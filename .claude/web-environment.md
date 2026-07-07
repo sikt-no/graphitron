@@ -13,7 +13,25 @@ It is not relevant when building locally or in CI.
 ## Automatic setup (SessionStart hook)
 
 `.claude/scripts/session-start-web-env.sh` runs at the start of every web session and brings the
-sandbox to a buildable state. Each step is idempotent and no-ops on local development. It:
+sandbox to a buildable state. In web sessions it runs **asynchronously** (R439): the session
+starts immediately while the hook keeps working in the background, first the prerequisite steps
+below, then a warm build of the whole reactor (`mvn install -P 'local-db,!docs' -DskipTests`),
+so the first foreground `mvn` command runs against a warm `~/.m2` and compiled `target/`
+directories instead of paying the cold build. Progress is tracked in
+`/tmp/graphitron-web-env.status` (`prereqs` / `warm-build` / `done` / `failed`, plus the hook
+PID and a start timestamp) and logged to `/tmp/graphitron-web-env.log`.
+
+You normally never need to think about this: a PreToolUse hook
+(`.claude/scripts/wait-for-web-env.sh`) automatically holds any Bash command involving `mvn`
+until the warm-up has finished (and `psql` until the prerequisites have finished), so a
+foreground build cannot race the background one; two concurrent Mavens sharing `~/.m2` and the
+same `target/` directories would corrupt each other, including the catalog-jar clobber below.
+The guard fails open if the hook died or the status file is stale, so a crashed warm-up can
+never wedge the session; the foreground build then just runs cold. To wait by hand or check
+progress, run `.claude/scripts/wait-for-web-env.sh` or `tail -f /tmp/graphitron-web-env.log`.
+
+Each prerequisite step is idempotent and no-ops on local development (where the hook stays
+fully synchronous and skips the warm build). It:
 
 - **Installs JDK 25 and makes it the default.** The parent pom's enforcer requires Java >= 25, but
   older sandbox images default to Java 21 and pin it via `/etc/profile.d/java.sh`. The hook installs
@@ -37,9 +55,12 @@ sandbox to a buildable state. Each step is idempotent and no-ops on local develo
   (`.github/workflows/rewrite-build.yml`) clones the same `v0.26.9` directly (it has unrestricted
   GitHub access), so the sandbox and CI exercise the same runtime version.
 
-Each step prints a one-line status message on success or failure. If a step fails, re-run the script
-by hand (`.claude/scripts/session-start-web-env.sh`) or apply that step manually from its description
-above.
+Each step prints a one-line status message on success or failure (into
+`/tmp/graphitron-web-env.log` in web sessions, as `systemMessage` output locally). If a step
+fails, re-run the script by hand (`CLAUDE_CODE_REMOTE=true .claude/scripts/session-start-web-env.sh`
+in a web sandbox) or apply that step manually from its description above. The JDK step also
+appends `JAVA_HOME` to `$CLAUDE_ENV_FILE` when the harness provides one, so agent shells do not
+inherit a stale `JAVA_HOME=java-21` that trips the enforcer even though `java` on the PATH is 25.
 
 ## Building the reactor
 

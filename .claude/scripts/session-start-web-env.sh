@@ -3,10 +3,46 @@
 # graphitron-rewrite. Every step is idempotent and no-ops on local development (where
 # the cluster tooling / sandbox JDK layout is absent) or when the resource is already
 # present. See .claude/web-environment.md for the rationale behind each step.
+#
+# In web sessions (CLAUDE_CODE_REMOTE=true) the hook runs in ASYNC mode: it tells the
+# harness to start the session immediately and keeps working in the background, first
+# the prerequisites below, then a Maven warm build of the whole reactor (R439). Progress
+# is tracked in $STATUS_FILE and logged to $LOG_FILE; the PreToolUse guard
+# (.claude/scripts/wait-for-web-env.sh) makes mvn/psql commands wait on that status
+# instead of racing the background work. On local development the hook stays fully
+# synchronous and never creates the status file.
 
 set -u
 
-emit() { printf '%s\n' "{\"systemMessage\":\"$1\"}"; }
+STATUS_FILE=/tmp/graphitron-web-env.status
+LOG_FILE=/tmp/graphitron-web-env.log
+
+ASYNC=0
+[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && ASYNC=1
+
+if [ "$ASYNC" -eq 1 ]; then
+  # First stdout line switches the harness to async mode; the session starts now.
+  printf '%s\n' '{"async": true, "asyncTimeout": 1800000}'
+  printf 'prereqs %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"
+  # Everything below logs to the file; the session has already started.
+  exec >>"$LOG_FILE" 2>&1
+  # If the hook dies or is killed (asyncTimeout) mid-flight, don't leave a running
+  # state behind: the guard would otherwise wait on a corpse until its PID check kicks in.
+  cleanup() {
+    if grep -qE '^(prereqs|warm-build) ' "$STATUS_FILE" 2>/dev/null; then
+      printf 'failed %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"
+    fi
+  }
+  trap cleanup EXIT TERM INT
+fi
+
+emit() {
+  if [ "$ASYNC" -eq 1 ]; then
+    printf '[%s] %s\n' "$(date +%H:%M:%S)" "$1"
+  else
+    printf '%s\n' "{\"systemMessage\":\"$1\"}"
+  fi
+}
 
 # Repo root, resolved from this script's own location so paths work regardless of cwd.
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -27,6 +63,11 @@ if [ -x "$JDK25/bin/java" ]; then
     printf 'export JAVA_HOME=%s\nexport PATH=${JAVA_HOME}/bin:${PATH}\n' "$JDK25" \
       | sudo tee /etc/profile.d/java.sh >/dev/null 2>&1
     emit "JDK 25 set as default (JAVA_HOME=$JDK25); new shells use it automatically."
+  fi
+  # Agent shells don't always source /etc/profile.d, so also persist JAVA_HOME through
+  # the harness env file; a stale inherited JAVA_HOME=21 otherwise trips the enforcer.
+  if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -q "JAVA_HOME=$JDK25" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+    printf 'export JAVA_HOME=%s\n' "$JDK25" >> "$CLAUDE_ENV_FILE"
   fi
 elif command -v java >/dev/null 2>&1 && ! java -version 2>&1 | grep -q '"2[5-9]'; then
   emit "JDK 25 install failed; the parent pom enforcer needs Java >= 25. See .claude/web-environment.md."
@@ -96,6 +137,29 @@ elif command -v curl >/dev/null 2>&1 && command -v make >/dev/null 2>&1 && comma
     emit "libtree-sitter ${TS_VERSION} install failed; graphitron-lsp native tests will error. See .claude/web-environment.md."
   fi
   rm -rf "$ts_tmp"
+fi
+
+# 5. Warm build (web sessions only, R439). The repo is cloned fresh into every session, so
+#    target/ is always empty and, on a cold container, so is ~/.m2. Build the reactor now,
+#    in the background, so the agent's first real mvn command runs against a warm cache.
+#    -Plocal-db keeps the jOOQ catalog jar correct (see the clobber footgun in
+#    web-environment.md), !docs skips the AsciiDoctor render, -DskipTests skips test
+#    execution but still compiles tests and runs fixture codegen. The PreToolUse guard
+#    holds concurrent mvn invocations until this finishes, so two Mavens never fight over
+#    ~/.m2 or the same target/ directories.
+if [ "$ASYNC" -eq 1 ]; then
+  printf 'warm-build %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"
+  export JAVA_HOME="$JDK25"
+  export PATH="$JDK25/bin:$PATH"
+  MVN=$(command -v mvn || echo /opt/maven/bin/mvn)
+  emit "Warm build starting: mvn -B -ntp install -P local-db,!docs -DskipTests"
+  if (cd "$REPO_ROOT" && "$MVN" -B -ntp install -P 'local-db,!docs' -DskipTests); then
+    emit "Warm build finished; reactor installed to ~/.m2 with a valid catalog jar."
+    printf 'done %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"
+  else
+    emit "Warm build FAILED; the first foreground build will surface the error. Log: $LOG_FILE"
+    printf 'failed %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"
+  fi
 fi
 
 exit 0

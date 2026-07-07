@@ -25,7 +25,7 @@ mvn -version  # expect "Java version: 25.x"
 
 If `mvn -version` reports Java 21, the session inherited a stale `JAVA_HOME`; see `.claude/web-environment.md` for the JDK 25 install + `JAVA_HOME` export. The parent pom's enforcer fails loudly with "Detected JDK … 21", so this is not silent.
 
-**Claude Code Web** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). For PostgreSQL/Testcontainers errors there, see `.claude/web-environment.md`.
+**Claude Code Web** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). The SessionStart hook runs asynchronously and warms the full reactor build in the background (R439); a PreToolUse guard holds your first `mvn` command until the warm-up finishes, so an unusually long first `mvn` invocation is the guard waiting, not a hang. For PostgreSQL/Testcontainers errors there, see `.claude/web-environment.md`.
 
 ## Common commands
 
