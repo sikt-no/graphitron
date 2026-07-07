@@ -44,7 +44,8 @@ public sealed interface TableExpr permits TableExpr.Catalog {
 }
 
 public sealed interface On permits On.ColumnPairs, On.Predicate {
-    record ColumnPairs(ForeignKeyRef fk, List<JoinSlot.FkSlot> slots) implements On { }
+    record ColumnPairs(ForeignKeyRef fk, List<JoinSlot.FkSlot> slots)
+            implements On, HasSlots { }
     record Predicate(JoinConditionRef condition) implements On { }
 }
 ```
@@ -54,19 +55,28 @@ public sealed interface On permits On.ColumnPairs, On.Predicate {
   arms are declared destinations that land with their pulling consumers (`@tableMethod` rewire,
   R435's `RoutineCall` + the `Lateral` `on`-arm); minting unpopulated arms up front would repeat
   the horizontal-vocabulary mistake R222 rejected.
-- **`on` is non-null day one.** R333's model has `on` absent exactly for the start node, but the
-  shipped path representation has no start-node entry: the source supplies the start, `path[0]`
-  already joins. The absent-`on` start node becomes representable only when R435's root routine
-  entry needs it; minting an optional now would be another unpopulated arm. Every shipped `Hop`
-  carries exactly one `on`.
-- **`ColumnPairs` keeps the FK as provenance.** Emitters emit `.onKey($T.$L)` from
-  `fk().keysClass()` / `fk().constantName()` at five sites (`InlineTableFieldEmitter:164`,
-  `InlineLookupTableFieldEmitter:207`, `InlineColumnReferenceFieldEmitter:104`,
-  `SplitRowsMethodEmitter:404`, `TypeConditionsGenerator:241`, plus `FkTargetConditionEmitter:135`),
-  and `CatalogBuilder` / `NodeIdLeafResolver` / `SourceRowDirectiveResolver` read `fk().sqlName()`
-  / `constantName()` for classification and diagnostics. Day one every `ColumnPairs` is FK-derived,
-  so `fk` is a non-null component; when R435 adds the PK/UK name-match derivation, the derivation
-  becomes its own small seal on the arm and FK becomes one case of it. Not minted now.
+- **`on` is non-null day one, and stays non-null.** R333's model has `on` absent exactly for the
+  start node, but the shipped path representation has no start-node entry: the source supplies the
+  start, `path[0]` already joins. The forward contract for R435's root routine entry is a **sealed
+  sibling, not an optional**: R333 line 839 models the path as a start node *followed by* join
+  steps, so the start node arrives as its own variant or as a `(start, List<Hop>)` path carrier,
+  never by widening `Hop.on` to `Optional<On>` (line 858's "absent" reading). Widening would
+  reintroduce a null-in-exactly-one-case state and forfeit the every-`Hop`-joins certainty the
+  non-null component buys.
+- **`ColumnPairs` deliberately carries more than R333's literal sketch.** R333 line 860 writes
+  `ColumnPairs(List<(sourceCol, targetCol)>)` with no FK, treating the FK as pure derivation. But
+  emitters emit `.onKey($T.$L)` from `fk().keysClass()` / `fk().constantName()` at six sites
+  (`InlineTableFieldEmitter:164`, `InlineLookupTableFieldEmitter:207`,
+  `InlineColumnReferenceFieldEmitter:104`, `SplitRowsMethodEmitter:404`,
+  `TypeConditionsGenerator:241`, `FkTargetConditionEmitter:135`), and a bare pair list would force
+  `.on(col.eq(col))` instead, changing generated output against this item's own byte-identical
+  acceptance. So `fk` is a required non-null component, not a deviation to correct back to R333's
+  sketch: emitters read `fk` for `.onKey` legibility, correlation and split-rows readers read
+  `slots` for key tuples; the two coexist by design. `CatalogBuilder` / `NodeIdLeafResolver` /
+  `SourceRowDirectiveResolver` additionally read `fk().sqlName()` / `constantName()` for
+  classification and diagnostics. When R435 adds the PK/UK name-match derivation, the derivation
+  becomes its own small seal on the arm (FK-derived emits `.onKey`, name-matched emits explicit
+  column equality) and FK becomes one case of it. Not minted now.
 - **New capability is a new arm, not a new step type**: a new target arm (`RoutineCall`), a new
   source-side provenance (`Lift`), or a new `on` derivation (PK/UK name-match), per R333.
 
@@ -79,18 +89,30 @@ Where every component of the two deleted variants lands:
 | `FkJoin.fk` | `On.ColumnPairs.fk` (provenance, still non-null) |
 | `FkJoin.slots` | `On.ColumnPairs.slots` |
 | `FkJoin.targetTable` / `ConditionJoin.targetTable` | `Hop.target` (`TableExpr.Catalog.table`) |
-| `FkJoin.originTable` | `Hop.originTable`, now on every hop (`parsePath` knows the current source; `ConditionJoin` simply never carried it). Denormalized: it duplicates the previous step's target / the source table. Kept mechanically because `ParentCorrelation:65`, `BuildContext:1776` and `FieldBuilder` read it; deleting it in favor of a path-position derivation is a follow-up, not this reshape. |
+| `FkJoin.originTable` | `Hop.originTable`, now on every hop (`parsePath` knows the current source; `ConditionJoin` simply never carried it). Denormalized: it duplicates the previous step's target / the source table. Kept mechanically because `ParentCorrelation:65`, `BuildContext:1776` and `FieldBuilder` read it, and pre-resolved-over-re-derived is the generation-thinking default. Deleting it in favor of a path-position derivation is homed in R431, which re-types the path structure anyway (noted there). |
 | `FkJoin.whereFilter` | `Hop.filter`, retyped `JoinConditionRef` (see R16 absorption) |
 | `ConditionJoin.condition` | `On.Predicate.condition`, retyped `JoinConditionRef` |
 | `FkJoin.alias` / `ConditionJoin.alias` | `Hop.alias` |
 
-The capability interfaces reshape rather than survive verbatim: `HasTargetTable` (target table +
-alias, uniformly true) stays, implemented by both permits. `WithTarget` (slot iteration) loses its
-reason to exist as a cross-variant capability: `Hop` answers the pairable-slots question through
-`on() instanceof ColumnPairs`, and `LiftedHop` keeps its slot list directly. Readers that today
-dispatch `FkJoin | LiftedHop` through `WithTarget` at hop 0 (`SplitRowsMethodEmitter`,
-`ParentCorrelation`) re-dispatch on `Hop`-with-`ColumnPairs` vs `LiftedHop`; whether a shared
-slot-iteration accessor survives that is the implementer's call at the site.
+The capability interfaces reshape rather than survive verbatim, along the doctrine's own line
+(capabilities express what is uniformly true, sealed switches what varies by identity):
+
+- `HasTargetTable` (target table + alias, uniformly true of every step) stays, implemented by both
+  permits.
+- `WithTarget` dies as a `JoinStep`-level capability because slot *presence* now varies within
+  `Hop` (`ColumnPairs` has slots, `Predicate` does not); presence is answered by `on() instanceof
+  ColumnPairs`, a sealed dispatch.
+- Slot *iteration* stays a capability, because it remains uniformly identical across the two
+  slot-carrying types that coexist in the R438-to-R431 window: a small `HasSlots` interface (the
+  current `WithTarget` helper body: `Iterable<? extends JoinSlot> slots()`, `slotCount()`,
+  `sourceSideColumns()` / `targetSideColumns()` defaults) implemented by `On.ColumnPairs` and
+  `JoinStep.LiftedHop`. The `Iterable`-not-`List` discipline (`JoinStep.java:90-95`, positional
+  access as a compile error) transfers with it, not "implementer's call": `ColumnPairs` may store
+  a `List` component but exposes iteration through the capability. `HasSlots` dies with
+  `LiftedHop` in R431, when `ColumnPairs` becomes its only implementor. Readers that today
+  dispatch `FkJoin | LiftedHop` through `WithTarget` at hop 0 (`SplitRowsMethodEmitter`,
+  `ParentCorrelation`) re-dispatch on `Hop`-with-`ColumnPairs` vs `LiftedHop` and read slots
+  through `HasSlots`.
 
 ## What stays: `LiftedHop` is R431's to retire
 
@@ -151,9 +173,11 @@ intermediate commit. Slicing:
 
 ## Acceptance
 
-- **Generated output is byte-identical.** This is a model reshape with no behavior surface; the
-  sakila golden files and the execution tier must not move. Any diff in generated code is a bug in
-  the reshape.
+- **Generated output is byte-identical.** This is a model reshape with no behavior surface. There
+  is no checked-in golden corpus for full generated output, so the gate is named concretely: diff
+  `graphitron-sakila-example/target/generated-sources/graphitron` before and after each slice
+  (generated fresh by `mvn install -Plocal-db`) and require an empty diff, alongside the
+  pipeline-tier assertions on emitted bodies. Any diff in generated code is a bug in the reshape.
 - Pipeline and execution tiers green at every intermediate commit, not just the endpoint.
 - `JoinStep.java`'s javadoc (the variant-contrast table, the cardinality invariant) survives the
   reshape rewritten against the axes, not deleted.
@@ -161,9 +185,14 @@ intermediate commit. Slicing:
 ## Out of scope, and coordination
 
 - `MethodCall` / `RoutineCall` target arms, the `Lateral` `on`-arm, PK/UK name-match derivation,
-  the absent-`on` start node, and the `@oneOf` SDL path-element surface: all R435 (or its
-  follow-ons), which lands them on these axes.
-- `Lift` source-side provenance, `LiftedHop` retirement, `SourceKey.path` re-typing: R431.
+  the start-node variant (a sealed sibling, never `Optional<On>`, see above), and the `@oneOf` SDL
+  path-element surface: all R435 (or its follow-ons), which lands them on these axes.
+- `Lift` source-side provenance, `LiftedHop` retirement (and with it `HasSlots` and the four
+  defensive unreachable arms), `SourceKey.path` re-typing, and the `originTable`
+  derivation-over-denormalization cleanup: R431. **Sequencing**: both items carry `depends-on: []`
+  but they reshape the same seal; R431 reads R438's `Hop`, so R431 follows R438. Recorded as prose
+  in both items rather than a hard edge because the dependency is on the landed shape, not on this
+  item's completion ceremony.
 - The R381 path-walker lift (`step(currentSource, hopElement)` over an `FkEdge` abstraction)
   touches the same seam; coordinate so the lifted stepper reads the two-axis step, not the flat
   seal.

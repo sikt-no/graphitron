@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-07-04
-last-updated: 2026-07-04
+last-updated: 2026-07-07
 ---
 
 # Decompose SourceKey onto the model's facts
@@ -42,6 +42,15 @@ on this type). Introduce the decomposed facts alongside `SourceKey`, dual-source
 arm by arm behind the compiler, then delete the record; the execution-tier acceptance holds at every
 intermediate commit, not just the endpoint. Not a single atomic edit — `SourceKey` is too widely
 pinned for big-bang in a trunk-based, concurrently-edited repo.
+
+**Incoming from R438** (`materialize-joinpath-facts`, the join-path twin; R438 lands first, this
+item reads its two-axis `Hop`): retiring `JoinStep.LiftedHop` is this item's work, since its lifted
+slots are the `Lift` source-side provenance and moving it out of the `JoinStep` seal requires the
+`SourceKey.path` re-typing done here. Three payoffs ride along: the four defensive
+LiftedHop-unreachable arms in the `@reference`-path emitters become type-level impossibilities; the
+transitional `HasSlots` capability dies (R438's `On.ColumnPairs` becomes its only implementor); and
+the denormalized `Hop.originTable` component becomes deletable in favor of a path-position
+derivation once the path carrier owns its start.
 
 Why eager rather than pulled by the emit slices: the surface is being extended in its conflated form
 right now. R425 (parent projection omits a `@splitQuery`/`@service` child's key columns) and R426
