@@ -108,24 +108,18 @@ in the builder ; never reach past the boundary.
 *Enforced by:* review only, via the grep-able discovery recipes above; a meta-test pinning each
 containment set is a candidate roadmap item.
 
-=== Narrow component types over broad interfaces
+=== Shape the type as precisely as the fact allows
 
-Field record components are declared with the narrowest type the classifier can guarantee, not
-the broad sealed-interface root: a field whose return type is always table-bound declares
-`ReturnTypeRef.TableBoundReturnType` directly, so consumers know it without a runtime check.
+Give each fact the narrowest type the classifier can guarantee. A field record component declares
+the narrowest, not the broad sealed-interface root ; a return type that is always table-bound
+declares `ReturnTypeRef.TableBoundReturnType` directly, so consumers know it without a runtime
+check. A complex outcome gets its own sealed sub-taxonomy, not raw strings ; `TableRef` for the
+resolved table, `ColumnRef` for the resolved column. A new sub-taxonomy earns its place with a
+one-line note on what it carries that a sibling cannot ; otherwise it is a field on an existing
+record, and at milestone boundaries audit which could collapse.
 
-*Enforced by:* the compiler ; the narrowed component type is the contract.
-
-=== Sub-taxonomies for resolution outcomes
-
-Complex resolution outcomes get their own sealed type rather than raw strings: `TableRef` is the
-resolved-table sub-taxonomy, `ColumnRef` the resolved-column one. Each new sub-taxonomy proposal
-comes with a one-line note on what distinct information it carries that a sibling cannot ;
-otherwise it's probably a field on an existing record. At milestone boundaries, audit which
-sub-taxonomies could collapse.
-
-*Enforced by:* review only (the one-line justification note at proposal time; the
-milestone-boundary collapse audit).
+*Enforced by:* the compiler where the narrowed component type is the contract; review for a new
+sub-taxonomy's justification note and the milestone collapse audit.
 
 === Classification and validation gather facts; the gathering stays out of the model
 
@@ -263,11 +257,11 @@ for the symmetry itself.
 
 == Every invariant has an enforcer
 
-*An invariant exists only while something fails when it breaks.* The corollaries below are the
-three directions the rule flows ; rejections (classifier to validator), acceptances (classifier to
-emitter), claims (documentation to test or type) ; and the direction matters because each has a
-different enforcer. Enforcers run at build time or earlier; a runtime cast is not one ; it fails
-on a real request, days after the build passed. This axiom enforces against the drift smell: a
+*An invariant exists only while something fails when it breaks.* Three corollaries below name where
+a fact is enforced ; at the validator, at the emitter's type or tier, at the pipeline tier ; and
+two turn the same discipline on this document itself. Each names a distinct enforcer that runs at
+build time or earlier ; a runtime cast is never one, failing on a real request days after the build
+passed. This axiom enforces against the drift smell: a
 fact restated with no single enforcer (a second dispatch set, a defensive cast, an
 unguarded census) drifts silently. R268 is the worked example, an emit-side allow-list that drifted
 from the arms the emitter implemented until it was deleted and the invariant re-sourced. A review-only label
@@ -626,7 +620,9 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
    rejections (classifier to validator), acceptances (classifier to emitter), claims
    (documentation to test or type) ; the direction tells a contributor which mechanism to reach
    for, and a runtime cast is explicitly not an enforcer. The code-string-assertion ban stays in
-   the body, not behind the testing.adoc xref.
+   the body, not behind the testing.adoc xref. (Decision 17 later reframes the body's "three
+   directions" wording: there are five corollaries, so the body now names 3 enforcement mechanisms
+   + 2 document-self-governance rules. The decision to keep them as separate corollaries stands.)
 8. **Axiom 1 keeps two corollaries with teeth** (consult): the parse boundary as a *containment*
    invariant with R433's corrected discovery recipes, and the fact-gathering corollary (decision 13)
    that the gathering process's transient state stays out of the model.
@@ -721,8 +717,28 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     visibly axiom 2's smell one scale up, not a separate rule. Roughly word-neutral (R268 stated
     once buys back the coinage and the scale tags); the value is correctness, not budget. The
     narrower instances that are not general restatements, the DataLoader worked-example smell and
-    capability-membership drift, stay in place. Findings B (axiom 5's body promising "three
-    directions" while carrying five corollaries) and C (micro-merges under axiom 1) remain open.
+    capability-membership drift, stay in place. Findings B and C are landed in decisions 17 and 18.
+17. **Axiom 5's body describes its own corollaries honestly** (user's Spec review, 2026-07-07;
+    "Finding B"). The body claimed "the corollaries below are the three directions the rule flows ;
+    rejections, acceptances, claims", but the section carries five corollaries, and "claims"
+    (Documentation names only live tests) is document self-governance, not a model-internal
+    producer-to-consumer contract the way rejections and acceptances are. The corollary *order*
+    already grouped 3+2 (Rejections, Acceptances, Behaviour-at-tier ; then Principles-at-altitude,
+    Documentation-names-live-tests), so only the body mis-described it. Rewritten to name the two
+    honest groups: three place the enforcer for a model fact (validator, emitter's type or tier,
+    pipeline tier), two turn the same discipline on this document, which is itself a view over the
+    code, so altitude and name-only-live-tests are single-sourcing applied reflexively. No corollary
+    moved; the runtime-cast-is-not-an-enforcer point is preserved.
+18. **Axiom 1's two type-shape corollaries merged** (user's Spec review, 2026-07-07; "Finding C").
+    "Narrow component types over broad interfaces" (compiler-enforced) and "Sub-taxonomies for
+    resolution outcomes" (review-enforced) were both "shape the type as precisely as the fact
+    allows", now one corollary under that heading. Both examples survive
+    (`ReturnTypeRef.TableBoundReturnType` for the narrowing rule, `TableRef`/`ColumnRef` for the
+    sub-taxonomy rule) and both enforcers are kept on one compound `*Enforced by:*` line (the
+    compiler for the narrowed component; review for a new sub-taxonomy's justification note and the
+    milestone collapse audit). Axiom 1 goes from six corollaries to five; the two with teeth
+    decision 8 names (containment invariant, fact-gathering) are untouched. The saving offsets
+    Finding B, so the v2 block holds at 3,499, under the 3,500 cap.
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
