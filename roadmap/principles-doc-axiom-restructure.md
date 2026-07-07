@@ -17,10 +17,14 @@ lesson learned and now carries 28 flat peer sections: an axiom like "classificat
 parse boundary" has the same weight as "use two-arg `DSL.val`", the type-system family is stated
 five times at different zoom levels, and the doc's actual central principle (R222's thesis:
 orthogonal facts are slots, never permit cross-products) exists only as a preamble pointer while
-five of its weaker cousins have their own sections. Meanwhile two patterns that are now load-bearing
-across shipped items are absent entirely: the walker-carrier pattern (R238/R244/R246/R256: typed
-call carrier + `AuthorError` sub-seal with stable LSP codes + collect-Err-exclude-field) and the
-additive-then-cutover discipline for structural pivots (stated only inside R431/R222 item files).
+five of its weaker cousins have their own sections. Meanwhile two patterns now load-bearing across
+shipped items are absent from the old doc, and v2 lands each where it belongs rather than as a new
+section: the walker-carrier pattern (R238/R244/R246/R256: typed call carrier + `AuthorError`
+sub-seal with stable LSP codes + collect-Err-exclude-field), whose kernel folds into the
+sealed-results and fact-gathering corollaries (the walker is builder-internal gathering scaffolding
+that stays out of the model; decision 4), and the additive-then-cutover discipline for structural
+pivots (stated only inside R431/R222 item files), which relocates to `roadmap/workflow.adoc` as
+change discipline (decision 5).
 The restructure: a small axiom set with corollaries, every principle carrying a uniform anatomy
 (rule, exemplar, smell, and a named *enforcement*: compiler / meta-test / build tier / review-only,
 extending R433's altitude discriminator from inventories to the principles themselves), descriptive
@@ -123,7 +127,8 @@ sub-taxonomy's justification note and the milestone collapse audit.
 "Carry the decision as a type" says what the model holds; this corollary says what it must not.
 Classification gathers facts and populates the model; the scaffolding it carries while gathering ; a
 builder-internal sealed hierarchy, a re-classification of the same argument in each output field's
-context, any intermediate resolution state ; is an implementation detail, discarded before the
+context, a traversal carrier threading call context and collecting located violations as it walks
+the schema ; is an implementation detail, discarded before the
 model and invisible to every downstream view (generator, LSP). Validation is the same activity
 pointed the other way: it gathers facts too, reifying each missing or conflicting fact into a
 located violation the build acts on later (that violation's typed shape lives under "Builder-step
@@ -747,8 +752,19 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     `Method`/`Constructor` aside, the jOOQ exception enumeration) ; the grep recipe and both
     containment sets stay, since for a review-only invariant the recipe is the enforcer. Net 114
     words back; the block lands at 3,385, giving real headroom instead of sitting at the wall.
-
-Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
+20. **Motivation reconciled with the outcome; walker-carrier given a home** (user's Spec review,
+    2026-07-07). The motivation paragraph promised two absent load-bearing patterns and, read
+    literally, implied both would land in the principles doc ; but walker-carrier was consciously
+    removed as an exemplar (decision 4) and additive-then-cutover relocated to workflow.adoc
+    (decision 5), so the summary no longer described the result. Cosmetic for a spec, but fixed:
+    the motivation now states where each lands. Walker-carrier also gains a genuine home rather than
+    a bare dropped-list line ; its kernel (a typed carrier threading call context and collecting
+    located violations while walking the schema) is precisely the fact-gathering corollary's own
+    anti-pattern, so it joins that corollary's gathering-scaffolding examples, replacing the vague
+    "any intermediate resolution state" catch-all. This is not a walk-back of decision 4: the walker
+    appears as a smell (scaffolding that must stay out of the model), a stable category, not as a
+    positive exemplar with a scheduled death, so the stable-exemplar rule is respected. The typed
+    carrier and `AuthorError` sub-seal kernel remains carried by sealed-results and typed-rejection. (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
 
 ````asciidoc
