@@ -64,8 +64,7 @@ xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipl
 *Before implementing a feature, ensure the model carries what the feature needs ; pre-resolved,
 ready to consume.* `GraphitronSchemaBuilder` reads directives once and resolves everything: table
 names, column references, method names, extraction strategies. Every consumer receives the model
-in terms of "what to do", never "what to interpret" ; a generator sees "what to emit", the
-validator "what to check", the LSP "what to show".
+in terms of "what to do", never "what to interpret".
 
 Signs a model type needs more pre-resolution:
 
@@ -81,9 +80,8 @@ Signs a model type needs more pre-resolution:
 When different variants of a concept carry different data, use a sealed interface, not an enum
 with a shared field set: a sealed record hierarchy gives each variant exactly the fields it needs,
 and every switch that misses a new variant becomes a compile error. `CallSiteExtraction` is the
-exemplar ; some arms carry nothing, others exactly the references their extraction strategy needs,
-payloads no enum constant could hold; read the type for the current arm set, this doc deliberately
-does not enumerate it.
+exemplar ; some arms carry nothing, others exactly the references their extraction strategy needs ;
+read the type for the current arm set.
 
 *Enforced by:* the compiler ; exhaustive switches over a sealed hierarchy break when a variant is
 added.
@@ -96,12 +94,11 @@ live at all.
 Reading the reflection `java.lang.reflect.Type` tree is permitted only at builder-side classifiers
 that convert reflection output into typed carrier values ; a deliberately small set of files,
 discoverable by searching for the `Type`-tree reads themselves (`java.lang.reflect.Type`,
-`getGenericReturnType`, `getGenericParameterTypes`), not by the `java.lang.reflect` import (model
-records legitimately carry resolved `Method` and `Constructor` handles). Everything downstream ;
-validator, generator ; switches on pre-classified values and never touches reflection types. The
-jOOQ twin: `JooqCatalog` is the canonical holder of raw jOOQ types (`Table<?>`,
-`ForeignKey<?,?>`); the few deliberate exceptions (validator candidate-hint enumeration, the LSP
-catalog snapshot) import `org.jooq` at their own boundary and are discoverable by that import. If
+`getGenericReturnType`, `getGenericParameterTypes`), not by the `java.lang.reflect` import.
+Everything downstream ; validator, generator ; switches on pre-classified values and never touches
+reflection types. The jOOQ twin: `JooqCatalog` is the canonical holder of raw jOOQ types
+(`Table<?>`, `ForeignKey<?,?>`); the few deliberate exceptions import `org.jooq` at their own
+boundary and are discoverable by that import. If
 a generator needs information not yet in a taxonomy record, add a component and extract the value
 in the builder ; never reach past the boundary.
 
@@ -130,7 +127,7 @@ context, any intermediate resolution state ; is an implementation detail, discar
 model and invisible to every downstream view (generator, LSP). Validation is the same activity
 pointed the other way: it gathers facts too, reifying each missing or conflicting fact into a
 located violation the build acts on later (that violation's typed shape lives under "Builder-step
-results are sealed" and "Rejections", not restated here). The smell either way: gathering
+results are sealed" and "Rejections"). The smell either way: gathering
 scaffolding leaking into a model type, or a downstream view branching on a builder-internal type
 instead of the landed fact.
 
@@ -163,9 +160,7 @@ application; R333 is the current statement of the target model.
 The DataLoader-backed source side is the worked example: key shape, body input contract, row
 count, and loader registration are independent axes, and each dispatch site reads off whichever
 axis it forks on (xref:dispatch-axes.adoc[Dispatch axes] narrates the split). The smell to watch
-for: a single shared accessor whose meaning depends on the variant, a sealed permit name that
-splices two axes together, or a record component set in parallel to the one that already determines
-it (rather than derived from it in the canonical constructor).
+for: a single shared accessor whose meaning depends on the variant.
 
 *Enforced by:* the compiler where cross-axis invariants live in compact constructors; review at
 model-design time otherwise.
@@ -249,8 +244,7 @@ not the adapter alone. The generated `QueryConditions.<method>(Table, env)` forw
 user-written `<X>Conditions.<method>(Table, ...)` is the worked example. The smell is asymmetric
 typing across the pair ; most often the adapter erasing type information the composer needs (an
 arity-erased `RowN` where the decoder produced `Row<N><T1, ..., TN>`; R79 is the shipped fix),
-turning would-be compile failures into DSL-runtime surprises. Honour the type the decoder
-produces; don't widen the composer to absorb the loss.
+turning would-be compile failures into DSL-runtime surprises.
 
 *Enforced by:* the `graphitron-sakila-example` compile where the pair's signatures meet; review
 for the symmetry itself.
@@ -265,8 +259,7 @@ passed. This axiom enforces against the drift smell: a
 fact restated with no single enforcer (a second dispatch set, a defensive cast, an
 unguarded census) drifts silently. R268 is the worked example, an emit-side allow-list that drifted
 from the arms the emitter implemented until it was deleted and the invariant re-sourced. A review-only label
-anywhere in this document is an invitation: filing the meta-test that pins it is roadmap material.
-The set of review-only principles is read off the labels, never stored as its own list.
+is an invitation: filing the meta-test that pins it is roadmap material.
 
 === Rejections: validator mirrors classifier invariants
 
@@ -739,6 +732,21 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     milestone collapse audit). Axiom 1 goes from six corollaries to five; the two with teeth
     decision 8 names (containment invariant, fact-gathering) are untouched. The saving offsets
     Finding B, so the v2 block holds at 3,499, under the 3,500 cap.
+19. **Density pass: cut self-narration, illustrative enumerations, and in-section restatement**
+    (user's Spec review, 2026-07-07). The v2 block sat at the 3,500 cap while reading long-winded
+    for its primary audience (agents loading it on every design consult). Four low-risk cuts, no
+    rule / exemplar / smell / enforcer touched: (D) the doc's editorial notes about its own
+    construction ; "this doc deliberately does not enumerate it" (sealed hierarchies),
+    "payloads no enum constant could hold" (restated the rule above it), "not restated here"
+    (fact-gathering), and "the set of review-only principles is read off the labels, never stored
+    as its own list" (axiom 5) ; all already carried by the altitude principle. (E) illustrative
+    enumerations re-instancing a rule just stated ; the generator/validator/LSP "what to X" triple
+    (axiom 1 body) and two of the three DataLoader smell items that merely re-listed the field-scale
+    drift smell (axiom 2). (F) the adapter/composer corollary's trailing imperative restating its
+    own smell. (G) the justifying parentheticals in the parse-boundary containment recipe (the
+    `Method`/`Constructor` aside, the jOOQ exception enumeration) ; the grep recipe and both
+    containment sets stay, since for a review-only invariant the recipe is the enforcer. Net 114
+    words back; the block lands at 3,385, giving real headroom instead of sitting at the wall.
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
