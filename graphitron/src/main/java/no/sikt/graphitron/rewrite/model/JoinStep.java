@@ -165,16 +165,17 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * <p>{@code whereFilter} is an optional user-supplied condition method resolved from a
      * {@code condition} argument on the same {@code @reference} path element as the {@code key}.
      * When present, the generator appends it as a {@code .where()} or {@code .and()} clause on the
-     * enclosing SELECT — <em>not</em> on the JOIN's ON clause. The method receives the source-table
-     * alias and the newly-joined table alias as its two arguments, in that order. This field is
-     * {@code null} when no {@code condition} argument was specified alongside the key.
+     * enclosing SELECT — <em>not</em> on the JOIN's ON clause. The {@link JoinConditionRef}
+     * wrapper types the calling convention (source-table alias, newly-joined alias, in that
+     * order). This field is {@code null} when no {@code condition} argument was specified
+     * alongside the key.
      */
     record FkJoin(
         ForeignKeyRef fk,
         TableRef originTable,
         TableRef targetTable,
         List<JoinSlot.FkSlot> slots,
-        MethodRef whereFilter,
+        JoinConditionRef whereFilter,
         String alias
     ) implements JoinStep, WithTarget {
 
@@ -211,7 +212,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * <p>Contrast with {@link FkJoin#whereFilter}: that field is a WHERE clause on the enclosing
      * SELECT; this condition is the JOIN's ON clause.
      */
-    record ConditionJoin(MethodRef condition, TableRef targetTable, String alias)
+    record ConditionJoin(JoinConditionRef condition, TableRef targetTable, String alias)
             implements JoinStep, HasTargetTable {
 
         public ConditionJoin {

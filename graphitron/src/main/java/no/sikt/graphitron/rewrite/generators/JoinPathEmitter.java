@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
@@ -98,9 +98,13 @@ public final class JoinPathEmitter {
     /**
      * Emits a {@code <className>.<methodName>(srcAlias, tgtAlias)} invocation used by
      * {@link JoinStep.FkJoin#whereFilter()} (added to the enclosing WHERE) and by
-     * {@link JoinStep.ConditionJoin#condition()} (used as the join ON clause).
+     * {@link JoinStep.ConditionJoin#condition()} (used as the join ON clause). Takes the
+     * {@link JoinConditionRef} wrapper directly — the two-argument calling convention is the
+     * wrapper's contract, so call sites hand over the typed reference rather than extracting
+     * a raw {@code MethodRef}.
      */
-    public static CodeBlock emitTwoArgMethodCall(MethodRef method, String srcAlias, String tgtAlias) {
+    public static CodeBlock emitTwoArgMethodCall(JoinConditionRef condition, String srcAlias, String tgtAlias) {
+        var method = condition.method();
         return CodeBlock.of("$T.$L($L, $L)",
             ClassName.bestGuess(method.className()), method.methodName(), srcAlias, tgtAlias);
     }

@@ -29,6 +29,7 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -1325,8 +1326,8 @@ class BuildContext {
      *
      * <p>{@code sourceSqlName} must be non-null; callers gate inference on that precondition.
      * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} and
-     * {@code {key:}} branches in {@link #parsePathElement} may pass a resolved {@link MethodRef}
-     * when the element carries a {@code condition:} sub-argument.
+     * {@code {key:}} branches in {@link #parsePathElement} may pass a resolved
+     * {@link JoinConditionRef} when the element carries a {@code condition:} sub-argument.
      *
      * <p>Returns:
      * <ul>
@@ -1349,7 +1350,7 @@ class BuildContext {
      *     FKs, where the table-name comparison resolves direction.
      */
     FkJoinResolution synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
-            int stepIndex, MethodRef whereFilter, boolean selfRefFkOnSource) {
+            int stepIndex, JoinConditionRef whereFilter, boolean selfRefFkOnSource) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
         boolean fkOnSource = catalog.foreignKeyOnSource(f, sourceSqlName, selfRefFkOnSource);
@@ -1538,14 +1539,14 @@ class BuildContext {
                 return;
             }
             String effectiveSourceSqlName = currentSourceSqlName != null ? currentSourceSqlName : fkSideTable;
-            MethodRef whereFilter = null;
+            JoinConditionRef whereFilter = null;
             if (hasCondition) {
                 var res = resolveConditionRef(asMap(conditionRaw));
                 if (res.error() != null) {
                     errors.add(res.error());
                     return;
                 }
-                whereFilter = res.ref();
+                whereFilter = new JoinConditionRef(res.ref());
             }
             var keyResolution = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (keyResolution) {
@@ -1570,14 +1571,14 @@ class BuildContext {
                 errors.add(fkCountMessage(currentSourceSqlName, tableName.get(), fks, /*directiveAbsent=*/false));
                 return;
             }
-            MethodRef whereFilter = null;
+            JoinConditionRef whereFilter = null;
             if (hasCondition) {
                 var res = resolveConditionRef(asMap(conditionRaw));
                 if (res.error() != null) {
                     errors.add(res.error());
                     return;
                 }
-                whereFilter = res.ref();
+                whereFilter = new JoinConditionRef(res.ref());
             }
             var tableStepResolution = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (tableStepResolution) {
@@ -1606,7 +1607,7 @@ class BuildContext {
             var targetResolution = resolveConditionJoinTarget(res.ref(), isTerminal, terminalTargetSqlName);
             switch (targetResolution) {
                 case ConditionJoinTargetResolution.Resolved r -> {
-                    out.add(new ConditionJoin(res.ref(), r.target(), alias));
+                    out.add(new ConditionJoin(new JoinConditionRef(res.ref()), r.target(), alias));
                     // Check 2 (R379): the ON-clause method is called method(sourceAlias, targetAlias).
                     // Source is the table entering this hop; target is the resolved ConditionJoin
                     // target (return table for a terminal hop, second-parameter-resolved otherwise).
@@ -1622,7 +1623,7 @@ class BuildContext {
     /**
      * Result of {@link #resolveConditionJoinTarget}: either a fully-resolved {@link TableRef} or
      * an actionable {@code AUTHOR_ERROR} message. {@link Resolved} feeds the
-     * {@link ConditionJoin#ConditionJoin(MethodRef, TableRef, String) ConditionJoin compact
+     * {@link ConditionJoin#ConditionJoin(JoinConditionRef, TableRef, String) ConditionJoin compact
      * constructor}'s non-null contract directly; {@link AuthorError} routes through the
      * {@code errors} accumulator in {@link #parsePathElement} and surfaces as a
      * {@link Rejection.AuthorError.Structural} upstream.
@@ -1772,7 +1773,7 @@ class BuildContext {
      */
     private void validateWhereFilterParamTables(FkJoin fkJoin, List<String> errors) {
         if (fkJoin.whereFilter() == null) return;
-        validateConditionParamTables(fkJoin.whereFilter(),
+        validateConditionParamTables(fkJoin.whereFilter().method(),
             fkJoin.originTable().tableName(), fkJoin.targetTable().tableName(), errors);
     }
 

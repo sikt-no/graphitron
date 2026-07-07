@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -47,8 +48,8 @@ class SplitTableFieldValidationTest {
         TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(),
         TestFixtures.joinTarget("film_actor"), List.of(), null, ""));
     private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
-        TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
-            ClassName.get("org.jooq", "Condition"), List.of()),
+        new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
+            ClassName.get("org.jooq", "Condition"), List.of())),
         TestFixtures.actorTable(), ""));
 
     enum Case implements ValidatorCase {

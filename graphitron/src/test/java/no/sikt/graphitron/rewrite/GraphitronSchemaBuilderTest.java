@@ -304,7 +304,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
                 var cj = (JoinStep.ConditionJoin) ref.joinPath().get(0);
-                assertThat(cj.condition().methodName()).isEqualTo("join");
+                assertThat(cj.condition().method().methodName()).isEqualTo("join");
             }),
 
         CONDITION_PATH_UNKNOWN_CLASS(

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -53,8 +54,8 @@ class ServiceFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
             new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(
-                new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
-                    List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), TestFixtures.filmTable(), "")),
+                new JoinStep.ConditionJoin(new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
+                    List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext())))), TestFixtures.filmTable(), "")),
                 RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
                 + "(condition-join lift form) is not yet supported — see "

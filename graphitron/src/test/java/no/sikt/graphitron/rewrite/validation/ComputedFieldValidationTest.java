@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.TestFixtures;
@@ -41,8 +42,8 @@ class ComputedFieldValidationTest {
             new ComputedField("Film", "fullTitle", null,
                 new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(
-                    TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition",
-                        ClassName.get("org.jooq", "Condition"), List.of()),
+                    new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition",
+                        ClassName.get("org.jooq", "Condition"), List.of())),
                     TestFixtures.filmTable(),
                     "")),
                 DUMMY_METHOD),

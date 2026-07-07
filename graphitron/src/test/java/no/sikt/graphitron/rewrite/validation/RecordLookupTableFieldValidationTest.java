@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
@@ -54,8 +55,8 @@ class RecordLookupTableFieldValidationTest {
         TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
         TestFixtures.joinTarget("film"), List.of(), null, ""));
     private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
-        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
-            ClassName.get("org.jooq", "Condition"), List.of()),
+        new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+            ClassName.get("org.jooq", "Condition"), List.of())),
         TestFixtures.filmTable(), ""));
 
     enum Case implements ValidatorCase {

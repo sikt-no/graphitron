@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
+import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -498,7 +499,7 @@ public final class TestFixtures {
     public static JoinStep.FkJoin fkJoin(ForeignKeyRef fk, TableRef originTable,
                                           List<ColumnRef> sourceColumns,
                                           TableRef targetTable, List<ColumnRef> targetColumns,
-                                          MethodRef whereFilter, String alias) {
+                                          JoinConditionRef whereFilter, String alias) {
         if (sourceColumns.size() != targetColumns.size()) {
             throw new IllegalArgumentException(
                 "fkJoin fixture: sourceColumns/targetColumns arity mismatch ("
