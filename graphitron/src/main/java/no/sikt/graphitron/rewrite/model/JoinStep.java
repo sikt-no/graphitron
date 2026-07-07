@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.model;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +10,9 @@ import java.util.List;
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
  *
  * <ul>
+ *   <li>{@link Hop} — the two-axis step (R333): a {@link TableExpr} target plus an {@link On}
+ *       describing how the step joins. Replaces {@link FkJoin} / {@link ConditionJoin}, which
+ *       remain permits only until the cutover completes.</li>
  *   <li>{@link FkJoin} — navigate via a jOOQ foreign key ({@code .join(table).onKey(fk)}),
  *       with an optional WHERE filter on the enclosing SELECT.</li>
  *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
@@ -64,7 +66,7 @@ import java.util.List;
  *       rejecting it.</li>
  * </ol>
  */
-public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin, JoinStep.LiftedHop {
+public sealed interface JoinStep permits JoinStep.Hop, JoinStep.FkJoin, JoinStep.ConditionJoin, JoinStep.LiftedHop {
 
     /**
      * Capability mixed in by every hop that pre-resolves a target table the prelude joins to.
@@ -84,43 +86,80 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     /**
      * Capability mixed in by hops that pre-resolve a target table <em>and</em> a slot list pairing
      * source / target columns for FK-correlation predicates. Lets emitters read
-     * {@link #targetTable()}, {@link #slots()}, and {@link #alias()} polymorphically — exactly
-     * where the accessors mean the same thing on every implementor.
+     * {@link #targetTable()}, {@link HasSlots#slots()}, and {@link #alias()} polymorphically —
+     * exactly where the accessors mean the same thing on every implementor.
      *
-     * <p>{@link #slots()} returns {@link Iterable} rather than {@link List} on purpose: positional
-     * methods ({@code .get(i)}, {@code .getFirst()}, {@code .subList(...)}) become compile errors
-     * at the consumer rather than grep findings. Cardinality stays available through
-     * {@link #slotCount()}. The variant identity (FK pairing vs lifter identity) lives on the
-     * concrete {@link JoinSlot} permit returned by iteration; emitters iterate uniformly through
-     * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()} regardless of permit.
+     * <p>The slot-iteration contract (including the {@link Iterable}-not-{@link List}
+     * discipline) lives on {@link HasSlots}, which this interface composes with
+     * {@link HasTargetTable}. Transitional: dies with the flat {@link FkJoin} variant when the
+     * two-axis {@link Hop} cutover completes — slot presence then varies <em>within</em> a step
+     * ({@link On.ColumnPairs} has slots, {@link On.Predicate} does not), so it stops being a
+     * step-level capability and is answered by sealed dispatch on {@link Hop#on()} instead.
      *
      * <p>{@link JoinStep.ConditionJoin} implements {@link HasTargetTable} directly (no slot list)
      * — its source/target correlation is the condition method call, not paired columns.
      */
-    interface WithTarget extends HasTargetTable {
-        Iterable<? extends JoinSlot> slots();
-        int slotCount();
+    interface WithTarget extends HasTargetTable, HasSlots {
+    }
 
-        /**
-         * Source-side columns for this hop, materialised as a {@link List} for readers that
-         * need the columns themselves (e.g. constructing a {@link SourceKey} entry-point
-         * column tuple) rather than slot-by-slot iteration. The order matches {@link #slots()};
-         * index {@code i} is {@code slots[i].sourceSide()}.
-         */
-        default List<ColumnRef> sourceSideColumns() {
-            List<ColumnRef> out = new ArrayList<>(slotCount());
-            for (JoinSlot slot : slots()) out.add(slot.sourceSide());
-            return List.copyOf(out);
+    /**
+     * One join step as two orthogonal facts (R333): a <b>target</b> node materialized by a
+     * {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
+     * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
+     * predicate}). Replaces the flat {@link FkJoin} / {@link ConditionJoin} variants, which
+     * spliced the two facts into the permit name.
+     *
+     * <p>{@code target} is the table node this step joins to; day one always a
+     * {@link TableExpr.Catalog}. {@link #targetTable()} folds it back to the {@link TableRef}
+     * for the uniform {@link HasTargetTable} read.
+     *
+     * <p>{@code on} is non-null on every hop: the shipped path representation has no start-node
+     * entry (the source supplies the start; {@code path[0]} already joins). See {@link On} for
+     * the forward contract when a start-node variant arrives.
+     *
+     * <p>{@code originTable} is the traversal-origin table of this hop — the side the join
+     * enters <em>from</em>: the parent table for hop 0, the previous hop's target for subsequent
+     * hops. Denormalized (it duplicates the previous step's target / the source table) and kept
+     * mechanically because consumers read it pre-resolved; deleting it in favor of a
+     * path-position derivation is homed in R431. {@code null} when the source is not
+     * table-backed or the jOOQ catalog is unavailable (unit tests).
+     *
+     * <p>{@code filter} is an optional per-hop filter appended to the enclosing SELECT's WHERE —
+     * <em>not</em> the JOIN's ON clause (that is {@code on}); resolved from a {@code condition:}
+     * sub-argument accompanying a {@code key:}/{@code table:} path element. {@code null} when
+     * the element carried none.
+     *
+     * <p>{@code alias} is the unique table alias for this step within the enclosing query,
+     * computed at build time as {@code fieldName + "_" + stepIndex}; unique per field × depth,
+     * which handles self-referential join paths where the same table appears multiple times.
+     */
+    record Hop(
+        TableExpr target,
+        On on,
+        TableRef originTable,
+        JoinConditionRef filter,
+        String alias
+    ) implements JoinStep, HasTargetTable {
+
+        public Hop {
+            if (target == null) {
+                throw new NullPointerException("JoinStep.Hop.target must not be null");
+            }
+            if (on == null) {
+                throw new NullPointerException(
+                    "JoinStep.Hop.on must not be null: every shipped hop joins. A future "
+                    + "start-node entry is its own sealed variant, never a null/absent on.");
+            }
+            if (alias == null) {
+                throw new NullPointerException("JoinStep.Hop.alias must not be null");
+            }
         }
 
-        /**
-         * Target-side columns for this hop, materialised as a {@link List}. The order matches
-         * {@link #slots()}; index {@code i} is {@code slots[i].targetSide()}.
-         */
-        default List<ColumnRef> targetSideColumns() {
-            List<ColumnRef> out = new ArrayList<>(slotCount());
-            for (JoinSlot slot : slots()) out.add(slot.targetSide());
-            return List.copyOf(out);
+        @Override
+        public TableRef targetTable() {
+            return switch (target) {
+                case TableExpr.Catalog c -> c.table();
+            };
         }
     }
 

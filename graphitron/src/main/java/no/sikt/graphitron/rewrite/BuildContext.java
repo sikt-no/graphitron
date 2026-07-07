@@ -43,6 +43,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
@@ -1305,6 +1306,15 @@ class BuildContext {
         }
         JoinStep terminal = resolvedElements.getLast();
         return switch (terminal) {
+            case JoinStep.Hop hop -> switch (hop.on()) {
+                case On.ColumnPairs ignored -> hop.targetTable().sameTable(returnSqlTableName)
+                    ? new TerminalTargetVerdict.Match()
+                    : new TerminalTargetVerdict.Mismatch(fieldName, hop.targetTable().tableName(), returnSqlTableName);
+                // Match by construction, same as the flat ConditionJoin arm below:
+                // resolveConditionJoinTarget's terminal branch builds the target from the
+                // return @table, so the comparison is tautological.
+                case On.Predicate ignored -> new TerminalTargetVerdict.Match();
+            };
             case JoinStep.FkJoin fk -> fk.targetTable().sameTable(returnSqlTableName)
                 ? new TerminalTargetVerdict.Match()
                 : new TerminalTargetVerdict.Mismatch(fieldName, fk.targetTable().tableName(), returnSqlTableName);

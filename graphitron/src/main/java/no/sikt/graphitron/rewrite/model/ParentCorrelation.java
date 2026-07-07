@@ -67,6 +67,10 @@ public sealed interface ParentCorrelation
                 case JoinStep.ConditionJoin unreachable -> throw new IllegalStateException(
                     "ParentCorrelation.OnFkSlots.firstHop is JoinStep.WithTarget (FkJoin or "
                     + "LiftedHop); ConditionJoin cannot reach this arm: " + unreachable);
+                case JoinStep.Hop unreachable -> throw new IllegalStateException(
+                    "ParentCorrelation.OnFkSlots.firstHop is JoinStep.WithTarget (FkJoin or "
+                    + "LiftedHop); the two-axis Hop does not implement it and cannot reach "
+                    + "this arm until the R438 cutover retypes the carrier: " + unreachable);
             };
             case OnConditionJoin cj -> cj.parentTable();
         };

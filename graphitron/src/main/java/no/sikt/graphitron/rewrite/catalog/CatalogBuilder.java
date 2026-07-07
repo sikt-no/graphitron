@@ -561,6 +561,14 @@ public final class CatalogBuilder {
         var out = new ArrayList<FieldClassification.FkStep>(joinPath.size());
         for (var step : joinPath) {
             switch (step) {
+                case JoinStep.Hop hop -> out.add(switch (hop.on()) {
+                    case no.sikt.graphitron.rewrite.model.On.ColumnPairs cp ->
+                        new FieldClassification.FkStep(
+                            hop.targetTable() != null ? hop.targetTable().tableName() : null,
+                            cp.fk().sqlName());
+                    case no.sikt.graphitron.rewrite.model.On.Predicate ignored ->
+                        new FieldClassification.FkStep(null, null);
+                });
                 case JoinStep.FkJoin fk -> out.add(new FieldClassification.FkStep(
                     fk.targetTable() != null ? fk.targetTable().tableName() : null,
                     fk.fk() != null ? fk.fk().sqlName() : null));

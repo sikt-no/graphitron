@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -160,6 +161,14 @@ public final class InlineTableFieldEmitter {
             JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
             switch (bridging) {
+                case JoinStep.Hop hop -> {
+                    switch (hop.on()) {
+                        case On.ColumnPairs cp -> sel.add("\n        .join($L).onKey($T.$L)",
+                            prevAlias, cp.fk().keysClass(), cp.fk().constantName());
+                        case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
+                            prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                    }
+                }
                 case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
                     prevAlias, fk.fk().keysClass(), fk.fk().constantName());
                 case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
