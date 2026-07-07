@@ -764,7 +764,9 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     "any intermediate resolution state" catch-all. This is not a walk-back of decision 4: the walker
     appears as a smell (scaffolding that must stay out of the model), a stable category, not as a
     positive exemplar with a scheduled death, so the stable-exemplar rule is respected. The typed
-    carrier and `AuthorError` sub-seal kernel remains carried by sealed-results and typed-rejection. (after the plan-shape bullets), receiving the technique the
+    carrier and `AuthorError` sub-seal kernel remains carried by sealed-results and typed-rejection.
+
+Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
 
 ````asciidoc
