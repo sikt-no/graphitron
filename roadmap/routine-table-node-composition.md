@@ -1,7 +1,7 @@
 ---
 id: R435
 title: "Routine table nodes: order-significant @routine / @reference composition"
-status: Spec
+status: Ready
 bucket: feature
 theme: service
 depends-on: [coordinate-lowers-to-datafetcher-queryparts, materialize-joinpath-facts]
