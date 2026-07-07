@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * cheaply, and the dev loop's single-file incremental compile pays those costs cold.
  *
  * <p><b>Carve-out vs. the "code-string assertions banned" principle.</b>
- * {@code rewrite-design-principles.adoc} § "Pipeline tests are the primary behavioural tier"
+ * {@code development-principles.adoc} § "Behaviour is pinned at the pipeline tier and above"
  * bans code-string assertions on generated method bodies because they test implementation,
  * not behaviour, and break on every refactor. The defect this test guards is itself an
  * implementation-shape property: chain depth has no behavioural correlate, only a (fragile,

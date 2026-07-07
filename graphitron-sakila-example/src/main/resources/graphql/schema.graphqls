@@ -350,7 +350,7 @@ type Query {
     # that re-emitted the static `SampleInstanceService.titleByFilmId(...)` call shape against
     # this instance method would surface here as a javac rejection on the generated source, not
     # a unit-test body-string mismatch — the compile tier is the structural backstop for the
-    # static-vs-instance fork (rewrite-design-principles.adoc:128, 136-140).
+    # static-vs-instance fork (development-principles.adoc, "Acceptances: classifier guarantees shape emitter assumptions").
     titleByFilmIdViaInstance(filmId: Int!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.SampleInstanceService",

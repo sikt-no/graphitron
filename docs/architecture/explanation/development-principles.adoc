@@ -1,0 +1,367 @@
+= Graphitron Development Principles
+
+How Graphitron is built: six axioms, each with corollary principles, and every principle ends with
+an *Enforced by* line naming what fails when it is broken ; the compiler, a named meta-test, a
+build tier, or the honest gap label "review only". Two theories give the axioms their spine.
+*Functional core, imperative shell* fixes the topology: untyped external inputs (wire formats,
+reflection, jOOQ) are confined to a thin boundary that decodes inbound and encodes outbound, and
+the interior is pure derivation over typed facts. *Normalization* is the design discipline in that
+interior, and it governs both ends of the pipe. It shapes the authoring surface ; the SDL author
+states each fact once, at its grain, and Graphitron derives the rest ; guides how the model is
+discovered and extended, find a concept's grain and natural key first ; and keeps the classified
+model a normalized fact base: each fact asserted once at the parse boundary, everything downstream
+(generation, validation, the LSP) a derived view. Because the model is rebuilt from source every
+build, each such view is a materialized view, never a copy that can drift from its source ; that
+copy is *the drift smell*, and it recurs at every scale below. Strategic principles live at
+xref:../../graphitron-principles.adoc[graphitron-principles.md]; the typed-rejection narrative at
+xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipline in
+`roadmap/workflow.adoc`.
+
+'''
+
+== Decide once, at the parse boundary; carry the decision as a type
+
+*Before implementing a feature, ensure the model carries what the feature needs ; pre-resolved,
+ready to consume.* `GraphitronSchemaBuilder` reads directives once and resolves everything: table
+names, column references, method names, extraction strategies. Every consumer receives the model
+in terms of "what to do", never "what to interpret".
+
+Signs a model type needs more pre-resolution:
+
+- A generator switches on a raw string, or recomputes a derived name from a field name.
+- The same multi-arm type switch recurs across multiple generators.
+- Generation and calling are conflated in the same model type.
+- A generator branches on a predicate over pre-resolved data ; the decision was not resolved,
+  only its inputs were. Rule of thumb: if two consumers evaluate the same predicate over a model
+  field, the branch belongs in the model, and the duplicate sites are an opportunity to drift.
+
+=== Sealed hierarchies over enums for typed information
+
+When different variants of a concept carry different data, use a sealed interface, not an enum
+with a shared field set: a sealed record hierarchy gives each variant exactly the fields it needs,
+and every switch that misses a new variant becomes a compile error. `CallSiteExtraction` is the
+exemplar ; some arms carry nothing, others exactly the references their extraction strategy needs ;
+read the type for the current arm set.
+
+*Enforced by:* the compiler ; exhaustive switches over a sealed hierarchy break when a variant is
+added.
+
+=== The parse boundary is a containment invariant
+
+Classification is not only "decide once"; it is a statement about *where* raw external types may
+live at all.
+
+Reading the reflection `java.lang.reflect.Type` tree is permitted only at builder-side classifiers
+that convert reflection output into typed carrier values ; a deliberately small set of files,
+discoverable by searching for the `Type`-tree reads themselves (`java.lang.reflect.Type`,
+`getGenericReturnType`, `getGenericParameterTypes`), not by the `java.lang.reflect` import.
+Everything downstream ; validator, generator ; switches on pre-classified values and never touches
+reflection types. The jOOQ twin: `JooqCatalog` is the canonical holder of raw jOOQ types
+(`Table<?>`, `ForeignKey<?,?>`); the few deliberate exceptions import `org.jooq` at their own
+boundary and are discoverable by that import. If
+a generator needs information not yet in a taxonomy record, add a component and extract the value
+in the builder ; never reach past the boundary.
+
+*Enforced by:* review only, via the grep-able discovery recipes above; a meta-test pinning each
+containment set is a candidate roadmap item.
+
+=== Shape the type as precisely as the fact allows
+
+Give each fact the narrowest type the classifier can guarantee. A field record component declares
+the narrowest, not the broad sealed-interface root ; a return type that is always table-bound
+declares `ReturnTypeRef.TableBoundReturnType` directly, so consumers know it without a runtime
+check. A complex outcome gets its own sealed sub-taxonomy, not raw strings ; `TableRef` for the
+resolved table, `ColumnRef` for the resolved column. A new sub-taxonomy earns its place with a
+one-line note on what it carries that a sibling cannot ; otherwise it is a field on an existing
+record, and at milestone boundaries audit which could collapse.
+
+*Enforced by:* the compiler where the narrowed component type is the contract; review for a new
+sub-taxonomy's justification note and the milestone collapse audit.
+
+=== Classification and validation gather facts; the gathering stays out of the model
+
+"Carry the decision as a type" says what the model holds; this corollary says what it must not.
+Classification gathers facts and populates the model; the scaffolding it carries while gathering ; a
+builder-internal sealed hierarchy, a re-classification of the same argument in each output field's
+context, a traversal carrier threading call context and collecting located violations as it walks
+the schema ; is an implementation detail, discarded before the
+model and invisible to every downstream view (generator, LSP). Validation is the same activity
+pointed the other way: it gathers facts too, reifying each missing or conflicting fact into a
+located violation the build acts on later (that violation's typed shape lives under "Builder-step
+results are sealed" and "Rejections"). The smell either way: gathering
+scaffolding leaking into a model type, or a downstream view branching on a builder-internal type
+instead of the landed fact. A third form is inter-pass, not model-vs-scaffolding: several gathering
+passes coordinating implicitly through duplicated hardcoded skip-lists (`buildFilters()` skipping
+the pagination arguments `buildPaginationSpec()` claims, by the same hardcoded names) instead of
+each projecting exhaustively off one classification ; the lists must agree, nothing binds them, and
+a new argument type falls through both silently.
+
+*Enforced by:* review only ; a downstream view referencing a builder-internal classification type,
+or two passes sharing a hardcoded skip-list, is the tell.
+
+=== Builder-step results are sealed, not strings or out-params
+
+Every builder-step lift returns a sealed `Resolved`; rejection is a typed variant with a stable
+LSP code, never a string or out-param. The full narrative lives at
+xref:typed-rejection.adoc[Typed rejection]. In fact-base terms, rejections are facts too: located
+violations asserted once and rendered into views ; the build log, the LSP ; never prose composed
+at the detection site.
+
+*Enforced by:* the compiler on the sealed results; `SealedHierarchyDocCoverageTest` pins the
+permit-to-doc mapping for the `Rejection` taxonomy.
+
+== Orthogonal facts are independent axes
+
+*Assert what nothing else carries; derive the rest from that base ; and never let a derived fact
+become a copy maintained apart from its source.* When a concept's variants multiply, the usual
+cause is independent axes spliced into one identifier: the permit set becomes the cross-product of
+its axes, and adding a value to any axis multiplies the permits below it. Find the concept's grain
+and natural key, carry each axis as its own slot or sealed sub-interface, and either compute
+cross-axis views at the read site or materialize them from the base. The drift smell at field
+scale is the spliced identifier: two axes fused into one permit name, so the cross-product falls to
+hand-maintenance rather than derivation. R222 (`dimensional-model-pivot`) is the roadmap-scale
+application; R333 is the current statement of the target model.
+
+The DataLoader-backed source side is the worked example: key shape, body input contract, row
+count, and loader registration are independent axes, and each dispatch site reads off whichever
+axis it forks on (xref:dispatch-axes.adoc[Dispatch axes] narrates the split). The smell to watch
+for: a single shared accessor whose meaning depends on the variant.
+
+*Enforced by:* the compiler where cross-axis invariants live in compact constructors; review at
+model-design time otherwise.
+
+=== Capabilities reify an orthogonal axis; sealed switches fork on identity
+
+A fact true across a subset of variants is an orthogonal axis: reify it as a capability interface
+that exposes the fact uniformly (`SqlGeneratingField.filters()` over variants that carry filters in
+structurally different places), not as an `instanceof` chain re-enumerating the members. A view that
+forks on identity uses a sealed switch. Membership in a capability is itself a derived fact, so the
+axiom above governs it: safe when it is single-sourced ; mechanically assigned by the classifier or
+pinned by a test ; and a drift risk when it is a hand-declared marker nothing binds to the base
+facts it should track. Capabilities relocate exhaustiveness bookkeeping off the sealed switch rather
+than eliminating it.
+
+*Enforced by:* the compiler for the accessor contract and the sealed-switch half; capability
+*membership* completeness is review only ; a variant that should implement a capability but omits it
+is a silent skip, so a membership meta-test is candidate roadmap material.
+
+=== Directives carry only what the SDL author needs to say
+
+Where the ingress's authoring-surface principle, state each fact once at its grain, is enforced at
+directive-design time. Directive arguments are flat scalars whenever the directive site already
+disambiguates the axis; an input-object wrapper is justified only for several genuinely-orthogonal
+pieces of information at once. `@field(name: String!)` is the worked example: the site (field,
+input field, argument, enum value) tells the classifier which axis is bound, so the directive
+carries only the name ; the axis is structural. The smell: an
+input wrapper most callsites fill in two-of-four slots on, whose failure surface widens from "the
+named thing didn't resolve" to a cross-product of missing/inconsistent-slot errors
+(`ExternalCodeReference` is the existing case new directives should not lean on).
+
+*Enforced by:* review only, at directive-design time.
+
+== One model, many views
+
+*Code generation is the narrowest view of the classified model, not the model itself.* Other
+consumers (the LSP snapshot today) re-source from the same classified facts; no consumer owns a
+private model, and a view's coverage guarantee lives at its projection seam.
+`CatalogBuilder.projectFieldClassification` is the exemplar: an exhaustive switch over the field
+permits, so a new permit fails compilation until the view covers it; the coverage switch moves
+with the seam. The drift smell at model scale is a consumer-side shadow taxonomy: a second model
+hand-maintained to feed a view.
+
+*Enforced by:* the compile-checked projection switch at each view's seam.
+
+== Boundaries decode and encode; the interior is typed
+
+*Opaque wire formats (Relay NodeId base64 strings, Relay cursor strings, federation `_Any`
+representations) decode at the DataFetcher boundary into typed column tuples; the projection layer
+encodes back into wire format only at the same boundary; variants representing the wire shape
+don't survive in the model.*
+
+For any opaque wire format, classify the failure mode (skip vs throw) and the direction (encode
+vs decode) at the boundary, never below it. R50 is the worked example: nine "the model says this
+is a NodeId" markers were retired in favour of decode and encode facts carried at the boundary
+slots where each happens (see R50 in the changelog for the carrier-by-carrier story); cursor and
+federation `_Any` handling already followed the pattern. The smell: a "this is a NodeId" or "this
+is a base64 cursor" marker spreading through the model ; a bypass around classified information
+the boundary already carries.
+
+*Enforced by:* review only; the R50 regression surface is pipeline-tier (a wire-shape carrier
+reintroduced into the model has no typed home to land in).
+
+=== Model metadata over parallel type systems
+
+When the model already carries typed information, runtime data formats derive from that metadata
+rather than inventing a parallel type system. The cursor format is the exemplar: each cursor
+column's jOOQ `DataType` is already known, so encode/decode goes through
+`field.getDataType().convert()` instead of a hand-rolled type-tag system ; the column metadata
+*is* the type information. A parallel type system in a runtime format is the drift smell at the
+format boundary: redundant, and diverges.
+
+*Enforced by:* review only.
+
+=== Wire boundaries are typed adapter / composer pairs
+
+Where the generator emits a method that crosses the wire-format boundary, it emits it in pair
+with a composer: the adapter decodes the wire shape into typed values, the composer does the work,
+and the composer's signature is exactly the shape the adapter yields ; the boundary is the pair,
+not the adapter alone. The generated `QueryConditions.<method>(Table, env)` forwarding to the
+user-written `<X>Conditions.<method>(Table, ...)` is the worked example. The smell is asymmetric
+typing across the pair ; most often the adapter erasing type information the composer needs (an
+arity-erased `RowN` where the decoder produced `Row<N><T1, ..., TN>`; R79 is the shipped fix),
+turning would-be compile failures into DSL-runtime surprises.
+
+*Enforced by:* the `graphitron-sakila-example` compile where the pair's signatures meet; review
+for the symmetry itself.
+
+== Every invariant has an enforcer
+
+*An invariant exists only while something fails when it breaks.* Three corollaries below name where
+a fact is enforced ; at the validator, at the emitter's type or tier, at the pipeline tier ; and
+two turn the same discipline on this document itself. Each names a distinct enforcer that runs at
+build time or earlier ; a runtime cast is never one, failing on a real request days after the build
+passed. This axiom enforces against the drift smell: a
+fact restated with no single enforcer (a second dispatch set, a defensive cast, an
+unguarded census) drifts silently. R268 is the worked example, an emit-side allow-list that drifted
+from the arms the emitter implemented until it was deleted and the invariant re-sourced. A review-only label
+is an invitation: filing the meta-test that pins it is roadmap material.
+
+=== Rejections: validator mirrors classifier invariants
+
+Every classifier decision that implies a generator branch must fail at validate time if that
+branch is unimplemented: the validator reads the same dispatch sets the generator does, so an
+unsupported classification is a build-time error, not a runtime
+`UnsupportedOperationException`. The dispatch state is a four-way disjoint partition over every
+`GraphitronField` sealed leaf in `TypeFetcherGenerator` (`IMPLEMENTED_LEAVES`, `PROJECTED_LEAVES`,
+`NOT_DISPATCHED_LEAVES`, `STUBBED_VARIANTS.keySet()`; safe to enumerate because the test below
+pins it), and `ValidateMojo` fails the build on stubbed variants. The rule extends to every new
+classifier invariant: no generator-side invariant goes unchecked at validate time.
+
+*Enforced by:* `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` (partition
+exhaustive and disjoint); `ValidateMojo` fails the build on stubbed variants.
+
+=== Acceptances: classifier guarantees shape emitter assumptions
+
+The reverse direction: a classifier acceptance lets an emitter assume narrower shapes, so emitted
+code reads as tight as hand-written ; no defensive casts, no wildcard locals, no `instanceof`
+guards. The contract anchors on three layers: type-system narrowing at the producer (a record
+component, a return type, a sealed sub-variant ; once in the type, mechanically enforced),
+pipeline-tier tests pinning the end-to-end shape, and the `graphitron-sakila-example` compile as
+cross-module backstop. A defensive runtime cast or a `var`-typed local abandons the guarantee ;
+it fails on a real request, days after the build passed. Candidate type-system lifts that would
+carry current prose contracts structurally are R240 (`@tableMethod` type-token threading) and
+R239 (`ColumnField.parentTable`). To record a producer-consumer linkage the type system can't
+carry, use a javadoc `{@link}` from consumer to producer ; IDE-refactor-tracked, no audit
+infrastructure. Rule: if you relax a producer's check body, audit every emitter site that
+consumes the corresponding shape, in the same commit.
+
+*Enforced by:* the type system where the contract is lifted; the pipeline tier and the
+`graphitron-sakila-example` compile otherwise.
+
+=== Behaviour is pinned at the pipeline tier and above
+
+Behaviour is asserted at the SDL to classified model to generated `TypeSpec` pipeline layer; new
+features earn a pipeline test first. Above it, the `graphitron-sakila-example` compile pins type
+correctness and PostgreSQL execution pins behaviour. Code-string assertions on generated method
+bodies are banned at every tier: they test implementation, not behaviour, and break on every
+refactor ; the compile and execution tiers replace them. Tier names, locations, and the decision
+rubric: xref:../how-to/testing.adoc[Test-tier guide].
+
+*Enforced by:* the tiers themselves, on every `-Plocal-db` build; the code-string ban is
+review-enforced at test-review time.
+
+=== Principles are stated at altitude
+
+An unguarded inventory in this document ; an arm list, a file census, an occurrence count, a
+compliance roster ; reads as authoritative and rots silently. A principle names the rule, one
+canonical exemplar, and the smell; an inventory appears only when a named live test pins it (the
+dispatch partition under "Rejections" is the pattern). Counts and arm lists otherwise belong in
+guarded tests or generated reports; read the type for the current arm set. Exemplars are chosen on
+stable surfaces: an exemplar that needs a forward note about its own demolition is the wrong
+exemplar.
+
+*Enforced by:* review; the named-test requirement is the rule itself.
+
+=== Documentation names only live tests/code
+
+Two failure modes share one principle: trusted documentation the code does not mechanically pin.
+The narrow form: any named test, method, or class must exist today ; a javadoc citing a
+nonexistent test is worse than no comment, and a plan that anticipates a symbol it will create
+says "C3 adds `X`", never "as asserted by `X`". The broad form: an invariant claim ("the producer
+rejects X so the emitter may assume Y") whose symbols exist but which no test or type pins; when X
+is silently relaxed the claim is silently false. The fix is the same for both: pin the invariant
+mechanically and let documentation describe what's pinned rather than make claims of its own.
+
+*Enforced by:* the reviewer gates (Spec to Ready, In Review to Done); doc-coverage meta-tests
+where the surface is closed (`SealedHierarchyDocCoverageTest` and its siblings).
+
+== Generated code is a consumer artifact
+
+*Emitted code is read, breakpointed, and stack-traced by developers who have never seen the
+generator, and it compiles on the consumer's toolchain.* Optimise emitted code for the consumer's
+legibility, not emitter-side brevity; and keep everything that ships to consumers valid Java 17,
+whatever Java 25 features the generator itself uses. This is the readability-and-portability
+companion to "Acceptances: classifier guarantees shape emitter assumptions": that corollary keeps
+emitted code tight (no defensive casts, no wildcard locals); this axiom keeps it legible and
+consumable.
+
+=== Readability rules
+
+A generated method that throws on a real request must produce a stack frame, a line, and locals
+that a developer who has never seen the generator can reason about. Concrete rules for any code a
+generator emits:
+
+- *Explicit types, never `var`* ; the reader does not have the generator's context.
+- *Meaningful local names* (`nodeId`, `row`, `key`), never throwaway pattern-binding noise
+  (`_s`, `_r`).
+- *Statement form over expression tricks.* No deeply-nested ternaries, no
+  throw-inside-an-expression contortions; a developer cannot breakpoint a ternary arm. When the
+  output must be an expression, lift the body into a named private helper (per
+  xref:../reference/emitter-conventions.adoc#helper-locality[Helper-locality]) so the call site
+  stays an expression and the body is readable statements.
+- *No `__`-prefixed Java identifiers in emitted code.* Every name in scope is knowable at
+  generation time, so a readable deterministic prefix (`arg_<name>`) always beats a blanket `__`.
+  The `__`-prefix legitimately survives only as *string literals* (synthetic SQL column aliases
+  like `__sort__`; spec-defined external names like jOOQ's `__NODE_*` and federation scalars);
+  the identifier-vs-literal discriminator and its full semantics live on
+  `GeneratedSourcesLintTest`.
+
+The smell: an emitter building a `CodeBlock` of nested `? :` with `Object` casts and `_x` locals ;
+written for the emitter author's convenience, not the consumer's. (R260 cleaned up the
+NodeId-decode instance; R334 tracks the `@condition` arg-extraction instance.)
+
+*Enforced by:* `GeneratedSourcesLintTest.emittedSourcesDoNotUseVar` and
+`GeneratedSourcesLintTest.emittedSourcesHaveNoDunderIdentifiers` (plus that class's sibling
+lints); review for statement form and naming.
+
+=== Generator Java 25; generated output and shipped runtime Java 17
+
+Three categories, three floors. *Generator implementation* may freely use Java 25 features.
+*Generated source files* must be valid Java 17: consumers compile Graphitron's output with their
+own toolchain, so nothing emitted may require 21+ ; no switch patterns, no sequenced-collections
+API. *Hand-written runtime artifacts consumers depend on* (`graphitron-jakarta-rest` is the first
+instance) must also target Java 17 ; a runtime jar on the consumer's classpath keeps the same
+floor as the generated sources. When adding code, ask which category it is in before reaching for
+syntax.
+
+*Enforced by:* the parent pom's `requireJavaVersion` enforcer (generator floor);
+`graphitron-sakila-example` compiling with `<release>17</release>` (emitted-syntax ceiling);
+`graphitron-jakarta-rest`'s own `<release>17</release>` main compile (runtime category).
+
+The emitter-conventions catalogue (return types, selection-aware queries, error quality,
+`DSL.val` column binding, DTO-parent batching, helper-locality) is reference material for emitter
+authors: xref:../reference/emitter-conventions.adoc[Emitter conventions].
+
+'''
+
+== Constraints
+
+Facts with existing enforcers, recorded here so the axioms above stay principles:
+
+- The repo root `pom.xml` is a single self-contained Maven reactor: `mvn install` on a clean local
+  repo builds every module (the root pom's `<modules>` list is the live inventory) with no
+  dependency outside the pinned third-party set. The legacy `graphitron-parent` generator is
+  retired; `graphitron-maven-plugin` is the consumer entry point.
+- This document is a shared context cost: agents and reviewers load it on every design consult, so
+  it budgets itself at 3,500 words. An addition that pushes past the cap must displace something.
+  *Enforced by:* `DocSizeBudgetTest.developmentPrinciplesStaysUnderBudget`.

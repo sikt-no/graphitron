@@ -730,7 +730,7 @@ class GraphQLQueryTest {
         //   Cannot invoke "...Record.into(...)" because "element" is null
         // (the bug R269 fixes). execute(...) asserts result.getErrors() is empty, so the NPE — which
         // would surface as a DataFetcher exception — is pinned out behaviourally, not by grepping the
-        // emitted `if (element == null)` out of the fetcher body (banned per rewrite-design-principles).
+        // emitted `if (element == null)` out of the fetcher body (banned per the development principles).
         //
         // Mixed batch: with the seed inventory_id N -> film_id N, inventories 1 and 3 (odd film_ids)
         // still resolve their full Film row through the same AccessorKeyedSingle loader, proving the

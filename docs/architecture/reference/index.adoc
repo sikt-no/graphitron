@@ -8,5 +8,6 @@ The facts, for when you know what you are looking for.
 * xref:argument-resolution.adoc[Argument Resolution] — the unified argument-resolution lift.
 * xref:runtime-extension-points.adoc[Runtime Extension Points] — the runtime seams a consumer extends.
 * xref:modules.adoc[Modules] — the reactor module map.
+* xref:emitter-conventions.adoc[Emitter Conventions]: conventions for the code the generator emits, companion to the consumer-artifact axiom.
 
 xref:../index.adoc[← Architecture]

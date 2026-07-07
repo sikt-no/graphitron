@@ -354,7 +354,7 @@ to `null` at any level whose value is absent or is not a Map, so a
 
 == Test assertions
 
-Follows `docs/rewrite-design-principles.md`: no body-string assertions on
+Follows `docs/architecture/explanation/development-principles.adoc`: no body-string assertions on
 emitted method bodies. Execution tests assert, for each case:
 
 - JDBC round-trip count matches expectation (catches spurious extra queries).

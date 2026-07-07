@@ -73,7 +73,7 @@ Rejection
 
 `Deferred` classifies cleanly but the generator hasn't shipped emit support for the variant yet. The arm carries a `summary` plus a `planSlug` (the roadmap file basename, no extension) plus a `StubKey`. The stub key is itself a sealed sub-type: a `VariantClass` arm names the stubbed variant class (or carries `null` for inline-defer sites whose rejection names a feature shape); an `EmitBlock` arm names a typed enum value for "this shape can't emit yet" sites inside the emitters. The validator projects every `Deferred` through the same renderer; the typed key lets the LSP offer "open the roadmap item" instead of parsing the path back out.
 
-The xref:rewrite-design-principles.adoc#_classifier_guarantees_shape_emitter_assumptions[classifier-shaped emitter-assumption] principle and the xref:rewrite-design-principles.adoc#_validator_mirrors_classifier_invariants[validator-mirrors-classifier] rule both ride this contract: the validator switches on the same dispatch sets the generator does, so an unsupported classification surfaces as a typed `Deferred` at validate time, not as an `UnsupportedOperationException` at runtime. Validate is a typed-rejection projection of classify.
+The xref:development-principles.adoc#acceptances-classifier-guarantees-shape-emitter-assumptions[classifier-shaped emitter-assumption] principle and the xref:development-principles.adoc#rejections-validator-mirrors-classifier-invariants[validator-mirrors-classifier] rule both ride this contract: the validator switches on the same dispatch sets the generator does, so an unsupported classification surfaces as a typed `Deferred` at validate time, not as an `UnsupportedOperationException` at runtime. Validate is a typed-rejection projection of classify.
 
 == `BuildContext.candidateHint`: Levenshtein-ranked suggestions
 
@@ -178,6 +178,6 @@ The overlay shows `LookupKeyDirectiveResolver.Resolved` as one worked example of
 
 *See also:*
 
-* {empty}xref:rewrite-design-principles.adoc#_builder_step_results_are_sealed_not_strings_or_out_params[Builder-step results are sealed]: the principle this page is the canonical source for.
-* {empty}xref:rewrite-design-principles.adoc#_validator_mirrors_classifier_invariants[Validator mirrors classifier invariants]: the validator-side rule that consumes typed rejections at the build's diagnostic surface.
+* {empty}xref:development-principles.adoc#builder-step-results-are-sealed-not-strings-or-out-params[Builder-step results are sealed]: the principle this page is the canonical source for.
+* {empty}xref:development-principles.adoc#rejections-validator-mirrors-classifier-invariants[Rejections: validator mirrors classifier invariants]: the validator-side rule that consumes typed rejections at the build's diagnostic surface.
 * {empty}xref:../../manual/reference/diagnostics-glossary.adoc[Diagnostics glossary]: the user-facing reference for what each rejection-derived diagnostic message means.

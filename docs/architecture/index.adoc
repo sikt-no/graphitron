@@ -50,7 +50,7 @@ You're *integrating an editor or agent with the dev loop*, what the `dev` Mojo w
 
 You want to *read the classification taxonomy*, every variant the schema builder produces, every generator's input. → xref:reference/code-generation-triggers.adoc[Code Generation Triggers].
 
-You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift, the dispatch-axis model behind DataLoader-backed source-side fields. → see xref:explanation/rewrite-design-principles.adoc[Rewrite Design Principles], xref:how-to/testing.adoc[Test-tier guide], xref:reference/argument-resolution.adoc[Argument Resolution], xref:explanation/dispatch-axes.adoc[Dispatch axes]. The module map is at xref:reference/modules.adoc[Modules]; the pipeline overview at xref:explanation/pipeline-overview.adoc[Pipeline overview].
+You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift, the dispatch-axis model behind DataLoader-backed source-side fields. → see xref:explanation/development-principles.adoc[Graphitron Development Principles], xref:how-to/testing.adoc[Test-tier guide], xref:reference/argument-resolution.adoc[Argument Resolution], xref:explanation/dispatch-axes.adoc[Dispatch axes]. The module map is at xref:reference/modules.adoc[Modules]; the pipeline overview at xref:explanation/pipeline-overview.adoc[Pipeline overview].
 
 == Publishing
 

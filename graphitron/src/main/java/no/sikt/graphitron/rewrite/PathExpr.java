@@ -17,12 +17,12 @@ import java.util.List;
  * a chain of {@link Step} on top of a {@link Head}. The {@code liftsList} flag on each {@code Step}
  * records whether the schema type at that depth was list-shaped, so the leaf Java type and the
  * runtime walking code are precomputed at classify time and the emitter never re-asks the GraphQL
- * schema (rewrite-design-principles "Generation-thinking").
+ * schema (development-principles "Decide once, at the parse boundary").
  *
  * <p>Distinct information vs. a sibling: {@code Head} carries only a slot name; {@code Step}
  * carries the field name at a depth plus the {@code liftsList} flag. A flat {@code String} cannot
- * encode the per-step list-shape decision, so the carrier is required (rewrite-design-principles
- * "Sub-taxonomies for resolution outcomes").
+ * encode the per-step list-shape decision, so the carrier is required (development-principles
+ * "Shape the type as precisely as the fact allows").
  */
 public sealed interface PathExpr {
 

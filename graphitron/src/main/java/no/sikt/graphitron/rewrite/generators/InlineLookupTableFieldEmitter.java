@@ -40,7 +40,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  * step-0 parent correlation is read through {@link ChildField.LookupTableField#parentCorrelation()}.
  *
  * <p>Threads the nested-alias parameter through every emitted Table-bound helper call — see
- * "Helper-locality" in {@code docs/rewrite-design-principles.md}.
+ * "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.
  */
 public final class InlineLookupTableFieldEmitter {
 

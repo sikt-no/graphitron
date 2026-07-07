@@ -185,7 +185,7 @@ that it landed cleanly:
 * `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` stays green
   end-to-end (build-fixtures → test → compile-spec → execute-spec).
 
-Per `rewrite-design-principles.adoc`, no per-dispatcher unit test
+Per `development-principles.adoc`, no per-dispatcher unit test
 asserting `CodeBlock` string equality on `.get(Tables.X.COL)` etc.;
 that pattern is banned at every tier. The pipeline tier already
 verifies the four callsites' emission shapes by compiling generated

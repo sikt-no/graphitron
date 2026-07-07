@@ -37,7 +37,7 @@ public final class SampleQueryService {
      * derived table preserves the specific table type required by the strict
      * {@code @tableMethod} return-type check in {@code ServiceCatalog.reflectTableMethod}, and
      * feeds {@code FilmType.$fields(...)} directly without a downcast. See
-     * {@code rewrite-design-principles.md} ("Classifier guarantees shape emitter assumptions").
+     * {@code development-principles.adoc} ("Acceptances: classifier guarantees shape emitter assumptions").
      */
     public static Film popularFilms(Double minRentalRate) {
         return Tables.FILM.where(Tables.FILM.RENTAL_RATE.ge(java.math.BigDecimal.valueOf(minRentalRate)));

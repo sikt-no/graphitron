@@ -1027,7 +1027,7 @@ class ServiceCatalog {
      * parameter reflection; SINGLE is filtered out via {@code accept}) and
      * {@code FieldBuilder.classifyAccessorReturn} (the accessor-side classifier on
      * class-backed parents; all three kinds are accepted). Both call sites remain inside
-     * parse-boundary classes per the {@code rewrite-design-principles.adoc} rule on holding
+     * parse-boundary classes per the {@code development-principles.adoc} containment invariant on holding
      * raw reflection types only inside {@code JooqCatalog} / {@code TypeBuilder} /
      * {@code FieldBuilder} / {@code ServiceCatalog}; the helper itself lives here to honour
      * the more-general SOURCES classifier as the natural home.

@@ -276,7 +276,7 @@ class FetcherPipelineTest {
         // ErrorChannel.Mapped assertion in ErrorChannelClassificationTest). The catch-arm body shape
         // (the Outcome.ErrorList mapping-walk + redact fallthrough) is pinned behaviourally by
         // ChannelCatchArmEmitterTest (unit) and the GraphQLQueryTest execution-tier round-trip, not
-        // by a code-string assertion on the generated body (banned per rewrite-design-principles.adoc).
+        // by a code-string assertion on the generated body (banned per development-principles.adoc).
         var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
         assertThat(sak.returnType().toString())
             .contains("graphql.execution.DataFetcherResult")

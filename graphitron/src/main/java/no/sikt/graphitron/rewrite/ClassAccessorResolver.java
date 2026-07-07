@@ -21,7 +21,7 @@ import java.util.List;
  *
  * <p>Joins the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
  * payload-errors path, {@code SourceRowDirectiveResolver}) — see
- * {@code docs/rewrite-design-principles.adoc} for the boundary rule.
+ * {@code docs/architecture/explanation/development-principles.adoc} ("The parse boundary is a containment invariant") for the boundary rule.
  */
 public final class ClassAccessorResolver {
 

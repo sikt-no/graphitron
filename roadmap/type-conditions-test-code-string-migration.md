@@ -16,8 +16,8 @@ last-updated: 2026-06-26
 `method.code().toString()` + AssertJ `contains(...)` on literal jOOQ expression strings
 (e.g. `assertThat(body).contains("table.FILM_ID.in(ids)")`). This contradicts the
 rewrite design principle that *code-string assertions on generated method bodies are banned
-at every tier* (`rewrite-design-principles.adoc` § "Pipeline tests are the primary behavioural
-tier", and § "Compilation against real jOOQ is a test tier"): such assertions test
+at every tier* (`development-principles.adoc` § "Behaviour is pinned at the pipeline
+tier and above"): such assertions test
 implementation rather than behaviour and break on every emitter refactor. The pattern predates
 R380 (the existing cases trace to R375 / R79 / R50) and R380 extended it for the
 `RemoteColumnPredicate` / correlated-`EXISTS` arm; in every case the emitted behavior is

@@ -5,7 +5,7 @@
 
 This guide answers "which tier does my test belong to, where does the file go, and what should it assert?"
 Four tiers cover every test in the rewrite.
-For design principles (why pipeline is the primary behavioural tier, why code-string body matching is banned), see xref:../explanation/rewrite-design-principles.adoc[Rewrite Design Principles].
+For design principles (why pipeline is the primary behavioural tier, why code-string body matching is banned), see xref:../explanation/development-principles.adoc[Graphitron Development Principles].
 For build commands and database setup, see `.claude/web-environment.md`.
 
 == Choosing a tier

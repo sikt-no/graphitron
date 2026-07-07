@@ -218,20 +218,31 @@ class GeneratedSourcesLintTest {
      * generated code only as a string literal, so it is masked before the scan and needs no
      * allowlist entry. R436's {@code __src_<col>__} full-parent-row aliases are the same case:
      * string-literal-only ({@code table.COL.as("__src_col__")} / {@code source.get("__src_col__",
-     * …)}), masked before the scan, no allowlist entry needed. See rewrite-design-principles.adoc,
-     * "Generated code is read and debugged".
+     * …)}), masked before the scan, no allowlist entry needed. See development-principles.adoc,
+     * "Readability rules".
      */
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
     /**
      * The no-regression guard for R271: no emitted Java <em>identifier</em> (local, parameter, or
-     * field) may lead with {@code __}. Synthetic SQL column aliases ({@code __sort__},
-     * {@code __idx__}, {@code __rn__}, {@code __typename}, {@code __pkN__}, and R436's
-     * {@code __src_<col>__} full-parent-row aliases) are deliberate collision-avoidance names that
-     * reach generated code only as string literals, so masking literals (and comments) before the
-     * scan leaves them alone; the discriminator is exactly
-     * "Java identifier vs string literal in the emitted output". A reintroduced lazy dunder local
-     * surfaces as a bare identifier and trips this with file and line.
+     * field) may lead with {@code __}. The generator emits every name in scope, including the
+     * method signature, so a collision is always knowable at generation time; the {@code __}
+     * prefix buys no safety that a readable name plus generation-time awareness does not provide.
+     * Author-derived identifiers (a GraphQL argument or input-component name becoming a local)
+     * namespace with a readable, deterministic prefix ({@code arg_<name>}, {@code c_<name>}),
+     * never a blanket {@code __}.
+     *
+     * <p>Synthetic SQL column aliases ({@code __sort__}, {@code __idx__}, {@code __rn__},
+     * {@code __typename}, {@code __pkN__}, and R436's {@code __src_<col>__} full-parent-row
+     * aliases) live in the result-set column namespace alongside consumer-controlled table
+     * columns and wrap in {@code __} precisely to avoid colliding with a real column. They are
+     * deliberate collision-avoidance names that reach generated code only as string literals, so
+     * masking literals (and comments) before the scan leaves them alone; the discriminator is
+     * exactly "Java identifier vs string literal in the emitted output". By convention each alias
+     * is declared as a named constant carrying its collision rationale at the declaration site;
+     * this test does not pin the constant form, only the identifier-vs-literal boundary, so the
+     * constant discipline is a readability convention, not an enforced invariant. A reintroduced
+     * lazy dunder local surfaces as a bare identifier and trips this with file and line.
      *
      * <p>Scans the real pipeline output over the Sakila + fixtures schemas, which exercise every
      * renamed emitter (batch loaders, the validator pre-step, DML decode locals, the multi-table
@@ -275,7 +286,7 @@ class GeneratedSourcesLintTest {
                 + "with the DB-column-collision rationale), never for Java locals/params/fields.\n"
                 + "Pick a readable name (`row`, `byPk`, `fetched`, `violations`); for author-derived\n"
                 + "locals use a readable deterministic prefix (`arg_<name>`, `c_<name>`).\n"
-                + "See rewrite-design-principles.adoc, \"Generated code is read and debugged\".")
+                + "See development-principles.adoc, \"Readability rules\".")
             .isEmpty();
     }
 

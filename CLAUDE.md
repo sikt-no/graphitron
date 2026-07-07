@@ -43,7 +43,7 @@ The full install is fast; prefer it over targeted `-pl` builds. If you do need `
 
 The `mvn install -Plocal-db` command above runs the full pipeline (build-fixtures → test → compile-spec → execute-spec). Reach for the deeper docs only when the task requires it:
 
-- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/explanation/rewrite-design-principles.adoc`.
+- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/explanation/development-principles.adoc`.
 - Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `docs/architecture/index.adoc`.
 - Diagnosing build/test failures specific to the web sandbox: `.claude/web-environment.md`.
 

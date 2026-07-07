@@ -8,8 +8,8 @@ package no.sikt.graphitron.rewrite.model;
  * DataLoader-backed), and {@link ChildField.RecordLookupTableField} (result-mapped parent,
  * DataLoader-backed).
  *
- * <p>Per the "Capability interfaces and sealed switches serve different roles" principle in
- * {@code docs/architecture/explanation/rewrite-design-principles.adoc}, the generator routes on this
+ * <p>Per the "Capabilities reify an orthogonal axis; sealed switches fork on identity" principle
+ * in {@code docs/architecture/explanation/development-principles.adoc}, the generator routes on this
  * capability rather than on a per-variant {@code instanceof} chain. See
  * {@code docs/architecture/reference/argument-resolution.adoc} for the design.
  *

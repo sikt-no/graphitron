@@ -84,7 +84,7 @@ import java.util.Set;
  * </ul>
  *
  * <p>Emitted Table-bound helpers ({@code <fieldName>OrderBy}) take the aliased {@code Table}
- * as a parameter — see "Helper-locality" in {@code docs/rewrite-design-principles.md}.
+ * as a parameter — see "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.
  */
 public class TypeFetcherGenerator {
 
@@ -6550,7 +6550,7 @@ public class TypeFetcherGenerator {
      * {@code errors -> { var p = new Payload(); p.setA(...); ...; p.setErrors(errors); ...;
      * return p; }} lambda that invokes the bound errors setter with the runtime list and every
      * other setter with its language-default literal. Per
-     * {@code rewrite-design-principles.adoc} the bound setter is called first for diagnostic
+     * {@code development-principles.adoc} ("Readability rules") the bound setter is called first for diagnostic
      * clarity; semantic order doesn't matter (Java-bean setters are independent assignments).
      */
     private static CodeBlock payloadFactoryLambdaSetters(

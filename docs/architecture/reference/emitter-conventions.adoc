@@ -1,0 +1,130 @@
+= Emitter Conventions
+
+Conventions for the code the generator emits; the reference companion to the "Generated code is a
+consumer artifact" axiom in
+xref:../explanation/development-principles.adoc[Graphitron Development Principles].
+
+== Return types
+
+DataFetchers return `Result<Record>` ; no DTOs, no TypeMappers. GraphQL-Java traverses records
+using the registered field DataFetchers. Exception: Connection fields return `ConnectionResult`, a
+generated carrier wrapping `Result<Record>` + pagination context.
+
+== Selection-aware queries
+
+`DataFetchingFieldSelectionSet` and `SelectedField` are threaded through all table method
+signatures, structurally committing to selection-aware queries:
+
+- *Top-level queries*: call `Type.$fields(sel, table, env)` for the column list, then
+  `dsl.select(fields).from(table)...`
+- *Inline nesting*: use jOOQ `multiset(select(columns).from(CHILD).where(...)).as("alias")`
+  returning `Field<?>` (type-erased). Use type erasure at every helper method boundary ; jOOQ
+  generic types compound badly with nesting depth, causing slow compile times.
+- *`@splitQuery`*: separate DataLoader; parent fetches FK/PK columns, child batches by those keys.
+
+Selection-driven queries produce different SQL per request, preventing cached query-plan reuse.
+This is an acceptable trade-off for wide tables with large optional columns; for narrow tables
+(≤ 10 columns) where most fields are always requested, `TABLE.*` is simpler and the dynamic-column
+overhead exceeds the benefit.
+
+== Error quality
+
+`BuildContext.candidateHint(attempt, candidates)` sorts candidates by Levenshtein distance. The
+Levenshtein-suggestion contract has consolidated onto `BuildContext` and `Rejection` (the
+rejection-construction sites), with classifier-side callers thinning out as rejections are
+produced through the typed sealed-result path. When adding new jOOQ existence checks in the
+validator or builder, follow the same pattern ; pass the relevant candidate list from
+`JooqCatalog` to `candidateHint`, or produce the rejection through `Rejection.unknownName(...)` so
+the candidate list rides on the typed result.
+
+== Column value binding: `DSL.val(rawValue, col.getDataType())`
+
+When emitting code that binds a raw GraphQL input value (from an input map or
+`env.getArgument(...)`) to a specific jOOQ column, always use the two-argument form:
+
+[source,java]
+----
+DSL.val(rawValue, table.COL.getDataType())
+----
+
+Do *not* use the one-argument form with a Java-side cast (`DSL.val((JavaType) rawValue)`):
+
+- GraphQL-Java delivers enum values as `String` ; a Java cast to the jOOQ enum class throws
+  `ClassCastException` at runtime.
+- GraphQL-Java delivers `ID` scalars as `String` ; a cast to `Long` (or any numeric PK type)
+  also throws.
+- The one-argument form ignores the column's registered jOOQ `Converter` entirely.
+
+The two-argument form hands `rawValue` to the column's `DataType` and its registered `Converter`
+at bind time. No SQL `CAST` is rendered; the coercion is purely Java-side, inside jOOQ.
+
+*`CallSiteExtraction` solves a different problem.* Its value-coercion strategies exist to produce
+a typed Java value for a *condition/ordering method parameter* ; code paths where a
+developer-written method expects the column's Java type, not a jOOQ `Field<T>`. For inline jOOQ
+DSL expressions (INSERT `values(...)`, UPDATE `set(...)`, DELETE/UPDATE `where(...)` predicates),
+`DSL.val(rawValue, col.getDataType())` does the coercion inside jOOQ without any Java-side step,
+and no `CallSiteExtraction` switch is needed.
+
+Precedent: `LookupValuesJoinEmitter.addRowBuildingCore` (search for `DSL.val` with two arguments).
+
+For DTO-parent batching ; where the parent's backing class is a plain POJO or Java record without
+a jOOQ FK to the child's `@table` ; see <<dto-parent-batching,DTO-parent batching>> below; the
+lifter contract is how the schema author hands the framework a typed key when the catalog can't
+supply one.
+
+[#dto-parent-batching]
+== DTO-parent batching
+
+When a record-backed parent's backing class (reflected from its producer) is not a jOOQ
+`TableRecord`, the catalog cannot supply the FK columns the column-keyed DataLoader path needs to
+batch a child `@table` field. The `@sourceRow` directive closes that gap: the schema author
+supplies a static Java method that lifts a `RowN<...>` batch key out of the parent DTO, plus the
+`targetColumns` (column names on the child table) the key positions match. The classifier reflects
+on the lifter once at build time, validates the per-position column-class match, and produces a
+`SourceKey` whose `Reader` is `SourceRowsCall(lifter)` and whose `Wrap` is `Row`, carrying a
+`JoinStep.LiftedHop` (target table + slot list, single-hop by construction) in the `path` and a
+`LifterRef` (declaring class + method name) on the reader. The lifted slots are
+`JoinSlot.LifterSlot` permits, each folding source-side and target-side onto a single `ColumnRef`
+by construction (DataLoader key tuple IS target-column tuple as a type fact, not a prose
+precondition). The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod`
+path with no identity branching: target accessors come from `WithTarget.slots()`, key extraction
+from the lifter call. The lifter is the *single place* where the DTO → key mapping lives; if a
+schema author needs a different key, they author a new lifter method, not a new emitter arm.
+
+[#helper-locality]
+== Helper-locality
+
+Emitted helper methods that bind column references to a specific aliased jOOQ `Table` instance
+always take the `Table` as a parameter ; never declare it locally. Callers from different paths
+(root fetcher, inline subquery, Split-rows method) need to pass distinct aliases for the same
+target table; a locally-declared `Table` forces the wrong alias on every caller but the one the
+helper was first written for.
+
+Pattern (canonical example, `<fieldName>OrderBy` emitted by
+`TypeFetcherGenerator.buildOrderByHelperMethod`):
+
+[source,java]
+----
+private static OrderByResult <fieldName>OrderBy(DataFetchingEnvironment env, <Table> table) { ... }
+----
+
+Each call site supplies the alias appropriate to its scope: the root fetcher passes its declared
+`<entity>Table`; a Split-rows method passes its FK-chain terminal alias; an inline subquery passes
+its correlated alias. The helper's column references resolve through the parameter.
+
+The rule does not apply to helpers that are not Table-bound (e.g. cursor encode/decode helpers
+operating on `Field<?>` / `SortField<?>`).
+
+== Cursor encode/decode
+
+The emitter companion to the "Model metadata over parallel type systems" principle: each cursor
+column's jOOQ `DataType` is already known, so cursor round-tripping goes through the column
+metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
+
+- *Encode/decode a seek value*: `field.getDataType().convert(rawValue)` ; the `DataType` and its
+  registered `Converter` do the coercion, exactly as with `DSL.val`'s two-argument form.
+- *The no-seek case*: `DSL.noField(field)` where a column position must be present but no seek
+  value applies, rather than a null placeholder or an omitted column that would misalign the tuple.
+
+`OrderByResult` (pairing `List<SortField<?>>` with `List<Field<?>>`) is the carrier these operate
+over.

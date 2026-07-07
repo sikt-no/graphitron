@@ -52,8 +52,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Second: structural emit-side ({@code TypeSpec.methodSpecs[].parameters[].type},
  * {@code returnType}, {@code fieldSpecs[].type}, plus the parsed import list), walked through
  * JavaPoet's typed graph. The pipeline tier bans code-string assertions over rendered method
- * bodies (per {@code rewrite-design-principles.adoc} "Pipeline tests are the primary
- * behavioural tier"); a substring scan over {@code JavaFile.toString()} would be that ban
+ * bodies (per {@code development-principles.adoc} "Behaviour is pinned at the pipeline
+ * tier and above"); a substring scan over {@code JavaFile.toString()} would be that ban
  * dressed up as FQN inspection. The typed-graph walk and the model assertions together cover
  * what a regression that re-derives a {@code ClassName} from the bare {@code jooqPackage}
  * could break, without crossing the line.

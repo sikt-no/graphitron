@@ -146,7 +146,7 @@ class DunderFreeEmissionPipelineTest {
             .as("Emitted code must not declare or reference Java identifiers that lead with `__`.\n"
                 + "The `__`-prefix is reserved for synthetic SQL column aliases (string literals\n"
                 + "with the DB-column-collision rationale), never for Java locals/params/fields.\n"
-                + "See rewrite-design-principles.adoc, \"Generated code is read and debugged\".")
+                + "See development-principles.adoc, \"Readability rules\".")
             .isEmpty();
     }
 

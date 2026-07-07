@@ -10,7 +10,7 @@ last-updated: 2026-05-21
 
 # Audit design-doc claims for implementation conformance
 
-R205 surfaced a five-layer survival pattern where a documented design claim (`docs/argument-resolution.adoc`'s truth table at `:262-275` saying plain inputs and `@table` inputs share the same implicit-predicate behaviour) diverged from the implementation (`FieldBuilder.java:1349` passing `null` for `implicitBodyParams` on plain inputs) and survived because no enforcing test asserted the symmetry. The same shape — design doc says X, code does Y, no test pinning X — plausibly exists elsewhere in the rewrite-internal docs (`argument-resolution.adoc`, `typed-rejection.adoc`, `rewrite-design-principles.adoc`, per-resolver javadocs).
+R205 surfaced a five-layer survival pattern where a documented design claim (`docs/argument-resolution.adoc`'s truth table at `:262-275` saying plain inputs and `@table` inputs share the same implicit-predicate behaviour) diverged from the implementation (`FieldBuilder.java:1349` passing `null` for `implicitBodyParams` on plain inputs) and survived because no enforcing test asserted the symmetry. The same shape — design doc says X, code does Y, no test pinning X — plausibly exists elsewhere in the rewrite-internal docs (`argument-resolution.adoc`, `typed-rejection.adoc`, `development-principles.adoc`, per-resolver javadocs).
 
 This Backlog stub is the Spec-stage prompt to scope the audit. None of the below have an obvious answer; the Spec phase picks one and defends the choice:
 
@@ -35,5 +35,5 @@ Likely starting points based on the R205 investigation:
 
 - `docs/argument-resolution.adoc` § "Truth table" — the pattern that bit us; the rest of this doc may have analogues.
 - `docs/typed-rejection.adoc` § "Sealed `Resolved` across the resolver siblings" — the thirteen sibling resolvers; spot-check each producer/consumer pair for "the rejection arm is read by every consumer."
-- `docs/rewrite-design-principles.adoc` § "Builder-step results are sealed, not strings or out-params" — the meta-principle; audit for `List<String> errors` out-params co-existing with sealed result types (the violation R205 closed at `InputFieldResolver.resolve`).
+- `docs/architecture/explanation/development-principles.adoc` § "Builder-step results are sealed, not strings or out-params" — the meta-principle; audit for `List<String> errors` out-params co-existing with sealed result types (the violation R205 closed at `InputFieldResolver.resolve`).
 - Per-resolver javadocs on `*DirectiveResolver.Resolved` declarations.

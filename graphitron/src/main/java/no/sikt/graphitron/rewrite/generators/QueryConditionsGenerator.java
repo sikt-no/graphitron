@@ -45,7 +45,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
  * Fetcher bodies collapse to {@code QueryConditions.<name>Condition(<tableLocal>, env)}.
  *
  * <p>Emitted {@code <fieldName>Condition} helpers take the aliased {@code Table} as a
- * parameter — see "Helper-locality" in {@code docs/rewrite-design-principles.md}.
+ * parameter — see "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.
  */
 public class QueryConditionsGenerator {
 

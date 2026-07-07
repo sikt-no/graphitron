@@ -74,6 +74,15 @@ The `create` subcommand picks the next free `R<n>`, writes the file with the ID 
 * A plan deleted on Done has its file removed outright. Git history preserves it; leaving a tombstone file encourages staleness.
 * Plans with a user-visible surface (a new Mojo goal, a new directive, a new output format, a wire-protocol change) include a draft of the user docs as the first client of the design. If the docs do not read simply, the design is wrong and must change before implementation. The draft lives inside the plan and moves into its real home (`getting-started.adoc`, the relevant README) when the feature ships. The LSP plan's `++##++ User documentation (first-client check)` section is the canonical example. Internal refactors with no user surface are exempt.
 
+== Structural pivots land additive-then-cutover
+
+When an item replaces a widely-pinned type or seam (R222's technique, restated by R431): introduce
+the decomposed replacement alongside the old surface, dual-source, migrate consumers arm by arm
+behind the compiler, then delete the old surface. The execution-tier acceptance holds at every
+intermediate commit, not just the endpoint; a big-bang edit on a widely-pinned type does not
+survive a trunk-based, concurrently-edited repo. This is a technique, not a prescription: slices
+may refine or discard it when the surface is narrowly pinned.
+
 == Roadmap rendering
 
 The per-item front-matter is the source of truth. The roll-up README is derived. Use `Done` only for milestones worth keeping as history (capture the landing commit in link:https://github.com/sikt-no/graphitron/blob/claude/graphitron-rewrite/roadmap/changelog.md[`changelog.md`]); routine completions disappear entirely when their item file is deleted.

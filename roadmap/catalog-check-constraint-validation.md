@@ -238,7 +238,7 @@ pipeline; the only legitimate consumer is the recognizer.
 
 The recognizer is on the catalog-side of the boundary too, since it imports
 `org.jooq.Condition`. That's a deliberate, narrow exemption to the canonical
-jOOQ-types boundary list at `rewrite-design-principles.adoc:29` (`JooqCatalog`,
+jOOQ-types boundary (`development-principles.adoc`, "The parse boundary is a containment invariant") (`JooqCatalog`,
 `TypeBuilder`, `FieldBuilder`, `ServiceCatalog`): the recognizer becomes a
 fifth member, dedicated to lifting `Condition` AST shapes into typed
 `CheckRecognition` outcomes. The principles-doc roster updates in this item's
@@ -724,10 +724,10 @@ against a principle; each is settled here so the implementer doesn't relitigate.
    `Recognized` into `SingleColumn` (carrying `column()`) and a sibling
    `MultiColumn` (carrying its own column-set accessor) *before* adding
    the cross-column permit, rather than retrofitting a nullable accessor
-   on the existing root. Per *Sealed hierarchies over enums for typed
-   information* (`rewrite-design-principles.adoc:25`: "sealed sub-interfaces
-   per axis rather than inventing a god accessor whose meaning depends on
-   the variant").
+   on the existing root. Per *Orthogonal facts are independent axes*
+   (`development-principles.adoc`: carry each axis as its own slot or sealed
+   sub-interface rather than a god accessor whose meaning depends on the
+   variant).
 
 ---
 

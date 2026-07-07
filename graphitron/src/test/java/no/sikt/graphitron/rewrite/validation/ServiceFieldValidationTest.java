@@ -306,7 +306,7 @@ class ServiceFieldValidationTest {
      * holder rule from {@code (DSLContext)}-only to any all-bindable constructor, and migrated the
      * prose rejection onto the typed arm). Existing {@code ServiceCatalogTest} coverage is
      * unit-tier; this test pins reachability through the validator's own dispatch surface, matching
-     * {@code rewrite-design-principles.adoc} ("validator mirrors classifier invariants").
+     * {@code development-principles.adoc} ("Rejections: validator mirrors classifier invariants").
      */
     @org.junit.jupiter.api.Test
     void instanceServiceHolderShape_unbindableCtor_validatorReportsTypedAuthorError() {

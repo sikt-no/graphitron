@@ -44,7 +44,7 @@ Files changed:
 
 # Read first (these define what "good" looks like here)
 
-- docs/architecture/explanation/rewrite-design-principles.adoc  (technical principles)
+- docs/architecture/explanation/development-principles.adoc  (technical principles)
 - docs/graphitron-principles.adoc                         (strategic principles)
 - docs/architecture/index.adoc                     (architectural orientation)
 - docs/architecture/reference/code-generation-triggers.adoc              (sealed-type hierarchy map)
@@ -111,9 +111,9 @@ Prioritized list, highest-leverage first. For each opportunity:
 
 - **Summary.** One line.
 - **Pointer.** `path/to/file.java:LINE` or function name.
-- **Principle.** Cite the heading from `rewrite-design-principles.md` or
-  `graphitron-principles.md` (e.g. "Generation-thinking", "Sealed hierarchies
-  over enums").
+- **Principle.** Cite the heading from `development-principles.adoc` or
+  `graphitron-principles.md` (e.g. "Decide once, at the parse boundary",
+  "Sealed hierarchies over enums").
 - **Why the current shape is weaker.** One or two sentences. Concrete, not
   abstract.
 - **Sketch of stronger shape.** One or two sentences, optional if obvious.

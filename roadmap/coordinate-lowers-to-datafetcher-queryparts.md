@@ -1384,7 +1384,7 @@ relational model as design discipline; do not adopt a relational runtime.** The 
   what make the leaf zoo dissolve; they cost nothing but clear thinking and are already in this doc. Keep
   taking the *modeling* all the way.
 - **A query-engine runtime is the wrong tool here, for three reasons.** (1) It inverts the project's
-  deepest commitment. `rewrite-design-principles.adoc` is wall-to-wall *compile-time* typing of the model
+  deepest commitment. `development-principles.adoc` is wall-to-wall *compile-time* typing of the model
   (sealed hierarchies over enums, narrow component types, classification pinned at the parse boundary,
   exhaustive switches that turn "added a variant" into a compile error). A SQL or Datalog layer makes the
   model stringly-typed and moves exhaustiveness from `javac` to runtime, spending the central asset to buy

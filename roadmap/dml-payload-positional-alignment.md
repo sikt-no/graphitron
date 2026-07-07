@@ -220,7 +220,7 @@ was produced must be `null`."
    service-producer call site; takes the producer's `List<XRecord>` (or
    `Result<…>`) result and the input size, validates equality, propagates
    `null` entries unchanged.
-7. **Tests** (every tier; rules of `rewrite-design-principles.adoc`):
+7. **Tests** (every tier; rules of `development-principles.adoc`):
    - *Unit:* wrapper-shape admission/rejection across all four verbs and
      both element arms (`ID`-element and `@table`-element); the DELETE-Id
      `RETURNING` `LEFT JOIN` emission shape pinned; the left-join null-pad

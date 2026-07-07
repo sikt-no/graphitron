@@ -16,7 +16,7 @@ Surfaced by R237 Phase 2 as a (b-relational) structural-lift candidate. `Service
 
 Lift: parameterise `MethodRef.StaticOnly` and `ReturnTypeRef.TableBoundReturnType` on a shared `<T extends Table<?>>` type token; thread it through every site that constructs or reads either. The strict-`ClassName.equals` runtime check at `ServiceCatalog.java:498` becomes redundant once the type-token enforces the equality at construction.
 
-Higher blast radius than the single-record narrow lift in R239: every call site that constructs or reads `MethodRef.StaticOnly` or `ReturnTypeRef.TableBoundReturnType` needs the type-token threaded through, and the threading hits the boundaries jOOQ helpers accept type erasure at (per `rewrite-design-principles.adoc § "Selection-aware queries"`). Some sites may need explicit `Table<?>` widening, which caps how far the bound carries.
+Higher blast radius than the single-record narrow lift in R239: every call site that constructs or reads `MethodRef.StaticOnly` or `ReturnTypeRef.TableBoundReturnType` needs the type-token threaded through, and the threading hits the boundaries jOOQ helpers accept type erasure at (per `emitter-conventions.adoc § "Selection-aware queries"`). Some sites may need explicit `Table<?>` widening, which caps how far the bound carries.
 
 The sibling service-catalog return-type contract (already structural because `MethodRef.Service` carries a captured parameterised return type) benefits as a side effect: the type-token threading lifts both halves of the service-catalog return-type contract under one structural mechanism.
 

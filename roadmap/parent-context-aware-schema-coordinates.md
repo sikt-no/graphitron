@@ -21,7 +21,7 @@ R119 keyed the LSP's directive vocabulary on GraphQL-spec schema coordinates: `D
 
 The canonical overlay binds the shared coordinate to one `MethodNameBinding(classNameCoord)` arm. Diagnostics' validator then re-discriminates by the enclosing directive name via a hand-coded `METHOD_VALIDATING_DIRECTIVES = Set.of("service", "condition", "externalField", "tableMethod", "reference", "sourceRow")` (`graphitron-lsp/.../diagnostics/Diagnostics.java:53`).
 
-That set is exactly the smell `rewrite-design-principles` calls "two consumers evaluate the same predicate over a model field" — the Behavior overlay says "this is a method slot", the validator says "but only for these directives". The classifier knows the per-directive policy at parse time; collapsing both onto one arm and re-deriving via `Set.contains(directiveName)` in Diagnostics is the smell.
+That set is exactly the smell `development-principles.adoc` calls "two consumers evaluate the same predicate over a model field" — the Behavior overlay says "this is a method slot", the validator says "but only for these directives". The classifier knows the per-directive policy at parse time; collapsing both onto one arm and re-deriving via `Set.contains(directiveName)` in Diagnostics is the smell.
 
 The same shape would surface for any future Behavior arm whose semantics differ by enclosing directive (the spec's "structurally inert on @externalField / @enum / @record" rule for `argMapping` is the next one queued).
 

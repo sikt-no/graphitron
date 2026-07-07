@@ -5357,7 +5357,7 @@ class FieldBuilder {
      * the resolved {@link SourceKey} + {@link LoaderRegistration} into {@link RecordTableField} /
      * {@link RecordLookupTableField}, or surfaces the rejection as
      * {@link GraphitronField.UnclassifiedField}. Builder-internal sealed result per the
-     * {@code rewrite-design-principles.adoc} rule on {@code Builder-step results are sealed}.
+     * {@code development-principles.adoc} rule on {@code Builder-step results are sealed}.
      */
     private sealed interface RecordParentSourceResolution {
         /**

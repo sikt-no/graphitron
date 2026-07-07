@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code field.parentSourceKey().columns().size()}; for the accessor-call permits the hub
  * identity is implicit in the {@code LiftedHop}'s {@code targetTable}.
  *
- * <p>Per the rewrite-design-principles, body-shape assertions on emitted method bodies are not
+ * <p>Per the development principles, body-shape assertions on emitted method bodies are not
  * used; the {@code ColumnRead} variant pins TypeSpec equivalence with a table-backed parent
  * fixture so any drift across the two producers fails fast.
  */

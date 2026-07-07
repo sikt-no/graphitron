@@ -654,7 +654,7 @@ Four families, by what they emit. The Generators package holds emitter helpers (
 | Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into
 |===
 
-`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:../explanation/rewrite-design-principles.adoc[Rewrite Design Principles]).
+`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:../explanation/development-principles.adoc[Graphitron Development Principles]).
 
 === Directives
 
@@ -664,5 +664,5 @@ Four families, by what they emit. The Generators package holds emitter helpers (
 '''
 
 *See also:*
-- xref:../explanation/rewrite-design-principles.adoc[Rewrite Design Principles] ; architectural and technical principles for the rewrite pipeline
+- xref:../explanation/development-principles.adoc[Graphitron Development Principles] ; the six axioms, their corollaries, and the named enforcement behind each
 - link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/roadmap[Rewrite Roadmap] ; remaining generator work

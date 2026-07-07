@@ -123,7 +123,7 @@ If the rebase conflicts, surface and stop until resolved. Don't review a
 # Read first (in this order)
 
 1. {{spec-path}}  (the spec under review)
-2. docs/architecture/explanation/rewrite-design-principles.adoc  (technical principles, esp. "Documentation names only live tests/code")
+2. docs/architecture/explanation/development-principles.adoc  (technical principles, esp. "Documentation names only live tests/code")
 3. roadmap/workflow.adoc  (state machine + reviewer-rule paragraph)
 4. docs/architecture/index.adoc  (architectural orientation)
 
@@ -132,8 +132,7 @@ If the rebase conflicts, surface and stop until resolved. Don't review a
 Spec-stage framing: "is this plan sound enough to hand to an implementer", not
 "is this code correct".
 
-- **Architectural soundness against principles.** Does the proposed shape align
-  with the rewrite-design-principles? Sealed hierarchies, generation-thinking,
+- **Architectural soundness against principles.** Does the proposed shape align  with the development principles? Sealed hierarchies, decide-once classification,
   classifier guarantees, validator-mirrors-classifier, etc. Surface any place
   the spec pushes against a principle without justifying the trade.
 - **Plan completeness.** Decisions left implicit that the implementer would have
@@ -218,7 +217,7 @@ diff is worse than waiting for a clean checkout.
 1. {{spec-path}}  (the contract; what the implementer was building)
 2. The implementation diff: `git log --oneline -20` and
    `git show <sha>` on the implementation commits.
-3. docs/architecture/explanation/rewrite-design-principles.adoc  (technical principles)
+3. docs/architecture/explanation/development-principles.adoc  (technical principles)
 4. docs/architecture/index.adoc  (architectural orientation)
 
 # What to assess
@@ -229,7 +228,7 @@ Implementation-stage framing: spec is the contract, diff is the delivery.
   promised? Anything the spec marked out-of-scope but landed anyway, or
   anything in scope that didn't ship?
 - **Architectural soundness in the diff.** Apply the principles from
-  rewrite-design-principles.adoc; surface any place the diff weakens or
+  development-principles.adoc; surface any place the diff weakens or
   contradicts them. The `reviewer-prompt` skill's "What to look for" list is
   the canonical taxonomy if you want a checklist.
 - **Test coverage.** Spec-named pipeline-tier, execution-tier, audit, and unit
