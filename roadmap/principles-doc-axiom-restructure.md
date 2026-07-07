@@ -808,13 +808,21 @@ may refine or discard it when the surface is narrowly pinned.
 8. Full `mvn install -Plocal-db` green (docs render; `check-adoc-tables`; doc-coverage tests; the
    new budget test).
 
-## Open questions for Spec review
+## Open questions, resolved in Spec review
 
-- Name: *Graphitron Development Principles* / `development-principles.adoc` is drafted;
-  `engineering-principles` and `technical-principles` are live alternatives if preferred.
-- The 3,500-word cap and the word-count mechanism (vs a char cap) are first guesses; the reviewer
-  may prefer a different threshold or measure.
-- Axiom sections that state a rule directly (orthogonal axes; one model, many views; boundaries)
-  carry their own `*Enforced by:*` lines; the decide-once, enforcement, and consumer-artifact
-  axioms delegate to their corollaries. Reviewer should check this reads consistently rather than
-  accidentally.
+The three questions this spec opened for review were worked through in the 2026-07-07 review pass
+and resolved; recorded here so the Spec to Ready reviewer sees them closed, not dangling.
+
+- **Name.** *Graphitron Development Principles* / `development-principles.adoc` stands; the
+  collision-avoidance reasoning against the strategic `graphitron-principles.md` holds.
+  `engineering-principles` and `technical-principles` were considered and not preferred.
+- **Word cap.** The 3,500-word cap and word-count measure are coarse, but the point is forcing a
+  displacement conversation rather than pinning an exact threshold, and that mechanism is sound. At
+  3,396 words (after the decision-19 density pass) the block has real headroom, so the coarse
+  cap-vs-char-cap question is moot for now; revisit only if a future addition makes the measure bite
+  in a way the word count misrepresents.
+- **Enforced-by consistency.** Confirmed consistent by design, not by accident: exactly the axioms
+  whose bodies state a rule directly (orthogonal axes; one model, many views; boundaries) carry
+  their own `*Enforced by:*` lines, while the three whose bodies delegate to corollaries (decide
+  once, every invariant has an enforcer, generated code is a consumer artifact) put the line on each
+  corollary.
