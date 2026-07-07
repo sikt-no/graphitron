@@ -1,12 +1,12 @@
 ---
 id: R435
 title: "Routine table nodes: order-significant @routine / @reference composition"
-status: Ready
+status: Spec
 bucket: feature
 theme: service
 depends-on: [coordinate-lowers-to-datafetcher-queryparts, materialize-joinpath-facts]
 created: 2026-07-05
-last-updated: 2026-07-06
+last-updated: 2026-07-07
 ---
 
 # Routine table nodes: order-significant @routine / @reference composition
@@ -66,7 +66,11 @@ shape downstream.
   the terminus and keying checks catch most reorders, but two orderings can both terminate
   correctly and mean different join graphs (the `sandwich` case), so order-preserving round-trips
   are a stated requirement, not an assumption. The editor surfaces the resolved chain (the R381
-  inlay/hover) so the load-bearing order is always visible while authoring.
+  inlay/hover) so the load-bearing order is always visible while authoring. Enforced by: the
+  root-head, terminus, and keying rules for any reorder that changes the head or terminus or
+  breaks keying; nothing at build time for terminus-preserving reorders (the `sandwich` case),
+  which remain an external round-trip contract on SDL tooling; the R381 inlay/hover is
+  authoring-time visibility, not an enforcer.
 
 ## Substrate and sequencing
 
@@ -94,33 +98,49 @@ either way, but the emit conventions should be coordinated.
 
 ## Validation
 
-All typed rejections; the validator owns misordering since order now carries meaning.
+All typed rejections, produced once. The classifier parses the ordered directive applications a
+single time, lands the chain, and mints every misordering, terminus, and `columnMapping` violation
+below as a typed `Rejection` at classify time; the validator projects those rejections (validate
+is a typed-rejection projection of classify, per `typed-rejection.adoc`) and never re-reads
+directive order. The head and terminus rules are facts about the landed chain, not the raw
+directive list, so no second pass parses order and there is nothing for two passes to disagree
+about. Every rule reuses an existing `Rejection` arm; no new arm is minted.
 
 * Root fields: the first directive application must supply the head, i.e. be `@routine`. This
   generalizes and *checks* R333's root-iff-routine invariant, which today rests on omission.
+  Arm: `AuthorError.Structural`.
 * Terminus invariant: last node's table class == field's `@table` type (== routine result table
-  when a routine is last). Exists at root today; extends to every chain.
+  when a routine is last). Exists at root today; extends to every chain. Arm:
+  `AuthorError.Structural`.
 * `columnMapping` legal iff a previous node exists; bound columns must exist on the previous node
-  with types compatible with the routine parameters.
+  with types compatible with the routine parameters. Arms: no previous node and type
+  incompatibility are `AuthorError.Structural`; a bound column absent from the previous node is
+  `AuthorError.UnknownName` with the previous node's columns as candidates (the standard
+  candidate-hint contract).
 * `repeatable` applies semantically only where order-composition does (FIELD_DEFINITION table
   chains); GraphQL cannot scope repeatability per location, so the classifier rejects repeated
   `@reference` on `ARGUMENT_DEFINITION` and `INPUT_FIELD_DEFINITION` with a message pointing at
-  the field-level composition surface (the `@lookupKey` declared-but-rejected precedent).
+  the field-level composition surface (the `@lookupKey` declared-but-rejected precedent). Arm:
+  `InvalidSchema.DirectiveConflict` (its "rejected because of where it appears" case).
 
 ## Composition with other field surfaces
 
 Day-one verdicts for the directives that could co-occur on a routine-backed field; each rejection
-is a typed classifier rejection with a validator mirror and a fixture.
+names its `Rejection` arm, is produced at classify time, and lands with a validator projection and
+a fixture. Like the validation rules above, every verdict reuses an existing arm.
 
 * **`@splitQuery`**: composes. It forces the new-query anchor, which is the same batched keyed
   re-query form the child fetch already rides; no special casing.
-* **`@asConnection` / pagination**: rejected on any field whose chain contains a routine node
-  (R300 already rejects Connection at root). Keyset pagination needs an ordering contract the
-  FK-less routine result does not carry. Named deferral: chains whose terminus is a catalog table
-  could support it later.
-* **`@orderBy` / `@condition`**: rejected on routine-backed fields day one, extending R300's
-  no-field-level-filter-surface stance from the root slice to every chain position. Named
-  deferral: both key on `resolvedTable` (R333) and are meaningful for catalog-terminus chains.
+* **`@asConnection` / pagination**: two verdicts, two arms. A chain whose *terminus* is the
+  routine result rejects as `InvalidSchema.DirectiveConflict` (R300 already rejects Connection at
+  root): keyset pagination needs an ordering contract the FK-less routine result does not carry,
+  so the combination can never work. A chain that merely *contains* a routine node but terminates
+  on a catalog table rejects as `Deferred`: it classifies cleanly and could support pagination
+  later (`planSlug` stays empty until someone files that follow-up item).
+* **`@orderBy` / `@condition`**: rejected on routine-backed fields day one as `Deferred`
+  (`planSlug` empty, same follow-up story), extending R300's no-field-level-filter-surface stance
+  from the root slice to every chain position. Both key on `resolvedTable` (R333) and are
+  meaningful for catalog-terminus chains, so this is a capability gap, not a schema contradiction.
 
 ## Implementation
 
@@ -131,11 +151,12 @@ is a typed classifier rejection with a validator mirror and a fixture.
 * `JooqCatalog.resolveTableValuedFunction`: additionally resolve the `Field`-overload call surface
   (today filtered out) for correlated emission.
 * Classifier (`FieldBuilder` + `RoutineDirectiveResolver`): read the ordered directive
-  applications off the field definition, build the chain (implicit head at child positions),
-  desugar the single-application case, mint the `RoutineCall` target arm and `Lateral` `on`-arm
-  onto R438's two-axis `JoinStep`.
-* `GraphitronSchemaValidator`: the four validation rules plus the composition verdicts above,
-  mirroring the classifier.
+  applications off the field definition (the only pass that does), build the chain (implicit head
+  at child positions), desugar the single-application case, mint the `RoutineCall` target arm and
+  `Lateral` `on`-arm onto R438's two-axis `JoinStep`, and produce the chain rejections named in
+  *Validation*.
+* `GraphitronSchemaValidator`: surfaces the four validation rules plus the composition verdicts
+  above by projecting the classifier's typed rejections; no second parse of directive order.
 * Emitters: chain rendering in the fetcher generators (root and child), `DSL.lateral()` for
   correlated calls, name-matched keying for hops out of a routine.
 * Docs: `routine.adoc` rewrite and the `@reference` page's composition section (see the draft
