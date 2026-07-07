@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * One cell of a join's column-pairing relationship between the source and target tables.
  *
- * <p>A {@link JoinStep.WithTarget} carries a {@code List} of these on its {@code slots} component,
+ * <p>A {@link HasSlots} carrier holds a {@code List} of these on its {@code slots} component,
  * with two permits.
  *
  * <ul>

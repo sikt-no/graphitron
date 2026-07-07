@@ -10,33 +10,31 @@ import java.util.List;
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
  *
  * <ul>
- *   <li>{@link Hop} — the two-axis step (R333): a {@link TableExpr} target plus an {@link On}
- *       describing how the step joins. Replaces {@link FkJoin} / {@link ConditionJoin}, which
- *       remain permits only until the cutover completes.</li>
- *   <li>{@link FkJoin} — navigate via a jOOQ foreign key ({@code .join(table).onKey(fk)}),
- *       with an optional WHERE filter on the enclosing SELECT.</li>
- *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
- *       the condition becomes the ON clause of an explicit JOIN.</li>
+ *   <li>{@link Hop} — the two-axis step (R333): a <b>target</b> node materialized by a
+ *       {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
+ *       ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
+ *       predicate}). Every {@code @reference}-parsed step is a {@code Hop}.</li>
  *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@code @sourceRows} lifter or
  *       a class-backed-parent accessor; no FK, no source-side columns, the DataLoader key
- *       tuple <em>is</em> the target-column tuple.</li>
+ *       tuple <em>is</em> the target-column tuple. Transitional: its lifted slots are
+ *       source-side key provenance (R333's {@code Lift} arm), which is R431's decomposition;
+ *       R431 retires this permit when it re-types {@code SourceKey.path}.</li>
  * </ul>
  *
- * <p>{@link FkJoin} and {@link LiftedHop} share the {@link WithTarget} capability so the
- * rows-method prelude reads {@code targetTable()}, {@code slots()}, and {@code alias()}
- * uniformly without per-accessor sealed switches. The variant identity is carried by the
- * slot subtype ({@link JoinSlot.FkSlot} vs. {@link JoinSlot.LifterSlot}), not by the
- * carrier; capabilities express what is uniformly true, sealed switches express what
- * varies by identity.
+ * <p>Both permits implement {@link HasTargetTable} so emitters read {@code targetTable()} and
+ * {@code alias()} uniformly. Slot iteration is the {@link HasSlots} capability, implemented by
+ * {@link On.ColumnPairs} and {@link LiftedHop} — the two slot populations that coexist until
+ * R431. Capabilities express what is uniformly true; how a {@link Hop} joins is a sealed
+ * dispatch on {@link Hop#on()}.
  *
- * <p><b>Variant contrast:</b>
+ * <p><b>Step contrast:</b>
  * <pre>
- *   FkJoin (key only):          .join(target).onKey(FK)
- *   FkJoin (key + whereFilter): .join(target).onKey(FK) ... .where(filter(src, target))
- *   ConditionJoin:              .join(target).on(condition(src, target))
+ *   Hop, On.ColumnPairs:            .join(target).onKey(FK)
+ *   Hop, On.ColumnPairs + filter:   .join(target).onKey(FK) ... .where(filter(src, target))
+ *   Hop, On.Predicate:              .join(target).on(condition(src, target))
  * </pre>
- * {@code whereFilter} is a WHERE clause on the enclosing SELECT — it does not affect the JOIN's
- * ON clause. {@link ConditionJoin#condition} is the ON clause.
+ * {@link Hop#filter()} is a WHERE clause on the enclosing SELECT — it does not affect the JOIN's
+ * ON clause. {@link Hop#on()} is the ON clause.
  *
  * <h2>Cardinality invariant</h2>
  *
@@ -66,17 +64,18 @@ import java.util.List;
  *       rejecting it.</li>
  * </ol>
  */
-public sealed interface JoinStep permits JoinStep.Hop, JoinStep.FkJoin, JoinStep.ConditionJoin, JoinStep.LiftedHop {
+public sealed interface JoinStep permits JoinStep.Hop, JoinStep.LiftedHop {
 
     /**
-     * Capability mixed in by every hop that pre-resolves a target table the prelude joins to.
+     * Capability mixed in by every step that pre-resolves a target table the prelude joins to.
      * Lets emitters read {@link #targetTable()} and {@link #alias()} uniformly without a sealed
-     * switch — every {@link JoinStep} permit implements this interface (FkJoin and LiftedHop via
-     * {@link WithTarget}; ConditionJoin directly).
+     * switch — every {@link JoinStep} permit implements this interface.
      *
      * <p>Capability interfaces and sealed switches serve different roles: this interface is the
-     * "uniformly true" axis (every hop has a target table); {@link WithTarget} below adds the
-     * FK-correlation slot iteration that only FK-style hops (FkJoin, LiftedHop) carry.
+     * "uniformly true" axis (every step has a target table); how a {@link Hop} joins varies by
+     * identity and is answered by sealed dispatch on {@link Hop#on()}. Slot iteration lives on
+     * {@link HasSlots}, implemented by the slot-carrying types ({@link On.ColumnPairs},
+     * {@link LiftedHop}).
      */
     interface HasTargetTable {
         TableRef targetTable();
@@ -84,30 +83,11 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.FkJoin, JoinStep
     }
 
     /**
-     * Capability mixed in by hops that pre-resolve a target table <em>and</em> a slot list pairing
-     * source / target columns for FK-correlation predicates. Lets emitters read
-     * {@link #targetTable()}, {@link HasSlots#slots()}, and {@link #alias()} polymorphically —
-     * exactly where the accessors mean the same thing on every implementor.
-     *
-     * <p>The slot-iteration contract (including the {@link Iterable}-not-{@link List}
-     * discipline) lives on {@link HasSlots}, which this interface composes with
-     * {@link HasTargetTable}. Transitional: dies with the flat {@link FkJoin} variant when the
-     * two-axis {@link Hop} cutover completes — slot presence then varies <em>within</em> a step
-     * ({@link On.ColumnPairs} has slots, {@link On.Predicate} does not), so it stops being a
-     * step-level capability and is answered by sealed dispatch on {@link Hop#on()} instead.
-     *
-     * <p>{@link JoinStep.ConditionJoin} implements {@link HasTargetTable} directly (no slot list)
-     * — its source/target correlation is the condition method call, not paired columns.
-     */
-    interface WithTarget extends HasTargetTable, HasSlots {
-    }
-
-    /**
      * One join step as two orthogonal facts (R333): a <b>target</b> node materialized by a
      * {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
      * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
-     * predicate}). Replaces the flat {@link FkJoin} / {@link ConditionJoin} variants, which
-     * spliced the two facts into the permit name.
+     * predicate}). Replaced the flat {@code FkJoin} / {@code ConditionJoin} variants, which
+     * spliced the two facts into the permit name (R438).
      *
      * <p>{@code target} is the table node this step joins to; day one always a
      * {@link TableExpr.Catalog}. {@link #targetTable()} folds it back to the {@link TableRef}
@@ -130,8 +110,9 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.FkJoin, JoinStep
      * the element carried none.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query,
-     * computed at build time as {@code fieldName + "_" + stepIndex}; unique per field × depth,
-     * which handles self-referential join paths where the same table appears multiple times.
+     * computed at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"}
+     * for the first step of a {@code language} field); unique per field × depth, which handles
+     * self-referential join paths where the same table appears multiple times.
      */
     record Hop(
         TableExpr target,
@@ -164,112 +145,6 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.FkJoin, JoinStep
     }
 
     /**
-     * One hop navigated by a jOOQ foreign key.
-     *
-     * <p>The generator emits {@code .join(targetAlias).onKey(Keys.FK_...)} for this step. Whether
-     * it is an INNER or LEFT JOIN depends on the surrounding query structure (see the interface-level
-     * cardinality invariant). All fields are pre-resolved at build time from the jOOQ catalog.
-     *
-     * <p>{@code fk} is the resolved {@link ForeignKeyRef} carrying the SQL constraint name, the
-     * schema-correct {@code Keys} class, and the Java constant name. Non-null by the type system:
-     * the {@link no.sikt.graphitron.rewrite.BuildContext#synthesizeFkJoin} resolver routes a
-     * catalog-miss on the FK name into a {@code FkJoinResolution.UnknownForeignKey} arm rather
-     * than producing an {@code FkJoin} with a null FK. Emitters consume it as
-     * {@code .onKey($T.$L)} with {@code fk.keysClass()} / {@code fk.constantName()}; readers that
-     * need the SQL constraint name use {@code fk.sqlName()}.
-     *
-     * <p>{@code slots} carries the FK pairing as a list of {@link JoinSlot.FkSlot}, oriented at
-     * synthesis time: each slot's {@link JoinSlot#sourceSide()} is the column on the hop's source
-     * table (the side the join is entered from), and {@link JoinSlot#targetSide()} is the column
-     * on the hop's target table. The FK-direction question (which end of the catalog FK sits on
-     * which side) is answered once in {@code BuildContext.synthesizeFkJoin} and baked into the
-     * slot pair, so emitter sites read {@code targetAlias.<slot.targetSide()>.eq(sourceCtx.<slot.sourceSide()>)}
-     * uniformly without re-deriving direction. The list is empty when the jOOQ catalog is
-     * unavailable (unit tests).
-     *
-     * <p>{@code originTable} is the <em>traversal-origin</em> table of this hop — i.e. the side
-     * the join enters <em>from</em>, which is the parent table for hop 0 and the previous hop's
-     * target for subsequent hops. Falls back to an empty {@link TableRef} when the jOOQ catalog
-     * is unavailable.
-     *
-     * <p>{@code targetTable} resolves to the table on the hop's target side (the side the join
-     * lands on). Combined with {@code slots[i].targetSide()}, this gives the fully-qualified
-     * target columns each slot pairs against.
-     *
-     * <p>{@code alias} is the unique table alias for this step within the enclosing query, computed
-     * at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"} for the
-     * first step of a {@code language} field). The alias is unique per field × depth, which handles
-     * self-referential join paths where the same table appears multiple times.
-     *
-     * <p>{@code whereFilter} is an optional user-supplied condition method resolved from a
-     * {@code condition} argument on the same {@code @reference} path element as the {@code key}.
-     * When present, the generator appends it as a {@code .where()} or {@code .and()} clause on the
-     * enclosing SELECT — <em>not</em> on the JOIN's ON clause. The {@link JoinConditionRef}
-     * wrapper types the calling convention (source-table alias, newly-joined alias, in that
-     * order). This field is {@code null} when no {@code condition} argument was specified
-     * alongside the key.
-     */
-    record FkJoin(
-        ForeignKeyRef fk,
-        TableRef originTable,
-        TableRef targetTable,
-        List<JoinSlot.FkSlot> slots,
-        JoinConditionRef whereFilter,
-        String alias
-    ) implements JoinStep, WithTarget {
-
-        public FkJoin {
-            if (fk == null) {
-                throw new NullPointerException(
-                    "FkJoin.fk must not be null; resolution failures route through"
-                    + " BuildContext.synthesizeFkJoin's FkJoinResolution sub-taxonomy.");
-            }
-            slots = List.copyOf(slots);
-        }
-
-        @Override public int slotCount() { return slots.size(); }
-    }
-
-    /**
-     * One hop navigated by a user-supplied condition method (no FK constraint involved).
-     *
-     * <p>The condition method becomes the ON clause of an explicit join: the generator emits
-     * {@code .join(targetAlias).on(condition(sourceAlias, targetAlias))}. Used when there is no
-     * database foreign key for this join step. Typical use: reconnecting a service or
-     * {@code @externalField} result back to the parent table when no FK exists.
-     *
-     * <p>{@code alias} is the unique table alias for this step, computed at build time as
-     * {@code fieldName + "_" + stepIndex}.
-     *
-     * <p>{@code targetTable} is pre-resolved at parse time by {@code BuildContext
-     * .resolveConditionJoinTarget}: for a terminal hop, from the carrier field's return-type
-     * {@code @table} binding; for an intermediate hop, by reflecting on the condition method's
-     * second parameter. Both unresolvable cases route through {@code Rejection.AuthorError}
-     * upstream; the compact constructor below is the structural safety net so consumers can
-     * read {@link #targetTable()} without a null check.
-     *
-     * <p>Contrast with {@link FkJoin#whereFilter}: that field is a WHERE clause on the enclosing
-     * SELECT; this condition is the JOIN's ON clause.
-     */
-    record ConditionJoin(JoinConditionRef condition, TableRef targetTable, String alias)
-            implements JoinStep, HasTargetTable {
-
-        public ConditionJoin {
-            if (condition == null) {
-                throw new NullPointerException("ConditionJoin.condition must not be null");
-            }
-            if (targetTable == null) {
-                throw new NullPointerException(
-                    "ConditionJoin.targetTable must not be null; BuildContext.parsePathElement "
-                    + "resolves it from the carrier field's return-type @table binding (terminal "
-                    + "hop) or by reflecting on the condition method's second parameter "
-                    + "(intermediate hop). Both unresolvable cases route through "
-                    + "Rejection.AuthorError upstream.");
-            }
-        }
-    }
-
-    /**
      * One hop pre-keyed by a {@code @sourceRows} lifter or a class-backed-parent accessor —
      * no foreign key, no traversal direction, no source-side-distinct-from-target columns. The
      * DataLoader key tuple <em>is</em> the target-column tuple, encoded as a type fact: each
@@ -279,14 +154,19 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.FkJoin, JoinStep
      * directly, identical in shape to the FK case.
      *
      * <p>The leaf-PK shape (no {@code @reference}) sits at {@code SourceKey.path = [hop]} with
-     * a single {@code LiftedHop}. The {@code @reference}-composed shape is a list of
-     * {@link FkJoin} hops; that path does not use {@code LiftedHop}.
+     * a single {@code LiftedHop}. The {@code @reference}-composed shape is a list of FK-derived
+     * {@link Hop}s; that path does not use {@code LiftedHop}.
+     *
+     * <p>Transitional: this permit is not a join-path fact — {@code @reference} path parsing
+     * never produces it, and its lifted slots are source-side key provenance (R333's
+     * {@code Lift} arm). R431 retires it when it re-types {@code SourceKey.path}, at which
+     * point {@link HasSlots} collapses to its single {@link On.ColumnPairs} implementor.
      */
     record LiftedHop(
         TableRef targetTable,
         List<JoinSlot.LifterSlot> slots,
         String alias
-    ) implements JoinStep, WithTarget {
+    ) implements JoinStep, HasTargetTable, HasSlots {
 
         public LiftedHop {
             if (slots.isEmpty()) {

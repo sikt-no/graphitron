@@ -126,7 +126,7 @@ class R58TypedRejectionPipelineTest {
     //  inlineTableField_conditionJoinStep_rejectedAtBuildTime,
     //  inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime) all delete with the capability
     // and the deferred-rejection arms they covered. The replacement assertions —
-    // "ConditionJoin classifies and emits a real correlated subquery" — live on the per-variant
+    // "condition join classifies and emits a real correlated subquery" — live on the per-variant
     // validation tests (TableFieldValidationTest.*_WITH_CONDITION_ONLY etc.) plus the new
     // GraphitronSchemaBuilderTest fixtures that pin BuildContext.resolveConditionJoinTarget.
 

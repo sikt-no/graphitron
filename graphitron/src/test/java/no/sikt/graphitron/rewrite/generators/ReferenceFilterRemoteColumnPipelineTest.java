@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * design principles; the EXISTS body shape itself is locked at the unit tier in
  * {@code TypeConditionsGeneratorTest}, and semantic correctness at the execution tier in
  * {@code GraphQLQueryTest}. The discrimination guard (nodeId FK-target stays local) and the
- * ConditionJoin-path rejection round out the matrix.
+ * condition-join-path rejection round out the matrix.
  */
 @PipelineTier
 class ReferenceFilterRemoteColumnPipelineTest {
@@ -196,14 +196,14 @@ class ReferenceFilterRemoteColumnPipelineTest {
             .isNotInstanceOf(BodyParam.RemoteColumnPredicate.class);
     }
 
-    // ===== ConditionJoin reference-filter path: clean rejection =====
+    // ===== Condition-join reference-filter path: clean rejection =====
 
     @Test
     void surface2_conditionJoinPath_isRejected() {
         // v1 supports Fk-join reference-filter paths only; a {condition:} hop is deferred and must
         // surface as a clean (typed) rejection rather than an emitter IllegalStateException. Uses a
         // resolvable *intermediate* condition hop (film -> film_actor) with an FK terminal so the
-        // path parses to a ConditionJoin step and the classifier's foreign-key-only guard fires.
+        // path parses to a condition-join step and the classifier's foreign-key-only guard fires.
         var f = field("""
             type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") { title: String }

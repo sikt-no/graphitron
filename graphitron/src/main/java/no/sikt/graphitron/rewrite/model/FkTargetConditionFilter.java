@@ -25,7 +25,7 @@ import java.util.List;
  * <ul>
  *   <li>{@link #targetTable()} — the FK-target table {@code X} the developer method expects; the
  *       terminal table of {@link #joinPath()}.</li>
- *   <li>{@link #joinPath()} — the resolved {@link JoinStep.FkJoin} hops from the input's own table
+ *   <li>{@link #joinPath()} — the resolved FK-derived {@link JoinStep.Hop}s from the input's own table
  *       to {@code X}. Single-hop for the common case; multi-hop walked inside the {@code EXISTS}.</li>
  *   <li>{@link #liftedSourceColumns()} — the FK-child column tuple on the input's own table
  *       (the {@code override: false} implicit-predicate path binds decoded keys against these

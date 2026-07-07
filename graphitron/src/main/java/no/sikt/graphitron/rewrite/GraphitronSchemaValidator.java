@@ -840,8 +840,8 @@ public class GraphitronSchemaValidator {
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
         if (path.isEmpty()) return; // classifier guarantees non-empty for this variant; skip in isolated validator unit tests
-        // Every JoinStep permit implements HasTargetTable post-R232 (FkJoin and LiftedHop via
-        // WithTarget; ConditionJoin directly). The comparison is uniform across permits.
+        // Every JoinStep permit implements HasTargetTable post-R232. The comparison is
+        // uniform across permits.
         var lastStep = (JoinStep.HasTargetTable) path.getLast();
         if (!lastStep.targetTable().denotesSameTableAs(targetTable)) {
             errors.add(new ValidationError(
@@ -1215,7 +1215,7 @@ public class GraphitronSchemaValidator {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).
         // R330: an FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
         // join path (QueryConditionsGenerator.emitFkTargetExists), which requires every hop to be a
-        // resolved FkJoin. Mirror that emitter precondition here so a non-Fk / unresolved hop fails
+        // resolved FK-derived hop. Mirror that emitter precondition here so a non-FK / unresolved hop fails
         // at validate time with a directed message rather than as an emitter IllegalStateException.
         if (field.condition().isPresent() && !field.joinPath().isEmpty()
                 && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
@@ -1230,10 +1230,10 @@ public class GraphitronSchemaValidator {
         // R380: a plain @reference (Direct extraction) implicit-predicate field whose terminal
         // column lives on a joined table emits a correlated EXISTS over the path
         // (TypeConditionsGenerator.emitRemoteExists), which requires every hop to be a resolved
-        // FkJoin. Mirror that emitter precondition so a non-Fk / ConditionJoin hop fails at validate
+        // FK-derived. Mirror that emitter precondition so a non-FK / condition-join hop fails at validate
         // time with a directed message rather than as an emitter IllegalStateException. (Today the
-        // builder cannot resolve a terminal column through a non-FkJoin hop, so this is a defensive
-        // mirror against future path-resolution changes; the v1 deferral of ConditionJoin reference
+        // builder cannot resolve a terminal column through a non-FK hop, so this is a defensive
+        // mirror against future path-resolution changes; the v1 deferral of condition-join reference
         // filters is the same posture FkTargetConditionEmitter takes.)
         if (field.condition().isEmpty()
                 && field.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct
@@ -1255,7 +1255,7 @@ public class GraphitronSchemaValidator {
      * correlated EXISTS whose correlation ANDs every composite-FK slot (the same
      * {@code QueryConditionsGenerator}/{@code FkTargetConditionEmitter} path as the single-column
      * case, since {@link no.sikt.graphitron.rewrite.generators.JoinPathEmitter#emitCorrelationWhere}
-     * already walks all slots). That requires every hop to be a resolved FkJoin; mirror the emitter
+     * already walks all slots). That requires every hop to be FK-derived; mirror the emitter
      * precondition here so a non-Fk / unresolved hop fails at validate time with a directed message
      * rather than as an emitter IllegalStateException.
      */

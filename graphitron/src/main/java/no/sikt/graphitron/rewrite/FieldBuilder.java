@@ -1347,7 +1347,7 @@ class FieldBuilder {
         // Unlike the @nodeId FK-target arm above (which lifts to local FK columns and emits no
         // join), a plain @reference filter resolves the column against the *terminal* table and
         // emits a correlated EXISTS. Read the path before the local findColumn so the column never
-        // mis-binds against the field's own table. v1 supports FkJoin paths only; a ConditionJoin
+        // mis-binds against the field's own table. v1 supports FK-derived paths only; a condition-join
         // hop is deferred (mirrors FkTargetConditionEmitter and the output-side @reference stub).
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
             var refPath = ctx.parsePath(arg, name, rt.tableName(), null);
@@ -1416,10 +1416,10 @@ class FieldBuilder {
 
     /**
      * Shared rejection text for a scalar {@code @reference} filter path that traverses a
-     * non-foreign-key ({@code ConditionJoin}) hop. v1 emits the correlated EXISTS through FK hops
+     * non-foreign-key (condition-join) hop. v1 emits the correlated EXISTS through FK hops
      * only; the {@code condition:} reference form is still a runtime-throwing stub on the output
      * side, so a reference *filter* path through it is rejected at validate time. Asserted on by
-     * the Surface-2 ConditionJoin rejection test and mirrored by the validator.
+     * the Surface-2 condition-join rejection test and mirrored by the validator.
      */
     static String referenceFilterConditionJoinRejection(String argName) {
         return "argument '" + argName + "': @reference filter path traverses a condition-join "
@@ -4879,7 +4879,7 @@ class FieldBuilder {
             // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
             // condition-join first hop has no parent table to anchor the condition method's source
             // argument. parentTable=null routes the OnConditionJoin arm to AuthorError, mirroring
-            // RecordTableField / RecordLookupTableField. FkJoin / LiftedHop first hops produce
+            // RecordTableField / RecordLookupTableField. FK-derived / LiftedHop first hops produce
             // ParentCorrelation.OnFkSlots and don't consult parentTable.
             var rtmPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null, capturedSourceKey.columns());
             if (rtmPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
@@ -4924,7 +4924,7 @@ class FieldBuilder {
             List<JoinStep> joinPath = ok.joinPath();
             // class-backed-parent carriers: the surface SDL parent type has no @table binding, so a
             // condition-join first hop has no parent table to anchor against and routes to
-            // AuthorError. The FkJoin / LiftedHop arms (the normal cases) produce
+            // AuthorError. The FK-derived / LiftedHop arms (the normal cases) produce
             // ParentCorrelation.OnFkSlots and don't consult parentTable.
             var srPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null, ok.sourceKey().columns());
             if (srPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
@@ -5237,7 +5237,7 @@ class FieldBuilder {
 
     /**
      * Derives the {@link SourceKey} + {@link LoaderRegistration} for a {@code @table}-parent
-     * {@code @splitQuery} field. When the first hop is an {@link JoinStep.FkJoin}, both
+     * {@code @splitQuery} field. When the first hop is FK-derived, both
      * cardinalities key by that hop's source-side columns ({@code fk.sourceSideColumns()}): for
      * Single (parent-holds-FK) these are the parent's FK columns, and for List (child-holds-FK)
      * {@link BuildContext#resolveFkSlots} orients the slot so the source side is the parent's
@@ -5251,7 +5251,7 @@ class FieldBuilder {
      * returns zero rows (R338).
      *
      * <p>The {@code primaryKeyColumns()} fallback covers the non-FK first-hop shape
-     * ({@link JoinStep.ConditionJoin}), where the emitter's
+     * (a condition join), where the emitter's
      * {@code ParentCorrelation.OnConditionJoin} arm correlates {@code parentInput} on the
      * parent's own PK columns.
      *
@@ -5316,10 +5316,10 @@ class FieldBuilder {
      * Derives the FK-based {@link SourceKey} + {@link LoaderRegistration} for a record-parent
      * batched field ({@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField},
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the
-     * FK source columns from the join path's first {@link JoinStep.FkJoin} step.
+     * FK source columns from the join path's first FK-derived {@link JoinStep.Hop}.
      *
      * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when the join
-     * path is empty or its first step is not an {@link JoinStep.FkJoin}.
+     * path is empty or its first step is not FK-derived.
      *
      * <p>Otherwise returns the projection: {@link SourceKey.Wrap.Row} +
      * {@link SourceKey.Reader.ColumnRead} (the catalog-FK row-keyed shape) with
@@ -5372,7 +5372,7 @@ class FieldBuilder {
          * {@code joinPath} is the FK-derived original path on the FK arm; on the auto-derived
          * accessor arm it is replaced with {@code [liftedHop]} (mirroring the {@code @sourceRow}
          * leaf-PK call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the
-         * target-side columns through {@link JoinStep.WithTarget} uniformly.
+         * target-side columns through {@link no.sikt.graphitron.rewrite.model.HasSlots} uniformly.
          */
         record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath) implements RecordParentSourceResolution {}
         record Rejected(Rejection rejection) implements RecordParentSourceResolution {}
@@ -6161,7 +6161,7 @@ class FieldBuilder {
             ColumnRef k = keys.get(0);
             // parentTable is the @nodeId carrier's parent NodeType.table() — always non-null at
             // this site, so the buildParentCorrelation AuthorError arm (gated on parentTable
-            // == null when the first hop is a ConditionJoin) is unreachable here. The cast is
+            // == null when the first hop is a condition join) is unreachable here. The cast is
             // a structural safety net rather than runtime branching.
             var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable, List.of());
             var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
@@ -6325,8 +6325,8 @@ class FieldBuilder {
 
     /**
      * Validates that a join path for a {@link ChildField.TableInterfaceField} is a single
-     * {@link JoinStep.FkJoin} step. Returns an error message if the path is multi-hop or
-     * contains a {@link JoinStep.ConditionJoin}, or {@code null} if the path is valid.
+     * FK-derived step. Returns an error message if the path is multi-hop or
+     * contains a condition join, or {@code null} if the path is valid.
      */
     private static String validateSingleHopFkJoin(List<JoinStep> path, String fieldName) {
         if (path.size() != 1) {
@@ -6335,7 +6335,7 @@ class FieldBuilder {
         }
         if (!(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs)) {
             return "Field '" + fieldName + "': TableInterfaceField @reference paths must use a foreign key "
-                + "(ConditionJoin paths are not yet supported — see stub-interface-union-fetchers.md)";
+                + "(condition-join paths are not yet supported — see stub-interface-union-fetchers.md)";
         }
         return null;
     }

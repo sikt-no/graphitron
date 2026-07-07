@@ -459,7 +459,7 @@ class JooqCatalogMultiSchemaTest {
     }
 
     @Test
-    void fkJoinResolution_resolved_projectsToOptionalOfFkJoin() {
+    void fkJoinResolution_resolved_projectsToOptionalOfHop() {
         var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);

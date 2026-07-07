@@ -55,8 +55,8 @@ public final class JoinPathEmitter {
     }
 
     private static String targetJavaClassName(JoinStep step, int index, int size, TableRef terminalTable) {
-        // Every JoinStep permit implements HasTargetTable (FkJoin and LiftedHop via WithTarget;
-        // ConditionJoin directly), so the read is uniform without a sealed switch. The
+        // Every JoinStep permit implements HasTargetTable, so the read is uniform without a
+        // sealed switch. The
         // terminalTable parameter is retained for the rare unit-test setup that constructs a
         // JoinStep without a resolved target; the parameter retires when those test setups update.
         return ((JoinStep.HasTargetTable) step).targetTable().tableClass().simpleName();
@@ -98,8 +98,8 @@ public final class JoinPathEmitter {
 
     /**
      * Emits a {@code <className>.<methodName>(srcAlias, tgtAlias)} invocation used by
-     * {@link JoinStep.FkJoin#whereFilter()} (added to the enclosing WHERE) and by
-     * {@link JoinStep.ConditionJoin#condition()} (used as the join ON clause). Takes the
+     * {@link JoinStep.Hop#filter()} (added to the enclosing WHERE) and by
+     * {@link On.Predicate#condition()} (used as the join ON clause). Takes the
      * {@link JoinConditionRef} wrapper directly — the two-argument calling convention is the
      * wrapper's contract, so call sites hand over the typed reference rather than extracting
      * a raw {@code MethodRef}.

@@ -176,7 +176,7 @@ class GraphitronSchemaBuilderTest {
 
     enum ColumnReferenceFieldCase implements ClassificationCase {
         KNOWN_FK_BY_SQL_NAME(
-            "@reference with a lowercase SQL FK name resolves to FkJoin",
+            "@reference with a lowercase SQL FK name resolves to an FK-derived hop",
             """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
@@ -190,7 +190,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         KNOWN_FK_BY_JAVA_CONSTANT(
-            "@reference with a Java-constant-style FK name also resolves to FkJoin",
+            "@reference with a Java-constant-style FK name also resolves to an FK-derived hop",
             """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
@@ -291,7 +291,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         CONDITION_PATH(
-            "@reference with {condition: {className, method}} resolves to a ConditionJoin",
+            "@reference with {condition: {className, method}} resolves to a condition-join hop",
             """
             type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") {
@@ -457,7 +457,7 @@ class GraphitronSchemaBuilderTest {
     enum ParticipantColumnReferenceFieldCase implements ClassificationCase {
         SCALAR_REFERENCE_TO_OTHER_TABLE(
             "scalar @reference on a TableInterfaceType participant whose target is a different "
-            + "table is classified as ParticipantColumnReferenceField with the cross-table FkJoin "
+            + "table is classified as ParticipantColumnReferenceField with the cross-table FK hop "
             + "and a unique alias name",
             """
             interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
@@ -493,7 +493,7 @@ class GraphitronSchemaBuilderTest {
             type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
               contentId: Int! @field(name: "CONTENT_ID")
               # Hypothetical self-FK — left as a no-FK fallback to ensure the path doesn't lift to
-              # ParticipantColumnReferenceField when no cross-table FkJoin exists. The field falls
+              # ParticipantColumnReferenceField when no cross-table FK hop exists. The field falls
               # through to ColumnReferenceField/UnclassifiedField via the existing classifier path.
               titleAlias: String @field(name: "TITLE")
             }
@@ -939,7 +939,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         WITH_REFERENCE_PATH(
-            "@reference(path:) populates the joinPath with one FkJoin",
+            "@reference(path:) populates the joinPath with one FK-derived hop",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -954,7 +954,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_REFERENCE_SPLIT_TABLE(
-            "no @reference on @splitQuery with single FK between parent and target tables → SplitTableField with one inferred FkJoin",
+            "no @reference on @splitQuery with single FK between parent and target tables → SplitTableField with one inferred FK hop",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
@@ -967,7 +967,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE(
-            "no @reference on @splitQuery + @lookupKey with single FK → SplitLookupTableField with one inferred FkJoin",
+            "no @reference on @splitQuery + @lookupKey with single FK → SplitLookupTableField with one inferred FK hop",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -1252,7 +1252,7 @@ class GraphitronSchemaBuilderTest {
         // field's return-type @table binding (terminal-hop arm of
         // BuildContext.resolveConditionJoinTarget).
         CONDITION_ONLY_TERMINAL_RESOLVES_TARGET_FROM_RETURN_TYPE(
-            "condition-only path on a TableField — ConditionJoin.targetTable resolved from "
+            "condition-only path on a TableField — the hop's targetTable resolved from "
             + "the return-type @table binding (terminal hop)",
             """
             type Actor @table(name: "actor") { firstName: String }
@@ -1272,8 +1272,8 @@ class GraphitronSchemaBuilderTest {
             }),
 
         // R232: a condition-only path with @table on both sides preserves the legacy
-        // {table:, condition:} combination semantics — the FkJoin is derived from endpoints
-        // and {condition:} folds into whereFilter, no ConditionJoin produced.
+        // {table:, condition:} combination semantics — the FK hop is derived from endpoints
+        // and {condition:} folds into the hop filter, no condition join produced.
         TABLE_WITH_CONDITION_PRESERVES_WHERE_FILTER(
             "{table:, condition:} combination preserves whereFilter semantics — regression guard",
             """
@@ -1337,11 +1337,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(field.joinPath()).hasSize(2);
                 var first = field.joinPath().get(0);
                 assertThat(first)
-                    .as("intermediate-hop condition resolves to ConditionJoin")
+                    .as("intermediate-hop condition resolves to a condition-join hop")
                     .matches(TestFixtures::isConditionHop, "condition-join hop");
                 var cj = TestFixtures.conditionHop(first);
                 assertThat(cj.targetTable().tableName())
-                    .as("intermediate ConditionJoin.targetTable resolved from the condition method's second parameter type")
+                    .as("intermediate condition-join targetTable resolved from the condition method's second parameter type")
                     .isEqualToIgnoringCase("film_actor");
             }),
 
@@ -1501,7 +1501,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         WITH_AUTO_FK_INFERENCE(
-            "@tableMethod without @reference and exactly one FK between parent and target table → single-hop FkJoin auto-inferred",
+            "@tableMethod without @reference and exactly one FK between parent and target table → single-hop FK hop auto-inferred",
             """
             type Film @table(name: "film") { title: String }
             type Inventory @table(name: "inventory") {
@@ -1518,7 +1518,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         WITH_CONDITION_PATH(
-            "@tableMethod + @reference(path:[{condition:...}]) resolves to a ConditionJoin with non-null targetTable (R232)",
+            "@tableMethod + @reference(path:[{condition:...}]) resolves to a condition-join hop with non-null targetTable (R232)",
             """
             type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") {
@@ -1532,7 +1532,7 @@ class GraphitronSchemaBuilderTest {
                 var field = (TableMethodField) schema.field("Film", "actor");
                 assertThat(field.joinPath()).hasSize(1);
                 assertThat(field.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
-                // R232: ConditionJoin.targetTable() resolves at parse time from the field's
+                // R232: the condition-join hop's targetTable() resolves at parse time from the field's
                 // return-type @table binding (terminal-hop arm of resolveConditionJoinTarget).
                 var cj = TestFixtures.conditionHop(field.joinPath().get(0));
                 assertThat(cj.targetTable()).isNotNull();
@@ -1798,7 +1798,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         NULL_SOURCE_KEY_PATH_ORIGIN_DEFAULTS_TO_FK_SIDE(
-            "@service field with @reference {key:} (null parent SQL source) defaults FkJoin originTable to the FK-side table",
+            "@service field with @reference {key:} (null parent SQL source) defaults the hop's originTable to the FK-side table",
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
@@ -2359,7 +2359,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_TABLE(
-            "JooqTableRecordType record-backed parent + @table return with single FK → RecordTableField with one inferred FkJoin",
+            "JooqTableRecordType record-backed parent + @table return with single FK → RecordTableField with one inferred FK hop",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2380,7 +2380,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE(
-            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FkJoin",
+            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FK hop",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {

@@ -241,7 +241,7 @@ The full set of input-field directives (`@field`, `@condition`, `@reference`) in
 [#condition-form]
 == The `condition:` form (classify-only today)
 
-`ReferenceElement` has a third option: `condition:` is an `ExternalCodeReference` to a Java method that returns a `org.jooq.Condition` to use as the join predicate. The classifier accepts it, but the generator's emitter for `ConditionJoin` paths is currently a runtime-throwing stub:
+`ReferenceElement` has a third option: `condition:` is an `ExternalCodeReference` to a Java method that returns a `org.jooq.Condition` to use as the join predicate. The classifier accepts it, but the generator's emitter for condition-join paths is currently a runtime-throwing stub:
 
 [source,graphql]
 ----
@@ -262,7 +262,7 @@ public static Condition sameNamePrefix(Table<?> src, Table<?> tgt) {
 }
 ----
 
-The classifier produces a `JoinStep.ConditionJoin` and the schema validates, but selecting `Category.similar` at request time throws `UnsupportedOperationException` until the emitter ships a real body. This shape is reserved for non-FK joins: catalog-derived predicates (e.g. "category whose name shares a prefix with this one"), date-range overlaps, computed predicates with no FK constraint to anchor against. Today, treat the schema as a placeholder; production schemas should not include `condition:`-only references.
+The classifier resolves the join step with the condition method as its join predicate and the schema validates, but selecting `Category.similar` at request time throws `UnsupportedOperationException` until the emitter ships a real body. This shape is reserved for non-FK joins: catalog-derived predicates (e.g. "category whose name shares a prefix with this one"), date-range overlaps, computed predicates with no FK constraint to anchor against. Today, treat the schema as a placeholder; production schemas should not include `condition:`-only references.
 
 When the runtime arm lands, the contract will be: the method receives the source and target table aliases (both as `Table<?>`) and returns the `Condition` to use on the JOIN's `ON` clause. The framework wraps that into the JOIN at SQL emit time. Mixed paths that combine a `key:` hop with a `condition:`-only terminal hop are also reserved.
 

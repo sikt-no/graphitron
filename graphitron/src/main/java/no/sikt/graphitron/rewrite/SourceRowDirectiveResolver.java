@@ -53,7 +53,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *   <li>On the no-{@code @reference} path, the produced {@link SourceKey}'s path is a single
  *       {@link JoinStep.LiftedHop} (the leaf-PK shape).</li>
  *   <li>On the {@code @reference}-composed path, the produced {@link SourceKey}'s path is the
- *       resolved FK chain (one or more {@link JoinStep.FkJoin}s) from the parent's lifter
+ *       resolved FK chain (one or more FK-derived {@link JoinStep.Hop}s) from the parent's lifter
  *       columns to the leaf table.</li>
  * </ul>
  *
@@ -83,7 +83,7 @@ final class SourceRowDirectiveResolver {
      *       {@link LoaderRegistration} pair, the {@link JoinStep} chain the rows-method
      *       emitter consumes, and the {@link ReturnTypeRef.TableBoundReturnType} for the
      *       field. {@code joinPath} is {@code [hop]} on the leaf-PK arm and the resolved
-     *       {@link JoinStep.FkJoin} chain on the {@code @reference} arm.</li>
+     *       FK-derived {@link JoinStep.Hop} chain on the {@code @reference} arm.</li>
      *   <li>{@link Rejected} — every error path: wrong parent shape, missing class, missing
      *       method, return-type mismatch, arity / column-class mismatch, {@code @reference}
      *       parse failure.</li>
@@ -281,7 +281,7 @@ final class SourceRowDirectiveResolver {
                     && firstHop.on() instanceof On.ColumnPairs firstPairs)) {
                 return new Resolved.Rejected(Rejection.structural(
                     "@sourceRow on '" + parentTypeName + "." + fieldName
-                    + "': @reference's first element resolved to a ConditionJoin which has no "
+                    + "': @reference's first element resolved to a condition join which has no "
                     + "source-side columns; @sourceRow's first hop must be an FK"));
             }
             String fkLabel = firstPairs.fk().constantName();

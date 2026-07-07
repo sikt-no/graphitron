@@ -5,7 +5,7 @@ import org.jooq.Condition;
 /**
  * Minimal condition-method stub used by {@link GraphitronSchemaBuilderTest} to test that
  * {@code @reference(path: [{condition: {…}}])} is correctly classified as a {@link
- * no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin}.
+ * no.sikt.graphitron.rewrite.model.On.Predicate} hops.
  *
  * <p>Condition methods take two {@code Table<?>} parameters (source and target) and return a
  * {@link Condition}. Both parameters are classified as {@link

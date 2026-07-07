@@ -17,7 +17,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * <p>Verifies the structural contract of G5 C3: the {@code TypeClassGenerator.$fields} method
  * contains a switch arm for each nested table field; {@code TypeFetcherGenerator} emits
  * <em>no</em> fetcher method for the field (the inline projection lives in {@code $fields});
- * and the ConditionJoin branch emits a runtime-throwing stub pending classification-vocabulary
+ * and the condition-join branch emits a runtime-throwing stub pending classification-vocabulary
  * item 5.
  */
 @PipelineTier

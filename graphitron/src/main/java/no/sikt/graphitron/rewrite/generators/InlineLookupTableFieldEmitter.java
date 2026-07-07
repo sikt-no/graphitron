@@ -36,7 +36,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  * nor {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Single} (Single-cardinality
  * {@code @lookupKey} is rejected as a schema bug).
  *
- * <p>Handles both {@link JoinStep.FkJoin} and {@link JoinStep.ConditionJoin} hops uniformly:
+ * <p>Handles both {@link On.ColumnPairs FK-derived} and {@link On.Predicate condition-join} hops uniformly:
  * targets read through {@link JoinStep.HasTargetTable}; the JOIN chain dispatches on step type;
  * step-0 parent correlation is read through {@link ChildField.LookupTableField#parentCorrelation()}.
  *
@@ -212,10 +212,6 @@ public final class InlineLookupTableFieldEmitter {
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
                     }
                 }
-                case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
-                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
-                case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                     "LiftedHop should not appear in an @reference-composed path; this path is "
                     + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");

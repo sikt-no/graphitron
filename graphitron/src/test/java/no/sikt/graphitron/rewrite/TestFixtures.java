@@ -396,7 +396,7 @@ public final class TestFixtures {
      * {@code Keys.<TABLE>__<FK>} convention closely enough for fixture purposes); tests that need
      * exact constant names should pass them explicitly via the three-arg overload.
      *
-     * <p>R81 lifted {@link no.sikt.graphitron.rewrite.model.JoinStep.FkJoin#fk()} to a non-null
+     * <p>R81 lifted the FK-hop provenance ({@link no.sikt.graphitron.rewrite.model.On.ColumnPairs#fk()}) to a non-null
      * {@link ForeignKeyRef}. Fixtures that previously passed {@code null} should route through
      * this factory so the synthetic FK reference is type-correct end to end.
      */

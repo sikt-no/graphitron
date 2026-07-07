@@ -101,7 +101,7 @@ What to change:
 [#condition-step]
 === `must be a foreign key`
 
-A `{ condition: ... }` step appeared inside a multi-hop `@nodeId` `@reference` path. Every step in a multi-hop chain must be a `JoinStep.FkJoin`; condition-only steps are rejected with:
+A `{ condition: ... }` step appeared inside a multi-hop `@nodeId` `@reference` path. Every step in a multi-hop chain must join via a foreign key; condition-only steps are rejected with:
 
 [source]
 ----

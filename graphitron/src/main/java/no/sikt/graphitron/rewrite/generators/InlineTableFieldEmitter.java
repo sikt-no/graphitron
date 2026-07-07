@@ -29,12 +29,12 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *
  * <p>Relies on the C1 invariant {@code TableField.returnType().wrapper() != Connection}.
  *
- * <p>Handles both {@link JoinStep.FkJoin} and {@link JoinStep.ConditionJoin} hops uniformly:
+ * <p>Handles both {@link On.ColumnPairs FK-derived} and {@link On.Predicate condition-join} hops uniformly:
  * targets are pre-resolved on {@link JoinStep.HasTargetTable} so alias declarations read
  * through one capability, and the JOIN chain dispatches on step type to emit either
  * {@code .join(alias).onKey(FK)} or {@code .join(alias).on(condition(prevAlias, alias))}.
  * Step-0 parent correlation reads {@link ChildField.TableField#parentCorrelation()} via a
- * sealed switch; FkJoin first-hops produce a WHERE-clause correlation, ConditionJoin
+ * sealed switch; FK-derived first-hops produce a WHERE-clause correlation, condition-join
  * first-hops fold their correlation into the JOIN's ON clause.
  */
 public final class InlineTableFieldEmitter {
@@ -87,8 +87,8 @@ public final class InlineTableFieldEmitter {
             // alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
             // self-referential subselects never shadow each other's aliases. For the base (outermost)
             // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
-            // giving globally unique aliases at every depth. Both FkJoin and ConditionJoin (and the
-            // unreachable-here LiftedHop) expose targetTable() through HasTargetTable.
+            // giving globally unique aliases at every depth. Every Hop (and the
+            // unreachable-here LiftedHop) exposes targetTable() through HasTargetTable.
             // Invariant (R379): the terminal hop's targetTable equals the field return type's
             // @table, and every condition method's concretely-typed parameters match the aliases
             // passed here — both asserted at build time in BuildContext.parsePath (Check 1 / 2),
@@ -169,10 +169,6 @@ public final class InlineTableFieldEmitter {
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
                     }
                 }
-                case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
-                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
-                case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                     "LiftedHop should not appear in an @reference-composed path; this path is "
                     + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");

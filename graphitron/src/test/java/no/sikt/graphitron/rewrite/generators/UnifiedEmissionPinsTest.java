@@ -61,7 +61,7 @@ class UnifiedEmissionPinsTest {
         // Every rows-method MethodSpec emit site in the generators package routes through
         // RowsMethodSkeleton.build. Current sites (7): SplitRowsMethodEmitter's three internal
         // builders (buildListMethod, buildSingleMethod, buildConnectionMethod) plus
-        // buildForRecordTableMethod's two arms (single-hop FK emit + multi-hop / ConditionJoin /
+        // buildForRecordTableMethod's two arms (single-hop FK emit + multi-hop / condition-join /
         // empty-path runtime stub, R43 commit 5) plus TypeFetcherGenerator.buildServiceRowsMethod
         // (ServiceRecordField verbatim return) plus SplitRowsMethodEmitter.buildServiceTableLift
         // (R285 ServiceTableField lift-back re-projection). Together they cover all six

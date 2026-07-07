@@ -13,9 +13,9 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>Carried in two places with two distinct emit shapes:
  * <ul>
- *   <li>{@link JoinStep.ConditionJoin#condition()} — the JOIN's ON clause:
+ *   <li>{@link On.Predicate#condition()} — the JOIN's ON clause:
  *       {@code .join(target).on(method(src, tgt))}.</li>
- *   <li>{@link JoinStep.FkJoin#whereFilter()} — a filter appended to the enclosing SELECT's
+ *   <li>{@link JoinStep.Hop#filter()} — a filter appended to the enclosing SELECT's
  *       WHERE, alongside an FK-keyed join: {@code .onKey(FK) ... .where(method(src, tgt))}.</li>
  * </ul>
  * Same calling convention, different clause; the carrying component names the clause.

@@ -1217,7 +1217,7 @@ class TypeFetcherGeneratorTest {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = tableBoundFilm(wrapper);
         // Fixture: parent (Language) holds the FK → child (Film) PK.
-        // FkJoin: source=Film(language_id), target=Language(language_id).
+        // FK hop: source=Film(language_id), target=Language(language_id).
         List<JoinStep> joinPath = List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE,
             List.of(languageIdCol()), FILM_TABLE, List.of(languageIdCol()), null, name + "_0"));
         return new ChildField.TableInterfaceField("Language", name, null, returnType,

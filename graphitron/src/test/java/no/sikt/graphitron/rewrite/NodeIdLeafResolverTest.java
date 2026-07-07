@@ -250,7 +250,7 @@ class NodeIdLeafResolverTest {
     @Test
     void multiHopConditionStepRejected() {
         // R114: a condition step inside a multi-hop @reference path is rejected. Every step
-        // must be a FkJoin; the resolver routes ConditionJoin steps to a Rejected with the
+        // must be FK-derived; the resolver routes condition-join steps to a Rejected with the
         // CONDITION_STEP_MARKER text. The first hop is a real FK; the second is a condition
         // method on TestConditionStub.
         String sdl = """

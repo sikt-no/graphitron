@@ -19,7 +19,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *
  * <p>Mirrors {@link InlineTableFieldEmitter}'s shape with the inner SELECT collapsed to a
  * single column — the result is a scalar value, not a row/multiset. Handles both
- * {@link JoinStep.FkJoin} and {@link JoinStep.ConditionJoin} hops; step-0 parent correlation
+ * {@link On.ColumnPairs FK-derived} and {@link On.Predicate condition-join} hops; step-0 parent correlation
  * reads {@link ChildField.ColumnReferenceField#parentCorrelation()} via a sealed switch.
  *
  * <p>{@link CallSiteCompaction.NodeIdEncodeKeys} (rooted-at-parent NodeId reference) is
@@ -69,8 +69,8 @@ public final class InlineColumnReferenceFieldEmitter {
 
         // Declare aliased jOOQ tables for each hop. Alias strings are prefixed with the parent
         // alias's runtime name so recursive / self-referential subselects never shadow each other's
-        // aliases — same pattern as InlineTableFieldEmitter. HasTargetTable folds the FkJoin /
-        // ConditionJoin permits onto one targetTable read.
+        // aliases — same pattern as InlineTableFieldEmitter. HasTargetTable folds every
+        // step onto one targetTable read.
         for (int i = 0; i < path.size(); i++) {
             JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
             ClassName jooqTableClass = ht.targetTable().tableClass();
@@ -109,10 +109,6 @@ public final class InlineColumnReferenceFieldEmitter {
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
                     }
                 }
-                case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
-                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
-                case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                     "LiftedHop should not appear in an @reference-composed path");
             }

@@ -16,8 +16,8 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  *
  * <p>The check validates a constraint the author opted into by naming a concrete table; the
  * idiomatic wildcard {@code (Table<?>, Table<?>)} signature stays fully accepted (nothing is
- * assertable about a wildcard slot). Both carriers ({@code ConditionJoin} ON-clause and
- * {@code FkJoin.whereFilter}) and both parameter positions are covered.
+ * assertable about a wildcard slot). Both carriers ({@code On.Predicate} ON-clause and
+ * {@code Hop.filter}) and both parameter positions are covered.
  */
 @PipelineTier
 class ReferencePathConditionParamTest {

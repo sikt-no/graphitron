@@ -111,7 +111,7 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 |===
 | Kind | Purpose | Source
 
-| *Reference condition* | How two tables are joined within a scope | `@reference` directive: FK key → `FkJoin`; condition method → `ConditionJoin`
+| *Reference condition* | How two tables are joined within a scope | `@reference` directive, carried on the hop's `On` axis: FK key → `On.ColumnPairs`; condition method → `On.Predicate`
 | *Filter condition* | Narrows the result set of the current scope | `@condition` directive, arguments, cursor
 | *Lookup condition* | Filters the (source × target) row pairs produced by a lookup's derived target table. Must preserve the N × M positional contract ; see <<derived-tables,Derived tables>> above. | `@condition` directive on a field with `@lookupKey`
 |===
@@ -618,7 +618,7 @@ All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. E
 | Column reference | `ColumnRef.java` | Resolved column with Java type
 | Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic`
 | Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection`
-| Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` / `LiftedHop`
+| Join path | `JoinStep.java` | `Hop` (a `TableExpr` target × an `On`: `ColumnPairs` / `Predicate`) / `LiftedHop`
 | WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract
 | Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants
 | DataLoader keys | `SourceKey.java`, `LoaderRegistration.java` | `SourceKey` carries the source-side dispatch axis (sealed `Wrap` — `Row` / `Record` / `TableRecord` — sealed `Reader` — `ColumnRead` / `AccessorCall` / `SourceRowsCall` / `ServiceTableRecord` / `ServiceUntypedRecord` / `ResultRowWalk` / `ProducedRecordRead` — plus a `Cardinality` enum). `LoaderRegistration` carries DataLoader identity (`Container` — `POSITIONAL_LIST` / `MAPPED_SET` — `Dispatch` — `LOAD_ONE` / `LOAD_MANY`).

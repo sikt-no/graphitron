@@ -62,11 +62,6 @@ public sealed interface ParentCorrelation
             case OnFkSlots fk -> switch (fk.firstHop()) {
                 case JoinStep.Hop hop -> hop.originTable();
                 case JoinStep.LiftedHop lifted -> lifted.targetTable();
-                case JoinStep.FkJoin fkJoin -> fkJoin.originTable();
-                case JoinStep.ConditionJoin unreachable -> throw new IllegalStateException(
-                    "ParentCorrelation.OnFkSlots.firstHop carries pairable slots (a Hop with "
-                    + "On.ColumnPairs, or a LiftedHop); ConditionJoin cannot reach this arm: "
-                    + unreachable);
             };
             case OnConditionJoin cj -> cj.parentTable();
         };
@@ -118,8 +113,6 @@ public sealed interface ParentCorrelation
             boolean pairable = switch (firstHop) {
                 case JoinStep.Hop hop -> hop.on() instanceof On.ColumnPairs;
                 case JoinStep.LiftedHop ignored -> true;
-                case JoinStep.FkJoin ignored -> true;
-                case JoinStep.ConditionJoin ignored -> false;
             };
             if (!pairable) {
                 throw new IllegalArgumentException(
@@ -133,9 +126,6 @@ public sealed interface ParentCorrelation
             return switch (firstHop) {
                 case JoinStep.Hop hop -> (On.ColumnPairs) hop.on();
                 case JoinStep.LiftedHop lifted -> lifted;
-                case JoinStep.FkJoin fkJoin -> fkJoin;
-                case JoinStep.ConditionJoin unreachable -> throw new IllegalStateException(
-                    "rejected by the compact constructor: " + unreachable);
             };
         }
     }

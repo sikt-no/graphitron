@@ -36,8 +36,8 @@ import java.util.Objects;
  *       returning the target record); non-empty when traversal walks an FK chain to the
  *       target ({@link Reader.SourceRowsCall} on a {@code @reference} path) or a single
  *       {@link JoinStep.LiftedHop} (lifter-leaf and accessor arms). {@link JoinStep} (rather
- *       than the spec's narrower {@code List<JoinStep.FkJoin>}) admits both
- *       {@link JoinStep.FkJoin} and {@link JoinStep.LiftedHop}; the lifter / accessor arms
+ *       than a narrower FK-only list) admits both
+ *       FK-derived {@link JoinStep.Hop}s and {@link JoinStep.LiftedHop}; the lifter / accessor arms
  *       carry the latter.</li>
  *   <li>{@link #wrap()} — the Java shape of one row of source data:
  *       {@link Wrap.Row} ({@code RowN<...>}), {@link Wrap.Record} ({@code RecordN<...>}),

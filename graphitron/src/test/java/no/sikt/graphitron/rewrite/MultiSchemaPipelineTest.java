@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p>Assertions land at two typed surfaces. First: model-level ({@link no.sikt.graphitron.rewrite.model.TableRef}
- * / {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef} / {@link JoinStep.FkJoin}), which
+ * / {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef} / the FK-derived {@link JoinStep.Hop}), which
  * is the value the emitter consumes — every {@code ClassName} the generator emits flows from
  * one of these slots, so model correctness propagates to emit correctness by construction.
  * Second: structural emit-side ({@code TypeSpec.methodSpecs[].parameters[].type},
@@ -258,7 +258,7 @@ class MultiSchemaPipelineTest {
      * appear only inline inside CodeBlocks are not directly reachable here, but every
      * such reference flows from a typed model slot ({@link no.sikt.graphitron.rewrite.model.TableRef#tableClass()},
      * {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef#keysClass()},
-     * {@link JoinStep.FkJoin#targetTable()}) whose correctness is pinned by the model-level
+     * {@link JoinStep.Hop#targetTable()}) whose correctness is pinned by the model-level
      * assertions above; correctness propagates from the model into the emit by construction.
      */
     private static Set<ClassName> referencedClassNames(TypeSpec spec) {

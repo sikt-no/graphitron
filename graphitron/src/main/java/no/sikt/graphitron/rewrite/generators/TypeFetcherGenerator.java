@@ -536,7 +536,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationBulkDeletePayloadField f -> builder.addMethod(buildMutationBulkDeletePayloadFetcher(ctx, f, outputPackage));
                 // ColumnReferenceField: inline projection via TypeClassGenerator.$fields (Direct
                 // compaction); the read of that aliased projection is reified by FetcherEmitter.bind
-                // and collected below. The validator rejects the NodeIdEncodeKeys and ConditionJoin
+                // and collected below. The validator rejects the NodeIdEncodeKeys and condition-join
                 // shapes ahead of generation; no per-shape carve-out is needed here.
                 case ChildField.ColumnReferenceField ignored    -> { }
                 case ChildField.CompositeColumnReferenceField f -> builder.addMethod(stub(f));
@@ -945,8 +945,8 @@ public class TypeFetcherGenerator {
      * <p>Executes a per-parent SQL query: conditions on the single-hop FK join path extracted
      * from {@code env.getSource()}, then projects all columns via {@code table.asterisk()} plus
      * the discriminator column so the {@code TypeResolver} can route the result to the correct
-     * concrete type. The classifier guarantees a single-hop {@link JoinStep.FkJoin} path;
-     * multi-hop and {@link JoinStep.ConditionJoin} paths are rejected at classification time.
+     * concrete type. The classifier guarantees a single-hop FK-derived {@link JoinStep.Hop};
+     * multi-hop and condition-join paths are rejected at classification time.
      *
      * <p>Generated code (single-value variant, one-hop FK where child holds the FK):
      * <pre>{@code
@@ -983,8 +983,8 @@ public class TypeFetcherGenerator {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
 
-        // Build join-path condition. Only single-hop FkJoin is supported; multi-hop and
-        // ConditionJoin paths are caught at classification time.
+        // Build join-path condition. Only the single-hop FK-derived shape is supported;
+        // multi-hop and condition-join paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
         // R405: shared discriminator-filter + projection + join assembly (see the query twin).
         builder.addCode(buildTableInterfaceReprojection(ctx, tif.participants(), tif.discriminatorColumn(),
@@ -1005,7 +1005,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds the {@code Condition} declaration from a single-hop {@link JoinStep.FkJoin} path
+     * Builds the {@code Condition} declaration from a single-hop FK-derived {@link JoinStep.Hop} path
      * for a {@link ChildField.TableInterfaceField} fetcher.
      *
      * <p>The hop's source side is the parent table, target side the child table — by synthesis-time
@@ -1339,7 +1339,7 @@ public class TypeFetcherGenerator {
      *
      * <p>Multi-column FK paths are supported via per-column equalities chained with {@code .and(...)}
      * (positional pairing of {@code sourceColumns} / {@code targetColumns} per
-     * {@link no.sikt.graphitron.rewrite.model.JoinStep.FkJoin}'s arity invariant).
+     * {@link no.sikt.graphitron.rewrite.model.On.ColumnPairs}' arity invariant).
      */
     private static CodeBlock buildCrossTableJoinChain(
             List<ParticipantRef> participants, String discriminatorColumn,
@@ -1558,9 +1558,9 @@ public class TypeFetcherGenerator {
      * this is per-row, not DataLoader-keyed — {@code TableMethodField} carries no
      * {@code parentSourceKey} / {@code loaderRegistration}.
      *
-     * <p>Single-hop {@link JoinStep.FkJoin} is the shipped emit shape — the common case in
+     * <p>The single-hop FK-derived {@link JoinStep.Hop} is the shipped emit shape — the common case in
      * practice and the only one exercised by the R43 commit 3 pipeline + execution coverage.
-     * Multi-hop FK paths and {@link JoinStep.ConditionJoin} arms surface a runtime
+     * Multi-hop FK paths and condition-join arms surface a runtime
      * {@link UnsupportedOperationException} so classification stays permissive (the schema is
      * still emittable) but the runtime gap is explicit.
      */
@@ -1588,14 +1588,14 @@ public class TypeFetcherGenerator {
         boolean unsupportedPath = path.isEmpty() || path.size() > 1
             || !(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs);
         if (unsupportedPath) {
-            // Multi-hop FK paths and ConditionJoin terminals are accepted by the classifier so the
+            // Multi-hop FK paths and condition-join terminals are accepted by the classifier so the
             // schema remains well-formed, but R43 commit 3 ships only the single-hop FK emit shape
             // (the common case, and the one covered by the planned pipeline + execution tests).
             // Surfacing the gap as a runtime throw rather than an empty fetcher keeps the failure
             // mode loud and pointable.
             String shapeLabel = path.isEmpty()
                 ? "empty joinPath"
-                : path.size() > 1 ? "multi-hop join path" : "ConditionJoin path";
+                : path.size() > 1 ? "multi-hop join path" : "condition-join path";
             builder.addStatement("throw new $T($S)",
                 UnsupportedOperationException.class,
                 "child @tableMethod with " + shapeLabel + " is not yet emitted — only single-hop FK "

@@ -138,8 +138,7 @@ name at implementer's discretion) carried by both `On.Predicate` and `Hop.filter
 `emitTwoArgMethodCall` takes the wrapper directly so call sites stop extracting raw `MethodRef`s.
 R16's naming complaint dissolves structurally: the ON-clause condition and the WHERE-appended
 filter become different components with accurate names (`on` vs `filter`) instead of one
-overloaded `whereFilter`. R16 closes when this lands; its file is deleted in the same commit that
-deletes the flat variants.
+overloaded `whereFilter`. Done: R16's file deleted in slice 4, changelog entry added.
 
 ## Consumer inventory
 
@@ -152,24 +151,34 @@ three permits) lives in 18 files, 62 sites: `BuildContext` (19), `FieldBuilder` 
 `MultiTablePolymorphicEmitter`, `TypeClassGenerator`, `TypeFetcherGenerator`. The `LiftedHop` arms
 among these stay; the `FkJoin` / `ConditionJoin` arms migrate.
 
-## Transition plan
+## Transition plan (shipped)
 
-Additive-then-cutover (R222 / R431's technique); the pipeline / execution tiers hold at every
-intermediate commit. Slicing:
+Additive-then-cutover (R222 / R431's technique); full build green and generated output verified
+byte-identical after every slice:
 
-1. **Type the convention (R16 core).** Mint `JoinConditionRef`, retype `FkJoin.whereFilter` and
-   `ConditionJoin.condition`, make `emitTwoArgMethodCall` take it. Self-contained, no seal change.
-2. **Mint the axes.** Add `TableExpr` (`Catalog` only), `On`, and the two-axis `Hop` as a fourth
-   permit. The compiler lists every exhaustive switch; new `Hop` arms initially delegate or throw
-   `unreachable` (nothing produces a `Hop` yet), so this commit is inert.
-3. **Cut producers over, reader by reader behind the compiler.** `BuildContext.parsePath` /
-   `parsePathElement` / `synthesizeFkJoin` produce `Hop`; every `@reference`-path reader's
-   `FkJoin` / `ConditionJoin` arms move onto the `Hop` arm (dispatching on `on`). `SourceKey`'s
-   FK-composed paths get `Hop` lists for free (the `@sourceRow` resolver reuses `parsePath`).
-   This can land as several commits, one reader cluster each, because dual-sourcing keeps the old
-   arms alive until their last producer dies.
-4. **Delete.** Remove `FkJoin` / `ConditionJoin`, the dead `WithTarget` plumbing, and the
-   defensive arms the compiler now rejects. Delete R16's file, changelog both IDs.
+1. **Type the convention (R16 core)** — shipped at `bd9e2d8`. `JoinConditionRef` minted;
+   `whereFilter` / `condition` retyped; `emitTwoArgMethodCall` takes the wrapper.
+2. **Mint the axes** — shipped at the slice-2 commit. `TableExpr` (`Catalog` only), `On`
+   (`ColumnPairs` | `Predicate`), `Hop` as a fourth permit; the slot-iteration contract moved
+   from `WithTarget` into a standalone `HasSlots` capability (`WithTarget` reduced to composing
+   `HasTargetTable` + `HasSlots`), which sidestepped a default-method clash the spec's sketch
+   (`WithTarget` and `HasSlots` coexisting with duplicate defaults) would have hit.
+3. **Cut producers over, migrate every reader** — shipped at the slice-3 commit, as one commit
+   rather than several reader clusters: the carrier types (`ParentCorrelation`,
+   `ChildField.ParticipantColumnReferenceField`, `ParticipantRef.CrossTableField` /
+   `JoinedTableBound`) retype in the same motion as the producers, so the intermediate
+   dual-sourced states would not have compiled per-cluster. `FkJoinResolution.Resolved` carries
+   the `Hop`; `ParentCorrelation.OnFkSlots` carries the slot-bearing step and exposes `slots()`
+   via `HasSlots`; `OnConditionJoin` carries a `Predicate` hop and exposes `condition()`.
+   Learning: the consumer inventory's `case`/`instanceof` census was the compile-forced subset;
+   an equal-sized set of *silent* `instanceof` guards (behavioral, not compile-broken) had to be
+   found by grep and migrated in the same commit, plus ~15 line-level test-source clusters
+   (the spec's test-inventory note).
+4. **Delete** — this commit. `FkJoin` / `ConditionJoin` / `WithTarget` removed; permit list is
+   `Hop | LiftedHop`; dead arms deleted; `JoinStep` javadoc rewritten against the axes; R16's
+   file deleted and changelogged; stale-reference sweep over main/test javadoc and the four
+   doc-site mentions (`code-generation-triggers.adoc`, `multi-hop-nodeid-filter.adoc`,
+   `join-with-references.adoc`).
 
 ## Acceptance
 

@@ -41,8 +41,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
-import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
@@ -1011,7 +1009,7 @@ class BuildContext {
      */
     public sealed interface TerminalTargetVerdict {
 
-        /** The terminal hop lands on the return table (or is a {@code ConditionJoin}, whose target
+        /** The terminal hop lands on the return table (or is a condition join, whose target
          *  is constructed from the return {@code @table} and so matches by construction). */
         record Match() implements TerminalTargetVerdict {}
 
@@ -1158,7 +1156,7 @@ class BuildContext {
     /**
      * Parses the {@code @reference(path:)} directive on {@code container} into a {@link ParsedPath},
      * or — when the directive is absent or carries an empty {@code path:} list — infers a single-hop
-     * {@link FkJoin} from the catalog when exactly one foreign key connects {@code startSqlTableName}
+     * FK-derived hop from the catalog when exactly one foreign key connects {@code startSqlTableName}
      * to {@code targetSqlTableName}.
      *
      * <p>Inference fires only when all three of: {@code startSqlTableName != null},
@@ -1216,7 +1214,7 @@ class BuildContext {
                 stepIndex++;
                 if (!resolvedElements.isEmpty()) {
                     var last = resolvedElements.getLast();
-                    // After R232 ConditionJoin carries a resolved targetTable, so advance
+                    // After R232 every hop carries a resolved targetTable, so advance
                     // currentSource uniformly through HasTargetTable. LiftedHop is never
                     // produced by @reference path parsing (single-hop terminal only).
                     currentSource = last instanceof JoinStep.HasTargetTable ht
@@ -1279,15 +1277,15 @@ class BuildContext {
      * directive element.
      *
      * <ul>
-     *   <li>{@link JoinStep.FkJoin} — {@link TerminalTargetVerdict.Mismatch} when the resolved
+     *   <li>FK-derived {@link JoinStep.Hop} — {@link TerminalTargetVerdict.Mismatch} when the resolved
      *       target table differs (case-insensitive) from {@code returnSqlTableName}, else
      *       {@link TerminalTargetVerdict.Match}. R232's resolved {@code targetTable} encodes
      *       "where this hop lands" for both terminal {@code {table:}} and terminal {@code {key:}}
      *       elements, so this single comparison subsumes both author forms.</li>
-     *   <li>{@link JoinStep.ConditionJoin} — {@link TerminalTargetVerdict.Match} by construction:
-     *       {@code resolveConditionJoinTarget}'s terminal branch builds the target from the return
-     *       {@code @table}, so the comparison is tautological. The terminal {@code ConditionJoin}'s
-     *       method parameters are validated by Check 2, not here.</li>
+     *   <li>Condition-join {@link JoinStep.Hop} — {@link TerminalTargetVerdict.Match} by
+     *       construction: {@code resolveConditionJoinTarget}'s terminal branch builds the target
+     *       from the return {@code @table}, so the comparison is tautological. The terminal
+     *       hop's method parameters are validated by Check 2, not here.</li>
      *   <li>{@link JoinStep.LiftedHop} — unreachable; {@code @reference} path parsing never
      *       produces a {@code LiftedHop} (single-hop terminal only, from the {@code @sourceRow}
      *       leaf-PK arm, which passes a null start and so never reaches this gate).</li>
@@ -1311,15 +1309,10 @@ class BuildContext {
                 case On.ColumnPairs ignored -> hop.targetTable().sameTable(returnSqlTableName)
                     ? new TerminalTargetVerdict.Match()
                     : new TerminalTargetVerdict.Mismatch(fieldName, hop.targetTable().tableName(), returnSqlTableName);
-                // Match by construction, same as the flat ConditionJoin arm below:
-                // resolveConditionJoinTarget's terminal branch builds the target from the
-                // return @table, so the comparison is tautological.
+                // Match by construction: resolveConditionJoinTarget's terminal branch builds
+                // the target from the return @table, so the comparison is tautological.
                 case On.Predicate ignored -> new TerminalTargetVerdict.Match();
             };
-            case JoinStep.FkJoin fk -> fk.targetTable().sameTable(returnSqlTableName)
-                ? new TerminalTargetVerdict.Match()
-                : new TerminalTargetVerdict.Mismatch(fieldName, fk.targetTable().tableName(), returnSqlTableName);
-            case JoinStep.ConditionJoin ignored -> new TerminalTargetVerdict.Match();
             case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                 "JoinStep.LiftedHop is never produced by @reference path parsing (single-hop "
                 + "terminal only, from the @sourceRow leaf-PK arm, which passes a null target and "
@@ -1437,7 +1430,7 @@ class BuildContext {
 
     /**
      * Sub-taxonomy of outcomes for {@link #synthesizeFkJoin}. Lifts the prior
-     * {@code Optional<FkJoin>} return into a typed switch over the three catalog-failure shapes
+     * {@code Optional}-returning shape into a typed switch over the three catalog-failure shapes
      * an FK-join construction can hit. Diagnostic builders read the carried failure data
      * directly: {@link UnknownTable#failure} routes through {@link #unknownTableRejection};
      * {@link UnknownForeignKey#fkName} routes through {@link #unknownForeignKeyRejection}.
@@ -1650,8 +1643,8 @@ class BuildContext {
     /**
      * Result of {@link #resolveConditionJoinTarget}: either a fully-resolved {@link TableRef} or
      * an actionable {@code AUTHOR_ERROR} message. {@link Resolved} feeds the
-     * {@link ConditionJoin#ConditionJoin(JoinConditionRef, TableRef, String) ConditionJoin compact
-     * constructor}'s non-null contract directly; {@link AuthorError} routes through the
+     * {@link TableExpr.Catalog} compact constructor's non-null contract directly;
+     * {@link AuthorError} routes through the
      * {@code errors} accumulator in {@link #parsePathElement} and surfaces as a
      * {@link Rejection.AuthorError.Structural} upstream.
      */

@@ -574,10 +574,6 @@ public final class CatalogBuilder {
                     case no.sikt.graphitron.rewrite.model.On.Predicate ignored ->
                         new FieldClassification.FkStep(null, null);
                 });
-                case JoinStep.FkJoin fk -> out.add(new FieldClassification.FkStep(
-                    fk.targetTable() != null ? fk.targetTable().tableName() : null,
-                    fk.fk() != null ? fk.fk().sqlName() : null));
-                case JoinStep.ConditionJoin ignored -> out.add(new FieldClassification.FkStep(null, null));
                 case JoinStep.LiftedHop lh -> out.add(new FieldClassification.FkStep(
                     lh.targetTable() != null ? lh.targetTable().tableName() : null, null));
             }

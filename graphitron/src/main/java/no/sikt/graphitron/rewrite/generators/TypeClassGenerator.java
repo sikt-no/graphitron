@@ -443,8 +443,8 @@ public class TypeClassGenerator {
      *   <li>{@link ChildField.TableMethodField} on a table-bound parent — the fetcher built by
      *       {@code TypeFetcherGenerator.buildChildTableMethodFetcher} correlates the developer's
      *       returned table against the parent via {@code parentRecord.get(DSL.name("<src>"), …)}
-     *       on the resolved FK's source-side columns. Only the single-hop {@link JoinStep.FkJoin}
-     *       shape is projected: multi-hop and {@code ConditionJoin} paths surface a runtime
+     *       on the resolved FK's source-side columns. Only the single-hop FK-derived
+     *       {@link JoinStep.Hop} shape is projected: multi-hop and condition-join paths surface a runtime
      *       {@code UnsupportedOperationException} in the emitter, so projecting their first hop
      *       would synthesise dead columns.</li>
      * </ul>
