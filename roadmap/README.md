@@ -36,7 +36,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R435` | Routine table nodes: order-significant @routine / @reference composition <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [materialize-joinpath-facts](materialize-joinpath-facts.md)</sub> | Ready | 2026-07-07 <sub>created 2026-07-05</sub> | [plan](routine-table-node-composition.md) |
-| `R439` | Background dev-environment warm-up for web sessions | In Review | 2026-07-07 | [plan](web-env-background-warm-build.md) |
 
 ---
 
@@ -318,7 +317,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### (untagged)
 
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
-- `R439` [**Background dev-environment warm-up for web sessions**](web-env-background-warm-build.md)
 - `R373` [**Capture test stdout/stderr to per-class files via Surefire redirectTestOutputToFile**](surefire-redirect-test-output.md)
 - `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
