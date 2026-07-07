@@ -1,7 +1,7 @@
 ---
 id: R438
 title: "Materialize the join-path facts: JoinStep as (tableExpr target, on)"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 4
 theme: structural-refactor
