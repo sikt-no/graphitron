@@ -73,8 +73,31 @@ public record TableRef(
         return other != null && tableName.equalsIgnoreCase(other);
     }
 
-    /** True when {@code other} denotes the same table as this ref (case-insensitive, null-safe). */
+    /**
+     * True when {@code other} denotes the same table as this ref. Compares the reified jOOQ
+     * table-class identity ({@code tableClass}) when both sides carry one — this is what
+     * distinguishes same-named tables across schemas and matches a schema-qualified {@code @table}
+     * echo against jOOQ's unqualified canonical name. Falls back to the case-insensitive name
+     * compare ({@link #sameTable(String)}) only when either side lacks a {@code tableClass}, which
+     * catalog-constructed refs never do ({@code JooqCatalog.TableEntry.toTableRef} always populates
+     * it); the fallback exists for fixture-built partial refs in unit tests. Null-safe: a null
+     * {@code other} is not this table.
+     *
+     * <p>This is the model-side identity home for the same-table question. It agrees by
+     * construction with {@code JooqCatalog}'s parse-boundary primitives (R396), which compare raw
+     * jOOQ {@code Table<?>} classes ({@code endpoint.getClass() == resolvedSource.getClass()})
+     * while the raw objects are still in scope: both derive from the same generated jOOQ class at
+     * parse time. A consumer should pick by where it stands — at the parse boundary with raw jOOQ
+     * objects, use the catalog primitive; past the boundary with model refs, use this predicate —
+     * rather than growing a third mechanism.
+     */
     public boolean denotesSameTableAs(TableRef other) {
-        return other != null && sameTable(other.tableName());
+        if (other == null) {
+            return false;
+        }
+        if (tableClass != null && other.tableClass() != null) {
+            return tableClass.equals(other.tableClass());
+        }
+        return sameTable(other.tableName());
     }
 }

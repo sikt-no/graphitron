@@ -5510,7 +5510,7 @@ class FieldBuilder {
         TableRef expectedTable = tb.table();
 
         List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, accessorBaseName,
-            fieldIsList, expectedTable.tableName());
+            fieldIsList, expectedTable);
 
         // Reduction over the collected matches.
         List<AccessorMatch> resolvable = matches.stream()
@@ -5591,19 +5591,22 @@ class FieldBuilder {
      * field name; this restores symmetry with the scalar/result branch on the same parent shape
      * which already threads the directive value through {@link #resolveRecordAccessor}.
      * {@code fieldName} is retained for the cardinality-mismatch text, which quotes the SDL
-     * field name rather than the accessor base. When {@code expectedSqlName} is non-null, only
-     * matches whose element table's SQL name equals it (case-insensitively, since
-     * {@code TableRef.tableName()} preserves the verbatim directive casing on one resolution path
-     * and the jOOQ {@code Table.getName()} casing on the other) are kept (table-bound case); when null,
-     * every {@code TableRecord} element matches and the caller (polymorphic-hub case) discovers
-     * the hub from the unique surviving match.
+     * field name rather than the accessor base. When {@code expectedTable} is non-null, only
+     * matches whose element table denotes the same table by reified jOOQ class identity
+     * ({@link TableRef#denotesSameTableAs}) are kept (table-bound case). Both operands are
+     * catalog-constructed and carry a real {@code tableClass}: the accessor side resolves through
+     * {@code svc.resolveTableByRecordClass} (record-class identity in the catalog) and the expected
+     * side is {@code tb.table()}, so the compare is identity-vs-identity and a schema-qualified
+     * {@code @table} echo matches jOOQ's unqualified canonical name across colliding schemas. When
+     * {@code null}, every {@code TableRecord} element matches and the caller (polymorphic-hub case)
+     * discovers the hub from the unique surviving match.
      *
      * <p>Shared between {@link #deriveAccessorRecordParentSource} (table-bound, expected-table
      * check) and {@link #derivePolymorphicHubSource} (polymorphic, hub discovery). The reduction
      * step differs across callers; only the per-method match logic is shared.
      */
     private List<AccessorMatch> collectAccessorMatches(Class<?> parentClass, String fieldName,
-            String accessorBaseName, boolean fieldIsList, String expectedSqlName) {
+            String accessorBaseName, boolean fieldIsList, TableRef expectedTable) {
         List<AccessorMatch> matches = new ArrayList<>();
         String ucBase = ucFirst(accessorBaseName);
         for (java.lang.reflect.Method m : parentClass.getMethods()) {
@@ -5623,7 +5626,7 @@ class FieldBuilder {
 
             var elementTableRef = svc.resolveTableByRecordClass(axis.elementClass());
             if (elementTableRef.isEmpty()) continue;
-            if (expectedSqlName != null && !elementTableRef.get().sameTable(expectedSqlName)) continue;
+            if (expectedTable != null && !elementTableRef.get().denotesSameTableAs(expectedTable)) continue;
 
             if (fieldIsList) {
                 if (axis.container() == ServiceCatalog.ContainerKind.LIST

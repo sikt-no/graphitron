@@ -54,6 +54,10 @@ public final class DummyService {
     public static AccessorPayloads.AmbiguousListPayload makeAccessorAmbiguousListPayload() { return unused(); }
     public static AccessorPayloads.SingleAccessorOnListField makeAccessorSingleAccessorOnListField() { return unused(); }
 
+    // ===== R441EventAccessorPayloads.* (multischema typed-accessor / qualified @table match) =====
+    public static R441EventAccessorPayloads.SchemaAEventsPayload makeR441SchemaAEventsPayload() { return unused(); }
+    public static R441EventAccessorPayloads.SchemaBEventsPayload makeR441SchemaBEventsPayload() { return unused(); }
+
     // ===== R88AccessorFixtures.* (method name = "r88" + fixture simple name) =====
     public static R88AccessorFixtures.MissingGetterPojo r88MissingGetterPojo() { return unused(); }
     public static R88AccessorFixtures.ReturnTypeMismatchPojo r88ReturnTypeMismatchPojo() { return unused(); }
