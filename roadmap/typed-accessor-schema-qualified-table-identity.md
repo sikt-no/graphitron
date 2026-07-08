@@ -1,7 +1,7 @@
 ---
 id: R441
 title: "Typed-accessor match must compare jOOQ table identity, not bare @table name"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: mutations-errors
