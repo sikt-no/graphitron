@@ -1,7 +1,7 @@
 ---
 id: R422
 title: "@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: interface-union
