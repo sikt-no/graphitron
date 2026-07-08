@@ -68,30 +68,43 @@ Doc-rot and consolidation:
 
 ## Design
 
-**D1: Query-only gate on the root-chain interception.** The interception's root arm (the
-root-head rule and `classifyRootRoutineChain`) applies only when the parent is `Query`. A
-Mutation root chain carrying `@routine` gets a typed `AuthorError.Structural` minted in the
-interception with a routine-specific message: a `@routine` table chain is a read surface,
-procedure-write routines are R300's deferred fork, and Mutation fields need `@service` /
-`@mutation`; the generic "both absent" fallback in `classifyMutationField` would bury the
-actual cause. A Subscription root chain falls through to `classifyRootField`'s existing
-generic Subscription `Deferred` (consistency: everything on Subscription lands there). A
-repeated-`@reference` chain with no routine node on Mutation also falls through, so it gets
-the Mutation story rather than the Query-oriented "move @routine first" root-head rejection.
+Shaped with the principles consult (2026-07-08): the conflict mechanism becomes a pairwise
+verdict table rather than a slot count with carve-outs, the query-side detector gets one
+hoisted call site instead of two, and the classification verdicts ride the existing
+`UnclassifiedField` → `validateUnclassifiedField` projection, so the validator mirror holds
+by construction.
 
-**D2: `@routine` joins the conflict detectors, with per-pair verdicts.** The verdict table,
+**D1: Query-only gate on the root-chain interception.** The interception's root arm (the
+root-head rule and `classifyRootRoutineChain`) applies only when the parent is `Query`. The
+root position (Query / Mutation / Subscription) is read once at the top of `classifyField`
+and feeds both the hoisted D2 detector guard and the interception, so no second
+string-comparison site appears. A Mutation root chain carrying `@routine` gets a typed
+`AuthorError.Structural` minted in the interception with a routine-specific message: a
+`@routine` table chain is a read surface, procedure-write routines are R300's deferred fork,
+and Mutation fields need `@service` / `@mutation`; the generic "both absent" fallback in
+`classifyMutationField` would bury the actual cause. A Subscription root chain falls through
+to `classifyRootField`'s existing generic Subscription `Deferred` (consistency: everything on
+Subscription lands there). A repeated-`@reference` chain with no routine node on Mutation
+also falls through, so it gets the Mutation story rather than the Query-oriented "move
+@routine first" root-head rejection. This closes a genuine acceptance gap:
+`QueryRoutineTableField.source()` asserts `Root.Query`, a fact the producer never enforced.
+
+**D2: `@routine` joins the conflict detectors via a pairwise verdict table.** The verdicts,
 uniform across positions: `@routine` × `@service` / `@externalField` / `@tableMethod` /
 `@nodeId` is `InvalidSchema.DirectiveConflict` (two source-claiming directives); `@routine` ×
 `@lookupKey` is typed `Deferred` with planSlug `routine-chain-fetch-form-breadth`, extending
 R435's shipped child verdict to root (a capability gap per R447, not a contradiction);
-`@routine` × `@splitQuery` composes (shipped R435). Mechanically: `detectChildFieldConflict`
-gains the routine slot (it already runs before the interception, and its slot set carries no
-`@lookupKey`, so the child position needs nothing else); `detectQueryFieldConflict` gains the
-routine slot against `@service` / `@tableMethod` while the `@routine` × `@lookupKey` pair
-short-circuits to the `Deferred` before slot counting; the query-side check also runs at the
-top of the interception's Query-root branch so multi-node chains reach it (single-node roots
-keep the existing call inside `classifyQueryField`; the detector is pure over the field
-definition, so two call sites cannot disagree).
+`@routine` × `@splitQuery` composes (shipped R435). Mechanically the table is the mechanism,
+not a slot count with a carve-out: an explicit map from unordered directive pair to a sealed
+verdict (`Conflict` | `Deferred(planSlug)` | `Composes`), which each detector projects
+exhaustively over the directives present at its position, reducing with defined precedence —
+any `Conflict` pair dominates a `Deferred` pair, so `@routine @lookupKey @service` rejects
+the `@service` × `@routine` conflict rather than short-circuiting to the `Deferred` (the
+three-directive hole a pre-count carve-out would reintroduce). Call sites:
+`detectChildFieldConflict` already runs before the interception (child position needs the new
+rows only); `detectQueryFieldConflict` is hoisted to the same pre-interception location,
+guarded by the Query position from D1's single read, and the existing call inside
+`classifyQueryField` is deleted — one site per position, single-node and multi-node alike.
 
 **D3: test tightening.** The three text-only rejection fixtures in
 `GraphitronSchemaBuilderTest`'s R435 block gain `isInstanceOf` arm assertions
@@ -101,11 +114,10 @@ structural channel both route today); a new fixture asserts the R300 single-node
 lands `QueryRoutineTableField` with empty `hops` (the re-home fact currently pinned only
 indirectly).
 
-**D4: comment repairs.** Point `BuildContext.computeTerminalTargetVerdict`'s `On.Lateral`
-throw arm at `FieldBuilder.routineChainVerdict`; align the three stale pre-flip topology
-comments in `SplitRowsMethodEmitter` with the shipped `parentInput`-anchored start-first walk.
-Sequencing note: R450 (in Spec) reworks the same file's correlation arms; whichever lands
-second rebases trivially, no real coupling.
+**D4: comment repair.** Point `BuildContext.computeTerminalTargetVerdict`'s `On.Lateral`
+throw arm at `FieldBuilder.routineChainVerdict`. The three stale pre-flip topology comments
+in `SplitRowsMethodEmitter` move to R450's scope (it reworks that file's correlation arms
+anyway; two items editing the same javadocs blind is a merge hazard, per the consult).
 
 **D5: root-fetcher emission consolidation.** Route the root routine call through
 `RoutineCallEmitter.emitCall` by adding a payload-free `PreviousNodeRef.None` arm (the root
@@ -113,7 +125,9 @@ chain head has no previous node); `argExpression`'s `SourceColumn` × `None` com
 classifier-unreachable, citing the `QueryRoutineTableField` compact-constructor pin that root
 bindings are `ParamSource.Arg`. Delete the duplicated `nonRoutineParamSource` helper; route
 the root hop alias-declaration loop through the shared `JoinPathEmitter.emitTableExpression`
-switch. Behaviour-identical; the existing pipeline and execution tests pin it.
+switch. Behaviour-identical, with one acceptance kept pinned by the existing pipeline and
+execution tiers: at root `correlated` is false (the compact-constructor pin), so `emitCall`
+must not wrap argument reads in `DSL.val` — the byte-identity claim rides on that.
 
 ## Tests
 
@@ -127,7 +141,8 @@ code-string assertions.
 * D2: `@service @routine` on a child field, a root single-node field, and a root multi-node
   chain all assert `InvalidSchema.DirectiveConflict` naming both directives (the three
   positions that today disagree silently); `@routine @lookupKey` at root asserts the typed
-  `Deferred` with the R447 planSlug.
+  `Deferred` with the R447 planSlug; `@routine @lookupKey @service` asserts the `Conflict`
+  verdict dominates the `Deferred` (the precedence rule's enforcer).
 * D3 is itself test work (arm tightening + the `hops = []` desugar fixture).
 * D4/D5 need no new tests: comments have no runtime surface, and the consolidation is
   behaviour-identical under the existing R435 pipeline + execution suite.
@@ -136,5 +151,9 @@ code-string assertions.
 
 * The R447 capabilities (multi-routine chains, `@lookupKey` landings, record-backed and
   interface parents) and R448 residue (ordering, `DataType` lift, corpus migration).
-* R450's parent-anchor correlation rework in `SplitRowsMethodEmitter` (D4 touches only
-  comments there).
+* R450's parent-anchor correlation rework in `SplitRowsMethodEmitter`, which also absorbs the
+  three stale pre-flip javadoc repairs there.
+* Lifting root position into the type itself (`RootType` sealed into Query / Mutation /
+  Subscription, so position dispatch is exhaustive rather than string-compared) — the
+  consult's named deeper fix. D1 single-sources the string read; the type lift is a
+  model-cleanup follow-up to file if wanted.

@@ -90,6 +90,12 @@ topology are *one* decision made at *one* producer, with the type enforcing thei
    `Predicate` hop-0 with no parent `@table`), landing `AuthorError.Structural`: the filter's
    source row is not a catalog table; the message names the escape hatch (filter on a later
    hop, or the terminal `@condition` surface).
+6. **Housekeeping absorbed from R449** (its 2026-07-08 principles consult flagged the
+   same-file merge hazard): repair the three stale pre-flip topology javadoc spots in
+   `SplitRowsMethodEmitter` (`emitFromBridgeAndParentJoin`'s `.from(terminalAlias)` opener,
+   the flat-SELECT comment, `buildSingleMethod`'s javadoc) while reworking the file — they
+   describe the retired terminal-back walk and contradict the shipped `parentInput`-anchored
+   start-first paragraphs in the same javadocs.
 
 ## Tests
 
@@ -113,8 +119,7 @@ Pipeline tier primary; no code-string assertions on generated method bodies.
 
 ## Out of scope
 
-* The stale pre-flip topology comments and the root-fetcher emission duplication in the same
-  file (R449 carries those).
+* The root-fetcher emission duplication in `TypeFetcherGenerator` (R449 carries that).
 * Inline *behaviour* (already correct; inline emitters change only mechanically, re-dispatching
   the renamed arm on `firstHop.on()`) and non-hop-0 split filters (already correct; the sibling
   fixture pins them).
