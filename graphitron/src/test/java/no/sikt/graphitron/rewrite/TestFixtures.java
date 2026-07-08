@@ -599,19 +599,21 @@ public final class TestFixtures {
 
     /**
      * Synthesises a {@link ParentCorrelation} mirroring
-     * {@code BuildContext.buildParentCorrelation}: {@link ParentCorrelation.OnConditionJoin}
-     * when the first hop joins on a condition method, {@link ParentCorrelation.OnFkSlots}
-     * otherwise, and {@code null} when the joinPath is empty (standalone-lookup shape).
-     * Test fixtures use this to satisfy the ChildField compact-constructor invariant without
-     * threading the resolver state through every test case.
+     * {@code BuildContext.buildParentCorrelation}: the parent-anchor arm
+     * {@link ParentCorrelation.OnParentJoin} when the first hop joins on a condition method
+     * <em>or</em> carries a hop-0 {@code filter()} (R450), {@link ParentCorrelation.OnFkSlots}
+     * for a filter-less FK/lifted head, and {@code null} when the joinPath is empty
+     * (standalone-lookup shape). Test fixtures use this to satisfy the ChildField
+     * compact-constructor invariant without threading the resolver state through every test case.
      */
     public static ParentCorrelation pcFor(List<JoinStep> joinPath, TableRef parentTable) {
         if (joinPath.isEmpty()) {
             return null;
         }
         JoinStep first = joinPath.get(0);
-        if (first instanceof JoinStep.Hop hop && hop.on() instanceof On.Predicate) {
-            return new ParentCorrelation.OnConditionJoin(hop, parentTable, List.of());
+        if (first instanceof JoinStep.Hop hop
+                && (hop.on() instanceof On.Predicate || hop.filter() != null)) {
+            return new ParentCorrelation.OnParentJoin(hop, parentTable);
         }
         return new ParentCorrelation.OnFkSlots(first);
     }

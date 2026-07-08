@@ -194,8 +194,11 @@ public final class InlineTableFieldEmitter {
 
         // WHERE: step 0's correlation against parent (sealed switch on parentCorrelation),
         // then whereFilter methods, then user filters. OnFkSlots: emit the slot-based
-        // predicate. OnConditionJoin: the condition method is the correlation predicate
-        // (SQL-equivalent to an ON clause for the bridging step that joined firstAlias in).
+        // predicate. OnParentJoin: dispatch on the hop's own On — a filtered FK hop emits the
+        // same slot correlation as OnFkSlots (the parent is already in scope inline, so a hop-0
+        // filter's source binds correctly without split's parent anchor), a condition-join hop
+        // emits the condition method (SQL-equivalent to an ON clause for the step that joined
+        // firstAlias in).
         var where = CodeBlock.builder();
         if (path.isEmpty()) {
             // Standalone shape: no parent correlation (parentCorrelation is null here). Seed
@@ -207,8 +210,13 @@ public final class InlineTableFieldEmitter {
             switch (tf.parentCorrelation()) {
                 case ParentCorrelation.OnFkSlots fk ->
                     where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
-                case ParentCorrelation.OnConditionJoin cj ->
-                    where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
+                case ParentCorrelation.OnParentJoin pj ->
+                    where.add("$L", switch (pj.firstHop().on()) {
+                        case On.ColumnPairs cp -> JoinPathEmitter.emitCorrelationWhere(cp, firstAlias, parentAlias);
+                        case On.Predicate pred -> JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), parentAlias, firstAlias);
+                        case On.Lateral ignored -> throw new IllegalStateException(
+                            "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
+                    });
                 // R435: the lateral routine call is correlated through its arguments (the
                 // alias-declaration loop rendered the parent columns into the call), so the
                 // step-0 WHERE contributes nothing.

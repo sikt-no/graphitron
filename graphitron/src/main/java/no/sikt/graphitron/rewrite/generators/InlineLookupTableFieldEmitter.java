@@ -241,8 +241,13 @@ public final class InlineLookupTableFieldEmitter {
             switch (lf.parentCorrelation()) {
                 case ParentCorrelation.OnFkSlots fk ->
                     where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
-                case ParentCorrelation.OnConditionJoin cj ->
-                    where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
+                case ParentCorrelation.OnParentJoin pj ->
+                    where.add("$L", switch (pj.firstHop().on()) {
+                        case On.ColumnPairs cp -> JoinPathEmitter.emitCorrelationWhere(cp, firstAlias, parentAlias);
+                        case On.Predicate pred -> JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), parentAlias, firstAlias);
+                        case On.Lateral ignored -> throw new IllegalStateException(
+                            "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
+                    });
                 case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                     "a lateral routine hop cannot head a lookup path; @lookupKey on routine "
                     + "chains classifies as typed Deferred (R435)");

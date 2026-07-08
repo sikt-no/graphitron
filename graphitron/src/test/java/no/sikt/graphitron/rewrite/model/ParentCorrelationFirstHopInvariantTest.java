@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that satisfy the invariant for representative SDL shapes.
  *
  * <p>The two ParentCorrelation arms ({@link ParentCorrelation.OnFkSlots},
- * {@link ParentCorrelation.OnConditionJoin}) are both exercised so the test fails loudly if a
+ * {@link ParentCorrelation.OnParentJoin}) are both exercised so the test fails loudly if a
  * future synthesis-site change breaks identity.
  */
 @PipelineTier
@@ -47,7 +47,7 @@ class ParentCorrelationFirstHopInvariantTest {
     }
 
     @Test
-    void onConditionJoin_firstHopIsJoinPathHead() {
+    void onParentJoin_conditionHead_firstHopIsJoinPathHead() {
         var schema = TestSchemaHelper.buildSchema("""
             type Query { city: City }
             type City @table(name: "city") {
@@ -61,7 +61,36 @@ class ParentCorrelationFirstHopInvariantTest {
             .as("non-empty joinPath ⇒ non-null parentCorrelation")
             .isNotNull();
         assertThat(field.parentCorrelation())
-            .isInstanceOf(ParentCorrelation.OnConditionJoin.class);
+            .isInstanceOf(ParentCorrelation.OnParentJoin.class);
+        assertThat(field.parentCorrelation().firstHop())
+            .as("parentCorrelation.firstHop() === joinPath.get(0)")
+            .isSameAs(field.joinPath().get(0));
+    }
+
+    @Test
+    void onParentJoin_hop0FilterHead_landsParentAnchorArm() {
+        // R450: a filter-carrying FK first hop ({key:, condition:}) lands the parent-anchor arm
+        // (OnParentJoin), not OnFkSlots — the hop-0 filter reads the parent row, so both the
+        // batch grain and the correlation topology must anchor the parent. The invariant
+        // firstHop() === joinPath.get(0) must still hold.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Query { film: Film }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [
+                    {key: "film_actor_film_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}},
+                    {key: "film_actor_actor_id_fkey"}
+                ]) @defaultOrder(primaryKey: true)
+            }
+            type Actor @table(name: "actor") { firstName: String }
+            """);
+        var field = (ChildField.TableField) schema.field("Film", "actors");
+
+        assertThat(field.joinPath().get(0))
+            .as("hop 0 carries a condition filter")
+            .isInstanceOfSatisfying(JoinStep.Hop.class,
+                hop -> assertThat(hop.filter()).isNotNull());
+        assertThat(field.parentCorrelation())
+            .isInstanceOf(ParentCorrelation.OnParentJoin.class);
         assertThat(field.parentCorrelation().firstHop())
             .as("parentCorrelation.firstHop() === joinPath.get(0)")
             .isSameAs(field.joinPath().get(0));

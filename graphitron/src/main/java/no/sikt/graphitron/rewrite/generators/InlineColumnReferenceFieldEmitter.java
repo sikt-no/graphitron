@@ -126,15 +126,21 @@ public final class InlineColumnReferenceFieldEmitter {
         }
 
         // WHERE: step-0 correlation reads parentCorrelation via a sealed switch (OnFkSlots
-        // emits the slot-based predicate; OnConditionJoin emits the condition method call).
+        // emits the slot-based predicate; OnParentJoin dispatches on the hop's On — slot
+        // correlation for a filtered FK hop, condition method for a condition-join hop).
         // Then per-hop whereFilter methods append.
         String firstAlias = aliases.get(0);
         var where = CodeBlock.builder();
         switch (crf.parentCorrelation()) {
             case ParentCorrelation.OnFkSlots fk ->
                 where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
-            case ParentCorrelation.OnConditionJoin cj ->
-                where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
+            case ParentCorrelation.OnParentJoin pj ->
+                where.add("$L", switch (pj.firstHop().on()) {
+                    case On.ColumnPairs cp -> JoinPathEmitter.emitCorrelationWhere(cp, firstAlias, parentAlias);
+                    case On.Predicate pred -> JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), parentAlias, firstAlias);
+                    case On.Lateral ignored -> throw new IllegalStateException(
+                        "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
+                });
             case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                 "a lateral routine hop cannot head a column-reference path; routine chains do "
                 + "not produce ColumnReferenceField (R435)");

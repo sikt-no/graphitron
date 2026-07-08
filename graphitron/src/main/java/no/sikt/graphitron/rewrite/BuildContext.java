@@ -1926,10 +1926,13 @@ class BuildContext {
 
     /**
      * Synthesises a {@link no.sikt.graphitron.rewrite.model.ParentCorrelation} for a carrier
-     * field given its already-built joinPath. {@code OnFkSlots} when the first hop carries
-     * pairable slots (FkJoin or LiftedHop); {@code OnConditionJoin} when the first hop is a
-     * condition method. The two-axis decoupling is intentional: any intermediate hop may be
-     * a condition join regardless of which arm fires here.
+     * field given its already-built joinPath. {@code OnFkSlots} for a filter-less FK first hop
+     * (an {@code On.ColumnPairs} {@link JoinStep.Hop} or a {@link JoinStep.LiftedHop});
+     * {@code OnParentJoin} (the parent-anchor arm) when the first hop is a condition method
+     * <em>or</em> carries a hop-0 {@code filter()} (R450); {@code OnLateralArgs} for a lateral
+     * routine head. The grain follows the arm via
+     * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation#parentKeyColumns()}, so this one
+     * choice fixes both correlation topology and batch grain.
      *
      * <p>Returns an empty {@link ParentCorrelationResolution.Resolved} (wrapping {@code null})
      * for an empty joinPath — the standalone-lookup shape, where the carrier needs no parent
@@ -1937,31 +1940,48 @@ class BuildContext {
      * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation#checkCarrierInvariant} reads
      * this case as "empty joinPath → null correlation".
      *
-     * <p>The condition-join arm requires a non-null {@code parentTable}; pass it when the
-     * carrier sits on a table-backed parent. For class-backed parents the
-     * classifier should never produce a condition-join first hop (no parent table to anchor
-     * the ON clause to); pass {@code null} and the helper routes the case to
-     * {@link ParentCorrelationResolution.AuthorError}.
-     *
-     * <p>{@code parentPkCols} is populated for split-rows carriers (where {@code parentInput}
-     * is materialised) and empty for inline carriers.
+     * <p>The parent-anchor arm requires a non-null {@code parentTable} to anchor the parent row
+     * the condition method or hop-0 filter reads. Pass it when the carrier sits on a table-backed
+     * parent; for class-backed parents (record / service shapes) pass {@code null} and the helper
+     * routes a condition-join or filter-carrying first hop to
+     * {@link ParentCorrelationResolution.AuthorError} rather than fabricating a parent anchor that
+     * does not exist.
      */
     ParentCorrelationResolution buildParentCorrelation(
-            List<JoinStep> joinPath, TableRef parentTable, List<ColumnRef> parentPkCols) {
+            List<JoinStep> joinPath, TableRef parentTable) {
         if (joinPath.isEmpty()) {
             return new ParentCorrelationResolution.Resolved(null);
         }
         JoinStep first = joinPath.get(0);
-        // Exhaustive over the step-0 join identity: each On arm maps to its ParentCorrelation
-        // mirror (ColumnPairs -> OnFkSlots, Predicate -> OnConditionJoin, Lateral ->
-        // OnLateralArgs), so a new On arm is a compile error here rather than a runtime throw
-        // inside a constructor.
+        // Exhaustive over the step-0 join identity. A filter-less FK / lifted head mirrors to
+        // OnFkSlots and a lateral head to OnLateralArgs; a condition-join head OR any hop-0 filter
+        // lands the parent-anchor arm (OnParentJoin), because a hop-0 filter reads the parent row
+        // and so needs both the parent-PK grain and a parent alias to bind its source parameter
+        // (R450). A new On arm is a compile error here rather than a runtime throw in a constructor.
         return switch (first) {
             case JoinStep.LiftedHop lifted -> new ParentCorrelationResolution.Resolved(
                 new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(lifted));
             case JoinStep.Hop hop -> switch (hop.on()) {
-                case On.ColumnPairs ignored -> new ParentCorrelationResolution.Resolved(
-                    new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop));
+                case On.ColumnPairs ignored -> {
+                    if (hop.filter() == null) {
+                        yield new ParentCorrelationResolution.Resolved(
+                            new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop));
+                    }
+                    // R450: a hop-0 filter reads the parent row, so it lands the parent-anchor arm
+                    // regardless of the FK keying. A record / service parent has no catalog table
+                    // to anchor the filter's source parameter — reject with the escape hatch.
+                    if (parentTable == null) {
+                        yield new ParentCorrelationResolution.AuthorError(
+                            "hop-0 `condition:` filter on a `@reference` path whose parent row is "
+                            + "not a catalog table: the filter's source parameter has no parent "
+                            + "`@table` alias to bind. Move the `condition:` to a later hop, express "
+                            + "it on the terminal `@condition` surface, or give the carrier field's "
+                            + "parent type an `@table(name: …)` binding.");
+                    }
+                    yield new ParentCorrelationResolution.Resolved(
+                        new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnParentJoin(
+                            hop, parentTable));
+                }
                 case On.Predicate ignored -> {
                     if (parentTable == null) {
                         yield new ParentCorrelationResolution.AuthorError(
@@ -1971,8 +1991,8 @@ class BuildContext {
                             + "path to use `{table:}` or `{key:}` for the first hop.");
                     }
                     yield new ParentCorrelationResolution.Resolved(
-                        new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnConditionJoin(
-                            hop, parentTable, parentPkCols));
+                        new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnParentJoin(
+                            hop, parentTable));
                 }
                 // R435: a lateral routine node at step 0 correlates through its call arguments
                 // (the SourceColumn bindings render the parent columns inside the call), so the

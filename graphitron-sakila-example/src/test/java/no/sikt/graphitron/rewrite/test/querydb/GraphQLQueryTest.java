@@ -1887,6 +1887,39 @@ class GraphQLQueryTest {
             .containsExactly("b-one");
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitTableField_hop0ConditionFilter_appliesPerParentByParentPkGrain() {
+        // R450: SplitFilterParent.targetSplit is a single-cardinality @splitQuery whose hop-0
+        // {key:, condition:} filter reads the parent's `include` column. Parents 1 and 2 point at
+        // the SAME target row (target_id=1); the filter passes for parent 1 (include=true) and
+        // fails for parent 2 (include=false). A slot-keyed batch (the pre-R450 OnFkSlots grain)
+        // would collapse both parents onto key target_id=1 and hand them one shared verdict;
+        // parent-PK keying (OnParentJoin) gives each its own. targetInline is the inline sibling —
+        // asserting both proves the split form reproduces the inline form's per-parent rows exactly.
+        Map<String, Object> data = execute(
+            "{ splitFilterParents { parentId targetSplit { label } targetInline { label } } }");
+        var parents = assertThat(data).extractingByKey("splitFilterParents", as(list(Map.class)));
+        parents.filteredOn(p -> Integer.valueOf(1).equals(p.get("parentId")))
+            .singleElement(as(MAP))
+            .satisfies(
+                p -> assertThat((Map<String, Object>) p.get("targetSplit"))
+                    .as("filter passes for parent 1 → resolves the shared target")
+                    .containsEntry("label", "shared-target"),
+                p -> assertThat((Map<String, Object>) p.get("targetInline"))
+                    .as("inline parity for parent 1")
+                    .containsEntry("label", "shared-target"));
+        parents.filteredOn(p -> Integer.valueOf(2).equals(p.get("parentId")))
+            .singleElement(as(MAP))
+            .satisfies(
+                p -> assertThat(p.get("targetSplit"))
+                    .as("filter fails for parent 2 → null despite sharing target_id=1 with parent 1")
+                    .isNull(),
+                p -> assertThat(p.get("targetInline"))
+                    .as("inline parity for parent 2")
+                    .isNull());
+    }
+
     // ===== R413: @splitQuery / @sourceRow over a converter-backed domain key =====
     //
     // converter_campus.org_code -> converter_org.org_code is a BIGINT domain (org_code_domain)

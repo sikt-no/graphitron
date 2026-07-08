@@ -143,7 +143,7 @@ public final class SplitRowsMethodEmitter {
         String terminalAlias,
         String firstAlias,
         // For ParentCorrelation.OnFkSlots: firstAlias (the first hop's target table).
-        // For ParentCorrelation.OnConditionJoin: parentAlias (the @table-bound parent declared
+        // For ParentCorrelation.OnParentJoin: parentAlias (the @table-bound parent declared
         // in the prelude). The {@code .join(parentInput).on(...)} predicate's LHS reads this
         // alias paired with {@link #joinOnCols}; the parent-input field lookup uses {@link
         // #joinOnParentCols} for sqlName + Java type. The two arms collapse onto one accessor
@@ -288,12 +288,12 @@ public final class SplitRowsMethodEmitter {
         List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
-        // Classifier contract: joinPath is non-empty. The first step is either an FK-style
-        // hop (FK-derived Hop or LiftedHop — pairable slots through HasSlots) or a condition-join
-        // (no slots; correlation is the method call). The sealed switch on parentCorrelation
-        // routes both arms uniformly: OnFkSlots reads the slot pairs as before; OnConditionJoin
-        // declares the parent-alias table local and routes parentInput's JOIN through the
-        // parent's own PK columns.
+        // Classifier contract: joinPath is non-empty. The first step is either a filter-less FK-style
+        // hop (FK-derived Hop or LiftedHop — pairable slots through HasSlots), a parent-anchored hop
+        // (a condition-join OR any hop-0 filter — R450), or a lateral routine head. The sealed switch
+        // on parentCorrelation routes them uniformly: OnFkSlots reads the slot pairs as before;
+        // OnParentJoin declares the parent-alias table local and routes parentInput's JOIN through the
+        // parent's own PK columns (the parent-PK grain the arm dictates).
         String joinOnAlias;
         List<ColumnRef> joinOnCols;
         List<ColumnRef> joinOnParentCols;
@@ -304,14 +304,16 @@ public final class SplitRowsMethodEmitter {
                 joinOnCols = firstSlots.targetSideColumns();
                 joinOnParentCols = firstSlots.sourceSideColumns();
             }
-            case ParentCorrelation.OnConditionJoin cj -> {
+            case ParentCorrelation.OnParentJoin pj -> {
                 // ParentInput joins on the parent table's own PK columns: the predicate is
                 // parentAlias.<pkCol> = parentInput.field("<pkCol.sqlName>"). The DataLoader
-                // key tuple still IS the parent-PK tuple, so the cols on both sides of the
-                // predicate are the same ColumnRef set — only the alias to put them on differs.
+                // key tuple IS the parent-PK tuple (parentKeyColumns), so the cols on both sides
+                // of the predicate are the same ColumnRef set — only the alias to put them on
+                // differs. Hop 0 then attaches off parentAlias (its On dispatched in
+                // emitFromBridgeAndParentJoin), so a hop-0 filter has a real parent alias to bind.
                 joinOnAlias = "parentAlias";
-                joinOnCols = cj.parentPkCols();
-                joinOnParentCols = cj.parentPkCols();
+                joinOnCols = pj.parentKeyColumns();
+                joinOnParentCols = pj.parentKeyColumns();
             }
             case ParentCorrelation.OnLateralArgs ignored -> {
                 // R435: a lateral routine hop at step 0 correlates through its call arguments —
@@ -364,6 +366,10 @@ public final class SplitRowsMethodEmitter {
                 : parentCorrelation instanceof ParentCorrelation.OnLateralArgs
                     ? new PreviousNodeRef.ParentInputField("parentInput", parentCorrelation.parentKeyOwnerTable())
                     : new PreviousNodeRef.TypedAlias("parentAlias");
+            // ^ The "parentAlias" placeholder is only ever read for a lateral routine hop (to
+            // reference the previous node inside the call args); a Catalog target ignores
+            // previousNode. Only the OnParentJoin arm actually declares a parentAlias local
+            // (below) — OnFkSlots materialises hop 0 off parentInput's slot columns and needs none.
             body.addStatement("$T $L = $L.as($S)",
                 jooqTableClass, aliases.get(i),
                 JoinPathEmitter.emitTableExpression(joinPath.get(i), previousNode,
@@ -371,11 +377,13 @@ public final class SplitRowsMethodEmitter {
                 fieldName + "_" + aliases.get(i));
         }
 
-        // OnConditionJoin: declare the @table-bound parent alias the rows-method JOINs against
-        // via the condition method, and against which parentInput pairs on parent-PK columns.
-        // OnFkSlots reuses firstAlias as the join-on alias and needs no extra declaration.
-        if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
-            TableRef parentTable = cj.parentTable();
+        // OnParentJoin: declare the @table-bound parent alias the rows-method anchors on. Hop 0
+        // attaches off it (via its On — an ordinary forward join for a filtered FK hop, or the
+        // condition method for a condition-join hop), and parentInput pairs against it on the
+        // parent-PK columns. OnFkSlots reuses firstAlias as the join-on alias and needs no extra
+        // declaration.
+        if (parentCorrelation instanceof ParentCorrelation.OnParentJoin pj) {
+            TableRef parentTable = pj.parentTable();
             body.addStatement("$T parentAlias = $T.$L.as($S)",
                 parentTable.tableClass(), parentTable.constantsClass(), parentTable.javaFieldName(),
                 fieldName + "_parent");
@@ -388,7 +396,7 @@ public final class SplitRowsMethodEmitter {
      * Emits the flat join topology shared by all three cardinality siblings
      * ({@link #buildListMethod}, {@link #buildSingleMethod}, {@link #buildConnectionMethod}):
      * {@code .from(terminalAlias)}, the bridging-hop chain back to step 0, the optional
-     * {@code OnConditionJoin} parent JOIN, and the {@code parentInput} correlation JOIN. Appends
+     * {@code OnParentJoin} parent JOIN, and the {@code parentInput} correlation JOIN. Appends
      * to {@code sel} and stops before the WHERE clause (list inserts its lookup-input JOIN there;
      * connection appends its window tail), so each caller frames the projection and tail itself.
      *
@@ -421,7 +429,7 @@ public final class SplitRowsMethodEmitter {
             List<ColumnRef> joinOnCols,
             List<ColumnRef> joinOnParentCols) {
         // The parentInput correlation predicate. For OnFkSlots, joinOnAlias is firstAlias and the
-        // predicate pairs slot.targetSide()/slot.sourceSide(). For OnConditionJoin, joinOnAlias is
+        // predicate pairs slot.targetSide()/slot.sourceSide(). For OnParentJoin, joinOnAlias is
         // parentAlias and the predicate pairs parent-PK on both sides. For OnLateralArgs the slot
         // lists are empty — correlation rides the lateral call's arguments. The parentInput field
         // is resolved by sqlName + the owner column's DataType rather than positional index,
@@ -442,12 +450,23 @@ public final class SplitRowsMethodEmitter {
         switch (parentCorrelation) {
             case ParentCorrelation.OnFkSlots ignored ->
                 sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
-            case ParentCorrelation.OnConditionJoin cj -> {
-                // parentAlias pairs with parentInput on the parent's PK, then the condition
-                // method brings in firstAlias (= aliases[0], the condition-join hop's target).
+            case ParentCorrelation.OnParentJoin pj -> {
+                // parentAlias pairs with parentInput on the parent's PK, then hop 0 attaches
+                // firstAlias (= aliases[0], the hop's target) off parentAlias. The attach dispatches
+                // on the hop's own On (JoinStep's two-axis model): an ordinary forward join for an
+                // FK hop carrying a hop-0 filter, or the two-arg condition method for a
+                // condition-join hop. Either way firstAlias hangs off a real parent alias, so a
+                // hop-0 filter (emitted in buildWhereCondition) can bind parentAlias as its source.
                 sel.add(".join(parentAlias).on($L)\n", onCond.build());
-                sel.add(".join($L).on($L)\n", firstAlias,
-                    JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), "parentAlias", firstAlias));
+                switch (pj.firstHop().on()) {
+                    case On.ColumnPairs cp -> sel.add("$L\n",
+                        JoinPathEmitter.emitForwardJoin(cp, "parentAlias", firstAlias));
+                    case On.Predicate pred -> sel.add(".join($L).on($L)\n", firstAlias,
+                        JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), "parentAlias", firstAlias));
+                    case On.Lateral ignored -> throw new IllegalStateException(
+                        "ParentCorrelation.OnParentJoin cannot wrap a lateral hop; its compact "
+                        + "constructor rejects On.Lateral (a routine node is OnLateralArgs)");
+                }
             }
             case ParentCorrelation.OnLateralArgs ignored ->
                 sel.add(".crossJoin($T.lateral($L))\n", DSL, firstAlias);
@@ -481,6 +500,14 @@ public final class SplitRowsMethodEmitter {
      * {@code terminalAlias}). Returns the condition CodeBlock; the caller wraps it in
      * {@code .where(...)} so the connection sibling can chain {@code .orderBy()/.seek()} after.
      *
+     * <p>The per-hop filter is emitted as {@code method(srcAlias, tgtAlias)}, where {@code srcAlias}
+     * is the hop's origin side: the previous hop's alias for hops 1..n, and for hop 0 the parent
+     * alias declared by the {@link ParentCorrelation.OnParentJoin} arm. The classifier lands any
+     * hop-0 {@code filter()} on that arm precisely so a parent alias exists here (R450); under the
+     * other arms a hop-0 filter is unreachable and guarded (the pre-R450 code bound the hop-0
+     * <em>target</em> alias as both parameters, so a filter's concretely-typed source parameter
+     * failed javac and a wildcard-typed one produced silently self-referential SQL).
+     *
      * <p>Only {@link JoinStep.Hop}s carry a per-hop filter; lifter hops are skipped by the
      * {@code instanceof} guard.
      */
@@ -490,7 +517,7 @@ public final class SplitRowsMethodEmitter {
             List<JoinStep> path,
             List<String> aliases,
             String terminalAlias,
-            String firstAlias,
+            ParentCorrelation parentCorrelation,
             List<WhereFilter> filters,
             CompositeDecodeHelperRegistry registry) {
         // R330: declare an aliased FK-target table local per join hop for every FK-target @nodeId
@@ -506,7 +533,25 @@ public final class SplitRowsMethodEmitter {
         for (int i = 0; i < path.size(); i++) {
             if (!(path.get(i) instanceof JoinStep.Hop hop)) continue;
             if (hop.filter() != null) {
-                String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
+                String srcAlias;
+                if (i == 0) {
+                    // A hop-0 filter reads the parent row, so the classifier lands it on the
+                    // parent-anchor arm (OnParentJoin) precisely so parentAlias is in scope to bind
+                    // the filter's source parameter. Under OnFkSlots / OnLateralArgs parentInput
+                    // carries no parent alias, so a hop-0 filter is classifier-unreachable — guard
+                    // it loudly rather than silently bind the target alias twice as the pre-R450
+                    // code did.
+                    if (!(parentCorrelation instanceof ParentCorrelation.OnParentJoin)) {
+                        throw new IllegalStateException(
+                            "hop-0 filter reached buildWhereCondition under "
+                            + parentCorrelation.getClass().getSimpleName() + "; the classifier lands "
+                            + "any hop-0 filter on ParentCorrelation.OnParentJoin so a parent alias "
+                            + "is in scope to bind the filter's source parameter (R450)");
+                    }
+                    srcAlias = "parentAlias";
+                } else {
+                    srcAlias = aliases.get(i - 1);
+                }
                 String tgtAlias = aliases.get(i);
                 where.add("\n        .and($L)",
                     JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, tgtAlias));
@@ -909,7 +954,7 @@ public final class SplitRowsMethodEmitter {
         // WHERE: per-hop whereFilters + field-level filters, shared with the single and connection
         // siblings via buildWhereCondition.
         sel.add(".where($L)\n",
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -993,7 +1038,7 @@ public final class SplitRowsMethodEmitter {
         emitFromBridgeAndParentJoin(sel, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         sel.add(".where($L)\n",
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -1138,7 +1183,7 @@ public final class SplitRowsMethodEmitter {
         // (FkTargetConditionEmitter.declareAliases), so a second call would emit duplicate
         // local declarations.
         body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
 
         // Inner windowed SELECT — attaches .orderBy()/.seek() for cursor-driven filtering; the
         // OS-level seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.

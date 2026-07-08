@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.test.conditions;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.Actor;
 import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.tables.SplitFilterParent;
+import no.sikt.graphitron.rewrite.test.jooq.tables.SplitFilterTarget;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -66,5 +68,19 @@ public final class ReferencePathConditionFixtures {
      */
     public static Condition filmActorJunctionToActor(FilmActor filmActor, Actor actor) {
         return filmActor.ACTOR_ID.eq(actor.ACTOR_ID);
+    }
+
+    /**
+     * R450 grain-proof fixture: a hop-0 {@code {key:, condition:}} filter on a single-cardinality
+     * {@code @splitQuery} whose predicate reads a <em>parent</em> column
+     * ({@code split_filter_parent.include}). The parameters are the concrete parent and target
+     * jOOQ tables, so the argument order is type-checked at compile time: the pre-R450 emitter
+     * bound the hop-0 <em>target</em> alias ({@link SplitFilterTarget}) as both parameters, which
+     * fails javac against the declared {@code (SplitFilterParent, SplitFilterTarget)} signature.
+     * Post-R450 the emitter binds the parent alias as the source, so the filter is evaluated per
+     * parent (parent-PK grain) rather than per shared target row.
+     */
+    public static Condition splitFilterParentIncluded(SplitFilterParent parent, SplitFilterTarget target) {
+        return parent.INCLUDE.isTrue();
     }
 }

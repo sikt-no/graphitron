@@ -1,6 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -414,5 +418,67 @@ class SplitTableFieldPipelineTest {
             .orElseThrow();
         var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
         assertThat(methodNames).doesNotContain("cast", "rowsCast");
+    }
+
+    // ===== R450: hop-0 filter grain + topology =====
+
+    @Test
+    void hop0Filter_tableBackedParent_keysOnParentPkAndAnchorsParent() {
+        // R450: a single-cardinality @splitQuery whose hop-0 {key:, condition:} element folds a
+        // filter into Hop.filter. The filter reads the parent row, so the batch must key on the
+        // parent PK (not the FK slot, which for parent-holds-FK is address_id) and the correlation
+        // must anchor the parent table — the OnParentJoin arm. This is the coverage whose absence
+        // kept the bug latent: no fixture authored a hop-0 {key:, condition:} on a split path.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Customer @table(name: "customer") {
+                address: Address @splitQuery @reference(path: [
+                    {key: "customer_address_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}
+                ])
+            }
+            type Address @table(name: "address") { district: String }
+            type Query { customer: Customer }
+            """);
+        var field = (ChildField.SplitTableField) schema.field("Customer", "address");
+
+        assertThat(field.joinPath().get(0))
+            .as("hop 0 folds the condition into Hop.filter")
+            .isInstanceOfSatisfying(JoinStep.Hop.class, h -> assertThat(h.filter()).isNotNull());
+        assertThat(field.parentCorrelation())
+            .as("hop-0 filter lands the parent-anchor arm")
+            .isInstanceOf(ParentCorrelation.OnParentJoin.class);
+        assertThat(field.sourceKey().columns()).extracting(ColumnRef::sqlName)
+            .as("parent-PK grain, not the FK slot (address_id)")
+            .containsExactly("customer_id");
+    }
+
+    @Test
+    void hop1Filter_keepsSlotKeyAndOnFkSlots() {
+        // R450 sibling guard: a filter on hop 1 (not hop 0) is unaffected — hop 0 stays a
+        // filter-less FK head, so the arm stays OnFkSlots and the batch keeps its slot-tuple key.
+        // Only a hop-0 filter reads the parent row and forces the parent-anchor reclassification.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @splitQuery @reference(path: [
+                    {key: "film_actor_film_id_fkey"},
+                    {key: "film_actor_actor_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}
+                ]) @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+        var field = (ChildField.SplitTableField) schema.field("Film", "actors");
+
+        assertThat(field.joinPath().get(0))
+            .as("hop 0 carries no filter")
+            .isInstanceOfSatisfying(JoinStep.Hop.class, h -> assertThat(h.filter()).isNull());
+        assertThat(field.joinPath().get(1))
+            .as("hop 1 carries the filter")
+            .isInstanceOfSatisfying(JoinStep.Hop.class, h -> assertThat(h.filter()).isNotNull());
+        assertThat(field.parentCorrelation())
+            .as("filter-less FK head keeps OnFkSlots")
+            .isInstanceOf(ParentCorrelation.OnFkSlots.class);
+        assertThat(field.sourceKey().columns()).extracting(ColumnRef::sqlName)
+            .as("slot-tuple grain unchanged")
+            .containsExactly("film_id");
     }
 }

@@ -528,6 +528,31 @@ INSERT INTO split_parent_tag (tag_id, parent_code, tag) VALUES
     (2, 'ALPHA', 'a-two'),
     (3, 'BETA',  'b-one');
 
+-- R450 execution-tier fixture: the grain proof for a hop-0 {key:, condition:} filter on a
+-- single-cardinality @splitQuery. Two parents point at the SAME target row (shared FK-slot value
+-- target_id=1) but carry different values in a parent-only column (include). A hop-0 filter reads
+-- that parent column, so it passes for one parent and fails for the other. A slot-keyed batch (the
+-- pre-R450 OnFkSlots grain) collapses both parents onto one key (target_id=1) and hands them one
+-- shared verdict; parent-PK keying (OnParentJoin) distinguishes them. The filter method is typed
+-- with the concrete parent/target jOOQ classes, so the pre-R450 emitter (which bound the hop-0
+-- target alias as both filter parameters) additionally failed compile-spec with incompatible types.
+CREATE TABLE split_filter_target (
+    target_id integer     PRIMARY KEY,
+    label     varchar(64) NOT NULL
+);
+
+CREATE TABLE split_filter_parent (
+    parent_id integer PRIMARY KEY,
+    target_id integer NOT NULL REFERENCES split_filter_target(target_id),
+    include   boolean NOT NULL
+);
+
+INSERT INTO split_filter_target (target_id, label) VALUES (1, 'shared-target');
+
+INSERT INTO split_filter_parent (parent_id, target_id, include) VALUES
+    (1, 1, true),    -- passes the hop-0 filter → resolves the target
+    (2, 1, false);   -- fails the hop-0 filter → resolves null, though it shares target_id=1
+
 -- R300 routine fixture: the driving table-valued read function. A side-effect-free
 -- PostgreSQL function with three TEXT IN parameters and RETURNS TABLE(...), the shape
 -- @routine binds day-one. jOOQ generates this as a table-valued-function Table class in

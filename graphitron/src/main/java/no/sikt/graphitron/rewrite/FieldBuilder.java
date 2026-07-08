@@ -881,21 +881,18 @@ class FieldBuilder {
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
-            var parentSplitSource = deriveSplitQuerySource(parentTableType.table(), referencePath.elements(), returnType);
             // Synthesise the step-0 parent correlation once per carrier — both inline and
             // split-rows arms below read this through their @reference-carrying record header.
-            // parentPkCols is sourced from the split-rows sourceKey when present (the VALUES-
-            // derived parentInput joins on those columns) and is empty for inline emission
-            // (no parentInput materialised).
-            List<ColumnRef> tbtParentPkCols = hasSplitQuery
-                ? parentSplitSource.sourceKey().columns()
-                : List.of();
+            // The split-query batch grain is a projection off this arm (R450:
+            // ParentCorrelation.parentKeyColumns), so build the correlation first and read the
+            // entry columns off it rather than re-deriving them from the path.
             var tbtPcResolution = ctx.buildParentCorrelation(
-                referencePath.elements(), parentTableType.table(), tbtParentPkCols);
+                referencePath.elements(), parentTableType.table());
             if (tbtPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
             var tbtParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) tbtPcResolution).correlation();
+            var parentSplitSource = deriveSplitQuerySource(tbtParentCorrelation, parentTableType.table(), returnType);
             if (hasSplitQuery && hasLookupKey) {
                 var lookupResolved = lookupKeyResolver.resolveAtChild(returnType, true);
                 if (lookupResolved instanceof LookupKeyDirectiveResolver.Resolved.Rejected r) {
@@ -2271,8 +2268,17 @@ class FieldBuilder {
                 // @splitQuery names; if ever wanted, that is a separate capability.)
                 boolean lateralHead = walk.steps().get(0) instanceof JoinStep.Hop h
                     && h.on() instanceof On.Lateral;
+                // Build the step-0 correlation first; the split batch grain is a projection off
+                // it (R450: ParentCorrelation.parentKeyColumns), so it must exist before the grain
+                // is derived and the uncorrelated-routine check below can read the derived key.
+                var pcResolution = ctx.buildParentCorrelation(walk.steps(), tbt.table());
+                if (pcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError ae) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.structural(ae.message()));
+                }
+                var pc = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
                 var splitSource = hasSplitQuery
-                    ? deriveSplitQuerySource(tbt.table(), walk.steps(), walk.tb().returnType())
+                    ? deriveSplitQuerySource(pc, tbt.table(), walk.tb().returnType())
                     : null;
                 if (hasSplitQuery && lateralHead && splitSource.sourceKey().columns().isEmpty()) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -2293,16 +2299,6 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, orderRejected.rejection());
                 }
                 var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
-                // parentPkCols is read only by the OnConditionJoin arm (a condition hop heading
-                // the chain), and only the split form materialises parentInput to pair them
-                // against — same sourcing rule as classifyObjectReturnChildField.
-                var pcResolution = ctx.buildParentCorrelation(walk.steps(), tbt.table(),
-                    hasSplitQuery ? splitSource.sourceKey().columns() : List.of());
-                if (pcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError ae) {
-                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.structural(ae.message()));
-                }
-                var pc = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
                 if (hasSplitQuery) {
                     yield new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                         parentTypeName, name, location, walk.tb().returnType(), walk.steps(),
@@ -4938,7 +4934,9 @@ class FieldBuilder {
             false,
             LoaderRegistration.Container.POSITIONAL_LIST,
             isList ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
-        var pcResolution = ctx.buildParentCorrelation(joinPath, null, pkColumns);
+        // Always a single LiftedHop (source=target re-fetch), so buildParentCorrelation yields
+        // OnFkSlots — never an AuthorError; the direct Resolved cast is safe.
+        var pcResolution = ctx.buildParentCorrelation(joinPath, null);
         var parentCorrelation =
             ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
         return new ChildField.RecordTableField(
@@ -5165,11 +5163,11 @@ class FieldBuilder {
             var capturedSourceKey = sourceKey;
             var capturedLoaderRegistration = loaderRegistration;
             // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
-            // condition-join first hop has no parent table to anchor the condition method's source
-            // argument. parentTable=null routes the OnConditionJoin arm to AuthorError, mirroring
-            // RecordTableField / RecordLookupTableField. FK-derived / LiftedHop first hops produce
-            // ParentCorrelation.OnFkSlots and don't consult parentTable.
-            var rtmPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null, capturedSourceKey.columns());
+            // condition-join (or hop-0-filter) first hop has no parent table to anchor the source
+            // argument. parentTable=null routes the parent-anchor (OnParentJoin) arm to AuthorError,
+            // mirroring RecordTableField / RecordLookupTableField. Filter-less FK-derived / LiftedHop
+            // first hops produce ParentCorrelation.OnFkSlots and don't consult parentTable.
+            var rtmPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
             if (rtmPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
@@ -5214,7 +5212,7 @@ class FieldBuilder {
             // condition-join first hop has no parent table to anchor against and routes to
             // AuthorError. The FK-derived / LiftedHop arms (the normal cases) produce
             // ParentCorrelation.OnFkSlots and don't consult parentTable.
-            var srPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null, ok.sourceKey().columns());
+            var srPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
             if (srPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
@@ -5342,9 +5340,10 @@ class FieldBuilder {
                 var resolved = (RecordParentSourceResolution.Resolved) resolution;
                 var resolvedJoinPath = resolved.joinPath();
                 // class-backed-parent carriers: see the @sourceRow branch above for the parentTable
-                // null rationale. The condition-join first hop is the only arm that consults
-                // parentTable, and it routes to AuthorError without one.
-                var resolvedPcResolution = ctx.buildParentCorrelation(resolvedJoinPath, /* parentTable= */ null, resolved.sourceKey().columns());
+                // null rationale. The parent-anchor arm (a condition-join first hop, or any hop-0
+                // filter — R450) is the only one that consults parentTable, and it routes to
+                // AuthorError without one.
+                var resolvedPcResolution = ctx.buildParentCorrelation(resolvedJoinPath, /* parentTable= */ null);
                 if (resolvedPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
                 }
@@ -5527,34 +5526,38 @@ class FieldBuilder {
 
     /**
      * Derives the {@link SourceKey} + {@link LoaderRegistration} for a {@code @table}-parent
-     * {@code @splitQuery} field. When the first hop is FK-derived, both
-     * cardinalities key by that hop's source-side columns ({@code fk.sourceSideColumns()}): for
-     * Single (parent-holds-FK) these are the parent's FK columns, and for List (child-holds-FK)
-     * {@link BuildContext#resolveFkSlots} orients the slot so the source side is the parent's
-     * <em>referenced</em> columns, which may be a non-PK unique key. Either way they are exactly
-     * the parent columns the emitter's correlation predicate pairs against
-     * ({@code SplitRowsMethodEmitter}'s {@code joinOnParentCols}, also read from
-     * {@code sourceSideColumns()} on the same first hop), so the {@code parentInput} VALUES
-     * columns and the predicate's parent-side columns are drawn from one column set. Keying off
-     * the parent PK when the FK references a non-PK column makes the two disagree, jOOQ resolves
-     * the absent {@code parentInput.field(...)} to {@code null}, and every parent silently
-     * returns zero rows (R338).
+     * {@code @splitQuery} field. The batch grain (the {@code parentInput} VALUES columns) is read
+     * straight off the already-built step-0 {@code correlation} arm via
+     * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation#parentKeyColumns()} (R450), so the
+     * grain and the correlation topology are one decision made at one producer:
      *
-     * <p>The {@code primaryKeyColumns()} fallback covers the non-FK first-hop shape
-     * (a condition join), where the emitter's
-     * {@code ParentCorrelation.OnConditionJoin} arm correlates {@code parentInput} on the
-     * parent's own PK columns.
+     * <ul>
+     *   <li>{@code OnFkSlots} (filter-less FK first hop) keys by the hop's source-side columns.
+     *       For Single (parent-holds-FK) these are the parent's FK columns; for List
+     *       (child-holds-FK) {@link BuildContext#resolveFkSlots} orients the slot so the source
+     *       side is the parent's <em>referenced</em> columns, which may be a non-PK unique key.
+     *       Either way they are exactly the parent columns the emitter's correlation predicate
+     *       pairs against, so the VALUES columns and the predicate agree (keying off the parent PK
+     *       when the FK references a non-PK column made them disagree and silently returned zero
+     *       rows for every parent — R338).</li>
+     *   <li>{@code OnParentJoin} (a condition-join first hop, or any hop-0 {@code filter()} — R450)
+     *       keys by the parent's own PK columns: the hop-0 predicate reads arbitrary parent
+     *       columns, so the parent's identity is part of the fetch's inputs and a coarser key would
+     *       hand two distinct parents one shared verdict. The emitter joins {@code parentInput} to
+     *       the parent alias on these PK columns.</li>
+     *   <li>{@code OnLateralArgs} (a lateral routine first hop — R435) keys on the routine's
+     *       column-bound inputs; a routine result is a pure function of its inputs, and the
+     *       emitter reads those columns off {@code parentInput} directly inside the call
+     *       expression with no correlation JOIN predicate.</li>
+     * </ul>
      *
-     * <p>A lateral routine first hop (R435) keys on the routine's column-bound inputs instead:
-     * key derivation was already per-{@code ParentCorrelation}-arm (FK slots vs parent PK), and
-     * the lateral arm's natural key is the input tuple the {@code SourceColumn} bindings name —
-     * the emitter's {@code OnLateralArgs} arm reads those columns off {@code parentInput}
-     * directly inside the call expression, with no correlation JOIN predicate at all.
-     *
-     * <p>The keying is taken from {@code path.get(0)} only, so it is hop-count agnostic: a
-     * multi-hop single-cardinality path (e.g. {@code customer -> store -> address}) keys
-     * correctly by the first hop's FK source columns, and the emitter bridges the remaining hops
-     * back from the terminal table.
+     * <p>Because the key is a projection off the arm rather than a re-read of {@code path.get(0)},
+     * it is hop-count agnostic (a multi-hop single-cardinality path keys by the first hop and the
+     * emitter bridges the rest) and cannot drift from the topology: adding a second
+     * {@code filter() != null} branch here would be two producers evaluating one predicate with
+     * nothing binding them, the drift this method's own history (R338) warns against. The
+     * empty-joinPath standalone shape carries a {@code null} correlation and falls back to the
+     * parent PK.
      *
      * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} +
      * {@link SourceKey.Reader.ColumnRead} (catalog-FK column read on the parent); the
@@ -5566,28 +5569,20 @@ class FieldBuilder {
      * parent PK.
      */
     private static SplitQuerySource deriveSplitQuerySource(
-            TableRef parentTable, List<JoinStep> path, ReturnTypeRef.TableBoundReturnType returnType) {
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
+            TableRef parentTable, ReturnTypeRef.TableBoundReturnType returnType) {
         boolean isList = returnType.wrapper().isList();
-        List<ColumnRef> entryColumns;
-        if (!path.isEmpty() && path.get(0) instanceof JoinStep.Hop hop
-                && hop.on() instanceof On.ColumnPairs cp) {
-            entryColumns = cp.sourceSideColumns();
-        } else if (!path.isEmpty() && path.get(0) instanceof JoinStep.Hop lateralHop
-                && lateralHop.target() instanceof TableExpr.RoutineCall rc) {
-            // R435 lateral head: the batch key IS the routine's column-bound inputs (the
-            // ParamSource.SourceColumn bindings) — a routine result is a pure function of its
-            // inputs, so keying on the parent's identity would over-specify the batch grain
-            // and force a redundant parent self-join just to re-read columns already lifted.
-            // May be empty (an uncorrelated routine has nothing to key on); the caller rejects
-            // that combination as DirectiveConflict before landing a split leaf.
-            entryColumns = rc.routine().argBindings().stream()
-                .filter(b -> b.source() instanceof ParamSource.SourceColumn)
-                .map(b -> ((ParamSource.SourceColumn) b.source()).column())
-                .distinct()
-                .toList();
-        } else {
-            entryColumns = parentTable.primaryKeyColumns();
-        }
+        // R450: the batch grain is a pure projection off the step-0 correlation arm
+        // (ParentCorrelation.parentKeyColumns) — FK-slot columns for OnFkSlots, parent PK for the
+        // parent-anchor OnParentJoin arm, routine inputs for OnLateralArgs. Reading it here rather
+        // than re-deriving from the path makes "parent-PK grain iff parent-anchor topology"
+        // structurally impossible to violate: a hop-0 filter lands OnParentJoin at the single
+        // producer (buildParentCorrelation), which is exactly the column set the emitter's
+        // correlation predicate pairs against. The empty-joinPath standalone shape carries a null
+        // correlation and falls back to the parent PK.
+        List<ColumnRef> entryColumns = correlation != null
+            ? correlation.parentKeyColumns()
+            : parentTable.primaryKeyColumns();
         SourceKey sourceKey = new SourceKey(
             returnType.table(),
             entryColumns,
@@ -6376,7 +6371,7 @@ class FieldBuilder {
                     "column '" + columnName + "' could not be resolved in the jOOQ table",
                     columnName, candidates));
             }
-            var crfPcResolution = ctx.buildParentCorrelation(refPath.elements(), tableType.table(), List.of());
+            var crfPcResolution = ctx.buildParentCorrelation(refPath.elements(), tableType.table());
             if (crfPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
@@ -6476,7 +6471,7 @@ class FieldBuilder {
             // this site, so the buildParentCorrelation AuthorError arm (gated on parentTable
             // == null when the first hop is a condition join) is unreachable here. The cast is
             // a structural safety net rather than runtime branching.
-            var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable, List.of());
+            var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable);
             var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
             return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction,
                 nodeRefParentCorrelation);

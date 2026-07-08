@@ -1271,7 +1271,7 @@ class GraphitronSchemaBuilderTest {
                 var cj = TestFixtures.conditionHop(field.joinPath().get(0));
                 assertThat(cj.targetTable().tableName()).isEqualToIgnoringCase("actor");
                 assertThat(field.parentCorrelation())
-                    .isInstanceOf(ParentCorrelation.OnConditionJoin.class);
+                    .isInstanceOf(ParentCorrelation.OnParentJoin.class);
             }),
 
         // R232: a condition-only path with @table on both sides preserves the legacy
@@ -2544,6 +2544,35 @@ class GraphitronSchemaBuilderTest {
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
                         && m.contains("@splitQuery is redundant on a record-backed parent field"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        // R450: a hop-0 {key:, condition:} filter on a record-backed parent's @splitQuery
+        // @reference. The filter reads the parent row, but a record parent has no @table to anchor
+        // the filter's source parameter, so buildParentCorrelation routes it to AuthorError rather
+        // than fabricating a parent anchor. Pre-R450 the shape classified unverified (Check 2 skips
+        // when originTable is null) and the emitter bound the hop-0 target alias as both filter
+        // parameters. The message names the escape hatch.
+        SPLIT_QUERY_RECORD_PARENT_HOP0_FILTER_REJECTED(
+            "hop-0 {key:, condition:} filter on a @splitQuery record-backed parent → UnclassifiedField (Structural) naming the escape hatch",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails {
+              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("FilmDetails", "language");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("hop-0 `condition:` filter")
+                    .contains("not a catalog table");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },

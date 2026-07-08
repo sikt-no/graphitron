@@ -119,6 +119,9 @@ type Query {
     stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
     # R338 execution-tier root for the non-PK-referenced-FK @splitQuery fixture below.
     splitParents: [SplitParent!]! @defaultOrder(primaryKey: true)
+    # R450 execution-tier root for the hop-0-filter grain-proof fixture below. Returns both parents
+    # in one list so their single-cardinality targetSplit fields batch through one DataLoader.
+    splitFilterParents: [SplitFilterParent!]! @defaultOrder(primaryKey: true)
     # R413 execution-tier roots for the converter-backed-domain @splitQuery fixtures below
     # (ConverterOrg / ConverterCampus). The join key org_code is a BIGINT domain carrying a
     # Converter<Long, String>; both directions of the split fetch must bind the parent-input
@@ -1085,6 +1088,39 @@ type SplitParent @table(name: "split_parent") {
 type SplitParentTag @table(name: "split_parent_tag") {
     tagId: Int!    @field(name: "TAG_ID")
     tag:   String! @field(name: "TAG")
+}
+
+# R450 execution-tier fixture: the grain proof for a hop-0 {key:, condition:} filter on a
+# single-cardinality @splitQuery. Both split_filter_parent rows point at target_id=1 (a shared
+# FK-slot value) but carry different `include` values. The hop-0 filter (splitFilterParentIncluded)
+# reads the parent's `include` column, so it passes for parent 1 and fails for parent 2. Pre-R450
+# the field classified as OnFkSlots and keyed the batch on the FK slot (target_id), collapsing both
+# parents onto one key and handing them one shared verdict; the emitter also bound the hop-0 target
+# alias as both filter parameters (a compile-spec incompatible-types error against the concrete
+# parameter types). Post-R450 the field lands OnParentJoin, keys on the parent PK, anchors the
+# parent table, and binds the parent alias as the filter's source — so each parent gets its own
+# verdict. targetInline is the inline sibling pinning inline/split parity for the identical filter.
+type SplitFilterParent @table(name: "split_filter_parent") {
+    parentId: Int! @field(name: "PARENT_ID")
+    targetSplit: SplitFilterTarget @splitQuery @reference(path: [{
+        key: "split_filter_parent_target_id_fkey",
+        condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "splitFilterParentIncluded"
+        }
+    }])
+    targetInline: SplitFilterTarget @reference(path: [{
+        key: "split_filter_parent_target_id_fkey",
+        condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "splitFilterParentIncluded"
+        }
+    }])
+}
+
+type SplitFilterTarget @table(name: "split_filter_target") {
+    targetId: Int!   @field(name: "TARGET_ID")
+    label:    String! @field(name: "LABEL")
 }
 
 # R413 execution-tier fixture: @splitQuery over a converter-backed domain key. org_code is a
