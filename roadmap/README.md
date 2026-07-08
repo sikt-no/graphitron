@@ -35,6 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R449` | Routine chains: classification edges from the R435 second-pass review | Spec | 2026-07-08 | [plan](routine-chain-classification-edges.md) |
 | `R450` | Split-path hop-0 condition filter binds the same alias as source and target | Spec | 2026-07-08 | [plan](split-hop-zero-filter-alias.md) |
 
 ---
@@ -114,7 +115,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md): A real user report (paraphrased) crashed the schema build: <sub>updated 2026-05-20, created 2026-05-19</sub>
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md): `LeafCoverageReport.parseMentions` (R104) joins each sealed leaf simple-name against every roadmap `*.md` body via a `\b<simpleName>\b` regex. The match is undifferentiated: backticked code spans, code-fenced blocks, and bare prose mentions all collapse into the same `Roadmap` cell. Two consequences. First, every roadmap edit that names a leaf in any form drifts `inference-axis-coverage.adoc` and trips the `verify-leaf-coverage-report` CI gate, which is the regen-friction tax R104 deferred. Second, a reviewer reading the column has no way to sanity-check a match — `Field` against `FieldType` is excluded by `\b`, but a phrase like "the field type" cannot be told apart from a deliberate `` `Field` `` symbol reference without re-reading the source spec body.
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md): A list-valued node-id reference field on an INSERT input (e.g. `parentId: [ID!]! @nodeId(typeName: "T") @reference(path: [...])`) passes classification and validation today: `NodeIdLeafResolver` is arity-agnostic, `BuildContext.classifyInputField` just bakes `list=true` into the `ColumnReferenceField` / `CompositeColumnReferenceField` carrier, and `MutationInputResolver.admitMutationInputFields` admits reference carriers for INSERT unconditionally (only the `NestingField` arm rejects lists). The generated code compiles but hardcodes single-value assumptions (`instanceof String` decode guard, `.value1()` bind in `TypeFetcherGenerator`), so any non-empty list value throws `GraphitronClientException` "Decoded NodeId did not match the expected type" at runtime. That is the worst failure mode: it surfaces only when the field is populated. Until fan-out semantics are actually supported (R420), a `list()` guard in `admitMutationInputFields` alongside the existing nesting-field list rejection should turn this into a clear build-time schema error. <sub>updated 2026-07-02</sub>
-- `R449` [**Routine chains: classification edges from the R435 second-pass review**](routine-chain-classification-edges.md): A second-pass In Review review of R435 (post-approval, 2026-07-08) surfaced classification edges and polish items that do not break the shipped surface but leave invariants without enforcers. None of them gates R435; recorded here so they are not lost. <sub>updated 2026-07-08</sub>
 
 ### Other
 
@@ -204,7 +204,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R449` [**Routine chains: classification edges from the R435 second-pass review**](routine-chain-classification-edges.md) — Backlog, validation
+- `R449` [**Routine chains: classification edges from the R435 second-pass review**](routine-chain-classification-edges.md) — Spec, validation
 - `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
 - `R447` [**Routine chains: remaining fetch-form breadth**](routine-chain-fetch-form-breadth.md) — Backlog, feature
 
