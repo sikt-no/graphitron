@@ -4,7 +4,7 @@ title: "Routine chains: ordering, binding, and corpus residue"
 status: Backlog
 bucket: improvement
 theme: service
-depends-on: [routine-table-node-composition]
+depends-on: []
 created: 2026-07-08
 last-updated: 2026-07-08
 ---
