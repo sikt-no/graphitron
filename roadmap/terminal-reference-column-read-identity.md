@@ -1,7 +1,7 @@
 ---
 id: R444
 title: "Scalar @reference terminal column read must resolve terminal table by class identity, not bare SQL name"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: interface-union
@@ -35,11 +35,19 @@ The empty-path case is not broken today (the start table's `tableName()` is the 
 All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/`:
 
 - `ServiceCatalog.java`: replace `terminalTableSqlName(List<JoinStep>, String)` and `terminalTableSqlNameForReference(List<JoinStep>, TableBackedType)` with one ref-carrying resolver, `Optional<TableRef> terminalTableForReference(List<JoinStep> path, TableRef start)`: walk the path; any step that is not an FK-derived `JoinStep.Hop` with `On.ColumnPairs` yields empty (same condition-only bail-out as today); otherwise the terminal is the last hop's `targetTable()`; an empty path yields `start`.
-- `ServiceCatalog.java`: retype `resolveColumnForReference(String columnName, List<JoinStep> path, ...)` to take the start as `TableRef` (drop the `String startSqlTableName` overload; the `TableBackedType` convenience overload delegates via `sourceType.table()`). Resolve the column against the terminal `TableRef.allColumns()` (the fully-resolved `ColumnRef` list populated at parse time), replicating `JooqCatalog.findColumn`'s matching order: `javaName` `equalsIgnoreCase` first across all columns, then `sqlName`. No catalog reach-back, no new `JooqCatalog` surface; the decision is carried entirely in the type. (`allColumns` is empty only on refs constructed outside the catalog flow, i.e. hand-built test fixtures; every ref reaching this path is catalog-constructed.) Alternative considered and rejected: `JooqCatalog.findTableByClassName(ClassName)` bridging javapoet `ClassName` to reflection names and delegating to `findColumn(Table<?>, String)`; keeps matching semantics single-sourced but adds a catalog lookup surface and a name-bridge for something the ref already knows.
+- `model/TableRef.java`: add `Optional<ColumnRef> column(String columnName)`, the single model-side home for the column matcher over `allColumns` with `JooqCatalog.findColumn`'s matching order (`javaName` `equalsIgnoreCase` first across all columns, then `sqlName`). One matcher home, not an inlined copy at the call site, so it cannot drift from a second restatement and is available to the sibling item below. (`allColumns` is empty only on refs constructed outside the catalog flow, i.e. hand-built test fixtures; every ref reaching this path is catalog-constructed. The "catalog closed at emit time" rationale in `allColumns`' javadoc is not the driver here — the catalog is still open at classify time — the driver is consuming the already-carried decision instead of re-resolving it.) Alternative considered and rejected: `JooqCatalog.findTableByClassName(ClassName)` bridging javapoet `ClassName` to reflection names and delegating to `findColumn(Table<?>, String)`; also single-sources the matcher but adds a catalog lookup surface and a name-bridge for something the ref already knows.
+- `ServiceCatalog.java`: retype `resolveColumnForReference(String columnName, List<JoinStep> path, ...)` to take the start as `TableRef` (drop the `String startSqlTableName` overload; the `TableBackedType` convenience overload delegates via `sourceType.table()`). Resolve the column via `terminalTableForReference(...).flatMap(t -> t.column(columnName))`, no bare-name catalog re-resolve.
 - `FieldBuilder.java:6105`: pass `tableType.table()`; the unknown-column diagnostic (`FieldBuilder.java:6107`) switches from `terminalTableSqlNameForReference` + `JooqCatalog.columnJavaNamesOf(bareName)` (also ambiguity-broken: empty candidates on a colliding terminal) to enumerating candidates from the terminal `TableRef.allColumns()` java names.
 - `FieldBuilder.java:1373` (argument `@reference` filter) and `BuildContext.java:2206` (input field): both already hold the resolved `TableRef` (`rt` / `resolvedTable`); pass it instead of `.tableName()`. These callers share the fixed resolver, so the argument-filter and input-field shapes are covered by the same change.
 
 Behavioral deltas: a colliding terminal table now resolves (the bug fix); everything else (condition-only paths, unknown columns, empty paths) keeps today's outcomes.
+
+## Scope
+
+Two adjacent bare-name column reads stay out of scope, deliberately:
+
+- The direct non-`@reference` scalar read (`ServiceCatalog.resolveColumn`, `ServiceCatalog.java:73`, consumed at `FieldBuilder.java:6125`) also resolves by string, but the string is the source type's verbatim `@table` echo, which resolves schema-qualified (R396), so the author has a workaround (qualify the `@table(name:)`). It survives R444 by design; do not read "String overloads retired" as "all bare-name column reads retired".
+- The participant cross-table `@reference` path (`TypeBuilder.java:845`, `:861`) is a genuine seventh site of the no-workaround class: it holds the FK-pinned `fk.targetTable()` `TableRef` and collapses it to `tableName()` for both the candidate hint and the actual column resolve, and it never routes through `resolveColumnForReference`, so this item's overload retirement cannot catch it. Tracked as its own Backlog item (R445, `participant-cross-table-column-read-identity`), which consumes the `TableRef.column` matcher this item introduces.
 
 ## Tests
 
@@ -53,4 +61,4 @@ SDL shape: `type EventLog @table(name: "event_log")` (bare name, unique to A) wi
 
 ## Roadmap entries
 
-On Done: delete this file, add a `changelog.md` entry noting this closes the sixth site of the schema-qualified `@table` bug class and correcting R422's "closes the bug class" claim. Before flipping to In Review, grep for any remaining `findTable(String)`-fed column reads downstream of an already-resolved ref (a seventh site); if one exists, file it as a Backlog item rather than expanding this one.
+On Done: delete this file, add a `changelog.md` entry. Do not repeat R422's mistake of claiming the whole bug class closed: the accurate framing is "closes the FK-terminal `@reference` column-read sub-class (scalar output field, argument filter, input field); the participant cross-table path is tracked in R445".
