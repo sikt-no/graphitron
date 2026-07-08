@@ -1,7 +1,7 @@
 ---
 id: R444
 title: "Scalar @reference terminal column read must resolve terminal table by class identity, not bare SQL name"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
