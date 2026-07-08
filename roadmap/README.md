@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R446` | Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors | Spec | 2026-07-08 | [plan](array-column-typename-codegen.md) |
+| `R446` | Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors | Ready | 2026-07-08 | [plan](array-column-typename-codegen.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -189,7 +189,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R446` [**Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors**](array-column-typename-codegen.md) — Spec, bug
+- `R446` [**Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors**](array-column-typename-codegen.md) — Ready, bug
 - `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — Ready, architecture
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
