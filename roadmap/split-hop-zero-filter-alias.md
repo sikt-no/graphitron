@@ -1,7 +1,7 @@
 ---
 id: R450
 title: "Split-path hop-0 condition filter binds the same alias as source and target"
-status: In Review
+status: Ready
 bucket: bug
 theme: structural-refactor
 depends-on: []
@@ -10,6 +10,34 @@ last-updated: 2026-07-08
 ---
 
 # Split-path hop-0 condition filter binds the same alias as source and target
+
+## Review feedback (In Review → Ready, 2026-07-08)
+
+Independent review of `cf2c34c`. The behavioural delivery is complete and approved as-is: the
+`OnParentJoin` rename with no `condition()` accessor, the single-producer reclassification in
+`buildParentCorrelation`, the `parentKeyColumns()` grain projection, the consumer audit (three
+inline emitters re-dispatch on `firstHop.on()`; the split-rows siblings anchor `parentAlias`;
+`TypeFetcherGenerator` holds no `ParentCorrelation` switch, verified by sealed exhaustiveness and
+a repo-wide grep), the `AuthorError.Structural` routing, and all four spec-named test tiers
+including the execution-tier grain proof. Full reactor green under `-Plocal-db`. Do not rework any
+of that.
+
+**One item did not ship: Design item 6** (the R449-absorbed javadoc housekeeping). All three stale
+pre-flip topology spots remain in `SplitRowsMethodEmitter` and still describe the retired
+terminal-back walk while the code emits `.from(parentInput)` start-first:
+
+1. `emitFromBridgeAndParentJoin`'s javadoc opener (~line 398): "`.from(terminalAlias)`, the
+   bridging-hop chain back to step 0" — contradicting the R435 start-first paragraph later in the
+   same javadoc.
+2. The flat-SELECT comment in `buildListMethod` (~line 924): "Flat SELECT: FROM terminal, JOIN
+   bridging hops back toward step 0".
+3. `buildSingleMethod`'s javadoc (~lines 983-984): "The shared topology projects and FROMs off
+   `terminalAlias` and bridges multi-hop paths back to step 0".
+
+This cannot be dropped silently: R449's principles consult re-homed the repair here precisely
+because of the same-file merge hazard, so if R450 goes Done without it no item carries it. The
+rework pass is those three comment repairs only (plus collapsing the shipped design items below to
+`shipped at cf2c34c` notes per plan-housekeeping convention), then back to In Review.
 
 ## Problem
 
