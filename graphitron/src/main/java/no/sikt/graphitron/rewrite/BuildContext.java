@@ -1656,7 +1656,9 @@ class BuildContext {
                     // Check 2 (R379): the ON-clause method is called method(sourceAlias, targetAlias).
                     // Source is the table entering this hop; target is the resolved condition-join
                     // target (return table for a terminal hop, second-parameter-resolved otherwise).
-                    validateConditionParamTables(res.ref(), currentSourceSqlName, r.target().tableName(), errors);
+                    // Thread the resolved TableRefs (R442): conditionOrigin is null when the source
+                    // is not table-backed (the existing skip), r.target() is already a TableRef.
+                    validateConditionParamTables(res.ref(), conditionOrigin, r.target(), errors);
                 }
                 case ConditionJoinTargetResolution.AuthorError e -> errors.add(e.message());
             }
@@ -1816,7 +1818,7 @@ class BuildContext {
     private void validateWhereFilterParamTables(JoinStep.Hop hop, List<String> errors) {
         if (hop.filter() == null) return;
         validateConditionParamTables(hop.filter().method(),
-            hop.originTable().tableName(), hop.targetTable().tableName(), errors);
+            hop.originTable(), hop.targetTable(), errors);
     }
 
     /**
@@ -1826,35 +1828,39 @@ class BuildContext {
      * emitter will hand it, or the generated source fails javac with an incompatible-types error
      * in a downstream consumer's build. This moves that failure to build time.
      *
-     * <p>Parameter 0 is checked against {@code sourceSqlName}, parameter 1 against
-     * {@code targetSqlName}. Wildcard {@code Table<?>} parameters (the idiomatic
-     * {@code (Table<?>, Table<?>)} shape) are unverifiable and accepted — the same wildcard
-     * predicate {@link #resolveConditionJoinTarget} uses. A concrete parameter type that does not
-     * resolve to a catalog table (a non-{@code Table} parameter, or a class absent from the
-     * codegen loader) is likewise skipped: this check validates a constraint the author opted into
-     * by naming a concrete jOOQ table, it imposes no new signature requirement.
+     * <p>Parameter 0 is checked against the {@code source} table, parameter 1 against the
+     * {@code target} table (both resolved {@link TableRef}s, R442). Wildcard {@code Table<?>}
+     * parameters (the idiomatic {@code (Table<?>, Table<?>)} shape) are unverifiable and accepted —
+     * the same wildcard predicate {@link #resolveConditionJoinTarget} uses. A concrete parameter
+     * type that does not resolve to a catalog table (a non-{@code Table} parameter, or a class
+     * absent from the codegen loader) is likewise skipped: this check validates a constraint the
+     * author opted into by naming a concrete jOOQ table, it imposes no new signature requirement.
      *
      * <p>Reads the reflected {@link MethodRef} parameter types and the resolved source/target
      * tables already in scope at the call site; it never re-inspects the directive element nor
      * re-walks the path.
      */
     private void validateConditionParamTables(
-            MethodRef method, String sourceSqlName, String targetSqlName, List<String> errors) {
+            MethodRef method, TableRef source, TableRef target, List<String> errors) {
         var params = method.params();
-        checkConcreteParamTable(method, params, 0, sourceSqlName, "source", errors);
-        checkConcreteParamTable(method, params, 1, targetSqlName, "target", errors);
+        checkConcreteParamTable(method, params, 0, source, "source", errors);
+        checkConcreteParamTable(method, params, 1, target, "target", errors);
     }
 
     /**
      * Validates one positional table parameter of a condition method against the table the emitter
-     * will pass it. Skips when the position is out of range, the expected table is unknown, the
-     * declared parameter is a wildcard {@code Table<?>}, or the concrete type does not resolve to a
-     * catalog table. Reuses {@link #resolveConditionJoinTarget}'s {@code Class.forName} +
-     * {@link JooqCatalog#findTableByClass} machinery and the wildcard predicate.
+     * will pass it. Skips when the position is out of range, the {@code expected} table is null
+     * (unknown, e.g. a non-table-backed source), the declared parameter is a wildcard
+     * {@code Table<?>}, or the concrete type does not resolve to a catalog table. Reuses
+     * {@link #resolveConditionJoinTarget}'s {@code Class.forName} +
+     * {@link JooqCatalog#findTableByClass} machinery and the wildcard predicate. The final compare
+     * is jOOQ class identity via {@link TableRef#denotesSameTableAs} (R442): both operands are
+     * catalog-built refs, so schema-qualified {@code @table} echoes match their unqualified jOOQ
+     * canonical names and same-named tables across schemas stay distinct.
      */
     private void checkConcreteParamTable(MethodRef method, List<MethodRef.Param> params,
-            int index, String expectedSqlName, String role, List<String> errors) {
-        if (expectedSqlName == null || index >= params.size()) return;
+            int index, TableRef expected, String role, List<String> errors) {
+        if (expected == null || index >= params.size()) return;
         String typeName = params.get(index).typeName();
         // Wildcard `Table<?>` (the literal type-name jOOQ reflection yields) accepts any aliased
         // table; nothing is assertable. Same predicate as resolveConditionJoinTarget.
@@ -1869,11 +1875,20 @@ class BuildContext {
         }
         var entry = catalog.findTableByClass(cls);
         if (entry.isEmpty()) return; // a concrete non-table parameter; nothing to assert.
-        String declaredTable = entry.get().table().getName();
-        if (!declaredTable.equalsIgnoreCase(expectedSqlName)) {
+        // Both sides are catalog-built refs, so the compare is jOOQ class identity, not a
+        // bare-vs-qualified name string compare (R442): a parameter typed with the correct
+        // generated table class classifies green even when the hop's table name is
+        // schema-qualified, and two same-named tables in different schemas stay distinguishable.
+        TableRef declared = entry.get().toTableRef(entry.get().table().getName());
+        if (!declared.denotesSameTableAs(expected)) {
+            // A mismatch can now pair two tables that share a bare name across schemas, so render
+            // the declared side schema-qualified (the entry carries the schema) to stay actionable;
+            // the expected side keeps the author's verbatim (possibly qualified) @table echo.
+            String declaredQualified = entry.get().table().getSchema().getName()
+                + "." + entry.get().table().getName();
             errors.add("condition method '" + method.className() + "." + method.methodName()
-                + "' parameter " + index + " is typed for table '" + declaredTable
-                + "' but this hop's " + role + " table is '" + expectedSqlName
+                + "' parameter " + index + " is typed for table '" + declaredQualified
+                + "' but this hop's " + role + " table is '" + expected.tableName()
                 + "'; the emitter passes the " + role + " alias positionally, so the concrete "
                 + "parameter type must match (or use a wildcard `Table<?>`).");
         }

@@ -1,7 +1,7 @@
 ---
 id: R442
 title: "Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name"
-status: Ready
+status: In Review
 bucket: bug
 priority: 3
 theme: structural-refactor
@@ -162,6 +162,36 @@ class identity can tell the schemas apart.
   documented fallback arm. Extend the latter with the identity arm: two refs sharing a bare
   `tableName` but differing in `tableClass` are not the same table; two refs with equal
   `tableClass` and differently-cased names are.
+
+## Implementation notes (landed)
+
+R441 landed first, so the shared `TableRef.denotesSameTableAs` identity predicate (identity body with
+the classless name fallback) and the `TableRefSameTablePredicateTest` three-arm coverage are already
+on trunk; per the coordination note this item reuses them verbatim and drops that scope, along with
+the same-commit audit R441 recorded of the five `denotesSameTableAs` consumers. R442's own changes
+are the `BuildContext` validator chain (`validateConditionParamTables` / `checkConcreteParamTable`
+now take resolved `TableRef`s and compare via `denotesSameTableAs`; the condition-hop site threads
+the hoisted `conditionOrigin` and `r.target()`; the where-filter site threads `hop.originTable()` /
+`hop.targetTable()`), the additive `multischema_a.event_log` DDL, and the tests below.
+
+**Test-plan deviation on target-side coverage.** The Tests section routed target-position coverage
+through a `{table:, condition:}` where-filter hop whose target is the colliding `event` table. That
+path is not reachable in the current tree: `synthesizeFkJoin` resolves the FK's target endpoint by
+its bare jOOQ name (`f.getKey().getTable().getName()` → `event`) through `catalog.findTable`, which is
+*ambiguous* across `multischema_a` / `multischema_b` and rejects before `checkConcreteParamTable`
+runs. That bare-endpoint resolution is R440's scope (`fk-join-endpoint-class-identity`, Backlog), not
+R442's, and R442 must not widen into it. Target-side coverage instead rides a **terminal** condition
+hop, whose target is resolved from the return type's `@table` echo
+(`resolveConditionJoinTarget`'s terminal branch, `findTable("multischema_a.event")`, qualified and
+unambiguous): parent `Widget`, terminal condition to a return type
+`@table(name: "multischema_a.event")`, parameter 1 typed `multischema_a.tables.Event` passes /
+`multischema_b.tables.Event` errors. This carries the qualified echo on the target operand
+independently of the parameter, so it reproduces the same false-rejection and the same cross-schema
+identity guard the where-filter shape would have. The additive `event_log` table is still used, for
+the **where-filter source** operand (the reversed shape: parent `@table(name: "multischema_a.event")`,
+where-filter hop to the uniquely-named `event_log`, parameter 0 typed `multischema_a.tables.Event`),
+which exercises `validateWhereFilterParamTables` with a qualified source echo. New tests live in
+`MultiSchemaConditionParamTest` + `MultiSchemaConditionStub`.
 
 ## Cross-links
 

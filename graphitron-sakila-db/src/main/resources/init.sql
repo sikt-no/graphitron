@@ -886,6 +886,19 @@ CREATE TABLE multischema_a.event (
     name       varchar(50) NOT NULL
 );
 
+-- R442 pipeline fixture: an additive table holding an in-schema FK into multischema_a.event so a
+-- {table:, condition:} where-filter hop can target the colliding 'event' table. The 'event' bare
+-- name collides across multischema_a / multischema_b, so a concrete condition-method table
+-- parameter typed multischema_a.tables.Event vs multischema_b.tables.Event can only be told apart
+-- by jOOQ class identity, not the bare-vs-qualified name string that checkConcreteParamTable used
+-- before R442. No FK previously touched 'event'; this supplies the endpoint for target-position
+-- coverage via the where-filter path.
+CREATE TABLE multischema_a.event_log (
+    event_log_id  serial      PRIMARY KEY,
+    event_id      int         NOT NULL REFERENCES multischema_a.event(event_id),
+    note          varchar(50)
+);
+
 -- R395 execution-tier fixture: a single-table discriminated interface living in a NAMED schema
 -- (multischema_a) with a lowercase real name. The discriminator column signal_kind routes rows to
 -- two concrete types; widget_id is an in-schema FK into multischema_a.widget so one participant can
