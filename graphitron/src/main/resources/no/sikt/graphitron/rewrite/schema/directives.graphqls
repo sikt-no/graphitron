@@ -147,7 +147,7 @@ If neither table or key are provided and none can be automatically inferred, the
 directive @reference(
   """The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type of the field."""
   path: [ReferenceElement!]!
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+) repeatable on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
 Removed. `@multitableReference` is no longer supported. The directive stays declared here only so
@@ -435,7 +435,14 @@ directive @routine(
   bind to a GraphQL argument of the same name (identity).
   """
   argMapping: String
-) on FIELD_DEFINITION
+  """
+  Maps routine IN parameters to columns of the previous table node in the field's chain (the
+  enclosing type's table for a child field). Each entry is `routineParam: column_name`; multiple
+  entries are comma-separated. A column-bound parameter makes the call correlated (LATERAL).
+  Legal only where a previous node exists; a root chain's head has none.
+  """
+  columnMapping: String
+) repeatable on FIELD_DEFINITION
 
 """
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.

@@ -7370,6 +7370,166 @@ class GraphitronSchemaBuilderTest {
         assertThat(p.methodClassName()).endsWith(".Routines");
     }
 
+    // ===== R435 — order-significant @routine / @reference composition =====
+    // The classifier reads the ordered field-level directive applications once, enforces the
+    // root-head rule, and validates the single-node chain (including columnMapping against the
+    // implicit head at child positions). Chain shapes beyond the shipped root single-node
+    // classify as typed Deferred until the chain build + emitters land.
+
+    private static final String TILGANG_TYPE = """
+        type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+          organisasjonskode: Int
+          rollekode: String
+        }
+        """;
+
+    @Test
+    void rootChainNotStartingWithRoutineRejectsAsStructural() {
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @reference(path: [{key: "some_fkey"}])
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason()).contains("must start with @routine");
+    }
+
+    @Test
+    void rootRoutineThenHopsChainDefersUntilChainEmitLands() {
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @reference(path: [{key: "some_fkey"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("roadmap/routine-table-node-composition.md");
+    }
+
+    @Test
+    void repeatedReferenceChainOnChildFieldDefersUntilChainEmitLands() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+              languageName: String
+                @field(name: "name")
+                @reference(path: [{key: "film_language_id_fkey"}])
+                @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "languageName");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("repeated @reference");
+    }
+
+    @Test
+    void childRoutineWithValidColumnMappingClassifiesThenDefersOnEmit() {
+        // The correlated single-node chain: pEnv binds to the parent's `title` column
+        // (columnMapping), the remaining params to field arguments. All bindings validate at
+        // classify time; the LATERAL emit is the deferred half.
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: title")
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason())
+            .contains("correlated single-node chain")
+            .contains("roadmap/routine-table-node-composition.md");
+    }
+
+    @Test
+    void childRoutineColumnMappingUnknownColumnRejectsWithCandidates() {
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: no_such_column")
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        assertThat(f.reason())
+            .contains("not a column of the previous node")
+            .contains("title"); // candidate hint lists the parent table's columns
+        assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+    }
+
+    @Test
+    void rootRoutineWithColumnMappingRejectsAsStructural() {
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: title")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason()).contains("a root chain's head has none");
+    }
+
+    @Test
+    void routineParamInBothMappingsRejectsAsStructural() {
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: title")
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason()).contains("exactly one source");
+    }
+
+    @Test
+    void orderByArgumentOnRoutineFieldDefersAsCapabilityGap() {
+        var schema = build(TILGANG_TYPE + """
+            enum TilgangOrder { ROLLE }
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!,
+                        orderBy: TilgangOrder @orderBy): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("@orderBy / @condition on a routine-backed field");
+    }
+
+    @Test
+    void repeatedReferenceOnArgumentRejectsAsDirectiveConflict() {
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              films(name: String @reference(path: [{key: "film_language_id_fkey"}])
+                                 @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(f.reason()).contains("repeated @reference on an argument");
+    }
+
     @Test
     @ProjectionFor({QueryField.QueryNodeField.class, QueryField.QueryNodesField.class})
     void queryNodeProjectionCarriesListMultiplicity() {

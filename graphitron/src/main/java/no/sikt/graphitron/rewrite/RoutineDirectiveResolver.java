@@ -15,7 +15,10 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLUMN_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
@@ -56,10 +59,29 @@ final class RoutineDirectiveResolver {
     }
 
     /**
-     * Resolves {@code @routine} on {@code fieldDef}. Pass {@code isRoot=true} at root sites so the
-     * Connection invariant fires.
+     * Resolves a single-application {@code @routine} on {@code fieldDef} — the single-node chain,
+     * where the routine result is both the chain's head and its terminus (R435 desugars the
+     * single-application case to this shape at the parse boundary).
+     *
+     * <p>{@code implicitHeadTableSqlName} is the previous node of the chain: {@code null} at root
+     * (a root chain's head is the routine itself; {@code columnMapping} is illegal), the parent
+     * type's table at child positions ({@code columnMapping} binds against it).
      */
-    Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot) {
+    Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot,
+            String implicitHeadTableSqlName) {
+        // Composition verdict (R435): @orderBy / @condition key on the resolved table and are
+        // meaningful for catalog-terminus chains, but no filter/order surface ships for
+        // routine-backed fields yet — a capability gap, not a schema contradiction. @orderBy is
+        // argument-positioned; @condition appears on the field or its arguments.
+        boolean hasOrderOrCondition = fieldDef.hasAppliedDirective(DIR_CONDITION)
+            || fieldDef.getArguments().stream().anyMatch(a ->
+                a.hasAppliedDirective(DIR_ORDER_BY) || a.hasAppliedDirective(DIR_CONDITION));
+        if (hasOrderOrCondition) {
+            return new Resolved.Rejected(Rejection.deferred(
+                "@orderBy / @condition on a routine-backed field is not yet supported — "
+                + "no filter or order surface ships for routine-backed fields", ""));
+        }
+
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName)
@@ -69,9 +91,14 @@ final class RoutineDirectiveResolver {
         if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tableBound)) {
             return new Resolved.Rejected(Rejection.structural("@routine requires a @table-annotated return type"));
         }
-        if (isRoot && returnType.wrapper() instanceof FieldWrapper.Connection) {
-            return new Resolved.Rejected(Rejection.invalidSchema(
-                "@routine at the root does not support Connection return types — use [T] or T instead"));
+        // Composition verdict (R435): a chain whose terminus is the routine result can never
+        // support Connection pagination — keyset pagination needs an ordering contract the
+        // FK-less routine result does not carry. On the single-node chain the routine is always
+        // the terminus, so this fires at root and child alike.
+        if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+            return new Resolved.Rejected(Rejection.directiveConflict(List.of(DIR_ROUTINE),
+                "a routine-terminus chain does not support Connection return types — keyset "
+                + "pagination needs an ordering contract the routine result does not carry; use [T] or T instead"));
         }
 
         var dir = fieldDef.getAppliedDirective(DIR_ROUTINE);
@@ -94,6 +121,27 @@ final class RoutineDirectiveResolver {
         }
         Map<String, List<String>> overrides = ((ArgBindingMap.ParsedArgMapping.Ok) parsedMapping).overrides();
 
+        String rawColumnMapping = Optional.ofNullable(dir.getArgument(ARG_COLUMN_MAPPING))
+            .map(a -> a.getValue()).map(Object::toString).orElse(null);
+        var parsedColumnMapping = ArgBindingMap.parseArgMapping(rawColumnMapping);
+        if (parsedColumnMapping instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
+            return new Resolved.Rejected(Rejection.structural("@routine columnMapping " + pe.message()));
+        }
+        Map<String, List<String>> columnOverrides =
+            ((ArgBindingMap.ParsedArgMapping.Ok) parsedColumnMapping).overrides();
+        if (!columnOverrides.isEmpty() && isRoot) {
+            return new Resolved.Rejected(Rejection.structural(
+                "@routine columnMapping requires a previous table node in the chain, and a root "
+                + "chain's head has none — bind routine parameters from GraphQL arguments via argMapping"));
+        }
+        if (!columnOverrides.isEmpty() && implicitHeadTableSqlName == null) {
+            // Non-root position whose implicit head is not a resolvable catalog table (a
+            // record-backed parent). Correlation against a record head lands with the emit slice.
+            return new Resolved.Rejected(Rejection.deferred(
+                "@routine columnMapping under a parent without a catalog table is not yet supported",
+                "routine-table-node-composition"));
+        }
+
         return switch (ctx.catalog.resolveTableValuedFunction(routineName)) {
             case JooqCatalog.RoutineResolution.NotInCatalog ignored -> new Resolved.Rejected(Rejection.unknownTable(
                 "@routine could not be resolved — no table-valued function named '" + routineName
@@ -104,23 +152,59 @@ final class RoutineDirectiveResolver {
                 + "' resolves to a table or view, not a table-valued function"));
             case JooqCatalog.RoutineResolution.NoConvenienceMethod nc -> new Resolved.Rejected(Rejection.structural(
                 "@routine could not be resolved — " + nc.detail()));
-            case JooqCatalog.RoutineResolution.Resolved fn -> bindArgs(fieldDef, tableBound, fn, overrides);
+            case JooqCatalog.RoutineResolution.Resolved fn ->
+                bindArgs(fieldDef, tableBound, fn, overrides, columnOverrides, implicitHeadTableSqlName);
         };
     }
 
     private Resolved bindArgs(GraphQLFieldDefinition fieldDef, ReturnTypeRef.TableBoundReturnType returnType,
-            JooqCatalog.RoutineResolution.Resolved fn, Map<String, List<String>> overrides) {
+            JooqCatalog.RoutineResolution.Resolved fn, Map<String, List<String>> overrides,
+            Map<String, List<String>> columnOverrides, String implicitHeadTableSqlName) {
         // The @table-bound element type must be the routine-result table, so projection ($fields)
-        // and the routine call agree on columns.
+        // and the routine call agree on columns. On the single-node chain the routine is the
+        // terminus, so this is the terminus invariant for this shape.
         if (!returnType.table().tableClass().equals(fn.resultTable().tableClass())) {
             return new Resolved.Rejected(Rejection.structural(
                 "@routine could not be resolved — the field's @table type ('" + returnType.table().tableName()
                 + "') does not match the routine's result table ('" + fn.resultTable().tableName() + "')"));
         }
 
+        for (var claimed : columnOverrides.keySet()) {
+            if (fn.params().stream().noneMatch(p -> p.name().equals(claimed))) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@routine columnMapping names parameter '" + claimed
+                    + "', which is not an IN parameter of routine '" + fn.methodName() + "'"));
+            }
+            if (overrides.containsKey(claimed)) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@routine parameter '" + claimed + "' appears in both argMapping and columnMapping — "
+                    + "a routine parameter has exactly one source"));
+            }
+        }
+
         Set<String> fieldArgs = FieldBuilder.fieldArgumentNames(fieldDef);
         var bindings = new ArrayList<RoutineRef.ArgBinding>();
         for (var param : fn.params()) {
+            var columnOverride = columnOverrides.get(param.name());
+            if (columnOverride != null) {
+                if (columnOverride.size() != 1) {
+                    return new Resolved.Rejected(Rejection.structural(
+                        "@routine columnMapping for parameter '" + param.name()
+                        + "' must bind a single column of the previous node; dot-path bindings are not supported"));
+                }
+                String columnName = columnOverride.get(0);
+                var column = ctx.catalog.resolveColumn(implicitHeadTableSqlName, columnName);
+                if (column.isEmpty()) {
+                    return new Resolved.Rejected(Rejection.unknownColumn(
+                        "@routine columnMapping binds parameter '" + param.name() + "' to column '"
+                        + columnName + "', which is not a column of the previous node ('"
+                        + implicitHeadTableSqlName + "')",
+                        columnName, ctx.catalog.columnSqlNamesOf(implicitHeadTableSqlName)));
+                }
+                bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(),
+                    new ParamSource.SourceColumn(column.get())));
+                continue;
+            }
             var override = overrides.get(param.name());
             String graphqlArg;
             if (override != null) {

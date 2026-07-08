@@ -34,7 +34,8 @@ import java.util.Objects;
  */
 public sealed interface ParamSource
     permits ParamSource.Arg, ParamSource.Context, ParamSource.Sources,
-            ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable {
+            ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable,
+            ParamSource.SourceColumn {
 
     /**
      * A GraphQL field argument bound via the directive's argMapping rule.
@@ -97,4 +98,19 @@ public sealed interface ParamSource
      * Present only in join-condition methods where both ends of the join must be referenced.
      */
     record SourceTable() implements ParamSource {}
+
+    /**
+     * A single column of the previous table node in the field's chain — the column-granularity
+     * sibling of {@link SourceTable}, authored via {@code @routine(columnMapping:)} (R435). A
+     * column-bound routine parameter makes the call correlated: the emitter renders the routine
+     * as {@code CROSS JOIN LATERAL} with this column of the previous node as the argument
+     * expression. {@code column} is the resolved column on the previous node's table.
+     *
+     * <p>Produced only for {@link RoutineRef.ArgBinding}; never a {@link MethodRef} param source.
+     */
+    record SourceColumn(ColumnRef column) implements ParamSource {
+        public SourceColumn {
+            Objects.requireNonNull(column, "column");
+        }
+    }
 }

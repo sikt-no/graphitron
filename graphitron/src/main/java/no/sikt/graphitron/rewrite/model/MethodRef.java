@@ -102,10 +102,11 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
         return switch (p.source()) {
             case ParamSource.Arg arg         -> arg.graphqlArgName();
             case ParamSource.Context ignored -> p.name();
-            case ParamSource.Sources ignored     -> throw nonExtractedSource(p);
-            case ParamSource.DslContext ignored  -> throw nonExtractedSource(p);
-            case ParamSource.Table ignored       -> throw nonExtractedSource(p);
-            case ParamSource.SourceTable ignored -> throw nonExtractedSource(p);
+            case ParamSource.Sources ignored      -> throw nonExtractedSource(p);
+            case ParamSource.DslContext ignored   -> throw nonExtractedSource(p);
+            case ParamSource.Table ignored        -> throw nonExtractedSource(p);
+            case ParamSource.SourceTable ignored  -> throw nonExtractedSource(p);
+            case ParamSource.SourceColumn ignored -> throw nonExtractedSource(p);
         };
     }
 
@@ -120,10 +121,11 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
         return switch (p.source()) {
             case ParamSource.Arg arg             -> arg.extraction();
             case ParamSource.Context ignored     -> new CallSiteExtraction.ContextArg();
-            case ParamSource.Sources ignored     -> throw nonExtractedSource(p);
-            case ParamSource.DslContext ignored  -> throw nonExtractedSource(p);
-            case ParamSource.Table ignored       -> throw nonExtractedSource(p);
-            case ParamSource.SourceTable ignored -> throw nonExtractedSource(p);
+            case ParamSource.Sources ignored      -> throw nonExtractedSource(p);
+            case ParamSource.DslContext ignored   -> throw nonExtractedSource(p);
+            case ParamSource.Table ignored        -> throw nonExtractedSource(p);
+            case ParamSource.SourceTable ignored  -> throw nonExtractedSource(p);
+            case ParamSource.SourceColumn ignored -> throw nonExtractedSource(p);
         };
     }
 

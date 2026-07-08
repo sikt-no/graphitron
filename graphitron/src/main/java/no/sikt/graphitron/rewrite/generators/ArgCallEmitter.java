@@ -233,6 +233,11 @@ public final class ArgCallEmitter {
                 throw new IllegalStateException(
                     "ParamSource.SourceTable reached buildMethodBackedCallArgs — SourceTable is a child-field concept, unreachable at root: param '"
                     + param.name() + "'");
+            case ParamSource.SourceColumn ignored ->
+                throw new IllegalStateException(
+                    "ParamSource.SourceColumn reached buildMethodBackedCallArgs — SourceColumn is a "
+                    + "routine-binding concept (@routine columnMapping), never a MethodRef param source: param '"
+                    + param.name() + "'");
         };
     }
 

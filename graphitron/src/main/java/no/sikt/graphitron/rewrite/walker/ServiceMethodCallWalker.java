@@ -159,10 +159,11 @@ public final class ServiceMethodCallWalker {
                 new MappingEntry.FromContext(param.name(), param.javaType(), param.name());
             case ParamSource.Arg arg -> new MappingEntry.FromArg(param.name(),
                 deriveValueShape(arg, param.javaType(), method, errors));
-            // Table / SourceTable / Sources don't appear on root sync @service permits.
-            // Defensive fallback: skip and let upstream rejection surface.
+            // Table / SourceTable / SourceColumn / Sources don't appear on root sync @service
+            // permits. Defensive fallback: skip and let upstream rejection surface.
             case ParamSource.Table ignored -> null;
             case ParamSource.SourceTable ignored -> null;
+            case ParamSource.SourceColumn ignored -> null;
             case ParamSource.Sources ignored -> null;
         };
     }

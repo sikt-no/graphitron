@@ -1530,6 +1530,10 @@ public class TypeFetcherGenerator {
                 case ParamSource.DslContext ignored -> throw nonRoutineParamSource(b);
                 case ParamSource.Table ignored -> throw nonRoutineParamSource(b);
                 case ParamSource.SourceTable ignored -> throw nonRoutineParamSource(b);
+                case ParamSource.SourceColumn ignored -> throw new IllegalStateException(
+                    "correlated column binding for parameter '" + b.routineParamName()
+                    + "' reached the root routine fetcher — a root chain's head has no previous "
+                    + "node, and the classifier rejects columnMapping at root");
             })
             .toList(), ", ");
         String tableLocal = names.tableLocalName();

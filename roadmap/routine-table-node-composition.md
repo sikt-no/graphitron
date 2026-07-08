@@ -144,21 +144,43 @@ a fixture. Like the validation rules above, every verdict reuses an existing arm
 
 ## Implementation
 
+Shipped (surface-and-validation slice; the chain build and emitters are the pending half):
+
 * `directives.graphqls`: `repeatable` on `@reference` and `@routine`; `columnMapping: String` on
-  `@routine`.
-* `RoutineRef.ArgBinding` gains the `ParamSource` slot; `ParamSource` gains the column arm; the
-  existing arg case migrates to `ParamSource.Arg` (see *Model placements*).
+  `@routine`. Shipped.
+* `RoutineRef.ArgBinding` gains the `ParamSource` slot; `ParamSource` gains the column arm
+  (`SourceColumn`, carrying the resolved previous-node `ColumnRef`); the existing arg case
+  migrates to `ParamSource.Arg`. Shipped.
+* Classifier order read: `FieldBuilder.classify` reads the ordered field-level applications once
+  (`chainDirectiveNames`), enforces the root-head rule, and desugars the single-application case
+  onto the existing root leaf. The child single-node chain (correlated `@routine`) fully
+  validates — routine resolution, `argMapping`, `columnMapping` existence against the implicit
+  head, one-source-per-parameter — then lands a typed `Deferred` (planSlug: this item) pending
+  the LATERAL emitter. Multi-node chains (routine-then-hops, hops-then-routine, sandwich,
+  repeated `@reference`) land typed `Deferred` the same way. Shipped.
+* Composition verdicts: Connection-terminus rejects as `InvalidSchema.DirectiveConflict` (root
+  and child, since the single-node terminus is the routine); `@orderBy` (argument-positioned) /
+  `@condition` on routine-backed fields land `Deferred` with empty planSlug; repeated
+  `@reference` on `ARGUMENT_DEFINITION` / `INPUT_FIELD_DEFINITION` rejects at the argument
+  (`InvalidSchema.DirectiveConflict`) and input-field (structural channel) read sites. Shipped.
+* `GraphitronSchemaValidator`: nothing new — every rule above is a classify-time `Rejection`
+  carried on `UnclassifiedField` and projected by the existing `validateUnclassifiedField`.
+  Shipped by construction.
+
+Pending (the chain-build + emit slice):
+
 * `JooqCatalog.resolveTableValuedFunction`: additionally resolve the `Field`-overload call surface
   (today filtered out) for correlated emission.
-* Classifier (`FieldBuilder` + `RoutineDirectiveResolver`): read the ordered directive
-  applications off the field definition (the only pass that does), build the chain (implicit head
-  at child positions), desugar the single-application case, mint the `RoutineCall` target arm and
-  `Lateral` `on`-arm onto R438's two-axis `JoinStep`, and produce the chain rejections named in
-  *Validation*.
-* `GraphitronSchemaValidator`: surfaces the four validation rules plus the composition verdicts
-  above by projecting the classifier's typed rejections; no second parse of directive order.
+* Chain build: mint the `RoutineCall` target arm and `Lateral` `on`-arm onto R438's two-axis
+  `JoinStep`, build the chain (implicit head at child positions) instead of the `Deferred`
+  landings above, add the terminus rule for multi-node chains and the name-match keying
+  derivation (the small seal on `On.ColumnPairs` R438 pre-planned), and re-home the root slice so
+  `QueryRoutineTableField` carries the `(start, hops)` chain.
+* Type compatibility of `columnMapping`-bound columns against routine parameter types (the
+  existence check ships; the type check needs the column `DataType` read).
 * Emitters: chain rendering in the fetcher generators (root and child), `DSL.lateral()` for
-  correlated calls, name-matched keying for hops out of a routine.
+  correlated calls, name-matched keying for hops out of a routine. Each emitted shape flips its
+  `Deferred` landing to a real classification as it lands.
 * Docs: `routine.adoc` rewrite and the `@reference` page's composition section (see the draft
   below); the order contract documented where repeatable directives are introduced.
 
@@ -169,16 +191,23 @@ Pipeline tier is primary; no code-string assertions at any tier.
 * **Pipeline (SDL to model to TypeSpec)**: one fixture per chain shape in *The rule*'s example
   block (root single-node, root routine-then-hops, child correlated single-node, child
   hops-then-routine, sandwich), plus `ClassifiedCorpus` entries asserting the classification
-  facts.
+  facts. Pending with the chain build (today those shapes assert their typed `Deferred`
+  landings; the corpus entries land when the shapes classify onto real leaves).
 * **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id)`-shaped fixture
   function added to `init.sql`) verifying the LATERAL correlation returns per-parent rows under
   batching; a root routine-then-hops chain verifying the hop out of the routine keys correctly;
-  selection narrowing on a routine-result table (extends `RoutineFieldExecutionTest`).
-* **Rejection fixtures**, one per validator rule: root chain not starting with `@routine`;
-  terminus mismatch; `columnMapping` with no previous node; `columnMapping` naming a column absent
-  from the previous node; name-match keying failure (routine result lacking the key columns);
-  repeated `@reference` on `ARGUMENT_DEFINITION` / `INPUT_FIELD_DEFINITION`; `@asConnection`,
-  `@orderBy`, and `@condition` on a routine-backed field.
+  selection narrowing on a routine-result table (extends `RoutineFieldExecutionTest`). Pending
+  with the emit slice. Reviewer note from the Spec → Ready pass: add a terminus-direction
+  (hops-then-routine) execution case alongside these.
+* **Rejection fixtures**, one per validator rule (shipped rules asserted in
+  `GraphitronSchemaBuilderTest`'s R435 block): root chain not starting with `@routine` (shipped);
+  `columnMapping` with no previous node (shipped); `columnMapping` naming a column absent from
+  the previous node (shipped, with candidate hint); one parameter claimed by both mappings
+  (shipped); repeated `@reference` on `ARGUMENT_DEFINITION` (shipped) / `INPUT_FIELD_DEFINITION`
+  (guarded at the read site; fixture pending); `@asConnection` on a routine-terminus chain
+  (arm flipped to `DirectiveConflict`; fixture pending); `@orderBy` on a routine-backed field
+  (shipped); `@condition` on a routine-backed field (guard shipped; fixture pending); terminus
+  mismatch and name-match keying failure (pending with the chain build).
 
 ## User documentation (first-client check)
 

@@ -845,6 +845,18 @@ public class JooqCatalog {
     }
 
     /**
+     * Resolves a single column on a table to its fully-resolved {@link ColumnRef} (SQL name,
+     * Java field name, column class), matching the column SQL name case-insensitively. Empty
+     * when the table or the column cannot be found.
+     */
+    public Optional<ColumnRef> resolveColumn(String tableSqlName, String columnSqlName) {
+        return findTable(tableSqlName).asEntry()
+            .flatMap(te -> te.allColumnRefs().stream()
+                .filter(c -> c.sqlName().equalsIgnoreCase(columnSqlName))
+                .findFirst());
+    }
+
+    /**
      * Returns all SQL column names for the given table, in the order they appear in the generated
      * jOOQ table class. Returns an empty list when the table cannot be found.
      */

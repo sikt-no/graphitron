@@ -1350,6 +1350,16 @@ class FieldBuilder {
         // mis-binds against the field's own table. v1 supports FK-derived paths only; a condition-join
         // hop is deferred (mirrors FkTargetConditionEmitter and the output-side @reference stub).
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
+            // R435 made @reference repeatable so field-level applications compose the table
+            // chain; order-composition has no meaning on an argument, so repetition here is a
+            // conflict, not a chain.
+            if (arg.getAppliedDirectives(DIR_REFERENCE).size() > 1) {
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    Rejection.directiveConflict(List.of(DIR_REFERENCE),
+                        "repeated @reference on an argument is not supported — ordered chain "
+                        + "composition applies only to output field definitions; compose the chain "
+                        + "on the field instead"));
+            }
             var refPath = ctx.parsePath(arg, name, rt.tableName(), null);
             if (refPath.hasError()) {
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
@@ -2117,12 +2127,46 @@ class FieldBuilder {
             }
         }
 
-        // R300 day-one mints only the root @routine leaf. A child-positioned read routine (the
-        // ChildField.RecordTableMethodField analogue) is a deferred follow-up; reject it at validate
-        // time rather than silently ignoring the directive.
-        if (!(parentType instanceof RootType) && fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                "@routine is only supported on root Query fields; a child-positioned read routine is not yet implemented"));
+        // R435 — order-significant @routine / @reference composition. The ordered field-level
+        // applications compose the field's table chain, and this is the only pass that reads
+        // their order. Shipped slice: the single-node chain (a lone @routine application) — at
+        // root via classifyRootField's @routine branch, at child positions validated here
+        // (routine resolution, argMapping, columnMapping against the implicit head) and then
+        // deferred until the LATERAL emitter lands. Multi-node chains classify as typed
+        // Deferred; misorderings reject as AuthorError at classify time. See
+        // roadmap/routine-table-node-composition.md.
+        var chainDirectives = chainDirectiveNames(fieldDef);
+        long routineApplications = chainDirectives.stream().filter(DIR_ROUTINE::equals).count();
+        if (routineApplications > 0 || chainDirectives.size() > 1) {
+            boolean isRoot = parentType instanceof RootType;
+            if (isRoot && !DIR_ROUTINE.equals(chainDirectives.get(0))) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "a root field's table chain must start with @routine — directives compose the chain in "
+                    + "written order, and at root only a routine can supply the chain's head (move @routine first)"));
+            }
+            if (chainDirectives.size() > 1) {
+                String shape = routineApplications > 0
+                    ? "a multi-node table chain composing @routine with @reference hops"
+                    : "a table chain composed of repeated @reference applications";
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                    shape + " classifies but does not emit yet", "routine-table-node-composition"));
+            }
+            // Exactly one @routine application: the single-node chain (head == terminus).
+            if (!isRoot) {
+                String headTable = parentType instanceof TableBackedType tbt ? tbt.table().tableName() : null;
+                return switch (routineResolver.resolve(parentTypeName, fieldDef, false, headTable)) {
+                    case RoutineDirectiveResolver.Resolved.Rejected r ->
+                        new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+                    // The correlated child single-node chain classifies cleanly (routine
+                    // resolution, argMapping, and columnMapping all checked); the batched
+                    // LATERAL emit lands with the R435 emit slice.
+                    case RoutineDirectiveResolver.Resolved.TableBound ignored ->
+                        new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                            "a child-positioned @routine (correlated single-node chain) classifies but does not emit yet",
+                            "routine-table-node-composition"));
+                };
+            }
+            // The root single-node chain falls through to classifyRootField's @routine branch.
         }
 
         if (parentType instanceof RootType rootType) {
@@ -3732,7 +3776,7 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
-            return switch (routineResolver.resolve(parentTypeName, fieldDef, true)) {
+            return switch (routineResolver.resolve(parentTypeName, fieldDef, true, null)) {
                 case RoutineDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case RoutineDirectiveResolver.Resolved.TableBound tb ->
@@ -6356,6 +6400,19 @@ class FieldBuilder {
         return fieldDef.getArguments().stream()
             .map(GraphQLArgument::getName)
             .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
+     * The names of the field-level chain-directive applications ({@code @routine} /
+     * {@code @reference}) in authored order — the order the GraphQL parser preserves and the
+     * only order-significant read in the classifier (R435). One entry per application, so a
+     * repeated directive contributes one entry per repetition.
+     */
+    private static java.util.List<String> chainDirectiveNames(GraphQLFieldDefinition fieldDef) {
+        return fieldDef.getAppliedDirectives().stream()
+            .map(graphql.schema.GraphQLAppliedDirective::getName)
+            .filter(n -> DIR_ROUTINE.equals(n) || DIR_REFERENCE.equals(n))
+            .toList();
     }
 
     /**

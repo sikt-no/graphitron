@@ -110,6 +110,7 @@ class BuildContext {
     static final String ARG_EXTERNAL_FIELD_REF = "reference";
     static final String ARG_METHOD             = "method";
     static final String ARG_ARG_MAPPING        = "argMapping";
+    static final String ARG_COLUMN_MAPPING     = "columnMapping";
     static final String ARG_VALUE              = "value";
     static final String ARG_NAME               = "name";
     static final String ARG_ON                 = "on";
@@ -2109,6 +2110,15 @@ class BuildContext {
                 resolvedTable, errors);
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
+            // R435 made @reference repeatable so field-level applications compose the table
+            // chain; order-composition has no meaning on an input field, so repetition here is
+            // a conflict, not a chain.
+            if (field.getAppliedDirectives(DIR_REFERENCE).size() > 1) {
+                return new InputFieldResolution.Unresolved(name, null,
+                    "repeated @reference on an input field is not supported — ordered chain "
+                    + "composition applies only to output field definitions; compose the chain "
+                    + "on the field instead");
+            }
             var path = parsePath(field, name, resolvedTable.tableName(), null);
             if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
