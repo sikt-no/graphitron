@@ -214,6 +214,17 @@ the implementer picks the exact fixture wiring (the nodeid fixtures are single-s
 the catalog-level unit cases above carry the collision coverage if resolver-tier wiring proves
 disproportionate; note the choice in the item when made).
 
+**Implementer decision (In Progress):** the collision coverage sits at the catalog / `BuildContext`
+unit tier on the multischema fixture (`JooqCatalogMultiSchemaTest`), which is where the two new
+collisions (`note`/`event` bare-name target + `note_event_fk` constraint-name) actually live. The
+nodeid fixtures remain single-schema, so wiring a second schema into them purely to re-drive
+`NodeIdLeafResolver` against a collision it cannot otherwise reach was judged disproportionate: the
+resolver's two entry points stay exercised by the existing single-schema `NodeIdLeafResolverTest` /
+`NodeIdPipelineTest`, and the collision-specific behaviour is pinned by the D1-D4 unit cases plus
+the `{key:}` entry-point membership enforcer
+(`parsePathElement_keyNotTouchingSource_rejectsBeforeSynthesis`). The `findUniqueFkToTable`
+directionality cases migrated to the FK-object shape in `JooqCatalogIdRefTest`.
+
 ## Shape / cross-links
 
 - Same "compare class identity, not the name string" pattern as **R396** (`@reference` FK

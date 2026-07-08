@@ -41,9 +41,11 @@ class JooqCatalogIdRefTest {
     // --- findUniqueFkToTable ---
 
     @Test
-    void findUniqueFkToTable_uniqueFk_returnsConstraintName() {
+    void findUniqueFkToTable_uniqueFk_returnsFkObject() {
+        // R440: returns the resolved jOOQ ForeignKey object, not the bare constraint name.
         var result = sakila().findUniqueFkToTable("inventory", "film");
-        assertThat(result).hasValue("inventory_film_id_fkey");
+        assertThat(result).isPresent();
+        assertThat(result.get().getName()).isEqualToIgnoringCase("inventory_film_id_fkey");
     }
 
     @Test

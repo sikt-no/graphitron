@@ -1136,7 +1136,7 @@ public final class CatalogBuilder {
     }
 
     private static String keyConstant(JooqCatalog jooq, ForeignKey<?, ?> fk) {
-        return jooq.fkJavaConstantName(fk.getName()).orElse(fk.getName());
+        return jooq.fkJavaConstantName(fk).orElse(fk.getName());
     }
 
     private static String commentOf(Table<?> table) {

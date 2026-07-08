@@ -324,7 +324,7 @@ public class JooqCatalog {
     /**
      * Returns the jOOQ-generated Java constant names (the {@code TABLE__CONSTRAINT} field names in
      * each schema's {@code Keys} class) of all foreign keys known to the catalog. Companion to
-     * {@link #allForeignKeySqlNames()}: {@link #findForeignKey(String)} resolves keys in either
+     * {@link #allForeignKeySqlNames()}: {@link #findForeignKey(String, String)} resolves keys in either
      * namespace, so a candidate hint must be able to render in either to match the form a schema
      * author used in {@code @reference(key:)}.
      */
@@ -387,68 +387,100 @@ public class JooqCatalog {
     }
 
     /**
-     * Find a foreign key by name, searching all schemas in the catalog.
-     * First tries matching by SQL constraint name (e.g. {@code "film_language_id_fkey"}),
-     * then falls back to matching by the jOOQ-generated Java constant name
-     * (e.g. {@code "FILM__FILM_LANGUAGE_ID_FKEY"}) via reflection on the generated
-     * {@code Keys} class. Both lookups are case-insensitive.
+     * Scoped, sealed foreign-key lookup by name (R440). Replaces the {@code Optional}-returning
+     * {@code findForeignKey(String)}: an {@code Optional} could only collapse a cross-schema
+     * constraint-name collision into "not found", erasing exactly the wrong-join hazard this
+     * surfaces. The result is a {@link ForeignKeyLookup} so the {@link ForeignKeyLookup.Ambiguous}
+     * outcome reaches author-facing call sites as a typed rejection instead of a silent first-hit.
+     *
+     * <p>Matching keeps the historical dual namespace: first the SQL constraint name
+     * (e.g. {@code "film_language_id_fkey"}), then, only if that finds nothing, the jOOQ-generated
+     * Java constant name (e.g. {@code "FILM__FILM_LANGUAGE_ID_FKEY"}) via the {@code Keys} class.
+     * Both are case-insensitive.
+     *
+     * <p>{@code sourceSqlName} (nullable) scopes the candidate set. When it is non-null and resolves
+     * through {@link #findTable(String)} to a single catalog table, candidates are filtered to the
+     * FKs that touch that table (class identity via {@link #foreignKeyTouchesTable}); a cross-schema
+     * constraint-name collision then disambiguates naturally to the one FK on the author's table.
+     * When {@code sourceSqlName} is {@code null}, does not resolve, or a genuine residual collision
+     * survives scoping, more than one distinct FK still matches and {@link ForeignKeyLookup.Ambiguous}
+     * is returned naming the colliding schemas.
      */
     @SuppressWarnings("unchecked")
-    public Optional<ForeignKey<?, ?>> findForeignKey(String name) {
-        if (catalog == null) return Optional.empty();
-        var bySql = (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
+    public ForeignKeyLookup findForeignKey(String name, String sourceSqlName) {
+        if (catalog == null) return new ForeignKeyLookup.NotInCatalog();
+        List<ForeignKey<?, ?>> bySql = (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
             .filter(fk -> fk.getName().equalsIgnoreCase(name))
-            .findFirst();
-        if (bySql.isPresent()) {
-            return bySql;
+            .toList();
+        List<ForeignKey<?, ?>> candidates = bySql.isEmpty()
+            ? (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
+                .flatMap(schema -> keysClass(schema).stream())
+                .flatMap(cls -> Arrays.stream(cls.getFields()))
+                .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
+                .filter(f -> f.getName().equalsIgnoreCase(name))
+                .map(f -> (ForeignKey<?, ?>) fieldValue(f))
+                .toList()
+            : bySql;
+        if (candidates.isEmpty()) return new ForeignKeyLookup.NotInCatalog();
+        if (sourceSqlName != null) {
+            var scoped = candidates.stream()
+                .filter(fk -> foreignKeyTouchesTable(fk, sourceSqlName))
+                .toList();
+            if (!scoped.isEmpty()) candidates = scoped;
         }
-        return (Optional<ForeignKey<?, ?>>) (Optional<?>) catalog.schemaStream()
-            .flatMap(schema -> keysClass(schema).stream())
-            .flatMap(cls -> Arrays.stream(cls.getFields()))
-            .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
-            .filter(f -> f.getName().equalsIgnoreCase(name))
-            .map(f -> fieldValue(f))
-            .findFirst();
+        var distinct = candidates.stream().distinct().toList();
+        if (distinct.size() == 1) return new ForeignKeyLookup.Resolved(distinct.get(0));
+        List<String> schemas = distinct.stream()
+            .map(fk -> fk.getTable().getSchema().getName())
+            .distinct()
+            .sorted()
+            .toList();
+        return new ForeignKeyLookup.Ambiguous(schemas);
     }
 
     /**
      * Returns the Java constant name (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}) of a foreign
-     * key in the generated {@code Keys} class, given the SQL constraint name
-     * (e.g. {@code "film_language_id_fkey"}). Used at build time to emit
-     * {@code Keys.FK_...} references in generated code.
+     * key in the generated {@code Keys} class, given the jOOQ {@link ForeignKey} instance
+     * (R440: resolved by class identity via {@link #findForeignKeyRef}, not by re-looking-up the
+     * bare SQL name). Used at build time to emit {@code Keys.FK_...} references in generated code.
      *
      * <p>Returns empty when the catalog or Keys class is not available (e.g. unit tests that do
-     * not depend on jOOQ codegen output) or when no matching key is found.
+     * not depend on jOOQ codegen output) or when the FK is not in the catalog.
      */
-    public Optional<String> fkJavaConstantName(String sqlConstraintName) {
-        return findForeignKeyByName(sqlConstraintName).asRef().map(ForeignKeyRef::constantName);
+    public Optional<String> fkJavaConstantName(ForeignKey<?, ?> fk) {
+        return findForeignKeyRef(fk).asRef().map(ForeignKeyRef::constantName);
     }
 
     /**
-     * Resolves a foreign key by SQL constraint name into a typed {@link ForeignKeyRef} carrying
-     * the schema-correct {@code Keys} {@link ClassName} together with the Java constant name.
-     * Replaces per-emit-site {@code ClassName.get(jooqPackage, "Keys")} concatenation: the keys
-     * class is read from the live {@link Class} of the matching FK constant, so multi-schema
-     * codegen layouts produce schema-segmented FQNs (e.g. {@code multischema_a.Keys}) without
-     * any caller-side derivation.
+     * Resolves a jOOQ {@link ForeignKey} instance into a typed {@link ForeignKeyRef} carrying the
+     * schema-correct {@code Keys} {@link ClassName} together with the Java constant name, by
+     * <em>reference identity</em> (R440). Scans only the {@code Keys} class of the FK-holder schema
+     * (the schema of {@code fk.getTable()}, which structurally pins the owning schema) and matches
+     * the constant whose value {@code == fk}. jOOQ's generated {@link ForeignKey#getReferences()}
+     * returns the same {@code Keys.FK_*} singletons, so identity holds for every FK that flows out
+     * of the catalog; that singleton assumption is an invariant whose named enforcer is
+     * {@code JooqCatalogMultiSchemaTest.findForeignKeyRef_*}. No name matching anywhere, so a
+     * constraint name colliding across schemas cannot mis-resolve.
      *
-     * <p>The returned {@link ForeignKeyResolution} is {@link ForeignKeyResolution.Resolved}
-     * carrying the {@link ForeignKeyRef} when the FK is found, otherwise
-     * {@link ForeignKeyResolution.NotInCatalog}. FK names are scoped to a {@code Keys} class so
-     * cross-schema ambiguity does not apply at this lookup. The match is case-insensitive on the
-     * SQL name (consistent with {@link #findForeignKey(String)}).
+     * <p>Replaces per-emit-site {@code ClassName.get(jooqPackage, "Keys")} concatenation: the keys
+     * class is read from the live {@link Class} of the matching FK constant, so multi-schema
+     * codegen layouts produce schema-segmented FQNs (e.g. {@code multischema_a.Keys}) without any
+     * caller-side derivation.
+     *
+     * <p>{@link ForeignKeyResolution.Resolved} carries the {@link ForeignKeyRef} when the FK is
+     * found; {@link ForeignKeyResolution.NotInCatalog} when the constant is absent from the holder
+     * schema's {@code Keys} class (a catalog-vs-FK mismatch; defensive).
      */
-    public ForeignKeyResolution findForeignKeyByName(String sqlConstraintName) {
+    public ForeignKeyResolution findForeignKeyRef(ForeignKey<?, ?> fk) {
         if (catalog == null) return new ForeignKeyResolution.NotInCatalog();
-        return catalog.schemaStream()
-            .flatMap(schema -> keysClass(schema).stream())
+        return keysClass(fk.getTable().getSchema()).stream()
             .flatMap(cls -> Arrays.stream(cls.getFields()))
             .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
-            .filter(f -> ((ForeignKey<?, ?>) fieldValue(f)).getName().equalsIgnoreCase(sqlConstraintName))
+            .filter(f -> fieldValue(f) == fk)
             .map(f -> new ForeignKeyRef(
-                ((ForeignKey<?, ?>) fieldValue(f)).getName(),
+                fk.getName(),
                 ClassName.get(f.getDeclaringClass()),
                 f.getName()))
             .findFirst()
@@ -549,19 +581,22 @@ public class JooqCatalog {
     }
 
     /**
-     * Returns the FK constraint name when exactly one outgoing FK from {@code sourceTableSqlName}
-     * references {@code targetTableSqlName}; empty otherwise (zero or many).
+     * Returns the FK object when exactly one outgoing FK from {@code sourceTableSqlName} references
+     * {@code targetTableSqlName}; empty otherwise (zero or many). Returns the resolved jOOQ
+     * {@link ForeignKey} (R440) rather than its bare constraint name, so the caller can hand it
+     * straight to {@link BuildContext#synthesizeFkJoin} by class identity instead of round-tripping
+     * through a name re-lookup that would reintroduce cross-schema collision.
      *
      * <p>Directional: only FKs where {@code sourceTableSqlName} is the FK source (not the target)
      * are counted. Uses {@link #findForeignKeysBetweenTables} and filters to the source side via
      * {@link #foreignKeyOnSource} (identity-based, so a schema-qualified source is not silently
      * dropped by the bare endpoint-name compare).
      */
-    public Optional<String> findUniqueFkToTable(String sourceTableSqlName, String targetTableSqlName) {
+    public Optional<ForeignKey<?, ?>> findUniqueFkToTable(String sourceTableSqlName, String targetTableSqlName) {
         var matches = findForeignKeysBetweenTables(sourceTableSqlName, targetTableSqlName).stream()
             .filter(fk -> foreignKeyOnSource(fk, sourceTableSqlName, /*selfRefHint=*/true))
             .toList();
-        return matches.size() == 1 ? Optional.of(matches.get(0).getName()) : Optional.empty();
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
     }
 
     /**
@@ -613,7 +648,14 @@ public class JooqCatalog {
      * Empty when the FK is not found or does not originate from {@code sourceTableSqlName}.
      */
     public Optional<String> qualifierForFk(String sourceTableSqlName, String fkName) {
-        return findForeignKey(fkName)
+        // R440: scope the lookup by the source table so a constraint name colliding across schemas
+        // resolves to this table's FK instead of the first-hit wrong schema. Keeps the Optional
+        // contract (non-author-facing): NotInCatalog / Ambiguous both map to empty; scoping makes
+        // the collision resolve, so callers' "unreachable" guards stay genuine can't-happens.
+        if (!(findForeignKey(fkName, sourceTableSqlName) instanceof ForeignKeyLookup.Resolved r)) {
+            return Optional.empty();
+        }
+        return Optional.of(r.fk())
             .filter(fk -> foreignKeyOnSource(fk, sourceTableSqlName, /*selfRefHint=*/true))
             .map(JooqCatalog::localGetQualifier);
     }
@@ -1324,22 +1366,48 @@ public class JooqCatalog {
     }
 
     /**
-     * Sub-taxonomy of outcomes for {@link #findForeignKeyByName(String)}. Symmetric in spirit to
-     * {@link TableResolution} with one failure arm: FK names are scoped to a {@code Keys} class
-     * so cross-schema ambiguity does not apply at this lookup. Lets
+     * Sub-taxonomy of outcomes for {@link #findForeignKeyRef(ForeignKey)}. Symmetric in spirit to
+     * {@link TableResolution} with one failure arm: the reference-identity lookup resolves an FK
+     * that already flowed out of the catalog, so ambiguity cannot apply. Lets
      * {@link no.sikt.graphitron.rewrite.BuildContext#synthesizeFkJoin} distinguish "endpoint
-     * table missing" from "FK name missing" instead of conflating both into a single empty.
+     * table missing" from "FK not in catalog" instead of conflating both into a single empty.
      */
     public sealed interface ForeignKeyResolution {
-        /** The FK constraint name resolves to exactly one FK in the catalog. */
+        /** The FK instance resolves to exactly one {@code Keys}-class constant in its holder schema. */
         record Resolved(ForeignKeyRef ref) implements ForeignKeyResolution {}
 
-        /** No schema's {@code Keys} class declares an FK with this constraint name. */
+        /** The FK instance is not present in its holder schema's {@code Keys} class (defensive). */
         record NotInCatalog() implements ForeignKeyResolution {}
 
         /** Project to {@link Optional}{@code <ForeignKeyRef>} for callers that ignore the failure mode. */
         default Optional<ForeignKeyRef> asRef() {
             return this instanceof Resolved r ? Optional.of(r.ref()) : Optional.empty();
+        }
+    }
+
+    /**
+     * Sealed outcome of the scoped name lookup {@link #findForeignKey(String, String)} (R440).
+     * A {@code JooqCatalog}-local result type in the same family as {@link TableResolution},
+     * {@link ForeignKeyResolution}, and {@link RoutineResolution}. Unlike the retired
+     * {@code Optional<ForeignKey>} form, it keeps the raw jOOQ {@link ForeignKey} (a permitted
+     * holder inside the catalog boundary) on {@link Resolved} and surfaces {@link Ambiguous} as a
+     * first-class arm so a cross-schema constraint-name collision reaches author-facing call sites
+     * as a typed rejection instead of a silent first-hit.
+     *
+     * <p>Not in scope for {@code VariantCoverageTest} (which covers classification leaves) or
+     * {@code SealedHierarchyDocCoverageTest} (which walks only the {@code Rejection} hierarchy);
+     * documented here by javadoc, in the sibling-result-type convention.
+     */
+    public sealed interface ForeignKeyLookup {
+        /** The name resolves (within scope) to exactly one FK; carries the raw jOOQ instance. */
+        record Resolved(ForeignKey<?, ?> fk) implements ForeignKeyLookup {}
+
+        /** No FK matches the name in either the SQL or jOOQ-constant namespace. */
+        record NotInCatalog() implements ForeignKeyLookup {}
+
+        /** More than one distinct FK matches after scoping; {@code schemas} names the colliding schemas. */
+        record Ambiguous(List<String> schemas) implements ForeignKeyLookup {
+            public Ambiguous { schemas = List.copyOf(schemas); }
         }
     }
 }

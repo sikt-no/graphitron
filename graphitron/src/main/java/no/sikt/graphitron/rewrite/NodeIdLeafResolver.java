@@ -459,17 +459,13 @@ final class NodeIdLeafResolver {
                 "no unique FK from '" + containingTable.tableName() + "' to '" + targetTableName
                 + "'; declare @reference(path: [{key: ...}]) to disambiguate");
         }
-        String fkName = inferred.get();
-        var fkOpt = ctx.catalog.findForeignKey(fkName);
-        if (fkOpt.isEmpty()) {
-            return new JoinPathResult(null, null,
-                "FK '" + fkName + "' on table '" + containingTable.tableName()
-                + "' not found in catalog");
-        }
+        // R440: findUniqueFkToTable resolved endpoints by class and returns the FK object itself;
+        // hand it straight to synthesizeFkJoin rather than round-tripping through a bare-name
+        // re-lookup that would reintroduce cross-schema constraint-name collision.
         // NodeId leafs are single-cardinality decoded keys against the parent's own table; the
         // shim's invariant places the FK on the parent (source) side, so selfRefFkOnSource=true.
         var fkStepResolution = ctx.synthesizeFkJoin(
-            fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
+            inferred.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
                 new JoinPathResult(List.of(r.hop()), r.pairs().sourceSideColumns(), null);

@@ -962,7 +962,7 @@ class BuildContext {
         }
         return touching.stream()
             .map(fk -> constantNamespace
-                ? catalog.fkJavaConstantName(fk.getName()).orElse(fk.getName())
+                ? catalog.fkJavaConstantName(fk).orElse(fk.getName())
                 : fk.getName())
             .distinct()
             .toList();
@@ -1140,6 +1140,29 @@ class BuildContext {
             "foreign key '" + fkName + "' could not be resolved in the jOOQ catalog",
             fkName,
             constantNamespace ? catalog.allForeignKeyConstantNames() : catalog.allForeignKeySqlNames());
+    }
+
+    /**
+     * Builds the {@link Rejection} for a {@code @reference(key:)} name that matches an FK constraint
+     * name present in more than one schema (R440). Symmetric to {@link #unknownTableRejection}'s
+     * ambiguity arm: an {@link Rejection.AuthorError.Structural} rule violation, not a "did you
+     * mean" candidate lookup (the author spelled a real name; what they need is to scope it, not a
+     * typo fix). Names the colliding schemas and the schema-qualified forms so the fix is actionable.
+     *
+     * <p>Reached only from the author-facing name-lookup sites (the {@code {key:}} path element, the
+     * IdReference synthesis shim, and the explicit {@code @reference(key:)} record-FK site) when the
+     * source table did not scope the collision away. {@link #synthesizeFkJoin} never surfaces this:
+     * after R440 the FK there is resolved by class identity, so ambiguity is impossible past the
+     * name-lookup boundary.
+     */
+    Rejection ambiguousForeignKeyRejection(String fkName, List<String> schemas) {
+        String qualifiedHints = schemas.stream()
+            .map(s -> "'" + s + "." + fkName + "'")
+            .collect(Collectors.joining(", "));
+        return Rejection.structural(
+            "foreign key '" + fkName + "' is ambiguous: the constraint name is defined in schemas "
+            + schemas + "; scope the source @table(name:) so the FK resolves within one schema"
+            + " (qualified forms: " + qualifiedHints + ")");
     }
 
     /**
@@ -1336,13 +1359,16 @@ class BuildContext {
      *
      * <p>Returns:
      * <ul>
-     *   <li>{@link FkJoinResolution.Resolved} when both endpoint tables and the FK constraint name
+     *   <li>{@link FkJoinResolution.Resolved} when both endpoint tables and the FK
      *       resolve through the catalog;</li>
-     *   <li>{@link FkJoinResolution.UnknownTable} carrying the failing
-     *       {@link JooqCatalog.TableResolution} (always {@code NotInCatalog} or {@code Ambiguous})
-     *       when an endpoint cannot be resolved;</li>
-     *   <li>{@link FkJoinResolution.UnknownForeignKey} when the FK constraint name itself is
-     *       absent from every schema's {@code Keys} class.</li>
+     *   <li>{@link FkJoinResolution.UnknownTable} (R440: defensive-only, always {@code NotInCatalog})
+     *       when an endpoint's jOOQ class is not in the catalog, a catalog-vs-FK mismatch. Both
+     *       endpoints are resolved by class identity off the FK, so this never fires on bare-name
+     *       ambiguity; author-facing source-membership is validated upstream (the
+     *       {@link JooqCatalog#foreignKeyTouchesTable} check in {@link #parsePathElement}, and by
+     *       construction on the shim / {@code NodeIdLeafResolver} routes);</li>
+     *   <li>{@link FkJoinResolution.UnknownForeignKey} when the FK instance is absent from its
+     *       holder schema's {@code Keys} class (also defensive after R440).</li>
      * </ul>
      * Callers switch over this result and route each failure shape through the matching diagnostic
      * builder ({@link #unknownTableRejection} / {@link #unknownForeignKeyRejection}).
@@ -1356,27 +1382,32 @@ class BuildContext {
      */
     FkJoinResolution synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
             int stepIndex, JoinConditionRef whereFilter, boolean selfRefFkOnSource) {
-        String fkSideTable  = f.getTable().getName();
-        String keySideTable = f.getKey().getTable().getName();
         boolean fkOnSource = catalog.foreignKeyOnSource(f, sourceSqlName, selfRefFkOnSource);
-        String targetSqlName = fkOnSource ? keySideTable : fkSideTable;
+        // R440: both endpoints are resolved by jOOQ class identity off the FK object, never by bare
+        // SQL name. The FK already pins the exact target and origin Table classes, so two schemas
+        // sharing a bare table name no longer yield Ambiguous here, and the orientation (fkOnSource,
+        // itself identity-based since R396) picks which endpoint is the target.
+        var targetJooq = fkOnSource ? f.getKey().getTable() : f.getTable();
+        var originJooq = fkOnSource ? f.getTable() : f.getKey().getTable();
 
-        var fkResolution = catalog.findForeignKeyByName(f.getName());
+        var fkResolution = catalog.findForeignKeyRef(f);
         if (!(fkResolution instanceof JooqCatalog.ForeignKeyResolution.Resolved fkResolved)) {
             return new FkJoinResolution.UnknownForeignKey(f.getName());
         }
 
-        var targetResolution = catalog.findTable(targetSqlName);
-        if (!(targetResolution instanceof JooqCatalog.TableResolution.Resolved targetResolved)) {
-            return new FkJoinResolution.UnknownTable(targetSqlName, targetResolution);
+        var targetEntry = catalog.findTableByClass(targetJooq.getClass());
+        if (targetEntry.isEmpty()) {
+            return new FkJoinResolution.UnknownTable(targetJooq.getName(), new JooqCatalog.TableResolution.NotInCatalog());
         }
-        var originResolution = catalog.findTable(sourceSqlName);
-        if (!(originResolution instanceof JooqCatalog.TableResolution.Resolved originResolved)) {
-            return new FkJoinResolution.UnknownTable(sourceSqlName, originResolution);
+        var originEntry = catalog.findTableByClass(originJooq.getClass());
+        if (originEntry.isEmpty()) {
+            return new FkJoinResolution.UnknownTable(sourceSqlName, new JooqCatalog.TableResolution.NotInCatalog());
         }
 
-        TableRef targetTable = targetResolved.entry().toTableRef(targetSqlName);
-        TableRef originTable = originResolved.entry().toTableRef(sourceSqlName);
+        // Target requested name is the endpoint's own jOOQ name; origin keeps sourceSqlName so the
+        // case-preserved directive form still flows into error messages.
+        TableRef targetTable = targetEntry.get().toTableRef(targetJooq.getName());
+        TableRef originTable = originEntry.get().toTableRef(sourceSqlName);
         List<JoinSlot.FkSlot> slots = resolveFkSlots(f, fkOnSource);
         String alias = fieldName + "_" + stepIndex;
         return new FkJoinResolution.Resolved(new JoinStep.Hop(
@@ -1547,13 +1578,20 @@ class BuildContext {
         String alias = fieldName + "_" + stepIndex;
 
         if (keyName.isPresent()) {
-            Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
-            if (fk.isEmpty()) {
+            // R440: scope the FK-name lookup by the current source so a constraint name colliding
+            // across schemas resolves to this position's table; a genuine unresolved collision
+            // (null / unresolvable scope) surfaces as a typed Ambiguous rejection, not a silent hit.
+            var fkLookup = catalog.findForeignKey(keyName.get(), currentSourceSqlName);
+            if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog) {
                 errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(keyName.get(), fkCandidateNames(currentSourceSqlName, keyName.get())));
                 return;
             }
-            var f = fk.get();
+            if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.Ambiguous amb) {
+                errors.add(ambiguousForeignKeyRejection(keyName.get(), amb.schemas()).message());
+                return;
+            }
+            var f = ((JooqCatalog.ForeignKeyLookup.Resolved) fkLookup).fk();
             String fkSideTable  = f.getTable().getName();
             String keySideTable = f.getKey().getTable().getName();
             if (currentSourceSqlName != null
@@ -2208,66 +2246,73 @@ class BuildContext {
                 && !field.hasAppliedDirective(DIR_REFERENCE)) {
             String shimFkName = catalog.buildQualifierMap(tableName).get(columnName.toLowerCase());
             if (shimFkName != null) {
-                String qualifier = catalog.qualifierForFk(tableName, shimFkName)
-                    .orElseThrow(() -> new IllegalStateException(
-                        "qualifierForFk returned empty for FK '" + shimFkName + "' on table '"
-                        + tableName + "' — should be unreachable"));
-                Optional<String> targetTableOpt = catalog.findForeignKey(shimFkName)
-                    .map(fk -> fk.getKey().getTable().getName());
-                Optional<String> targetTypeOpt = targetTableOpt.flatMap(this::findGraphQLTypeForTable);
-                // Gate: target table carries __NODE_TYPE_ID. Same KjerneJooqGenerator-project
-                // sentinel the scalar bare-ID NodeId shim uses; if the target isn't a node type the
-                // canonical replacement we'd emit (@nodeId(typeName:)) wouldn't typecheck either.
-                var shimTargetMeta = catalog.nodeIdMetadata(targetTableOpt.orElse(""));
-                if (shimTargetMeta.isPresent() && targetTypeOpt.isPresent()) {
-                    boolean fkAmbiguous = catalog
-                        .findUniqueFkToTable(tableName, targetTableOpt.get())
-                        .isEmpty();
-                    String canonical = fkAmbiguous
-                        ? "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")"
-                          + " @reference(path: [{key: \"" + shimFkName + "\"}])"
-                        : "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")";
-                    ID_REF_SHIM_LOGGER.warn(
-                        "input field '{}.{}' synthesizes a NodeId reference from qualifier '{}'"
-                        + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
-                        + " The shim will be removed in a future release;"
-                        + " see roadmap/retire-id-reference-synthesis-shim.md",
-                        parentTypeName, name, qualifier, shimFkName, canonical);
-                    Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, errors);
-                    var shimFkOpt = catalog.findForeignKey(shimFkName);
-                    if (shimFkOpt.isEmpty()) {
-                        return new InputFieldResolution.Unresolved(name, null,
-                            "synthesis shim FK '" + shimFkName + "' not found in catalog");
+                // R440: resolve the FK once, scoped by the backing table, so a constraint name
+                // colliding across schemas resolves to this table's FK instead of a first-hit. The
+                // FK object is then carried by identity into synthesizeFkJoin (no bare re-lookup).
+                var shimFkLookup = catalog.findForeignKey(shimFkName, tableName);
+                if (shimFkLookup instanceof JooqCatalog.ForeignKeyLookup.Ambiguous shimAmb) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        ambiguousForeignKeyRejection(shimFkName, shimAmb.schemas()).message());
+                }
+                // NotInCatalog cannot happen here (shimFkName came from the qualifier map built off
+                // this table's own references); fall through to the column lookup if it somehow does.
+                if (shimFkLookup instanceof JooqCatalog.ForeignKeyLookup.Resolved shimFkResolvedLookup) {
+                    var shimFk = shimFkResolvedLookup.fk();
+                    String qualifier = catalog.qualifierForFk(tableName, shimFkName)
+                        .orElseThrow(() -> new IllegalStateException(
+                            "qualifierForFk returned empty for FK '" + shimFkName + "' on table '"
+                            + tableName + "' — should be unreachable"));
+                    String shimTargetTable = shimFk.getKey().getTable().getName();
+                    Optional<String> targetTypeOpt = findGraphQLTypeForTable(shimTargetTable);
+                    // Gate: target table carries __NODE_TYPE_ID. Same KjerneJooqGenerator-project
+                    // sentinel the scalar bare-ID NodeId shim uses; if the target isn't a node type the
+                    // canonical replacement we'd emit (@nodeId(typeName:)) wouldn't typecheck either.
+                    var shimTargetMeta = catalog.nodeIdMetadata(shimTargetTable);
+                    if (shimTargetMeta.isPresent() && targetTypeOpt.isPresent()) {
+                        boolean fkAmbiguous = catalog
+                            .findUniqueFkToTable(tableName, shimTargetTable)
+                            .isEmpty();
+                        String canonical = fkAmbiguous
+                            ? "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")"
+                              + " @reference(path: [{key: \"" + shimFkName + "\"}])"
+                            : "@nodeId(typeName: \"" + targetTypeOpt.get() + "\")";
+                        ID_REF_SHIM_LOGGER.warn(
+                            "input field '{}.{}' synthesizes a NodeId reference from qualifier '{}'"
+                            + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
+                            + " The shim will be removed in a future release;"
+                            + " see roadmap/retire-id-reference-synthesis-shim.md",
+                            parentTypeName, name, qualifier, shimFkName, canonical);
+                        Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, errors);
+                        // Synthesis shim is for input-side NodeId refs; the parent (input field's
+                        // backing table) holds the FK by the shim's invariant, so selfRefFkOnSource
+                        // is fixed at true.
+                        var shimFkResolution = synthesizeFkJoin(shimFk, tableName, name, 0, null, /*selfRefFkOnSource=*/true);
+                        var shimTargetResolution = catalog.findTable(shimTargetTable);
+                        if (!(shimFkResolution instanceof FkJoinResolution.Resolved shimFkResolved)) {
+                            return switch (shimFkResolution) {
+                                case FkJoinResolution.UnknownTable u -> new InputFieldResolution.Unresolved(name, null,
+                                    unknownTableRejection(u.failure(), u.requestedName()).message());
+                                case FkJoinResolution.UnknownForeignKey uf -> new InputFieldResolution.Unresolved(name, null,
+                                    unknownForeignKeyRejection(uf.fkName()).message());
+                                case FkJoinResolution.Resolved r -> throw new IllegalStateException("unreachable");
+                            };
+                        }
+                        if (!(shimTargetResolution instanceof JooqCatalog.TableResolution.Resolved shimTargetResolved)) {
+                            return new InputFieldResolution.Unresolved(name, null,
+                                unknownTableRejection(shimTargetResolution, shimTargetTable).message());
+                        }
+                        List<JoinStep> shimJoinPath = List.of(shimFkResolved.hop());
+                        // Single-hop FK shim path: the lifted tuple is the first hop's source-side
+                        // columns by construction (length-1 path; lift predicate is vacuous).
+                        return buildInputNodeIdReference(
+                            parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                            shimTargetResolved.entry().toTableRef(shimTargetTable),
+                            targetTypeOpt.get(), shimTargetTable,
+                            shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
+                            shimJoinPath,
+                            shimFkResolved.pairs().sourceSideColumns(),
+                            shimRefCond);
                     }
-                    // Synthesis shim is for input-side NodeId refs; the parent (input field's
-                    // backing table) holds the FK by the shim's invariant, so selfRefFkOnSource
-                    // is fixed at true.
-                    var shimFkResolution = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null, /*selfRefFkOnSource=*/true);
-                    var shimTargetResolution = catalog.findTable(targetTableOpt.get());
-                    if (!(shimFkResolution instanceof FkJoinResolution.Resolved shimFkResolved)) {
-                        return switch (shimFkResolution) {
-                            case FkJoinResolution.UnknownTable u -> new InputFieldResolution.Unresolved(name, null,
-                                unknownTableRejection(u.failure(), u.requestedName()).message());
-                            case FkJoinResolution.UnknownForeignKey uf -> new InputFieldResolution.Unresolved(name, null,
-                                unknownForeignKeyRejection(uf.fkName()).message());
-                            case FkJoinResolution.Resolved r -> throw new IllegalStateException("unreachable");
-                        };
-                    }
-                    if (!(shimTargetResolution instanceof JooqCatalog.TableResolution.Resolved shimTargetResolved)) {
-                        return new InputFieldResolution.Unresolved(name, null,
-                            unknownTableRejection(shimTargetResolution, targetTableOpt.get()).message());
-                    }
-                    List<JoinStep> shimJoinPath = List.of(shimFkResolved.hop());
-                    // Single-hop FK shim path: the lifted tuple is the first hop's source-side
-                    // columns by construction (length-1 path; lift predicate is vacuous).
-                    return buildInputNodeIdReference(
-                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        shimTargetResolved.entry().toTableRef(targetTableOpt.get()),
-                        targetTypeOpt.get(), targetTableOpt.get(),
-                        shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
-                        shimJoinPath,
-                        shimFkResolved.pairs().sourceSideColumns(),
-                        shimRefCond);
                 }
             }
         }
@@ -2654,7 +2699,8 @@ class BuildContext {
      * expressed in the rewrite's model.
      *
      * <p>FK selection: an explicit {@code @reference(key:)} ({@code explicitFkKey}) names the FK
-     * verbatim via {@link JooqCatalog#findForeignKey}; otherwise the FK is <em>deduced</em> as the
+     * verbatim via {@link JooqCatalog#findForeignKey(String, String)} (scoped by the record table);
+     * otherwise the FK is <em>deduced</em> as the
      * single foreign key whose source side is {@code recordTable} and which references
      * {@code nodeTableSqlName} (the directional {@code findUniqueFkToTable} deduction, materialised to
      * the FK object). Zero or multiple such FKs reject through {@link #fkCountMessage}, asking the
@@ -2672,13 +2718,19 @@ class BuildContext {
             List<ColumnRef> nodeKeyColumns, Optional<String> explicitFkKey) {
         ForeignKey<?, ?> fk;
         if (explicitFkKey.isPresent()) {
-            var fkOpt = catalog.findForeignKey(explicitFkKey.get());
-            if (fkOpt.isEmpty()) {
+            // R440: scope by the record's own table so a colliding constraint name resolves to this
+            // record's schema; an unresolved collision surfaces as a typed Ambiguous rejection.
+            var fkLookup = catalog.findForeignKey(explicitFkKey.get(), recordTable.tableName());
+            if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog) {
                 return new RecordFkTargets.Rejected("@reference(key: \"" + explicitFkKey.get()
                     + "\") could not be resolved in the jOOQ catalog"
                     + candidateHint(explicitFkKey.get(), catalog.allForeignKeySqlNames()));
             }
-            fk = fkOpt.get();
+            if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.Ambiguous amb) {
+                return new RecordFkTargets.Rejected(
+                    ambiguousForeignKeyRejection(explicitFkKey.get(), amb.schemas()).message());
+            }
+            fk = ((JooqCatalog.ForeignKeyLookup.Resolved) fkLookup).fk();
         } else {
             var directional = catalog.findForeignKeysBetweenTables(recordTable.tableName(), nodeTableSqlName)
                 .stream()

@@ -44,7 +44,8 @@ class SynthesizeFkJoinReorderedKeysTest {
     @Test
     void synthesizeFkJoin_pairsSlotsByFkOwnReferencedColumnList() {
         var ctx = new BuildContext(null, nodeIdCatalog(), stubRewriteContext());
-        var fk = nodeIdCatalog().findForeignKey("reordered_fk_child_parent_fkey").orElseThrow();
+        var fk = ((JooqCatalog.ForeignKeyLookup.Resolved) nodeIdCatalog()
+            .findForeignKey("reordered_fk_child_parent_fkey", null)).fk();
 
         // Sanity-check the FK shape: jOOQ exposes two distinct lists; this fixture provokes the
         // divergence the test guards against. If the next jOOQ upgrade folds these into one,

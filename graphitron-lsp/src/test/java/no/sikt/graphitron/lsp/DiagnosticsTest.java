@@ -280,7 +280,7 @@ class DiagnosticsTest {
 
     @Test
     void knownReferenceKeyMatchesCaseInsensitively() {
-        // Mirrors JooqCatalog.findForeignKeyByName, which the runtime
+        // Mirrors JooqCatalog.findForeignKey(name, source), which the runtime
         // resolver uses with equalsIgnoreCase. The LSP must not flag a
         // lowercased FK name the generator would accept.
         var file = file("""

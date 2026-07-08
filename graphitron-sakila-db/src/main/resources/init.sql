@@ -936,6 +936,27 @@ CREATE TABLE multischema_b.event (
     code       varchar(50) NOT NULL
 );
 
+-- R440: a 'note' table in BOTH schemas, each with an FK explicitly named 'note_event_fk' into its
+-- OWN schema's 'event'. This yields the two collisions the earlier fixture lacked: (1) the FK
+-- target is 'event', a bare table name that collides across schemas and is reached via FK
+-- synthesis, and (2) the FK CONSTRAINT name 'note_event_fk' is identical in both schemas. Postgres
+-- constraint names are schema-scoped, so the duplicate name is legal. Before R440 the bare-name
+-- endpoint lookup returned Ambiguous (join fails) and the bare-name FK lookup silently returned the
+-- first schema's FK (wrong-join hazard). Class-identity / reference-identity resolution fixes both.
+CREATE TABLE multischema_a.note (
+    note_id    serial      PRIMARY KEY,
+    event_id   int,
+    body       varchar(50) NOT NULL,
+    CONSTRAINT note_event_fk FOREIGN KEY (event_id) REFERENCES multischema_a.event(event_id)
+);
+
+CREATE TABLE multischema_b.note (
+    note_id    serial      PRIMARY KEY,
+    event_id   int,
+    body       varchar(50) NOT NULL,
+    CONSTRAINT note_event_fk FOREIGN KEY (event_id) REFERENCES multischema_b.event(event_id)
+);
+
 -- R83 execution-tier seed: minimal rows so a query that traverses the cross-schema
 -- FK (gadget -> widget) round-trips end-to-end. Keeps the dataset small enough
 -- that pagination / ordering concerns stay out of scope: one widget, two gadgets
@@ -946,6 +967,10 @@ INSERT INTO multischema_a.event  (event_id,  name) VALUES (10, 'launch-a');
 INSERT INTO multischema_b.event  (event_id,  code) VALUES (20, 'B-001');
 INSERT INTO multischema_b.gadget (gadget_id, widget_id, note) VALUES (100, 1, 'first-gadget');
 INSERT INTO multischema_b.gadget (gadget_id, widget_id, note) VALUES (101, 1, 'second-gadget');
+
+-- R440: one note row per schema so the colliding-FK fixture can round-trip at the execution tier.
+INSERT INTO multischema_a.note (note_id, event_id, body) VALUES (200, 10, 'note-a');
+INSERT INTO multischema_b.note (note_id, event_id, body) VALUES (300, 20, 'note-b');
 
 -- R395 seed: two ALERT rows (one of which a NoticeSignal does not match) and one NOTICE row, with
 -- the ALERT rows carrying an FK to the seeded widget so the cross-table @reference resolves.

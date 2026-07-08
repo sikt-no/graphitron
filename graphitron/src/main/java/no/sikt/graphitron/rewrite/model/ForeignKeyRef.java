@@ -14,8 +14,8 @@ import no.sikt.graphitron.javapoet.ClassName;
  * segmented FQNs (e.g. {@code multischema_a.Keys}) without the per-caller
  * {@code ClassName.get(jooqPackage, "Keys")} concatenation that this record retires.
  *
- * <p>Built by {@link no.sikt.graphitron.rewrite.JooqCatalog#findForeignKeyByName(String)} from a
- * resolved jOOQ {@link org.jooq.ForeignKey}; emitters consume it through
- * {@link On.ColumnPairs#fk()}.
+ * <p>Built by {@link no.sikt.graphitron.rewrite.JooqCatalog#findForeignKeyRef(org.jooq.ForeignKey)}
+ * from a resolved jOOQ {@link org.jooq.ForeignKey} by reference identity; emitters consume it
+ * through {@link On.ColumnPairs#fk()}.
  */
 public record ForeignKeyRef(String sqlName, ClassName keysClass, String constantName) {}

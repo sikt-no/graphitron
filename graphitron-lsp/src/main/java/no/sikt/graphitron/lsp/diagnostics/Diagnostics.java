@@ -684,7 +684,7 @@ public final class Diagnostics {
     ) {
         String fkName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fkName.isEmpty()) return;
-        // Match case-insensitively to mirror JooqCatalog.findForeignKeyByName,
+        // Match case-insensitively to mirror JooqCatalog.findForeignKey(name, source),
         // which the runtime resolver uses; the LSP must not flag names the
         // generator would accept. Path-step refinement (which step's table we
         // are on) is deferred along with path-aware completion.
