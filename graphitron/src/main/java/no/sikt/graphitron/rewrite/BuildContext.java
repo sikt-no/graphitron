@@ -1235,20 +1235,35 @@ class BuildContext {
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName, TableRef returnTableRef, boolean isList) {
-        var directive = container.getAppliedDirective(DIR_REFERENCE);
-        var pathArg = directive != null ? directive.getArgument(ARG_PATH) : null;
-        List<?> elements;
-        if (pathArg != null) {
-            Object pathValue = pathArg.getValue();
-            elements = pathValue instanceof List<?> l ? l : List.of(pathValue);
-        } else {
-            elements = List.of();
+        // R435: @reference is repeatable, and repeated field-level applications compose one
+        // chain — their path elements concatenate in authored order over a single running
+        // source, so a multi-application chain is just a longer path to every downstream
+        // consumer. Argument / input-field positions reject repeated applications upstream,
+        // and the root-head rule rejects an @reference-first root chain, so concatenation
+        // here is the field-level chain rule and nothing else.
+        var applications = container.getAppliedDirectives(DIR_REFERENCE);
+        var elements = new ArrayList<Object>();
+        for (var application : applications) {
+            var pathArg = application.getArgument(ARG_PATH);
+            Object pathValue = pathArg != null ? pathArg.getValue() : null;
+            List<?> appElements = pathValue instanceof List<?> l ? l
+                : pathValue != null ? List.of(pathValue) : List.of();
+            if (applications.size() > 1 && appElements.stream().noneMatch(v -> v instanceof Map<?, ?>)) {
+                // Element-less inference resolves the FK between the field's endpoints; inside a
+                // multi-application chain an application has no endpoints of its own, so each
+                // must state its hops (same rule as parseChainSegment's routine-chain segments).
+                return new ParsedPath(List.of(),
+                    "an @reference application composing a table chain must carry at least one "
+                    + "path element — hops in a multi-application chain are stated explicitly",
+                    new TerminalTargetVerdict.NotApplicable());
+            }
+            elements.addAll(appElements);
         }
 
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
         resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
-            resolvedElements, errors);
+            /*stepIndexBase=*/0, /*endsChain=*/true, resolvedElements, errors);
 
         if (!errors.isEmpty()) {
             return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
@@ -1298,25 +1313,33 @@ class BuildContext {
     }
 
     /**
-     * The element-walk core shared by {@link #parsePath} and {@link #parseChainHops}: resolves
+     * The element-walk core shared by {@link #parsePath} and {@link #parseChainSegment}: resolves
      * each map-shaped path element through {@link #parsePathElement}, advancing the current
      * source table through the resolved hop's {@link JoinStep.HasTargetTable#targetTable()}
      * (after R232 every hop carries one; LiftedHop is never produced by {@code @reference} path
      * parsing). Steps are aliased {@code fieldName + "_" + stepIndex} with {@code stepIndex}
-     * running across the whole element list — for a chain, across all applications.
+     * running across the whole chain — {@code stepIndexBase} carries the offset when the caller
+     * walks a chain segment-by-segment (0 when the element list is the whole chain).
+     *
+     * <p>{@code endsChain} narrows terminal treatment (a {@code {condition:}}-only terminal
+     * element resolves its target from the field's return {@code @table}) to the element that
+     * truly ends the field's chain: a segment followed by further chain nodes passes
+     * {@code false} so none of its elements read the return table.
      */
     private void resolvePathElements(List<?> elements, String fieldName, String startSqlTableName,
-            String targetSqlTableName, boolean isList,
+            String targetSqlTableName, boolean isList, int stepIndexBase, boolean endsChain,
             List<JoinStep> resolvedElements, List<String> errors) {
         String currentSource = startSqlTableName;
-        int stepIndex = 0;
+        int stepIndex = stepIndexBase;
+        int localIndex = 0;
         int totalElements = (int) elements.stream().filter(v -> v instanceof Map<?, ?>).count();
         for (var v : elements) {
             if (v instanceof Map<?, ?>) {
-                boolean isTerminal = (stepIndex == totalElements - 1);
+                boolean isTerminal = endsChain && (localIndex == totalElements - 1);
                 parsePathElement(asMap(v), currentSource, fieldName, stepIndex,
                     resolvedElements, errors, isList, isTerminal, targetSqlTableName);
                 stepIndex++;
+                localIndex++;
                 if (!resolvedElements.isEmpty()) {
                     var last = resolvedElements.getLast();
                     currentSource = last instanceof JoinStep.HasTargetTable ht
@@ -1327,47 +1350,51 @@ class BuildContext {
     }
 
     /**
-     * Parses the ordered {@code @reference} applications composing a routine chain's hops (R435)
-     * into a single resolved hop list. The applications' path elements concatenate in authored
-     * order and walk one running source: {@code startSqlTableName} is the routine's result table
-     * (the chain's start node), so the first element's keying rides the FK-less derivation
-     * ({@link #synthesizeNameMatchedJoin}, gated inside {@link #parsePathElement} on the catalog's
-     * table-valued-function fact) while subsequent elements resolve through the ordinary FK /
-     * condition machinery. The terminal-target verdict is computed against
-     * {@code returnTableRef} exactly as in {@link #parsePath}; the caller converts
-     * {@link TerminalTargetVerdict.Mismatch} into the chain's terminus rejection.
-     *
-     * <p>An application with no path elements is an error: element-less inference has no FK to
-     * find out of a routine result, and a chain author states each hop explicitly.
+     * Result of {@link #parseChainSegment}: the segment's resolved hops, or a joined error
+     * message. No terminal verdict — the caller walking a routine chain owns the terminus rule
+     * over the <em>whole</em> chain (the last node may be a routine, which no segment parse
+     * sees).
      */
-    ParsedPath parseChainHops(List<graphql.schema.GraphQLAppliedDirective> refApplications,
+    record ChainSegment(List<JoinStep> hops, String errorMessage) {
+        boolean hasError() { return errorMessage != null; }
+    }
+
+    /**
+     * Parses one {@code @reference} application inside a routine chain (R435) into its resolved
+     * hops. The chain walker in {@code FieldBuilder} ({@code walkRoutineChain}, shared by the
+     * root and child chain classifiers) calls this per application with the running source
+     * table and a running {@code stepIndexBase} (chain-wide {@code fieldName + "_" + N}
+     * aliasing); a segment whose running source is a routine result gets the FK-less
+     * name-matched keying ({@link #synthesizeNameMatchedJoin}, gated inside
+     * {@link #parsePathElement} on the catalog's table-valued-function fact). {@code endsChain}
+     * is true only for the segment whose last element ends the whole chain (false when a
+     * routine node or another segment follows), which gates the terminal {@code {condition:}}
+     * target-from-return-table resolution in {@link #resolvePathElements}.
+     *
+     * <p>An application with no path elements is an error, exactly as in {@link #parsePath}'s
+     * multi-application arm: element-less inference resolves the FK between the field's
+     * endpoints, and inside a chain an application has no endpoints of its own.
+     */
+    ChainSegment parseChainSegment(graphql.schema.GraphQLAppliedDirective refApplication,
             String fieldName, String startSqlTableName, String targetSqlTableName,
-            TableRef returnTableRef, boolean isList) {
-        var elements = new ArrayList<Object>();
-        for (var app : refApplications) {
-            var pathArg = app.getArgument(ARG_PATH);
-            Object pathValue = pathArg != null ? pathArg.getValue() : null;
-            List<?> appElements = pathValue instanceof List<?> l ? l
-                : pathValue != null ? List.of(pathValue) : List.of();
-            if (appElements.stream().noneMatch(v -> v instanceof Map<?, ?>)) {
-                return new ParsedPath(List.of(),
-                    "an @reference application composing a routine chain must carry at least one "
-                    + "path element — hops out of a routine result cannot be inferred",
-                    new TerminalTargetVerdict.NotApplicable());
-            }
-            elements.addAll(appElements);
+            boolean isList, int stepIndexBase, boolean endsChain) {
+        var pathArg = refApplication.getArgument(ARG_PATH);
+        Object pathValue = pathArg != null ? pathArg.getValue() : null;
+        List<?> elements = pathValue instanceof List<?> l ? l
+            : pathValue != null ? List.of(pathValue) : List.of();
+        if (elements.stream().noneMatch(v -> v instanceof Map<?, ?>)) {
+            return new ChainSegment(List.of(),
+                "an @reference application composing a routine chain must carry at least one "
+                + "path element — hops out of a routine result cannot be inferred");
         }
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
         resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
-            resolvedElements, errors);
+            stepIndexBase, endsChain, resolvedElements, errors);
         if (!errors.isEmpty()) {
-            return new ParsedPath(List.of(), String.join("; ", errors),
-                new TerminalTargetVerdict.NotApplicable());
+            return new ChainSegment(List.of(), String.join("; ", errors));
         }
-        var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName,
-            startSqlTableName, targetSqlTableName, returnTableRef);
-        return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
+        return new ChainSegment(List.copyOf(resolvedElements), null);
     }
 
     /**
@@ -1925,22 +1952,35 @@ class BuildContext {
             return new ParentCorrelationResolution.Resolved(null);
         }
         JoinStep first = joinPath.get(0);
-        if (first instanceof JoinStep.Hop hop && hop.on() instanceof On.Predicate) {
-            if (parentTable == null) {
-                return new ParentCorrelationResolution.AuthorError(
-                    "condition-only first hop on `@reference` path with no parent `@table` "
-                    + "binding: the parser cannot anchor the condition method's first argument. "
-                    + "Add `@table(name: …)` to the carrier field's parent type, or rewrite the "
-                    + "path to use `{table:}` or `{key:}` for the first hop.");
-            }
-            return new ParentCorrelationResolution.Resolved(
-                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnConditionJoin(
-                    hop, parentTable, parentPkCols));
-        }
-        // Everything else carries pairable slots (a Hop with On.ColumnPairs, or a LiftedHop);
-        // the OnFkSlots compact constructor is the structural guard.
-        return new ParentCorrelationResolution.Resolved(
-            new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(first));
+        // Exhaustive over the step-0 join identity: each On arm maps to its ParentCorrelation
+        // mirror (ColumnPairs -> OnFkSlots, Predicate -> OnConditionJoin, Lateral ->
+        // OnLateralArgs), so a new On arm is a compile error here rather than a runtime throw
+        // inside a constructor.
+        return switch (first) {
+            case JoinStep.LiftedHop lifted -> new ParentCorrelationResolution.Resolved(
+                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(lifted));
+            case JoinStep.Hop hop -> switch (hop.on()) {
+                case On.ColumnPairs ignored -> new ParentCorrelationResolution.Resolved(
+                    new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop));
+                case On.Predicate ignored -> {
+                    if (parentTable == null) {
+                        yield new ParentCorrelationResolution.AuthorError(
+                            "condition-only first hop on `@reference` path with no parent `@table` "
+                            + "binding: the parser cannot anchor the condition method's first argument. "
+                            + "Add `@table(name: …)` to the carrier field's parent type, or rewrite the "
+                            + "path to use `{table:}` or `{key:}` for the first hop.");
+                    }
+                    yield new ParentCorrelationResolution.Resolved(
+                        new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnConditionJoin(
+                            hop, parentTable, parentPkCols));
+                }
+                // R435: a lateral routine node at step 0 correlates through its call arguments
+                // (the SourceColumn bindings render the parent columns inside the call), so the
+                // step-0 WHERE contributes nothing.
+                case On.Lateral ignored -> new ParentCorrelationResolution.Resolved(
+                    new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLateralArgs(hop));
+            };
+        };
     }
 
     /**

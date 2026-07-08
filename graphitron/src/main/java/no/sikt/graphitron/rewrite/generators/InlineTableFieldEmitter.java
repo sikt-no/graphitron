@@ -29,13 +29,18 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *
  * <p>Relies on the C1 invariant {@code TableField.returnType().wrapper() != Connection}.
  *
- * <p>Handles both {@link On.ColumnPairs FK-derived} and {@link On.Predicate condition-join} hops uniformly:
+ * <p>Handles {@link On.ColumnPairs keyed}, {@link On.Predicate condition-join} and
+ * {@link On.Lateral lateral routine} hops uniformly:
  * targets are pre-resolved on {@link JoinStep.HasTargetTable} so alias declarations read
- * through one capability, and the JOIN chain dispatches on step type to emit either
- * {@code .join(alias).onKey(FK)} or {@code .join(alias).on(condition(prevAlias, alias))}.
+ * through one capability, and the JOIN chain walks start-first (a lateral hop's call
+ * arguments reference the previous node's alias, which SQL LATERAL scoping requires to its
+ * left), dispatching on each hop's join identity — the shared keying dispatch
+ * ({@code .onKey(FK)} / the name-matched column conjunction),
+ * {@code .join(alias).on(condition(prevAlias, alias))}, or {@code CROSS JOIN LATERAL}.
  * Step-0 parent correlation reads {@link ChildField.TableField#parentCorrelation()} via a
  * sealed switch; FK-derived first-hops produce a WHERE-clause correlation, condition-join
- * first-hops fold their correlation into the JOIN's ON clause.
+ * first-hops fold their correlation into the JOIN's ON clause, and lateral routine first-hops
+ * correlate through their call arguments (the step-0 WHERE contributes nothing).
  */
 public final class InlineTableFieldEmitter {
 
@@ -157,28 +162,27 @@ public final class InlineTableFieldEmitter {
         sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
             DSL, typeClass, sfName, terminalAlias);
 
-        // FROM: terminal hop's aliased table.
-        sel.add("\n        .from($L)", terminalAlias);
-
-        // JOIN chain: walking from terminal back towards step 0. Bridging steps dispatch on the
-        // hop's identity — FK hops use .onKey(FK), condition hops use .on(method(prevAlias, alias)).
-        // The alias being joined IN is the previous-step's alias (the one closer to step 0).
-        for (int i = path.size() - 1; i >= 1; i--) {
+        // FROM: step 0's aliased table, with the JOIN chain walking forward towards the
+        // terminal (R435): a lateral routine hop's call arguments reference the previous
+        // node's alias, and SQL LATERAL scoping only sees FROM entries to its left, so the
+        // chain renders start-first — the same order the root chain fetcher emits. Bridging
+        // steps dispatch on the hop's join identity: FK / name-matched hops through the
+        // shared keying dispatch, condition hops as .join(alias).on(method(prevAlias, alias)),
+        // lateral routine hops as CROSS JOIN LATERAL (their correlation rides the call
+        // arguments the alias declaration above rendered).
+        sel.add("\n        .from($L)", path.isEmpty() ? terminalAlias : aliases.get(0));
+        for (int i = 1; i < path.size(); i++) {
             JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
             switch (bridging) {
                 case JoinStep.Hop hop -> {
                     switch (hop.on()) {
                         case On.ColumnPairs cp -> sel.add("\n        $L",
-                            JoinPathEmitter.emitBridgingJoin(cp, prevAlias, aliases.get(i)));
+                            JoinPathEmitter.emitForwardJoin(cp, prevAlias, aliases.get(i)));
                         case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
-                            prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
-                        // A lateral routine hop at bridging position is the multi-node chain
-                        // (routine-then-hops / sandwich), which classifies as typed Deferred
-                        // (R435); only the single-node chain (hop 0) emits today.
-                        case On.Lateral ignored -> throw new IllegalStateException(
-                            "a lateral routine hop cannot appear at bridging position; "
-                            + "multi-node routine chains classify as typed Deferred (R435)");
+                            aliases.get(i), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                        case On.Lateral ignored -> sel.add("\n        .crossJoin($T.lateral($L))",
+                            DSL, aliases.get(i));
                     }
                 }
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(

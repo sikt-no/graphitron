@@ -134,6 +134,18 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.LiftedHop {
             if (alias == null) {
                 throw new NullPointerException("JoinStep.Hop.alias must not be null");
             }
+            // R435: lateralness and routine-ness are one fact, pinned on the hop itself. A
+            // routine node carries no key metadata to join on (its correlation rides the call
+            // arguments), and a catalog table never joins laterally — so On.Lateral appears
+            // exactly on TableExpr.RoutineCall targets. Enforced here rather than per consumer
+            // leaf so every carrier (TableField's chain, QueryRoutineTableField's hops guard)
+            // inherits the correspondence.
+            if ((target instanceof TableExpr.RoutineCall) != (on instanceof On.Lateral)) {
+                throw new IllegalArgumentException(
+                    "JoinStep.Hop joins a routine node laterally and a catalog node by key or "
+                    + "predicate — got target " + target.getClass().getSimpleName()
+                    + " with on " + on.getClass().getSimpleName());
+            }
         }
 
         @Override

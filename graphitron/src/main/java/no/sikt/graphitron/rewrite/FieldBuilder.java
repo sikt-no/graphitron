@@ -2131,12 +2131,13 @@ class FieldBuilder {
 
         // R435 — order-significant @routine / @reference composition. The ordered field-level
         // applications compose the field's table chain, and this is the only pass that reads
-        // their order. Shipped slice: the single-node chain (a lone @routine application) — at
-        // root via classifyRootField's @routine branch, at child positions validated here
-        // (routine resolution, argMapping, columnMapping against the implicit head) and then
-        // deferred until the LATERAL emitter lands. Multi-node chains classify as typed
-        // Deferred; misorderings reject as AuthorError at classify time. See
-        // roadmap/routine-table-node-composition.md.
+        // their order. Root chains land QueryRoutineTableField (the single-node R300 shape via
+        // classifyRootField's @routine branch, routine-then-hops via classifyRootRoutineChain);
+        // child chains with a routine node land ChildField.TableField via the chain walker
+        // (classifyChildRoutineChain — head, mid-chain, or terminus routine position); child
+        // chains of repeated @reference applications carry no routine node and fall through to
+        // the ordinary classification (parsePath concatenates their elements). Misorderings
+        // reject as AuthorError at classify time. See roadmap/routine-table-node-composition.md.
         var chainDirectives = chainDirectiveNames(fieldDef);
         long routineApplications = chainDirectives.stream().filter(DIR_ROUTINE::equals).count();
         if (routineApplications > 0 || chainDirectives.size() > 1) {
@@ -2146,70 +2147,25 @@ class FieldBuilder {
                     "a root field's table chain must start with @routine — directives compose the chain in "
                     + "written order, and at root only a routine can supply the chain's head (move @routine first)"));
             }
-            if (chainDirectives.size() > 1) {
-                if (isRoot) {
-                    // Root-head rule above guarantees the chain starts with @routine here. One
-                    // routine node plus @reference hops is the routine-then-hops chain, built
-                    // below; a second routine node needs the lateral-at-hop-position emit and
-                    // stays typed Deferred.
-                    if (routineApplications > 1) {
-                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                            "a table chain with more than one routine node classifies but does not emit yet",
-                            "routine-table-node-composition"));
-                    }
-                    return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
-                }
-                String shape = routineApplications > 0
-                    ? "a child-positioned multi-node table chain composing @routine with @reference hops"
-                    : "a table chain composed of repeated @reference applications";
+            // A second routine node needs the multi-lateral emit and stays typed Deferred, at
+            // root and child positions alike.
+            if (routineApplications > 1) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                    shape + " classifies but does not emit yet", "routine-table-node-composition"));
+                    "a table chain with more than one routine node classifies but does not emit yet",
+                    "routine-table-node-composition"));
             }
-            // Exactly one @routine application: the single-node chain (head == terminus).
-            if (!isRoot) {
-                String headTable = parentType instanceof TableBackedType tbt ? tbt.table().tableName() : null;
-                return switch (routineResolver.resolve(parentTypeName, fieldDef, false, headTable)) {
-                    case RoutineDirectiveResolver.Resolved.Rejected r ->
-                        new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                    case RoutineDirectiveResolver.Resolved.TableBound tb -> {
-                        // Emitted shape: the inline single-node chain on a table-backed parent —
-                        // a correlated multiset subquery whose FROM source is the routine call
-                        // (TableExpr.RoutineCall / On.Lateral / OnLateralArgs), riding
-                        // TableField's existing inline machinery. Compositions that need a
-                        // different fetch form stay typed Deferred until their emitters land.
-                        if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY) || hasLookupKeyAnywhere(fieldDef)) {
-                            yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                                "@splitQuery / @lookupKey on a routine-backed child field (the batched "
-                                + "keyed re-query form) classifies but does not emit yet",
-                                "routine-table-node-composition"));
-                        }
-                        if (!(parentType instanceof TableBackedType tbt) || parentType instanceof TableInterfaceType) {
-                            yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                                "a child-positioned @routine under a non-table-backed parent classifies "
-                                + "but does not emit yet",
-                                "routine-table-node-composition"));
-                        }
-                        // Ordering: @orderBy is rejected upstream (typed Deferred), so the only
-                        // order surface is @defaultOrder, resolved against the routine result
-                        // table (whose columns are real catalog columns). The PK fallback lands
-                        // None by construction — a TVF result table carries no primary key — so
-                        // a list-shaped routine child without @defaultOrder fails the
-                        // deterministic-order validator exactly like any PK-less table read.
-                        var orderResolved = orderByResolver.resolve(List.of(), fieldDef, tb.returnType().table().tableName());
-                        if (orderResolved instanceof OrderByResolver.Resolved.Rejected orderRejected) {
-                            yield new UnclassifiedField(parentTypeName, name, location, fieldDef, orderRejected.rejection());
-                        }
-                        var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
-                        var hop = new JoinStep.Hop(
-                            new TableExpr.RoutineCall(tb.routine(), tb.returnType().table()),
-                            new On.Lateral(), tbt.table(), null, name + "_0");
-                        yield new TableField(parentTypeName, name, location, tb.returnType(),
-                            List.of(hop), List.of(), orderBy, null,
-                            new ParentCorrelation.OnLateralArgs(hop));
-                    }
-                };
+            if (isRoot && chainDirectives.size() > 1) {
+                // Root-head rule above guarantees the chain starts with @routine here: the
+                // routine-then-hops chain.
+                return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
             }
-            // The root single-node chain falls through to classifyRootField's @routine branch.
+            if (!isRoot && routineApplications == 1) {
+                return classifyChildRoutineChain(fieldDef, parentTypeName, parentType, name, location);
+            }
+            // Remaining shapes fall through: the root single-node chain (classifyRootField's
+            // @routine branch) and child chains of repeated @reference applications with no
+            // routine node, whose concatenated path the ordinary classification below consumes
+            // like any longer @reference path.
         }
 
         if (parentType instanceof RootType rootType) {
@@ -2229,13 +2185,17 @@ class FieldBuilder {
     }
 
     /**
-     * Classifies the root routine-then-hops chain (R435): {@code @routine} supplies the chain's
-     * head (the FROM source), each subsequent {@code @reference} application contributes hops in
-     * authored order, and the terminus must be the field's {@code @table} type. The hop out of
-     * the routine result keys by the name-matched target key ({@code BuildContext
+     * Classifies a root routine chain (R435): {@code @routine} supplies the chain's head (the
+     * FROM source; the root-head rule upstream guarantees it is the first application), each
+     * subsequent {@code @reference} application contributes hops in authored order, and the
+     * terminus must be the field's {@code @table} type (the chain-level verdict,
+     * {@link #routineChainVerdict}). The hop out of the routine
+     * result keys by the name-matched target key ({@code BuildContext
      * .synthesizeNameMatchedJoin}, gated on the catalog's table-valued-function fact); later hops
      * ride the ordinary FK / condition machinery. Lands
-     * {@link QueryField.QueryRoutineTableField} carrying the {@code (start, hops)} chain.
+     * {@link QueryField.QueryRoutineTableField} carrying the {@code (start, hops)} chain; the
+     * R300 single-node shape is the degenerate chain with no {@code @reference} applications
+     * ({@code hops = []}).
      *
      * <p>Ordering note: like the R300 single-node root, the chain root carries no ordering
      * surface ({@code QueryRoutineTableField} is not a {@code SqlGeneratingField}); an
@@ -2243,33 +2203,199 @@ class FieldBuilder {
      */
     private GraphitronField classifyRootRoutineChain(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location) {
-        return switch (routineResolver.resolveChainHead(parentTypeName, fieldDef, true, null)) {
-            case RoutineDirectiveResolver.Resolved.Rejected r ->
+        return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null)) {
+            case ChainWalk.Rejected r ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-            case RoutineDirectiveResolver.Resolved.TableBound tb -> {
-                var refApplications = fieldDef.getAppliedDirectives().stream()
-                    .filter(d -> DIR_REFERENCE.equals(d.getName()))
-                    .toList();
-                boolean isList = tb.returnType().wrapper().isList();
-                var parsed = ctx.parseChainHops(refApplications, name,
-                    tb.resultTable().tableName(), tb.returnType().table().tableName(),
-                    tb.returnType().table(), isList);
-                if (parsed.hasError()) {
-                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.structural(parsed.errorMessage()));
-                }
-                // Terminus rule for the multi-node chain: the last node's table class must be
-                // the field's @table type. Same R379 verdict machinery as plain @reference paths.
-                if (parsed.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch m) {
-                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.structural(m.diagnostic()));
+            case ChainWalk.Ok walk -> {
+                var verdict = routineChainVerdict(name, walk.tb().returnType(),
+                    walk.terminusTable(), walk.terminusIsRoutine());
+                if (verdict != null) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, verdict);
                 }
                 yield new QueryField.QueryRoutineTableField(parentTypeName, name, location,
-                    tb.returnType(),
-                    new TableExpr.RoutineCall(tb.routine(), tb.resultTable()),
-                    parsed.elements());
+                    walk.tb().returnType(),
+                    new TableExpr.RoutineCall(walk.tb().routine(), walk.tb().resultTable()),
+                    walk.steps());
             }
         };
+    }
+
+    /**
+     * Classifies a child-positioned table chain containing exactly one routine node (R435): the
+     * ordered applications compose the chain over one running source starting at the implicit
+     * head (the parent's table). The routine node may sit at the head (routine-then-hops), the
+     * terminus (hops-then-routine, where {@code columnMapping} binds against the previous hop's
+     * node rather than the implicit head), or strictly between hops (the sandwich); in every
+     * position it joins as CROSS JOIN LATERAL, correlated through its call arguments. Lands
+     * {@link ChildField.TableField} riding the inline correlated-multiset machinery; the
+     * single-application case is the degenerate chain {@code [Hop(RoutineCall, Lateral)]}.
+     *
+     * <p>Fetch forms beyond the inline multiset ({@code @splitQuery} / {@code @lookupKey} — the
+     * batched keyed re-query — and non-table-backed parents) stay typed {@code Deferred} until
+     * their emitters land.
+     */
+    private GraphitronField classifyChildRoutineChain(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, GraphitronType parentType, String name, SourceLocation location) {
+        // The walk needs the implicit head to start from, so this gate precedes it.
+        if (!(parentType instanceof TableBackedType tbt) || parentType instanceof TableInterfaceType) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                "a child-positioned @routine under a non-table-backed parent classifies "
+                + "but does not emit yet",
+                "routine-table-node-composition"));
+        }
+        return switch (walkRoutineChain(fieldDef, parentTypeName, name, tbt.table())) {
+            case ChainWalk.Rejected r ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+            case ChainWalk.Ok walk -> {
+                var verdict = routineChainVerdict(name, walk.tb().returnType(),
+                    walk.terminusTable(), walk.terminusIsRoutine());
+                if (verdict != null) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, verdict);
+                }
+                if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY) || hasLookupKeyAnywhere(fieldDef)) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                        "@splitQuery / @lookupKey on a routine-backed child field (the batched "
+                        + "keyed re-query form) classifies but does not emit yet",
+                        "routine-table-node-composition"));
+                }
+                // Ordering: @orderBy is rejected upstream (typed Deferred), so the only order
+                // surface is @defaultOrder, resolved against the chain's terminus. A
+                // routine-terminus chain requires it (a TVF result table carries no primary
+                // key, so the PK fallback lands None and a list-shaped field fails the
+                // deterministic-order validator); a catalog terminus orders like any table.
+                var orderResolved = orderByResolver.resolve(List.of(), fieldDef,
+                    walk.tb().returnType().table().tableName());
+                if (orderResolved instanceof OrderByResolver.Resolved.Rejected orderRejected) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, orderRejected.rejection());
+                }
+                var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
+                var pcResolution = ctx.buildParentCorrelation(walk.steps(), tbt.table(), List.of());
+                if (pcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError ae) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.structural(ae.message()));
+                }
+                var pc = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
+                yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
+                    walk.steps(), List.of(), orderBy, null, pc);
+            }
+        };
+    }
+
+    /**
+     * Result of {@link #walkRoutineChain}: the chain's resolved steps plus the routine node's
+     * resolution, or the first rejection. {@code steps} contains the routine node as a lateral
+     * {@link JoinStep.Hop} wherever a previous node exists (every child position); a root
+     * chain's head has none, so the root walk yields the {@code @reference} hops only and the
+     * caller carries the routine as {@code QueryRoutineTableField.start}.
+     */
+    private sealed interface ChainWalk {
+        record Ok(List<JoinStep> steps, RoutineDirectiveResolver.Resolved.TableBound tb)
+                implements ChainWalk {
+            /** The chain's last node — the routine result when no hop follows the routine. */
+            TableRef terminusTable() {
+                return steps.isEmpty() ? tb.resultTable()
+                    : ((JoinStep.Hop) steps.getLast()).targetTable();
+            }
+            /** Whether the chain's last node is the routine node. */
+            boolean terminusIsRoutine() {
+                return steps.isEmpty()
+                    || ((JoinStep.Hop) steps.getLast()).target() instanceof TableExpr.RoutineCall;
+            }
+        }
+        record Rejected(Rejection rejection) implements ChainWalk {}
+    }
+
+    /**
+     * Walks a field's ordered chain-directive applications over one running source (R435) — the
+     * single order-significant read shared by the root and child chain classifiers.
+     * {@code headTable} is the implicit head: the parent's {@code @table} at child positions,
+     * {@code null} at root (where the root-head rule upstream guarantees the walk starts at the
+     * {@code @routine} application). {@code @reference} applications parse through
+     * {@link BuildContext#parseChainSegment} with chain-wide {@code fieldName + "_" + N}
+     * aliasing; the {@code @routine} application resolves with the running source as its
+     * previous node ({@code columnMapping} binds against it) and contributes the lateral
+     * routine hop. Exactly one {@code @routine} application is the caller's guarantee
+     * (multi-routine chains land typed {@code Deferred} upstream).
+     */
+    private ChainWalk walkRoutineChain(GraphQLFieldDefinition fieldDef, String parentTypeName,
+            String name, TableRef headTable) {
+        var applications = fieldDef.getAppliedDirectives().stream()
+            .filter(d -> DIR_ROUTINE.equals(d.getName()) || DIR_REFERENCE.equals(d.getName()))
+            .toList();
+        boolean isList = buildWrapper(fieldDef).isList();
+        var steps = new ArrayList<JoinStep>();
+        TableRef runningSource = headTable;
+        RoutineDirectiveResolver.Resolved.TableBound tb = null;
+        int stepIndex = 0;
+        for (int i = 0; i < applications.size(); i++) {
+            var application = applications.get(i);
+            if (DIR_ROUTINE.equals(application.getName())) {
+                var resolved = routineResolver.resolve(parentTypeName, fieldDef,
+                    /*isRoot=*/headTable == null,
+                    runningSource == null ? null : runningSource.tableName());
+                if (resolved instanceof RoutineDirectiveResolver.Resolved.Rejected r) {
+                    return new ChainWalk.Rejected(r.rejection());
+                }
+                tb = (RoutineDirectiveResolver.Resolved.TableBound) resolved;
+                if (runningSource != null) {
+                    // A previous node exists: the routine joins in as a lateral hop, correlated
+                    // through its call arguments against that node.
+                    steps.add(new JoinStep.Hop(
+                        new TableExpr.RoutineCall(tb.routine(), tb.resultTable()),
+                        new On.Lateral(), runningSource, null, name + "_" + stepIndex));
+                    stepIndex++;
+                }
+                runningSource = tb.resultTable();
+            } else {
+                boolean endsChain = i == applications.size() - 1;
+                // The target name feeds only terminal-{condition:} target resolution, and a
+                // chain-terminal @reference segment always follows the routine node (the
+                // root-head rule at root; the walk order at child), so tb is resolved here.
+                String targetSqlTableName = endsChain ? tb.returnType().table().tableName() : null;
+                var segment = ctx.parseChainSegment(application, name,
+                    runningSource == null ? null : runningSource.tableName(),
+                    targetSqlTableName, isList, stepIndex, endsChain);
+                if (segment.hasError()) {
+                    return new ChainWalk.Rejected(Rejection.structural(segment.errorMessage()));
+                }
+                steps.addAll(segment.hops());
+                stepIndex += segment.hops().size();
+                runningSource = ((JoinStep.HasTargetTable) segment.hops().getLast()).targetTable();
+            }
+        }
+        return new ChainWalk.Ok(List.copyOf(steps), tb);
+    }
+
+    /**
+     * The chain-level composition verdicts (R435), evaluated once over the <em>landed</em>
+     * chain: the terminus rule (the chain's last node must be the field's {@code @table} type)
+     * and the Connection fork — a routine-terminus chain can never support keyset pagination
+     * (the FK-less routine result carries no ordering contract), so it rejects as
+     * {@code DirectiveConflict}; a catalog-terminus chain could support it later, so it lands
+     * typed {@code Deferred} with an empty planSlug until someone files that follow-up item.
+     * Returns {@code null} when the chain passes. Deciding here keeps the routine-node resolver
+     * position-agnostic; the leaf compact constructors re-assert the terminus mechanically.
+     */
+    private static Rejection routineChainVerdict(String fieldName,
+            ReturnTypeRef.TableBoundReturnType returnType, TableRef terminusTable,
+            boolean terminusIsRoutine) {
+        if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+            return terminusIsRoutine
+                ? Rejection.directiveConflict(List.of(DIR_ROUTINE),
+                    "a routine-terminus chain does not support Connection return types — keyset "
+                    + "pagination needs an ordering contract the routine result does not carry; use [T] or T instead")
+                : Rejection.deferred(
+                    "Connection pagination over a catalog-terminus chain containing a routine node "
+                    + "is not yet supported", "");
+        }
+        if (!terminusTable.denotesSameTableAs(returnType.table())) {
+            return Rejection.structural(terminusIsRoutine
+                ? "@routine could not be resolved — the field's @table type ('" + returnType.table().tableName()
+                    + "') does not match the routine's result table ('" + terminusTable.tableName() + "')"
+                : new BuildContext.TerminalTargetVerdict.Mismatch(fieldName, terminusTable.tableName(),
+                    returnType.table().tableName()).diagnostic());
+        }
+        return null;
     }
 
     private GraphitronField classifyChildFieldOnErrorType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -3863,14 +3989,9 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
-            return switch (routineResolver.resolve(parentTypeName, fieldDef, true, null)) {
-                case RoutineDirectiveResolver.Resolved.Rejected r ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                case RoutineDirectiveResolver.Resolved.TableBound tb ->
-                    // The R300 single-node chain: hops empty, the routine result is the terminus.
-                    new QueryField.QueryRoutineTableField(parentTypeName, name, location, tb.returnType(),
-                        new TableExpr.RoutineCall(tb.routine(), tb.resultTable()), List.of());
-            };
+            // The R300 single-node chain — the degenerate root chain with no @reference
+            // applications (hops empty, the routine result is the terminus).
+            return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
         }
 
         String rawTypeName = baseTypeName(fieldDef);

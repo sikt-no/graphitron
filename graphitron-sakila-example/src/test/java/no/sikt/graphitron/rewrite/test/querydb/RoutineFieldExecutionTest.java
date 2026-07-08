@@ -33,6 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * catalog table, joined on the name-matched target PK ({@code source.FILM_ID = film.FILM_ID} —
  * a routine result carries no FK). Projecting film-table-only columns proves the hop keyed
  * correctly.
+ *
+ * <p>R435's child multi-node chains are proven per shape: {@code Actor.recentFilms}
+ * (routine-then-hops at a child position — lateral head, name-matched hop out),
+ * {@code Film.castFilms} (hops-then-routine — {@code columnMapping} binds against the previous
+ * node, {@code film_actor.actor_id}, not the implicit head), and {@code Film.castRecentFilms}
+ * (the sandwich — hops in, CROSS JOIN LATERAL, name-matched hop back out to {@code film}).
  */
 @ExecutionTier
 class RoutineFieldExecutionTest {
@@ -154,6 +160,86 @@ class RoutineFieldExecutionTest {
             .containsExactlyInAnyOrder(1, 3);
         assertThat(films).extracting(f -> f.get("description"))
             .containsExactlyInAnyOrder("A Epic Drama", "A Quirky Comedy");
+    }
+
+    @Test
+    void childRoutineThenHopsChainJoinsOutOfRoutineResultPerParent() {
+        // R435: routine-then-hops at a child position — the lateral routine call heads each
+        // actor's chain (correlated on that row's actor_id) and the name-matched hop lands on
+        // the film table. `description` exists only there, so a mis-keyed hop cannot pass;
+        // per-parent narrowing proves the correlation reaches the lateral call.
+        var data = execute("""
+            { allActors {
+                firstName
+                recentFilms(minLength: 50) { filmId description }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(fieldOf(actors, "PENELOPE", "recentFilms", "filmId")).containsExactly(1, 3);
+        assertThat(fieldOf(actors, "PENELOPE", "recentFilms", "description"))
+            .containsExactly("A Epic Drama", "A Quirky Comedy");
+        assertThat(fieldOf(actors, "NICK", "recentFilms", "filmId")).containsExactly(1, 4);
+        assertThat(fieldOf(actors, "ED", "recentFilms", "filmId")).containsExactly(5); // film 2 (48) filtered out
+    }
+
+    @Test
+    void childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode() {
+        // R435: hops-then-routine — the FK hop reaches the film_actor junction first, so
+        // pActorId is fed from film_actor.actor_id (the previous node), NOT the implicit head.
+        // For film 1 the cast is PENELOPE(1) and NICK(2): films_for_actor(1, 50) -> {1, 3},
+        // films_for_actor(2, 50) -> {1, 4}; the multiset concatenates per junction row and
+        // @defaultOrder(film_id) sorts the merged set. A head-bound pActorId (film_id = 1 for
+        // every junction row) would instead repeat PENELOPE's set twice.
+        var data = execute("""
+            { films {
+                filmId
+                castFilms(minLength: 50) { filmId }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(nestedOf(films, 1, "castFilms", "filmId")).containsExactly(1, 1, 3, 4);
+        assertThat(nestedOf(films, 5, "castFilms", "filmId")).containsExactly(5); // cast: ED only
+    }
+
+    @Test
+    void childSandwichChainJoinsBackOutToCatalogTerminus() {
+        // R435: the sandwich — film -> film_actor (FK hop), CROSS JOIN LATERAL
+        // films_for_actor(fa.actor_id, 50), name-matched hop back onto film. The projected
+        // `description` exists only on the film table, proving the tail hop out of the routine
+        // result; the row multiset mirrors castFilms' merged cast sets.
+        var data = execute("""
+            { films {
+                filmId
+                castRecentFilms(minLength: 50) { filmId description }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        assertThat(nestedOf(films, 1, "castRecentFilms", "filmId")).containsExactly(1, 1, 3, 4);
+        assertThat(nestedOf(films, 1, "castRecentFilms", "description")).containsExactly(
+            "A Epic Drama", "A Epic Drama", "A Quirky Comedy", "A Classic Romance");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> fieldOf(List<Map<String, Object>> actors, String firstName,
+            String listField, String column) {
+        return actors.stream()
+            .filter(a -> firstName.equals(a.get("firstName")))
+            .flatMap(a -> ((List<Map<String, Object>>) a.get(listField)).stream())
+            .map(f -> f.get(column))
+            .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> nestedOf(List<Map<String, Object>> films, int filmId,
+            String listField, String column) {
+        return films.stream()
+            .filter(f -> Integer.valueOf(filmId).equals(f.get("filmId")))
+            .flatMap(f -> ((List<Map<String, Object>>) f.get(listField)).stream())
+            .map(r -> r.get(column))
+            .toList();
     }
 
     @SuppressWarnings("unchecked")

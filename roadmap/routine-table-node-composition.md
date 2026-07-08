@@ -208,22 +208,40 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
   `parsePathElement`'s `{table:}` branch on the catalog's table-valued-function fact (a node
   property, not caller plumbing), target PK matched by SQL name against the previous node's
   columns, `condition:` as the escape hatch (non-PK UK matching is a possible extension).
-  `RoutineDirectiveResolver.resolveChainHead` reuses the call resolution minus the two
-  routine-is-terminus checks (field-table match moves to the chain terminus rule; Connection
-  lands `Deferred` instead of `DirectiveConflict` on catalog-terminus chains).
-  `BuildContext.parseChainHops` concatenates the ordered `@reference` applications' elements
-  over one running source; the fetcher emits `FROM Routines.method(args)` plus forward joins
+  The fetcher emits `FROM Routines.method(args)` plus forward joins
   (`JoinPathEmitter.emitForwardJoin`, the start-first mirror of `emitBridgingJoin`). Shipped.
 * Ordering note (root reconciliation): the chain root, like the R300 single-node root, carries
   no ordering surface (`QueryRoutineTableField` is not a `SqlGeneratingField`, so the
   deterministic-order rule exempts it); an `@defaultOrder` surface over the catalog terminus is
   a follow-up, reconciling with the child slice where `@defaultOrder` is required.
+* Child-positioned multi-node chains **classify and emit** — routine-then-hops, hops-then-routine
+  (`columnMapping` bound against the previous node instead of the implicit head), and the
+  sandwich — through one chain walker shared by the root and child classifiers
+  (`FieldBuilder.walkRoutineChain` over `BuildContext.parseChainSegment`, which retired the
+  root-only `parseChainHops`): ordered applications walk one running source with chain-wide
+  `fieldName_N` aliasing; the routine node joins as a lateral hop wherever a previous node
+  exists (at root it stays the `start`, hop-free). The terminus rule and the Connection fork
+  are evaluated once over the landed chain (`FieldBuilder.routineChainVerdict`), which dropped
+  the resolver's `routineIsTerminus` threading — `RoutineDirectiveResolver.resolve` is now
+  position-agnostic (one entry point; `resolveChainHead` retired). The lateral-iff-routine
+  correspondence is `JoinStep.Hop`'s own compact-constructor invariant;
+  `TableField` pins the leaf-specific set (exactly one routine node, no
+  filters/argument-ordering/pagination, non-Connection); `BuildContext.buildParentCorrelation`
+  dispatches exhaustively over `On` (the `OnLateralArgs` arm replaced the hand-built
+  correlation). The inline multiset emitter's join chain now walks start-first (a lateral
+  hop's call arguments reference the previous node's alias, which SQL LATERAL scoping requires
+  to its left; same order as the root chain fetcher), with lateral bridging hops emitted as
+  `.crossJoin(DSL.lateral(alias))`. Shipped.
+* Repeated plain `@reference` applications compose one chain at the parse boundary:
+  `BuildContext.parsePath` concatenates the applications' path elements in authored order over
+  one running source (an element-less application inside a multi-application chain is a
+  structural error), so the composed chain is a longer path to every downstream consumer —
+  no new leaf, full existing feature surface. Shipped.
 
 Pending (the remaining chain-build + emit work):
 
-* Child-positioned multi-node chains: hops-then-routine (`On.Lateral` at hop position joined
-  through `columnMapping` against the previous node instead of the implicit head) and sandwich
-  chains, plus chains with more than one routine node (all typed `Deferred` today).
+* Chains with more than one routine node (typed `Deferred` today, root and child alike): the
+  multi-lateral emit.
 * The batched keyed re-query form for routine children (`@splitQuery`, record-backed parents,
   `TableInterfaceType` parents) — flips the typed `Deferred` landings left by the inline slice.
 * Type compatibility of `columnMapping`-bound columns against routine parameter types (the
@@ -241,19 +259,23 @@ Pending (the remaining chain-build + emit work):
 Pipeline tier is primary; no code-string assertions at any tier.
 
 * **Pipeline (SDL to model to TypeSpec)**: one fixture per chain shape in *The rule*'s example
-  block (root single-node, root routine-then-hops, child correlated single-node, child
-  hops-then-routine, sandwich), plus `ClassifiedCorpus` entries asserting the classification
-  facts. Child correlated single-node and root routine-then-hops shipped (the `Actor.films` and
-  `Query.recentFilmsForActor` fixtures in the sakila example schema ride the compile-spec
-  pipeline); the child multi-node shapes assert their typed `Deferred` landings until their
-  chain build.
+  block — all shipped: root single-node, root routine-then-hops, child correlated single-node,
+  child routine-then-hops (`Actor.recentFilms`), child hops-then-routine (`Film.castFilms`),
+  sandwich (`Film.castRecentFilms`), and the repeated-`@reference` composed chain
+  (`Film.castActorsViaChain`), all riding the sakila example schema through the compile-spec
+  pipeline with classification facts asserted in `GraphitronSchemaBuilderTest`'s R435 block.
+  `ClassifiedCorpus` entries remain pending.
 * **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id, min_length)`
   fixture function in `init.sql`) verifying per-parent correlation and the mixed
   column/argument binding through the inline correlated multiset — shipped
   (`RoutineFieldExecutionTest.correlatedChildRoutine*`). Root routine-then-hops shipped
   (`rootRoutineThenHopsChainJoinsOutOfRoutineResult`: projects a film-table-only column, so a
-  mis-keyed hop cannot pass). Pending: the reviewer-note terminus-direction
-  (hops-then-routine) case.
+  mis-keyed hop cannot pass). Child multi-node chains shipped per shape: routine-then-hops
+  (`childRoutineThenHopsChainJoinsOutOfRoutineResultPerParent`), hops-then-routine — the
+  reviewer-note terminus-direction case —
+  (`childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode`: film 1's merged cast sets
+  prove `columnMapping` reads the junction row, not the head), and the sandwich
+  (`childSandwichChainJoinsBackOutToCatalogTerminus`).
 * **Rejection fixtures**, one per validator rule (shipped rules asserted in
   `GraphitronSchemaBuilderTest`'s R435 block): root chain not starting with `@routine` (shipped);
   `columnMapping` with no previous node (shipped); `columnMapping` naming a column absent from
@@ -262,8 +284,13 @@ Pipeline tier is primary; no code-string assertions at any tier.
   (guarded at the read site; fixture pending); `@asConnection` on a routine-terminus chain
   (arm flipped to `DirectiveConflict`; fixture pending); `@orderBy` on a routine-backed field
   (shipped); `@condition` on a routine-backed field (guard shipped; fixture pending); terminus
-  mismatch on a multi-node chain (shipped, via the R379 terminal-target verdict); name-match
-  keying failure (shipped, with the previous node's columns as candidate hint); Connection over
+  mismatch on a multi-node chain (shipped at root and child, both terminus kinds: the R379
+  diagnostic for a catalog terminus, the routine-result-mismatch message for a routine
+  terminus); name-match
+  keying failure (shipped, with the previous node's columns as candidate hint); `columnMapping`
+  naming a column absent from a mid-chain previous node (shipped, candidates list that node's
+  columns, not the head's); an element-less `@reference` application inside a
+  multi-application chain (shipped); Connection over
   a catalog-terminus routine chain (`Deferred` arm shipped; fixture pending).
 
 ## User documentation (first-client check)

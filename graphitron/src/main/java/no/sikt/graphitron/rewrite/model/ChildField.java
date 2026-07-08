@@ -456,27 +456,30 @@ public sealed interface ChildField extends OutputField
         public TableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
             // R435: TableField is an implemented leaf, so no validator gate re-checks its
-            // shape — a routine-bearing path must be exactly the emitted inline single-node
-            // correlated chain, pinned mechanically here rather than by classifier prose.
-            // Every other routine shape (multi-node, filters, argument-driven ordering,
-            // pagination, Connection) lands as typed Deferred on UnclassifiedField, never on
-            // this leaf. @defaultOrder is admitted (OrderBySpec.Fixed against the routine
-            // result table's real columns, rendered on the terminal alias like any table).
-            if (!joinPath.isEmpty()
-                    && joinPath.get(0) instanceof JoinStep.Hop h
-                    && h.target() instanceof TableExpr.RoutineCall) {
-                boolean dayOneShape = joinPath.size() == 1
-                    && parentCorrelation instanceof ParentCorrelation.OnLateralArgs
+            // shape — the emittable routine-chain set is pinned mechanically here rather than
+            // by classifier prose. A routine-bearing path carries exactly one routine node
+            // (chains with more land as typed Deferred, never on this leaf; the emitter's
+            // single CROSS JOIN LATERAL arm covers exactly this set) and none of the surfaces
+            // the inline emit does not render for routine chains: no filters, no
+            // argument-driven ordering, no pagination, non-Connection. @defaultOrder is
+            // admitted (OrderBySpec.Fixed against the terminus's real columns, rendered on
+            // the terminal alias like any table). The lateral-iff-routine correspondence is
+            // JoinStep.Hop's own invariant, not restated here.
+            long routineNodes = joinPath.stream()
+                .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
+                .count();
+            if (routineNodes > 0) {
+                boolean dayOneSurface = routineNodes == 1
                     && filters.isEmpty()
                     && !(orderBy instanceof OrderBySpec.Argument)
                     && pagination == null
                     && !(returnType.wrapper() instanceof FieldWrapper.Connection);
-                if (!dayOneShape) {
+                if (!dayOneSurface) {
                     throw new IllegalArgumentException(
-                        "TableField with a routine-node path must be the inline single-node "
-                        + "correlated shape (single lateral hop, OnLateralArgs correlation, no "
-                        + "filters/argument-ordering/pagination, non-Connection); other routine "
-                        + "chain shapes classify as typed Deferred (R435)");
+                        "TableField with a routine-node path must be the inline correlated "
+                        + "chain shape (exactly one lateral routine node, no filters/"
+                        + "argument-ordering/pagination, non-Connection); other routine chain "
+                        + "shapes classify as typed Deferred (R435)");
                 }
             }
         }

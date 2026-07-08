@@ -1455,6 +1455,38 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # so it stays bound to this film row (a NestingField) and its columns project off the parent
     # film record. See its definition for the deferred @tableMethod-under-nesting note (R277).
     detailsForMethod: FilmDetailsForMethod
+    # R435 execution fixture: the child hops-then-routine chain. The FK hop lands on the
+    # film_actor junction first, so columnMapping binds pActorId against the PREVIOUS node
+    # (film_actor.actor_id), not the implicit head — the order-significance the item exists
+    # for. The routine result is the terminus, so @defaultOrder over its columns is required
+    # (a TVF result carries no PK).
+    castFilms(minLength: Int!): [ActorFilm!]
+        @reference(path: [{table: "film_actor"}])
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pMinLength: minLength"
+            columnMapping: "pActorId: actor_id"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
+    # R435 execution fixture: the sandwich chain — hops in, lateral routine, name-matched hop
+    # back out to the film catalog table. Projecting film-table-only columns (description)
+    # proves the tail hop keys correctly out of the routine result.
+    castRecentFilms(minLength: Int!): [Film!]
+        @reference(path: [{table: "film_actor"}])
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pMinLength: minLength"
+            columnMapping: "pActorId: actor_id"
+        )
+        @reference(path: [{table: "film"}])
+        @defaultOrder(primaryKey: true)
+    # R435 fixture: repeated @reference applications compose one chain — the two applications'
+    # elements concatenate in authored order over one running source, emitting exactly the SQL
+    # a single two-element path would (see Film.actors for the single-application sibling).
+    castActorsViaChain: [Actor!]!
+        @reference(path: [{key: "film_actor_film_id_fkey"}])
+        @reference(path: [{key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(primaryKey: true)
 }
 
 type Actor implements Searchable @table(name: "actor") {
@@ -1474,6 +1506,18 @@ type Actor implements Searchable @table(name: "actor") {
             columnMapping: "pActorId: actor_id"
         )
         @defaultOrder(fields: [{name: "film_id"}])
+    # R435 execution fixture: the child routine-then-hops chain — the lateral routine node
+    # heads the chain (correlated on this actor row), the @reference hop lands the terminus on
+    # the film catalog table via the name-matched target PK. The child mirror of
+    # Query.recentFilmsForActor; projecting description (film-table-only) proves the hop.
+    recentFilms(minLength: Int!): [Film!]
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pMinLength: minLength"
+            columnMapping: "pActorId: actor_id"
+        )
+        @reference(path: [{table: "film"}])
+        @defaultOrder(primaryKey: true)
     # B2 fixture: Searchable.name maps to first_name on Actor. Combined with Film.name
     # (mapped to title), one Searchable result list mixes typed Records of both shapes
     # under a uniform interface contract.

@@ -7480,20 +7480,198 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void repeatedReferenceChainOnChildFieldDefersUntilChainEmitLands() {
+    void repeatedReferenceApplicationsComposeOneChain() {
+        // The chain rule for plain @reference: repeated field-level applications concatenate
+        // their path elements in authored order over one running source, so the composed chain
+        // is just a longer path to every downstream consumer (no routine node, no new leaf).
         var schema = build("""
-            type Language @table(name: "language") { name: String }
+            type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") {
-              languageName: String
-                @field(name: "name")
-                @reference(path: [{key: "film_language_id_fkey"}])
-                @reference(path: [{key: "film_language_id_fkey"}])
+              castActors: [Actor!]
+                @reference(path: [{key: "film_actor_film_id_fkey"}])
+                @reference(path: [{key: "film_actor_actor_id_fkey"}])
+                @defaultOrder(primaryKey: true)
             }
             type Query { film: Film }
             """);
-        var f = (UnclassifiedField) schema.field("Film", "languageName");
-        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("repeated @reference");
+        var f = (ChildField.TableField) schema.field("Film", "castActors");
+        assertThat(f.joinPath()).hasSize(2);
+        assertThat(((JoinStep.Hop) f.joinPath().get(0)).targetTable().tableName()).isEqualTo("film_actor");
+        assertThat(((JoinStep.Hop) f.joinPath().get(1)).targetTable().tableName()).isEqualTo("actor");
+        assertThat(f.returnType().table().tableName()).isEqualTo("actor");
+    }
+
+    @Test
+    void repeatedReferenceApplicationsComposeOneChainOnScalarField() {
+        // Same rule on a scalar carrier: the concatenated chain lands the ordinary
+        // ColumnReferenceField with the terminal column resolved on the composed terminus.
+        var schema = build("""
+            type Film @table(name: "film") {
+              anActorName: String
+                @field(name: "first_name")
+                @reference(path: [{key: "film_actor_film_id_fkey"}])
+                @reference(path: [{key: "film_actor_actor_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var f = (ChildField.ColumnReferenceField) schema.field("Film", "anActorName");
+        assertThat(f.joinPath()).hasSize(2);
+        assertThat(f.column().sqlName()).isEqualToIgnoringCase("first_name");
+    }
+
+    @Test
+    void elementLessReferenceApplicationInChainRejectsAsStructural() {
+        // Element-less inference resolves the FK between the field's endpoints; inside a
+        // multi-application chain an application has no endpoints of its own.
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+              castActors: [Actor!]
+                @reference(path: [{key: "film_actor_film_id_fkey"}])
+                @reference(path: [])
+                @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "castActors");
+        assertThat(f.reason()).contains("must carry at least one path element");
+    }
+
+    @Test
+    void childRoutineThenHopsChainClassifiesWithNameMatchedHop() {
+        // The child mirror of the root routine-then-hops chain: the lateral routine node heads
+        // the chain (correlated on the implicit head), the @reference hop lands the terminus on
+        // the film catalog table, keyed by the name-matched target PK.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") {
+              recentFilms(minLength: Int!): [Film!]
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+                @reference(path: [{table: "film"}])
+                @defaultOrder(primaryKey: true)
+            }
+            type Query { actors: [Actor] }
+            """);
+        var f = (ChildField.TableField) schema.field("Actor", "recentFilms");
+        assertThat(f.joinPath()).hasSize(2);
+        var routineHop = (JoinStep.Hop) f.joinPath().get(0);
+        assertThat(routineHop.on()).isInstanceOf(On.Lateral.class);
+        assertThat(routineHop.target()).isInstanceOf(TableExpr.RoutineCall.class);
+        assertThat(routineHop.originTable().tableName()).isEqualTo("actor");
+        var filmHop = (JoinStep.Hop) f.joinPath().get(1);
+        assertThat(filmHop.targetTable().tableName()).isEqualTo("film");
+        assertThat(filmHop.originTable().tableName()).isEqualTo("films_for_actor");
+        var pairs = (On.ColumnPairs) filmHop.on();
+        assertThat(pairs.keying()).isInstanceOf(On.Keying.NameMatchedKey.class);
+        assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLateralArgs.class);
+    }
+
+    @Test
+    void childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode() {
+        // The hops-then-routine chain: the FK hop precedes the routine, so columnMapping binds
+        // against the previous hop's node (film_actor), not the implicit head (film) — the
+        // order-significance this item exists for. The routine result is the terminus.
+        var schema = build("""
+            type ActorFilm @table(name: "films_for_actor") {
+              filmId: Int @field(name: "FILM_ID")
+            }
+            type Film @table(name: "film") {
+              castFilms(minLength: Int!): [ActorFilm!]
+                @reference(path: [{table: "film_actor"}])
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
+            type Query { film: Film }
+            """);
+        var f = (ChildField.TableField) schema.field("Film", "castFilms");
+        assertThat(f.joinPath()).hasSize(2);
+        var junctionHop = (JoinStep.Hop) f.joinPath().get(0);
+        assertThat(junctionHop.targetTable().tableName()).isEqualTo("film_actor");
+        assertThat(junctionHop.on()).isInstanceOf(On.ColumnPairs.class);
+        assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnFkSlots.class);
+        var routineHop = (JoinStep.Hop) f.joinPath().get(1);
+        assertThat(routineHop.on()).isInstanceOf(On.Lateral.class);
+        assertThat(routineHop.originTable().tableName()).isEqualTo("film_actor");
+        var rc = (TableExpr.RoutineCall) routineHop.target();
+        var pActorId = rc.routine().argBindings().stream()
+            .filter(b -> b.routineParamName().equals("pActorId")).findFirst().orElseThrow();
+        assertThat(pActorId.source()).isInstanceOf(ParamSource.SourceColumn.class);
+        assertThat(((ParamSource.SourceColumn) pActorId.source()).column().sqlName())
+            .isEqualToIgnoringCase("actor_id");
+    }
+
+    @Test
+    void childSandwichChainClassifiesWithRoutineStrictlyBetweenTables() {
+        // The sandwich: hops in, lateral routine, name-matched hop out. Three nodes after the
+        // implicit head, the routine strictly between catalog tables.
+        var schema = build("""
+            type Film @table(name: "film") {
+              castRecentFilms(minLength: Int!): [Film!]
+                @reference(path: [{table: "film_actor"}])
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+                @reference(path: [{table: "film"}])
+                @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """);
+        var f = (ChildField.TableField) schema.field("Film", "castRecentFilms");
+        assertThat(f.joinPath()).hasSize(3);
+        assertThat(((JoinStep.Hop) f.joinPath().get(0)).on()).isInstanceOf(On.ColumnPairs.class);
+        assertThat(((JoinStep.Hop) f.joinPath().get(1)).on()).isInstanceOf(On.Lateral.class);
+        var tailHop = (JoinStep.Hop) f.joinPath().get(2);
+        assertThat(tailHop.targetTable().tableName()).isEqualTo("film");
+        assertThat(((On.ColumnPairs) tailHop.on()).keying()).isInstanceOf(On.Keying.NameMatchedKey.class);
+    }
+
+    @Test
+    void childRoutineTerminusMismatchRejectsAsStructural() {
+        // Hops-then-routine whose field @table type is not the routine's result table.
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+              castFilms(minLength: Int!): [Actor!]
+                @reference(path: [{table: "film_actor"}])
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "castFilms");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason()).contains("does not match the routine's result table");
+    }
+
+    @Test
+    void childChainColumnMappingUnknownColumnListsPreviousNodeCandidates() {
+        // columnMapping resolves against the running source at the routine's position: here
+        // the previous node is film_actor, so the candidate hint lists ITS columns, not the
+        // implicit head's.
+        var schema = build("""
+            type ActorFilm @table(name: "films_for_actor") {
+              filmId: Int @field(name: "FILM_ID")
+            }
+            type Film @table(name: "film") {
+              castFilms(minLength: Int!): [ActorFilm!]
+                @reference(path: [{table: "film_actor"}])
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: title")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "castFilms");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        assertThat(f.reason())
+            .contains("not a column of the previous node ('film_actor')")
+            .contains("actor_id"); // candidate hint lists the previous node's columns
     }
 
     @Test
