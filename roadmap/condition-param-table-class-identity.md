@@ -1,7 +1,7 @@
 ---
 id: R442
 title: "Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: structural-refactor
@@ -119,12 +119,15 @@ either side).
 ## Coordinate the shared identity predicate with R441
 
 R441 (`typed-accessor-schema-qualified-table-identity`, gap E) is the accessor-side sibling and
-names this gap as its coordination partner: one identity predicate on `TableRef`, not two. This spec
-lands that predicate as the upgraded `denotesSameTableAs` body described above; if R441 ships first
-and has already landed an equivalent identity route, reuse it verbatim and reduce this item's
-`TableRef` work to zero. That mutual ordering is why no `depends-on:` is set. The case-guard update
-R441 anticipates belongs to R441's own change (it rewires `collectAccessorMatches` away from
-`sameTable(String)`); nothing here touches the guard.
+names this gap as its coordination partner: one identity predicate on `TableRef`, not two. R441's
+own Spec (landed concurrently with this one) settles on the *identical* predicate design — upgrade
+the body of `denotesSameTableAs` to `ClassName` identity with the name-compare fallback for
+classless fixture refs — so the two specs agree by construction. Whichever item is implemented
+first lands the predicate plus the same-commit audit of the existing `denotesSameTableAs`
+consumers R441's plan enumerates; the second implementer reuses it verbatim and drops that part of
+its own scope. That mutual ordering is why no `depends-on:` is set. R441's Spec also resolves the
+Backlog note's case-guard question: no guard change is needed (the predicate home is excluded from
+the scan), which matches the Guards analysis above.
 
 ## Tests
 
