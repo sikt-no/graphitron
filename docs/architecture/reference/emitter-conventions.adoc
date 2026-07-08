@@ -87,7 +87,7 @@ on the lifter once at build time, validates the per-position column-class match,
 `JoinSlot.LifterSlot` permits, each folding source-side and target-side onto a single `ColumnRef`
 by construction (DataLoader key tuple IS target-column tuple as a type fact, not a prose
 precondition). The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod`
-path with no identity branching: target accessors come from `WithTarget.slots()`, key extraction
+path with no identity branching: target accessors come from `HasSlots.slots()`, key extraction
 from the lifter call. The lifter is the *single place* where the DTO → key mapping lives; if a
 schema author needs a different key, they author a new lifter method, not a new emitter arm.
 

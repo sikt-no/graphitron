@@ -4,7 +4,7 @@ title: "Routine table nodes: order-significant @routine / @reference composition
 status: Ready
 bucket: feature
 theme: service
-depends-on: [coordinate-lowers-to-datafetcher-queryparts, materialize-joinpath-facts]
+depends-on: [coordinate-lowers-to-datafetcher-queryparts]
 created: 2026-07-05
 last-updated: 2026-07-07
 ---

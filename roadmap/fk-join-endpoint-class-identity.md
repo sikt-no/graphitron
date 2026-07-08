@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 3
 theme: interface-union
-depends-on: [materialize-joinpath-facts]
+depends-on: []
 created: 2026-07-08
 last-updated: 2026-07-08
 ---
