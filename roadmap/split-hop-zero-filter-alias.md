@@ -53,52 +53,70 @@ parent-join topology with the hop's own `On` doing the attach.
 
 ## Design
 
-1. **Grain (classifier).** In `deriveSplitQuerySource`, a hop-0 `Hop` carrying a non-null
-   `filter()` forces the parent-PK entry columns (the existing fallback branch), regardless of
-   the hop's `On` arm. Filter-less FK hops keep the cheaper slot grain; the fork is carried by
-   the model (which correlation arm the field lands), not re-derived at emit sites.
-2. **Topology (model).** Generalize `ParentCorrelation.OnConditionJoin` into the parent-join
-   arm: it already carries `(firstHop, parentTable, condition)`; the generalization is
-   "`parentInput` joins the parent table on its PK; hop 0 then attaches off `parentAlias` by
-   the hop's own `On`" (`ColumnPairs` renders the ordinary forward join, `Predicate` the
-   existing two-arg condition call). `OnFkSlots` remains the no-parent-join fast path for
-   filter-less FK hops. Follows the R435/R438 precedent of folding a special case into one arm
-   of a general axis (fk becoming one case of `On.Keying`). Exact shape (widen
-   `OnConditionJoin` vs a sibling arm reading `firstHop.on()`) is the implementer's call;
-   either way every switch over `ParentCorrelation` stays exhaustive.
-3. **Emitter.** `buildWhereCondition` receives the parent-side alias and uses it as hop-0
-   source under the parent-join arm. Under `OnFkSlots` a hop-0 filter becomes
-   classifier-unreachable: throw, per the established classifier-unreachable convention.
-4. **Non-table-backed split parents (record / service shapes).** No parent table exists to
-   join, and Check 2 silently skips when `originTable` is null, so the broken shape classifies
-   unverified today. A hop-0 `condition:` filter on a split path under a non-table-backed
-   parent gets a typed rejection at classify time (`AuthorError.Structural`: the filter's
-   source row is not a catalog table, name the escape hatch of filtering on a later hop or the
-   terminal `@condition` surface).
-5. **Inline emitters unchanged.** They already pass the parent alias at hop 0; the fix's
-   correctness is pinned by inline/split row equivalence at the execution tier.
+Shaped with the principles consult (2026-07-08); the load-bearing choice is that grain and
+topology are *one* decision made at *one* producer, with the type enforcing their coherence.
+
+1. **One arm, one decision (model + classifier).** The correlation arm choice moves to: a
+   hop-0 `Hop` carrying a non-null `filter()` lands the parent-anchor arm regardless of its
+   `On`; filter-less FK hops keep `OnFkSlots`. The parent-anchor arm is the renamed
+   generalization of `OnConditionJoin` carrying only the topology payload
+   (`firstHop`, `parentTable`): "`parentInput` joins the parent table on its PK; hop 0 then
+   attaches off `parentAlias`". It exposes **no** `condition()` accessor (a partial accessor
+   whose meaning depends on the occupant is the axis smell); consumers dispatch the hop-0
+   attach on `firstHop.on()` per `JoinStep`'s own two-axis model: `ColumnPairs` renders the
+   ordinary forward join, `Predicate` the existing two-arg condition call.
+   `buildParentCorrelation` is the single shared producer, so the reclassification applies to
+   inline carriers too; the inline `ColumnPairs`-occupant emission is behaviour-identical
+   (parent already in scope, same slot correlation), pinned by the existing inline fixtures.
+2. **Grain is a projection off the arm (classifier).** `ParentCorrelation` gains a
+   key-columns accessor beside the existing `parentKeyOwnerTable()`; `deriveSplitQuerySource`
+   builds the correlation first and reads entry columns off it instead of re-deriving from
+   the path. Parent-PK grain iff parent-anchor topology becomes structurally impossible to
+   violate; the alternative (a second `filter() != null` branch in `deriveSplitQuerySource`)
+   is two producer sites evaluating one predicate with nothing binding them, exactly the
+   R338 silent-zero-rows drift `deriveSplitQuerySource`'s own javadoc warns about.
+3. **Same-commit consumer audit.** Every switch over `ParentCorrelation` (three inline
+   emitters, `TypeFetcherGenerator`, the split-rows siblings) is audited in the same commit
+   as the producer change; the previous `OnConditionJoin` arms re-dispatch on
+   `firstHop.on()`. Sealed exhaustiveness makes the compiler surface each site.
+4. **Emitter.** `buildWhereCondition` receives the parent-side alias and uses it as hop-0
+   source under the parent-anchor arm. Under `OnFkSlots` a hop-0 filter is
+   classifier-unreachable once (1) lands: throw tersely citing the classifier guarantee,
+   matching the existing classifier-unreachable throws in the same file.
+5. **Non-table-backed split parents (record / service shapes).** No parent table exists to
+   anchor, and Check 2 silently skips when `originTable` is null, so the broken shape
+   classifies unverified today. Route the rejection through the existing
+   `ParentCorrelationResolution.AuthorError` pathway (the same channel that already rejects a
+   `Predicate` hop-0 with no parent `@table`), landing `AuthorError.Structural`: the filter's
+   source row is not a catalog table; the message names the escape hatch (filter on a later
+   hop, or the terminal `@condition` surface).
 
 ## Tests
 
 Pipeline tier primary; no code-string assertions on generated method bodies.
 
 * **Pipeline**: a `@splitQuery` field with a hop-0 `{key:, condition:}` element on a
-  table-backed parent asserts the parent-PK `sourceKey` and the parent-join correlation arm; a
-  sibling fixture with the filter on hop 1 asserts the slot-tuple key and `OnFkSlots` are
-  unchanged.
-* **Execution (PostgreSQL)**: the grain proof. Seed two parents sharing the same FK-slot value
-  where the hop-0 filter passes for one parent and fails for the other; assert the split form
-  reproduces the inline form's per-parent rows exactly. A slot-keyed batch cannot pass this
-  test (both parents would receive identical rows).
+  table-backed parent asserts the parent-PK `sourceKey` and the parent-anchor correlation arm
+  (this is the coverage whose absence kept the bug latent); a sibling fixture with the filter
+  on hop 1 asserts the slot-tuple key and `OnFkSlots` are unchanged; an inline fixture with a
+  hop-0 filter asserts the parent-anchor arm lands there too (behaviour pinned by the existing
+  inline execution tests).
+* **Execution (PostgreSQL)**: the grain proof, non-negotiable — it is the behavioural enforcer
+  of grain-topology coherence. Seed two parents sharing the same FK-slot value where the hop-0
+  filter passes for one parent and fails for the other; assert the split form reproduces the
+  inline form's per-parent rows exactly. A slot-keyed batch cannot pass this test (both
+  parents would receive identical rows).
 * **Rejection fixture**: hop-0 filter on a split path under a record-backed parent asserts the
   `Structural` arm and message.
-* **Unit**: compact-constructor invariants of the widened/added `ParentCorrelation` arm.
+* **Unit**: compact-constructor invariants of the parent-anchor `ParentCorrelation` arm and
+  its key-columns projection.
 
 ## Out of scope
 
 * The stale pre-flip topology comments and the root-fetcher emission duplication in the same
   file (R449 carries those).
-* Hop-0 filters on *inline* paths (already correct) and non-hop-0 split filters (already
-  correct; the sibling fixture pins them).
+* Inline *behaviour* (already correct; inline emitters change only mechanically, re-dispatching
+  the renamed arm on `firstHop.on()`) and non-hop-0 split filters (already correct; the sibling
+  fixture pins them).
 * Any new authoring surface: this item changes which query the existing surface generates,
   nothing about the SDL.
