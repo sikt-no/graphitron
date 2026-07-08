@@ -25,8 +25,8 @@ Classification gaps (both are validation edges on shapes no fixture authors toda
   `QueryField.QueryRoutineTableField` (whose `source()` is `Source.Root.Query`) instead of a
   typed rejection, while the adjacent single-node `@routine` on Mutation correctly rejects
   through `classifyRootField`'s Mutation fork. Fix: check the parent type name before
-  `classifyRootRoutineChain` (procedure-write routines are explicitly out of scope per R300 /
-  R435) and add the rejection fixture.
+  `classifyRootRoutineChain` (procedure-write routines are R451's scope, deferred since R300)
+  and add the rejection fixture.
 * **`@routine` is missing from both directive-conflict detectors.** `detectChildFieldConflict`
   and `detectQueryFieldConflict` count `@service` / `@externalField` / `@tableMethod` /
   `@nodeId` / `@lookupKey` slots but not `@routine`, and the R435 chain interception runs
@@ -81,10 +81,13 @@ root-head rule and `classifyRootRoutineChain`) applies only when the parent is `
 root position (Query / Mutation / Subscription) is read once at the top of `classifyField`
 and feeds both the hoisted D2 detector guard and the interception, so no second
 string-comparison site appears. A Mutation root chain carrying `@routine` gets a typed
-`AuthorError.Structural` minted in the interception with a routine-specific message: a
-`@routine` table chain is a read surface, procedure-write routines are R300's deferred fork,
-and Mutation fields need `@service` / `@mutation`; the generic "both absent" fallback in
-`classifyMutationField` would bury the actual cause. A Subscription root chain falls through
+`Deferred` with planSlug `routine-mutation-write` minted in the interception with a
+routine-specific message: `@routine` on Mutation is R451's write arm (the routine call
+commits before the follow-up query), a capability gap rather than an authoring error — the
+same distinction D2 draws for `@routine` × `@lookupKey`; the generic "both absent" fallback
+in `classifyMutationField` would bury the actual cause. The single-node `@routine` on
+Mutation gets the same `Deferred` from a check at the top of `classifyMutationField` (today
+it lands that generic fallback), so the single-node and chain stories agree. A Subscription root chain falls through
 to `classifyRootField`'s existing generic Subscription `Deferred` (consistency: everything on
 Subscription lands there). A repeated-`@reference` chain with no routine node on Mutation
 also falls through, so it gets the Mutation story rather than the Query-oriented "move
@@ -141,10 +144,11 @@ byte-identity claim rides on the pin, not on prose.
 Pipeline tier in `GraphitronSchemaBuilderTest`'s R435 block, matching its fixture style; no
 code-string assertions.
 
-* D1: a Mutation multi-node routine chain asserts `AuthorError.Structural` and the
-  routine-specific message; a Subscription routine chain asserts the generic Subscription
-  `Deferred`; a Mutation repeated-`@reference` chain asserts it lands the Mutation fallback,
-  not the root-head rejection.
+* D1: a Mutation multi-node routine chain asserts the typed `Deferred` with the R451
+  planSlug and the routine-specific message; a single-node Mutation `@routine` asserts the
+  same `Deferred` (today's generic-fallback landing is the regression case); a Subscription
+  routine chain asserts the generic Subscription `Deferred`; a Mutation repeated-`@reference`
+  chain asserts it lands the Mutation fallback, not the root-head rejection.
 * D2: `@service @routine` on a child field, a root single-node field, and a root multi-node
   chain all assert `InvalidSchema.DirectiveConflict` naming both directives (the three
   positions that today disagree silently); `@routine @lookupKey` at root asserts the typed
@@ -160,6 +164,8 @@ code-string assertions.
 
 * The R447 capabilities (multi-routine chains, `@lookupKey` landings, record-backed and
   interface parents) and R448 residue (ordering, `DataType` lift, corpus migration).
+* Implementing the routine write arm itself — R451 (`routine-mutation-write`) carries the
+  commit-before-requery contract; D1 only lands its typed `Deferred` signpost.
 * R450's parent-anchor correlation rework in `SplitRowsMethodEmitter`, which also absorbs the
   three stale pre-flip javadoc repairs there.
 * Lifting root position into the type itself (`RootType` sealed into Query / Mutation /
