@@ -50,50 +50,115 @@ R396's source-side FK predicate and R422's terminal-target verdict: a verbatim s
 standing in for jOOQ table-class identity, which additionally cannot distinguish same-named tables
 across schemas the way identity can.
 
-## The fix (two candidate shapes, decide at Spec)
+## Design decision: thread the hop's `TableRef` identity (shape 1)
 
-The comparison happens in exactly one place (`checkConcreteParamTable`), and it *already* holds the
-param's resolved catalog table: `catalog.findTableByClass(cls)` yields `entry.get().table()`. What it
-lacks is the hop table's identity, only the qualified name string is threaded in. Smallest-ripple
-first:
+Of the two candidate shapes the Backlog body listed, thread the resolved `TableRef` down instead of
+name strings. Shape 2 (re-resolving `expectedSqlName` through `JooqCatalog.findTable` inside
+`checkConcreteParamTable`) is rejected on principle: it recomputes from a string a fact every caller
+already holds as a resolved type. All three call paths have (or trivially have) the `TableRef` in
+hand:
 
-1. **Thread the hop's `TableRef` identity (recommended).** `validateWhereFilterParamTables` /
-   `validateConditionParamTables` currently pass `hop.originTable().tableName()` /
-   `hop.targetTable().tableName()` (bare/qualified name strings) into `checkConcreteParamTable`. The
-   hop's `originTable()` / `targetTable()` already carry the resolved table class, so pass the
-   `TableRef` (or its `ClassName`) down instead and compare it against the param's resolved class via
-   the shared identity predicate below. This is the same "the identity is right there and thrown away"
-   shape R441 documents on the accessor side.
-2. **Resolve the expected name at the comparison point (no upstream signature change).** Resolve
-   `expectedSqlName` through the schema-aware `JooqCatalog.findTable` R396 introduced and compare the
-   resolved table's class identity against `cls`, falling back to the existing bare
-   `equalsIgnoreCase` when the expected name does not resolve to a catalog table, so the diagnostic
-   surface for genuinely-unknown names is unchanged.
+- `validateWhereFilterParamTables` (`BuildContext.java:1815`) holds `hop.originTable()` /
+  `hop.targetTable()` and today calls `.tableName()` on them, throwing the identity away.
+- The condition-hop site (`BuildContext.java:1658`) passes `currentSourceSqlName` (the parent's
+  possibly-qualified `@table` echo) as source; the same block already resolves that string to a
+  `TableRef` via the schema-aware `catalog.findTable` (`conditionOrigin`, `:1646`-`1650`). The target
+  is `r.target()`, already a `TableRef`.
 
-Either shape must keep the existing skip conditions (out-of-range position, unknown expected table,
-wildcard `Table<?>`, non-catalog concrete type) and must still error on a genuine mismatch; the fix
-tightens the compare, it does not disable it.
+Threading identity also dissolves a naming-worlds asymmetry the string plumbing hides: at the
+condition-hop site the target ref is built from the method's own second-parameter class via
+`toTableRef(entry.get().table().getName())` (`:1795`), so its `tableName()` is always bare and the
+qualified-echo bug never fired on that operand; only the source operand did. On the where-filter
+path both operands carry the author's echo and both can be qualified. Once the compare is class
+identity, none of this matters; the call sites converge on one comparison.
+
+## Implementation
+
+**`TableRef` (`model/TableRef.java`): upgrade `denotesSameTableAs` in place.** Give the existing
+`denotesSameTableAs(TableRef)` an identity body: when both sides carry a non-null `tableClass()`,
+compare those `ClassName`s for equality; otherwise fall back to the current case-insensitive
+name compare. Do *not* add a sibling predicate: two `TableRef`-vs-`TableRef` predicates differing
+only in rigor is exactly the trap where a future consumer reaches for the collision-blind one.
+Existing consumers (`FieldBuilder:6185`, `GraphitronSchemaValidator:846`, `TypeBuilder:773/824/905`)
+are upgraded in place; for single-schema catalogs identity and name agree, and for multi-schema
+catalogs identity is strictly more correct. The name fallback exists only for refs constructed
+outside the catalog flow (hand-built test fixtures); every catalog-built ref carries a non-null
+`tableClass` (`JooqCatalog.toTableRef`, `JooqCatalog.java:1204`). The fallback is the one arm that
+can answer *wrongly* under a bare-name collision, so it needs an enforcer: the colliding-schema
+pipeline test below proves catalog-built refs take the identity branch (a false green there means
+the fallback decided). `sameTable(String)` stays untouched; a string operand has no class to compare.
+
+**`BuildContext`: thread `TableRef` through the validator chain.**
+
+- `validateConditionParamTables(MethodRef, String, String, errors)` →
+  `(MethodRef, TableRef source, TableRef target, errors)`; likewise
+  `checkConcreteParamTable(..., String expectedSqlName, ...)` → `(..., TableRef expected, ...)`.
+  A null `TableRef` means "expected table unknown, skip", preserving the existing
+  null-`expectedSqlName` skip.
+- `validateWhereFilterParamTables` passes `hop.originTable()` / `hop.targetTable()` directly.
+- The condition-hop site (`:1658`) passes the hoisted `conditionOrigin` `TableRef` (null when the
+  source is not table-backed, which is the existing skip) and `r.target()`.
+- Inside `checkConcreteParamTable`, the param side already resolves to a catalog entry via
+  `Class.forName` + `catalog.findTableByClass(cls)`; build its ref via the entry's `toTableRef` and
+  compare with `denotesSameTableAs`. Both sides are catalog-built, so the compare is class identity.
+- Keep every existing skip (out-of-range position, null expected, wildcard `Table<?>`, concrete type
+  not resolving to a catalog table) and keep erroring on genuine mismatch; the fix tightens the
+  compare, it does not disable it.
+- The error message keeps the expected side's verbatim (possibly qualified) echo via
+  `expected.tableName()`. Since a mismatch can now pair two tables sharing a bare name
+  (`event` vs `event`), render the declared side schema-qualified (the entry has the schema in hand)
+  so the message stays actionable.
+
+**Guards.** `TableNameComparisonCaseGuardTest` (R358) scans for textual `.tableName().equals*`
+patterns and excludes `model/TableRef.java` (the predicate home), so it needs no change here; the
+compare being deleted in `checkConcreteParamTable` is on `table().getName()`, which the guard never
+matched. R358's case-folding contract is preserved by the fallback arm and, on the identity arm, by
+`ClassName` equality being case-exact against jOOQ's own generated names (no author-echo casing on
+either side).
 
 ## Coordinate the shared identity predicate with R441
 
-R441 (`typed-accessor-schema-qualified-table-identity`, gap E) is the accessor-side sibling of this
-exact bug class and explicitly names this gap (`checkConcreteParamTable`) as its coordination partner:
-both are consumers of the same bare-name compare, and both should route through **one** table-class
-identity predicate on `TableRef` (R441 proposes giving `TableRef.sameTableAs(TableRef)` a real
-`tableClass()`-comparison body instead of delegating to the bare-name `sameTable`), not two. Per
-R441's framing, whichever item ships first introduces that predicate and the other reuses it; that
-mutual ordering is why no `depends-on:` is set here. When wiring this in, expect the case-folding
-guard R441 flags (`TableNameComparisonCaseGuardTest`, R358/R359) to need updating once `sameTable`
-gains an identity route.
+R441 (`typed-accessor-schema-qualified-table-identity`, gap E) is the accessor-side sibling and
+names this gap as its coordination partner: one identity predicate on `TableRef`, not two. This spec
+lands that predicate as the upgraded `denotesSameTableAs` body described above; if R441 ships first
+and has already landed an equivalent identity route, reuse it verbatim and reduce this item's
+`TableRef` work to zero. That mutual ordering is why no `depends-on:` is set. The case-guard update
+R441 anticipates belongs to R441's own change (it rewires `collectAccessorMatches` away from
+`sameTable(String)`); nothing here touches the guard.
 
 ## Tests
 
-- Pipeline tier: an `@condition` method whose parameter 0 is typed with a colliding table class (a
-  bare table name shared across two schemas) validated against a schema-qualified hop source must
-  pass with no author error and *without* widening the parameter to `Table<?>`. Pair with a genuine
-  mismatch (parameter typed for a different table than the hop's) that still errors, so the fix
-  tightens the compare without disabling it. Cover both parameter 0 (source) and parameter 1 (target)
-  positions.
+Pipeline tier, extending the R379 pattern (`ReferencePathConditionParamTest` + `TestConditionStub`)
+with a multi-schema sibling: a stub class whose condition methods are typed with
+`no.sikt.graphitron.rewrite.multischemafixture` table classes, and SDL built against the
+multi-schema fixture context (as in `MultiSchemaPipelineTest`). The fixture's `event` table collides
+across `multischema_a` / `multischema_b`, which is the discriminating shape: same bare name, only
+class identity can tell the schemas apart.
+
+- **False-rejection case (the bug):** a terminal `@condition` hop on a parent typed
+  `@table(name: "multischema_a.event")`, condition method parameter 0 typed
+  `multischema_a.tables.Event`. Today rejected (`event` vs `multischema_a.event`); must classify
+  green without widening to `Table<?>`.
+- **Genuine mismatch stays an error, now by identity:** same hop, parameter 0 typed
+  `multischema_b.tables.Event` — identical bare name, wrong schema. Must still produce the author
+  error. This is also the fallback enforcer: catalog-built refs on both sides means a pass here
+  proves the identity branch decided.
+- **Target position via the where-filter path.** The condition-hop site cannot carry a qualified
+  echo on its target operand (see the asymmetry note above), so target-side coverage rides a
+  `{table:, condition:}` where-filter hop whose target is the colliding table. The fixture currently
+  has no FK touching `event`; add a small additive table to the multi-schema DDL section of
+  `graphitron-sakila-db/src/main/resources/init.sql` (e.g. `multischema_a.event_log` with
+  `event_id REFERENCES multischema_a.event`), then: parent on `event_log`,
+  `{table: "multischema_a.event", condition: filter}`, filter parameter 1 typed
+  `multischema_a.tables.Event` must pass, `multischema_b.tables.Event` must error. The same shape
+  reversed (parent `@table(name: "multischema_a.event")`, hop to `event_log`) covers the qualified
+  source operand on the where-filter path.
+- **Existing coverage stays green:** `ReferencePathConditionParamTest` (single-schema sakila) must
+  pass unchanged — identity and name compares agree when nothing collides — as must
+  `TableRefSameTablePredicateTest`, whose hand-built refs carry no `tableClass` and exercise the
+  documented fallback arm. Extend the latter with the identity arm: two refs sharing a bare
+  `tableName` but differing in `tableClass` are not the same table; two refs with equal
+  `tableClass` and differently-cased names are.
 
 ## Cross-links
 
