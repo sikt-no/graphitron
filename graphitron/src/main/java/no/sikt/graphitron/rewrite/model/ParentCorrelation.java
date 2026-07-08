@@ -18,7 +18,7 @@ import java.util.List;
  * {@link OnConditionJoin} regardless of which intermediate hops appear in the joinPath.
  *
  * <p>Classifier-time invariant: each carrier field's compact constructor verifies
- * {@code parentCorrelation.firstStep() == joinPath.get(0)} so the model can never carry a
+ * {@code parentCorrelation.firstHop() == joinPath.get(0)} so the model can never carry a
  * correlation that disagrees with the path it sits on. The carrier is a denormalised view of
  * data already on {@code joinPath.get(0)} + {@code sourceKey} (where present) + the carrier
  * field's parent type's {@code @table} binding — pre-resolved once at parse time so consumers
@@ -28,16 +28,13 @@ public sealed interface ParentCorrelation
         permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnConditionJoin {
 
     /**
-     * Identity of the first hop this correlation pairs against, folded onto the
+     * Identity of the first hop this correlation pairs against, declared on the
      * {@link JoinStep} root so the carrier-side invariant
-     * {@code parentCorrelation.firstStep() == joinPath.get(0)} can be expressed uniformly.
+     * {@code parentCorrelation.firstHop() == joinPath.get(0)} can be expressed uniformly.
+     * Both permits satisfy it through their {@code firstHop} record component
+     * ({@link OnConditionJoin}'s covariantly, as {@link JoinStep.Hop}).
      */
-    default JoinStep firstStep() {
-        return switch (this) {
-            case OnFkSlots fk -> fk.firstHop();
-            case OnConditionJoin cj -> cj.firstHop();
-        };
-    }
+    JoinStep firstHop();
 
     /**
      * The table that owns the DataLoader key columns ({@code SourceKey.columns()}) this
@@ -69,7 +66,7 @@ public sealed interface ParentCorrelation
 
     /**
      * Carrier-side classifier invariant: a non-empty {@code joinPath} carries a non-null
-     * {@link ParentCorrelation} whose {@link #firstStep()} is the same instance as
+     * {@link ParentCorrelation} whose {@link #firstHop()} is the same instance as
      * {@code joinPath.get(0)}; an empty joinPath carries a null correlation
      * (the lookup runs standalone and no parent correlation is needed). Each ChildField
      * variant compact constructor invokes this helper so the model can never carry a
@@ -88,9 +85,9 @@ public sealed interface ParentCorrelation
             throw new NullPointerException(
                 variantName + ".parentCorrelation must not be null when joinPath is non-empty");
         }
-        if (pc.firstStep() != joinPath.get(0)) {
+        if (pc.firstHop() != joinPath.get(0)) {
             throw new IllegalArgumentException(
-                variantName + ".parentCorrelation.firstStep() must be the same object as "
+                variantName + ".parentCorrelation.firstHop() must be the same object as "
                 + "joinPath.get(0); BuildContext.buildParentCorrelation produces both from the "
                 + "same JoinStep list.");
         }

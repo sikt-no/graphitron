@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-07-04
-last-updated: 2026-07-07
+last-updated: 2026-07-08
 ---
 
 # Decompose SourceKey onto the model's facts
@@ -51,6 +51,17 @@ LiftedHop-unreachable arms in the `@reference`-path emitters become type-level i
 transitional `HasSlots` capability dies (R438's `On.ColumnPairs` becomes its only implementor); and
 the denormalized `Hop.originTable` component becomes deletable in favor of a path-position
 derivation once the path carrier owns its start.
+
+Two cleanups from R438's self-review land naturally while this item is in the seal (both
+pre-existing patterns R438 mechanically widened, not regressions): (1) the "is this hop FK-derived"
+narrowing (`x instanceof JoinStep.Hop h && h.on() instanceof On.ColumnPairs`, or the blind
+`(On.ColumnPairs) hop.on()` cast) is spelled inline at roughly forty sites across nineteen files;
+a model-level `isFkHop(JoinStep)` / `pairsOf(JoinStep)` pair would serve the predicate and
+blind-cast sites (the exhaustive sealed-switch sites are proper dispatch and stay). (2) The
+four inline/split emitters each carry the same seven-line `switch (hop.on())` bridging-join emit
+(`onKey` vs `.on(condition(...))`); `JoinPathEmitter` already hosts the shared join-path emit
+helpers and is the single home for it. Both get cheaper to place once LiftedHop is out of the
+seal, and the sealed exhaustiveness means neither can drift silently in the meantime.
 
 Why eager rather than pulled by the emit slices: the surface is being extended in its conflated form
 right now. R425 (parent projection omits a `@splitQuery`/`@service` child's key columns) and R426

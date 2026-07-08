@@ -99,7 +99,8 @@ public final class JoinPathEmitter {
     /**
      * Emits a {@code <className>.<methodName>(srcAlias, tgtAlias)} invocation used by
      * {@link JoinStep.Hop#filter()} (added to the enclosing WHERE) and by
-     * {@link On.Predicate#condition()} (used as the join ON clause). Takes the
+     * {@link no.sikt.graphitron.rewrite.model.On.Predicate#condition()} (used as the join ON
+     * clause). Takes the
      * {@link JoinConditionRef} wrapper directly — the two-argument calling convention is the
      * wrapper's contract, so call sites hand over the typed reference rather than extracting
      * a raw {@code MethodRef}.

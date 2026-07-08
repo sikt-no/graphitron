@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-07-06
-last-updated: 2026-07-07
+last-updated: 2026-07-08
 ---
 
 # Materialize the join-path facts: JoinStep as (tableExpr target, on)
@@ -179,6 +179,24 @@ byte-identical after every slice:
    file deleted and changelogged; stale-reference sweep over main/test javadoc and the four
    doc-site mentions (`code-generation-triggers.adoc`, `multi-hop-nodeid-filter.adoc`,
    `join-with-references.adoc`).
+
+**In Review self-review fixes** (multi-angle finder/verifier pass over the full range). One real
+regression: the `{key:}`/`{table:}` branches of `parsePathElement` wrapped `resolveConditionRef`'s
+result in `JoinConditionRef` without the null-ref guard the condition-only branch has, and
+`resolveConditionRef` reports reflection failures as `(ref=null, error=null)`, so an unresolvable
+`condition:` on a key/table path element crashed the generator with an NPE where the flat-variant
+code silently dropped the condition. Fixed with the same guard + author error as the condition-only
+branch, pinned by `KEY_WITH_UNRESOLVABLE_CONDITION_REJECTED`. Alongside it: `FkJoinResolution.Resolved`
+now enforces its documented FK-derived shape (compact-constructor guard + typed `pairs()` accessor,
+the `ParticipantColumnReferenceField` pattern) so its two consumers drop raw casts;
+`ParentCorrelation.firstStep()`'s dead both-arms-identical switch collapsed to an abstract
+`firstHop()` satisfied covariantly by the record components; a newly-dead null check on
+`Hop.targetTable()` in `CatalogBuilder.fkSteps` deleted; two stale javadoc references fixed
+(`{@link ConditionJoin}` in `resolveConditionJoinTarget`, unimported `On.Predicate` link in
+`JoinPathEmitter`). Two pre-existing duplication clusters the reshape widened but did not create
+(the ~40-site FK-derived narrowing, the four-emitter bridging-join switch) are recorded in R431's
+item as ride-alongs; the refuted findings (uniform `originTable` population, `HasSlots` list
+materialization) were confirmed as spec decisions or pre-existing shapes, not defects.
 
 ## Acceptance
 

@@ -1438,9 +1438,23 @@ class BuildContext {
     public sealed interface FkJoinResolution {
         /**
          * Both endpoint tables and the FK name resolved; the FK-derived {@link JoinStep.Hop}
-         * (an {@link On.ColumnPairs} join) is ready.
+         * (an {@link On.ColumnPairs} join) is ready. The compact constructor enforces the
+         * FK-derived shape so consumers read {@link #pairs()} without re-asserting it.
          */
-        record Resolved(JoinStep.Hop hop) implements FkJoinResolution {}
+        record Resolved(JoinStep.Hop hop) implements FkJoinResolution {
+            public Resolved {
+                if (!(hop.on() instanceof On.ColumnPairs)) {
+                    throw new IllegalArgumentException(
+                        "FkJoinResolution.Resolved carries an FK-derived hop; its on must be "
+                        + "On.ColumnPairs, got " + hop.on().getClass().getSimpleName());
+                }
+            }
+
+            /** The FK-derived join pairs the compact constructor guarantees. */
+            public On.ColumnPairs pairs() {
+                return (On.ColumnPairs) hop.on();
+            }
+        }
 
         /**
          * One of the FK's endpoint tables did not resolve. {@code requestedName} is the SQL
@@ -1550,9 +1564,14 @@ class BuildContext {
             String effectiveSourceSqlName = currentSourceSqlName != null ? currentSourceSqlName : fkSideTable;
             JoinConditionRef whereFilter = null;
             if (hasCondition) {
-                var res = resolveConditionRef(asMap(conditionRaw));
+                Map<String, Object> condMap = asMap(conditionRaw);
+                var res = resolveConditionRef(condMap);
                 if (res.error() != null) {
                     errors.add(res.error());
+                    return;
+                }
+                if (res.ref() == null) {
+                    errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
                     return;
                 }
                 whereFilter = new JoinConditionRef(res.ref());
@@ -1582,9 +1601,14 @@ class BuildContext {
             }
             JoinConditionRef whereFilter = null;
             if (hasCondition) {
-                var res = resolveConditionRef(asMap(conditionRaw));
+                Map<String, Object> condMap = asMap(conditionRaw);
+                var res = resolveConditionRef(condMap);
                 if (res.error() != null) {
                     errors.add(res.error());
+                    return;
+                }
+                if (res.ref() == null) {
+                    errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
                     return;
                 }
                 whereFilter = new JoinConditionRef(res.ref());
@@ -1718,9 +1742,9 @@ class BuildContext {
      * arm reads the carrier field's return-type {@code @table} binding (passed in via
      * {@code terminalTargetSqlName}); the intermediate-hop arm reflects on the condition method's
      * second parameter type via {@link JooqCatalog#findTableByClass}. Both unresolvable cases
-     * surface as {@link ConditionJoinTargetResolution.AuthorError}; the {@link ConditionJoin}
-     * compact constructor (in {@link JoinStep}) is the structural safety net for
-     * pre-resolution.
+     * surface as {@link ConditionJoinTargetResolution.AuthorError}; {@link TableExpr.Catalog}'s
+     * non-null table guard (behind {@link JoinStep.Hop}'s non-null target check) is the
+     * structural safety net for pre-resolution.
      *
      * <p>Wildcard parameter types ({@code Table<?>}) are supported on the terminal-hop arm
      * (resolution does not consult the method signature there); the intermediate-hop arm
@@ -2217,7 +2241,7 @@ class BuildContext {
                         targetTypeOpt.get(), targetTableOpt.get(),
                         shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
                         shimJoinPath,
-                        ((On.ColumnPairs) shimFkResolved.hop().on()).sourceSideColumns(),
+                        shimFkResolved.pairs().sourceSideColumns(),
                         shimRefCond);
                 }
             }

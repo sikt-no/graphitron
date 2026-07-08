@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * R232 cross-axis invariant: for every {@code @reference}-carrying {@link ChildField} variant in
- * a classified schema, {@code field.parentCorrelation().firstStep() == field.joinPath().get(0)}.
+ * a classified schema, {@code field.parentCorrelation().firstHop() == field.joinPath().get(0)}.
  * The carrier-side compact constructors call
  * {@link ParentCorrelation#checkCarrierInvariant(ParentCorrelation, List, String)} so violations
  * are detected at construction time; this pipeline-tier test confirms that
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ParentCorrelationFirstHopInvariantTest {
 
     @Test
-    void onFkSlots_firstStepIsJoinPathHead() {
+    void onFkSlots_firstHopIsJoinPathHead() {
         var schema = TestSchemaHelper.buildSchema("""
             type Query { language: Language }
             type Language @table(name: "language") {
@@ -41,13 +41,13 @@ class ParentCorrelationFirstHopInvariantTest {
             .isNotNull();
         assertThat(field.parentCorrelation())
             .isInstanceOf(ParentCorrelation.OnFkSlots.class);
-        assertThat(field.parentCorrelation().firstStep())
-            .as("parentCorrelation.firstStep() === joinPath.get(0)")
+        assertThat(field.parentCorrelation().firstHop())
+            .as("parentCorrelation.firstHop() === joinPath.get(0)")
             .isSameAs(field.joinPath().get(0));
     }
 
     @Test
-    void onConditionJoin_firstStepIsJoinPathHead() {
+    void onConditionJoin_firstHopIsJoinPathHead() {
         var schema = TestSchemaHelper.buildSchema("""
             type Query { city: City }
             type City @table(name: "city") {
@@ -62,8 +62,8 @@ class ParentCorrelationFirstHopInvariantTest {
             .isNotNull();
         assertThat(field.parentCorrelation())
             .isInstanceOf(ParentCorrelation.OnConditionJoin.class);
-        assertThat(field.parentCorrelation().firstStep())
-            .as("parentCorrelation.firstStep() === joinPath.get(0)")
+        assertThat(field.parentCorrelation().firstHop())
+            .as("parentCorrelation.firstHop() === joinPath.get(0)")
             .isSameAs(field.joinPath().get(0));
     }
 }

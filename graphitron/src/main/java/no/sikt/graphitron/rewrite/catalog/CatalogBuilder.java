@@ -568,8 +568,10 @@ public final class CatalogBuilder {
             switch (step) {
                 case JoinStep.Hop hop -> out.add(switch (hop.on()) {
                     case no.sikt.graphitron.rewrite.model.On.ColumnPairs cp ->
+                        // Hop.targetTable() is non-null by construction (Hop guards target,
+                        // TableExpr.Catalog guards table); LiftedHop's below is not.
                         new FieldClassification.FkStep(
-                            hop.targetTable() != null ? hop.targetTable().tableName() : null,
+                            hop.targetTable().tableName(),
                             cp.fk().sqlName());
                     case no.sikt.graphitron.rewrite.model.On.Predicate ignored ->
                         new FieldClassification.FkStep(null, null);

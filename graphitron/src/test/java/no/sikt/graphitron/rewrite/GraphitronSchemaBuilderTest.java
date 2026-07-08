@@ -1366,6 +1366,27 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("wildcard target parameter")
                     .contains("Table<?>");
+            }),
+
+        // R438 review fix: an unresolvable condition on a {key:}/{table:} path element is an
+        // author error, not a generator crash. resolveConditionRef reports reflection failures
+        // as (ref=null, error=null), so the branches must guard the null ref the same way the
+        // condition-only branch does instead of handing it to JoinConditionRef's null check.
+        KEY_WITH_UNRESOLVABLE_CONDITION_REJECTED(
+            "{key:, condition:} with unresolvable condition method → UnclassifiedField, not NPE",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.NoSuchStub", method: "nope"}}, {key: "film_actor_actor_id_fkey"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actors");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("could not be resolved");
             });
 
         final String sdl;

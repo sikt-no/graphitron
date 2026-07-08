@@ -472,7 +472,7 @@ final class NodeIdLeafResolver {
             fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
-                new JoinPathResult(List.of(r.hop()), pairs(r.hop()).sourceSideColumns(), null);
+                new JoinPathResult(List.of(r.hop()), r.pairs().sourceSideColumns(), null);
             case BuildContext.FkJoinResolution.UnknownTable u ->
                 new JoinPathResult(null, null,
                     ctx.unknownTableRejection(u.failure(), u.requestedName()).message());

@@ -122,8 +122,9 @@ public final class SplitRowsMethodEmitter {
      * <p>{@code joinOnCols} is the column list the rows-method's {@code JOIN parentInput ... ON ...}
      * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
      * the FK hop's source-side columns (FK-holder side, terminal for list cardinality); on
-     * the lifter path, {@link JoinStep.LiftedHop#targetColumns()} (the DataLoader key tuple IS the
-     * target-column tuple by {@code LiftedHop} construction); on the
+     * the lifter path, the {@link JoinStep.LiftedHop}'s
+     * {@link no.sikt.graphitron.rewrite.model.HasSlots#targetSideColumns()} (the DataLoader key
+     * tuple IS the target-column tuple by {@code LiftedHop} construction); on the
      * @sourceRow + @reference path, the FK hop's source-side columns again. The prelude resolves
      * this fork once via a sealed switch and exports the ready list; the consumer iterates without
      * re-switching.
