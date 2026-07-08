@@ -35,7 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R435` | Routine table nodes: order-significant @routine / @reference composition <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | In Progress | 2026-07-08 <sub>created 2026-07-05</sub> | [plan](routine-table-node-composition.md) |
+| `R435` | Routine table nodes: order-significant @routine / @reference composition <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | In Review | 2026-07-08 <sub>created 2026-07-05</sub> | [plan](routine-table-node-composition.md) |
 
 ---
 
@@ -205,7 +205,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
 - `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement, blocked by [routine-table-node-composition](routine-table-node-composition.md)
 - `R447` [**Routine chains: remaining fetch-form breadth**](routine-chain-fetch-form-breadth.md) — Backlog, feature, blocked by [routine-table-node-composition](routine-table-node-composition.md)
-- `R435` [**Routine table nodes: order-significant @routine / @reference composition**](routine-table-node-composition.md) — In Progress, feature, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)
+- `R435` [**Routine table nodes: order-significant @routine / @reference composition**](routine-table-node-composition.md) — In Review, feature, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)
 
 ### mutations-errors
 
