@@ -166,21 +166,48 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
 * `GraphitronSchemaValidator`: nothing new — every rule above is a classify-time `Rejection`
   carried on `UnclassifiedField` and projected by the existing `validateUnclassifiedField`.
   Shipped by construction.
+* Model arms (the R438 forward contract discharged for this shape): `TableExpr.RoutineCall`
+  (routine + result-table `TableRef`, so `Hop.targetTable()` folds uniformly),
+  `On.Lateral` (payload-free: the correlated columns live on the target's
+  `RoutineRef.ArgBinding`s), and `ParentCorrelation.OnLateralArgs` (step-0 WHERE contributes
+  `noCondition()`; correlation rides the call arguments). Every pre-existing sealed switch on
+  `On` / `ParentCorrelation` gained an explicit arm (throws where the shape is
+  classifier-unreachable). Shipped.
+* Child correlated single-node chain **classifies and emits**: `FieldBuilder` lands
+  `ChildField.TableField` with `joinPath = [Hop(RoutineCall, Lateral)]`, riding the existing
+  inline correlated-multiset machinery. FROM-source materialization is a single shared switch
+  on the hop's `TableExpr` (`JoinPathEmitter.emitTableExpression`, routed through all four
+  alias-declaration loops) delegating routine calls to `RoutineCallEmitter`: uncorrelated calls
+  use the generated value overload (jOOQ's own `DSL.val(v, dataType)` binding), correlated
+  calls the `Field` overload selected by javac overload resolution (`prev.COL` for column
+  bindings, `DSL.val(<typed read>)` for argument bindings). A compact-constructor invariant on
+  `TableField` pins routine-bearing paths to exactly this shape (single lateral hop,
+  `OnLateralArgs`, no filters/argument-ordering/pagination, non-Connection) since `TableField`
+  is an implemented leaf with no validator gate. `@defaultOrder` is admitted and is the one
+  order surface a routine list child has: the result table carries no PK, so the
+  deterministic-order validator requires an explicit fixed order over the result columns
+  (rendered on the terminal alias like any table). `@splitQuery` / `@lookupKey` composition and
+  non-table-backed parents stay typed `Deferred`. Shipped.
+* `JooqCatalog.resolveTableValuedFunction` needs **no** `Field`-overload resolution (the spec's
+  original pending item): the generated value and `Field` overloads share a method name, so
+  emitting `Field`-typed arguments selects the right overload at javac level in the generated
+  source. Resolved by construction.
 
-Pending (the chain-build + emit slice):
+Pending (the remaining chain-build + emit work):
 
-* `JooqCatalog.resolveTableValuedFunction`: additionally resolve the `Field`-overload call surface
-  (today filtered out) for correlated emission.
-* Chain build: mint the `RoutineCall` target arm and `Lateral` `on`-arm onto R438's two-axis
-  `JoinStep`, build the chain (implicit head at child positions) instead of the `Deferred`
-  landings above, add the terminus rule for multi-node chains and the name-match keying
-  derivation (the small seal on `On.ColumnPairs` R438 pre-planned), and re-home the root slice so
-  `QueryRoutineTableField` carries the `(start, hops)` chain.
+* Multi-node chains: build routine-then-hops / hops-then-routine / sandwich chains (today typed
+  `Deferred`), the terminus rule for multi-node chains, and the name-match keying derivation
+  (the small seal on `On.ColumnPairs` R438 pre-planned) for hops adjacent to a routine node;
+  re-home the root slice so `QueryRoutineTableField` carries the `(start, hops)` chain.
+* The batched keyed re-query form for routine children (`@splitQuery`, record-backed parents,
+  `TableInterfaceType` parents) — flips the typed `Deferred` landings left by the inline slice.
 * Type compatibility of `columnMapping`-bound columns against routine parameter types (the
   existence check ships; the type check needs the column `DataType` read).
-* Emitters: chain rendering in the fetcher generators (root and child), `DSL.lateral()` for
-  correlated calls, name-matched keying for hops out of a routine. Each emitted shape flips its
-  `Deferred` landing to a real classification as it lands.
+* Correlated value-arg `DataType` binding: mixed (`Field`-overload) calls type argument-sourced
+  values by their Java `paramType` read, not a two-arg `DSL.val(v, dataType)` — jOOQ's TVF
+  codegen exposes no `Parameter` constants to reference. Shares the enum/ID-as-String coercion
+  residue with the shipped root slice; lift the parameter `DataType` onto
+  `RoutineRef.ArgBinding` at the parse boundary when either site needs it.
 * Docs: `routine.adoc` rewrite and the `@reference` page's composition section (see the draft
   below); the order contract documented where repeatable directives are introduced.
 
@@ -191,14 +218,15 @@ Pipeline tier is primary; no code-string assertions at any tier.
 * **Pipeline (SDL to model to TypeSpec)**: one fixture per chain shape in *The rule*'s example
   block (root single-node, root routine-then-hops, child correlated single-node, child
   hops-then-routine, sandwich), plus `ClassifiedCorpus` entries asserting the classification
-  facts. Pending with the chain build (today those shapes assert their typed `Deferred`
-  landings; the corpus entries land when the shapes classify onto real leaves).
-* **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id)`-shaped fixture
-  function added to `init.sql`) verifying the LATERAL correlation returns per-parent rows under
-  batching; a root routine-then-hops chain verifying the hop out of the routine keys correctly;
-  selection narrowing on a routine-result table (extends `RoutineFieldExecutionTest`). Pending
-  with the emit slice. Reviewer note from the Spec → Ready pass: add a terminus-direction
-  (hops-then-routine) execution case alongside these.
+  facts. Child correlated single-node shipped (the `Actor.films` fixture in the sakila example
+  schema rides the compile-spec pipeline); the multi-node shapes assert their typed `Deferred`
+  landings until the chain build.
+* **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id, min_length)`
+  fixture function in `init.sql`) verifying per-parent correlation and the mixed
+  column/argument binding through the inline correlated multiset — shipped
+  (`RoutineFieldExecutionTest.correlatedChildRoutine*`). Pending: a root routine-then-hops
+  chain verifying the hop out of the routine keys correctly, and the reviewer-note
+  terminus-direction (hops-then-routine) case.
 * **Rejection fixtures**, one per validator rule (shipped rules asserted in
   `GraphitronSchemaBuilderTest`'s R435 block): root chain not starting with `@routine` (shipped);
   `columnMapping` with no previous node (shipped); `columnMapping` naming a column absent from

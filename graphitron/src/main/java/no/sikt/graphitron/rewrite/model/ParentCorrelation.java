@@ -25,7 +25,8 @@ import java.util.List;
  * don't re-derive at each emit site.
  */
 public sealed interface ParentCorrelation
-        permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnConditionJoin {
+        permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnConditionJoin,
+                ParentCorrelation.OnLateralArgs {
 
     /**
      * Identity of the first hop this correlation pairs against, declared on the
@@ -61,6 +62,9 @@ public sealed interface ParentCorrelation
                 case JoinStep.LiftedHop lifted -> lifted.targetTable();
             };
             case OnConditionJoin cj -> cj.parentTable();
+            // The lateral call's column bindings are drawn from the parent table (the chain's
+            // implicit head), which is the hop-0 origin.
+            case OnLateralArgs la -> la.firstHop().originTable();
         };
     }
 
@@ -171,6 +175,30 @@ public sealed interface ParentCorrelation
         /** The step-0 condition method the correlation predicate calls. */
         public JoinConditionRef condition() {
             return ((On.Predicate) firstHop.on()).condition();
+        }
+    }
+
+    /**
+     * First hop is a lateral routine node (R435): correlation rides the routine call's
+     * arguments ({@link ParamSource.SourceColumn} bindings on the hop's
+     * {@link TableExpr.RoutineCall} target), so the step-0 WHERE contributes nothing
+     * ({@code noCondition()}) and the emitters render the correlated columns inside the call
+     * expression itself. The arm mirrors {@link On.Lateral} exactly as {@link OnFkSlots}
+     * mirrors {@link On.ColumnPairs} and {@link OnConditionJoin} mirrors {@link On.Predicate}.
+     *
+     * <p>No payload beyond {@code firstHop}: the correlated columns live on the target's
+     * {@link RoutineRef.ArgBinding}s, keeping this carrier a pure step-0 dispatch fact.
+     */
+    record OnLateralArgs(JoinStep.Hop firstHop) implements ParentCorrelation {
+        public OnLateralArgs {
+            if (firstHop == null) {
+                throw new NullPointerException("ParentCorrelation.OnLateralArgs.firstHop must not be null");
+            }
+            if (!(firstHop.on() instanceof On.Lateral)) {
+                throw new IllegalArgumentException(
+                    "ParentCorrelation.OnLateralArgs.firstHop must join laterally (On.Lateral); got "
+                    + firstHop.on());
+            }
         }
     }
 }

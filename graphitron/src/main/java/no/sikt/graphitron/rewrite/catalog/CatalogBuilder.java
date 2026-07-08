@@ -575,6 +575,10 @@ public final class CatalogBuilder {
                             cp.fk().sqlName());
                     case no.sikt.graphitron.rewrite.model.On.Predicate ignored ->
                         new FieldClassification.FkStep(null, null);
+                    // R435: a lateral routine node carries no FK; the step still lands on the
+                    // routine's result table, which is what the LSP-facing projection surfaces.
+                    case no.sikt.graphitron.rewrite.model.On.Lateral ignored ->
+                        new FieldClassification.FkStep(hop.targetTable().tableName(), null);
                 });
                 case JoinStep.LiftedHop lh -> out.add(new FieldClassification.FkStep(
                     lh.targetTable() != null ? lh.targetTable().tableName() : null, null));

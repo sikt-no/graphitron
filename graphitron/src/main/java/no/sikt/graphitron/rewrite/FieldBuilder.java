@@ -72,12 +72,14 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
+import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -2157,13 +2159,42 @@ class FieldBuilder {
                 return switch (routineResolver.resolve(parentTypeName, fieldDef, false, headTable)) {
                     case RoutineDirectiveResolver.Resolved.Rejected r ->
                         new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                    // The correlated child single-node chain classifies cleanly (routine
-                    // resolution, argMapping, and columnMapping all checked); the batched
-                    // LATERAL emit lands with the R435 emit slice.
-                    case RoutineDirectiveResolver.Resolved.TableBound ignored ->
-                        new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                            "a child-positioned @routine (correlated single-node chain) classifies but does not emit yet",
-                            "routine-table-node-composition"));
+                    case RoutineDirectiveResolver.Resolved.TableBound tb -> {
+                        // Emitted shape: the inline single-node chain on a table-backed parent —
+                        // a correlated multiset subquery whose FROM source is the routine call
+                        // (TableExpr.RoutineCall / On.Lateral / OnLateralArgs), riding
+                        // TableField's existing inline machinery. Compositions that need a
+                        // different fetch form stay typed Deferred until their emitters land.
+                        if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY) || hasLookupKeyAnywhere(fieldDef)) {
+                            yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                                "@splitQuery / @lookupKey on a routine-backed child field (the batched "
+                                + "keyed re-query form) classifies but does not emit yet",
+                                "routine-table-node-composition"));
+                        }
+                        if (!(parentType instanceof TableBackedType tbt) || parentType instanceof TableInterfaceType) {
+                            yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                                "a child-positioned @routine under a non-table-backed parent classifies "
+                                + "but does not emit yet",
+                                "routine-table-node-composition"));
+                        }
+                        // Ordering: @orderBy is rejected upstream (typed Deferred), so the only
+                        // order surface is @defaultOrder, resolved against the routine result
+                        // table (whose columns are real catalog columns). The PK fallback lands
+                        // None by construction — a TVF result table carries no primary key — so
+                        // a list-shaped routine child without @defaultOrder fails the
+                        // deterministic-order validator exactly like any PK-less table read.
+                        var orderResolved = orderByResolver.resolve(List.of(), fieldDef, tb.returnType().table().tableName());
+                        if (orderResolved instanceof OrderByResolver.Resolved.Rejected orderRejected) {
+                            yield new UnclassifiedField(parentTypeName, name, location, fieldDef, orderRejected.rejection());
+                        }
+                        var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
+                        var hop = new JoinStep.Hop(
+                            new TableExpr.RoutineCall(tb.routine(), tb.returnType().table()),
+                            new On.Lateral(), tbt.table(), null, name + "_0");
+                        yield new TableField(parentTypeName, name, location, tb.returnType(),
+                            List.of(hop), List.of(), orderBy, null,
+                            new ParentCorrelation.OnLateralArgs(hop));
+                    }
                 };
             }
             // The root single-node chain falls through to classifyRootField's @routine branch.

@@ -455,6 +455,30 @@ public sealed interface ChildField extends OutputField
     ) implements TableTargetField {
         public TableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
+            // R435: TableField is an implemented leaf, so no validator gate re-checks its
+            // shape — a routine-bearing path must be exactly the emitted inline single-node
+            // correlated chain, pinned mechanically here rather than by classifier prose.
+            // Every other routine shape (multi-node, filters, argument-driven ordering,
+            // pagination, Connection) lands as typed Deferred on UnclassifiedField, never on
+            // this leaf. @defaultOrder is admitted (OrderBySpec.Fixed against the routine
+            // result table's real columns, rendered on the terminal alias like any table).
+            if (!joinPath.isEmpty()
+                    && joinPath.get(0) instanceof JoinStep.Hop h
+                    && h.target() instanceof TableExpr.RoutineCall) {
+                boolean dayOneShape = joinPath.size() == 1
+                    && parentCorrelation instanceof ParentCorrelation.OnLateralArgs
+                    && filters.isEmpty()
+                    && !(orderBy instanceof OrderBySpec.Argument)
+                    && pagination == null
+                    && !(returnType.wrapper() instanceof FieldWrapper.Connection);
+                if (!dayOneShape) {
+                    throw new IllegalArgumentException(
+                        "TableField with a routine-node path must be the inline single-node "
+                        + "correlated shape (single lateral hop, OnLateralArgs correlation, no "
+                        + "filters/argument-ordering/pagination, non-Connection); other routine "
+                        + "chain shapes classify as typed Deferred (R435)");
+                }
+            }
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());

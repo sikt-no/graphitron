@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.HasSlots;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
@@ -60,6 +61,34 @@ public final class JoinPathEmitter {
         // terminalTable parameter is retained for the rare unit-test setup that constructs a
         // JoinStep without a resolved target; the parameter retires when those test setups update.
         return ((JoinStep.HasTargetTable) step).targetTable().tableClass().simpleName();
+    }
+
+    /**
+     * Emits the table expression a hop's alias declaration binds — the single materialization
+     * switch on the hop's {@link TableExpr} target (R435). Callers append {@code .as(alias)}.
+     * All alias-declaration loops route through this helper so a new {@link TableExpr} arm
+     * forces exactly one emit-side acknowledgment; {@link JoinStep.HasTargetTable#targetTable()}
+     * stays the read for alias <em>naming</em> and terminus checks, never for materialization.
+     *
+     * @param step              the join step whose FROM/JOIN source is being declared
+     * @param previousNodeAlias the in-scope alias of the chain's previous node (the parent
+     *                          alias at hop 0), read by correlated routine-call bindings
+     * @param argSource         where argument-sourced routine bindings read runtime values
+     */
+    public static CodeBlock emitTableExpression(JoinStep step, String previousNodeAlias,
+            ArgumentValueSource argSource) {
+        return switch (step) {
+            case JoinStep.Hop hop -> switch (hop.target()) {
+                case TableExpr.Catalog c -> CodeBlock.of("$T.$L",
+                    c.table().constantsClass(), c.table().javaFieldName());
+                case TableExpr.RoutineCall rc ->
+                    RoutineCallEmitter.emitCall(rc, previousNodeAlias, argSource);
+            };
+            // Transitional (retires with R431): the lifter shape's target is always a catalog
+            // table; LiftedHop carries no TableExpr axis.
+            case JoinStep.LiftedHop lh -> CodeBlock.of("$T.$L",
+                lh.targetTable().constantsClass(), lh.targetTable().javaFieldName());
+        };
     }
 
     /**

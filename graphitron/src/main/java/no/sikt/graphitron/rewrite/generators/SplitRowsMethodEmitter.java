@@ -313,6 +313,9 @@ public final class SplitRowsMethodEmitter {
                 joinOnCols = cj.parentPkCols();
                 joinOnParentCols = cj.parentPkCols();
             }
+            case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
+                "a lateral routine hop cannot head a split-rows path; @splitQuery on routine "
+                + "chains classifies as typed Deferred (R435)");
         }
 
         // Empty-input short-circuit and DSLContext local are emitted by RowsMethodSkeleton's SQL
@@ -347,8 +350,14 @@ public final class SplitRowsMethodEmitter {
         for (int i = 0; i < joinPath.size(); i++) {
             JoinStep.HasTargetTable step = (JoinStep.HasTargetTable) joinPath.get(i);
             ClassName jooqTableClass = step.targetTable().tableClass();
-            body.addStatement("$T $L = $T.$L.as($S)",
-                jooqTableClass, aliases.get(i), step.targetTable().constantsClass(), step.targetTable().javaFieldName(),
+            // Materialization routes through the shared TableExpr switch (R435). Routine hops
+            // never reach the split-rows path today (typed Deferred at classify); the
+            // OnLateralArgs / On.Lateral arms in this emitter throw if that guard slips.
+            body.addStatement("$T $L = $L.as($S)",
+                jooqTableClass, aliases.get(i),
+                JoinPathEmitter.emitTableExpression(joinPath.get(i),
+                    i == 0 ? "parentAlias" : aliases.get(i - 1),
+                    new ArgumentValueSource.Env()),
                 fieldName + "_" + aliases.get(i));
         }
 
@@ -408,6 +417,9 @@ public final class SplitRowsMethodEmitter {
                             prevAlias, cp.fk().keysClass(), cp.fk().constantName());
                         case On.Predicate pred -> sel.add(".join($L).on($L)\n",
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                        case On.Lateral ignored -> throw new IllegalStateException(
+                            "a lateral routine hop cannot appear in a split-rows path; "
+                            + "@splitQuery on routine chains classifies as typed Deferred (R435)");
                     }
                 }
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(

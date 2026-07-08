@@ -74,8 +74,16 @@ public final class InlineColumnReferenceFieldEmitter {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
             ClassName jooqTableClass = ht.targetTable().tableClass();
-            code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
+            // Materialization routes through the shared TableExpr switch (R435). Routine hops
+            // never reach the column-reference path today (typed Deferred at classify); the
+            // OnLateralArgs / On.Lateral arms below throw if that guard slips. Column
+            // references carry no runtime-argument surface, so the Env source is a placeholder
+            // that the unreachable routine arm would read.
+            code.addStatement("$T $L = $L.as($L.getName() + $S)",
+                jooqTableClass, aliases.get(i),
+                JoinPathEmitter.emitTableExpression(path.get(i),
+                    i == 0 ? parentAlias : aliases.get(i - 1),
+                    new ArgumentValueSource.Env()),
                 parentAlias, "_" + aliases.get(i));
         }
 
@@ -107,6 +115,9 @@ public final class InlineColumnReferenceFieldEmitter {
                             prevAlias, cp.fk().keysClass(), cp.fk().constantName());
                         case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                        case On.Lateral ignored -> throw new IllegalStateException(
+                            "a lateral routine hop cannot appear in a column-reference path; "
+                            + "multi-node routine chains classify as typed Deferred (R435)");
                     }
                 }
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
@@ -124,6 +135,9 @@ public final class InlineColumnReferenceFieldEmitter {
                 where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
             case ParentCorrelation.OnConditionJoin cj ->
                 where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
+            case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
+                "a lateral routine hop cannot head a column-reference path; routine chains do "
+                + "not produce ColumnReferenceField (R435)");
         }
         for (JoinStep step : path) {
             if (step instanceof JoinStep.Hop hop && hop.filter() != null) {

@@ -26,6 +26,13 @@ type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
     rollekode: String
 }
 
+# R435: the result type of the correlated table-valued read function films_for_actor. Backs the
+# child-positioned @routine on Actor.films (the single-node chain with an implicit head).
+type ActorFilm @table(name: "films_for_actor") {
+    filmId: Int    @field(name: "FILM_ID")
+    title:  String
+}
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
     # R190 fixture: the one @service(contextArguments: ...) site in the example schema.
@@ -56,6 +63,9 @@ type Query {
             name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
         )
+    # R435 execution fixture: plain root table read of actors, host for the correlated
+    # child-positioned @routine Actor.films (films_for_actor).
+    allActors: [Actor!]!
     # Relay Global Object Identification entry point — dispatches by typeId prefix
     # (extracted from the opaque base64 id) to the matching NodeType's table.
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".
@@ -1441,6 +1451,19 @@ type Actor implements Searchable @table(name: "actor") {
     actorId:   Int!    @field(name: "ACTOR_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
+    # R435: correlated child-positioned @routine — the single-node chain whose implicit head is
+    # the parent's table. pActorId binds to the parent row's actor_id column (columnMapping),
+    # pMinLength to a GraphQL argument (argMapping); the mixed call emits the routine's
+    # Field-overload surface inside the inline correlated multiset. @defaultOrder is the one
+    # order surface a routine list child has: the result table carries no PK, so the
+    # deterministic-order rule requires an explicit fixed order over its result columns.
+    films(minLength: Int!): [ActorFilm!]
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pMinLength: minLength"
+            columnMapping: "pActorId: actor_id"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
     # B2 fixture: Searchable.name maps to first_name on Actor. Combined with Film.name
     # (mapped to title), one Searchable result list mixes typed Records of both shapes
     # under a uniform interface contract.

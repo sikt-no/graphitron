@@ -546,6 +546,26 @@ AS $$
     WHERE p_feide_id IS NOT NULL
 $$;
 
+-- R435 routine fixture: the correlated table-valued read function backing a child-positioned
+-- @routine (the films_for_actor(actor_id) shape named in the spec). p_actor_id is fed from the
+-- parent row's actor_id column (columnMapping), p_min_length from a GraphQL argument
+-- (argMapping) — the mixed call exercises the generated Field-overload surface. Reads the real
+-- film / film_actor seed rows so the execution test asserts per-parent correlation under the
+-- inline multiset emit.
+CREATE OR REPLACE FUNCTION public.films_for_actor(
+    p_actor_id   INTEGER,
+    p_min_length INTEGER
+) RETURNS TABLE(film_id INTEGER, title TEXT)
+LANGUAGE sql STABLE
+AS $$
+    SELECT f.film_id, f.title
+    FROM film f
+    JOIN film_actor fa ON fa.film_id = f.film_id
+    WHERE fa.actor_id = p_actor_id
+      AND f.length >= p_min_length
+    ORDER BY f.film_id
+$$;
+
 -- R328 fixture: self-FK @nodeId reference on a Graphitron-owned DML input — the neutral
 -- `email` / `mailbox` form of the CAMPUS self-FK case. `email` has a composite PK
 -- (mailbox_id, message_no). Two foreign keys share the `mailbox_id` child column:

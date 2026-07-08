@@ -22,6 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * This is the proof that the generated {@code Routines.<method>(<bound args>)} call and the
  * FROM-attach actually run and return rows, and that selection narrowing projects only the columns
  * the query selected.
+ *
+ * <p>R435 extends the proof to the child-positioned {@code @routine} (the correlated single-node
+ * chain): {@code Actor.films} rides the inline correlated multiset whose FROM source is
+ * {@code Routines.filmsForActor(parent.ACTOR_ID, DSL.val(minLength))}, asserting per-parent
+ * correlation and the mixed column/argument binding.
  */
 @ExecutionTier
 class RoutineFieldExecutionTest {
@@ -84,6 +89,53 @@ class RoutineFieldExecutionTest {
             assertThat(r).doesNotContainKey("rollekode");
         });
         assertThat(rows).extracting(r -> r.get("organisasjonskode")).containsExactly(184, 185);
+    }
+
+    @Test
+    void correlatedChildRoutineReturnsPerParentRows() {
+        // R435: the child-positioned @routine (single-node chain, implicit head). pActorId is fed
+        // from each parent Actor row's actor_id (columnMapping), pMinLength from the GraphQL
+        // argument (argMapping). Seeded casts: PENELOPE(1) -> films 1,2,3; NICK(2) -> 1,4;
+        // ED(3) -> 2,5. With minLength: 0 every cast film comes back, correlated per parent.
+        var data = execute("""
+            { allActors {
+                firstName
+                films(minLength: 0) { filmId title }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(actors).hasSize(3);
+        assertThat(filmIdsOf(actors, "PENELOPE")).containsExactly(1, 2, 3);
+        assertThat(filmIdsOf(actors, "NICK")).containsExactly(1, 4);
+        assertThat(filmIdsOf(actors, "ED")).containsExactly(2, 5);
+    }
+
+    @Test
+    void correlatedChildRoutineBindsArgumentAlongsideColumn() {
+        // The mixed call: pMinLength narrows inside the function body (film lengths: 1->86,
+        // 2->48, 3->50, 4->117, 5->169), proving the argument-sourced Field binding reaches the
+        // routine alongside the column-sourced correlation.
+        var data = execute("""
+            { allActors {
+                firstName
+                films(minLength: 50) { filmId }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(filmIdsOf(actors, "PENELOPE")).containsExactly(1, 3); // film 2 (48) filtered out
+        assertThat(filmIdsOf(actors, "NICK")).containsExactly(1, 4);
+        assertThat(filmIdsOf(actors, "ED")).containsExactly(5);          // film 2 (48) filtered out
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Integer> filmIdsOf(List<Map<String, Object>> actors, String firstName) {
+        return actors.stream()
+            .filter(a -> firstName.equals(a.get("firstName")))
+            .flatMap(a -> ((List<Map<String, Object>>) a.get("films")).stream())
+            .map(f -> (Integer) f.get("filmId"))
+            .toList();
     }
 
     private Map<String, Object> execute(String query) {

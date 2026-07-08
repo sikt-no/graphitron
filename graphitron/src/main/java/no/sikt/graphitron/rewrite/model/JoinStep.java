@@ -140,6 +140,7 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.LiftedHop {
         public TableRef targetTable() {
             return switch (target) {
                 case TableExpr.Catalog c -> c.table();
+                case TableExpr.RoutineCall rc -> rc.resultTable();
             };
         }
     }

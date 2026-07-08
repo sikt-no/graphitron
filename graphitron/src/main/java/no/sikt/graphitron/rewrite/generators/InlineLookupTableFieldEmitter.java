@@ -98,8 +98,14 @@ public final class InlineLookupTableFieldEmitter {
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
                 ClassName jooqTableClass = ht.targetTable().tableClass();
-                code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                    jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
+                // Materialization routes through the shared TableExpr switch (R435). Routine
+                // hops never reach the lookup path today (the classifier lands typed Deferred);
+                // the OnLateralArgs / On.Lateral arms below throw if that guard slips.
+                code.addStatement("$T $L = $L.as($L.getName() + $S)",
+                    jooqTableClass, aliases.get(i),
+                    JoinPathEmitter.emitTableExpression(path.get(i),
+                        i == 0 ? parentAlias : aliases.get(i - 1),
+                        new ArgumentValueSource.FromSelectedField(sfName)),
                     parentAlias, "_" + aliases.get(i));
             }
         }
@@ -210,6 +216,9 @@ public final class InlineLookupTableFieldEmitter {
                             prevAlias, cp.fk().keysClass(), cp.fk().constantName());
                         case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                        case On.Lateral ignored -> throw new IllegalStateException(
+                            "a lateral routine hop cannot appear in a lookup path; "
+                            + "multi-node routine chains classify as typed Deferred (R435)");
                     }
                 }
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
@@ -234,6 +243,9 @@ public final class InlineLookupTableFieldEmitter {
                     where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
                 case ParentCorrelation.OnConditionJoin cj ->
                     where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
+                case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
+                    "a lateral routine hop cannot head a lookup path; @lookupKey on routine "
+                    + "chains classifies as typed Deferred (R435)");
             }
         }
         for (JoinStep step : path) {

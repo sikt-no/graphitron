@@ -97,8 +97,14 @@ public final class InlineTableFieldEmitter {
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
                 ClassName jooqTableClass = ht.targetTable().tableClass();
-                code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                    jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
+                // Materialization routes through the shared TableExpr switch (R435): a catalog
+                // hop declares Tables.X, a routine hop declares Routines.m(<bound args>) — the
+                // correlated call reads the previous node's alias (the parent at hop 0).
+                String previousAlias = i == 0 ? parentAlias : aliases.get(i - 1);
+                code.addStatement("$T $L = $L.as($L.getName() + $S)",
+                    jooqTableClass, aliases.get(i),
+                    JoinPathEmitter.emitTableExpression(path.get(i), previousAlias,
+                        new ArgumentValueSource.FromSelectedField(sfName)),
                     parentAlias, "_" + aliases.get(i));
             }
         }
@@ -167,6 +173,12 @@ public final class InlineTableFieldEmitter {
                             prevAlias, cp.fk().keysClass(), cp.fk().constantName());
                         case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                        // A lateral routine hop at bridging position is the multi-node chain
+                        // (routine-then-hops / sandwich), which classifies as typed Deferred
+                        // (R435); only the single-node chain (hop 0) emits today.
+                        case On.Lateral ignored -> throw new IllegalStateException(
+                            "a lateral routine hop cannot appear at bridging position; "
+                            + "multi-node routine chains classify as typed Deferred (R435)");
                     }
                 }
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
@@ -192,6 +204,11 @@ public final class InlineTableFieldEmitter {
                     where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
                 case ParentCorrelation.OnConditionJoin cj ->
                     where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
+                // R435: the lateral routine call is correlated through its arguments (the
+                // alias-declaration loop rendered the parent columns into the call), so the
+                // step-0 WHERE contributes nothing.
+                case ParentCorrelation.OnLateralArgs ignored ->
+                    where.add("$T.noCondition()", DSL);
             }
         }
         for (JoinStep step : path) {

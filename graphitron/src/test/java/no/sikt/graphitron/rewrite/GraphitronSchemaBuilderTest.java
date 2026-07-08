@@ -47,6 +47,9 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -7429,10 +7432,11 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childRoutineWithValidColumnMappingClassifiesThenDefersOnEmit() {
+    void childRoutineWithValidColumnMappingClassifiesAsLateralTableField() {
         // The correlated single-node chain: pEnv binds to the parent's `title` column
-        // (columnMapping), the remaining params to field arguments. All bindings validate at
-        // classify time; the LATERAL emit is the deferred half.
+        // (columnMapping), the remaining params to field arguments. Classifies onto the inline
+        // TableField leaf carrying the routine-node chain: one Hop whose target is
+        // TableExpr.RoutineCall, joined On.Lateral, correlated via OnLateralArgs.
         var schema = build(TILGANG_TYPE + """
             type Film @table(name: "film") {
               title: String
@@ -7443,10 +7447,62 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """);
+        var f = (ChildField.TableField) schema.field("Film", "tilganger");
+        assertThat(f.joinPath()).hasSize(1);
+        var hop = (JoinStep.Hop) f.joinPath().get(0);
+        assertThat(hop.on()).isInstanceOf(On.Lateral.class);
+        var rc = (TableExpr.RoutineCall) hop.target();
+        assertThat(rc.resultTable().tableName()).isEqualTo("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+        assertThat(hop.targetTable().tableName()).isEqualTo("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+        assertThat(hop.originTable().tableName()).isEqualTo("film");
+        assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLateralArgs.class);
+        // Binding shapes: the column-mapped param carries the resolved parent column, the
+        // argument-mapped params ride ParamSource.Arg.
+        var bySource = rc.routine().argBindings();
+        assertThat(bySource).hasSize(3);
+        var pEnv = bySource.stream().filter(b -> b.routineParamName().equals("pEnv")).findFirst().orElseThrow();
+        assertThat(pEnv.source()).isInstanceOf(ParamSource.SourceColumn.class);
+        assertThat(((ParamSource.SourceColumn) pEnv.source()).column().sqlName()).isEqualTo("title");
+        var pServiceId = bySource.stream().filter(b -> b.routineParamName().equals("pServiceId")).findFirst().orElseThrow();
+        assertThat(pServiceId.source()).isInstanceOf(ParamSource.Arg.class);
+    }
+
+    @Test
+    void childRoutineWithoutColumnMappingAlsoClassifiesAsLateralTableField() {
+        // The uncorrelated child single-node chain: every param binds from field arguments.
+        // Same leaf and chain shape as the correlated case — the routine call is the row
+        // source either way; the emitters fork on the presence of SourceColumn bindings.
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            type Query { film: Film }
+            """);
+        var f = (ChildField.TableField) schema.field("Film", "tilganger");
+        var hop = (JoinStep.Hop) f.joinPath().get(0);
+        assertThat(hop.target()).isInstanceOf(TableExpr.RoutineCall.class);
+        assertThat(hop.on()).isInstanceOf(On.Lateral.class);
+    }
+
+    @Test
+    void splitQueryOnChildRoutineDefersUntilBatchedEmitLands() {
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!] @splitQuery
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: title")
+            }
+            type Query { film: Film }
+            """);
         var f = (UnclassifiedField) schema.field("Film", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
         assertThat(f.reason())
-            .contains("correlated single-node chain")
+            .contains("@splitQuery")
             .contains("roadmap/routine-table-node-composition.md");
     }
 

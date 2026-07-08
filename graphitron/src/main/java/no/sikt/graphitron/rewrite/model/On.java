@@ -15,12 +15,12 @@ import java.util.List;
  * {@code Optional<On>}, which would reintroduce a null-in-exactly-one-case state and forfeit the
  * every-hop-joins certainty the non-null component buys.
  *
- * <p>A new way to join is a new arm here (e.g. R435's {@code Lateral} for routine targets, or a
+ * <p>A new way to join is a new arm here (e.g. {@link Lateral} for routine targets, or a
  * PK/UK name-match derivation), not a new step type. When the name-match derivation lands, the
  * FK-vs-derived question becomes its own small seal on {@link ColumnPairs} and
  * {@link ColumnPairs#fk()} becomes one case of it.
  */
-public sealed interface On permits On.ColumnPairs, On.Predicate {
+public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
 
     /**
      * The step joins on paired source / target columns derived from a foreign key.
@@ -65,4 +65,19 @@ public sealed interface On permits On.ColumnPairs, On.Predicate {
             }
         }
     }
+
+    /**
+     * The step joins laterally (R435): the target is a {@link TableExpr.RoutineCall} whose
+     * arguments reference the previous node's columns ({@link ParamSource.SourceColumn}
+     * bindings), so the correlation rides the call arguments rather than an ON predicate or
+     * column pairs. Lateralness is a positive fact on this axis — never an overloaded
+     * {@code on}-absence.
+     *
+     * <p>The arm carries no payload: the correlated columns live on the target's
+     * {@link RoutineRef.ArgBinding}s, keeping the "what is the node" and "how does the step
+     * join" axes from duplicating each other. An uncorrelated routine node (all bindings
+     * argument-sourced) still uses this arm — the routine call is the row source either way,
+     * and the emitters render the same call shape with zero column references.
+     */
+    record Lateral() implements On {}
 }
