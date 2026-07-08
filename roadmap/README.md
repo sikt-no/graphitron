@@ -14,12 +14,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R442` | Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name | Spec | 2026-07-08 | [plan](condition-param-table-class-identity.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R440` | FK-join synthesis must resolve the endpoint (and FK) by jOOQ class identity, not bare name | Spec | 2026-07-08 | [plan](fk-join-endpoint-class-identity.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R441` | Typed-accessor match must compare jOOQ table identity, not bare @table name | Spec | 2026-07-08 | [plan](typed-accessor-schema-qualified-table-identity.md) |
+| `R442` | Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name | Ready | 2026-07-08 | [plan](condition-param-table-class-identity.md) |
 | `R429` | Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity | Ready | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](connection-transaction-lifecycle.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
@@ -243,7 +243,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
-- `R442` [**Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name**](condition-param-table-class-identity.md) — Spec, bug
+- `R442` [**Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name**](condition-param-table-class-identity.md) — Ready, bug
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural

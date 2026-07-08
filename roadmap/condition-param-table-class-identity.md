@@ -1,7 +1,7 @@
 ---
 id: R442
 title: "Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: structural-refactor
