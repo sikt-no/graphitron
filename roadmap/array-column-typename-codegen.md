@@ -1,9 +1,9 @@
 ---
 id: R446
 title: "Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors"
-status: Ready
+status: Spec
 bucket: bug
-priority: 2
+priority: 1
 theme: service
 depends-on: []
 created: 2026-07-08
@@ -12,7 +12,9 @@ last-updated: 2026-07-08
 
 # Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors
 
-Code generation crashes on any array-typed database column. This is **not** part of the schema-qualified `@table` bug class (fully closed by R396/R440/R441/R442/R422/R445); it is a separate, pre-existing codegen bug that only became reachable once opptak's schema stopped producing author-errors and the emit phase actually ran. It hard-blocks a consuming team's `graphitron:dev` / `generate`, with no author-side workaround.
+Code generation crashes on any array-typed database column mapped through the `SourceKey.Wrap.TableRecord` key-extraction path. This is **not** part of the schema-qualified `@table` bug class (fully closed by R396/R440/R441/R442/R422/R445); it is a **regression introduced by R436**, the "fix unsafe TableRecord key extraction colliding with multiset aliases" change. It hard-blocks a consuming team's `graphitron:dev` / `generate` on a shipped RC (RC26), with no author-side workaround, hence priority 1.
+
+R436 rewrote the `TableRecord` arm from a whole-record `into(Tables.X)` (jOOQ maps the row into the typed record by name at runtime, emitting no per-column `.class` literal) to per-column reconstruction that emits `key.set(Tables.X.COL, source.get("__src_<col>__", ColType.class))` for every column, iterating `TableRef.allColumns()`. That per-column `$T.class` is what calls `ClassName.bestGuess(col.columnClass())`, so the crash site is code R436 created; pre-R436 that arm never called `bestGuess` per column, and array columns emitted fine. The other `bestGuess(...columnClass())` sites (see Blast radius) are pre-existing and latent. **Do not fix this by reverting to `into(Tables.X)`:** R436's per-column reconstruction fixes a real base-column-namespace collision (a sibling multiset alias shadowing a physical column, poisoning the whole-record conversion), which is why it projects reserved `__src_<col>__` aliases. The fix keeps the per-column form and corrects only the type emission.
 
 ## Symptom
 
@@ -32,19 +34,21 @@ Observed stack: `TypeFetcherGenerator.buildServiceDataFetcher` (`TypeFetcherGene
 
 There is no author-side workaround. In `buildKeyExtraction`'s `SourceKey.Wrap.TableRecord` arm the loop is over `parentTable.allColumns()` (`GeneratorUtils.java:568`), i.e. every GraphQL-mapped field of the node type, not just the key columns. Hiding the array field in the schema does not matter; the whole node type fails to emit as soon as any of its mapped columns is array-typed.
 
+**Bisect.** Verify the regression by diffing the `TableRecord` arm across R436's landing: pre-R436 the arm read `((Record) env.getSource()).into(Tables.X)`; post-R436 it is the per-column `key.set(..., source.get("__src_<col>__", $T.class))` loop above. R436's authoring commit is `2992d2505` ("R436: fix unsafe TableRecord key extraction colliding with multiset aliases + route pre-dispatch throws through ErrorRouter"), but because R436 landed on trunk under a rebased SHA that commit is **not** an ancestor of `origin/claude/graphitron-rewrite` (`git merge-base --is-ancestor 2992d2505 origin/claude/graphitron-rewrite` returns false); locate the landing on trunk by message/content rather than by that SHA-ancestry check.
+
 ## Blast radius (audit all before fixing)
 
 The `ClassName.bestGuess(<ColumnRef>.columnClass())` pattern appears at the following sites (verified against trunk). The all-columns iterators are the ones **currently reachable** by this crash; the remaining sites are **latent** (an array-typed key/PK column is unusual but not impossible). Fix them consistently.
 
-Reachable (iterate the full mapped column set):
+Reachable (iterate the full mapped column set, over `allColumns()`):
 
-* `generators/GeneratorUtils.java:572` (TableRecord key-extraction arm, over `parentTable.allColumns()`) - the crash site
-* `generators/GeneratorUtils.java:487` (`buildKeyExtractionWithNullCheck`, Row arm)
+* `generators/GeneratorUtils.java:572` (TableRecord key-extraction arm, over `parentTable.allColumns()`) - the crash site, introduced by R436
 * `generators/SplitRowsMethodEmitter.java:879`
 * `generators/MultiTablePolymorphicEmitter.java:1853`
 
 Latent (key / PK / participant / decode / lookup column classes):
 
+* `generators/GeneratorUtils.java:487` (`buildKeyExtractionWithNullCheck`) - iterates `sourceKey.columns()` (the key columns), **not** `allColumns()`, so it is latent: an array-typed key column is unusual. (Earlier drafts filed this under "reachable"; it is not.)
 * `generators/FetcherEmitter.java:501`, `:657`, `:670`
 * `generators/SplitRowsMethodEmitter.java:269`, `:673`, `:837`, `:1385`
 * `generators/MultiTablePolymorphicEmitter.java:909`, `:1060`, `:1168`, `:1556`, `:1905`
@@ -113,8 +117,8 @@ Flat file-by-file; the type-lift plus its call sites compile as one unit.
 * `model/ColumnRef.java` - add a `TypeName columnType` component (keep `columnClass`); update the javadoc.
 * Thread `columnType` through every `new ColumnRef(…)` / `new ColumnEntry(…)` construction site. The `ColumnEntry -> ColumnRef` passthroughs (`ServiceCatalog` 70/109, `JooqCatalog` 892/1236, `OrderByResolver` 136/226/263/286, `InputBeanResolver:412`, `TypeBuilder:1354`, `MatchedKeys:56`, `BuildContext` 1176/2500/2773, `CatalogBuilder:1117`) forward `e.columnType()`; the `ColumnRef -> ColumnRef` passthrough (`FieldBuilder:1409`) forwards `col.get().columnType()`. Re-grep `new ColumnRef(` / `new ColumnEntry(` before editing; the compiler enforces completeness once the component is added.
 * Replace all 31 `ClassName.bestGuess(<ref>.columnClass())` occurrences with `<ref>.columnType()`:
-    * reachable (full mapped-column iterators): `generators/GeneratorUtils.java` 487/572, `generators/SplitRowsMethodEmitter.java:879`, `generators/MultiTablePolymorphicEmitter.java:1853`;
-    * latent (key / PK / participant / decode / lookup columns): `generators/FetcherEmitter.java` 501/657/670; `generators/SplitRowsMethodEmitter.java` 269/673/837/1385; `generators/MultiTablePolymorphicEmitter.java` 909/1060/1168/1556/1905; `generators/TypeFetcherGenerator.java` 1735/2825; `generators/TypeConditionsGenerator.java:282`; `generators/CompositeDecodeHelperRegistry.java` 119/232/242; `generators/InlineLookupTableFieldEmitter.java:123`; `generators/util/SelectMethodBody.java:137`; `generators/util/NodeIdEncoderClassGenerator.java:219`; `generators/util/ValuesJoinRowBuilder.java:104`; `model/SourceKey.java:207`; `model/ChildField.java` 285/314/351/1072.
+    * reachable (full mapped-column iterators, over `allColumns()`): `generators/GeneratorUtils.java:572`, `generators/SplitRowsMethodEmitter.java:879`, `generators/MultiTablePolymorphicEmitter.java:1853`;
+    * latent (key / PK / participant / decode / lookup columns): `generators/GeneratorUtils.java:487` (iterates `sourceKey.columns()`, not `allColumns()`); `generators/FetcherEmitter.java` 501/657/670; `generators/SplitRowsMethodEmitter.java` 269/673/837/1385; `generators/MultiTablePolymorphicEmitter.java` 909/1060/1168/1556/1905; `generators/TypeFetcherGenerator.java` 1735/2825; `generators/TypeConditionsGenerator.java:282`; `generators/CompositeDecodeHelperRegistry.java` 119/232/242; `generators/InlineLookupTableFieldEmitter.java:123`; `generators/util/SelectMethodBody.java:137`; `generators/util/NodeIdEncoderClassGenerator.java:219`; `generators/util/ValuesJoinRowBuilder.java:104`; `model/SourceKey.java:207`; `model/ChildField.java` 285/314/351/1072.
 * Widen the six `ClassName`-typed locals/vars listed under *Return-type widening* to `TypeName`.
 * `model/SourceKey.java:207` already casts `(TypeName)`; drop the now-redundant cast.
 * Add the key/NodeId array-column rejection (see Validation) in the relevant classifier/validator arm.
