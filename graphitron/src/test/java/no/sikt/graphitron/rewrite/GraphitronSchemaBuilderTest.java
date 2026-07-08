@@ -7563,6 +7563,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """);
         var f = (UnclassifiedField) schema.field("Film", "castActors");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(f.reason()).contains("must carry at least one path element");
     }
 
@@ -7922,6 +7923,7 @@ class GraphitronSchemaBuilderTest {
             }
             """);
         var f = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
         assertThat(f.reason()).contains("repeated @reference on an argument");
     }
 
@@ -7939,6 +7941,7 @@ class GraphitronSchemaBuilderTest {
             type Query { customers(filter: PlainFilter): [Customer!]! }
             """);
         var f = (UnclassifiedField) schema.field("Query", "customers");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(f.reason())
             .contains("repeated @reference on an input field")
             .contains("compose the chain on the field instead");
@@ -8013,6 +8016,202 @@ class GraphitronSchemaBuilderTest {
             .contains("java.lang.String")
             .contains("java.lang.Integer")
             .contains("must match the routine parameter's");
+    }
+
+    // ===== R449 — routine-chain classification edges (D1 root-position gate, D2 conflict table) =====
+    // D1 gates the root-chain interception on Query: @routine on Mutation is R451's write arm (a
+    // capability gap), Subscription lands its generic Deferred, and a non-routine Mutation chain
+    // gets the Mutation story rather than the Query-oriented root-head rejection. D2 folds @routine
+    // into the conflict detectors via a pairwise verdict table (Conflict dominates Deferred). D3
+    // pins the R300 single-node root desugar directly.
+
+    @Test
+    void rootSingleNodeRoutineDesugarsToQueryRoutineTableFieldWithEmptyHops() {
+        // R449 D3 — the R300 single-node root @routine is the degenerate chain: no @reference
+        // application, the routine result is itself the terminus, so hops is empty. Pinned
+        // directly here (previously only indirectly via the R300 projection + execution tiers).
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (QueryField.QueryRoutineTableField) schema.field("Query", "tilganger");
+        assertThat(f.hops()).isEmpty();
+        assertThat(f.start().resultTable().tableName())
+            .isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+        assertThat(f.returnType().table().tableName())
+            .isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+    }
+
+    @Test
+    void mutationMultiNodeRoutineChainDefersToRoutineWriteArm() {
+        // R449 D1 — a multi-node routine chain on Mutation lands the routine-mutation-write
+        // signpost (R451's write arm), not a QueryRoutineTableField whose source() asserts
+        // Root.Query. The interception mints it before the Query-oriented root-head rule.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            type Mutation {
+              recentFilms(actorId: Int!, minLength: Int!): [Film!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "recentFilms");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-mutation-write");
+        assertThat(f.reason()).contains("routine write arm");
+    }
+
+    @Test
+    void mutationSingleNodeRoutineDefersToRoutineWriteArm() {
+        // R449 D1 — the single-node @routine on Mutation lands the same Deferred from
+        // classifyMutationField's top; today (pre-R449) it lands the generic "both absent"
+        // fallback, so this is the regression case that keeps the single-node and chain stories
+        // aligned.
+        var schema = build(TILGANG_TYPE + """
+            type Query { tilgang: Tilgang }
+            type Mutation {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-mutation-write");
+        assertThat(f.reason()).contains("routine write arm");
+    }
+
+    @Test
+    void subscriptionRoutineChainLandsGenericSubscriptionDeferred() {
+        // R449 D1 — a Subscription routine chain falls through to classifyRootField's generic
+        // Subscription Deferred (everything on Subscription lands there); it is not routed to the
+        // Query routine classifier.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            type Subscription {
+              recentFilms(actorId: Int!, minLength: Int!): [Film!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Subscription", "recentFilms");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("Subscription is not supported");
+    }
+
+    @Test
+    void mutationRepeatedReferenceChainLandsMutationFallbackNotRootHeadRejection() {
+        // R449 D1 — a Mutation multi-node chain with no routine node (repeated @reference) falls
+        // through to classifyMutationField, landing the Mutation "both absent" fallback rather than
+        // the Query-oriented "move @routine first" root-head rejection.
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Query { actor: Actor }
+            type Mutation {
+              actors: [Actor!]
+                @reference(path: [{table: "actor"}])
+                @reference(path: [{table: "actor"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "actors");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason())
+            .contains("both absent")
+            .doesNotContain("move @routine first");
+    }
+
+    @Test
+    void serviceRoutineConflictOnChildField() {
+        // R449 D2 — @service @routine on a child field rejects as DirectiveConflict (two
+        // source-claiming directives). Before R449 the routine chain won on child fields.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") {
+              firstName: String
+              films(minLength: Int!): [Film!]
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+                @routine(name: "films_for_actor", argMapping: "pMinLength: minLength")
+            }
+            type Query { actor: Actor }
+            """);
+        var f = (UnclassifiedField) schema.field("Actor", "films");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason()).contains("@service").contains("@routine");
+    }
+
+    @Test
+    void serviceRoutineConflictOnRootSingleNodeField() {
+        // R449 D2 — @service @routine on a Query single-node field rejects as DirectiveConflict.
+        // Before R449 @service won here.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              films(actorId: Int!, minLength: Int!): [Film!]!
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason()).contains("@service").contains("@routine");
+    }
+
+    @Test
+    void serviceRoutineConflictOnRootMultiNodeChain() {
+        // R449 D2 — @service @routine on a Query multi-node chain rejects as DirectiveConflict: the
+        // hoisted query detector runs before the chain interception, so the routine chain no longer
+        // silently wins.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              films(actorId: Int!, minLength: Int!): [Film!]!
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason()).contains("@service").contains("@routine");
+    }
+
+    @Test
+    void routineLookupKeyAtRootDefers() {
+        // R449 D2 — @routine × @lookupKey at root is a capability gap (typed Deferred on R447's
+        // routine-chain-fetch-form-breadth), extending R435's shipped child verdict to root.
+        var schema = build("""
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filmId: [Int!]! @lookupKey): [Film!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: filmId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(((Rejection.Deferred) f.rejection()).planSlug())
+            .isEqualTo("routine-chain-fetch-form-breadth");
+        assertThat(f.reason()).contains("@lookupKey");
+    }
+
+    @Test
+    void routineLookupKeyServiceConflictDominatesDefer() {
+        // R449 D2 — @routine @lookupKey @service: the @service conflicts dominate the @routine ×
+        // @lookupKey defer (the precedence rule the pairwise table enforces; a pre-count carve-out
+        // would short-circuit to the defer and reintroduce the three-directive hole).
+        var schema = build("""
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filmId: [Int!]! @lookupKey): [Film!]!
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+                @routine(name: "films_for_actor", argMapping: "pActorId: filmId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason()).contains("@service").contains("@routine");
     }
 
     @Test

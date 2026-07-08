@@ -176,6 +176,23 @@ public sealed interface QueryField extends RootField
             if (start == null) {
                 throw new NullPointerException("QueryRoutineTableField.start must not be null");
             }
+            // R449 D5 — the start (chain head) binds every routine parameter from a GraphQL
+            // argument: a root chain's head has no previous node, so RoutineDirectiveResolver
+            // rejects columnMapping at root and mints only ParamSource.Arg. Pinning the acceptance
+            // at the producer (rather than trusting that classifier rejection nothing downstream
+            // re-checks) is what lets the shared RoutineCallEmitter path assume PreviousNodeRef.None
+            // carries no ParamSource.SourceColumn read.
+            for (RoutineRef.ArgBinding binding : start.routine().argBindings()) {
+                if (!(binding.source() instanceof ParamSource.Arg)) {
+                    throw new IllegalArgumentException(
+                        "QueryRoutineTableField start binding for routine parameter '"
+                        + binding.routineParamName() + "' carries "
+                        + binding.source().getClass().getSimpleName()
+                        + "; a root routine chain's head has no previous node, so every start "
+                        + "binding must be ParamSource.Arg (RoutineDirectiveResolver rejects "
+                        + "columnMapping at root before construction)");
+                }
+            }
             hops = List.copyOf(hops);
             // Mechanical R435 invariants (this is an implemented leaf; the classifier's chain
             // build is the only producer, and these pin exactly the shapes its emitter renders):

@@ -1449,10 +1449,11 @@ class BuildContext {
                 case On.Predicate ignored -> new TerminalTargetVerdict.Match();
                 // @reference path parsing never mints a lateral routine hop (R435); routine
                 // chains are landed by FieldBuilder's chain interception, whose terminus
-                // invariant lives in RoutineDirectiveResolver.bindArgs.
+                // invariant lives in FieldBuilder.routineChainVerdict (the resolver went
+                // position-agnostic and no longer owns the check).
                 case On.Lateral ignored -> throw new IllegalStateException(
                     "On.Lateral is never produced by @reference path parsing; routine-node "
-                    + "terminus checking lives in RoutineDirectiveResolver, not this gate.");
+                    + "terminus checking lives in FieldBuilder.routineChainVerdict, not this gate.");
             };
             case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                 "JoinStep.LiftedHop is never produced by @reference path parsing (single-hop "

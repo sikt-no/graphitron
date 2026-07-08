@@ -74,6 +74,16 @@ public final class RoutineCallEmitter {
                         pif.valuesLocal(), sc.column().sqlName(),
                         pif.ownerTable().constantsClass(), pif.ownerTable().javaFieldName(),
                         sc.column().javaName());
+                // Classifier-unreachable (R449 D5): a SourceColumn binding reads the previous
+                // chain node's column, but a None head has no previous node. The root chain pins
+                // every start binding to ParamSource.Arg (QueryRoutineTableField's compact
+                // constructor; RoutineDirectiveResolver rejects columnMapping at root), so this
+                // combination cannot be produced.
+                case PreviousNodeRef.None ignored -> throw new IllegalStateException(
+                    "correlated column binding for parameter '" + b.routineParamName()
+                    + "' reached a headless (None) routine call — a root chain's head has no "
+                    + "previous node, and QueryRoutineTableField pins every start binding to "
+                    + "ParamSource.Arg");
             };
             case ParamSource.Context ignored -> throw nonRoutineParamSource(b);
             case ParamSource.Sources ignored -> throw nonRoutineParamSource(b);

@@ -148,6 +148,20 @@ class FieldBuilder {
 
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
 
+    /**
+     * R449 D1 — the deferral prose for {@code @routine} on a Mutation root field, shared by the
+     * chain interception (multi-node chains) and {@link #classifyMutationField} (the single-node
+     * degenerate chain) so both stories agree. {@code @routine} on Mutation is R451's write arm:
+     * the routine call commits before the follow-up query, a recognised capability gap rather than
+     * an authoring error, so it lands a typed {@code Deferred} signposting {@code
+     * routine-mutation-write} instead of the Query-oriented root-head rejection or the generic
+     * "both absent" mutation fallback.
+     */
+    private static final String MUTATION_ROUTINE_DEFERRAL =
+        "@routine on a Mutation field is the routine write arm — the routine call commits before "
+        + "the follow-up query — which is a recognised capability gap, not an authoring error, and "
+        + "does not emit yet";
+
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final ServiceDirectiveResolver serviceResolver;
@@ -2102,6 +2116,15 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
+        // R449 D1 — the root position is read once here and feeds both the hoisted D2 query
+        // conflict detector below and the R435 chain interception's Query-only root arm, so no
+        // second string-comparison site appears (the fuller fix, lifting RootType into
+        // Query/Mutation/Subscription so dispatch is exhaustive rather than string-compared, is a
+        // model-cleanup follow-up out of R449's scope).
+        boolean isRoot = parentType instanceof RootType;
+        boolean isQueryRoot = isRoot && parentTypeName.equals("Query");
+        boolean isMutationRoot = isRoot && parentTypeName.equals("Mutation");
+
         // @notGenerated is no longer supported. Reject any application before conflict detection
         // so the user sees the no-longer-supported reason rather than a misleading "conflict with
         // @service" message when both directives are present.
@@ -2127,6 +2150,19 @@ class FieldBuilder {
             }
         }
 
+        // R449 D2 — the query conflict detector, hoisted from classifyQueryField so it runs before
+        // the R435 chain interception below (one detector site per position: child above, Query
+        // here). @service @routine on a Query field now rejects as a DirectiveConflict at every
+        // shape — single-node and multi-node chain alike — where the interception would otherwise
+        // silently route the multi-node chain to the routine classifier. Guarded by D1's single
+        // Query-position read.
+        if (isQueryRoot) {
+            var conflict = detectQueryFieldConflict(fieldDef);
+            if (conflict != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
+            }
+        }
+
         // R435 — order-significant @routine / @reference composition. The ordered field-level
         // applications compose the field's table chain, and this is the only pass that reads
         // their order. Root chains land QueryRoutineTableField (the single-node R300 shape via
@@ -2141,8 +2177,25 @@ class FieldBuilder {
         var chainDirectives = chainDirectiveNames(fieldDef);
         long routineApplications = chainDirectives.stream().filter(DIR_ROUTINE::equals).count();
         if (routineApplications > 0 || chainDirectives.size() > 1) {
-            boolean isRoot = parentType instanceof RootType;
-            if (isRoot && !DIR_ROUTINE.equals(chainDirectives.get(0))) {
+            // R449 D1 — a multi-node Mutation chain carrying @routine is R451's write arm (the
+            // routine call commits before the follow-up query): a capability gap, not an authoring
+            // error, so it lands a typed Deferred signposting routine-mutation-write rather than the
+            // Query-oriented root-head rejection below or a QueryRoutineTableField whose source()
+            // falsely asserts Root.Query. Placed ahead of the root-head and multi-routine rules so
+            // the author sees the write-arm cause, not "move @routine first" or the generic
+            // multi-routine defer. The single-node Mutation @routine reaches classifyMutationField's
+            // top for the same Deferred (the degenerate chain never enters the size>1 arms); a
+            // Mutation chain with no routine node (repeated @reference) and any Subscription chain
+            // fall through to classifyRootField, landing the Mutation "both absent" fallback and the
+            // generic Subscription Deferred respectively.
+            if (isMutationRoot && routineApplications > 0 && chainDirectives.size() > 1) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.deferred(MUTATION_ROUTINE_DEFERRAL, "routine-mutation-write"));
+            }
+            // The root-head rule (and classifyRootRoutineChain below, which lands
+            // QueryRoutineTableField whose source() asserts Root.Query) is Query-only (D1): at root
+            // only a Query chain supplies its head with @routine.
+            if (isQueryRoot && !DIR_ROUTINE.equals(chainDirectives.get(0))) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "a root field's table chain must start with @routine — directives compose the chain in "
                     + "written order, and at root only a routine can supply the chain's head (move @routine first)"));
@@ -2154,7 +2207,7 @@ class FieldBuilder {
                     "a table chain with more than one routine node classifies but does not emit yet",
                     "routine-chain-fetch-form-breadth"));
             }
-            if (isRoot && chainDirectives.size() > 1) {
+            if (isQueryRoot && chainDirectives.size() > 1) {
                 // Root-head rule above guarantees the chain starts with @routine here: the
                 // routine-then-hops chain.
                 return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
@@ -2162,9 +2215,11 @@ class FieldBuilder {
             if (!isRoot && routineApplications == 1) {
                 return classifyChildRoutineChain(fieldDef, parentTypeName, parentType, name, location);
             }
-            // Remaining shapes fall through: the root single-node chain (classifyRootField's
-            // @routine branch) and child chains of repeated @reference applications with no
-            // routine node, whose concatenated path the ordinary classification below consumes
+            // Remaining shapes fall through: the Query single-node chain (classifyQueryField's
+            // @routine branch), the Mutation single-node @routine (classifyMutationField's D1 top
+            // check) and Mutation/Subscription non-routine or Subscription routine chains (their
+            // classifyRootField stories), and child chains of repeated @reference applications with
+            // no routine node, whose concatenated path the ordinary classification below consumes
             // like any longer @reference path.
         }
 
@@ -3921,10 +3976,9 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        var conflict = detectQueryFieldConflict(fieldDef);
-        if (conflict != null) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
-        }
+        // R449 D2 — the query conflict detector moved to classifyField, hoisted before the R435
+        // chain interception so @service @routine on a multi-node chain rejects instead of routing
+        // to the routine classifier. One detector site per position; no call here.
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
             return switch (serviceResolver.resolve(parentTypeName, fieldDef, List.of())) {
@@ -4089,6 +4143,16 @@ class FieldBuilder {
     private GraphitronField classifyMutationField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
+
+        // R449 D1 — @routine on Mutation is R451's write arm (see MUTATION_ROUTINE_DEFERRAL). The
+        // single-node degenerate chain reaches here (the multi-node chain is signposted in
+        // classifyField's interception); landing the same typed Deferred keeps the single-node and
+        // chain stories aligned rather than letting this method's generic "both absent" fallback
+        // bury the actual cause.
+        if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.deferred(MUTATION_ROUTINE_DEFERRAL, "routine-mutation-write"));
+        }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
@@ -4814,59 +4878,120 @@ class FieldBuilder {
 
 
     /**
-     * Returns a reason string when mutually exclusive child-field classification directives appear
-     * together, or {@code null} when at most one exclusive slot is occupied.
-     *
-     * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive,
-     * so it may combine with {@code @service}, {@code @externalField}, {@code @tableMethod},
-     * {@code @tableField}, or {@code @nodeId}. It is therefore not included in this check.
+     * R449 D2 — the verdict for an unordered pair of classification-claiming directives. Two
+     * source-claiming directives conflict by default; the table below ({@link #pairVerdict})
+     * records the two exceptions {@code @routine} draws. The sealed shape lets
+     * {@link #reduceDirectiveConflict} switch exhaustively.
      */
-    private Rejection.InvalidSchema.DirectiveConflict detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
-        boolean hasService       = fieldDef.hasAppliedDirective(DIR_SERVICE);
-        boolean hasExternalField = fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD);
-        boolean hasTableMethod   = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
-        boolean hasNodeId        = fieldDef.hasAppliedDirective(DIR_NODE_ID);
-
-        int slots = (hasService       ? 1 : 0)
-                  + (hasExternalField ? 1 : 0)
-                  + (hasTableMethod   ? 1 : 0)
-                  + (hasNodeId        ? 1 : 0);
-
-        if (slots <= 1) return null;
-
-        var bareNames = new ArrayList<String>();
-        var atNames = new ArrayList<String>();
-        if (hasService)       { bareNames.add(DIR_SERVICE);              atNames.add("@" + DIR_SERVICE); }
-        if (hasExternalField) { bareNames.add(DIR_EXTERNAL_FIELD);       atNames.add("@" + DIR_EXTERNAL_FIELD); }
-        if (hasTableMethod)   { bareNames.add(DIR_TABLE_METHOD);         atNames.add("@" + DIR_TABLE_METHOD); }
-        if (hasNodeId)        { bareNames.add(DIR_NODE_ID);              atNames.add("@" + DIR_NODE_ID); }
-        return new Rejection.InvalidSchema.DirectiveConflict(
-            bareNames, String.join(", ", atNames) + " are mutually exclusive");
+    private sealed interface PairVerdict permits PairVerdict.Conflict, PairVerdict.Deferred, PairVerdict.Composes {
+        /** Two source-claiming directives that cannot co-occur. The default for any pair. */
+        record Conflict() implements PairVerdict {}
+        /** A recognised-but-unsupported combination, signposting {@code planSlug}. */
+        record Deferred(String planSlug) implements PairVerdict {}
+        /** A combination that legitimately composes (no rejection). */
+        record Composes() implements PairVerdict {}
     }
 
     /**
-     * Returns a typed {@link Rejection.InvalidSchema.DirectiveConflict} when mutually exclusive
-     * query-field directives appear together ({@code @service}, {@code @lookupKey} on arguments,
-     * {@code @tableMethod}), or {@code null}.
+     * R449 D2 — the pairwise conflict verdict for an unordered pair of classification-claiming
+     * directives. Two source-claiming directives conflict by default; this records the exceptions
+     * {@code @routine} draws: {@code @routine} × {@code @lookupKey} is a capability gap (typed
+     * {@code Deferred} on R447's {@code routine-chain-fetch-form-breadth}, the root extension of
+     * R435's shipped child verdict), and {@code @routine} × {@code @splitQuery} composes (shipped
+     * R435). {@link #reduceDirectiveConflict} projects this over the directives present at a
+     * position; making it a table rather than a slot count with a carve-out is what lets the
+     * reducer evaluate every pair (so {@code @routine @lookupKey @service} rejects the
+     * {@code @service} conflicts rather than short-circuiting on the {@code @routine} × {@code
+     * @lookupKey} defer).
      */
-    private Rejection.InvalidSchema.DirectiveConflict detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
-        boolean hasService     = fieldDef.hasAppliedDirective(DIR_SERVICE);
-        boolean hasLookupKey   = hasLookupKeyAnywhere(fieldDef);
-        boolean hasTableMethod = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
+    private static PairVerdict pairVerdict(String a, String b) {
+        var pair = Set.of(a, b);
+        if (pair.equals(Set.of(DIR_ROUTINE, DIR_LOOKUP_KEY))) {
+            return new PairVerdict.Deferred("routine-chain-fetch-form-breadth");
+        }
+        if (pair.equals(Set.of(DIR_ROUTINE, DIR_SPLIT_QUERY))) {
+            return new PairVerdict.Composes();
+        }
+        return new PairVerdict.Conflict();
+    }
 
-        int slots = (hasService     ? 1 : 0)
-                  + (hasLookupKey   ? 1 : 0)
-                  + (hasTableMethod ? 1 : 0);
+    /**
+     * R449 D2 — reduces the classification-claiming directives present at a position to a single
+     * verdict via the pairwise {@link #pairVerdict} table. Enumerates every unordered pair, looks
+     * up its verdict, and reduces with Conflict-dominates-Deferred precedence: any {@code Conflict}
+     * pair yields a {@link Rejection.InvalidSchema.DirectiveConflict} naming the participating
+     * directives; absent a conflict, the first {@code Deferred} pair yields its typed
+     * {@link Rejection.Deferred}; all-{@code Composes} (or fewer than two present) yields
+     * {@code null}. The precedence (rather than short-circuiting on the first non-{@code Composes}
+     * pair) is what closes the three-directive hole a pre-count carve-out would reintroduce.
+     */
+    private Rejection reduceDirectiveConflict(List<String> present) {
+        var conflicting = new LinkedHashSet<String>();
+        String deferredSlug = null;
+        for (int i = 0; i < present.size(); i++) {
+            for (int j = i + 1; j < present.size(); j++) {
+                switch (pairVerdict(present.get(i), present.get(j))) {
+                    case PairVerdict.Conflict ignored -> {
+                        conflicting.add(present.get(i));
+                        conflicting.add(present.get(j));
+                    }
+                    case PairVerdict.Deferred d -> {
+                        if (deferredSlug == null) deferredSlug = d.planSlug();
+                    }
+                    case PairVerdict.Composes ignored -> { }
+                }
+            }
+        }
+        if (!conflicting.isEmpty()) {
+            var names = List.copyOf(conflicting);
+            String at = names.stream().map(n -> "@" + n).collect(Collectors.joining(", "));
+            return Rejection.directiveConflict(names, at + " are mutually exclusive");
+        }
+        if (deferredSlug != null) {
+            // The only Deferred pair the table mints is @routine × @lookupKey.
+            return Rejection.deferred(
+                "@" + DIR_ROUTINE + " with @" + DIR_LOOKUP_KEY
+                + " on a root field classifies but does not emit yet",
+                deferredSlug);
+        }
+        return null;
+    }
 
-        if (slots <= 1) return null;
+    /**
+     * Returns a {@link Rejection} when the child-field classification-claiming directives present
+     * conflict (via {@link #reduceDirectiveConflict}), or {@code null} when at most one is present
+     * or the combination composes.
+     *
+     * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive,
+     * so it composes with any of these and is not listed. {@code @routine} <em>is</em> a
+     * classification directive (R449 D2): a valid child {@code @routine} chain carries only
+     * {@code @routine} (+ {@code @reference}), so it stays a single slot here; {@code @routine}
+     * combined with any other source-claiming directive conflicts.
+     */
+    private Rejection detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
+        var present = new ArrayList<String>();
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE))        present.add(DIR_SERVICE);
+        if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) present.add(DIR_EXTERNAL_FIELD);
+        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD))   present.add(DIR_TABLE_METHOD);
+        if (fieldDef.hasAppliedDirective(DIR_NODE_ID))        present.add(DIR_NODE_ID);
+        if (fieldDef.hasAppliedDirective(DIR_ROUTINE))        present.add(DIR_ROUTINE);
+        return reduceDirectiveConflict(present);
+    }
 
-        var bareNames = new ArrayList<String>();
-        var atNames = new ArrayList<String>();
-        if (hasService)     { bareNames.add(DIR_SERVICE);     atNames.add("@" + DIR_SERVICE); }
-        if (hasLookupKey)   { bareNames.add(DIR_LOOKUP_KEY);  atNames.add("@" + DIR_LOOKUP_KEY); }
-        if (hasTableMethod) { bareNames.add(DIR_TABLE_METHOD); atNames.add("@" + DIR_TABLE_METHOD); }
-        return new Rejection.InvalidSchema.DirectiveConflict(
-            bareNames, String.join(", ", atNames) + " are mutually exclusive");
+    /**
+     * Returns a {@link Rejection} when the query-field classification-claiming directives present
+     * conflict or compose to a capability gap (via {@link #reduceDirectiveConflict}), or
+     * {@code null}. The set is {@code @service}, {@code @lookupKey} (detected anywhere on the
+     * argument surface), {@code @tableMethod}, and {@code @routine} (R449 D2); {@code @routine} ×
+     * {@code @lookupKey} lands the typed {@code Deferred} that extends R435's child verdict to root.
+     */
+    private Rejection detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
+        var present = new ArrayList<String>();
+        if (fieldDef.hasAppliedDirective(DIR_SERVICE))      present.add(DIR_SERVICE);
+        if (hasLookupKeyAnywhere(fieldDef))                 present.add(DIR_LOOKUP_KEY);
+        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) present.add(DIR_TABLE_METHOD);
+        if (fieldDef.hasAppliedDirective(DIR_ROUTINE))      present.add(DIR_ROUTINE);
+        return reduceDirectiveConflict(present);
     }
 
     /**

@@ -43,7 +43,6 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -1533,37 +1532,30 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         // Routines.<method>(<bound IN params>) returns the configured table-valued-function table.
-        var routine = qrtf.routine();
-        CodeBlock args = CodeBlock.join(routine.argBindings().stream()
-            .map(b -> switch (b.source()) {
-                case ParamSource.Arg arg ->
-                    CodeBlock.of("env.<$T>getArgument($S)", b.paramType(), arg.graphqlArgName());
-                case ParamSource.Context ignored -> throw nonRoutineParamSource(b);
-                case ParamSource.Sources ignored -> throw nonRoutineParamSource(b);
-                case ParamSource.DslContext ignored -> throw nonRoutineParamSource(b);
-                case ParamSource.Table ignored -> throw nonRoutineParamSource(b);
-                case ParamSource.SourceTable ignored -> throw nonRoutineParamSource(b);
-                case ParamSource.SourceColumn ignored -> throw new IllegalStateException(
-                    "correlated column binding for parameter '" + b.routineParamName()
-                    + "' reached the root routine fetcher — a root chain's head has no previous "
-                    + "node, and the classifier rejects columnMapping at root");
-            })
-            .toList(), ", ");
+        // R449 D5 — routed through the shared RoutineCallEmitter rather than a second hand-built
+        // ParamSource switch. The root chain head has no previous node (PreviousNodeRef.None) and
+        // reads argument values off env (ArgumentValueSource.Env); QueryRoutineTableField pins every
+        // start binding to ParamSource.Arg, so emitCall's correlated fork is false here and no
+        // argument is wrapped in DSL.val — byte-identical to the former inline emission.
+        CodeBlock startExpr = RoutineCallEmitter.emitCall(qrtf.start(),
+            new PreviousNodeRef.None(), new ArgumentValueSource.Env());
         var hops = qrtf.hops();
         // Single-node keeps R300's terminus-derived local name; a chained start is not the
         // projected table, so it gets its own name (hop aliases end in "_<i>" — no collision).
         String startLocal = hops.isEmpty() ? names.tableLocalName() : "source";
 
         builder.beginControlFlow("try");
-        builder.addStatement("$T $L = $T.$L($L)",
-            qrtf.start().resultTable().tableClass(), startLocal,
-            routine.routinesClass(), routine.methodName(), args);
+        builder.addStatement("$T $L = $L",
+            qrtf.start().resultTable().tableClass(), startLocal, startExpr);
         for (JoinStep step : hops) {
             var hop = (JoinStep.Hop) step;
-            var target = hop.targetTable();
-            builder.addStatement("$T $L = $T.$L.as($S)",
-                target.tableClass(), hop.alias(),
-                target.constantsClass(), target.javaFieldName(), hop.alias());
+            // R449 D5 — the hop's catalog table expression comes from the shared emitter (the
+            // compact constructor pins every hop target to TableExpr.Catalog, so this is always
+            // Tables.<X>); the alias wrap stays here, matching every other alias-declaration site.
+            CodeBlock hopTableExpr = JoinPathEmitter.emitTableExpression(
+                step, new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+            builder.addStatement("$T $L = $L.as($S)",
+                hop.targetTable().tableClass(), hop.alias(), hopTableExpr, hop.alias());
         }
         String terminalLocal = hops.isEmpty() ? startLocal : ((JoinStep.Hop) hops.getLast()).alias();
 
@@ -1606,17 +1598,6 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    /**
-     * A routine {@link RoutineRef.ArgBinding} carrying a {@link ParamSource} arm the
-     * {@code RoutineDirectiveResolver} never mints for routine bindings reached emission —
-     * a classifier bug, not an authoring error.
-     */
-    private static IllegalStateException nonRoutineParamSource(RoutineRef.ArgBinding binding) {
-        return new IllegalStateException(
-            "routine binding for parameter '" + binding.routineParamName() + "' carries "
-            + binding.source().getClass().getSimpleName()
-            + " — RoutineDirectiveResolver mints only ParamSource.Arg");
-    }
 
     /**
      * Emits the fetcher for a {@link ChildField.TableMethodField}: per-row call to the developer's
