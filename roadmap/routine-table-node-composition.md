@@ -217,7 +217,8 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
 * Ordering note (root reconciliation): the chain root, like the R300 single-node root, carries
   no ordering surface (`QueryRoutineTableField` is not a `SqlGeneratingField`, so the
   deterministic-order rule exempts it); an `@defaultOrder` surface over the catalog terminus is
-  a follow-up, reconciling with the child slice where `@defaultOrder` is required.
+  a follow-up (re-homed to R448), reconciling with the child slice where `@defaultOrder` is
+  required.
 * Child-positioned multi-node chains **classify and emit** — routine-then-hops, hops-then-routine
   (`columnMapping` bound against the previous node instead of the implicit head), and the
   sandwich — through one chain walker shared by the root and child classifiers
@@ -275,19 +276,13 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
   pages cross-linked. A recipe-shaped how-to walk is a possible follow-up, not gating.
   Shipped.
 
-Pending (the remaining chain-build + emit work):
+Nothing pending in this item. The remaining work re-homed to follow-up items (2026-07-08):
 
-* Chains with more than one routine node (typed `Deferred` today, root and child alike): the
-  multi-lateral emit.
-* The remaining batched-fetch surfaces for routine children (typed `Deferred`): `@lookupKey`
-  composition, record-backed parents, and `TableInterfaceType` parents. The slice boundary
-  falls on the existing model seam (`SplitTableField` vs `RecordTableField` vs
-  `InterfaceField`), so the table-backed `@splitQuery` slice above stands alone coherently.
-* Correlated value-arg `DataType` binding: mixed (`Field`-overload) calls type argument-sourced
-  values by their Java `paramType` read, not a two-arg `DSL.val(v, dataType)` — jOOQ's TVF
-  codegen exposes no `Parameter` constants to reference. Shares the enum/ID-as-String coercion
-  residue with the shipped root slice; lift the parameter `DataType` onto
-  `RoutineRef.ArgBinding` at the parse boundary when either site needs it.
+* **R447** (`routine-chain-fetch-form-breadth`): chains with more than one routine node (the
+  multi-lateral emit), `@lookupKey` composition, record-backed parents, and
+  `TableInterfaceType` parents — the typed `Deferred` landings' planSlugs now point there.
+* **R448** (`routine-chain-residue`): the root `@defaultOrder` reconciliation, the correlated
+  value-arg `DataType` lift, and the `ClassifiedCorpus` migration of the R435 fixture block.
 
 ## Tests
 
@@ -301,7 +296,7 @@ Pipeline tier is primary; no code-string assertions at any tier.
   pipeline with classification facts asserted in `GraphitronSchemaBuilderTest`'s R435 block.
   Batched-form fixtures shipped alongside: `@splitQuery` on a correlated routine child lands
   `SplitTableField` with the bound-column `SourceKey`, and a hops-then-routine split keeps the
-  first hop's FK-slot key. `ClassifiedCorpus` entries remain pending.
+  first hop's FK-slot key. `ClassifiedCorpus` entries re-homed to R448.
 * **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id, min_length)`
   fixture function in `init.sql`) verifying per-parent correlation and the mixed
   column/argument binding through the inline correlated multiset — shipped

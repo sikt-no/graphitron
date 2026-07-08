@@ -144,7 +144,7 @@ final class RoutineDirectiveResolver {
             // record-backed parent). Correlation against a record head lands with the emit slice.
             return new Resolved.Rejected(Rejection.deferred(
                 "@routine columnMapping under a parent without a catalog table is not yet supported",
-                "routine-table-node-composition"));
+                "routine-chain-fetch-form-breadth"));
         }
 
         return switch (ctx.catalog.resolveTableValuedFunction(routineName)) {

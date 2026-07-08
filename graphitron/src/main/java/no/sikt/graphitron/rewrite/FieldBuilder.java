@@ -2138,7 +2138,9 @@ class FieldBuilder {
         // (classifyChildRoutineChain — head, mid-chain, or terminus routine position); child
         // chains of repeated @reference applications carry no routine node and fall through to
         // the ordinary classification (parsePath concatenates their elements). Misorderings
-        // reject as AuthorError at classify time. See roadmap/routine-table-node-composition.md.
+        // reject as AuthorError at classify time. Chain rule and shapes are documented in
+        // docs/manual/reference/directives/routine.adoc; remaining fetch-form breadth is
+        // roadmap/routine-chain-fetch-form-breadth.md.
         var chainDirectives = chainDirectiveNames(fieldDef);
         long routineApplications = chainDirectives.stream().filter(DIR_ROUTINE::equals).count();
         if (routineApplications > 0 || chainDirectives.size() > 1) {
@@ -2153,7 +2155,7 @@ class FieldBuilder {
             if (routineApplications > 1) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                     "a table chain with more than one routine node classifies but does not emit yet",
-                    "routine-table-node-composition"));
+                    "routine-chain-fetch-form-breadth"));
             }
             if (isRoot && chainDirectives.size() > 1) {
                 // Root-head rule above guarantees the chain starts with @routine here: the
@@ -2244,7 +2246,7 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                 "a child-positioned @routine under a non-table-backed parent classifies "
                 + "but does not emit yet",
-                "routine-table-node-composition"));
+                "routine-chain-fetch-form-breadth"));
         }
         return switch (walkRoutineChain(fieldDef, parentTypeName, name, tbt.table())) {
             case ChainWalk.Rejected r ->
@@ -2258,7 +2260,7 @@ class FieldBuilder {
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                         "@lookupKey on a routine-backed child field classifies but does not emit yet",
-                        "routine-table-node-composition"));
+                        "routine-chain-fetch-form-breadth"));
                 }
                 boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
                 // @splitQuery forces the batched keyed re-query anchor, which needs a key. A
