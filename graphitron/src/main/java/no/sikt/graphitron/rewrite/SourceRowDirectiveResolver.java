@@ -264,7 +264,7 @@ final class SourceRowDirectiveResolver {
             // supported "source not table-backed" path). The first FK hop's source-side
             // columns are the lifter's contract; subsequent hops walk the catalog FK chain.
             var parsed = ctx.parsePath(fieldDef, fieldName, /*startSqlTableName=*/ null,
-                leafTable.tableName(), tbReturnType.wrapper().isList());
+                leafTable.tableName(), leafTable, tbReturnType.wrapper().isList());
             if (parsed.hasError()) {
                 return new Resolved.Rejected(Rejection.structural(
                     "@sourceRow on '" + parentTypeName + "." + fieldName

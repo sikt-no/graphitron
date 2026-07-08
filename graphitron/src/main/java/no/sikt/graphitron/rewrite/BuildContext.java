@@ -1199,21 +1199,42 @@ class BuildContext {
      * table-backed — in which case FK direction is inferred as forward and connectivity is not
      * validated. {@code targetSqlTableName} is the SQL name of the return type's table when known,
      * or {@code null} to disable implicit-path inference at this site.
+     *
+     * <p>This 4-argument overload passes a {@code null} {@code returnTableRef}, so its terminal
+     * verdict is always {@link TerminalTargetVerdict.NotApplicable}. It is for sites that either
+     * pass a null target (no terminal-target invariant to check) or do not carry the resolved
+     * return {@link TableRef}; sites that hold the ref call the {@code returnTableRef}-carrying
+     * overloads so {@link #computeTerminalTargetVerdict} can compare identity (R422).
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName) {
-        return parsePath(container, fieldName, startSqlTableName, targetSqlTableName, /*isList=*/false);
+        return parsePath(container, fieldName, startSqlTableName, targetSqlTableName, /*returnTableRef=*/null, /*isList=*/false);
     }
 
     /**
-     * Variant of {@link #parsePath} that accepts the field's list-cardinality, used to
-     * disambiguate self-referential FK direction at synthesis time. For {@code category.parent}
+     * Variant of {@link #parsePath} that carries the resolved return-type {@link TableRef} for the
+     * terminal-target verdict (R422), without the list-cardinality signal. The {@code returnTableRef}
+     * is name/identity's second orthogonal projection of the return table: {@code targetSqlTableName}
+     * stays the input to the name-based plumbing (empty-path FK inference, condition-join terminal
+     * build), while the ref is consumed only by {@link #computeTerminalTargetVerdict}, which compares
+     * jOOQ table-class identity so a schema-qualified {@code @table} echo matches jOOQ's unqualified
+     * canonical name. Callers pass the ref they already hold one frame up rather than re-resolving.
+     */
+    ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
+            String startSqlTableName, String targetSqlTableName, TableRef returnTableRef) {
+        return parsePath(container, fieldName, startSqlTableName, targetSqlTableName, returnTableRef, /*isList=*/false);
+    }
+
+    /**
+     * Variant of {@link #parsePath} that accepts both the resolved return-type {@link TableRef}
+     * (R422; see the {@code returnTableRef} overload above) and the field's list-cardinality, used
+     * to disambiguate self-referential FK direction at synthesis time. For {@code category.parent}
      * the parent (source) holds the FK; for {@code category.children} the child (target) holds it,
      * even though both navigate the same FK constraint. Cardinality is the only reliable signal
      * here — the table-name comparison cannot resolve self-ref direction.
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
-            String startSqlTableName, String targetSqlTableName, boolean isList) {
+            String startSqlTableName, String targetSqlTableName, TableRef returnTableRef, boolean isList) {
         var directive = container.getAppliedDirective(DIR_REFERENCE);
         var pathArg = directive != null ? directive.getArgument(ARG_PATH) : null;
         List<?> elements;
@@ -1290,7 +1311,7 @@ class BuildContext {
         // invariant this check protects, so its two FieldBuilder callers (TableBoundReturnType,
         // TableInterfaceType) consume the verdict and reject on Mismatch. R381's LSP layer reads the
         // same projection. This keeps the predicate single-sourced and scoped to where it applies.
-        var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName, startSqlTableName, targetSqlTableName);
+        var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName, startSqlTableName, targetSqlTableName, returnTableRef);
         return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
     }
 
@@ -1302,8 +1323,9 @@ class BuildContext {
      *
      * <ul>
      *   <li>FK-derived {@link JoinStep.Hop} — {@link TerminalTargetVerdict.Mismatch} when the resolved
-     *       target table differs (case-insensitive) from {@code returnSqlTableName}, else
-     *       {@link TerminalTargetVerdict.Match}. R232's resolved {@code targetTable} encodes
+     *       target table is not the same jOOQ table as {@code returnTableRef} (R422: class-identity
+     *       compare via {@link TableRef#denotesSameTableAs}), else {@link TerminalTargetVerdict.Match}.
+     *       R232's resolved {@code targetTable} encodes
      *       "where this hop lands" for both terminal {@code {table:}} and terminal {@code {key:}}
      *       elements, so this single comparison subsumes both author forms.</li>
      *   <li>Condition-join {@link JoinStep.Hop} — {@link TerminalTargetVerdict.Match} by
@@ -1316,21 +1338,28 @@ class BuildContext {
      * </ul>
      *
      * <p>Returns {@link TerminalTargetVerdict.NotApplicable} when {@code startSqlTableName} or
-     * {@code returnSqlTableName} is null, or the path is empty: the check fires only for the
+     * {@code returnTableRef} is null, or the path is empty: the check fires only for the
      * inline/split output projection off a table-backed parent. The {@code @sourceRow} composition
      * (null start) and input-field sites (null return table) are excluded — their paths are not the
      * {@code $fields(terminalAlias)} projection this invariant protects.
+     *
+     * <p>R422: the FK-derived arm compares the terminal hop's target against {@code returnTableRef}
+     * by jOOQ table-class identity ({@link TableRef#denotesSameTableAs}), not the verbatim
+     * {@code returnSqlTableName} echo. Both sides are catalog-constructed, so a schema-qualified
+     * return {@code @table} (e.g. {@code multischema_a.widget}) matches the hop's unqualified
+     * canonical name instead of spuriously reporting {@code Mismatch}. {@code returnSqlTableName}
+     * stays the author's verbatim echo and is used only to render the {@code Mismatch} message.
      */
     private TerminalTargetVerdict computeTerminalTargetVerdict(
             List<JoinStep> resolvedElements, String fieldName,
-            String startSqlTableName, String returnSqlTableName) {
-        if (startSqlTableName == null || returnSqlTableName == null || resolvedElements.isEmpty()) {
+            String startSqlTableName, String returnSqlTableName, TableRef returnTableRef) {
+        if (startSqlTableName == null || returnTableRef == null || resolvedElements.isEmpty()) {
             return new TerminalTargetVerdict.NotApplicable();
         }
         JoinStep terminal = resolvedElements.getLast();
         return switch (terminal) {
             case JoinStep.Hop hop -> switch (hop.on()) {
-                case On.ColumnPairs ignored -> hop.targetTable().sameTable(returnSqlTableName)
+                case On.ColumnPairs ignored -> hop.targetTable().denotesSameTableAs(returnTableRef)
                     ? new TerminalTargetVerdict.Match()
                     : new TerminalTargetVerdict.Mismatch(fieldName, hop.targetTable().tableName(), returnSqlTableName);
                 // Match by construction: resolveConditionJoinTarget's terminal branch builds

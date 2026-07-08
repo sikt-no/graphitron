@@ -860,7 +860,7 @@ class FieldBuilder {
             // already demoted it in the registry; resolveReturnType would yield a ScalarReturnType and
             // the cast would crash. The collision still hard-fails the build at the validation pass.
             var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
-            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), wrapper.isList());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), returnType.table(), wrapper.isList());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
@@ -934,7 +934,7 @@ class FieldBuilder {
 
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
-            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName(), tableInterfaceType.table());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
@@ -4893,7 +4893,7 @@ class FieldBuilder {
                 String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr
                         && jtr.table() != null
                     ? jtr.table().tableName() : null;
-                var tmPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetTableName, buildWrapper(fieldDef).isList());
+                var tmPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetTableName, tbReturn.table(), buildWrapper(fieldDef).isList());
                 if (tmPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tmPath.errorMessage()));
                 }
@@ -5077,7 +5077,9 @@ class FieldBuilder {
         }
         String targetSqlTableName = resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tbt
             ? tbt.table().tableName() : null;
-        var objectPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetSqlTableName);
+        TableRef targetTableRef = resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tbt
+            ? tbt.table() : null;
+        var objectPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetSqlTableName, targetTableRef);
         if (objectPath.hasError()) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(objectPath.errorMessage()));
         }
@@ -6005,7 +6007,7 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case TableMethodDirectiveResolver.Resolved.TableBound tb -> {
                     String targetTableName = tb.returnType().table().tableName();
-                    var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetTableName, buildWrapper(fieldDef).isList());
+                    var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetTableName, tb.returnType().table(), buildWrapper(fieldDef).isList());
                     if (tableMethodPath.hasError()) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMethodPath.errorMessage()));
                     }
@@ -6066,7 +6068,7 @@ class FieldBuilder {
                 }
                 NodeType targetNodeType = targetNode.get();
                 TableRef parentTable = tableType.table();
-                var nodeRefPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetNodeType.table().tableName());
+                var nodeRefPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetNodeType.table().tableName(), targetNodeType.table());
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(nodeRefPath.errorMessage()));
                 }
@@ -6334,7 +6336,7 @@ class FieldBuilder {
         var paths = new java.util.LinkedHashMap<String, List<JoinStep>>();
         for (var p : participants) {
             if (!(p instanceof ParticipantRef.TableBound tb)) continue;
-            var parsed = ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName());
+            var parsed = ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table());
             if (parsed.hasError()) {
                 return ChildPolymorphicJoinPaths.fail(
                     "participant '" + tb.typeName() + "': " + parsed.errorMessage());

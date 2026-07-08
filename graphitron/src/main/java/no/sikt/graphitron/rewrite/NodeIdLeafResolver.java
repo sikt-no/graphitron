@@ -294,15 +294,21 @@ final class NodeIdLeafResolver {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
 
-        var joinPath = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName);
-        if (joinPath.error() != null) {
-            return new Resolved.Rejected(Rejection.structural(joinPath.error()));
-        }
+        // R422: resolve the target TableRef before resolveFkJoinPath so its parsePath call can pass
+        // ref and name together, letting the terminal-target verdict compare jOOQ table-class
+        // identity rather than the schema-qualified @table echo. In reachable inputs the return
+        // @table already resolved to a TableRef upstream (an unresolvable one is UnclassifiedType and
+        // never reaches this leaf), so hoisting the findTable ahead of the join resolution does not
+        // change which rejection surfaces in practice.
         var targetTableResolution = ctx.catalog.findTable(targetTableName);
         if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
+        var joinPath = resolveFkJoinPath(leaf, leafName, containingTable, targetTableName, targetTable);
+        if (joinPath.error() != null) {
+            return new Resolved.Rejected(Rejection.structural(joinPath.error()));
+        }
         var firstHop = pairs(joinPath.path().get(0));
         var terminalHop = pairs(joinPath.path().getLast());
         // DirectFk discriminator: the terminal hop's target-side columns must equal the NodeType's
@@ -405,6 +411,9 @@ final class NodeIdLeafResolver {
 
     /**
      * Resolves the FK join path from {@code containingTable} to {@code targetTableName}.
+     * {@code targetTable} is the already-resolved {@link TableRef} for {@code targetTableName},
+     * threaded (R422) into the explicit-{@code @reference} {@link BuildContext#parsePath} call so its
+     * terminal-target verdict compares jOOQ table-class identity rather than the {@code @table} echo.
      *
      * <p>Two intake shapes:
      * <ul>
@@ -424,9 +433,10 @@ final class NodeIdLeafResolver {
      * columns (backward-compatible).
      */
     private JoinPathResult resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
-                                             TableRef containingTable, String targetTableName) {
+                                             TableRef containingTable, String targetTableName,
+                                             TableRef targetTable) {
         if (leaf.hasAppliedDirective(DIR_REFERENCE)) {
-            var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName);
+            var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName, targetTable);
             if (path.hasError()) {
                 return new JoinPathResult(null, null, path.errorMessage());
             }
