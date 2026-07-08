@@ -24,10 +24,33 @@ For a scalar field with `@reference(path:)`, `FieldBuilder` (`FieldBuilder.java:
 
 On the opptak branch `feature/SHIIT-767-opptak-v2-skjema`: type `Opptakshendelsestype @table(name: "opptakshendelsestype_opptakstype")` with two scalar fields, `navn: String` and `kategori: String! @field(name: "opptakshendelsekategori")`, both `@reference(path: [{key: "opptakshendelsestype_opptakstype__opptakshendelsestype_opptakstype_opptakshendelsestype_fk"}])`. That FK's source is the join table `opptakshendelsestype_opptakstype` (opptak-only); its target is `opptakshendelsestype`, which exists in both `opptak` and `opptak_v2`, each carrying `navn` and `opptakshendelsekategori`. These are the last 2 of the original 31 author-errors; R440/R441/R442/R422 cleared the other 29.
 
-## Suggested fix
+## Design
 
-Same pattern as R440/R441/R422 ("decide once, carry the decision as a type"). Resolve the terminal column against the last hop's `targetTable()` `tableClass` identity via `JooqCatalog.findTableByClass` (`JooqCatalog.java:159`), not the bare `tableName()`. Empty-path (no hops) falls back to the source type's already-resolved `@table` `TableRef`. Reuse the identity plumbing already in hand (the `TableRef.tableClass` is populated on catalog-derived refs) rather than re-resolving a bare string.
+Same pattern as R440/R441/R422 ("decide once, carry the decision as a type"): the FK path's hops already carry identity-resolved `TableRef`s on `targetTable()` (R441 populated `tableClass` on catalog-derived refs; R440 resolves FK endpoints by class identity off the FK itself). The bug is that `ServiceCatalog.terminalTableSqlName` throws that identity away by returning `tableName()` as a bare string, and `resolveColumnInTable` re-resolves the string through `JooqCatalog.findTable(String)`, which is ambiguous on a colliding name. The fix stops the collapse: carry the terminal `TableRef` to the column lookup and never re-resolve a name the path already resolved.
 
-## Suggested coverage
+The empty-path case is not broken today (the start table's `tableName()` is the verbatim `@table` echo, which `findTable` resolves qualified), but the fix routes it through the same ref uniformly so there is one resolution story, not two.
 
-Pipeline-tier test over the existing multischema jOOQ fixture (`multischema_a`/`multischema_b`, both containing a bare-name-colliding table), sibling to R422's `QualifiedReturnTypeReferencePipelineTest` and R396's `QualifiedSourceReferencePipelineTest`: a scalar `@reference` field whose single FK hop lands on the colliding terminal table classifies green as a `ColumnReferenceField` and reads the column from the schema pinned by the FK, paired with a genuine unknown-column case that still rejects. No new DDL should be needed; check whether the fixture already has a scalar column on the colliding table to read, and add one additively (bump the jOOQ schema version) only if not.
+## Implementation
+
+All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/`:
+
+- `ServiceCatalog.java`: replace `terminalTableSqlName(List<JoinStep>, String)` and `terminalTableSqlNameForReference(List<JoinStep>, TableBackedType)` with one ref-carrying resolver, `Optional<TableRef> terminalTableForReference(List<JoinStep> path, TableRef start)`: walk the path; any step that is not an FK-derived `JoinStep.Hop` with `On.ColumnPairs` yields empty (same condition-only bail-out as today); otherwise the terminal is the last hop's `targetTable()`; an empty path yields `start`.
+- `ServiceCatalog.java`: retype `resolveColumnForReference(String columnName, List<JoinStep> path, ...)` to take the start as `TableRef` (drop the `String startSqlTableName` overload; the `TableBackedType` convenience overload delegates via `sourceType.table()`). Resolve the column against the terminal `TableRef.allColumns()` (the fully-resolved `ColumnRef` list populated at parse time), replicating `JooqCatalog.findColumn`'s matching order: `javaName` `equalsIgnoreCase` first across all columns, then `sqlName`. No catalog reach-back, no new `JooqCatalog` surface; the decision is carried entirely in the type. (`allColumns` is empty only on refs constructed outside the catalog flow, i.e. hand-built test fixtures; every ref reaching this path is catalog-constructed.) Alternative considered and rejected: `JooqCatalog.findTableByClassName(ClassName)` bridging javapoet `ClassName` to reflection names and delegating to `findColumn(Table<?>, String)`; keeps matching semantics single-sourced but adds a catalog lookup surface and a name-bridge for something the ref already knows.
+- `FieldBuilder.java:6105`: pass `tableType.table()`; the unknown-column diagnostic (`FieldBuilder.java:6107`) switches from `terminalTableSqlNameForReference` + `JooqCatalog.columnJavaNamesOf(bareName)` (also ambiguity-broken: empty candidates on a colliding terminal) to enumerating candidates from the terminal `TableRef.allColumns()` java names.
+- `FieldBuilder.java:1373` (argument `@reference` filter) and `BuildContext.java:2206` (input field): both already hold the resolved `TableRef` (`rt` / `resolvedTable`); pass it instead of `.tableName()`. These callers share the fixed resolver, so the argument-filter and input-field shapes are covered by the same change.
+
+Behavioral deltas: a colliding terminal table now resolves (the bug fix); everything else (condition-only paths, unknown columns, empty paths) keeps today's outcomes.
+
+## Tests
+
+Pipeline-tier test `QualifiedTerminalReferenceColumnPipelineTest`, sibling to R422's `QualifiedReturnTypeReferencePipelineTest` and R396's `QualifiedSourceReferencePipelineTest`, over the existing multischema fixture. The needed shape already exists, no new DDL and no jOOQ schema version bump: `multischema_a.event_log` carries FK `event_log_event_id_fkey` into `multischema_a.event`; `event` collides across `multischema_a`/`multischema_b`; column `name` exists only on A's copy, `code` only on B's.
+
+SDL shape: `type EventLog @table(name: "event_log")` (bare name, unique to A) with a scalar field `eventName: String @field(name: "name") @reference(path: [{key: "event_log_event_id_fkey"}])`, mirroring the live repro (source table unique, terminal colliding).
+
+1. Green: the `name` read through the FK classifies as `ColumnReferenceField` (impossible today: the bare-name terminal lookup is ambiguous and demotes to `UnclassifiedField`). Assert the resolved column too, so the classification is not vacuous.
+2. Schema-pinned, not search-all-schemas: the same FK path reading `code` (exists only on `multischema_b.event`) still rejects with the unknown-column author error. This pins that the fix resolves against the FK-pinned schema A copy rather than scanning every schema for a match.
+3. Genuine unknown column (`bogus`) still rejects with the author error, and the diagnostic's candidate list is now non-empty (names A's `event` columns), pinning the diagnostic-path fix.
+
+## Roadmap entries
+
+On Done: delete this file, add a `changelog.md` entry noting this closes the sixth site of the schema-qualified `@table` bug class and correcting R422's "closes the bug class" claim. Before flipping to In Review, grep for any remaining `findTable(String)`-fed column reads downstream of an already-resolved ref (a seventh site); if one exists, file it as a Backlog item rather than expanding this one.
