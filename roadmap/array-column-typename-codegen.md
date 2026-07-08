@@ -1,7 +1,7 @@
 ---
 id: R446
 title: "Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 2
 theme: service
