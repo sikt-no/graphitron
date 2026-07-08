@@ -1,7 +1,7 @@
 ---
 id: R422
 title: "@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
@@ -53,9 +53,15 @@ leave the name plumbing alone.
    non-null target all already hold the `TableRef` and lossily project it via `.tableName()`
    (`FieldBuilder.java:863` `returnType.table()`, `:937` `tableInterfaceType.table()`, `:5080`
    `tbt.table()`, `:6069` `targetNodeType.table()`, `:6337` `tb.table()`, `:4896`/`:6008`
-   `tb.returnType().table()`, `NodeIdLeafResolver:429`); they pass the ref they hold. Null-target
-   sites pass null and are untouched. This is "decide once, carry the decision as a type": the
-   identity was materialized one frame earlier, so no catalog re-query.
+   `tb.returnType().table()`); those six pass the ref they hold. This is "decide once, carry the
+   decision as a type": the identity was materialized one frame earlier, so no catalog re-query.
+   The seventh non-null site, `NodeIdLeafResolver:429`, is the exception: at that `parsePath` call
+   only the raw `@table` echo String is in hand (`NodeIdLeafResolver:256`), and the target
+   `TableRef` is built downstream at `:305` (`findTable` + `toTableRef`), *after* `resolveFkJoinPath`
+   returns at `:297`. The implementer must hoist that resolution above the call (or thread the ref
+   through `resolveFkJoinPath`'s signature) so this site passes ref and name together like the rest;
+   miswiring it (non-null name, null ref) silently flips the verdict to `NotApplicable`, which
+   R381's LSP layer reads off `ParsedPath`. Null-target sites pass null and are untouched.
 2. **Compare with R441's predicate.** `computeTerminalTargetVerdict` replaces
    `hop.targetTable().sameTable(returnSqlTableName)` with
    `hop.targetTable().denotesSameTableAs(returnTableRef)`. Both sides are catalog-constructed
