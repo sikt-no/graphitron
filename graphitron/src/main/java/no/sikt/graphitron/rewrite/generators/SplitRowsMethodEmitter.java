@@ -395,10 +395,11 @@ public final class SplitRowsMethodEmitter {
     /**
      * Emits the flat join topology shared by all three cardinality siblings
      * ({@link #buildListMethod}, {@link #buildSingleMethod}, {@link #buildConnectionMethod}):
-     * {@code .from(terminalAlias)}, the bridging-hop chain back to step 0, the optional
-     * {@code OnParentJoin} parent JOIN, and the {@code parentInput} correlation JOIN. Appends
-     * to {@code sel} and stops before the WHERE clause (list inserts its lookup-input JOIN there;
-     * connection appends its window tail), so each caller frames the projection and tail itself.
+     * {@code .from(parentInput)}, the step-0 attach per correlation arm (including the optional
+     * {@code OnParentJoin} parent JOIN), then the forward bridging-hop chain out to the terminal.
+     * Appends to {@code sel} and stops before the WHERE clause (list inserts its lookup-input JOIN
+     * there; connection appends its window tail), so each caller frames the projection and tail
+     * itself.
      *
      * <p>This block was the source of R324's bug: it lived as a byte-for-byte copy in
      * {@code buildListMethod} and {@code buildConnectionMethod} but never grew into
@@ -921,9 +922,10 @@ public final class SplitRowsMethodEmitter {
                 lookupInputTableType, DSL, lookupAliasArgs.build());
         }
 
-        // Flat SELECT: FROM terminal, JOIN bridging hops back toward step 0, JOIN parentInput
-        // on first-hop source columns eq parent PK via parentInput.field(sqlName). Shared with
-        // the single and connection siblings via emitFromBridgeAndParentJoin.
+        // Flat SELECT: FROM parentInput, step-0 attach per correlation arm (slot columns eq
+        // parentInput.field(sqlName), or the OnParentJoin parent-PK pairing), then the forward
+        // bridging hops out to the terminal. Shared with the single and connection siblings via
+        // emitFromBridgeAndParentJoin.
         var sel = CodeBlock.builder();
         sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
         sel.indent();
@@ -973,17 +975,18 @@ public final class SplitRowsMethodEmitter {
      * Single-cardinality sibling of {@link #buildListMethod} for {@link ChildField.SplitTableField}.
      * Parent-holds-FK at step 0 ({@link ChildField.SplitTableField}'s {@code sourceKey} carries the
      * parent's FK columns per {@code FieldBuilder.deriveSplitQuerySource}). Emits a flat
-     * {@code terminal JOIN <bridging hops> JOIN parentInput ON <step-0 correlation>} SELECT that
+     * {@code parentInput JOIN <step-0 attach> <bridging hops out to the terminal>} SELECT that
      * returns {@code List<Record>} indexed 1:1 with {@code keys} (nulls where no match).
      *
      * <p>Shares its join topology and WHERE clause with {@link #buildListMethod} and
      * {@link #buildConnectionMethod} via {@link #emitFromBridgeAndParentJoin} and
      * {@link #buildWhereCondition}; the only per-cardinality divergence is the {@code List<Record>}
      * return shape and the {@code scatterSingleByIdx} (1:1, null where no match) call. The shared
-     * topology projects and FROMs off {@code terminalAlias} and bridges multi-hop paths back to
-     * step 0, so a multi-hop single-cardinality {@code @splitQuery} (e.g. {@code customer -> store
-     * -> address}) resolves the terminal row per key in one batched query. Single-hop paths collapse
-     * the bridging loop to a no-op, reproducing the original single-hop shape.
+     * topology anchors on {@code parentInput} and walks the bridging hops start-first out to
+     * {@code terminalAlias} (R435), which carries the projection, so a multi-hop single-cardinality
+     * {@code @splitQuery} (e.g. {@code customer -> store -> address}) resolves the terminal row per
+     * key in one batched query. Single-hop paths collapse the bridging loop to a no-op, reproducing
+     * the original single-hop shape.
      *
      * <p>The bridging hops emit inner joins, consistent with the list and connection siblings: a
      * to-one chain resolves to {@code null} when any hop is absent (the row drops, and
