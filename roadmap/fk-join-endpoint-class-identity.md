@@ -1,7 +1,7 @@
 ---
 id: R440
 title: "FK-join synthesis must resolve the endpoint (and FK) by jOOQ class identity, not bare name"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: interface-union
