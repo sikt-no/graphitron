@@ -1,7 +1,7 @@
 ---
 id: R449
 title: "Routine chains: classification edges from the R435 second-pass review"
-status: Ready
+status: In Review
 bucket: validation
 theme: service
 depends-on: []
@@ -159,6 +159,37 @@ code-string assertions.
   behaviour-identical under the existing R435 pipeline + execution suite; D5's new
   compact-constructor pin is exercised by every existing fixture that lands
   `QueryRoutineTableField`.
+
+## Implementation (In Progress → In Review)
+
+All five design points landed; the full reactor build (including `graphitron-sakila-example`
+Java-17 output compile + execution tier and the LSP projection tests) is green.
+
+* **D1** — `FieldBuilder.classifyField` reads the root position once (`isRoot` / `isQueryRoot` /
+  `isMutationRoot`) at the top. The interception's root-head rule and `classifyRootRoutineChain`
+  are gated on `isQueryRoot`; a multi-node Mutation chain carrying `@routine` lands the shared
+  `MUTATION_ROUTINE_DEFERRAL` constant with planSlug `routine-mutation-write`, and the single-node
+  Mutation `@routine` lands the same Deferred from a new check at the top of
+  `classifyMutationField`. Subscription and non-routine Mutation chains fall through unchanged.
+* **D2** — `detectChildFieldConflict` / `detectQueryFieldConflict` now build the present-directive
+  list (both add `@routine`) and delegate to `reduceDirectiveConflict`, which projects the
+  `pairVerdict` table over every unordered pair and reduces with Conflict-dominates-Deferred
+  precedence. `detectQueryFieldConflict` is hoisted into `classifyField` before the interception,
+  guarded by `isQueryRoot`; the call inside `classifyQueryField` is deleted.
+* **D4** — `BuildContext.computeTerminalTargetVerdict`'s `On.Lateral` throw arm points at
+  `FieldBuilder.routineChainVerdict`. (The `SplitRowsMethodEmitter` javadoc repairs stay in R450's
+  scope, per the plan.)
+* **D5** — the root routine fetcher (`TypeFetcherGenerator.buildQueryRoutineFetcher`) routes the
+  routine call through `RoutineCallEmitter.emitCall` via a new `PreviousNodeRef.None` arm and the
+  hop aliases through `JoinPathEmitter.emitTableExpression`; the duplicated `nonRoutineParamSource`
+  helper and inline `ParamSource` switch are deleted. `QueryRoutineTableField`'s compact
+  constructor pins every start binding to `ParamSource.Arg`; `argExpression`'s `SourceColumn` ×
+  `None` combination throws classifier-unreachable citing the pin.
+* **D3** — the three text-only R435 fixtures gained `isInstanceOf` arm assertions
+  (`DirectiveConflict` for repeated `@reference` on `ARGUMENT_DEFINITION`; `AuthorError.Structural`
+  for the input-field and element-less cases). New pipeline-tier fixtures cover the single-node
+  root desugar (`hops = []`), the D1 Mutation/Subscription landings, and the D2 conflict/defer/
+  precedence verdicts.
 
 ## Out of scope
 
