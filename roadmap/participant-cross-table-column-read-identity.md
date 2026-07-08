@@ -1,7 +1,7 @@
 ---
 id: R445
 title: "Participant cross-table @reference column read must resolve the FK terminal by class identity, not bare SQL name"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: interface-union
@@ -68,7 +68,7 @@ type Query { allEntries: [Entry!]! }
 ```
 
 1. Green: `AlertEntry.eventName` classifies as `ParticipantColumnReferenceField` (impossible today: the bare-name terminal lookup is ambiguous, the field is skipped from the cross-table set, and the fallback path either author-errors or, post-R444, misclassifies as `ColumnReferenceField`). Assert the resolved column too, so the classification is not vacuous.
-2. Schema-pinned, not search-all-schemas: the same shape reading `code` (exists only on `multischema_b.event`) still rejects with the unknown-column author error, and the diagnostic's candidates name A's `event` columns, not B's. This pins that the fix resolves against the FK-pinned schema A copy rather than scanning every schema for a match. (The rejection surfaces through the `FieldBuilder` fallback path, which is R444's fixed diagnostic; the pipeline observable is the author error with A-side candidates.)
+2. Schema-pinned, not search-all-schemas: the same shape reading `code` (exists only on `multischema_b.event`) still rejects with the unknown-column author error, and the diagnostic's candidates name A's `event` columns, not B's. This pins that the fix resolves against the FK-pinned schema A copy rather than scanning every schema for a match. (The rejection surfaces through the `FieldBuilder` fallback path, which is R444's fixed diagnostic; the pipeline observable is the author error with A-side candidates.) This test is load-bearing, not a nicety: the silent skip at `TypeBuilder.java:862` stays silent after the fix, and its correctness then rests entirely on `fk.targetTable().column()` being identity-exact, so the fall-through carries only genuine unknowns; test 2 is the enforcer of that story.
 3. Guard ride-along: the same shape reading `event_id` (exists on both `event_log` and A's `event`) still trips the R388 contradiction rejection, and its detail-only candidate hint is non-empty (names `name`, A's only detail-resident column). This pins the `:843`-`:845` changes: before the fix the colliding detail table produced an empty candidate list.
 
 ## Roadmap entries
