@@ -156,7 +156,7 @@ among these stay; the `FkJoin` / `ConditionJoin` arms migrate.
 Additive-then-cutover (R222 / R431's technique); full build green and generated output verified
 byte-identical after every slice:
 
-1. **Type the convention (R16 core)** — shipped at `bd9e2d8`. `JoinConditionRef` minted;
+1. **Type the convention (R16 core)** — shipped at the slice-1 commit. `JoinConditionRef` minted;
    `whereFilter` / `condition` retyped; `emitTwoArgMethodCall` takes the wrapper.
 2. **Mint the axes** — shipped at the slice-2 commit. `TableExpr` (`Catalog` only), `On`
    (`ColumnPairs` | `Predicate`), `Hop` as a fourth permit; the slot-iteration contract moved
