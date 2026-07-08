@@ -71,19 +71,20 @@ public final class JoinPathEmitter {
      * forces exactly one emit-side acknowledgment; {@link JoinStep.HasTargetTable#targetTable()}
      * stays the read for alias <em>naming</em> and terminus checks, never for materialization.
      *
-     * @param step              the join step whose FROM/JOIN source is being declared
-     * @param previousNodeAlias the in-scope alias of the chain's previous node (the parent
-     *                          alias at hop 0), read by correlated routine-call bindings
-     * @param argSource         where argument-sourced routine bindings read runtime values
+     * @param step         the join step whose FROM/JOIN source is being declared
+     * @param previousNode where correlated routine-call bindings read the chain's previous
+     *                     node's columns (the parent alias at an inline hop 0, the
+     *                     {@code parentInput} lookup at a batched chain head)
+     * @param argSource    where argument-sourced routine bindings read runtime values
      */
-    public static CodeBlock emitTableExpression(JoinStep step, String previousNodeAlias,
+    public static CodeBlock emitTableExpression(JoinStep step, PreviousNodeRef previousNode,
             ArgumentValueSource argSource) {
         return switch (step) {
             case JoinStep.Hop hop -> switch (hop.target()) {
                 case TableExpr.Catalog c -> CodeBlock.of("$T.$L",
                     c.table().constantsClass(), c.table().javaFieldName());
                 case TableExpr.RoutineCall rc ->
-                    RoutineCallEmitter.emitCall(rc, previousNodeAlias, argSource);
+                    RoutineCallEmitter.emitCall(rc, previousNode, argSource);
             };
             // Transitional (retires with R431): the lifter shape's target is always a catalog
             // table; LiftedHop carries no TableExpr axis.

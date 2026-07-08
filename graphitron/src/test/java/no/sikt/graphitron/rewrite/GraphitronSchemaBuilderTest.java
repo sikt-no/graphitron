@@ -7731,7 +7731,11 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void splitQueryOnChildRoutineDefersUntilBatchedEmitLands() {
+    void splitQueryOnCorrelatedRoutineChildClassifiesAsSplitTableField() {
+        // R435 batched form: @splitQuery forces the keyed re-query anchor, and a routine-headed
+        // chain's batch key IS the routine's column-bound inputs — the SourceColumn bindings
+        // ride the parentInput VALUES table and the lateral call reads them off it directly,
+        // with no correlation JOIN predicate (design note on deriveSplitQuerySource).
         var schema = build(TILGANG_TYPE + """
             type Film @table(name: "film") {
               title: String
@@ -7742,11 +7746,74 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """);
+        var f = (SplitTableField) schema.field("Film", "tilganger");
+        assertThat(f.joinPath()).hasSize(1);
+        var hop = (JoinStep.Hop) f.joinPath().get(0);
+        assertThat(hop.on()).isInstanceOf(On.Lateral.class);
+        assertThat(hop.target()).isInstanceOf(TableExpr.RoutineCall.class);
+        assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLateralArgs.class);
+        assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName).containsExactly("title");
+    }
+
+    @Test
+    void splitQueryOnUncorrelatedRoutineChildRejectsAsDirectiveConflict() {
+        // An uncorrelated routine has nothing to key the batch on: @splitQuery demands a key
+        // the field's shape cannot supply — a contradiction, not a capability gap.
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!] @splitQuery
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason()).contains("nothing to key the batch on");
+    }
+
+    @Test
+    void splitQueryOnHopsThenRoutineChainKeysOnFirstHopSlots() {
+        // When hops precede the routine, the step-0 correlation is the ordinary OnFkSlots and
+        // the batch key stays the first hop's source-side columns; the mid-chain lateral reads
+        // the previous hop's alias inside the batch query — no key rule change.
+        var schema = build("""
+            type ActorFilm @table(name: "films_for_actor") {
+              filmId: Int @field(name: "FILM_ID")
+            }
+            type Film @table(name: "film") {
+              castFilms(minLength: Int!): [ActorFilm!] @splitQuery
+                @reference(path: [{table: "film_actor"}])
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+                @defaultOrder(fields: [{name: "film_id"}])
+            }
+            type Query { film: Film }
+            """);
+        var f = (SplitTableField) schema.field("Film", "castFilms");
+        assertThat(f.joinPath()).hasSize(2);
+        assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnFkSlots.class);
+        assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName).containsExactly("film_id");
+        assertThat(((JoinStep.Hop) f.joinPath().get(1)).on()).isInstanceOf(On.Lateral.class);
+    }
+
+    @Test
+    void lookupKeyOnRoutineChildStillDefers() {
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(serviceId: String!, feideId: [String!]! @lookupKey): [Tilgang!] @splitQuery
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: title")
+            }
+            type Query { film: Film }
+            """);
         var f = (UnclassifiedField) schema.field("Film", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason())
-            .contains("@splitQuery")
-            .contains("roadmap/routine-table-node-composition.md");
+        assertThat(f.reason()).contains("@lookupKey on a routine-backed child field");
     }
 
     @Test

@@ -313,9 +313,14 @@ public final class SplitRowsMethodEmitter {
                 joinOnCols = cj.parentPkCols();
                 joinOnParentCols = cj.parentPkCols();
             }
-            case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
-                "a lateral routine hop cannot head a split-rows path; @splitQuery on routine "
-                + "chains classifies as typed Deferred (R435)");
+            case ParentCorrelation.OnLateralArgs ignored -> {
+                // R435: a lateral routine hop at step 0 correlates through its call arguments —
+                // the SourceColumn bindings read parentInput fields directly (they ARE the
+                // DataLoader key), so the CROSS JOIN LATERAL carries no ON predicate at all.
+                joinOnAlias = firstAlias;
+                joinOnCols = List.of();
+                joinOnParentCols = List.of();
+            }
         }
 
         // Empty-input short-circuit and DSLContext local are emitted by RowsMethodSkeleton's SQL
@@ -350,13 +355,18 @@ public final class SplitRowsMethodEmitter {
         for (int i = 0; i < joinPath.size(); i++) {
             JoinStep.HasTargetTable step = (JoinStep.HasTargetTable) joinPath.get(i);
             ClassName jooqTableClass = step.targetTable().tableClass();
-            // Materialization routes through the shared TableExpr switch (R435). Routine hops
-            // never reach the split-rows path today (typed Deferred at classify); the
-            // OnLateralArgs / On.Lateral arms in this emitter throw if that guard slips.
+            // Materialization routes through the shared TableExpr switch (R435). A routine hop
+            // heading the chain reads its correlated columns off parentInput (the implicit head
+            // is not materialised in the batch query — its bound columns ARE the DataLoader
+            // key); a mid-chain routine hop reads the preceding hop's alias like the inline form.
+            PreviousNodeRef previousNode = i > 0
+                ? new PreviousNodeRef.TypedAlias(aliases.get(i - 1))
+                : parentCorrelation instanceof ParentCorrelation.OnLateralArgs
+                    ? new PreviousNodeRef.ParentInputField("parentInput", parentCorrelation.parentKeyOwnerTable())
+                    : new PreviousNodeRef.TypedAlias("parentAlias");
             body.addStatement("$T $L = $L.as($S)",
                 jooqTableClass, aliases.get(i),
-                JoinPathEmitter.emitTableExpression(joinPath.get(i),
-                    i == 0 ? "parentAlias" : aliases.get(i - 1),
+                JoinPathEmitter.emitTableExpression(joinPath.get(i), previousNode,
                     new ArgumentValueSource.Env()),
                 fieldName + "_" + aliases.get(i));
         }
@@ -389,57 +399,34 @@ public final class SplitRowsMethodEmitter {
      * cardinality fork; the genuine per-cardinality divergence (projection envelope, scatter call)
      * stays with each sibling.
      *
-     * <p>The bridging loop dispatches on step identity: FK hops use {@code .onKey(FK)}, condition
-     * hops use {@code .on(method(prevAlias, alias))}. {@link JoinStep.LiftedHop} never appears at a
-     * bridging position ({@code @reference}-composed paths are FK / condition chains; lifter shapes
-     * are single-hop), so the loop is a no-op for a single-hop path and the helper degrades to the
-     * old single-hop shape with no behaviour change.
+     * <p>The walk is start-first with {@code parentInput} as the FROM anchor (R435): a lateral
+     * routine hop's call arguments reference the previous node's alias — {@code parentInput}
+     * itself at the chain head — and SQL LATERAL scoping only sees FROM entries to its left, so
+     * the old terminal-back walk cannot host a lateral node. For the pure INNER-join chains every
+     * other shape emits, anchor and direction are behaviour-equivalent (the execution tier pins
+     * the multi-hop, single-cardinality, and connection shapes). The bridging loop dispatches on
+     * step identity: FK hops use {@code .onKey(FK)} / the name-matched pair conjunction, condition
+     * hops use {@code .on(method(prevAlias, alias))}, lateral routine hops use
+     * {@code .crossJoin(DSL.lateral(alias))}. {@link JoinStep.LiftedHop} never appears at a
+     * bridging position ({@code @reference}-composed paths are FK / condition chains; lifter
+     * shapes are single-hop), so the loop is a no-op for a single-hop path.
      */
     private static void emitFromBridgeAndParentJoin(
             CodeBlock.Builder sel,
             List<JoinStep> path,
             List<String> aliases,
-            String terminalAlias,
             String firstAlias,
             ParentCorrelation parentCorrelation,
             String joinOnAlias,
             List<ColumnRef> joinOnCols,
             List<ColumnRef> joinOnParentCols) {
-        sel.add(".from($L)\n", terminalAlias);
-        // Bridging hops: terminal back to step 0. No-op when path.size() == 1.
-        for (int i = path.size() - 1; i >= 1; i--) {
-            JoinStep bridging = path.get(i);
-            String prevAlias = aliases.get(i - 1);
-            switch (bridging) {
-                case JoinStep.Hop hop -> {
-                    switch (hop.on()) {
-                        case On.ColumnPairs cp -> sel.add("$L\n",
-                            JoinPathEmitter.emitBridgingJoin(cp, prevAlias, aliases.get(i)));
-                        case On.Predicate pred -> sel.add(".join($L).on($L)\n",
-                            prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
-                        case On.Lateral ignored -> throw new IllegalStateException(
-                            "a lateral routine hop cannot appear in a split-rows path; "
-                            + "@splitQuery on routine chains classifies as typed Deferred (R435)");
-                    }
-                }
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear at bridging position; @reference-composed paths "
-                    + "are Hop chains, lifter shapes are single-hop");
-            }
-        }
-        // OnConditionJoin: bring parentAlias into scope via the step-0 condition method, pairing
-        // parentAlias with firstAlias (= aliases[0], the condition-join hop's resolved target).
-        // OnFkSlots needs no extra JOIN here — parentInput pairs directly with firstAlias.
-        if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
-            sel.add(".join(parentAlias).on($L)\n",
-                JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), "parentAlias", firstAlias));
-        }
-        // JOIN parentInput on the carrier's parent-correlation columns. For OnFkSlots, joinOnAlias
-        // is firstAlias and the predicate pairs slot.targetSide()/slot.sourceSide(). For
-        // OnConditionJoin, joinOnAlias is parentAlias and the predicate pairs parent-PK on both
-        // sides. The parentInput field is resolved by sqlName + the owner column's DataType rather
-        // than positional index, sidestepping @node(keyColumns: [...]) vs FK column ordering
-        // mismatches and keeping converter-backed columns' type metadata faithful (R413).
+        // The parentInput correlation predicate. For OnFkSlots, joinOnAlias is firstAlias and the
+        // predicate pairs slot.targetSide()/slot.sourceSide(). For OnConditionJoin, joinOnAlias is
+        // parentAlias and the predicate pairs parent-PK on both sides. For OnLateralArgs the slot
+        // lists are empty — correlation rides the lateral call's arguments. The parentInput field
+        // is resolved by sqlName + the owner column's DataType rather than positional index,
+        // sidestepping @node(keyColumns: [...]) vs FK column ordering mismatches and keeping
+        // converter-backed columns' type metadata faithful (R413).
         TableRef ownerTable = parentCorrelation.parentKeyOwnerTable();
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
@@ -450,7 +437,41 @@ public final class SplitRowsMethodEmitter {
                 parentInputFieldLookup("parentInput", joinOnParentCols.get(i), ownerTable));
             if (i > 0) onCond.add(")");
         }
-        sel.add(".join(parentInput).on($L)\n", onCond.build());
+        sel.add(".from(parentInput)\n");
+        // Step 0: attach the chain's first node to parentInput, per correlation arm.
+        switch (parentCorrelation) {
+            case ParentCorrelation.OnFkSlots ignored ->
+                sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
+            case ParentCorrelation.OnConditionJoin cj -> {
+                // parentAlias pairs with parentInput on the parent's PK, then the condition
+                // method brings in firstAlias (= aliases[0], the condition-join hop's target).
+                sel.add(".join(parentAlias).on($L)\n", onCond.build());
+                sel.add(".join($L).on($L)\n", firstAlias,
+                    JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), "parentAlias", firstAlias));
+            }
+            case ParentCorrelation.OnLateralArgs ignored ->
+                sel.add(".crossJoin($T.lateral($L))\n", DSL, firstAlias);
+        }
+        // Bridging hops: step 0 forward to the terminal. No-op when path.size() == 1.
+        for (int i = 1; i < path.size(); i++) {
+            JoinStep bridging = path.get(i);
+            String prevAlias = aliases.get(i - 1);
+            switch (bridging) {
+                case JoinStep.Hop hop -> {
+                    switch (hop.on()) {
+                        case On.ColumnPairs cp -> sel.add("$L\n",
+                            JoinPathEmitter.emitForwardJoin(cp, prevAlias, aliases.get(i)));
+                        case On.Predicate pred -> sel.add(".join($L).on($L)\n",
+                            aliases.get(i), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
+                        case On.Lateral ignored -> sel.add(".crossJoin($T.lateral($L))\n",
+                            DSL, aliases.get(i));
+                    }
+                }
+                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
+                    "LiftedHop should not appear at bridging position; @reference-composed paths "
+                    + "are Hop chains, lifter shapes are single-hop");
+            }
+        }
     }
 
     /**
@@ -862,7 +883,7 @@ public final class SplitRowsMethodEmitter {
         sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
         sel.indent();
         sel.add(".select(selectFields)\n");
-        emitFromBridgeAndParentJoin(sel, path, aliases, terminalAlias, firstAlias,
+        emitFromBridgeAndParentJoin(sel, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
 
         // Lookup-input JOIN (SplitLookupTableField only). ON predicate uses typed
@@ -969,7 +990,7 @@ public final class SplitRowsMethodEmitter {
         sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
         sel.indent();
         sel.add(".select(selectFields)\n");
-        emitFromBridgeAndParentJoin(sel, path, aliases, terminalAlias, firstAlias,
+        emitFromBridgeAndParentJoin(sel, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         sel.add(".where($L)\n",
             buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
@@ -1128,7 +1149,7 @@ public final class SplitRowsMethodEmitter {
         // Join topology + WHERE shared with the list and single siblings via
         // emitFromBridgeAndParentJoin / buildWhereCondition; the connection-specific window tail
         // (.orderBy/.seek/.asTable) is appended after.
-        emitFromBridgeAndParentJoin(inner, path, aliases, terminalAlias, firstAlias,
+        emitFromBridgeAndParentJoin(inner, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         inner.add(".where(where)\n");
         inner.add(".orderBy(page.effectiveOrderBy())\n");
@@ -1164,7 +1185,7 @@ public final class SplitRowsMethodEmitter {
         count.add("$T<?> countSource = dsl\n", TABLE);
         count.indent();
         count.add(".select(idxField.as($S))\n", IDX_COLUMN);
-        emitFromBridgeAndParentJoin(count, path, aliases, terminalAlias, firstAlias,
+        emitFromBridgeAndParentJoin(count, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         count.add(".where(where)\n");
         count.add(".asTable($S);\n", "countSource");

@@ -72,6 +72,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
@@ -2227,12 +2228,14 @@ class FieldBuilder {
      * terminus (hops-then-routine, where {@code columnMapping} binds against the previous hop's
      * node rather than the implicit head), or strictly between hops (the sandwich); in every
      * position it joins as CROSS JOIN LATERAL, correlated through its call arguments. Lands
-     * {@link ChildField.TableField} riding the inline correlated-multiset machinery; the
-     * single-application case is the degenerate chain {@code [Hop(RoutineCall, Lateral)]}.
+     * {@link ChildField.TableField} riding the inline correlated-multiset machinery, or
+     * {@link ChildField.SplitTableField} when {@code @splitQuery} forces the batched keyed
+     * re-query anchor (the batch key for a routine-headed chain is the routine's column-bound
+     * inputs; see {@link #deriveSplitQuerySource}); the single-application case is the
+     * degenerate chain {@code [Hop(RoutineCall, Lateral)]}.
      *
-     * <p>Fetch forms beyond the inline multiset ({@code @splitQuery} / {@code @lookupKey} — the
-     * batched keyed re-query — and non-table-backed parents) stay typed {@code Deferred} until
-     * their emitters land.
+     * <p>{@code @lookupKey} composition and non-table-backed parents stay typed
+     * {@code Deferred} until their emitters land.
      */
     private GraphitronField classifyChildRoutineChain(GraphQLFieldDefinition fieldDef,
             String parentTypeName, GraphitronType parentType, String name, SourceLocation location) {
@@ -2252,11 +2255,30 @@ class FieldBuilder {
                 if (verdict != null) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, verdict);
                 }
-                if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY) || hasLookupKeyAnywhere(fieldDef)) {
+                if (hasLookupKeyAnywhere(fieldDef)) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                        "@splitQuery / @lookupKey on a routine-backed child field (the batched "
-                        + "keyed re-query form) classifies but does not emit yet",
+                        "@lookupKey on a routine-backed child field classifies but does not emit yet",
                         "routine-table-node-composition"));
+                }
+                boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
+                // @splitQuery forces the batched keyed re-query anchor, which needs a key. A
+                // routine-headed chain's batch key is the routine's column-bound inputs (design
+                // note on deriveSplitQuerySource); an uncorrelated routine head has none, so the
+                // directive demands a key the field's shape cannot supply — a contradiction,
+                // not a capability gap. (Broadcast-to-all would be a different anchor than
+                // @splitQuery names; if ever wanted, that is a separate capability.)
+                boolean lateralHead = walk.steps().get(0) instanceof JoinStep.Hop h
+                    && h.on() instanceof On.Lateral;
+                var splitSource = hasSplitQuery
+                    ? deriveSplitQuerySource(tbt.table(), walk.steps(), walk.tb().returnType())
+                    : null;
+                if (hasSplitQuery && lateralHead && splitSource.sourceKey().columns().isEmpty()) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.directiveConflict(List.of(DIR_SPLIT_QUERY, DIR_ROUTINE),
+                            "@splitQuery on an uncorrelated routine-backed field has nothing to "
+                            + "key the batch on (no columnMapping binds a parent column); every "
+                            + "parent would receive identical rows — drop @splitQuery or bind a "
+                            + "parent column via columnMapping"));
                 }
                 // Ordering: @orderBy is rejected upstream (typed Deferred), so the only order
                 // surface is @defaultOrder, resolved against the chain's terminus. A
@@ -2269,12 +2291,22 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, orderRejected.rejection());
                 }
                 var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
-                var pcResolution = ctx.buildParentCorrelation(walk.steps(), tbt.table(), List.of());
+                // parentPkCols is read only by the OnConditionJoin arm (a condition hop heading
+                // the chain), and only the split form materialises parentInput to pair them
+                // against — same sourcing rule as classifyObjectReturnChildField.
+                var pcResolution = ctx.buildParentCorrelation(walk.steps(), tbt.table(),
+                    hasSplitQuery ? splitSource.sourceKey().columns() : List.of());
                 if (pcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError ae) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         Rejection.structural(ae.message()));
                 }
                 var pc = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
+                if (hasSplitQuery) {
+                    yield new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
+                        parentTypeName, name, location, walk.tb().returnType(), walk.steps(),
+                        List.of(), orderBy, null,
+                        splitSource.sourceKey(), splitSource.loaderRegistration(), pc);
+                }
                 yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
                     walk.steps(), List.of(), orderBy, null, pc);
             }
@@ -5511,6 +5543,12 @@ class FieldBuilder {
      * {@code ParentCorrelation.OnConditionJoin} arm correlates {@code parentInput} on the
      * parent's own PK columns.
      *
+     * <p>A lateral routine first hop (R435) keys on the routine's column-bound inputs instead:
+     * key derivation was already per-{@code ParentCorrelation}-arm (FK slots vs parent PK), and
+     * the lateral arm's natural key is the input tuple the {@code SourceColumn} bindings name —
+     * the emitter's {@code OnLateralArgs} arm reads those columns off {@code parentInput}
+     * directly inside the call expression, with no correlation JOIN predicate at all.
+     *
      * <p>The keying is taken from {@code path.get(0)} only, so it is hop-count agnostic: a
      * multi-hop single-cardinality path (e.g. {@code customer -> store -> address}) keys
      * correctly by the first hop's FK source columns, and the emitter bridges the remaining hops
@@ -5528,11 +5566,26 @@ class FieldBuilder {
     private static SplitQuerySource deriveSplitQuerySource(
             TableRef parentTable, List<JoinStep> path, ReturnTypeRef.TableBoundReturnType returnType) {
         boolean isList = returnType.wrapper().isList();
-        List<ColumnRef> entryColumns =
-            (!path.isEmpty() && path.get(0) instanceof JoinStep.Hop hop
-                && hop.on() instanceof On.ColumnPairs cp)
-                ? cp.sourceSideColumns()
-                : parentTable.primaryKeyColumns();
+        List<ColumnRef> entryColumns;
+        if (!path.isEmpty() && path.get(0) instanceof JoinStep.Hop hop
+                && hop.on() instanceof On.ColumnPairs cp) {
+            entryColumns = cp.sourceSideColumns();
+        } else if (!path.isEmpty() && path.get(0) instanceof JoinStep.Hop lateralHop
+                && lateralHop.target() instanceof TableExpr.RoutineCall rc) {
+            // R435 lateral head: the batch key IS the routine's column-bound inputs (the
+            // ParamSource.SourceColumn bindings) — a routine result is a pure function of its
+            // inputs, so keying on the parent's identity would over-specify the batch grain
+            // and force a redundant parent self-join just to re-read columns already lifted.
+            // May be empty (an uncorrelated routine has nothing to key on); the caller rejects
+            // that combination as DirectiveConflict before landing a split leaf.
+            entryColumns = rc.routine().argBindings().stream()
+                .filter(b -> b.source() instanceof ParamSource.SourceColumn)
+                .map(b -> ((ParamSource.SourceColumn) b.source()).column())
+                .distinct()
+                .toList();
+        } else {
+            entryColumns = parentTable.primaryKeyColumns();
+        }
         SourceKey sourceKey = new SourceKey(
             returnType.table(),
             entryColumns,

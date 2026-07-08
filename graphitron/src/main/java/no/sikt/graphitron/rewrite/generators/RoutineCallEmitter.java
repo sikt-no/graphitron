@@ -36,26 +36,26 @@ public final class RoutineCallEmitter {
     /**
      * Emits {@code Routines.<method>(<args>)} for the routine node.
      *
-     * @param rc                the routine-call target node
-     * @param previousNodeAlias the in-scope alias of the chain's previous node (the parent
-     *                          table at hop 0), read by {@link ParamSource.SourceColumn}
-     *                          bindings
-     * @param argSource         where {@link ParamSource.Arg} bindings read their runtime
-     *                          values (R424's env-vs-SelectedField fork)
+     * @param rc           the routine-call target node
+     * @param previousNode where {@link ParamSource.SourceColumn} bindings read the previous
+     *                     chain node's columns — a typed alias in scope, or the batched form's
+     *                     {@code parentInput} field lookup (the {@link PreviousNodeRef} fork)
+     * @param argSource    where {@link ParamSource.Arg} bindings read their runtime
+     *                     values (R424's env-vs-SelectedField fork)
      */
-    public static CodeBlock emitCall(TableExpr.RoutineCall rc, String previousNodeAlias,
+    public static CodeBlock emitCall(TableExpr.RoutineCall rc, PreviousNodeRef previousNode,
             ArgumentValueSource argSource) {
         var routine = rc.routine();
         boolean correlated = routine.argBindings().stream()
             .anyMatch(b -> b.source() instanceof ParamSource.SourceColumn);
         CodeBlock args = CodeBlock.join(routine.argBindings().stream()
-            .map(b -> argExpression(b, correlated, previousNodeAlias, argSource))
+            .map(b -> argExpression(b, correlated, previousNode, argSource))
             .toList(), ", ");
         return CodeBlock.of("$T.$L($L)", routine.routinesClass(), routine.methodName(), args);
     }
 
     private static CodeBlock argExpression(RoutineRef.ArgBinding b, boolean correlated,
-            String previousNodeAlias, ArgumentValueSource argSource) {
+            PreviousNodeRef previousNode, ArgumentValueSource argSource) {
         return switch (b.source()) {
             case ParamSource.Arg arg -> {
                 CodeBlock raw = switch (argSource) {
@@ -66,8 +66,15 @@ public final class RoutineCallEmitter {
                 };
                 yield correlated ? CodeBlock.of("$T.val($L)", DSL, raw) : raw;
             }
-            case ParamSource.SourceColumn sc ->
-                CodeBlock.of("$L.$L", previousNodeAlias, sc.column().javaName());
+            case ParamSource.SourceColumn sc -> switch (previousNode) {
+                case PreviousNodeRef.TypedAlias ta ->
+                    CodeBlock.of("$L.$L", ta.alias(), sc.column().javaName());
+                case PreviousNodeRef.ParentInputField pif ->
+                    CodeBlock.of("$L.field($S, $T.$L.$L.getDataType())",
+                        pif.valuesLocal(), sc.column().sqlName(),
+                        pif.ownerTable().constantsClass(), pif.ownerTable().javaFieldName(),
+                        sc.column().javaName());
+            };
             case ParamSource.Context ignored -> throw nonRoutineParamSource(b);
             case ParamSource.Sources ignored -> throw nonRoutineParamSource(b);
             case ParamSource.DslContext ignored -> throw nonRoutineParamSource(b);

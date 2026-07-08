@@ -503,6 +503,35 @@ public sealed interface ChildField extends OutputField
     ) implements TableTargetField, BatchKeyField {
         public SplitTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitTableField");
+            // R435 leaf-specific surface pins, mirroring TableField's: a routine-bearing path
+            // carries exactly one routine node and none of the surfaces the batched emit does
+            // not render for routine chains. Additionally, a lateral-headed split keys the
+            // batch on the routine's column-bound inputs, so its sourceKey can never be empty
+            // (the classifier rejects the uncorrelated combination as DirectiveConflict).
+            long routineNodes = joinPath.stream()
+                .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
+                .count();
+            if (routineNodes > 0) {
+                boolean dayOneSurface = routineNodes == 1
+                    && filters.isEmpty()
+                    && !(orderBy instanceof OrderBySpec.Argument)
+                    && pagination == null
+                    && !(returnType.wrapper() instanceof FieldWrapper.Connection);
+                if (!dayOneSurface) {
+                    throw new IllegalArgumentException(
+                        "SplitTableField with a routine-node path must be the batched correlated "
+                        + "chain shape (exactly one lateral routine node, no filters/"
+                        + "argument-ordering/pagination, non-Connection); other routine chain "
+                        + "shapes classify as typed Deferred (R435)");
+                }
+            }
+            if (parentCorrelation instanceof ParentCorrelation.OnLateralArgs
+                    && sourceKey.columns().isEmpty()) {
+                throw new IllegalArgumentException(
+                    "SplitTableField with a lateral-headed path must key the batch on the "
+                    + "routine's column-bound inputs; an empty sourceKey is the uncorrelated "
+                    + "shape, which the classifier rejects as DirectiveConflict (R435)");
+            }
         }
         @Override
         public boolean emitsSingleRecordPerKey() {

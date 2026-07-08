@@ -104,7 +104,7 @@ public final class InlineLookupTableFieldEmitter {
                 code.addStatement("$T $L = $L.as($L.getName() + $S)",
                     jooqTableClass, aliases.get(i),
                     JoinPathEmitter.emitTableExpression(path.get(i),
-                        i == 0 ? parentAlias : aliases.get(i - 1),
+                        new PreviousNodeRef.TypedAlias(i == 0 ? parentAlias : aliases.get(i - 1)),
                         new ArgumentValueSource.FromSelectedField(sfName)),
                     parentAlias, "_" + aliases.get(i));
             }

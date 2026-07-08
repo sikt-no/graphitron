@@ -39,6 +39,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code Film.castFilms} (hops-then-routine — {@code columnMapping} binds against the previous
  * node, {@code film_actor.actor_id}, not the implicit head), and {@code Film.castRecentFilms}
  * (the sandwich — hops in, CROSS JOIN LATERAL, name-matched hop back out to {@code film}).
+ *
+ * <p>R435's batched keyed re-query form ({@code @splitQuery}) is proven by
+ * {@code Actor.filmsSplit} / {@code Actor.recentFilmsSplit}: the batch key is the routine's
+ * column-bound input (design B — the {@code parentInput} VALUES table carries {@code actor_id}
+ * and the lateral call reads it off {@code parentInput} directly), with per-parent scatter by
+ * {@code __idx__} reproducing the inline form's rows exactly.
  */
 @ExecutionTier
 class RoutineFieldExecutionTest {
@@ -220,6 +226,45 @@ class RoutineFieldExecutionTest {
         assertThat(nestedOf(films, 1, "castRecentFilms", "filmId")).containsExactly(1, 1, 3, 4);
         assertThat(nestedOf(films, 1, "castRecentFilms", "description")).containsExactly(
             "A Epic Drama", "A Epic Drama", "A Quirky Comedy", "A Classic Romance");
+    }
+
+    @Test
+    void splitRoutineChildBatchesByBoundColumns() {
+        // R435 batched form: filmsSplit rides the DataLoader keyed re-query. The batch key IS
+        // the routine's column-bound input (actor_id), lifted into the parentInput VALUES table;
+        // the CROSS JOIN LATERAL call reads it off parentInput with no correlation JOIN. The
+        // per-parent scatter (by __idx__) must reproduce exactly the inline form's rows.
+        var data = execute("""
+            { allActors {
+                firstName
+                filmsSplit(minLength: 50) { filmId }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(fieldOf(actors, "PENELOPE", "filmsSplit", "filmId")).containsExactly(1, 3);
+        assertThat(fieldOf(actors, "NICK", "filmsSplit", "filmId")).containsExactly(1, 4);
+        assertThat(fieldOf(actors, "ED", "filmsSplit", "filmId")).containsExactly(5);
+    }
+
+    @Test
+    void splitRoutineThenHopsChainJoinsOutInsideBatchQuery() {
+        // R435 batched routine-then-hops: the name-matched hop out of the routine result runs
+        // inside the batch query, after the lateral. `description` exists only on film, so a
+        // mis-keyed hop cannot pass; per-parent scatter proves the batch key correlation.
+        var data = execute("""
+            { allActors {
+                firstName
+                recentFilmsSplit(minLength: 50) { filmId description }
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(fieldOf(actors, "PENELOPE", "recentFilmsSplit", "filmId")).containsExactly(1, 3);
+        assertThat(fieldOf(actors, "PENELOPE", "recentFilmsSplit", "description"))
+            .containsExactly("A Epic Drama", "A Quirky Comedy");
+        assertThat(fieldOf(actors, "NICK", "recentFilmsSplit", "filmId")).containsExactly(1, 4);
+        assertThat(fieldOf(actors, "ED", "recentFilmsSplit", "filmId")).containsExactly(5);
     }
 
     @SuppressWarnings("unchecked")

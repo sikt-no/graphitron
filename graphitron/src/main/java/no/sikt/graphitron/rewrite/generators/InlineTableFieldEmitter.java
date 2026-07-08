@@ -108,7 +108,8 @@ public final class InlineTableFieldEmitter {
                 String previousAlias = i == 0 ? parentAlias : aliases.get(i - 1);
                 code.addStatement("$T $L = $L.as($L.getName() + $S)",
                     jooqTableClass, aliases.get(i),
-                    JoinPathEmitter.emitTableExpression(path.get(i), previousAlias,
+                    JoinPathEmitter.emitTableExpression(path.get(i),
+                        new PreviousNodeRef.TypedAlias(previousAlias),
                         new ArgumentValueSource.FromSelectedField(sfName)),
                     parentAlias, "_" + aliases.get(i));
             }

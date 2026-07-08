@@ -130,7 +130,11 @@ names its `Rejection` arm, is produced at classify time, and lands with a valida
 a fixture. Like the validation rules above, every verdict reuses an existing arm.
 
 * **`@splitQuery`**: composes. It forces the new-query anchor, which is the same batched keyed
-  re-query form the child fetch already rides; no special casing.
+  re-query form the child fetch already rides; no special casing. One addendum: an
+  *uncorrelated* routine child (no `columnMapping`) rejects as
+  `InvalidSchema.DirectiveConflict` — the directive demands a batch key and the routine's
+  input tuple (its natural key) is empty, so every parent would receive identical rows; a
+  contradiction, not a capability gap.
 * **`@asConnection` / pagination**: two verdicts, two arms. A chain whose *terminus* is the
   routine result rejects as `InvalidSchema.DirectiveConflict` (R300 already rejects Connection at
   root): keyset pagination needs an ordering contract the FK-less routine result does not carry,
@@ -242,13 +246,35 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
   passes the column's `Field` straight to the routine's `Field` overload — a mismatch would be
   a javac error in the generated source. `AuthorError.Structural`, checked at the
   `columnMapping` binding site in `RoutineDirectiveResolver.bindArgs`. Shipped.
+* The batched keyed re-query form (`@splitQuery`) for routine children on table-backed parents
+  **classifies and emits**: the batch key is the routine's column-bound inputs (the
+  `ParamSource.SourceColumn` bindings — a routine result is a pure function of its inputs, so
+  keying on the parent's identity would over-specify the batch grain and force a redundant
+  parent self-join just to re-read columns already lifted), derived as the lateral arm of
+  `deriveSplitQuerySource`'s existing per-correlation-arm key rule; hops-first chains keep
+  their FK-slot / parent-PK keys unchanged. The `parentInput` VALUES table carries the bound
+  columns and the CROSS JOIN LATERAL call reads them off `parentInput` directly — the
+  previous-node reference generalised to the sealed `PreviousNodeRef` (the column-reference
+  sibling of `ArgumentValueSource`): a typed alias inline / mid-chain,
+  `parentInput.field(sqlName, ownerDataType)` at the batched head (the R413-faithful lookup,
+  so javac still selects the routine's `Field` overload) — and the lateral step carries no
+  correlation JOIN predicate at all. `SplitRowsMethodEmitter`'s join walk flipped start-first
+  with `parentInput` as the FROM anchor (the same LATERAL-scoping argument as the inline
+  flip; behaviour-equivalent for the INNER-join chains every other split shape emits, pinned
+  by the existing split execution tests in the same commit). `SplitTableField`'s compact
+  constructor pins the routine surface (exactly one routine node, no
+  filters/argument-ordering/pagination, non-Connection; a lateral-headed split carries a
+  non-empty key). Force-projection of the bound columns into the parent SELECT rides the
+  existing blanket `BatchKeyField.sourceKey()` walk unchanged. Shipped.
 
 Pending (the remaining chain-build + emit work):
 
 * Chains with more than one routine node (typed `Deferred` today, root and child alike): the
   multi-lateral emit.
-* The batched keyed re-query form for routine children (`@splitQuery`, record-backed parents,
-  `TableInterfaceType` parents) — flips the typed `Deferred` landings left by the inline slice.
+* The remaining batched-fetch surfaces for routine children (typed `Deferred`): `@lookupKey`
+  composition, record-backed parents, and `TableInterfaceType` parents. The slice boundary
+  falls on the existing model seam (`SplitTableField` vs `RecordTableField` vs
+  `InterfaceField`), so the table-backed `@splitQuery` slice above stands alone coherently.
 * Correlated value-arg `DataType` binding: mixed (`Field`-overload) calls type argument-sourced
   values by their Java `paramType` read, not a two-arg `DSL.val(v, dataType)` — jOOQ's TVF
   codegen exposes no `Parameter` constants to reference. Shares the enum/ID-as-String coercion
@@ -267,7 +293,9 @@ Pipeline tier is primary; no code-string assertions at any tier.
   sandwich (`Film.castRecentFilms`), and the repeated-`@reference` composed chain
   (`Film.castActorsViaChain`), all riding the sakila example schema through the compile-spec
   pipeline with classification facts asserted in `GraphitronSchemaBuilderTest`'s R435 block.
-  `ClassifiedCorpus` entries remain pending.
+  Batched-form fixtures shipped alongside: `@splitQuery` on a correlated routine child lands
+  `SplitTableField` with the bound-column `SourceKey`, and a hops-then-routine split keeps the
+  first hop's FK-slot key. `ClassifiedCorpus` entries remain pending.
 * **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id, min_length)`
   fixture function in `init.sql`) verifying per-parent correlation and the mixed
   column/argument binding through the inline correlated multiset — shipped
@@ -278,7 +306,10 @@ Pipeline tier is primary; no code-string assertions at any tier.
   reviewer-note terminus-direction case —
   (`childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode`: film 1's merged cast sets
   prove `columnMapping` reads the junction row, not the head), and the sandwich
-  (`childSandwichChainJoinsBackOutToCatalogTerminus`).
+  (`childSandwichChainJoinsBackOutToCatalogTerminus`). The batched form shipped with two
+  execution proofs (`splitRoutineChildBatchesByBoundColumns`,
+  `splitRoutineThenHopsChainJoinsOutInsideBatchQuery`): per-parent scatter through the
+  DataLoader reproduces the inline form's rows exactly.
 * **Rejection fixtures**, one per validator rule (shipped rules asserted in
   `GraphitronSchemaBuilderTest`'s R435 block): root chain not starting with `@routine` (shipped);
   `columnMapping` with no previous node (shipped); `columnMapping` naming a column absent from
@@ -295,7 +326,9 @@ Pipeline tier is primary; no code-string assertions at any tier.
   naming a column absent from a mid-chain previous node (shipped, candidates list that node's
   columns, not the head's); an element-less `@reference` application inside a
   multi-application chain (shipped); Connection over
-  a catalog-terminus routine chain (shipped, typed `Deferred`). All rejection rules in
+  a catalog-terminus routine chain (shipped, typed `Deferred`); `@splitQuery` on an
+  uncorrelated routine child (shipped, `DirectiveConflict`); `@lookupKey` on a routine child
+  (shipped, typed `Deferred`). All rejection rules in
   Validation and the composition verdicts now carry fixtures.
 
 ## User documentation (first-client check)
