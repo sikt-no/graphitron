@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
@@ -136,7 +138,8 @@ final class RoutineDirectiveResolver {
                     "@routine parameter '" + param.name() + "' binds to GraphQL argument '" + graphqlArg
                     + "', which is not an argument of this field"));
             }
-            bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(), graphqlArg));
+            bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(),
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head(graphqlArg))));
         }
         return new Resolved.TableBound(returnType, new RoutineRef(fn.routinesClass(), fn.methodName(), bindings));
     }

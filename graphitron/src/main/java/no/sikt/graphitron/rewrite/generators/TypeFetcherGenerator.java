@@ -43,6 +43,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -1521,7 +1522,15 @@ public class TypeFetcherGenerator {
         // Routines.<method>(<bound IN params>) returns the configured table-valued-function table.
         var routine = qrtf.routine();
         CodeBlock args = CodeBlock.join(routine.argBindings().stream()
-            .map(b -> CodeBlock.of("env.<$T>getArgument($S)", b.paramType(), b.graphqlArgName()))
+            .map(b -> switch (b.source()) {
+                case ParamSource.Arg arg ->
+                    CodeBlock.of("env.<$T>getArgument($S)", b.paramType(), arg.graphqlArgName());
+                case ParamSource.Context ignored -> throw nonRoutineParamSource(b);
+                case ParamSource.Sources ignored -> throw nonRoutineParamSource(b);
+                case ParamSource.DslContext ignored -> throw nonRoutineParamSource(b);
+                case ParamSource.Table ignored -> throw nonRoutineParamSource(b);
+                case ParamSource.SourceTable ignored -> throw nonRoutineParamSource(b);
+            })
             .toList(), ", ");
         String tableLocal = names.tableLocalName();
 
@@ -1545,6 +1554,18 @@ public class TypeFetcherGenerator {
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /**
+     * A routine {@link RoutineRef.ArgBinding} carrying a {@link ParamSource} arm the
+     * {@code RoutineDirectiveResolver} never mints for routine bindings reached emission —
+     * a classifier bug, not an authoring error.
+     */
+    private static IllegalStateException nonRoutineParamSource(RoutineRef.ArgBinding binding) {
+        return new IllegalStateException(
+            "routine binding for parameter '" + binding.routineParamName() + "' carries "
+            + binding.source().getClass().getSimpleName()
+            + " — RoutineDirectiveResolver mints only ParamSource.Arg");
     }
 
     /**

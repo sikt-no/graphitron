@@ -6,7 +6,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Classifies the runtime source of a single parameter in a {@link MethodRef}.
+ * Classifies the runtime source of a single parameter in a {@link MethodRef} or a
+ * {@link RoutineRef} — one call-source taxonomy for service, condition, table-method, and
+ * routine calls.
  *
  * <p>The generator uses this to emit the correct expression for each parameter in the generated
  * service call, condition invocation, or table-method call:

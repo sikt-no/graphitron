@@ -35,10 +35,14 @@ public record RoutineRef(ClassName routinesClass, String methodName, List<ArgBin
     }
 
     /**
-     * One routine IN parameter bound to a GraphQL field argument. {@code paramType} is the boxed
-     * Java type of the routine parameter (e.g. {@code java.lang.String}), used to emit a typed
-     * {@code env.<T>getArgument(...)} read; {@code graphqlArgName} is the field argument whose value
-     * supplies it.
+     * One routine IN parameter and the {@link ParamSource} supplying its value. {@code paramType}
+     * is the boxed Java type of the routine parameter (e.g. {@code java.lang.String}), used to
+     * emit a typed read at the call site.
+     *
+     * <p>{@code source} is the shared call-source taxonomy ({@link ParamSource}), so a routine
+     * parameter has exactly one source shape: {@link ParamSource.Arg} when a GraphQL field
+     * argument supplies the value ({@code argMapping}). The other {@link ParamSource} arms are
+     * never minted for routine bindings; the resolver produces only the arms named here.
      */
-    public record ArgBinding(String routineParamName, TypeName paramType, String graphqlArgName) {}
+    public record ArgBinding(String routineParamName, TypeName paramType, ParamSource source) {}
 }
