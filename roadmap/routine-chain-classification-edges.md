@@ -19,7 +19,7 @@ section that follows is the plan.
 Classification gaps (both are validation edges on shapes no fixture authors today):
 
 * **Multi-node routine chains on `Mutation` / `Subscription` misclassify as Query reads.** The
-  R435 interception in `FieldBuilder.classify` gates on `parentType instanceof RootType` and
+  R435 interception in `FieldBuilder.classifyField` gates on `parentType instanceof RootType` and
   routes root multi-node chains to `classifyRootRoutineChain`, which never consults the parent
   type name; `type Mutation { x: [Film!] @routine(...) @reference(...) }` therefore lands
   `QueryField.QueryRoutineTableField` (whose `source()` is `Source.Root.Query`) instead of a
@@ -62,7 +62,9 @@ Doc-rot and consolidation:
   (with its own `ParamSource` switch and a duplicated `nonRoutineParamSource` helper mirroring
   `RoutineCallEmitter`) and emits hop aliases directly instead of through
   `JoinPathEmitter.emitTableExpression`. Safe today because `QueryRoutineTableField`'s compact
-  constructor pins hops to catalog targets and root bindings to `Arg`, but it is a second
+  constructor pins hops to catalog targets, and root bindings are all `Arg` because
+  `RoutineDirectiveResolver` rejects `columnMapping` at root (a classifier rejection nothing
+  downstream re-checks; the constructor carries no binding pin), but it is a second
   emission site for the routine-call surface; R448's correlated value-arg `DataType` lift
   would have to change both. Route the root fetcher through the shared emitters.
 
@@ -121,13 +123,18 @@ anyway; two items editing the same javadocs blind is a merge hazard, per the con
 
 **D5: root-fetcher emission consolidation.** Route the root routine call through
 `RoutineCallEmitter.emitCall` by adding a payload-free `PreviousNodeRef.None` arm (the root
-chain head has no previous node); `argExpression`'s `SourceColumn` × `None` combination throws
-classifier-unreachable, citing the `QueryRoutineTableField` compact-constructor pin that root
-bindings are `ParamSource.Arg`. Delete the duplicated `nonRoutineParamSource` helper; route
-the root hop alias-declaration loop through the shared `JoinPathEmitter.emitTableExpression`
-switch. Behaviour-identical, with one acceptance kept pinned by the existing pipeline and
-execution tiers: at root `correlated` is false (the compact-constructor pin), so `emitCall`
-must not wrap argument reads in `DSL.val` — the byte-identity claim rides on that.
+chain head has no previous node). The shape the shared path then assumes — root bindings are
+all `ParamSource.Arg` — is today enforced only by `RoutineDirectiveResolver`'s
+columnMapping-at-root rejection, a classifier rejection nothing downstream re-checks; pin the
+acceptance at the producer (per "Acceptances: classifier guarantees shape emitter
+assumptions") by extending `QueryRoutineTableField`'s compact constructor to require every
+start binding be `ParamSource.Arg`. `argExpression`'s `SourceColumn` × `None` combination then
+throws classifier-unreachable, citing that pin. Delete the duplicated `nonRoutineParamSource`
+helper; route the root hop alias-declaration loop through the shared
+`JoinPathEmitter.emitTableExpression` switch. Behaviour-identical, with one acceptance kept
+pinned by the existing pipeline and execution tiers: at root `correlated` is false (all
+bindings `Arg` by the new pin), so `emitCall` must not wrap argument reads in `DSL.val` — the
+byte-identity claim rides on the pin, not on prose.
 
 ## Tests
 
@@ -145,7 +152,9 @@ code-string assertions.
   verdict dominates the `Deferred` (the precedence rule's enforcer).
 * D3 is itself test work (arm tightening + the `hops = []` desugar fixture).
 * D4/D5 need no new tests: comments have no runtime surface, and the consolidation is
-  behaviour-identical under the existing R435 pipeline + execution suite.
+  behaviour-identical under the existing R435 pipeline + execution suite; D5's new
+  compact-constructor pin is exercised by every existing fixture that lands
+  `QueryRoutineTableField`.
 
 ## Out of scope
 
