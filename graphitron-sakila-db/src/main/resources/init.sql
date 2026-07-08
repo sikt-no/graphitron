@@ -886,13 +886,15 @@ CREATE TABLE multischema_a.event (
     name       varchar(50) NOT NULL
 );
 
--- R442 pipeline fixture: an additive table holding an in-schema FK into multischema_a.event so a
--- {table:, condition:} where-filter hop can target the colliding 'event' table. The 'event' bare
--- name collides across multischema_a / multischema_b, so a concrete condition-method table
--- parameter typed multischema_a.tables.Event vs multischema_b.tables.Event can only be told apart
--- by jOOQ class identity, not the bare-vs-qualified name string that checkConcreteParamTable used
--- before R442. No FK previously touched 'event'; this supplies the endpoint for target-position
--- coverage via the where-filter path.
+-- R442 pipeline fixture: an additive, uniquely-named table holding an in-schema FK into
+-- multischema_a.event. The 'event' bare name collides across multischema_a / multischema_b, so a
+-- concrete condition-method table parameter typed multischema_a.tables.Event vs
+-- multischema_b.tables.Event can only be told apart by jOOQ class identity, not the bare-vs-qualified
+-- name string that checkConcreteParamTable used before R442. This backs where-filter *source*-operand
+-- coverage: a {table: "event_log", condition:} hop off a parent @table(name: "multischema_a.event")
+-- carries the qualified parent echo on the source operand. (Target-position coverage rides a terminal
+-- condition hop instead; the where-filter FK-endpoint path resolves 'event' by bare name and is
+-- ambiguous, which is R440's scope, not R442's.)
 CREATE TABLE multischema_a.event_log (
     event_log_id  serial      PRIMARY KEY,
     event_id      int         NOT NULL REFERENCES multischema_a.event(event_id),
