@@ -126,7 +126,7 @@ candidates are filtered to FKs touching that table (class identity via the exist
 have `currentSourceSqlName == null`), scope unresolvable, or a genuine residual collision. Silent
 first-hit is gone.
 
-Call sites and their `Ambiguous` handling:
+Author-facing call sites and their `Ambiguous` handling:
 
 - `parsePathElement` `{key:}` (`BuildContext.java:1549`), scope `currentSourceSqlName`;
 - the ID-reference synthesis shim (`BuildContext.java:2190`, `:2212`), scope `tableName` (the
@@ -134,6 +134,16 @@ Call sites and their `Ambiguous` handling:
   schemas);
 - `resolveRecordFkTargetColumns` explicit `@reference(key:)` (`BuildContext.java:2650`), scope
   `recordTable.tableName()`.
+
+One further, non-author-facing caller must migrate with the signature change but keeps its
+`Optional` contract rather than surfacing `Ambiguous`: `qualifierForFk` (`JooqCatalog.java:616`)
+calls `findForeignKey(fkName)` unscoped and then filters by `foreignKeyOnSource(sourceTableSqlName)`,
+so a colliding FK name today resolves the wrong schema's FK and collapses to empty, tripping the
+`orElseThrow("should be unreachable")` at the shim's `BuildContext.java:2186-2189`. Pass
+`sourceTableSqlName` as the scope; `Resolved` maps to the qualifier, `NotInCatalog`/`Ambiguous`
+both map to `Optional.empty()` (scope makes the collision resolve, so the `orElseThrow` stays a
+genuine can't-happen guard). The shim's author-facing ambiguity rejection is already covered by the
+`:2190`/`:2212` sites above; `qualifierForFk` does not duplicate it.
 
 Each rejects `Ambiguous` through a new arm of the FK rejection surface: extend
 `unknownForeignKeyRejection` (or a sibling builder) with an ambiguous variant producing an
@@ -162,8 +172,15 @@ other caller (`BuildContext.java:2199`) tests presence only. Update the deductio
 - `NodeIdLeafResolver.java`: D4 consumption.
 - `CatalogBuilder.java:1139`: `fkJavaConstantName` retarget.
 - `model/ForeignKeyRef.java`: doc pointer update (built by `findForeignKeyRef` now).
-- New sealed variants must satisfy the sealed-hierarchy doc/variant coverage meta-tests
-  (`VariantCoverageTest` family); add the doc entries with the variants.
+- The new `ForeignKeyLookup` is a `JooqCatalog`-local result type in the same family as
+  `TableResolution` / `ForeignKeyResolution` / `RoutineResolution`: documented by rich javadoc on
+  the sealed interface and its arms, pinned by no doc-coverage meta-test. It is *not* in scope for
+  `VariantCoverageTest` (which covers `GraphitronField` / `GraphitronType` classification leaves) or
+  `SealedHierarchyDocCoverageTest` (which walks only the `Rejection` hierarchy against
+  `typed-rejection.adoc`). The ambiguous-FK rejection arm produces an existing `Rejection.structural`
+  leaf (as the table-ambiguity arm at `BuildContext.java:1112` does), so it adds no new `Rejection`
+  permit and no `typed-rejection.adoc` obligation. Match the sibling result types' javadoc
+  convention; there are no doc entries to add.
 - Passing raw `ForeignKey` through `BuildContext`/`NodeIdLeafResolver` is not a new containment
   leak; both are in the deliberate jOOQ boundary set and `synthesizeFkJoin` already takes one.
 
