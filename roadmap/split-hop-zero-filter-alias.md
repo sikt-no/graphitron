@@ -1,7 +1,7 @@
 ---
 id: R450
 title: "Split-path hop-0 condition filter binds the same alias as source and target"
-status: In Progress
+status: In Review
 bucket: bug
 theme: structural-refactor
 depends-on: []
@@ -38,6 +38,12 @@ This cannot be dropped silently: R449's principles consult re-homed the repair h
 because of the same-file merge hazard, so if R450 goes Done without it no item carries it. The
 rework pass is those three comment repairs only (plus collapsing the shipped design items below to
 `shipped at cf2c34c` notes per plan-housekeeping convention), then back to In Review.
+
+**Rework (2026-07-08):** the three javadoc repairs shipped at `1c0126d`; all three spots now
+describe the R435 start-first topology (`FROM parentInput`, step-0 attach per correlation arm,
+forward bridging hops out to the terminal), and a phrasing sweep found no further back-walk
+residue in the file. The shipped design items below are collapsed per the plan-housekeeping
+convention.
 
 ## Problem
 
@@ -84,46 +90,23 @@ parent-join topology with the hop's own `On` doing the attach.
 Shaped with the principles consult (2026-07-08); the load-bearing choice is that grain and
 topology are *one* decision made at *one* producer, with the type enforcing their coherence.
 
-1. **One arm, one decision (model + classifier).** The correlation arm choice moves to: a
-   hop-0 `Hop` carrying a non-null `filter()` lands the parent-anchor arm regardless of its
-   `On`; filter-less FK hops keep `OnFkSlots`. The parent-anchor arm is the renamed
-   generalization of `OnConditionJoin` carrying only the topology payload
-   (`firstHop`, `parentTable`): "`parentInput` joins the parent table on its PK; hop 0 then
-   attaches off `parentAlias`". It exposes **no** `condition()` accessor (a partial accessor
-   whose meaning depends on the occupant is the axis smell); consumers dispatch the hop-0
-   attach on `firstHop.on()` per `JoinStep`'s own two-axis model: `ColumnPairs` renders the
-   ordinary forward join, `Predicate` the existing two-arg condition call.
-   `buildParentCorrelation` is the single shared producer, so the reclassification applies to
-   inline carriers too; the inline `ColumnPairs`-occupant emission is behaviour-identical
-   (parent already in scope, same slot correlation), pinned by the existing inline fixtures.
-2. **Grain is a projection off the arm (classifier).** `ParentCorrelation` gains a
-   key-columns accessor beside the existing `parentKeyOwnerTable()`; `deriveSplitQuerySource`
-   builds the correlation first and reads entry columns off it instead of re-deriving from
-   the path. Parent-PK grain iff parent-anchor topology becomes structurally impossible to
-   violate; the alternative (a second `filter() != null` branch in `deriveSplitQuerySource`)
-   is two producer sites evaluating one predicate with nothing binding them, exactly the
-   R338 silent-zero-rows drift `deriveSplitQuerySource`'s own javadoc warns about.
-3. **Same-commit consumer audit.** Every switch over `ParentCorrelation` (three inline
-   emitters, `TypeFetcherGenerator`, the split-rows siblings) is audited in the same commit
-   as the producer change; the previous `OnConditionJoin` arms re-dispatch on
-   `firstHop.on()`. Sealed exhaustiveness makes the compiler surface each site.
-4. **Emitter.** `buildWhereCondition` receives the parent-side alias and uses it as hop-0
-   source under the parent-anchor arm. Under `OnFkSlots` a hop-0 filter is
-   classifier-unreachable once (1) lands: throw tersely citing the classifier guarantee,
-   matching the existing classifier-unreachable throws in the same file.
-5. **Non-table-backed split parents (record / service shapes).** No parent table exists to
-   anchor, and Check 2 silently skips when `originTable` is null, so the broken shape
-   classifies unverified today. Route the rejection through the existing
-   `ParentCorrelationResolution.AuthorError` pathway (the same channel that already rejects a
-   `Predicate` hop-0 with no parent `@table`), landing `AuthorError.Structural`: the filter's
-   source row is not a catalog table; the message names the escape hatch (filter on a later
-   hop, or the terminal `@condition` surface).
-6. **Housekeeping absorbed from R449** (its 2026-07-08 principles consult flagged the
-   same-file merge hazard): repair the three stale pre-flip topology javadoc spots in
-   `SplitRowsMethodEmitter` (`emitFromBridgeAndParentJoin`'s `.from(terminalAlias)` opener,
-   the flat-SELECT comment, `buildSingleMethod`'s javadoc) while reworking the file — they
-   describe the retired terminal-back walk and contradict the shipped `parentInput`-anchored
-   start-first paragraphs in the same javadocs.
+1. **One arm, one decision (model + classifier).** Shipped at `cf2c34c`: hop-0 `filter()`
+   lands the parent-anchor `OnParentJoin` arm (no `condition()` accessor; consumers dispatch
+   the hop-0 attach on `firstHop.on()`), single producer `buildParentCorrelation`.
+2. **Grain is a projection off the arm (classifier).** Shipped at `cf2c34c`:
+   `parentKeyColumns()` accessor; `deriveSplitQuerySource` reads entry columns off the
+   correlation.
+3. **Same-commit consumer audit.** Shipped at `cf2c34c`: three inline emitters re-dispatch on
+   `firstHop.on()`; split-rows siblings anchor `parentAlias`; `TypeFetcherGenerator` holds no
+   `ParentCorrelation` switch.
+4. **Emitter.** Shipped at `cf2c34c`: `buildWhereCondition` binds the parent-side alias as
+   hop-0 source under the parent-anchor arm; classifier-unreachable throw under `OnFkSlots`.
+5. **Non-table-backed split parents (record / service shapes).** Shipped at `cf2c34c`:
+   rejection through `ParentCorrelationResolution.AuthorError`, landing
+   `AuthorError.Structural` with the escape-hatch message.
+6. **Housekeeping absorbed from R449.** Shipped at `1c0126d` (rework pass): the three stale
+   pre-flip topology javadoc spots in `SplitRowsMethodEmitter` now describe the shipped
+   `parentInput`-anchored start-first walk.
 
 ## Tests
 
