@@ -840,9 +840,9 @@ class TypeBuilder {
             // classifier so no ParticipantColumnReferenceField is emitted (belt-and-suspenders). A
             // participant-only field like `navn` (column lives only on the detail table) is not
             // matched and stays a valid cross-table field.
-            if (ctx.catalog.findColumn(interfaceTable.tableName(), columnSqlName).isPresent()) {
-                var baseColumns = Set.copyOf(ctx.catalog.columnSqlNamesOf(interfaceTable.tableName()));
-                var detailOnlyColumns = ctx.catalog.columnSqlNamesOf(fk.targetTable().tableName()).stream()
+            if (interfaceTable.column(columnSqlName).isPresent()) {
+                var baseColumns = interfaceTable.allColumns().stream().map(ColumnRef::sqlName).collect(Collectors.toSet());
+                var detailOnlyColumns = fk.targetTable().allColumns().stream().map(ColumnRef::sqlName)
                     .filter(c -> !baseColumns.contains(c))
                     .toList();
                 ctx.addDiagnostic(ValidationError.forField(
@@ -858,9 +858,8 @@ class TypeBuilder {
                 continue;
             }
 
-            var columnEntry = ctx.catalog.findColumn(fk.targetTable().tableName(), columnSqlName).orElse(null);
-            if (columnEntry == null) continue;
-            var column = new ColumnRef(columnEntry.sqlName(), columnEntry.javaName(), columnEntry.columnClass());
+            var column = fk.targetTable().column(columnSqlName).orElse(null);
+            if (column == null) continue;
 
             String aliasName = participantTypeName + "_" + fieldName;
             out.add(new ParticipantRef.TableBound.CrossTableField(fieldName, column, fk, aliasName));
