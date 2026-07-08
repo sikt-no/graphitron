@@ -1,7 +1,7 @@
 ---
 id: R445
 title: "Participant cross-table @reference column read must resolve the FK terminal by class identity, not bare SQL name"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
