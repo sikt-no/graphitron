@@ -36,7 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R449` | Routine chains: classification edges from the R435 second-pass review | Spec | 2026-07-08 | [plan](routine-chain-classification-edges.md) |
-| `R450` | Split-path hop-0 condition filter binds the same alias as source and target | Spec | 2026-07-08 | [plan](split-hop-zero-filter-alias.md) |
+| `R450` | Split-path hop-0 condition filter binds the same alias as source and target | Ready | 2026-07-08 | [plan](split-hop-zero-filter-alias.md) |
 
 ---
 
@@ -282,7 +282,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Spec, architecture
 - `R117` [**Graphitron knowledge base programme: DuckDB as queryable model**](knowledge-base-programme.md) — Backlog, architecture
 - `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture, blocked by [capability-catalog](capability-catalog.md)
-- `R450` [**Split-path hop-0 condition filter binds the same alias as source and target**](split-hop-zero-filter-alias.md) — Spec, bug
+- `R450` [**Split-path hop-0 condition filter binds the same alias as source and target**](split-hop-zero-filter-alias.md) — Ready, bug
 
 ### docs
 
