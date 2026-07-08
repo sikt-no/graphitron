@@ -154,11 +154,11 @@ class MultiSchemaPipelineTest {
         // routes to the FK-holder side (B), not the target side (A). The R78 bug case is a
         // per-emit-site `ClassName.get(jooqPackage, "Keys")` that compiles to root.Keys —
         // a class which does not exist under multi-schema codegen.
-        assertThat(firstPairs.fk().keysClass())
+        assertThat(TestFixtures.fkRef(firstPairs).keysClass())
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Keys"));
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> uppercased; pin the
         // upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
-        assertThat(firstPairs.fk().constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
+        assertThat(TestFixtures.fkRef(firstPairs).constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
 
         // Target-table class: every emitter that traverses the FK reads
         // firstHop.targetTable().tableClass() to bind the joined-table alias. R78's bug

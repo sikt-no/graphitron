@@ -65,7 +65,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *
  * <ul>
  *   <li><b>{@code @reference} present.</b>
- *       {@code "@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match first-hop source-side column '<col>' of FK '<fk>' (Java type '<expected>')"}</li>
+ *       {@code "@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match first-hop source-side column '<col>' of FK '<fk>' (Java type '<expected>')"} (the FK label is the first hop's {@link On.Keying} description)</li>
  *   <li><b>Leaf-PK case.</b>
  *       {@code "@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match primary key column '<col>' of '<leaf>' (Java type '<expected>')"}</li>
  * </ul>
@@ -284,8 +284,8 @@ final class SourceRowDirectiveResolver {
                     + "': @reference's first element resolved to a condition join which has no "
                     + "source-side columns; @sourceRow's first hop must be an FK"));
             }
-            String fkLabel = firstPairs.fk().constantName();
-            derivation = new Derivation.Path(parsed.elements(), firstPairs.sourceSideColumns(), fkLabel);
+            String keyingLabel = firstPairs.keying().describe();
+            derivation = new Derivation.Path(parsed.elements(), firstPairs.sourceSideColumns(), keyingLabel);
         } else {
             // No @reference: read the leaf target's PK columns directly. The hop is a single
             // column-equality JOIN where source-side and target-side fold onto the same column.
@@ -406,14 +406,14 @@ final class SourceRowDirectiveResolver {
             }
         }
 
-        record Path(List<JoinStep> steps, List<ColumnRef> expectedTuple, String firstFkLabel)
+        record Path(List<JoinStep> steps, List<ColumnRef> expectedTuple, String firstKeyingLabel)
                 implements Derivation {
             @Override public String derivedShapeLabel() {
-                return "(first-hop source-side columns of FK '" + firstFkLabel + "')";
+                return "(first-hop source-side columns of " + firstKeyingLabel + ")";
             }
             @Override public String colMismatchTail(ColumnRef col) {
-                return "matching first-hop source-side column '" + col.sqlName() + "' of FK '"
-                    + firstFkLabel + "' (Java type '" + col.columnClass() + "')";
+                return "matching first-hop source-side column '" + col.sqlName() + "' of "
+                    + firstKeyingLabel + " (Java type '" + col.columnClass() + "')";
             }
             @Override public String perPositionMismatchMessage(
                     String parentTypeName, String fieldName, String lifterMethodName,
@@ -421,8 +421,8 @@ final class SourceRowDirectiveResolver {
                 return "@sourceRow on '" + parentTypeName + "." + fieldName
                     + "': lifter '" + lifterMethodName + "' RowN type at position " + position
                     + " ('" + actualType + "') does not match first-hop source-side column '"
-                    + expectedCol.sqlName() + "' of FK '" + firstFkLabel
-                    + "' (Java type '" + expectedType + "')";
+                    + expectedCol.sqlName() + "' of " + firstKeyingLabel
+                    + " (Java type '" + expectedType + "')";
             }
         }
     }

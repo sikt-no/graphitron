@@ -192,13 +192,19 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
   original pending item): the generated value and `Field` overloads share a method name, so
   emitting `Field`-typed arguments selects the right overload at javac level in the generated
   source. Resolved by construction.
+* The keying seal R438 pre-planned: `On.ColumnPairs` carries `On.Keying`
+  (`ForeignKey(ForeignKeyRef)` | `NameMatchedKey(targetKeyName)`); the six `.onKey` emit sites
+  route through one shared `JoinPathEmitter.emitBridgingJoin` dispatch (`.onKey(Keys.<FK>)` for
+  the catalog-FK derivation, the explicit column-equality conjunction over `slots` for the
+  name-matched derivation, which has no `Keys` constant), and diagnostics read
+  `Keying.describe()`. Shipped; the chain build below is the first `NameMatchedKey` producer.
 
 Pending (the remaining chain-build + emit work):
 
 * Multi-node chains: build routine-then-hops / hops-then-routine / sandwich chains (today typed
   `Deferred`), the terminus rule for multi-node chains, and the name-match keying derivation
-  (the small seal on `On.ColumnPairs` R438 pre-planned) for hops adjacent to a routine node;
-  re-home the root slice so `QueryRoutineTableField` carries the `(start, hops)` chain.
+  producer for hops adjacent to a routine node (the `On.Keying.NameMatchedKey` seal itself has
+  shipped); re-home the root slice so `QueryRoutineTableField` carries the `(start, hops)` chain.
 * The batched keyed re-query form for routine children (`@splitQuery`, record-backed parents,
   `TableInterfaceType` parents) — flips the typed `Deferred` landings left by the inline slice.
 * Type compatibility of `columnMapping`-bound columns against routine parameter types (the

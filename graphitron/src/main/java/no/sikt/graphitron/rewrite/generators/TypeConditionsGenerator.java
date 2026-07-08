@@ -239,8 +239,8 @@ public class TypeConditionsGenerator {
                     + "' is not FK-derived (" + path.get(i)
                     + "); the validator must reject non-foreign-key reference-filter paths before emission");
             }
-            sel.add("\n        .join($L).onKey($T.$L)",
-                hopAliases.get(i - 1), cp.fk().keysClass(), cp.fk().constantName());
+            sel.add("\n        $L",
+                JoinPathEmitter.emitBridgingJoin(cp, hopAliases.get(i - 1), hopAliases.get(i)));
         }
         if (!(path.get(0) instanceof JoinStep.Hop firstHop
                 && firstHop.on() instanceof On.ColumnPairs firstPairs)) {

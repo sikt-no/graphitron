@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.HasSlots;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -88,6 +89,47 @@ public final class JoinPathEmitter {
             // table; LiftedHop carries no TableExpr axis.
             case JoinStep.LiftedHop lh -> CodeBlock.of("$T.$L",
                 lh.targetTable().constantsClass(), lh.targetTable().javaFieldName());
+        };
+    }
+
+    /**
+     * Emits the join-in of a bridging hop's origin alias with its ON clause — the single
+     * dispatch on {@link On.Keying} (R435). {@link On.Keying.ForeignKey} emits the legible
+     * {@code .join(prev).onKey(Keys.<FK>)}; {@link On.Keying.NameMatchedKey} has no {@code Keys}
+     * constant, so it emits the explicit column-equality conjunction over the pairs'
+     * {@code slots}: {@code .join(prev).on(prev.<sourceSide>.eq(hop.<targetSide>))...}.
+     *
+     * <p>All bridging-join emit sites route through this helper so a new {@link On.Keying} arm
+     * forces exactly one emit-side acknowledgment. Callers supply their own surrounding
+     * whitespace / line-break formatting.
+     *
+     * @param cp        the hop's column pairs
+     * @param prevAlias the previous node's alias (the hop's origin side, being joined in)
+     * @param hopAlias  the hop's own alias (already in scope in the enclosing FROM/JOIN chain)
+     */
+    public static CodeBlock emitBridgingJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
+        return switch (cp.keying()) {
+            case On.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
+                prevAlias, k.fk().keysClass(), k.fk().constantName());
+            case On.Keying.NameMatchedKey ignored -> {
+                if (cp.slotCount() == 0) {
+                    throw new IllegalStateException(
+                        "a name-matched-key hop with no slots cannot be emitted; the derivation "
+                        + "mints the pairs from the live catalog, so empty slots indicate a "
+                        + "classifier bug, not a missing catalog");
+                }
+                var on = CodeBlock.builder();
+                int i = 0;
+                for (var slot : cp.slots()) {
+                    if (i > 0) on.add(".and(");
+                    on.add("$L.$L.eq($L.$L)",
+                        prevAlias, slot.sourceSide().javaName(),
+                        hopAlias, slot.targetSide().javaName());
+                    if (i > 0) on.add(")");
+                    i++;
+                }
+                yield CodeBlock.of(".join($L).on($L)", prevAlias, on.build());
+            }
         };
     }
 

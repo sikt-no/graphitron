@@ -133,8 +133,8 @@ public final class FkTargetConditionEmitter {
             String prevAlias = hopAliases.get(i - 1);
             if (bridging instanceof JoinStep.Hop hop
                     && hop.on() instanceof On.ColumnPairs cp) {
-                sel.add("\n        .join($L).onKey($T.$L)",
-                    prevAlias, cp.fk().keysClass(), cp.fk().constantName());
+                sel.add("\n        $L",
+                    JoinPathEmitter.emitBridgingJoin(cp, prevAlias, hopAliases.get(i)));
             } else {
                 throw new IllegalStateException(
                     "FK-target @nodeId override join hop " + i + " on '" + fk.methodName()

@@ -515,7 +515,7 @@ public final class TestFixtures {
             slots.add(new JoinSlot.FkSlot(sourceColumns.get(i), targetColumns.get(i)));
         }
         return new JoinStep.Hop(new TableExpr.Catalog(targetTable),
-            new On.ColumnPairs(fk, slots), originTable, whereFilter, alias);
+            new On.ColumnPairs(new On.Keying.ForeignKey(fk), slots), originTable, whereFilter, alias);
     }
 
     /** True when the step is a {@link JoinStep.Hop} joining on FK-derived column pairs. */
@@ -542,6 +542,19 @@ public final class TestFixtures {
     /** The FK-derived column pairs of a step; fails loudly when the step is not an FK hop. */
     public static On.ColumnPairs fkPairs(JoinStep step) {
         return (On.ColumnPairs) fkHop(step).on();
+    }
+
+    /**
+     * The {@link ForeignKeyRef} behind a {@link On.ColumnPairs}' keying; fails the test loudly
+     * when the pairs derive from the R435 name-matched key instead of a catalog FK. Assertion-side
+     * narrowing for the {@link On.Keying} seal.
+     */
+    public static ForeignKeyRef fkRef(On.ColumnPairs pairs) {
+        if (!(pairs.keying() instanceof On.Keying.ForeignKey k)) {
+            throw new AssertionError("expected FK-derived keying (On.Keying.ForeignKey); got "
+                + pairs.keying());
+        }
+        return k.fk();
     }
 
     /**

@@ -413,8 +413,8 @@ public final class SplitRowsMethodEmitter {
             switch (bridging) {
                 case JoinStep.Hop hop -> {
                     switch (hop.on()) {
-                        case On.ColumnPairs cp -> sel.add(".join($L).onKey($T.$L)\n",
-                            prevAlias, cp.fk().keysClass(), cp.fk().constantName());
+                        case On.ColumnPairs cp -> sel.add("$L\n",
+                            JoinPathEmitter.emitBridgingJoin(cp, prevAlias, aliases.get(i)));
                         case On.Predicate pred -> sel.add(".join($L).on($L)\n",
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
                         case On.Lateral ignored -> throw new IllegalStateException(

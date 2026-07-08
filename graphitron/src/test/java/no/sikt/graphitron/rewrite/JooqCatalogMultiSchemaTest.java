@@ -437,10 +437,10 @@ class JooqCatalogMultiSchemaTest {
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
         var resolved = ((BuildContext.FkJoinResolution.Resolved) result).hop();
         var pairs = (On.ColumnPairs) resolved.on();
-        assertThat(pairs.fk().sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
-        // Non-null fk is enforced by the On.ColumnPairs canonical constructor; existence of the
-        // Resolved variant proves the type-encoded guarantee here.
-        assertThat(pairs.fk()).isNotNull();
+        assertThat(TestFixtures.fkRef(pairs).sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
+        // Non-null fk is enforced by the On.Keying.ForeignKey canonical constructor; existence of
+        // the Resolved variant proves the type-encoded guarantee here.
+        assertThat(TestFixtures.fkRef(pairs)).isNotNull();
     }
 
     @Test

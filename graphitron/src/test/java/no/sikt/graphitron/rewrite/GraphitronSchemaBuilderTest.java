@@ -480,7 +480,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class);
                 var pcrf = (no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField) f;
                 assertThat(pcrf.targetTable().tableName()).isEqualToIgnoringCase("film");
-                assertThat(pcrf.pairs().fk().sqlName()).isEqualToIgnoringCase("content_film_id_fkey");
+                assertThat(TestFixtures.fkRef(pcrf.pairs()).sqlName()).isEqualToIgnoringCase("content_film_id_fkey");
                 assertThat(pcrf.aliasName()).isEqualTo("FilmContent_rating");
                 assertThat(pcrf.column().sqlName()).isEqualToIgnoringCase("rating");
             }),
@@ -1775,8 +1775,8 @@ class GraphitronSchemaBuilderTest {
             .isEqualToIgnoringCase("address");
         // The two parents resolve through their own FK constraints: the joinPath is genuinely
         // per-parent, not shared.
-        assertThat(TestFixtures.fkPairs(customerAddress.joinPath().get(0)).fk().sqlName())
-            .isNotEqualTo(TestFixtures.fkPairs(staffAddress.joinPath().get(0)).fk().sqlName());
+        assertThat(TestFixtures.fkRef(TestFixtures.fkPairs(customerAddress.joinPath().get(0))).sqlName())
+            .isNotEqualTo(TestFixtures.fkRef(TestFixtures.fkPairs(staffAddress.joinPath().get(0))).sqlName());
 
         // The multi-parent shape check admits the shared TableField (no "not yet supported" error).
         var errors = new GraphitronSchemaValidator().validate(schema);

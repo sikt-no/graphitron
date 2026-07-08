@@ -212,8 +212,8 @@ public final class InlineLookupTableFieldEmitter {
             switch (bridging) {
                 case JoinStep.Hop hop -> {
                     switch (hop.on()) {
-                        case On.ColumnPairs cp -> sel.add("\n        .join($L).onKey($T.$L)",
-                            prevAlias, cp.fk().keysClass(), cp.fk().constantName());
+                        case On.ColumnPairs cp -> sel.add("\n        $L",
+                            JoinPathEmitter.emitBridgingJoin(cp, prevAlias, aliases.get(i)));
                         case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
                             prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
                         case On.Lateral ignored -> throw new IllegalStateException(

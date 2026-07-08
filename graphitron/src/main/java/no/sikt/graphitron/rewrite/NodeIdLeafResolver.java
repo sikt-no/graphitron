@@ -519,7 +519,7 @@ final class NodeIdLeafResolver {
                 }
                 if (!found) {
                     return "@reference path on @nodeId leaf '" + leafName + "': hop " + (i + 1)
-                        + " ('" + current.fk().sqlName() + "') introduces a column translation —"
+                        + " (" + current.keying().describe() + ") introduces a column translation —"
                         + " its source-side columns " + sqlNames(currentSources)
                         + " are not a positional subset of the previous hop's target-side"
                         + " columns " + sqlNames(previousTargets) + " by SQL name."

@@ -16,6 +16,6 @@ import no.sikt.graphitron.javapoet.ClassName;
  *
  * <p>Built by {@link no.sikt.graphitron.rewrite.JooqCatalog#findForeignKeyRef(org.jooq.ForeignKey)}
  * from a resolved jOOQ {@link org.jooq.ForeignKey} by reference identity; emitters consume it
- * through {@link On.ColumnPairs#fk()}.
+ * through {@link On.Keying.ForeignKey#fk()}.
  */
 public record ForeignKeyRef(String sqlName, ClassName keysClass, String constantName) {}

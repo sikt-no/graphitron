@@ -236,7 +236,7 @@ public final class CatalogBuilder {
                 new FieldClassification.ParticipantCrossTable(
                     f.targetTable() != null ? f.targetTable().tableName() : null,
                     f.column().sqlName(),
-                    f.hop() != null ? f.pairs().fk().sqlName() : null,
+                    f.hop() != null ? fkSqlNameOrNull(f.pairs()) : null,
                     f.aliasName());
             case ChildField.CompositeColumnField f ->
                 new FieldClassification.CompositeColumn(parentTableName(f, schema), columnSqlNames(f.columns()));
@@ -572,7 +572,7 @@ public final class CatalogBuilder {
                         // TableExpr.Catalog guards table); LiftedHop's below is not.
                         new FieldClassification.FkStep(
                             hop.targetTable().tableName(),
-                            cp.fk().sqlName());
+                            fkSqlNameOrNull(cp));
                     case no.sikt.graphitron.rewrite.model.On.Predicate ignored ->
                         new FieldClassification.FkStep(null, null);
                     // R435: a lateral routine node carries no FK; the step still lands on the
@@ -585,6 +585,18 @@ public final class CatalogBuilder {
             }
         }
         return List.copyOf(out);
+    }
+
+    /**
+     * The LSP-facing projection surfaces an FK constraint name where the pairs derive from a
+     * catalog FK, and {@code null} for the R435 name-matched-key derivation (which has no
+     * constraint of its own) — the same shape as a condition or lateral step.
+     */
+    private static String fkSqlNameOrNull(no.sikt.graphitron.rewrite.model.On.ColumnPairs cp) {
+        return switch (cp.keying()) {
+            case no.sikt.graphitron.rewrite.model.On.Keying.ForeignKey k -> k.fk().sqlName();
+            case no.sikt.graphitron.rewrite.model.On.Keying.NameMatchedKey ignored -> null;
+        };
     }
 
     private static List<String> columnSqlNames(List<ColumnRef> columns) {

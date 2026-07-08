@@ -85,7 +85,7 @@ class QualifiedSourceReferencePipelineTest {
 
     private static void assertOrientedSignalToWidget(JoinStep.Hop hop) {
         var pairs = (On.ColumnPairs) hop.on();
-        assertThat(pairs.fk().sqlName()).isEqualToIgnoringCase("signal_widget_id_fkey");
+        assertThat(TestFixtures.fkRef(pairs).sqlName()).isEqualToIgnoringCase("signal_widget_id_fkey");
         assertThat(hop.originTable().tableClass()).isEqualTo(SIGNAL);
         assertThat(hop.targetTable().tableClass()).isEqualTo(WIDGET);
         assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");

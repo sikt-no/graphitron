@@ -1447,7 +1447,7 @@ class BuildContext {
         String alias = fieldName + "_" + stepIndex;
         return new FkJoinResolution.Resolved(new JoinStep.Hop(
             new TableExpr.Catalog(targetTable),
-            new On.ColumnPairs(fkResolved.ref(), slots),
+            new On.ColumnPairs(new On.Keying.ForeignKey(fkResolved.ref()), slots),
             originTable, whereFilter, alias));
     }
 

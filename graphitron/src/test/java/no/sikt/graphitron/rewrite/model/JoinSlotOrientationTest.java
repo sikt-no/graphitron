@@ -66,7 +66,9 @@ class JoinSlotOrientationTest {
             new JoinSlot.FkSlot(PROJECT_ID, PROJECT_ID),
             new JoinSlot.FkSlot(ORG_CODE, ORG_CODE));
         var hop = new JoinStep.Hop(new TableExpr.Catalog(childTable),
-            new On.ColumnPairs(TestFixtures.foreignKeyRef("project_note_project_fkey"), slots),
+            new On.ColumnPairs(
+                new On.Keying.ForeignKey(TestFixtures.foreignKeyRef("project_note_project_fkey")),
+                slots),
             parentTable, null, "notes_0");
         var fkJoin = (On.ColumnPairs) hop.on();
 
@@ -124,7 +126,7 @@ class JoinSlotOrientationTest {
         assertThat(asCapability.slotCount()).isEqualTo(1);
 
         HasSlots pairs = new On.ColumnPairs(
-            TestFixtures.foreignKeyRef("project_note_project_fkey"),
+            new On.Keying.ForeignKey(TestFixtures.foreignKeyRef("project_note_project_fkey")),
             List.of(new JoinSlot.FkSlot(PROJECT_ID, PROJECT_ID)));
         assertThat(pairs.slotCount()).isEqualTo(1);
     }

@@ -15,37 +15,83 @@ import java.util.List;
  * {@code Optional<On>}, which would reintroduce a null-in-exactly-one-case state and forfeit the
  * every-hop-joins certainty the non-null component buys.
  *
- * <p>A new way to join is a new arm here (e.g. {@link Lateral} for routine targets, or a
- * PK/UK name-match derivation), not a new step type. When the name-match derivation lands, the
- * FK-vs-derived question becomes its own small seal on {@link ColumnPairs} and
- * {@link ColumnPairs#fk()} becomes one case of it.
+ * <p>A new way to join is a new arm here (e.g. {@link Lateral} for routine targets), not a new
+ * step type. The FK-vs-derived question is its own small seal on {@link ColumnPairs}
+ * ({@link Keying}, the seal R438 pre-planned): the catalog FK is one derivation of the pairs,
+ * the R435 name-matched key (hops adjacent to a routine node, whose result table carries no FK
+ * metadata) the other.
  */
 public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
 
     /**
-     * The step joins on paired source / target columns derived from a foreign key.
+     * How a {@link ColumnPairs}' pairing was derived. Provenance with one emit consequence: the
+     * ON clause shape differs per arm ({@code .onKey(Keys.<FK>)} for legible generated code
+     * where a catalog FK exists, the explicit column-equality conjunction over {@code slots}
+     * where none does — see {@code JoinPathEmitter.emitBridgingJoin}). Correlation and
+     * split-rows readers stay on {@code slots} and never dispatch here.
+     */
+    sealed interface Keying permits Keying.ForeignKey, Keying.NameMatchedKey {
+
+        /** Human-readable derivation label for diagnostics; never emitted into generated code. */
+        String describe();
+
+        /**
+         * The pairs were derived from a resolved catalog foreign key. {@code fk} carries what
+         * the {@code .onKey(Keys.<FK>)} emit needs ({@code keysClass()} / {@code constantName()});
+         * classification and diagnostics additionally read {@code fk.sqlName()}. Non-null by
+         * the type system: catalog misses route through {@code BuildContext.synthesizeFkJoin}'s
+         * {@code FkJoinResolution} sub-taxonomy rather than producing a pair list with no
+         * provenance.
+         */
+        record ForeignKey(ForeignKeyRef fk) implements Keying {
+            public ForeignKey {
+                if (fk == null) {
+                    throw new NullPointerException(
+                        "On.Keying.ForeignKey.fk must not be null; resolution failures route "
+                        + "through BuildContext.synthesizeFkJoin's FkJoinResolution sub-taxonomy.");
+                }
+            }
+            @Override public String describe() { return "FK '" + fk.sqlName() + "'"; }
+        }
+
+        /**
+         * The pairs were derived by name-matching the target's unique key (PK by default)
+         * against the previous node's columns — R333's keying rule for FK-less nodes, minted by
+         * R435 for hops adjacent to a routine node. The build check (the previous node exposes
+         * every key column by SQL name) ran at derivation time; {@code targetKeyName} is the
+         * matched constraint's SQL name, retained for diagnostics only. The emitted ON is the
+         * explicit column-equality conjunction over {@code slots} — there is no {@code Keys}
+         * constant to reference.
+         */
+        record NameMatchedKey(String targetKeyName) implements Keying {
+            public NameMatchedKey {
+                if (targetKeyName == null) {
+                    throw new NullPointerException(
+                        "On.Keying.NameMatchedKey.targetKeyName must not be null");
+                }
+            }
+            @Override public String describe() { return "name-matched key '" + targetKeyName + "'"; }
+        }
+    }
+
+    /**
+     * The step joins on paired source / target columns.
      *
-     * <p>{@code fk} is the resolved {@link ForeignKeyRef} the pairs were derived from — required
-     * provenance, not redundancy: emitters emit the join as {@code .onKey(Keys.<FK>)} via
-     * {@code fk.keysClass()} / {@code fk.constantName()} (legible generated code, six emit
-     * sites), while correlation and split-rows readers read {@code slots} for the key tuples.
-     * Classification and diagnostics additionally read {@code fk.sqlName()}. Non-null by the
-     * type system: catalog misses route through
-     * {@code BuildContext.synthesizeFkJoin}'s {@code FkJoinResolution} sub-taxonomy rather than
-     * producing a pair list with no provenance.
+     * <p>{@code keying} is the pairing's derivation ({@link Keying}): a resolved catalog FK or
+     * the R435 name-matched key. Emitters dispatch on it for the ON clause shape; slot readers
+     * do not.
      *
      * <p>{@code slots} carries the pairing as {@link JoinSlot.FkSlot}s oriented at synthesis
      * time: each slot's {@link JoinSlot#sourceSide()} is the column on the hop's origin table,
-     * {@link JoinSlot#targetSide()} the column on the hop's target. The FK-direction question is
-     * answered once in {@code BuildContext.synthesizeFkJoin} and baked into the pair, so readers
-     * are direction-blind. The list is empty when the jOOQ catalog is unavailable (unit tests).
+     * {@link JoinSlot#targetSide()} the column on the hop's target. The direction question is
+     * answered once at synthesis time (for FK pairs in {@code BuildContext.synthesizeFkJoin})
+     * and baked into the pair, so readers are direction-blind. The list is empty when the jOOQ
+     * catalog is unavailable (unit tests).
      */
-    record ColumnPairs(ForeignKeyRef fk, List<JoinSlot.FkSlot> slots) implements On, HasSlots {
+    record ColumnPairs(Keying keying, List<JoinSlot.FkSlot> slots) implements On, HasSlots {
         public ColumnPairs {
-            if (fk == null) {
-                throw new NullPointerException(
-                    "On.ColumnPairs.fk must not be null; resolution failures route through "
-                    + "BuildContext.synthesizeFkJoin's FkJoinResolution sub-taxonomy.");
+            if (keying == null) {
+                throw new NullPointerException("On.ColumnPairs.keying must not be null");
             }
             slots = List.copyOf(slots);
         }
