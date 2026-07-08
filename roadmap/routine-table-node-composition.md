@@ -266,6 +266,14 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
   filters/argument-ordering/pagination, non-Connection; a lateral-headed split carries a
   non-empty key). Force-projection of the bound columns into the parent SELECT rides the
   existing blanket `BatchKeyField.sourceKey()` walk unchanged. Shipped.
+* Docs: `docs/manual/reference/directives/routine.adoc` rewritten for the full R435 surface
+  (repeatable + `columnMapping` signature, correlated child calls, the chain rule with all
+  three routine-bearing shapes, name-matched keying out of a routine result, the inline vs
+  `@splitQuery` fetch forms with the uncorrelated conflict, updated constraints);
+  `reference.adoc` gained the repeated-application composition section and carries the order
+  contract (repeatable-directive reorder is out of contract for SDL tooling), with the two
+  pages cross-linked. A recipe-shaped how-to walk is a possible follow-up, not gating.
+  Shipped.
 
 Pending (the remaining chain-build + emit work):
 
@@ -280,8 +288,6 @@ Pending (the remaining chain-build + emit work):
   codegen exposes no `Parameter` constants to reference. Shares the enum/ID-as-String coercion
   residue with the shipped root slice; lift the parameter `DataType` onto
   `RoutineRef.ArgBinding` at the parse boundary when either site needs it.
-* Docs: `routine.adoc` rewrite and the `@reference` page's composition section (see the draft
-  below); the order contract documented where repeatable directives are introduced.
 
 ## Tests
 
@@ -333,7 +339,8 @@ Pipeline tier is primary; no code-string assertions at any tier.
 
 ## User documentation (first-client check)
 
-Draft for the directive reference / how-to; moves to its real home when the feature ships.
+The draft below moved to its real home (`routine.adoc` / `reference.adoc`, see the shipped
+docs bullet in Implementation); kept verbatim as the first-client check record.
 
 > *Backing a field with a database function.* A table-valued function in your database appears in
 > the jOOQ catalog like any table. To back a field with one, add `@routine(name: "...")`: the

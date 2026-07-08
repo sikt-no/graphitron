@@ -4,13 +4,15 @@
 
 Declares an explicit foreign-key path between the field's parent table and the field's target table. The generator threads the path through jOOQ's catalog and emits a JOIN whenever the field is selected.
 
+The directive is repeatable on output field definitions: repeated applications compose one table chain in the order they are written, and they compose with xref:routine.adoc[`@routine`] so a database function can sit anywhere in the chain.
+
 == SDL signature
 
 [source,graphql]
 ----
 directive @reference(
   path: [ReferenceElement!]!
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+) repeatable on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 input ReferenceElement {
   table: String,
@@ -70,7 +72,7 @@ storeAddress: Address @reference(path: [
 ])
 ----
 
-The path is `customer.store_id → store.store_id → store.address_id → address.address_id` — two FKs and three tables touched, but still a single SQL statement with the same projection-narrowing.
+The path is `customer.store_id → store.store_id → store.address_id → address.address_id`: two FKs and three tables touched, but still a single SQL statement with the same projection-narrowing.
 
 When exactly one foreign key exists between two tables, `@reference` is unnecessary and the generator picks the path automatically:
 
@@ -83,9 +85,28 @@ type Store @table(name: "store") {
 
 There is exactly one FK between `customer` and `store` (`customer.store_id`), so the join is implicit. Multiple-FK cases must declare the path explicitly: the generator does not guess.
 
+== Composing chains with repeated applications
+
+On an output field definition, `@reference` may be applied more than once. The applications' path elements concatenate in the order they are written, over one running source, so the composed chain is exactly the longer path you could have written in a single application:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    castActors: [Actor!]
+        @reference(path: [{key: "film_actor_film_id_fkey"}])
+        @reference(path: [{key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(primaryKey: true)
+}
+----
+
+On its own this form is a stylistic choice. It exists for composition with xref:routine.adoc[`@routine`]: the directives on a field, read left to right, describe the path your data travels, starting at the enclosing type's table and ending at the field's type, and a routine node can sit before, between, or after the `@reference` hops. See the `@routine` page for the chain rule and the routine-bearing shapes.
+
+*The order is load-bearing.* Directive application order is semantically significant here, which the GraphQL spec sanctions and graphql-java preserves. Tooling that rewrites SDL and reorders repeatable directive applications (schema printers, federation composition pipelines) is out of contract: the terminus and keying checks catch most reorders, but two orderings can both terminate correctly and mean different join graphs, so an order-preserving round-trip is a stated requirement on any SDL tooling in your pipeline.
+
 == Constraints
 
-* `path` must be non-empty. A `@reference` with `path: []` fails graphql-java parsing.
+* In a chain of several applications, every application must carry at least one path element; an element-less application is rejected with `must carry at least one path element` (element-less FK inference resolves between the field's endpoints, and an application inside a chain has no endpoints of its own).
+* Repetition is legal only on output field definitions. Repeated `@reference` on an argument or an input field is rejected, pointing at the field-level composition surface.
 * When more than one foreign key exists between the source and destination tables for a given hop, `key` is required. The build fails with an ambiguous-reference error otherwise.
 * When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
 * A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
@@ -96,5 +117,6 @@ There is exactly one FK between `customer` and `store` (`customer.store_id`), so
 * xref:../../how-to/join-with-references.adoc[How-to: Join with references] for recipe-shaped variants.
 * xref:discriminate.adoc[`@discriminate`] / xref:discriminator.adoc[`@discriminator`] for the union/interface variant. See xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] for the supported shapes.
 * xref:table.adoc[`@table`] establishes the table binding both endpoints rely on.
+* xref:routine.adoc[`@routine`] contributes a database-function node to the same chain; the chain rule and the routine-bearing shapes live there.
 
 xref:../index.adoc[← Reference index]
