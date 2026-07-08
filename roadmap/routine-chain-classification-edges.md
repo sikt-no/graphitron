@@ -1,7 +1,7 @@
 ---
 id: R449
 title: "Routine chains: classification edges from the R435 second-pass review"
-status: Spec
+status: Ready
 bucket: validation
 theme: service
 depends-on: []

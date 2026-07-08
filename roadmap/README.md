@@ -36,7 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R449` | Routine chains: classification edges from the R435 second-pass review | Spec | 2026-07-08 | [plan](routine-chain-classification-edges.md) |
+| `R449` | Routine chains: classification edges from the R435 second-pass review | Ready | 2026-07-08 | [plan](routine-chain-classification-edges.md) |
 | `R450` | Split-path hop-0 condition filter binds the same alias as source and target | In Review | 2026-07-08 | [plan](split-hop-zero-filter-alias.md) |
 
 ---
@@ -206,7 +206,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R449` [**Routine chains: classification edges from the R435 second-pass review**](routine-chain-classification-edges.md) — Spec, validation
+- `R449` [**Routine chains: classification edges from the R435 second-pass review**](routine-chain-classification-edges.md) — Ready, validation
 - `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
 - `R447` [**Routine chains: remaining fetch-form breadth**](routine-chain-fetch-form-breadth.md) — Backlog, feature
 
