@@ -75,36 +75,33 @@ class ServiceCatalog {
     }
 
     Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, TableBackedType sourceType) {
-        return resolveColumnForReference(columnName, path, sourceType.table().tableName());
-    }
-
-    Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, String startSqlTableName) {
-        String terminal = terminalTableSqlName(path, startSqlTableName);
-        if (terminal == null) return Optional.empty();
-        return resolveColumnInTable(columnName, terminal);
+        return resolveColumnForReference(columnName, path, sourceType.table());
     }
 
     /**
-     * Walks the FK join path from {@code startSqlTableName} and returns the terminal table SQL
-     * name. Returns {@code null} when any path step is not FK-derived (i.e. the path
-     * contains a condition-only step whose target table is unknown at build time).
+     * Resolves a column at the terminal of an FK {@code @reference} path. The terminal is carried
+     * as the identity-resolved {@link TableRef} the path's hops already pinned (R444), never
+     * collapsed to a bare SQL name and re-resolved through the catalog — a bare-name lookup is
+     * ambiguous when the terminal table name collides across generated schemas.
      */
-    String terminalTableSqlName(List<JoinStep> path, String startSqlTableName) {
-        String current = startSqlTableName;
+    Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, TableRef start) {
+        return terminalTableForReference(path, start).flatMap(t -> t.column(columnName));
+    }
+
+    /**
+     * Walks the FK join path from {@code start} and returns the terminal table as the
+     * identity-resolved {@link TableRef} the last hop already carries; an empty path yields
+     * {@code start}. Returns empty when any path step is not FK-derived (i.e. the path contains
+     * a condition-only step whose target table is unknown at build time).
+     */
+    Optional<TableRef> terminalTableForReference(List<JoinStep> path, TableRef start) {
+        TableRef current = start;
         for (var step : path) {
             if (!(step instanceof JoinStep.Hop hop
-                    && hop.on() instanceof On.ColumnPairs)) return null;
-            current = hop.targetTable().tableName();
+                    && hop.on() instanceof On.ColumnPairs)) return Optional.empty();
+            current = hop.targetTable();
         }
-        return current;
-    }
-
-    /**
-     * Walks the FK join path to compute the terminal table SQL name. Returns {@code null} when any
-     * path step is not FK-derived (i.e. the path contains a condition-only step).
-     */
-    String terminalTableSqlNameForReference(List<JoinStep> path, TableBackedType sourceType) {
-        return terminalTableSqlName(path, sourceType.table().tableName());
+        return Optional.of(current);
     }
 
     Optional<ColumnRef> resolveColumnInTable(String columnName, String tableSqlName) {

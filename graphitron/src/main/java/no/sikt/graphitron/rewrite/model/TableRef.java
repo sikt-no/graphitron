@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A jOOQ table resolved from a {@code @table} directive value.
@@ -60,6 +61,24 @@ public record TableRef(
 ) {
     public boolean hasPrimaryKey() {
         return !primaryKeyColumns.isEmpty();
+    }
+
+    /**
+     * Resolves a column on this table by either its Java field name or its SQL name, matching
+     * {@code JooqCatalog.findColumn}'s order: Java name first (case-insensitive, across all
+     * columns), then SQL name (case-insensitive). Directive values in GraphQL schemas may be
+     * either convention; trying Java name first handles custom jOOQ naming strategies where
+     * {@code javaName} is not a simple {@code toUpperCase(sqlName)}.
+     *
+     * <p>This is the model-side matcher home (R444): a consumer that already holds an
+     * identity-resolved ref resolves columns here instead of collapsing to a bare SQL name and
+     * re-resolving through the catalog, which is ambiguous when the table name collides across
+     * schemas. Returns empty on an unknown column, and always on refs constructed outside the
+     * catalog flow (hand-built test fixtures leave {@code allColumns} empty).
+     */
+    public Optional<ColumnRef> column(String columnName) {
+        return allColumns.stream().filter(c -> columnName.equalsIgnoreCase(c.javaName())).findFirst()
+            .or(() -> allColumns.stream().filter(c -> columnName.equalsIgnoreCase(c.sqlName())).findFirst());
     }
 
     /**

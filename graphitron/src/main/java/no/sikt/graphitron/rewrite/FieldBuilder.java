@@ -1370,7 +1370,7 @@ class FieldBuilder {
                     Rejection.structural(referenceFilterConditionJoinRejection(name)));
             }
             String refColumnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
-            var refCol = svc.resolveColumnForReference(refColumnName, refPath.elements(), rt.tableName());
+            var refCol = svc.resolveColumnForReference(refColumnName, refPath.elements(), rt);
             if (refCol.isEmpty()) {
                 return new ArgumentRef.ScalarArg.UnboundArg(
                     name, typeName, nonNull, list, refColumnName,
@@ -6104,10 +6104,9 @@ class FieldBuilder {
             }
             Optional<ColumnRef> column = svc.resolveColumnForReference(columnName, refPath.elements(), tableType);
             if (column.isEmpty()) {
-                String terminalTable = svc.terminalTableSqlNameForReference(refPath.elements(), tableType);
-                List<String> candidates = terminalTable != null
-                    ? ctx.catalog.columnJavaNamesOf(terminalTable)
-                    : List.of();
+                List<String> candidates = svc.terminalTableForReference(refPath.elements(), tableType.table())
+                    .map(t -> t.allColumns().stream().map(ColumnRef::javaName).toList())
+                    .orElse(List.of());
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownColumn(
                     "column '" + columnName + "' could not be resolved in the jOOQ table",
                     columnName, candidates));

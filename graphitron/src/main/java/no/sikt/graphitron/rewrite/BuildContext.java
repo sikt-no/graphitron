@@ -2203,7 +2203,7 @@ class BuildContext {
             }
             var path = parsePath(field, name, resolvedTable.tableName(), null);
             if (path.hasError()) return new InputFieldResolution.Unresolved(name, null, path.errorMessage());
-            return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
+            return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable)
                 .<InputFieldResolution>map(col -> {
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
                     // Plain (non-@nodeId) @reference: the predicate fires against the resolved
