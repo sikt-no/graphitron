@@ -18,10 +18,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R442` | Concrete condition-method table param must match by jOOQ class identity, not bare-vs-qualified name | Ready | 2026-07-08 | [plan](condition-param-table-class-identity.md) |
-| `R440` | FK-join synthesis must resolve the endpoint (and FK) by jOOQ class identity, not bare name | Ready | 2026-07-08 | [plan](fk-join-endpoint-class-identity.md) |
 | `R429` | Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity | Ready | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](connection-transaction-lifecycle.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R441` | Typed-accessor match must compare jOOQ table identity, not bare @table name | Ready | 2026-07-08 | [plan](typed-accessor-schema-qualified-table-identity.md) |
+| `R440` | FK-join synthesis must resolve the endpoint (and FK) by jOOQ class identity, not bare name | In Progress | 2026-07-08 | [plan](fk-join-endpoint-class-identity.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
@@ -177,7 +177,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R422` [**@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo**](reference-terminal-verdict-return-type-identity.md) — Backlog, bug
-- `R440` [**FK-join synthesis must resolve the endpoint (and FK) by jOOQ class identity, not bare name**](fk-join-endpoint-class-identity.md) — Ready, bug
+- `R440` [**FK-join synthesis must resolve the endpoint (and FK) by jOOQ class identity, not bare name**](fk-join-endpoint-class-identity.md) — In Progress, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
