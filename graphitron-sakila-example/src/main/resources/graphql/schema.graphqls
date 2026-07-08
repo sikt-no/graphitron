@@ -66,6 +66,16 @@ type Query {
     # R435 execution fixture: plain root table read of actors, host for the correlated
     # child-positioned @routine Actor.films (films_for_actor).
     allActors: [Actor!]!
+    # R435 execution fixture: the root routine-then-hops chain. films_for_actor supplies the
+    # FROM source; the @reference hop lands the terminus on the film catalog table, keyed by
+    # the name-matched target PK (films_for_actor exposes film_id; no FK exists on a routine
+    # result). Projects real film-table columns, proving the hop out of the routine.
+    recentFilmsForActor(actorId: Int!, minLength: Int!): [Film!]!
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: actorId, pMinLength: minLength"
+        )
+        @reference(path: [{table: "film"}])
     # Relay Global Object Identification entry point — dispatches by typeId prefix
     # (extracted from the opaque base64 id) to the matching NodeType's table.
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".

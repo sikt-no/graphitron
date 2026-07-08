@@ -1247,26 +1247,8 @@ class BuildContext {
 
         var resolvedElements = new ArrayList<JoinStep>();
         var errors = new ArrayList<String>();
-        String currentSource = startSqlTableName;
-        int stepIndex = 0;
-
-        int totalElements = (int) elements.stream().filter(v -> v instanceof Map<?, ?>).count();
-        for (var v : elements) {
-            if (v instanceof Map<?, ?>) {
-                boolean isTerminal = (stepIndex == totalElements - 1);
-                parsePathElement(asMap(v), currentSource, fieldName, stepIndex,
-                    resolvedElements, errors, isList, isTerminal, targetSqlTableName);
-                stepIndex++;
-                if (!resolvedElements.isEmpty()) {
-                    var last = resolvedElements.getLast();
-                    // After R232 every hop carries a resolved targetTable, so advance
-                    // currentSource uniformly through HasTargetTable. LiftedHop is never
-                    // produced by @reference path parsing (single-hop terminal only).
-                    currentSource = last instanceof JoinStep.HasTargetTable ht
-                        ? ht.targetTable().tableName() : null;
-                }
-            }
-        }
+        resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
+            resolvedElements, errors);
 
         if (!errors.isEmpty()) {
             return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
@@ -1312,6 +1294,79 @@ class BuildContext {
         // TableInterfaceType) consume the verdict and reject on Mismatch. R381's LSP layer reads the
         // same projection. This keeps the predicate single-sourced and scoped to where it applies.
         var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName, startSqlTableName, targetSqlTableName, returnTableRef);
+        return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
+    }
+
+    /**
+     * The element-walk core shared by {@link #parsePath} and {@link #parseChainHops}: resolves
+     * each map-shaped path element through {@link #parsePathElement}, advancing the current
+     * source table through the resolved hop's {@link JoinStep.HasTargetTable#targetTable()}
+     * (after R232 every hop carries one; LiftedHop is never produced by {@code @reference} path
+     * parsing). Steps are aliased {@code fieldName + "_" + stepIndex} with {@code stepIndex}
+     * running across the whole element list — for a chain, across all applications.
+     */
+    private void resolvePathElements(List<?> elements, String fieldName, String startSqlTableName,
+            String targetSqlTableName, boolean isList,
+            List<JoinStep> resolvedElements, List<String> errors) {
+        String currentSource = startSqlTableName;
+        int stepIndex = 0;
+        int totalElements = (int) elements.stream().filter(v -> v instanceof Map<?, ?>).count();
+        for (var v : elements) {
+            if (v instanceof Map<?, ?>) {
+                boolean isTerminal = (stepIndex == totalElements - 1);
+                parsePathElement(asMap(v), currentSource, fieldName, stepIndex,
+                    resolvedElements, errors, isList, isTerminal, targetSqlTableName);
+                stepIndex++;
+                if (!resolvedElements.isEmpty()) {
+                    var last = resolvedElements.getLast();
+                    currentSource = last instanceof JoinStep.HasTargetTable ht
+                        ? ht.targetTable().tableName() : null;
+                }
+            }
+        }
+    }
+
+    /**
+     * Parses the ordered {@code @reference} applications composing a routine chain's hops (R435)
+     * into a single resolved hop list. The applications' path elements concatenate in authored
+     * order and walk one running source: {@code startSqlTableName} is the routine's result table
+     * (the chain's start node), so the first element's keying rides the FK-less derivation
+     * ({@link #synthesizeNameMatchedJoin}, gated inside {@link #parsePathElement} on the catalog's
+     * table-valued-function fact) while subsequent elements resolve through the ordinary FK /
+     * condition machinery. The terminal-target verdict is computed against
+     * {@code returnTableRef} exactly as in {@link #parsePath}; the caller converts
+     * {@link TerminalTargetVerdict.Mismatch} into the chain's terminus rejection.
+     *
+     * <p>An application with no path elements is an error: element-less inference has no FK to
+     * find out of a routine result, and a chain author states each hop explicitly.
+     */
+    ParsedPath parseChainHops(List<graphql.schema.GraphQLAppliedDirective> refApplications,
+            String fieldName, String startSqlTableName, String targetSqlTableName,
+            TableRef returnTableRef, boolean isList) {
+        var elements = new ArrayList<Object>();
+        for (var app : refApplications) {
+            var pathArg = app.getArgument(ARG_PATH);
+            Object pathValue = pathArg != null ? pathArg.getValue() : null;
+            List<?> appElements = pathValue instanceof List<?> l ? l
+                : pathValue != null ? List.of(pathValue) : List.of();
+            if (appElements.stream().noneMatch(v -> v instanceof Map<?, ?>)) {
+                return new ParsedPath(List.of(),
+                    "an @reference application composing a routine chain must carry at least one "
+                    + "path element — hops out of a routine result cannot be inferred",
+                    new TerminalTargetVerdict.NotApplicable());
+            }
+            elements.addAll(appElements);
+        }
+        var resolvedElements = new ArrayList<JoinStep>();
+        var errors = new ArrayList<String>();
+        resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
+            resolvedElements, errors);
+        if (!errors.isEmpty()) {
+            return new ParsedPath(List.of(), String.join("; ", errors),
+                new TerminalTargetVerdict.NotApplicable());
+        }
+        var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName,
+            startSqlTableName, targetSqlTableName, returnTableRef);
         return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
     }
 
@@ -1496,6 +1551,72 @@ class BuildContext {
     }
 
     /**
+     * Builds the R435 name-matched-key hop out of an FK-less node (a routine result table):
+     * R333's keying rule for nodes without FK metadata. The target's primary key columns are
+     * matched by SQL name (case-insensitive) against the previous node's columns — the
+     * result-columns-expose-key-columns-by-name build check — and each match becomes a
+     * {@link JoinSlot.FkSlot} (source side on the previous node, target side on the target's
+     * key), keyed as {@link On.Keying.NameMatchedKey}. Errors accumulate in {@code errors}
+     * exactly like the sibling {@code parsePathElement} branches:
+     *
+     * <ul>
+     *   <li>target or source unresolved — the ordinary unknown-table diagnostics;</li>
+     *   <li>target has no primary key — nothing to name-match; the fix is a
+     *       {@code condition:} element;</li>
+     *   <li>a target key column absent by name from the previous node — candidate hint over the
+     *       previous node's columns, plus the two fixes (expose the column from the routine, or
+     *       join on a {@code condition:}).</li>
+     * </ul>
+     *
+     * <p>Matching a non-PK unique key is a possible extension ("name-matched target UK, PK
+     * default"); day one is PK-only, with {@code condition:} as the escape hatch.
+     */
+    private void synthesizeNameMatchedJoin(String targetTableName, String currentSourceSqlName,
+            String fieldName, int stepIndex, JoinConditionRef whereFilter,
+            List<JoinStep> out, List<String> errors) {
+        var targetResolution = catalog.findTable(targetTableName);
+        if (!(targetResolution instanceof JooqCatalog.TableResolution.Resolved targetResolved)) {
+            errors.add(unknownTableRejection(targetResolution, targetTableName).message());
+            return;
+        }
+        var sourceResolution = catalog.findTable(currentSourceSqlName);
+        if (!(sourceResolution instanceof JooqCatalog.TableResolution.Resolved sourceResolved)) {
+            errors.add(unknownTableRejection(sourceResolution, currentSourceSqlName).message());
+            return;
+        }
+        TableRef targetTable = targetResolved.entry().toTableRef(targetTableName);
+        TableRef sourceTable = sourceResolved.entry().toTableRef(currentSourceSqlName);
+        var targetPk = targetResolved.entry().table().getPrimaryKey();
+        if (targetPk == null || targetTable.primaryKeyColumns().isEmpty()) {
+            errors.add("cannot key the hop from '" + currentSourceSqlName + "' (a routine result, "
+                + "which carries no FK metadata) to '" + targetTableName + "' — the target has no "
+                + "primary key to name-match; join on an explicit predicate via a 'condition:' element");
+            return;
+        }
+        var slots = new ArrayList<JoinSlot.FkSlot>(targetTable.primaryKeyColumns().size());
+        for (ColumnRef keyCol : targetTable.primaryKeyColumns()) {
+            var sourceCol = sourceTable.allColumns().stream()
+                .filter(c -> c.sqlName().equalsIgnoreCase(keyCol.sqlName()))
+                .findFirst();
+            if (sourceCol.isEmpty()) {
+                errors.add("cannot key the hop from '" + currentSourceSqlName + "' to '"
+                    + targetTableName + "' by name-match — the target's primary key column '"
+                    + keyCol.sqlName() + "' is not exposed by name on '" + currentSourceSqlName + "'"
+                    + candidateHint(keyCol.sqlName(),
+                        sourceTable.allColumns().stream().map(ColumnRef::sqlName).toList())
+                    + "; expose the key column from the routine, or join on an explicit predicate "
+                    + "via a 'condition:' element");
+                return;
+            }
+            slots.add(new JoinSlot.FkSlot(sourceCol.get(), keyCol));
+        }
+        out.add(new JoinStep.Hop(
+            new TableExpr.Catalog(targetTable),
+            new On.ColumnPairs(new On.Keying.NameMatchedKey(targetPk.getName()), slots),
+            sourceTable, whereFilter, fieldName + "_" + stepIndex));
+    }
+
+    /**
      * Sub-taxonomy of outcomes for {@link #synthesizeFkJoin}. Lifts the prior
      * {@code Optional}-returning shape into a typed switch over the three catalog-failure shapes
      * an FK-join construction can hit. Diagnostic builders read the carried failure data
@@ -1668,11 +1789,6 @@ class BuildContext {
                 errors.add("path element with 'table' requires a known source table — use 'key' instead to name the FK explicitly");
                 return;
             }
-            var fks = catalog.findForeignKeysBetweenTables(currentSourceSqlName, tableName.get());
-            if (fks.size() != 1) {
-                errors.add(fkCountMessage(currentSourceSqlName, tableName.get(), fks, /*directiveAbsent=*/false));
-                return;
-            }
             JoinConditionRef whereFilter = null;
             if (hasCondition) {
                 Map<String, Object> condMap = asMap(conditionRaw);
@@ -1686,6 +1802,20 @@ class BuildContext {
                     return;
                 }
                 whereFilter = new JoinConditionRef(res.ref());
+            }
+            // R435: a hop out of a routine result keys by the name-matched target key — the
+            // result table carries no FK metadata, so the FK-count machinery below can never
+            // resolve it. The gate is a catalog fact of the current source node, not caller
+            // plumbing; ordinary tables never take this branch.
+            if (catalog.isTableValuedFunction(currentSourceSqlName)) {
+                synthesizeNameMatchedJoin(tableName.get(), currentSourceSqlName, fieldName,
+                    stepIndex, whereFilter, out, errors);
+                return;
+            }
+            var fks = catalog.findForeignKeysBetweenTables(currentSourceSqlName, tableName.get());
+            if (fks.size() != 1) {
+                errors.add(fkCountMessage(currentSourceSqlName, tableName.get(), fks, /*directiveAbsent=*/false));
+                return;
             }
             var tableStepResolution = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (tableStepResolution) {

@@ -119,7 +119,7 @@ class FixtureWarningsGateTest {
             .contains("every page of @asConnection would equal the input set");
 
         // Coordinate: attributed to the field's declaration in the example schema. The field
-        // sits near the top of schema.graphqls (line 247); fields added above it shift this line.
+        // sits near the top of schema.graphqls (line 257); fields added above it shift this line.
         // Update it if the field moves.
         assertThat(warning.location()).isNotNull();
         assertThat(warning.location().getSourceName())
@@ -127,7 +127,7 @@ class FixtureWarningsGateTest {
             .endsWith("schema.graphqls");
         assertThat(warning.location().getLine())
             .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
-            .isEqualTo(247);
+            .isEqualTo(257);
     }
 
     /**

@@ -229,6 +229,19 @@ public class JooqCatalog {
     }
 
     /**
+     * True when {@code sqlName} resolves to a table-valued function's result table
+     * ({@code TableOptions.function()}). The R435 keying gate: an FK-less routine result cannot
+     * key a hop through the FK machinery, so a {@code {table:}} path element whose current source
+     * is one derives the name-matched key instead (see
+     * {@code BuildContext.synthesizeNameMatchedJoin}). False for unresolved names — the caller's
+     * ordinary unknown-table handling fires there.
+     */
+    public boolean isTableValuedFunction(String sqlName) {
+        return findTable(sqlName) instanceof TableResolution.Resolved r
+            && r.entry().table().getOptions().type().isFunction();
+    }
+
+    /**
      * Enumerate every table in the catalog as a {@link TableEntry}, in schema-then-table order
      * (the generated {@code Tables} class field order within each schema). Used by the R362
      * {@code CatalogFacts} build pass, which walks every table once while the codegen loader is

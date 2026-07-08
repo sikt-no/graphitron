@@ -27,6 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * chain): {@code Actor.films} rides the inline correlated multiset whose FROM source is
  * {@code Routines.filmsForActor(parent.ACTOR_ID, DSL.val(minLength))}, asserting per-parent
  * correlation and the mixed column/argument binding.
+ *
+ * <p>R435's routine-then-hops chain is proven by {@code Query.recentFilmsForActor}: the routine
+ * result is the FROM source and the {@code @reference} hop lands the terminus on the {@code film}
+ * catalog table, joined on the name-matched target PK ({@code source.FILM_ID = film.FILM_ID} —
+ * a routine result carries no FK). Projecting film-table-only columns proves the hop keyed
+ * correctly.
  */
 @ExecutionTier
 class RoutineFieldExecutionTest {
@@ -127,6 +133,27 @@ class RoutineFieldExecutionTest {
         assertThat(filmIdsOf(actors, "PENELOPE")).containsExactly(1, 3); // film 2 (48) filtered out
         assertThat(filmIdsOf(actors, "NICK")).containsExactly(1, 4);
         assertThat(filmIdsOf(actors, "ED")).containsExactly(5);          // film 2 (48) filtered out
+    }
+
+    @Test
+    void rootRoutineThenHopsChainJoinsOutOfRoutineResult() {
+        // R435: the root routine-then-hops chain. The routine narrows to PENELOPE(1)'s films of
+        // length >= 50 (films 1 and 3); the name-matched hop out of the routine result lands on
+        // the film table, and `description` exists ONLY there (the routine result exposes just
+        // film_id and title) — a mis-keyed or missing hop cannot produce these values.
+        var data = execute("""
+            { recentFilmsForActor(actorId: 1, minLength: 50) {
+                filmId
+                title
+                description
+            } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("recentFilmsForActor");
+        assertThat(films).extracting(f -> f.get("filmId"))
+            .containsExactlyInAnyOrder(1, 3);
+        assertThat(films).extracting(f -> f.get("description"))
+            .containsExactlyInAnyOrder("A Epic Drama", "A Quirky Comedy");
     }
 
     @SuppressWarnings("unchecked")

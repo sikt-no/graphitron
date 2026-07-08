@@ -108,9 +108,23 @@ public final class JoinPathEmitter {
      * @param hopAlias  the hop's own alias (already in scope in the enclosing FROM/JOIN chain)
      */
     public static CodeBlock emitBridgingJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
+        return emitKeyedJoin(cp, /*joinedAlias=*/prevAlias, prevAlias, hopAlias);
+    }
+
+    /**
+     * Forward-order sibling of {@link #emitBridgingJoin} for chains emitted start-first (the
+     * root routine chain's fetcher, R435): the FROM clause holds the chain's start, so each hop
+     * joins its <em>own</em> alias in — {@code .join(hop)} — with the same keying-dispatched ON.
+     */
+    public static CodeBlock emitForwardJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
+        return emitKeyedJoin(cp, /*joinedAlias=*/hopAlias, prevAlias, hopAlias);
+    }
+
+    private static CodeBlock emitKeyedJoin(On.ColumnPairs cp, String joinedAlias,
+            String prevAlias, String hopAlias) {
         return switch (cp.keying()) {
             case On.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
-                prevAlias, k.fk().keysClass(), k.fk().constantName());
+                joinedAlias, k.fk().keysClass(), k.fk().constantName());
             case On.Keying.NameMatchedKey ignored -> {
                 if (cp.slotCount() == 0) {
                     throw new IllegalStateException(
@@ -128,7 +142,7 @@ public final class JoinPathEmitter {
                     if (i > 0) on.add(")");
                     i++;
                 }
-                yield CodeBlock.of(".join($L).on($L)", prevAlias, on.build());
+                yield CodeBlock.of(".join($L).on($L)", joinedAlias, on.build());
             }
         };
     }

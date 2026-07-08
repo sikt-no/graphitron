@@ -1485,14 +1485,16 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Generates a fetcher for a root-query {@code @routine} table field (R300). Mirrors
-     * {@link #buildQueryTableFetcher}, with one difference: the {@code FROM} source is the schema's
-     * global {@code Routines} convenience method (which returns the configured table-valued-function
-     * table) rather than the bare {@code Tables.X} singleton, with the routine's IN parameters bound
-     * from GraphQL field arguments. Selection narrowing via {@code Type.$fields(...)} is unchanged,
-     * so the {@code SELECT} projects only the routine-result columns the query selected.
+     * Generates a fetcher for a root-query {@code @routine} table chain (R300 single-node, R435
+     * routine-then-hops). Mirrors {@link #buildQueryTableFetcher}, with one difference: the
+     * {@code FROM} source is the schema's global {@code Routines} convenience method (which
+     * returns the configured table-valued-function table) rather than the bare {@code Tables.X}
+     * singleton, with the routine's IN parameters bound from GraphQL field arguments. Chain hops
+     * join forward out of the routine result — the first keyed by the name-matched target key
+     * (no {@code Keys} constant exists), later hops by {@code .onKey} / condition — and the
+     * {@code Type.$fields(...)} selection narrowing projects the <em>terminus</em> alias.
      *
-     * <p>Generated code (list variant):
+     * <p>Generated code (list variant, single-node):
      * <pre>{@code
      * public static Result<Record> tilganger(DataFetchingEnvironment env) {
      *     TilgangerForFeidebrukerMedFsFiktivtFnr table =
@@ -1505,6 +1507,17 @@ public class TypeFetcherGenerator {
      *         .fetch();
      *     ...
      * }
+     * }</pre>
+     *
+     * <p>Routine-then-hops variant (R435):
+     * <pre>{@code
+     *     FilmsForActor source = Routines.filmsForActor(env.<Integer>getArgument("actorId"), ...);
+     *     Film films_0 = Tables.FILM.as("films_0");
+     *     Result<Record> payload = dsl
+     *         .select(Film.$fields(env.getSelectionSet(), films_0, env))
+     *         .from(source)
+     *         .join(films_0).on(source.FILM_ID.eq(films_0.FILM_ID))
+     *         .fetch();
      * }</pre>
      */
     private static MethodSpec buildQueryRoutineFetcher(TypeFetcherEmissionContext ctx,
@@ -1536,22 +1549,55 @@ public class TypeFetcherGenerator {
                     + "node, and the classifier rejects columnMapping at root");
             })
             .toList(), ", ");
-        String tableLocal = names.tableLocalName();
+        var hops = qrtf.hops();
+        // Single-node keeps R300's terminus-derived local name; a chained start is not the
+        // projected table, so it gets its own name (hop aliases end in "_<i>" — no collision).
+        String startLocal = hops.isEmpty() ? names.tableLocalName() : "source";
 
         builder.beginControlFlow("try");
         builder.addStatement("$T $L = $T.$L($L)",
-            names.jooqTableClass(), tableLocal, routine.routinesClass(), routine.methodName(), args);
+            qrtf.start().resultTable().tableClass(), startLocal,
+            routine.routinesClass(), routine.methodName(), args);
+        for (JoinStep step : hops) {
+            var hop = (JoinStep.Hop) step;
+            var target = hop.targetTable();
+            builder.addStatement("$T $L = $T.$L.as($S)",
+                target.tableClass(), hop.alias(),
+                target.constantsClass(), target.javaFieldName(), hop.alias());
+        }
+        String terminalLocal = hops.isEmpty() ? startLocal : ((JoinStep.Hop) hops.getLast()).alias();
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        builder.addCode(CodeBlock.builder()
+        var sel = CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
-            .add(".from($L)\n", tableLocal)
-            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
-            .unindent()
-            .build());
+            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), terminalLocal)
+            .add(".from($L)\n", startLocal);
+        var filters = new java.util.ArrayList<CodeBlock>();
+        for (int i = 0; i < hops.size(); i++) {
+            var hop = (JoinStep.Hop) hops.get(i);
+            String prev = i == 0 ? startLocal : ((JoinStep.Hop) hops.get(i - 1)).alias();
+            switch (hop.on()) {
+                case On.ColumnPairs cp -> sel.add("$L\n",
+                    JoinPathEmitter.emitForwardJoin(cp, prev, hop.alias()));
+                case On.Predicate pred -> sel.add(".join($L).on($L)\n",
+                    hop.alias(), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prev, hop.alias()));
+                // Unrepresentable: QueryRoutineTableField's compact constructor rejects a
+                // lateral hop (the chain's one routine node is the start, never a hop).
+                case On.Lateral ignored -> throw new IllegalStateException(
+                    "a lateral routine hop cannot appear in a root routine chain's hops");
+            }
+            if (hop.filter() != null) {
+                filters.add(JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
+            }
+        }
+        if (!filters.isEmpty()) {
+            sel.add(".where($L)\n", filters.stream()
+                .reduce((a, b) -> CodeBlock.of("$L.and($L)", a, b)).orElseThrow());
+        }
+        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
+        builder.addCode(sel.build());
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));

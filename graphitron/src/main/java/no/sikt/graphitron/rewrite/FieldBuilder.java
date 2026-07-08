@@ -2147,8 +2147,20 @@ class FieldBuilder {
                     + "written order, and at root only a routine can supply the chain's head (move @routine first)"));
             }
             if (chainDirectives.size() > 1) {
+                if (isRoot) {
+                    // Root-head rule above guarantees the chain starts with @routine here. One
+                    // routine node plus @reference hops is the routine-then-hops chain, built
+                    // below; a second routine node needs the lateral-at-hop-position emit and
+                    // stays typed Deferred.
+                    if (routineApplications > 1) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                            "a table chain with more than one routine node classifies but does not emit yet",
+                            "routine-table-node-composition"));
+                    }
+                    return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
+                }
                 String shape = routineApplications > 0
-                    ? "a multi-node table chain composing @routine with @reference hops"
+                    ? "a child-positioned multi-node table chain composing @routine with @reference hops"
                     : "a table chain composed of repeated @reference applications";
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                     shape + " classifies but does not emit yet", "routine-table-node-composition"));
@@ -2214,6 +2226,50 @@ class FieldBuilder {
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("parent type is unclassified"));
+    }
+
+    /**
+     * Classifies the root routine-then-hops chain (R435): {@code @routine} supplies the chain's
+     * head (the FROM source), each subsequent {@code @reference} application contributes hops in
+     * authored order, and the terminus must be the field's {@code @table} type. The hop out of
+     * the routine result keys by the name-matched target key ({@code BuildContext
+     * .synthesizeNameMatchedJoin}, gated on the catalog's table-valued-function fact); later hops
+     * ride the ordinary FK / condition machinery. Lands
+     * {@link QueryField.QueryRoutineTableField} carrying the {@code (start, hops)} chain.
+     *
+     * <p>Ordering note: like the R300 single-node root, the chain root carries no ordering
+     * surface ({@code QueryRoutineTableField} is not a {@code SqlGeneratingField}); an
+     * {@code @defaultOrder} surface over the catalog terminus is recorded as pending in the plan.
+     */
+    private GraphitronField classifyRootRoutineChain(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name, SourceLocation location) {
+        return switch (routineResolver.resolveChainHead(parentTypeName, fieldDef, true, null)) {
+            case RoutineDirectiveResolver.Resolved.Rejected r ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+            case RoutineDirectiveResolver.Resolved.TableBound tb -> {
+                var refApplications = fieldDef.getAppliedDirectives().stream()
+                    .filter(d -> DIR_REFERENCE.equals(d.getName()))
+                    .toList();
+                boolean isList = tb.returnType().wrapper().isList();
+                var parsed = ctx.parseChainHops(refApplications, name,
+                    tb.resultTable().tableName(), tb.returnType().table().tableName(),
+                    tb.returnType().table(), isList);
+                if (parsed.hasError()) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.structural(parsed.errorMessage()));
+                }
+                // Terminus rule for the multi-node chain: the last node's table class must be
+                // the field's @table type. Same R379 verdict machinery as plain @reference paths.
+                if (parsed.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch m) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.structural(m.diagnostic()));
+                }
+                yield new QueryField.QueryRoutineTableField(parentTypeName, name, location,
+                    tb.returnType(),
+                    new TableExpr.RoutineCall(tb.routine(), tb.resultTable()),
+                    parsed.elements());
+            }
+        };
     }
 
     private GraphitronField classifyChildFieldOnErrorType(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -3811,7 +3867,9 @@ class FieldBuilder {
                 case RoutineDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case RoutineDirectiveResolver.Resolved.TableBound tb ->
-                    new QueryField.QueryRoutineTableField(parentTypeName, name, location, tb.returnType(), tb.routine());
+                    // The R300 single-node chain: hops empty, the routine result is the terminus.
+                    new QueryField.QueryRoutineTableField(parentTypeName, name, location, tb.returnType(),
+                        new TableExpr.RoutineCall(tb.routine(), tb.resultTable()), List.of());
             };
         }
 

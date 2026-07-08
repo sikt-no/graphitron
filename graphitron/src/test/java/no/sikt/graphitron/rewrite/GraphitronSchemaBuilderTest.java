@@ -7401,17 +7401,82 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void rootRoutineThenHopsChainDefersUntilChainEmitLands() {
+    void rootRoutineThenHopsChainClassifiesWithNameMatchedHop() {
+        // The routine-then-hops chain (R435): @routine supplies the FROM source, the @reference
+        // hop lands the terminus. The hop out of the FK-less routine result keys by the
+        // name-matched target PK: films_for_actor exposes film_id, film's PK column.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              recentFilms(actorId: Int!, minLength: Int!): [Film!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (QueryField.QueryRoutineTableField) schema.field("Query", "recentFilms");
+        assertThat(f.start().resultTable().tableName()).isEqualTo("films_for_actor");
+        assertThat(f.returnType().table().tableName()).isEqualTo("film");
+        assertThat(f.hops()).hasSize(1);
+        var hop = (JoinStep.Hop) f.hops().get(0);
+        assertThat(hop.targetTable().tableName()).isEqualTo("film");
+        assertThat(hop.originTable().tableName()).isEqualTo("films_for_actor");
+        var pairs = (On.ColumnPairs) hop.on();
+        assertThat(pairs.keying()).isInstanceOf(On.Keying.NameMatchedKey.class);
+        assertThat(pairs.slotCount()).isEqualTo(1);
+        var slot = pairs.slots().iterator().next();
+        assertThat(slot.sourceSide().sqlName()).isEqualToIgnoringCase("film_id");
+        assertThat(slot.targetSide().sqlName()).isEqualToIgnoringCase("film_id");
+    }
+
+    @Test
+    void rootRoutineChainTerminusMismatchRejectsAsStructural() {
+        // Terminus rule for multi-node chains: the last node must be the field's @table type.
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Query {
+              recentFilms(actorId: Int!, minLength: Int!): [Actor!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "recentFilms");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason())
+            .contains("resolves to table 'film'")
+            .contains("the path must end on 'actor'");
+    }
+
+    @Test
+    void rootRoutineChainNameMatchKeyingFailureRejectsWithCandidates() {
+        // The name-match build check: the target's PK column must be exposed by SQL name on the
+        // routine result. actor's PK (actor_id) is not among films_for_actor's result columns.
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Query {
+              recentActors(actorId: Int!, minLength: Int!): [Actor!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "actor"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "recentActors");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason())
+            .contains("'actor_id' is not exposed by name on 'films_for_actor'")
+            .contains("film_id"); // candidate hint lists the routine result's columns
+    }
+
+    @Test
+    void rootChainWithTwoRoutineNodesDefersUntilLateralHopEmitLands() {
         var schema = build(TILGANG_TYPE + """
             type Query {
               tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
-                @reference(path: [{key: "some_fkey"}])
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
             }
             """);
         var f = (UnclassifiedField) schema.field("Query", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(f.reason()).contains("roadmap/routine-table-node-composition.md");
+        assertThat(f.reason()).contains("more than one routine node");
     }
 
     @Test
