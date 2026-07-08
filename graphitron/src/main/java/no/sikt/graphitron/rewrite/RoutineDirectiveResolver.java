@@ -197,6 +197,16 @@ final class RoutineDirectiveResolver {
                         + previousNodeTableSqlName + "')",
                         columnName, ctx.catalog.columnSqlNamesOf(previousNodeTableSqlName)));
                 }
+                // Type compatibility: the emitted call passes the column's Field directly to the
+                // routine's Field overload, so the column's boxed Java type must be the parameter's
+                // boxed Java type — a mismatch here would be a javac error in the generated source.
+                if (!column.get().columnClass().equals(param.type().toString())) {
+                    return new Resolved.Rejected(Rejection.structural(
+                        "@routine columnMapping binds parameter '" + param.name() + "' ("
+                        + param.type() + ") to column '" + columnName + "' of '"
+                        + previousNodeTableSqlName + "' (" + column.get().columnClass()
+                        + ") — the column's Java type must match the routine parameter's"));
+                }
                 bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(),
                     new ParamSource.SourceColumn(column.get())));
                 continue;

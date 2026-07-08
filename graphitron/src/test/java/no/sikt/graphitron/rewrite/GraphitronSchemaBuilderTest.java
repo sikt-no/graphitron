@@ -7830,6 +7830,96 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
+    void repeatedReferenceOnInputFieldRejects() {
+        // repeatable applies semantically only where order-composition does (output field
+        // definitions); an input field has no table chain, so repetition is a conflict.
+        var schema = build("""
+            input PlainFilter {
+              district: String
+                @reference(path: [{table: "address"}])
+                @reference(path: [{table: "address"}])
+            }
+            type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
+            type Query { customers(filter: PlainFilter): [Customer!]! }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "customers");
+        assertThat(f.reason())
+            .contains("repeated @reference on an input field")
+            .contains("compose the chain on the field instead");
+    }
+
+    @Test
+    void asConnectionOnRoutineTerminusChainRejectsAsDirectiveConflict() {
+        // A routine-terminus chain can never support keyset pagination: the FK-less routine
+        // result carries no ordering contract. DirectiveConflict, not Deferred.
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @asConnection
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+        assertThat(f.reason()).contains("a routine-terminus chain does not support Connection return types");
+    }
+
+    @Test
+    void asConnectionOnCatalogTerminusRoutineChainDefers() {
+        // A chain that merely CONTAINS a routine node but terminates on a catalog table could
+        // support pagination later, so it lands typed Deferred (empty planSlug), not a conflict.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              recentFilms(actorId: Int!, minLength: Int!): [Film!]!
+                @asConnection
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "recentFilms");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("Connection pagination over a catalog-terminus chain containing a routine node");
+    }
+
+    @Test
+    void conditionOnRoutineFieldDefersAsCapabilityGap() {
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "fieldCondition"})
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("@orderBy / @condition on a routine-backed field");
+    }
+
+    @Test
+    void columnMappingTypeMismatchRejectsAsStructural() {
+        // pEnv is TEXT (java.lang.String); film_id is an Integer column. The emitted call
+        // passes the column's Field to the routine's Field overload, so the boxed Java types
+        // must match — this would otherwise be a javac error in the generated source.
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
+                         columnMapping: "pEnv: film_id")
+            }
+            type Query { film: Film }
+            """);
+        var f = (UnclassifiedField) schema.field("Film", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason())
+            .contains("java.lang.String")
+            .contains("java.lang.Integer")
+            .contains("must match the routine parameter's");
+    }
+
+    @Test
     @ProjectionFor({QueryField.QueryNodeField.class, QueryField.QueryNodesField.class})
     void queryNodeProjectionCarriesListMultiplicity() {
         var snapshot = buildSnapshot("""

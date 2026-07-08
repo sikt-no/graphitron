@@ -237,6 +237,11 @@ Shipped (surface-and-validation slice; the chain build and emitters are the pend
   one running source (an element-less application inside a multi-application chain is a
   structural error), so the composed chain is a longer path to every downstream consumer —
   no new leaf, full existing feature surface. Shipped.
+* `columnMapping` type compatibility: the bound column's boxed Java type must equal the routine
+  parameter's (`ColumnRef.columnClass` against `RoutineParam.type`), because the emitted call
+  passes the column's `Field` straight to the routine's `Field` overload — a mismatch would be
+  a javac error in the generated source. `AuthorError.Structural`, checked at the
+  `columnMapping` binding site in `RoutineDirectiveResolver.bindArgs`. Shipped.
 
 Pending (the remaining chain-build + emit work):
 
@@ -244,8 +249,6 @@ Pending (the remaining chain-build + emit work):
   multi-lateral emit.
 * The batched keyed re-query form for routine children (`@splitQuery`, record-backed parents,
   `TableInterfaceType` parents) — flips the typed `Deferred` landings left by the inline slice.
-* Type compatibility of `columnMapping`-bound columns against routine parameter types (the
-  existence check ships; the type check needs the column `DataType` read).
 * Correlated value-arg `DataType` binding: mixed (`Field`-overload) calls type argument-sourced
   values by their Java `paramType` read, not a two-arg `DSL.val(v, dataType)` — jOOQ's TVF
   codegen exposes no `Parameter` constants to reference. Shares the enum/ID-as-String coercion
@@ -279,11 +282,12 @@ Pipeline tier is primary; no code-string assertions at any tier.
 * **Rejection fixtures**, one per validator rule (shipped rules asserted in
   `GraphitronSchemaBuilderTest`'s R435 block): root chain not starting with `@routine` (shipped);
   `columnMapping` with no previous node (shipped); `columnMapping` naming a column absent from
-  the previous node (shipped, with candidate hint); one parameter claimed by both mappings
-  (shipped); repeated `@reference` on `ARGUMENT_DEFINITION` (shipped) / `INPUT_FIELD_DEFINITION`
-  (guarded at the read site; fixture pending); `@asConnection` on a routine-terminus chain
-  (arm flipped to `DirectiveConflict`; fixture pending); `@orderBy` on a routine-backed field
-  (shipped); `@condition` on a routine-backed field (guard shipped; fixture pending); terminus
+  the previous node (shipped, with candidate hint); `columnMapping` binding a column whose Java
+  type differs from the routine parameter's (shipped, names both types); one parameter claimed
+  by both mappings (shipped); repeated `@reference` on `ARGUMENT_DEFINITION` /
+  `INPUT_FIELD_DEFINITION` (both shipped); `@asConnection` on a routine-terminus chain
+  (shipped, `DirectiveConflict`); `@orderBy` on a routine-backed field
+  (shipped); `@condition` on a routine-backed field (shipped); terminus
   mismatch on a multi-node chain (shipped at root and child, both terminus kinds: the R379
   diagnostic for a catalog terminus, the routine-result-mismatch message for a routine
   terminus); name-match
@@ -291,7 +295,8 @@ Pipeline tier is primary; no code-string assertions at any tier.
   naming a column absent from a mid-chain previous node (shipped, candidates list that node's
   columns, not the head's); an element-less `@reference` application inside a
   multi-application chain (shipped); Connection over
-  a catalog-terminus routine chain (`Deferred` arm shipped; fixture pending).
+  a catalog-terminus routine chain (shipped, typed `Deferred`). All rejection rules in
+  Validation and the composition verdicts now carry fixtures.
 
 ## User documentation (first-client check)
 
