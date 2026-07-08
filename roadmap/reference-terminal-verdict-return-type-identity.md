@@ -1,13 +1,13 @@
 ---
 id: R422
 title: "@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-07-02
-last-updated: 2026-07-02
+last-updated: 2026-07-08
 ---
 
 # @reference terminal-target verdict must compare return-type identity, not the verbatim @table echo
@@ -36,33 +36,73 @@ catalog primitive) and left the return-type comparison point for a focused follo
 `parsePath` threads return names as `String` across ~12 call sites, so an identity-based terminal
 check touches that signature or adds a catalog resolve at the one comparison point.
 
-## The fix (two candidate shapes, decide at Spec)
+## Design (settled at Spec)
 
-The terminal comparison happens in exactly one place (`computeTerminalTargetVerdict`). Two ways to
-close it, smallest-ripple first:
+The Backlog stub framed two shapes: (1) re-resolve `returnSqlTableName` through the catalog at the
+comparison point, or (2) migrate the whole `parsePath` String-name plumbing to identity. That is a
+false binary (principles-architect consult, 2026-07-08). The chosen design is a scoped parameter
+add: **thread the already-resolved return-type `TableRef` into the verdict as its own axis**, and
+leave the name plumbing alone.
 
-1. **Resolve at the comparison point (recommended, no signature change).** Inside
-   `computeTerminalTargetVerdict`, resolve `returnSqlTableName` through the catalog (or compare the
-   already-resolved terminal `TableRef`'s class identity against the return type's resolved class)
-   instead of `fk.targetTable().sameTable(returnSqlTableName)`. The `parsePath` callers already hold
-   the return type's `TableRef` (which carries `tableClass`, a `ClassName`), so the identity is
-   reachable without threading a new parameter.
-2. **Thread the return-type identity** from the `parsePath` callers down to the verdict. Wider ripple
-   across the `String` return-name plumbing; only worth it if a second consumer needs the identity.
+1. **New nullable parameter, not a String migration.** `parsePath` gains a nullable
+   `TableRef returnTableRef` parameter alongside the existing `targetSqlTableName` String. Name and
+   identity are two orthogonal projections of the return table: the String stays the input to the
+   name-based plumbing that legitimately wants a name (empty-path FK inference via
+   `findForeignKeysBetweenTables`, condition-join terminal-target build in `parsePathElement`); the
+   `TableRef` is consumed only by `computeTerminalTargetVerdict`. The call sites that pass a
+   non-null target all already hold the `TableRef` and lossily project it via `.tableName()`
+   (`FieldBuilder.java:863` `returnType.table()`, `:937` `tableInterfaceType.table()`, `:5080`
+   `tbt.table()`, `:6069` `targetNodeType.table()`, `:6337` `tb.table()`, `:4896`/`:6008`
+   `tb.returnType().table()`, `NodeIdLeafResolver:429`); they pass the ref they hold. Null-target
+   sites pass null and are untouched. This is "decide once, carry the decision as a type": the
+   identity was materialized one frame earlier, so no catalog re-query.
+2. **Compare with R441's predicate.** `computeTerminalTargetVerdict` replaces
+   `hop.targetTable().sameTable(returnSqlTableName)` with
+   `hop.targetTable().denotesSameTableAs(returnTableRef)`. Both sides are catalog-constructed
+   (`JooqCatalog.TableEntry.toTableRef` always populates `tableClass`), so the compare is
+   identity-vs-identity; the predicate's intrinsic name-compare fallback exists only for
+   fixture-built classless refs and never fires in production. This is the model-side identity home
+   R441's javadoc prescribes.
+3. **No R440-style resolve-or-fall-back contract.** Deliberately rejected: an unresolvable return
+   name is unreachable at the consuming callers (the return `@table` already resolved to a
+   `TableRef` upstream; an unresolvable one is `UnclassifiedType` and never reaches this site), and
+   re-resolving the lossy echo could yield `Ambiguous` on a bare cross-schema name collision, whose
+   bare-compare fallback would re-introduce the very bug this item closes.
+4. **Verdict gating and message unchanged.** `NotApplicable` keeps firing on null start / null
+   return / empty path; with the new parameter the return-side null check moves to
+   `returnTableRef == null` (callers pass ref and name together, so the gate is equivalent). The
+   `Mismatch` message keeps rendering the hop's canonical name against the author's verbatim
+   `@table` echo (`returnSqlTableName`), which stays available for the message.
 
-Prefer (1): it keeps the change to the single comparison point and reuses R396's identity-comparison
-principle without widening `BuildContext`'s jOOQ surface.
+**Scoping note (empty-path inference sibling).** The same schema-qualified return echo also flows
+into the empty-path FK inference at `BuildContext.java:1257`. That path is already covered: R440
+made `findForeignKeysBetweenTables` resolve both arguments by class identity (schema-aware
+`findTable`) with the bare-compare fallback only for genuinely unresolvable names
+(`JooqCatalog.java:566-581`). No surviving sibling there; R422 closes the last member of the
+schema-qualified `@table` bug class.
 
 ## Tests
 
-- Pipeline tier: an `@reference` field whose **return** type carries a schema-qualified `@table`
-  (e.g. `multischema_a.widget`) and whose terminal hop lands there must classify to a terminal verdict
-  of `Match` (today: spurious `Mismatch`), with no author error. Pair with a genuine mismatch (hop
-  lands on a different table than the qualified return type) that still reports `Mismatch`, so the fix
-  tightens the compare without disabling it.
+- Pipeline tier, sibling of R396's `QualifiedSourceReferencePipelineTest` over the existing
+  multischema jOOQ fixture (no new DDL): the cross-schema FK `multischema_b.gadget ->
+  multischema_a.widget` gives the shape directly. A `@reference` field on a parent bound to
+  `multischema_b.gadget` whose **return** type carries the schema-qualified
+  `@table(name: "multischema_a.widget")` and whose terminal hop lands there must classify green
+  (`ChildField.TableField`, not `UnclassifiedField`; terminal verdict `Match`), today a spurious
+  `Mismatch` rejection. Assert at the classifier/model surface, no code-string assertions.
+- Pair with a genuine mismatch over the same fixture (terminal hop lands on a table other than the
+  qualified return type, e.g. return type bound to `multischema_b.event` while the hop lands on
+  `widget`) that still rejects with `Mismatch`, so the fix tightens the compare without disabling
+  it.
+- Unit tier: `TableRefSameTablePredicateTest` (R441) already pins all three `denotesSameTableAs`
+  arms; no new predicate-level coverage needed unless the verdict gains its own branching.
 
 ## Notes
 
 - Same bug class and consumer wave as R395 / R396 (schema-qualified `@table` echoes vs. jOOQ's
   always-unqualified canonical names). Reachable only when the *return* type of an `@reference` field
   is schema-qualified, which is why R396 could ship its source-side fix without it.
+- Siblings all Done as of 2026-07-08: R396 (source-side FK predicate), R440 (FK-join endpoint/FK
+  identity, including `findForeignKeysBetweenTables`), R441 (typed-accessor match, landed
+  `TableRef.denotesSameTableAs`), R442 (condition-param match, reused the predicate). This item is
+  the last open member and reuses R441's predicate verbatim.

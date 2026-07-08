@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R422` | @reference terminal-target verdict must compare return-type identity, not the verbatim @table echo | Spec | 2026-07-08 <sub>created 2026-07-02</sub> | [plan](reference-terminal-verdict-return-type-identity.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -116,7 +117,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
-- `R422` [**@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo**](reference-terminal-verdict-return-type-identity.md): Split out of R396 (which fixed the FK source-side predicate for schema-qualified / case-mismatched *source* `@table` names). This is the same bug class on a *different* author shape: a schema-qualified **return-type** `@table`. <sub>updated 2026-07-02</sub>
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md): `BuildContext.classifyInputFieldInternal` (`BuildContext.java:1665`-`1677`) emits a "Did you mean…" hint when a nested-input column name is unresolvable. The candidate list is built from `catalog.columnSqlNamesOf(resolvedTable.tableName())` where `resolvedTable` is the path-*origin* enclosing input's `@table`, not the path's terminal table. <sub>updated 2026-05-23</sub>
 - `R373` [**Capture test stdout/stderr to per-class files via Surefire redirectTestOutputToFile**](surefire-redirect-test-output.md): Several tests emit info/warn/error logs (SLF4J + Logback `ConsoleAppender` → `System.out`) and stack traces during a normal `mvn install` run, drowning the console in noise that is irrelevant when the test passes. There is no per-test "show only on failure" buffering in plain Surefire, but `redirectTestOutputToFile=true` captures each test class's stdout/stderr into `target/surefire-reports/<TestClass>-output.txt`, keeping the reactor console clean while preserving the full output on disk for any class whose tests fail. Apply it once in the parent pom (`graphitron-rewrite/pom.xml`) so every module inherits it. <sub>updated 2026-06-25</sub>
 - `R432` [**Collapse SplitTableField and RecordTableField into one source-gated leaf**](collapse-split-and-record-table-leaves.md): The R333 beachhead: collapse `ChildField.SplitTableField` and `ChildField.RecordTableField` into one leaf gated on the source fact. Thread A measured the two component-identical (11 shared components, both `TableTargetField` + `BatchKeyField`; only `emitsSingleRecordPerKey()` and `sourceShape()` differ), and both child sides already lower to the same `load<X>` rows-method and fetcher; Split's only extra, the parent-key projection, already lands via `collectRequiredProjectionColumns` in the parent type's `$fields`. Collapsing with zero residue retires one cross-product axis with no generator rewrite and produces the lowering's first executable proof (R333 "First slice"). <sub>updated 2026-07-04</sub> _(blocked by [decompose-sourcekey](decompose-sourcekey.md))_
@@ -173,7 +173,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R422` [**@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo**](reference-terminal-verdict-return-type-identity.md) — Backlog, bug
+- `R422` [**@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo**](reference-terminal-verdict-return-type-identity.md) — Spec, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
