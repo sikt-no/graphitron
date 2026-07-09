@@ -1,13 +1,13 @@
 ---
 id: R451
 title: "Routine writes: @routine on Mutation commits before the follow-up query"
-status: Spec
+status: Ready
 bucket: feature
 priority: 2
 theme: service
 depends-on: []
 created: 2026-07-08
-last-updated: 2026-07-08
+last-updated: 2026-07-09
 ---
 
 # Routine writes: @routine on Mutation commits before the follow-up query
