@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R456` | Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads) | Ready | 2026-07-09 | [plan](workspacefile-read-vs-didchange-race.md) |
 | `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | Ready | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
-| `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | Ready | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
+| `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | In Progress | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
 | `R453` | Reject sort-enum values missing @order/@index instead of silently skipping (empty ORDER BY breaks keyset pagination) | In Review | 2026-07-09 | [plan](sort-enum-missing-order-directive.md) |
 | `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Review | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
@@ -251,7 +251,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R455` [**Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee**](completeness-oracle-reference-walk-blind-spots.md) — Ready, bug
+- `R455` [**Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee**](completeness-oracle-reference-walk-blind-spots.md) — In Progress, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
