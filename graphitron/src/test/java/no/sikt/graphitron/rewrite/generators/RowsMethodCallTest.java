@@ -13,6 +13,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit-tier coverage of {@link RowsMethodCall#batchLoaderLambda}: positional vs mapped
  * key-container axis (folded onto {@link LoaderRegistration#container()}) and the lambda
  * body invariant.
+ *
+ * <p><b>Load-bearing beyond this class (R429).</b> The synchronous body asserted below,
+ * {@code CompletableFuture.completedFuture(rows(keys, dfe))}, is what makes it safe for
+ * {@link no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator} to pin exactly
+ * one connection per operation: because every batch fetch runs its SQL synchronously on the dispatch
+ * thread, no two fetches of one operation ever touch the pinned connection concurrently. A future
+ * "make loaders async" change would break that invariant; the assertions here are the tripwire, so it
+ * fails at this emission site rather than as a distant execution-tier flake in the connection-lifecycle
+ * work.
  */
 @UnitTier
 class RowsMethodCallTest {

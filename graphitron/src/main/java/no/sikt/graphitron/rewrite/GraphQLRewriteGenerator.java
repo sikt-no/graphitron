@@ -40,6 +40,7 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionFetcherClassGenerato
 import no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
@@ -303,6 +304,7 @@ public class GraphQLRewriteGenerator {
         write(PolymorphicSelectionSetClassGenerator.generate(),                                   "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
+        write(ConnectionRuntimeClassGenerator.generate(outputPackage),                             "schema",     emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);
         write(GraphitronClientExceptionClassGenerator.generate(),                                 "schema",     emittedThisRun);
         write(ErrorRouterClassGenerator.generate(outputPackage),                                  "schema",     emittedThisRun);

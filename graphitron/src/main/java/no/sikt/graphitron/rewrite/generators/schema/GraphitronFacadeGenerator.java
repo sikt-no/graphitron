@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.model.ResolvedContextArg;
 
@@ -80,12 +81,25 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(newGraphQLJavadoc())
             .build();
 
+        var graphitronRuntime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        var dataSource = ClassName.get("javax.sql", "DataSource");
+        var sqlDialect = ClassName.get("org.jooq", "SQLDialect");
+        var runtime = MethodSpec.methodBuilder("runtime")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(graphitronRuntime)
+            .addParameter(dataSource, "dataSource")
+            .addParameter(sqlDialect, "dialect")
+            .addStatement("return new $T(dataSource, dialect)", graphitronRuntime)
+            .addJavadoc(runtimeJavadoc())
+            .build();
+
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc(classJavadoc())
             .addMethod(buildSchema)
             .addMethod(newExecutionInput)
-            .addMethod(newGraphQL);
+            .addMethod(newGraphQL)
+            .addMethod(runtime);
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
@@ -151,6 +165,24 @@ public final class GraphitronFacadeGenerator {
         method.addCode("    .dataLoaderRegistry(new $T());\n", dataLoaderRegistry);
         method.addJavadoc(newExecutionInputJavadoc(contextArgs));
         return method.build();
+    }
+
+    private static String runtimeJavadoc() {
+        return "Builds the application-scoped {@code GraphitronRuntime} that owns the connection\n"
+            + "lifecycle: it pins one connection per operation, mounts and unmounts per-request identity\n"
+            + "through the database session hooks, and demarcates operation-typed transactions. Built once\n"
+            + "at wiring time over a consumer-owned pooled {@code DataSource} and its jOOQ dialect:\n"
+            + "{@code var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);}.\n"
+            + "\n"
+            + "<p>This is the opinionated path (R429): per request you call\n"
+            + "{@code runtime.newExecutionInput(claims, ...)} and graphitron acquires the connection,\n"
+            + "runs the connect hook, and releases at completion. The lower-opinion escape hatch is the\n"
+            + "static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller owns the\n"
+            + "{@code DSLContext}, transaction demarcation, and identity state.\n"
+            + "@param dataSource the consumer's pooled {@code DataSource} (the consumer owns pool\n"
+            + "creation and tuning); must not be {@code null}\n"
+            + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
+            + "@return the application-scoped runtime, to be held for the app's lifetime\n";
     }
 
     private static String newGraphQLJavadoc() {

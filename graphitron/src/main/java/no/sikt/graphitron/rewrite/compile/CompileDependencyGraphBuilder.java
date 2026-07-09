@@ -373,6 +373,17 @@ public final class CompileDependencyGraphBuilder {
         }
         acc.addEdge(facade, schemaClass);
         acc.addEdge(facade, context);
+        // R429 connection-lifecycle runtime: the facade builds the runtime, which owns the pinned
+        // connection and the session-hook seam. These units are schema-invariant (ABI-frozen), so the
+        // edges never drive a recompile; they are modelled precisely rather than blanketed because no
+        // fetcher references them. The TypeSpecReferenceWalk oracle pins this wiring.
+        String graphitronRuntime = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime");
+        String pinnedConnection = units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection");
+        String sessionHook = units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook");
+        acc.addEdge(facade, graphitronRuntime);
+        acc.addEdge(graphitronRuntime, pinnedConnection);
+        acc.addEdge(graphitronRuntime, sessionHook);
+        acc.addEdge(pinnedConnection, sessionHook);
         addNodeLookupAndEntityDispatchEdges(schemaClass, context);
     }
 
@@ -411,6 +422,10 @@ public final class CompileDependencyGraphBuilder {
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_FETCHERS, "QueryNodeFetcher"));
         acc.addNode(units.rootUnit("Graphitron"));
+        // R429: the always-emitted connection-lifecycle runtime substrate.
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
     }
 
     private String nodeIdEncoderFqcn() {

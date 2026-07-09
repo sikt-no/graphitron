@@ -32,10 +32,10 @@ class GraphitronFacadeGeneratorTest {
     }
 
     @Test
-    void generatedClass_exposesBuildSchemaNewExecutionInputAndNewGraphQL() {
+    void generatedClass_exposesBuildSchemaNewExecutionInputNewGraphQLAndRuntime() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactly("buildSchema", "newExecutionInput", "newGraphQL");
+            .containsExactly("buildSchema", "newExecutionInput", "newGraphQL", "runtime");
     }
 
     @Test
