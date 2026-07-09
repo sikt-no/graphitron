@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 2
 theme: service
-depends-on: [routine-chain-classification-edges]
+depends-on: []
 created: 2026-07-08
 last-updated: 2026-07-08
 ---
@@ -32,7 +32,7 @@ Classification state at filing: a single-node `@routine` on Mutation lands
 `classifyMutationField`'s generic "needs `@service` / `@mutation`" fallback, and a multi-node
 chain misclassifies as a Query read until R449 lands. R449's D1 mints the typed `Deferred`
 with this item's planSlug (`routine-mutation-write`) for both shapes, so the SDL author is
-pointed here rather than at a dead end. This item builds on R449 (`depends-on`): D1's
+pointed here rather than at a dead end. This item builds on R449 (shipped): D1's
 Query-only interception gate and Deferred signposts are the classification seam this item
 opens, and D5's consolidation of the root routine call onto `RoutineCallEmitter` /
 `JoinPathEmitter` is the shared emission surface the write fetcher reuses rather than adding
