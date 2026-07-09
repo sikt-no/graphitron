@@ -1,7 +1,7 @@
 ---
 id: R451
 title: "Routine writes: @routine on Mutation commits before the follow-up query"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 2
 theme: service
