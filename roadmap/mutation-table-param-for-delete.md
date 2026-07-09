@@ -1,7 +1,7 @@
 ---
 id: R457
 title: "@mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: model-cleanup
@@ -156,9 +156,11 @@ in scope, not an afterthought:
   parameter lands, suppress the R332 `@table`-on-input deprecation warning for
   input types consumed by DELETE mutations, mirroring the encoded INSERT/UPSERT
   carve-out (`encodedWriteTargetInputTypes`, `GraphitronSchemaBuilder.java:796`).
-  Computed off the classified model: add `inputArg().typeName()` for every
+  Computed off the classified model: add `inputArg().inputTypeName()` for every
   `MutationDeleteTableField` / `MutationDeletePayloadField` /
-  `MutationBulkDeletePayloadField` (the record-carrier DML leaves are
+  `MutationBulkDeletePayloadField` (the DELETE leaves carry an `InputArgRef`,
+  whose accessor is `inputTypeName()`, not the `tableInputArg().typeName()` the
+  INSERT/UPSERT carve-out reads; the record-carrier DML leaves are
   INSERT/UPSERT-only by compact constructor, so these three are exhaustive).
   Conservative any-DELETE-consumer rule, deliberately stronger than the Backlog
   draft's "consumed only by DELETE": in commit 1 the return-derivation does not
