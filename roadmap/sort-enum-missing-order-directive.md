@@ -1,7 +1,7 @@
 ---
 id: R453
 title: "Reject sort-enum values missing @order/@index instead of silently skipping (empty ORDER BY breaks keyset pagination)"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: model-cleanup
