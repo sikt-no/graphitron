@@ -151,82 +151,43 @@ public sealed interface QueryField extends RootField
      * type is always a {@link ReturnTypeRef.TableBoundReturnType} and the existing
      * selection-narrowing projection applies unchanged.
      *
-     * <p>R435 re-homed this leaf onto the {@code (start, hops)} chain: {@code start} is the
-     * routine node (the {@code FROM} source — the schema's global {@code Routines} convenience
-     * method call with IN parameters bound from GraphQL arguments), {@code hops} the
-     * {@code @reference}-contributed steps that follow it in authored directive order. The R300
-     * single-node shape is {@code hops = []}, where the routine result is also the terminus. The
-     * start is a {@link TableExpr.RoutineCall} rather than a {@link JoinStep}: R333 models
-     * {@code on} as absent exactly for the start node, and this carrier encodes that absence
-     * structurally instead of widening {@code Hop.on} to an optional (see {@link On}).
+     * <p>R435 re-homed this leaf onto the {@code (start, hops)} chain; R451 extracted that shape
+     * into the shared {@link RoutineChain} carrier: {@code start} is the routine node (the
+     * {@code FROM} source — the schema's global {@code Routines} convenience method call with IN
+     * parameters bound from GraphQL arguments), {@code hops} the {@code @reference}-contributed
+     * steps that follow it in authored directive order. The R300 single-node shape is
+     * {@code hops = []}, where the routine result is also the terminus. The start is a
+     * {@link TableExpr.RoutineCall} rather than a {@link JoinStep}: R333 models {@code on} as
+     * absent exactly for the start node, and the carrier encodes that absence structurally
+     * instead of widening {@code Hop.on} to an optional (see {@link On}). The shared chain
+     * invariants (all-{@code Arg} start bindings, catalog-only non-lateral hops) are pinned in
+     * {@link RoutineChain}'s compact constructor, one enforcer spanning this leaf and
+     * {@link MutationField.MutationRoutineWriteField}; only the terminus rule stays here (it
+     * reads this leaf's return type).
      *
      * <p>{@code target()} projects a bare {@link TargetShape.Table}, exactly as
-     * {@link QueryTableMethodTableField} does. See R300 / R435.
+     * {@link QueryTableMethodTableField} does. See R300 / R435 / R451.
      */
     record QueryRoutineTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        TableExpr.RoutineCall start,
-        List<JoinStep> hops
-    ) implements QueryField {
+        RoutineChain chain
+    ) implements QueryField, RoutineChainField {
 
         public QueryRoutineTableField {
-            if (start == null) {
-                throw new NullPointerException("QueryRoutineTableField.start must not be null");
-            }
-            // R449 D5 — the start (chain head) binds every routine parameter from a GraphQL
-            // argument: a root chain's head has no previous node, so RoutineDirectiveResolver
-            // rejects columnMapping at root and mints only ParamSource.Arg. Pinning the acceptance
-            // at the producer (rather than trusting that classifier rejection nothing downstream
-            // re-checks) is what lets the shared RoutineCallEmitter path assume PreviousNodeRef.None
-            // carries no ParamSource.SourceColumn read.
-            for (RoutineRef.ArgBinding binding : start.routine().argBindings()) {
-                if (!(binding.source() instanceof ParamSource.Arg)) {
-                    throw new IllegalArgumentException(
-                        "QueryRoutineTableField start binding for routine parameter '"
-                        + binding.routineParamName() + "' carries "
-                        + binding.source().getClass().getSimpleName()
-                        + "; a root routine chain's head has no previous node, so every start "
-                        + "binding must be ParamSource.Arg (RoutineDirectiveResolver rejects "
-                        + "columnMapping at root before construction)");
-                }
-            }
-            hops = List.copyOf(hops);
-            // Mechanical R435 invariants (this is an implemented leaf; the classifier's chain
-            // build is the only producer, and these pin exactly the shapes its emitter renders):
-            // every hop is an @reference-contributed catalog step — a second routine node in the
-            // chain classifies as typed Deferred and never reaches this constructor.
-            for (JoinStep step : hops) {
-                if (!(step instanceof JoinStep.Hop hop)) {
-                    throw new IllegalArgumentException(
-                        "QueryRoutineTableField.hops must be @reference-contributed Hops; got "
-                        + step.getClass().getSimpleName());
-                }
-                if (!(hop.target() instanceof TableExpr.Catalog) || hop.on() instanceof On.Lateral) {
-                    throw new IllegalArgumentException(
-                        "QueryRoutineTableField admits exactly one routine node, the chain's start; "
-                        + "a routine node at hop position (a multi-routine chain) classifies as "
-                        + "typed Deferred (R435) and must not reach this leaf");
-                }
+            if (chain == null) {
+                throw new NullPointerException("QueryRoutineTableField.chain must not be null");
             }
             // Terminus invariant: the projected @table type is the chain's last node.
-            TableRef terminus = hops.isEmpty()
-                ? start.resultTable()
-                : ((JoinStep.Hop) hops.getLast()).targetTable();
-            if (!terminus.denotesSameTableAs(returnType.table())) {
+            if (!chain.terminus().denotesSameTableAs(returnType.table())) {
                 throw new IllegalArgumentException(
                     "QueryRoutineTableField terminus mismatch: the chain ends on '"
-                    + terminus.tableName() + "' but the field's @table type is bound to '"
+                    + chain.terminus().tableName() + "' but the field's @table type is bound to '"
                     + returnType.table().tableName() + "'; the classifier's terminus rule must "
                     + "reject this before construction");
             }
-        }
-
-        /** The routine call surface of the chain's start node. */
-        public RoutineRef routine() {
-            return start.routine();
         }
 
         @Override public DomainReturnType domainReturnType() {

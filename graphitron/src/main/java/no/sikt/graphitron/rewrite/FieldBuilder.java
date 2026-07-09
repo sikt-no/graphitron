@@ -70,6 +70,7 @@ import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.RoutineChain;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -149,18 +150,18 @@ class FieldBuilder {
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
 
     /**
-     * R449 D1 — the deferral prose for {@code @routine} on a Mutation root field, shared by the
-     * chain interception (multi-node chains) and {@link #classifyMutationField} (the single-node
-     * degenerate chain) so both stories agree. {@code @routine} on Mutation is R451's write arm:
-     * the routine call commits before the follow-up query, a recognised capability gap rather than
-     * an authoring error, so it lands a typed {@code Deferred} signposting {@code
-     * routine-mutation-write} instead of the Query-oriented root-head rejection or the generic
-     * "both absent" mutation fallback.
+     * R451 — the deferral prose for the single-node {@code @routine} on a Mutation root field
+     * (no {@code @reference} hop), landed by {@link #classifyMutationField}'s top check. The
+     * multi-node chain classifies for real since R451 ({@link #classifyMutationRoutineChain},
+     * landing {@code MutationRoutineWriteField}); the single-node shape has no post-commit table
+     * to re-read from, so its result-shape story is carried by the {@code
+     * routine-write-result-shapes} follow-up alongside procedures and scalar / void routines —
+     * a recognised capability gap, not an authoring error.
      */
-    private static final String MUTATION_ROUTINE_DEFERRAL =
-        "@routine on a Mutation field is the routine write arm — the routine call commits before "
-        + "the follow-up query — which is a recognised capability gap, not an authoring error, and "
-        + "does not emit yet";
+    private static final String MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL =
+        "@routine on a Mutation field without a @reference hop has no post-commit table to "
+        + "re-read the response from; the single-node result shape (void / scalar / OUT-parameter "
+        + "binding) is a recognised capability gap, not an authoring error, and does not emit yet";
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
@@ -2177,25 +2178,16 @@ class FieldBuilder {
         var chainDirectives = chainDirectiveNames(fieldDef);
         long routineApplications = chainDirectives.stream().filter(DIR_ROUTINE::equals).count();
         if (routineApplications > 0 || chainDirectives.size() > 1) {
-            // R449 D1 — a multi-node Mutation chain carrying @routine is R451's write arm (the
-            // routine call commits before the follow-up query): a capability gap, not an authoring
-            // error, so it lands a typed Deferred signposting routine-mutation-write rather than the
-            // Query-oriented root-head rejection below or a QueryRoutineTableField whose source()
-            // falsely asserts Root.Query. Placed ahead of the root-head and multi-routine rules so
-            // the author sees the write-arm cause, not "move @routine first" or the generic
-            // multi-routine defer. The single-node Mutation @routine reaches classifyMutationField's
-            // top for the same Deferred (the degenerate chain never enters the size>1 arms); a
-            // Mutation chain with no routine node (repeated @reference) and any Subscription chain
-            // fall through to classifyRootField, landing the Mutation "both absent" fallback and the
-            // generic Subscription Deferred respectively.
-            if (isMutationRoot && routineApplications > 0 && chainDirectives.size() > 1) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    Rejection.deferred(MUTATION_ROUTINE_DEFERRAL, "routine-mutation-write"));
-            }
-            // The root-head rule (and classifyRootRoutineChain below, which lands
-            // QueryRoutineTableField whose source() asserts Root.Query) is Query-only (D1): at root
-            // only a Query chain supplies its head with @routine.
-            if (isQueryRoot && !DIR_ROUTINE.equals(chainDirectives.get(0))) {
+            // R451 — a multi-node Mutation chain carrying @routine is the routine write arm (the
+            // routine call commits before the follow-up query) and classifies for real via
+            // classifyMutationRoutineChain below, landing MutationRoutineWriteField. It shares the
+            // root-head and multi-routine rules with the Query chain: at root only a routine can
+            // supply the chain's head, on Mutation exactly as on Query.
+            boolean isMutationWriteChain = isMutationRoot && routineApplications > 0 && chainDirectives.size() > 1;
+            // The root-head rule (and the root chain classifiers below, whose leaves' source()
+            // asserts the matching root) applies to Query chains and Mutation write chains alike;
+            // Subscription chains fall through to classifyRootField's generic Deferred.
+            if ((isQueryRoot || isMutationWriteChain) && !DIR_ROUTINE.equals(chainDirectives.get(0))) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "a root field's table chain must start with @routine — directives compose the chain in "
                     + "written order, and at root only a routine can supply the chain's head (move @routine first)"));
@@ -2212,12 +2204,16 @@ class FieldBuilder {
                 // routine-then-hops chain.
                 return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
             }
+            if (isMutationWriteChain) {
+                return classifyMutationRoutineChain(fieldDef, parentTypeName, name, location);
+            }
             if (!isRoot && routineApplications == 1) {
                 return classifyChildRoutineChain(fieldDef, parentTypeName, parentType, name, location);
             }
             // Remaining shapes fall through: the Query single-node chain (classifyQueryField's
-            // @routine branch), the Mutation single-node @routine (classifyMutationField's D1 top
-            // check) and Mutation/Subscription non-routine or Subscription routine chains (their
+            // @routine branch), the Mutation single-node @routine (classifyMutationField's top
+            // check, a typed Deferred carried by routine-write-result-shapes) and
+            // Mutation/Subscription non-routine or Subscription routine chains (their
             // classifyRootField stories), and child chains of repeated @reference applications with
             // no routine node, whose concatenated path the ordinary classification below consumes
             // like any longer @reference path.
@@ -2269,8 +2265,59 @@ class FieldBuilder {
                 }
                 yield new QueryField.QueryRoutineTableField(parentTypeName, name, location,
                     walk.tb().returnType(),
-                    new TableExpr.RoutineCall(walk.tb().routine(), walk.tb().resultTable()),
-                    walk.steps());
+                    new RoutineChain(
+                        new TableExpr.RoutineCall(walk.tb().routine(), walk.tb().resultTable()),
+                        walk.steps()));
+            }
+        };
+    }
+
+    /**
+     * Classifies a Mutation root routine chain (R451): the same walk and chain-level verdicts as
+     * {@link #classifyRootRoutineChain} (the root-head rule upstream guarantees {@code @routine}
+     * supplies the head; {@link #walkRoutineChain} composes the hops;
+     * {@link #routineChainVerdict} applies the terminus and Connection rules), landing
+     * {@link MutationField.MutationRoutineWriteField} — the routine call is the write and commits
+     * before the follow-up query re-reads the terminus.
+     *
+     * <p>One write-only verdict on top: hop 0 must join by {@link On.ColumnPairs}, with no
+     * per-hop {@code filter}. The write fetcher's step 2 anchors the post-commit re-read on hop
+     * 0's table keyed by the captured routine columns, so a condition-joined or filtered hop 0
+     * (whose predicate references the routine alias, absent from step 2) has no derivable re-read
+     * anchor; it lands a typed {@code Deferred} with an empty planSlug (the R435 precedent for a
+     * shape someone may file a follow-up for) rather than reaching the leaf. Hops past 0 keep
+     * their filters — both aliases are in scope in step 2's SELECT.
+     *
+     * <p>The chain's non-empty {@code hops} is the caller's guarantee
+     * ({@code chainDirectives.size() > 1} implies at least one {@code @reference} hop); the leaf's
+     * compact constructor re-asserts it mechanically.
+     */
+    private GraphitronField classifyMutationRoutineChain(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name, SourceLocation location) {
+        return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null)) {
+            case ChainWalk.Rejected r ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+            case ChainWalk.Ok walk -> {
+                var verdict = routineChainVerdict(name, walk.tb().returnType(),
+                    walk.terminusTable(), walk.terminusIsRoutine());
+                if (verdict != null) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, verdict);
+                }
+                if (!walk.steps().isEmpty() && walk.steps().get(0) instanceof JoinStep.Hop hop0
+                        && (!(hop0.on() instanceof On.ColumnPairs) || hop0.filter() != null)) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.deferred(
+                            "a Mutation routine chain whose first hop joins by condition or carries "
+                            + "a filter has no derivable post-commit re-read anchor (the predicate "
+                            + "references the routine alias, which must not appear in the follow-up "
+                            + "query) and does not emit yet",
+                            ""));
+                }
+                yield new MutationField.MutationRoutineWriteField(parentTypeName, name, location,
+                    walk.tb().returnType(),
+                    new RoutineChain(
+                        new TableExpr.RoutineCall(walk.tb().routine(), walk.tb().resultTable()),
+                        walk.steps()));
             }
         };
     }
@@ -4144,14 +4191,15 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // R449 D1 — @routine on Mutation is R451's write arm (see MUTATION_ROUTINE_DEFERRAL). The
-        // single-node degenerate chain reaches here (the multi-node chain is signposted in
-        // classifyField's interception); landing the same typed Deferred keeps the single-node and
-        // chain stories aligned rather than letting this method's generic "both absent" fallback
-        // bury the actual cause.
+        // R451 — only the single-node degenerate chain reaches here (the multi-node chain
+        // classifies for real in classifyField's interception, landing MutationRoutineWriteField).
+        // With no @reference hop there is no post-commit table to re-read the response from, so
+        // the single-node shape stays a typed Deferred carried by the result-shapes follow-up
+        // (see MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL) rather than letting this method's generic
+        // "both absent" fallback bury the actual cause.
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.deferred(MUTATION_ROUTINE_DEFERRAL, "routine-mutation-write"));
+                Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL, "routine-write-result-shapes"));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {

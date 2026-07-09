@@ -51,7 +51,7 @@ public final class ClassifiedDsl {
         enum Operation {
           Fetch Paginate Lookup ServiceCall Count Facet Nest
           NodeResolve EntityResolve
-          Insert Upsert Update UpdateMatching Delete DeleteMatching
+          Insert Upsert Update UpdateMatching Delete DeleteMatching RoutineWrite
         }
 
         enum TargetWrapper { Single List }

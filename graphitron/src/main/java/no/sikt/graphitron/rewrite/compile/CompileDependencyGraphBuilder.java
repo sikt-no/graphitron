@@ -251,6 +251,9 @@ public final class CompileDependencyGraphBuilder {
                 addNodeIdEncoderEdge(fetcher);
                 addDmlProjectionEdges(fetcher, f.returnExpression());
             }
+            // R451: the routine-write fetcher projects the terminus type inline in step 2's
+            // post-commit SELECT (Type.$fields(...)), exactly like the query routine fetcher.
+            case MutationField.MutationRoutineWriteField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceTableField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceTableInterfaceField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceRecordField ignored -> { }

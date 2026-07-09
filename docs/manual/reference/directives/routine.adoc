@@ -2,9 +2,9 @@
 :description: Back a field with a jOOQ database routine (a stored function or procedure).
 :!toc:
 
-Backs a field with a database *routine* rather than a catalog table. Supported today is the table-valued read function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's `@table`-bound element type resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$fields(...)` against it with the same selection narrowing. The difference from a plain catalog read is the row source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments (`argMapping`) or from columns of the previous table in the chain (`columnMapping`).
+Backs a field with a database *routine* rather than a catalog table. Supported today is the table-valued function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's `@table`-bound element type resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$fields(...)` against it with the same selection narrowing. The difference from a plain catalog read is the row source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments (`argMapping`) or from columns of the previous table in the chain (`columnMapping`).
 
-`@routine` is the seam for reading from a stored function whose result set parameterises on its inputs, such as an access-control function that returns the rows a caller may see. The read shape (table-valued) is read off the routine's jOOQ kind, not declared.
+`@routine` is the seam for reading from a stored function whose result set parameterises on its inputs, such as an access-control function that returns the rows a caller may see, and, on `Mutation`, for writing through a stored function that performs the mutation itself (see <<write,Writes on Mutation>>). The routine's shape (table-valued) is read off its jOOQ kind, not declared.
 
 The directive works at root and at child positions, and it composes with xref:reference.adoc[`@reference`]: the directives on a field, read left to right, describe the path your data travels, so the routine's result table can supply the field's rows, feed further joins, or sit between catalog tables (see <<chain,Composing with @reference>>).
 
@@ -107,6 +107,33 @@ castRecentFilms(minLength: Int!): [Film!]
 
 A hop *out of* a routine result has no foreign key to ride (a function result carries no FK metadata), so a `{table:}` element there keys by name matching: the target table's primary-key columns must be exposed, by SQL name, among the routine's result columns. `films_for_actor` exposes `film_id`, film's PK, so the hop above resolves; a `condition:` element is the escape hatch when names do not line up.
 
+[[write]]
+== Writes on Mutation
+
+On a `Mutation` field, the routine call *is* the write, and it commits before the follow-up query runs. The supported shape is the chain form: `@routine` naming a `VOLATILE` set-returning function, plus at least one `@reference` hop landing the field's `@table` type.
+
+[source,graphql]
+----
+type Rental @table(name: "rental") {
+    rentalId: Int! @field(name: "rental_id")
+}
+
+type Mutation {
+    rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+        @routine(
+            name:       "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}])
+}
+----
+
+The generated fetcher is two statements with a transaction boundary between them. Statement 1 executes the routine inside the per-mutation-field transaction and captures only the columns the first hop's key needs from the routine's result rows (here `rental_id`); the transaction commits when that statement returns. Statement 2 is a read-only SELECT anchored on the first hop's table, keyed by the captured values, with any remaining hops joined as in a read chain, projecting the terminus type. The routine never appears in statement 2: re-invoking it would re-execute the write. The field's return therefore always binds to the post-commit re-read, never to the routine's own rows, so the response observes committed state without exception.
+
+An SQL error from the routine rolls the transaction back and surfaces on the mutation field like any DML error; a read error in statement 2 cannot undo the already-committed write (the same caveat the DML mutations carry).
+
+Deferred write shapes, each reported with a pointer to the follow-up item: true procedures and scalar or void routines (jOOQ exposes them through a different call surface than table-valued functions), and the single-node Mutation `@routine` with no `@reference` hop (with no hop there is no post-commit table to re-read the response from). A chain whose first hop joins by `condition:` or carries a per-hop condition is likewise deferred: its predicate references the routine's result, which must not appear in the follow-up query, so no re-read anchor can be derived.
+
 == Fetch forms and @splitQuery
 
 A routine-backed child rides the inline correlated multiset by default: one SQL statement, the lateral call re-evaluated per parent row. `@splitQuery` moves the field to the batched keyed re-query instead: the parent rows' bound columns are collected as DataLoader keys, sent as a `VALUES` table in one batch query, and the lateral call reads them off that table, so the routine still runs once per distinct input inside a single statement.
@@ -116,8 +143,8 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 == Constraints
 
 * The field's return type must be `@table`-bound, and the chain's last node must be that table. A non-`@table` return is rejected with `@routine requires a @table-annotated return type`; a routine-terminus mismatch is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`.
-* `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. The deferred scalar-read and procedure-write forks reject here today.
-* On a root field composing a chain, `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. `columnMapping` is likewise illegal at the head of a root chain (there is no previous table to bind from); bind root routine parameters from GraphQL arguments.
+* `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.
+* On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. `columnMapping` is likewise illegal at the head of a root chain (there is no previous table to bind from); bind root routine parameters from GraphQL arguments.
 * `argMapping:` / `columnMapping:` parameter names are the jOOQ-generated (camelCased) names. Binding a parameter to an argument the field does not declare, or to a column the previous table does not carry, is a build error (the column case lists the previous table's columns as candidates). A column-bound parameter's Java type must match the routine parameter's. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.
 * Connection pagination does not compose with routine-terminus chains (`@asConnection` there is a build error: keyset pagination needs an ordering contract the routine result does not carry; use `[T]` or `T`). Over a catalog-terminus chain that merely contains a routine node it is reported as deferred, as are `@orderBy` and `@condition` on routine-backed fields and `@lookupKey` composition.

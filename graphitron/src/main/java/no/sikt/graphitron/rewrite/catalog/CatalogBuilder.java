@@ -396,6 +396,16 @@ public final class CatalogBuilder {
                     errorChannelName(f.errorChannel()));
 
             // --- MutationField permits ---
+            // R451: like the R300 routine read above, the routine write is a root table sourced
+            // from a generated Routines-class method call, so it projects onto the method-backed
+            // QueryTableMethod classification (className = the generated Routines class; hover and
+            // jump-to-source route to the routine's call surface). A dedicated routine
+            // classification is a follow-up once the LSP label/hover surface is wired.
+            case MutationField.MutationRoutineWriteField f ->
+                new FieldClassification.QueryTableMethod(
+                    targetTableName(f.returnType()),
+                    f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
+                    f.routine() != null ? f.routine().methodName() : null);
             case MutationField.MutationInsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.INSERT, f.errorChannel());
             case MutationField.MutationUpdateTableField f ->
                 // R246: UPDATE carries InputArgRef instead of TableInputArg; the table name and

@@ -591,6 +591,36 @@ AS $$
     ORDER BY f.film_id
 $$;
 
+-- R451 routine fixture: the VOLATILE set-returning write function backing @routine on a
+-- Mutation field (the routine call IS the write and commits before the follow-up query).
+-- Inserts a rental row and returns its generated key as a one-row table, the shape the
+-- write fetcher's step 1 captures inside the per-field transaction; the chained
+-- @reference hop then re-reads the committed row from the rental table post-commit.
+-- staff_id is pinned to the seeded Mike (staff_id 1) so the call needs only the two
+-- domain-meaningful IN parameters.
+CREATE OR REPLACE FUNCTION public.rent_film(
+    p_inventory_id INTEGER,
+    p_customer_id  INTEGER
+) RETURNS TABLE(rental_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+    VALUES (now(), p_inventory_id, p_customer_id, 1)
+    RETURNING rental.rental_id
+$$;
+
+-- R451 routine fixture: a scalar (non-table-valued) function pinning JooqCatalog's
+-- exists-but-not-table-valued resolution arm. jOOQ places it in the generated `routines`
+-- package (not `tables`), so @routine naming it must land the typed Deferred routed off
+-- RoutineResolution.NonTableValuedRoutine rather than the absent-name rejection a typo gets.
+CREATE OR REPLACE FUNCTION public.rental_count_for_customer(
+    p_customer_id INTEGER
+) RETURNS INTEGER
+LANGUAGE sql STABLE
+AS $$
+    SELECT count(*)::int FROM rental WHERE customer_id = p_customer_id
+$$;
+
 -- R328 fixture: self-FK @nodeId reference on a Graphitron-owned DML input — the neutral
 -- `email` / `mailbox` form of the CAMPUS self-FK case. `email` has a composite PK
 -- (mailbox_id, message_no). Two foreign keys share the `mailbox_id` child column:

@@ -322,6 +322,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField f     -> validateMutationUpdateTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField f     -> validateMutationDeleteTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField f     -> validateMutationUpsertTableField(f, errors);
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField f    -> {} // R451 — RoutineDirectiveResolver pins routine resolution + arg binding at classify time; RoutineChain's compact constructor and the leaf's own pins (hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict) carry the structural shape
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField f -> validateMutationServicePolymorphicField(f, errors);

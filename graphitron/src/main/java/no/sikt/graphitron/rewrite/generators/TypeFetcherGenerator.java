@@ -207,6 +207,7 @@ public class TypeFetcherGenerator {
         MutationField.MutationUpdateTableField.class,
         MutationField.MutationDeleteTableField.class,
         MutationField.MutationUpsertTableField.class,
+        MutationField.MutationRoutineWriteField.class,
         MutationField.MutationDmlRecordField.class,
         MutationField.MutationBulkDmlRecordField.class,
         MutationField.MutationUpdatePayloadField.class,
@@ -515,6 +516,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpdateTableField f  -> builder.addMethod(buildMutationUpdateFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDeleteTableField f  -> builder.addMethod(buildMutationDeleteFetcher(ctx, f, outputPackage));
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(ctx, f, outputPackage));
+                case MutationField.MutationRoutineWriteField f -> builder.addMethod(buildMutationRoutineWriteFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServicePolymorphicField f ->
@@ -1593,6 +1595,169 @@ public class TypeFetcherGenerator {
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
+        builder.endControlFlow();
+
+        return builder.build();
+    }
+
+    /**
+     * R451: the fetcher for a {@link MutationField.MutationRoutineWriteField} — the routine call
+     * is the write, and it commits before the follow-up query runs. The DML two-step
+     * ({@link #emitKeysTransaction} / {@link #emitProjected}) transposed onto the R435 chain:
+     * step 1 executes the routine inside {@code dsl.transactionResult(tx -> ...)} (the R429
+     * per-mutation-field boundary; the transaction commits when the lambda returns) and captures
+     * only the columns hop 0's key pairs need from the routine's result rows — the exact analog
+     * of DML's PK-only {@code RETURNING}. Step 2 runs after the commit: a read-only SELECT
+     * anchored on hop 0's table keyed by the captured values
+     * ({@link #buildKeysInCondition}), remaining hops joined forward as in
+     * {@link #buildQueryRoutineFetcher}, projecting the terminus type. The routine never appears
+     * in step 2's {@code FROM} — re-invoking it would re-execute the write. Read errors during
+     * step 2 propagate as field errors and cannot undo the committed write (the same documented
+     * caveat the DML fetchers carry); an SQL error from the routine rolls the transaction back at
+     * the {@code transactionResult} boundary.
+     *
+     * <p>Both the routine call and the hop table expressions come off the shared emitters
+     * ({@link RoutineCallEmitter#emitCall} — all bindings are {@code ParamSource.Arg} per the
+     * {@code RoutineChain} pin, so the uncorrelated value overload — and
+     * {@link JoinPathEmitter#emitTableExpression}), reading the chain through the
+     * {@code RoutineChainField} capability.
+     *
+     * <p>Generated shape (list cardinality):
+     * <pre>{@code
+     * public static DataFetcherResult<Result<Record>> rentFilm(DataFetchingEnvironment env) {
+     *     try {
+     *         RentFilm source = Routines.rentFilm(env.<Integer>getArgument("inventoryId"), ...);
+     *         Rental rentFilm_0 = Tables.RENTAL.as("rentFilm_0");
+     *         DSLContext dsl = graphitronContext(env).getDslContext(env);
+     *         Result<Record1<Integer>> keys = dsl.transactionResult(tx -> DSL.using(tx)
+     *             .select(source.RENTAL_ID)
+     *             .from(source)
+     *             .fetch());
+     *         Result<Record> payload = dsl
+     *             .select(Rental.$fields(env.getSelectionSet(), rentFilm_0, env))
+     *             .from(rentFilm_0)
+     *             .where(rentFilm_0.RENTAL_ID.in(keys.getValues(source.RENTAL_ID)))
+     *             .fetch();
+     *         ...
+     *     } catch (Exception e) { ... }
+     * }
+     * }</pre>
+     */
+    private static MethodSpec buildMutationRoutineWriteFetcher(TypeFetcherEmissionContext ctx,
+            MutationField.MutationRoutineWriteField mrwf, String outputPackage) {
+        var names = GeneratorUtils.ResolvedTableNames.of(mrwf.returnType().table(),
+            mrwf.returnType().returnTypeName(), outputPackage);
+        boolean isList = mrwf.returnType().wrapper().isList();
+        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+
+        var hops = mrwf.hops();
+        var hop0 = (JoinStep.Hop) hops.get(0);
+        // The classifier's re-read-anchor verdict admits only a ColumnPairs hop 0 (a
+        // condition-joined or filtered hop 0 lands a typed Deferred before construction).
+        if (!(hop0.on() instanceof On.ColumnPairs hop0Pairs)) {
+            throw new IllegalStateException(
+                "MutationRoutineWriteField hop 0 must join by column pairs; the classifier's "
+                + "re-read-anchor verdict admits no other shape");
+        }
+        if (hop0Pairs.slotCount() == 0) {
+            throw new IllegalStateException(
+                "a routine-write hop 0 with no slots cannot anchor the post-commit re-read; the "
+                + "derivation mints the pairs from the live catalog, so empty slots indicate a "
+                + "classifier bug, not a missing catalog");
+        }
+
+        var builder = MethodSpec.methodBuilder(mrwf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+        CodeBlock startExpr = RoutineCallEmitter.emitCall(mrwf.start(),
+            new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+        builder.addStatement("$T source = $L", mrwf.start().resultTable().tableClass(), startExpr);
+        for (JoinStep step : hops) {
+            var hop = (JoinStep.Hop) step;
+            CodeBlock hopTableExpr = JoinPathEmitter.emitTableExpression(
+                step, new PreviousNodeRef.None(), new ArgumentValueSource.Env());
+            builder.addStatement("$T $L = $L.as($S)",
+                hop.targetTable().tableClass(), hop.alias(), hopTableExpr, hop.alias());
+        }
+        String anchorLocal = hop0.alias();
+        String terminalLocal = ((JoinStep.Hop) hops.getLast()).alias();
+
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+
+        // Step 1 — the write. The routine executes inside the per-field transaction; the SELECT
+        // captures hop 0's source-side key columns off the routine's result rows, and the commit
+        // happens when the lambda returns.
+        var keyColumns = hop0Pairs.slots().stream()
+            .map(no.sikt.graphitron.rewrite.model.JoinSlot::sourceSide)
+            .toList();
+        var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), keyColumns);
+        TypeName keysType = isList
+            ? ParameterizedTypeName.get(RESULT, keyRowType)
+            : keyRowType;
+        var step1 = CodeBlock.builder()
+            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", keysType, DSL).indent()
+            .add(".select(");
+        for (int i = 0; i < keyColumns.size(); i++) {
+            if (i > 0) step1.add(", ");
+            step1.add("source.$L", keyColumns.get(i).javaName());
+        }
+        step1.add(")\n")
+            .add(".from(source)\n")
+            .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
+        builder.addCode(step1.build());
+
+        if (!isList) {
+            // A single-shape routine that returned no row: nothing was keyed, so skip the
+            // follow-up SELECT and return null — the same contract as the DML single-row shape.
+            builder.addCode("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
+                DATA_FETCHER_RESULT, valueType);
+        }
+
+        // Step 2 — the post-commit re-read. Anchored on hop 0's table keyed by the captured
+        // values; the remaining hops join forward exactly as the read chain's fetcher emits them.
+        var sel = CodeBlock.builder()
+            .add("$T payload = dsl\n", valueType)
+            .indent()
+            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), terminalLocal)
+            .add(".from($L)\n", anchorLocal);
+        var filters = new java.util.ArrayList<CodeBlock>();
+        for (int i = 1; i < hops.size(); i++) {
+            var hop = (JoinStep.Hop) hops.get(i);
+            String prev = ((JoinStep.Hop) hops.get(i - 1)).alias();
+            switch (hop.on()) {
+                case On.ColumnPairs cp -> sel.add("$L\n",
+                    JoinPathEmitter.emitForwardJoin(cp, prev, hop.alias()));
+                case On.Predicate pred -> sel.add(".join($L).on($L)\n",
+                    hop.alias(), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prev, hop.alias()));
+                // Unrepresentable: RoutineChain's compact constructor rejects a lateral hop
+                // (the chain's one routine node is the start, never a hop).
+                case On.Lateral ignored -> throw new IllegalStateException(
+                    "a lateral routine hop cannot appear in a root routine chain's hops");
+            }
+            if (hop.filter() != null) {
+                filters.add(JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), prev, hop.alias()));
+            }
+        }
+        var anchorCols = hop0Pairs.slots().stream()
+            .map(s -> CodeBlock.of("$L.$L", anchorLocal, s.targetSide().javaName()))
+            .toList();
+        var capturedCols = hop0Pairs.slots().stream()
+            .map(s -> CodeBlock.of("source.$L", s.sourceSide().javaName()))
+            .toList();
+        var keysCondition = buildKeysInCondition(anchorCols, capturedCols, isList);
+        var where = filters.stream()
+            .reduce(keysCondition, (a, b) -> CodeBlock.of("$L.and($L)", a, b));
+        sel.add(".where($L)\n", where);
+        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
+        builder.addCode(sel.build());
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(catchArm(outputPackage, mrwf.errorChannel()));
         builder.endControlFlow();
 
         return builder.build();
@@ -4798,54 +4963,64 @@ public class TypeFetcherGenerator {
 
     /**
      * The PK-IN {@code Condition} expression that keys the follow-up SELECT off the {@code keys}
-     * local declared by {@link #emitKeysTransaction}. Composite-safe: a single-column PK emits
-     * {@code TABLE.PK.eq(keys.value1())} / {@code TABLE.PK.in(keys.getValues(TABLE.PK))}, a
-     * multi-column PK emits the {@code DSL.row(...).eq(DSL.row(...))} /
-     * {@code DSL.row(...).in(...toList())} row-value form. Shared by {@link #emitProjected}
-     * (inlined into {@code .where(...)}) and {@link #emitDiscriminated} (the base condition).
+     * local declared by {@link #emitKeysTransaction}. Shared by {@link #emitProjected}
+     * (inlined into {@code .where(...)}) and {@link #emitDiscriminated} (the base condition);
+     * a thin wrapper over {@link #buildKeysInCondition} passing the table's PK column
+     * expressions on both sides (the DML {@code RETURNING} captured exactly those fields).
      */
     private static CodeBlock buildPkKeysCondition(
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, boolean isList) {
-        var pkCols = tableRef.primaryKeyColumns();
+        var pkColExprs = tableRef.primaryKeyColumns().stream()
+            .map(col -> CodeBlock.of("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName()))
+            .toList();
+        return buildKeysInCondition(pkColExprs, pkColExprs, isList);
+    }
+
+    /**
+     * The key-IN {@code Condition} expression that anchors a two-step fetcher's follow-up SELECT
+     * on the {@code keys} local captured in step 1. R451 generalized this from the PK-only DML
+     * form ({@link #buildPkKeysCondition}) to an arbitrary key-column list so the routine-write
+     * fetcher shares it: {@code conditionCols} are the field expressions the WHERE tests (the
+     * follow-up table's columns), {@code keyCols} the field expressions that read the captured
+     * values back off {@code keys} (the fields step 1 selected — identical to
+     * {@code conditionCols} for DML, the routine result's columns for the write chain).
+     * Composite-safe: a single-column key emits {@code col.eq(keys.value1())} /
+     * {@code col.in(keys.getValues(keyCol))}, a multi-column key the
+     * {@code DSL.row(...).eq(DSL.row(...))} / {@code DSL.row(...).in(...toList())} row-value form.
+     */
+    private static CodeBlock buildKeysInCondition(
+            List<CodeBlock> conditionCols, List<CodeBlock> keyCols, boolean isList) {
         var b = CodeBlock.builder();
         if (isList) {
-            if (pkCols.size() == 1) {
-                var col = pkCols.get(0);
-                b.add("$T.$L.$L.in(keys.getValues($T.$L.$L))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            if (conditionCols.size() == 1) {
+                b.add("$L.in(keys.getValues($L))", conditionCols.get(0), keyCols.get(0));
             } else {
                 b.add("$T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
+                for (int i = 0; i < conditionCols.size(); i++) {
                     if (i > 0) b.add(", ");
-                    var col = pkCols.get(i);
-                    b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    b.add("$L", conditionCols.get(i));
                 }
                 b.add(").in(keys.stream().map(r -> $T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
+                for (int i = 0; i < keyCols.size(); i++) {
                     if (i > 0) b.add(", ");
-                    var col = pkCols.get(i);
-                    b.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    b.add("r.get($L)", keyCols.get(i));
                 }
                 b.add(")).toList())");
             }
         } else {
-            if (pkCols.size() == 1) {
-                var col = pkCols.get(0);
-                b.add("$T.$L.$L.eq(keys.value1())",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            if (conditionCols.size() == 1) {
+                b.add("$L.eq(keys.value1())", conditionCols.get(0));
             } else {
                 b.add("$T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
+                for (int i = 0; i < conditionCols.size(); i++) {
                     if (i > 0) b.add(", ");
-                    var col = pkCols.get(i);
-                    b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    b.add("$L", conditionCols.get(i));
                 }
                 b.add(").eq($T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
+                for (int i = 0; i < keyCols.size(); i++) {
                     if (i > 0) b.add(", ");
-                    var col = pkCols.get(i);
-                    b.add("keys.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    b.add("keys.get($L)", keyCols.get(i));
                 }
                 b.add("))");
             }

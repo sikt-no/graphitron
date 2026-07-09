@@ -150,8 +150,15 @@ final class RoutineDirectiveResolver {
         return switch (ctx.catalog.resolveTableValuedFunction(routineName)) {
             case JooqCatalog.RoutineResolution.NotInCatalog ignored -> new Resolved.Rejected(Rejection.unknownTable(
                 "@routine could not be resolved — no table-valued function named '" + routineName
-                + "' in the jOOQ catalog (scalar-read and procedure-write routines are not yet supported)",
+                + "' in the jOOQ catalog",
                 routineName, ctx.catalog.allTableSqlNames()));
+            // R451 — the name exists as a database routine but is not table-valued (a procedure or
+            // scalar / void function): a capability gap, not a typo, so it signposts the
+            // non-table-valued call surface's follow-up item rather than the unknown-name rejection.
+            case JooqCatalog.RoutineResolution.NonTableValuedRoutine ntv -> new Resolved.Rejected(Rejection.deferred(
+                "@routine " + ntv.detail()
+                + "; the non-table-valued call surface (procedures, scalar and void routines) does not emit yet",
+                "routine-write-result-shapes"));
             case JooqCatalog.RoutineResolution.NotATableValuedFunction ignored -> new Resolved.Rejected(Rejection.structural(
                 "@routine could not be resolved — '" + routineName
                 + "' resolves to a table or view, not a table-valued function"));

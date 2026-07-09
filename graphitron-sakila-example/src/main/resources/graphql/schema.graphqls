@@ -33,6 +33,14 @@ type ActorFilm @table(name: "films_for_actor") {
     title:  String
 }
 
+# R451: the terminus of the routine-write chain Mutation.rentFilm. The response re-reads the
+# committed rental row from the catalog table post-commit, so this is an ordinary @table type.
+type Rental @table(name: "rental") {
+    rentalId:    Int! @field(name: "rental_id")
+    inventoryId: Int! @field(name: "inventory_id")
+    customerId:  Int! @field(name: "customer_id")
+}
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
     # R190 fixture: the one @service(contextArguments: ...) site in the example schema.
@@ -2663,6 +2671,19 @@ type Mutation {
     # The service is read-only here; the mutation framing pins the mutation-root path.
     contentSearchManyMutation: [Content!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchContents"})
+
+    # R451: the routine write — the routine call IS the write and commits before the follow-up
+    # query. rent_film is a VOLATILE set-returning function inserting a rental row and returning
+    # its generated key as a one-row table; step 1 captures that key inside the per-field
+    # transaction, step 2 re-reads the committed row from the rental table via the name-matched
+    # @reference hop (rent_film exposes rental_id, rental's PK), so the response observes
+    # committed state.
+    rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}])
 
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.

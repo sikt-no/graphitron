@@ -4742,6 +4742,75 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== R451: routine write — @routine on Mutation commits before the follow-up query =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilm_routineWriteCommitsAndReturnsReReadRow() {
+        // The routine call IS the write: step 1 runs rent_film (a VOLATILE set-returning
+        // function inserting a rental row) inside dsl.transactionResult(...) and captures the
+        // returned rental_id; step 2 re-reads the committed row from the rental table after the
+        // commit. The response row and the independent jOOQ read below both observe the
+        // committed state — the item's pinned contract.
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        Integer rentalId = null;
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    rentFilm(inventoryId: 2, customerId: 3) {
+                        rentalId
+                        inventoryId
+                        customerId
+                    }
+                }
+                """);
+
+            var rentals = (java.util.List<Map<String, Object>>) data.get("rentFilm");
+            assertThat(rentals).hasSize(1);
+            var rental = rentals.get(0);
+            assertThat(rental).containsEntry("inventoryId", 2);
+            assertThat(rental).containsEntry("customerId", 3);
+            rentalId = (Integer) rental.get("rentalId");
+            assertThat(rentalId).isNotNull();
+
+            // Independent read on the same DSLContext, outside the mutation's transaction:
+            // the row is committed, not merely visible inside a still-open transaction.
+            int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+            assertThat(countAfter)
+                .as("rentFilm committed exactly one rental row")
+                .isEqualTo(countBefore + 1);
+            assertThat(dsl.fetchExists(org.jooq.impl.DSL.table("rental"),
+                    org.jooq.impl.DSL.field("rental_id").eq(rentalId)))
+                .as("the committed row is independently readable by its returned key")
+                .isTrue();
+        } finally {
+            if (rentalId != null) {
+                dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
+                    .where(org.jooq.impl.DSL.field("rental_id").eq(rentalId))
+                    .execute();
+            }
+        }
+    }
+
+    @Test
+    void rentFilm_failingRoutineRollsBackAndSurfacesError() {
+        // An SQL error from the routine (an FK violation: inventory 999999 does not exist)
+        // rolls the transaction back at the transactionResult boundary and surfaces on the
+        // mutation field through the same channel as DML errors; no row is committed.
+        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { rentFilm(inventoryId: 999999, customerId: 3) { rentalId } }");
+
+        assertThat(result.getErrors())
+            .as("a failing routine call surfaces an error on the mutation field")
+            .isNotEmpty();
+        int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        assertThat(countAfter)
+            .as("the failed routine write committed nothing")
+            .isEqualTo(countBefore);
+    }
+
     @Test
     void assignFilmRecord_decodesNodeIdIntoJooqRecordMember() {
         // R195: a @service input bean whose member is a jOOQ FilmRecord backed by

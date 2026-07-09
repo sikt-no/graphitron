@@ -16,7 +16,8 @@ import java.util.Optional;
  * call sites pass {@link Optional#empty()}.
  */
 public sealed interface MutationField extends RootField, WithErrorChannel
-    permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
+    permits MutationField.DmlTableField, MutationField.MutationRoutineWriteField,
+            MutationField.MutationServiceTableField,
             MutationField.MutationServiceRecordField, MutationField.MutationServicePolymorphicField,
             MutationField.MutationServiceTableInterfaceField,
             MutationField.MutationDmlRecordField,
@@ -34,6 +35,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationUpsertTableField f -> new Operation.Upsert(f.tableInputArg());
             case MutationUpdateTableField f -> new Operation.Update(f.inputArg(), f.updateRows());
             case MutationDeleteTableField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
+            // Routine write: the routine call is the write verb; its call surface lives on the
+            // leaf's RoutineChain (read via RoutineChainField), not as arm payload.
+            case MutationRoutineWriteField f -> new Operation.RoutineWrite();
             case MutationServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
             case MutationServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
             case MutationServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
@@ -58,6 +62,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationUpdateTableField f -> OutputField.dmlTarget(f.returnExpression());
             case MutationDeleteTableField f -> OutputField.dmlTarget(f.returnExpression());
             case MutationUpsertTableField f -> OutputField.dmlTarget(f.returnExpression());
+            // Routine write: the response is the post-commit chain re-read projecting the
+            // terminus @table type — a bare Table shape, exactly as the read chain projects.
+            case MutationRoutineWriteField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case MutationServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             // Interface-only service-polymorphic return (union/table-interface rejected at classify).
@@ -247,6 +254,69 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     ) implements DmlTableField {
         @Override public DomainReturnType domainReturnType() {
             return dmlDomainReturnType(returnExpression, tableInputArg.inputTable());
+        }
+    }
+
+    /**
+     * A mutation field whose table chain starts with a database routine (R451): the routine call
+     * <em>is</em> the write, and it commits before the follow-up query runs. The emitted fetcher
+     * is the DML two-step transposed onto the chain — step 1 executes the routine inside the
+     * per-field {@code dsl.transactionResult(...)} boundary (R429) and captures only the columns
+     * hop 0's key needs from the routine's result rows (the analog of DML's PK-only
+     * {@code RETURNING}); step 2 runs after the commit, a read-only SELECT anchored on hop 0's
+     * table with the captured keys, remaining hops joined as in R435, projecting the terminus
+     * {@code @table} type. The routine never appears in step 2's {@code FROM}: re-invoking it
+     * would re-execute the write, so the field's return binds to the re-read only.
+     *
+     * <p>The chain shape is the shared {@link RoutineChain} (the {@code QueryRoutineTableField}
+     * carrier), exposed through {@link RoutineChainField}; this leaf adds one pin of its own —
+     * {@code hops} non-empty. With no hop there is no post-commit table to re-read from; the
+     * single-node Mutation {@code @routine} stays a typed {@code Deferred} carried by the
+     * result-shapes follow-up item (see {@code roadmap/routine-write-result-shapes.md}).
+     *
+     * <p>{@code errorChannel()} is pinned empty: the return is the direct terminus {@code @table}
+     * type (the terminus rule), never a payload carrying a typed {@code errors} field, so the
+     * fetcher wraps in the no-channel redacting catch arm — an SQL error from the routine rolls
+     * the transaction back at the {@code transactionResult} boundary and surfaces exactly as DML
+     * errors do.
+     */
+    record MutationRoutineWriteField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        RoutineChain chain
+    ) implements MutationField, RoutineChainField {
+
+        public MutationRoutineWriteField {
+            if (chain == null) {
+                throw new NullPointerException("MutationRoutineWriteField.chain must not be null");
+            }
+            // The write leaf's own pin (D2's chain-form requirement): at least one hop, so a
+            // post-commit re-read anchor exists. The classifier's interception routes the
+            // single-node shape to the typed Deferred before construction.
+            if (chain.hops().isEmpty()) {
+                throw new IllegalArgumentException(
+                    "MutationRoutineWriteField requires at least one @reference hop: with no hop "
+                    + "there is no post-commit table to re-read from, and the single-node Mutation "
+                    + "@routine classifies as typed Deferred (routine-write-result-shapes)");
+            }
+            // Terminus invariant: the projected @table type is the chain's last node.
+            if (!chain.terminus().denotesSameTableAs(returnType.table())) {
+                throw new IllegalArgumentException(
+                    "MutationRoutineWriteField terminus mismatch: the chain ends on '"
+                    + chain.terminus().tableName() + "' but the field's @table type is bound to '"
+                    + returnType.table().tableName() + "'; the classifier's terminus rule must "
+                    + "reject this before construction");
+            }
+        }
+
+        @Override public Optional<ErrorChannel> errorChannel() {
+            return Optional.empty();
+        }
+
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
         }
     }
 

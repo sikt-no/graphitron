@@ -135,4 +135,14 @@ public sealed interface Operation {
 
     /** A condition-matched DELETE. Modeled-but-unpopulated: unimplemented. */
     record DeleteMatching() implements Operation {}
+
+    /**
+     * A database-routine write (R451): the routine call is the write verb, committed inside the
+     * per-field transaction before the chain's follow-up re-read runs. This is the procedure-write
+     * arm R300's retirement anticipated — a new operation on the existing
+     * {@link Source.Root.Mutation} source. The arm carries no payload: the call surface and hops
+     * live on the leaf's {@code RoutineChain} (read via {@code RoutineChainField}), and the
+     * response shape (the post-commit terminus projection) is a {@link Target} fact.
+     */
+    record RoutineWrite() implements Operation {}
 }

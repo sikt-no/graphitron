@@ -561,6 +561,28 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * @routine on Mutation (R451): the routine call IS the write and commits before the
+         * follow-up query. The chain form (@routine plus at least one @reference hop) lands
+         * MutationRoutineWriteField (Mutation / RoutineWrite / List(Table)): step 1 runs the
+         * VOLATILE set-returning function inside the per-field transaction and captures hop 0's
+         * key columns; step 2 re-reads the committed rows from the hop's table, so the response
+         * always observes committed state. The routine resolves against the sakila-db fixture
+         * catalog's rent_film write function.
+         */
+        new Example("routine-mutation-write", """
+            type Rental @table(name: "rental") {
+              rentalId: Int! @field(name: "rental_id")
+            }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+                @classified(source: Mutation, operation: RoutineWrite, target: List, targetShape: Table)
+            }
+            """),
+
+        /*
          * @table children under a jOOQ-TableRecord-backed parent, reached by @lookupKey and by
          * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
          * new-query is derived): `FilmDetails.language` is a RecordLookupTableField (its @lookupKey makes

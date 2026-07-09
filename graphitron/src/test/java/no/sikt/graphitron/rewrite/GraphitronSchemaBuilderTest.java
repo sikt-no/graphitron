@@ -7402,6 +7402,28 @@ class GraphitronSchemaBuilderTest {
         assertThat(p.methodClassName()).endsWith(".Routines");
     }
 
+    @Test
+    @ProjectionFor(MutationField.MutationRoutineWriteField.class)
+    void mutationRoutineWriteProjectionCarriesRoutineCoordinates() {
+        // R451 — like the R300 read above, the routine write projects onto the method-backed
+        // QueryTableMethod classification (className = the generated Routines class; the
+        // tableName is the terminus the response re-reads). A dedicated routine classification
+        // is a follow-up once the LSP label/hover surface is wired.
+        var snapshot = buildSnapshot("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """);
+        var p = (FieldClassification.QueryTableMethod) snapshot.fieldClassificationsByCoord().get("Mutation.rentFilm");
+        assertThat(p.tableName()).isEqualToIgnoringCase("rental");
+        assertThat(p.methodName()).isEqualTo("rentFilm");
+        assertThat(p.methodClassName()).endsWith(".Routines");
+    }
+
     // ===== R435 — order-significant @routine / @reference composition =====
     // The classifier reads the ordered field-level directive applications once, enforces the
     // root-head rule, and validates the single-node chain (including columnMapping against the
@@ -8045,31 +8067,34 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void mutationMultiNodeRoutineChainDefersToRoutineWriteArm() {
-        // R449 D1 — a multi-node routine chain on Mutation lands the routine-mutation-write
-        // signpost (R451's write arm), not a QueryRoutineTableField whose source() asserts
-        // Root.Query. The interception mints it before the Query-oriented root-head rule.
+    void mutationMultiNodeRoutineChainClassifiesAsRoutineWrite() {
+        // R451 D3 — a multi-node routine chain on Mutation classifies for real (replacing R449
+        // D1's routine-mutation-write Deferred), landing MutationRoutineWriteField with the
+        // pinned RoutineChain shape: the routine node is the start, the single @reference hop is
+        // the post-commit re-read anchor, and the terminus is the field's @table type.
         var schema = build("""
-            type Film @table(name: "film") { title: String }
-            type Query { film: Film }
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
             type Mutation {
-              recentFilms(actorId: Int!, minLength: Int!): [Film!]!
-                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
-                @reference(path: [{table: "film"}])
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
             }
             """);
-        var f = (UnclassifiedField) schema.field("Mutation", "recentFilms");
-        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-mutation-write");
-        assertThat(f.reason()).contains("routine write arm");
+        var f = (MutationField.MutationRoutineWriteField) schema.field("Mutation", "rentFilm");
+        assertThat(f.hops()).hasSize(1);
+        assertThat(f.start().resultTable().tableName()).isEqualToIgnoringCase("rent_film");
+        assertThat(f.chain().terminus().tableName()).isEqualToIgnoringCase("rental");
+        assertThat(f.returnType().table().tableName()).isEqualToIgnoringCase("rental");
+        assertThat(f.errorChannel()).isEmpty();
     }
 
     @Test
-    void mutationSingleNodeRoutineDefersToRoutineWriteArm() {
-        // R449 D1 — the single-node @routine on Mutation lands the same Deferred from
-        // classifyMutationField's top; today (pre-R449) it lands the generic "both absent"
-        // fallback, so this is the regression case that keeps the single-node and chain stories
-        // aligned.
+    void mutationSingleNodeRoutineDefersToResultShapesFollowUp() {
+        // R451 D2 — the single-node @routine on Mutation has no @reference hop, so there is no
+        // post-commit table to re-read the response from; it stays a typed Deferred from
+        // classifyMutationField's top, its planSlug repointed from routine-mutation-write to the
+        // result-shapes follow-up that carries the void / scalar / OUT-parameter story.
         var schema = build(TILGANG_TYPE + """
             type Query { tilgang: Tilgang }
             type Mutation {
@@ -8079,8 +8104,85 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-mutation-write");
-        assertThat(f.reason()).contains("routine write arm");
+        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-write-result-shapes");
+        assertThat(f.reason()).contains("no post-commit table");
+    }
+
+    @Test
+    void mutationRoutineChainNamingScalarFunctionDefersOffNonTableValuedArm() {
+        // R451 D2 — a routine name that exists in the schema but is not table-valued (here the
+        // scalar rental_count_for_customer) routes off JooqCatalog's NonTableValuedRoutine
+        // resolution arm to the result-shapes Deferred: the author named a real routine whose
+        // call surface is the follow-up's work, not a typo.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            type Mutation {
+              countRentals(customerId: Int!): [Rental!]!
+                @routine(name: "rental_count_for_customer", argMapping: "pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "countRentals");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-write-result-shapes");
+        assertThat(f.reason()).contains("not table-valued");
+    }
+
+    @Test
+    void mutationRoutineChainNamingAbsentRoutineKeepsStructuralRejection() {
+        // R451 D2 — the fixture pair's other half: a genuinely absent name stays the structural
+        // not-in-catalog rejection (a typo is an authoring error, never a Deferred). This is the
+        // distinction the NonTableValuedRoutine arm exists to make possible.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            type Mutation {
+              countRentals(customerId: Int!): [Rental!]!
+                @routine(name: "no_such_routine_anywhere", argMapping: "pCustomerId: customerId")
+                @reference(path: [{table: "rental"}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "countRentals");
+        assertThat(f.rejection()).isNotInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("no table-valued function named 'no_such_routine_anywhere'");
+    }
+
+    @Test
+    void mutationRoutineChainWithReferenceFirstRejectsWithRootHeadRule() {
+        // R451 D3 — the root-head rule extends to Mutation write chains: directives compose the
+        // chain in written order, and at root only the routine can supply the head.
+        var schema = build("""
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Rental!]!
+                @reference(path: [{table: "rental"}])
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason()).contains("move @routine first");
+    }
+
+    @Test
+    void mutationRoutineChainWithConditionJoinedHopZeroDefers() {
+        // R451 D3 — a condition-joined hop 0 has no derivable post-commit re-read anchor (the
+        // predicate references the routine alias, which must not appear in the follow-up query),
+        // so the classifier's re-read-anchor verdict lands a typed Deferred instead of the leaf.
+        var schema = build("""
+            type Actor @table(name: "actor") { firstName: String }
+            type Query { actor: Actor }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): [Actor!]!
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+                @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "rentFilm");
+        assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(f.reason()).contains("no derivable post-commit re-read anchor");
     }
 
     @Test

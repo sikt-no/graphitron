@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -177,9 +178,12 @@ public class JooqCatalog {
      * <ul>
      *   <li>{@link RoutineResolution.Resolved} — the name resolved to a table-valued function and its
      *       convenience method was found.</li>
-     *   <li>{@link RoutineResolution.NotInCatalog} — the name resolves to no table at all (covers the
-     *       deferred scalar-read / procedure-write forks, which jOOQ does not place in
-     *       {@code getTables()}, so they reject here rather than throwing at emit).</li>
+     *   <li>{@link RoutineResolution.NonTableValuedRoutine} — the name resolves to no table, but a
+     *       generated routine class by that name exists in a schema's {@code routines} sub-package:
+     *       a procedure or a scalar / void function (R451; these carry a typed {@code Deferred}
+     *       signposting the non-table-valued call surface's follow-up item).</li>
+     *   <li>{@link RoutineResolution.NotInCatalog} — the name resolves to no table and no generated
+     *       routine at all: genuinely absent (a typo gets this structural rejection).</li>
      *   <li>{@link RoutineResolution.NotATableValuedFunction} — the name resolves to a catalog object
      *       that is not a function (a plain table / view).</li>
      *   <li>{@link RoutineResolution.NoConvenienceMethod} — function table found, but no table-form
@@ -189,7 +193,8 @@ public class JooqCatalog {
     public RoutineResolution resolveTableValuedFunction(String routineName) {
         var resolution = findTable(routineName);
         if (!(resolution instanceof TableResolution.Resolved r)) {
-            return new RoutineResolution.NotInCatalog();
+            var nonTableValued = findNonTableValuedRoutine(routineName);
+            return nonTableValued != null ? nonTableValued : new RoutineResolution.NotInCatalog();
         }
         var entry = r.entry();
         var table = entry.table();
@@ -226,6 +231,67 @@ public class JooqCatalog {
             .toList();
         return new RoutineResolution.Resolved(
             ClassName.get(routinesClass), method.getName(), params, entry.toTableRef(routineName));
+    }
+
+    /**
+     * R451 probe behind {@link #resolveTableValuedFunction(String)}'s not-a-table path: looks for a
+     * generated routine class matching {@code routineName} in each schema's {@code routines}
+     * sub-package (scoped to the named schema when the value is qualified). jOOQ generates one
+     * class per database routine there — procedures and scalar / void functions included — under
+     * its default PascalCase naming strategy; the loaded candidate is verified by instantiating it
+     * and comparing {@link org.jooq.Routine#getName()} against the SQL name, so a naming-strategy
+     * mismatch degrades to a probe miss (the caller falls back to
+     * {@link RoutineResolution.NotInCatalog}), never a false positive.
+     *
+     * @return the populated {@link RoutineResolution.NonTableValuedRoutine} arm, or {@code null}
+     *         when no schema carries a generated routine by that name
+     */
+    private RoutineResolution.NonTableValuedRoutine findNonTableValuedRoutine(String routineName) {
+        if (catalog == null) return null;
+        var qn = parseQualifiedTableName(routineName).orElse(null);
+        if (qn == null) return null;
+        String routineClassName = pascalCase(qn.table());
+        return catalog.schemaStream()
+            .filter(s -> qn.schema().map(sch -> s.getName().equalsIgnoreCase(sch)).orElse(true))
+            .map(s -> {
+                String candidateClass = s.getClass().getPackageName() + ".routines." + routineClassName;
+                try {
+                    Class<?> c = Class.forName(candidateClass, true, codegenLoader);
+                    if (!org.jooq.Routine.class.isAssignableFrom(c)) return null;
+                    var routine = (org.jooq.Routine<?>) c.getDeclaredConstructor().newInstance();
+                    if (!routine.getName().equalsIgnoreCase(qn.table())) return null;
+                    return new RoutineResolution.NonTableValuedRoutine(
+                        "'" + routineName + "' exists as a database routine (" + candidateClass
+                        + ") but is not table-valued — no RETURNS TABLE(...) form, so jOOQ exposes "
+                        + "it through the Routines call surface rather than as a catalog table");
+                } catch (ReflectiveOperationException | LinkageError e) {
+                    return null;
+                }
+            })
+            .filter(Objects::nonNull)
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * jOOQ's default naming transform for generated routine classes: underscore-separated SQL
+     * segments become capitalized PascalCase segments ({@code rental_count_for_customer} to
+     * {@code RentalCountForCustomer}). Only used to form the probe candidate in
+     * {@link #findNonTableValuedRoutine}, where the {@code getName()} verification makes a
+     * transform miss harmless.
+     */
+    private static String pascalCase(String sqlName) {
+        var sb = new StringBuilder(sqlName.length());
+        boolean upper = true;
+        for (char ch : sqlName.toCharArray()) {
+            if (ch == '_' || ch == ' ' || ch == '-') {
+                upper = true;
+                continue;
+            }
+            sb.append(upper ? Character.toUpperCase(ch) : ch);
+            upper = false;
+        }
+        return sb.toString();
     }
 
     /**
@@ -1380,7 +1446,7 @@ public class JooqCatalog {
     /**
      * Outcome of {@link #resolveTableValuedFunction(String)}. {@link Resolved} carries the call
      * surface ({@code Routines} class + method + ordered params) and the routine-result
-     * {@link TableRef}; the three failure arms map to the typed validate-time rejections the
+     * {@link TableRef}; the four failure arms map to the typed validate-time rejections the
      * {@code RoutineDirectiveResolver} surfaces.
      */
     public sealed interface RoutineResolution {
@@ -1391,6 +1457,15 @@ public class JooqCatalog {
         record NotInCatalog() implements RoutineResolution {}
         record NotATableValuedFunction() implements RoutineResolution {}
         record NoConvenienceMethod(String detail) implements RoutineResolution {}
+        /**
+         * R451: the name resolves to a generated database routine that is not table-valued (a
+         * procedure or a scalar / void function). jOOQ does not place these in {@code getTables()},
+         * but it does generate a per-routine class in the schema's {@code routines} sub-package;
+         * probing that package is what distinguishes "exists but is not table-valued" (this arm,
+         * routed to a typed {@code Deferred}) from a genuinely absent name
+         * ({@link NotInCatalog}, the structural rejection a typo gets).
+         */
+        record NonTableValuedRoutine(String detail) implements RoutineResolution {}
     }
 
     /**
