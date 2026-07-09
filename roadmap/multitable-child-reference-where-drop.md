@@ -1,7 +1,7 @@
 ---
 id: R452
 title: "Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: interface-union
