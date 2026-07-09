@@ -45,17 +45,20 @@ public record ColumnRef(String sqlName, String javaName, String columnClass, Typ
      * hand-constructed.
      */
     public ColumnRef(String sqlName, String javaName, String columnClass) {
-        this(sqlName, javaName, columnClass, bestGuessOrNull(columnClass));
+        this(sqlName, javaName, columnClass, bestGuessScalarTypeOrNull(columnClass));
     }
 
     /**
-     * Test-convenience decode: a real scalar FQCN decodes to a {@link ClassName}; the synthetic
-     * placeholder values some fixtures pass for {@code columnClass} (an empty string, a key name, a
-     * {@code related_n} tag) are not class names and yield a {@code null} {@code columnType}. Such
-     * refs exist only for their {@code sqlName}/{@code javaName} and are never emitted, so their
-     * type is never read. Array columns never reach here (see the constructor javadoc).
+     * The single decode shared by {@link ColumnRef} and {@code JooqCatalog.ColumnEntry}'s
+     * hand-built (3-/4-arg) constructors, so the two never diverge on placeholder tolerance. A real
+     * scalar FQCN decodes to a {@link ClassName}; the synthetic placeholder values some fixtures
+     * pass for {@code columnClass} (an empty string, a key name, a {@code related_n} tag) are not
+     * class names and yield a {@code null} {@code columnType}. Such refs exist only for their
+     * {@code sqlName}/{@code javaName} and are never emitted, so their type is never read. Array
+     * columns never reach here (see the constructor javadoc); the array-safe producer is the catalog
+     * reflection boundary, which supplies {@code TypeName.get(col.getType())}.
      */
-    private static TypeName bestGuessOrNull(String columnClass) {
+    public static TypeName bestGuessScalarTypeOrNull(String columnClass) {
         if (columnClass == null || columnClass.isBlank()) return null;
         try {
             return ClassName.bestGuess(columnClass);

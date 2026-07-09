@@ -1325,13 +1325,13 @@ public class JooqCatalog {
     public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable, TypeName columnType) {
         /**
          * Convenience for hand-built scalar entries (tests) that only carry the source-form
-         * {@code columnClass} string: derives {@code columnType} via {@code ClassName.bestGuess}.
-         * Array columns must come through the reflection boundary, which supplies
-         * {@code TypeName.get(col.getType())}; see {@link ColumnRef}'s auxiliary constructor.
+         * {@code columnClass} string. Routes through {@link ColumnRef#bestGuessScalarTypeOrNull} so
+         * this and {@link ColumnRef}'s auxiliary constructor share one decode and cannot diverge on
+         * placeholder tolerance. Array columns must come through the reflection boundary, which
+         * supplies {@code TypeName.get(col.getType())}.
          */
         public ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {
-            this(javaName, columnClass, sqlName, nullable,
-                columnClass == null || columnClass.isBlank() ? null : ClassName.bestGuess(columnClass));
+            this(javaName, columnClass, sqlName, nullable, ColumnRef.bestGuessScalarTypeOrNull(columnClass));
         }
     }
 
