@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R456` | Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads) | In Progress | 2026-07-09 | [plan](workspacefile-read-vs-didchange-race.md) |
-| `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | In Progress | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
+| `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | In Review | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
 | `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | In Progress | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
 | `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Review | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
@@ -180,7 +180,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R452` [**Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields**](multitable-child-reference-where-drop.md) — In Progress, bug
+- `R452` [**Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields**](multitable-child-reference-where-drop.md) — In Review, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R458` [**Per-participant explicit join paths on multi-table interface/union child fields**](per-participant-multitable-child-join-paths.md) — Spec, architecture, blocked by [multitable-child-reference-where-drop](multitable-child-reference-where-drop.md)
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
