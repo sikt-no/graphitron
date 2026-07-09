@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.compile;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -12,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.List;
 
@@ -23,11 +25,13 @@ import java.util.List;
  * of a pure exhaustive-switch projection over the same leaves the emitter reads (no emitter-reference
  * logic reconstructed here).
  *
- * <p>Two exhaustive switches carry the one-model drift guard: {@link #addTypeNodes} over the
+ * <p>Three exhaustive switches carry the one-model drift guard: {@link #addTypeNodes} over the
  * {@link GraphitronType} leaves (a new type variant fails to compile until its file contribution is
- * declared) and {@link #addFieldEdges} over the {@link GraphitronField} leaves (a new field variant
- * fails to compile until its reference contribution is declared). The R333 step (a later item)
- * re-targets these switches onto the method graph without changing this consumer.
+ * declared), {@link #addFieldEdges} over the {@link GraphitronField} leaves (a new field variant
+ * fails to compile until its reference contribution is declared), and {@link #addProjectionChildEdges}
+ * over the {@link ChildField} leaves (a new inline-projecting field variant fails to compile until its
+ * type-to-type projection edge is declared). The R333 step (a later item) re-targets these switches
+ * onto the method graph without changing this consumer.
  *
  * <p>Edge policy (see {@link CompileDependencyGraph}'s superset contract and {@link UtilSingleton}):
  * per-type structural edges are projected precisely from the leaves; the ABI-frozen runtime
@@ -63,6 +67,7 @@ public final class CompileDependencyGraphBuilder {
         for (var field : schema.fields().values()) {
             addFieldEdges(field);
         }
+        addTypeProjectionEdges();
         addBlanketAndWiringEdges();
     }
 
@@ -284,6 +289,143 @@ public final class CompileDependencyGraphBuilder {
             case DmlReturnExpression.EncodedSingle ignored -> { }
             case DmlReturnExpression.EncodedList ignored -> { }
         }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // Type-to-type projection composition: a top-down walk mirroring TypeClassGenerator's emit seam.
+    // ------------------------------------------------------------------------------------------------
+
+    /**
+     * Projection-composition edges attributed to the {@code types.<Type>} class, mirroring
+     * {@link no.sikt.graphitron.rewrite.generators.TypeClassGenerator}'s emit seam exactly: only
+     * {@link GraphitronType.TableType} / {@link GraphitronType.NodeType} parents get a type class
+     * (the same {@code generate()} filter), and that class's {@code $fields} method composes each
+     * inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}'s target projection
+     * via {@code Target.$fields(...)} (see
+     * {@link no.sikt.graphitron.rewrite.generators.TypeClassGenerator#emitSelectionSwitch} /
+     * {@link no.sikt.graphitron.rewrite.generators.InlineTableFieldEmitter}). This walk is kept
+     * <em>separate</em> from {@link #addFieldEdges}: that switch keys edges off each field's immediate
+     * {@code parentTypeName()} and cannot recover the hosting type class for nesting-hosted fields
+     * without re-deriving nesting ancestry, whereas {@code emitSelectionSwitch} emits a nested inline
+     * field's projection into the <em>outer</em> table type's class. Attributing here from the top of
+     * the type is the only way to match the emitter's actual host.
+     *
+     * <p>The {@link no.sikt.graphitron.rewrite.generators.CompositeDecodeHelperRegistry} shared
+     * "does this child inline-project a type class, and what target" predicate is a capability-lift
+     * candidate ({@code InlineProjectingField} with {@code projectedTypeName()}, implemented by
+     * {@code TableField}/{@code LookupTableField}, read by this walk and {@code emitSelectionSwitch});
+     * named here as the collapse target, not blocking this item.
+     */
+    private void addTypeProjectionEdges() {
+        for (var type : schema.types().values()) {
+            String host = switch (type) {
+                case GraphitronType.TableType t -> t.name();
+                case GraphitronType.NodeType t -> t.name();
+                default -> null;
+            };
+            if (host == null) {
+                continue;
+            }
+            String hostClass = units.typeClass(host);
+            // Blanket frozen-scaffold edge: a THROW-mode @nodeId decode helper lifted onto this
+            // class (CompositeDecodeHelperRegistry) references GraphitronClientException. Blanketed
+            // rather than gated on the helper because the target is a UtilSingleton.FrozenScaffold,
+            // so an over-approximated edge onto it never fires a recompile (its ABI is schema-invariant).
+            acc.addEdge(hostClass, graphitronClientExceptionFqcn());
+            for (var field : schema.fieldsOf(host)) {
+                if (field instanceof ChildField cf) {
+                    addProjectionChildEdges(hostClass, cf);
+                }
+            }
+        }
+    }
+
+    /**
+     * Per-child projection dispatch, a no-{@code default} exhaustive switch over the {@link ChildField}
+     * leaves (following {@link #addFieldEdges}' drift-guard discipline rather than
+     * {@code emitSelectionSwitch}'s {@code default -> {}}): a future inline-projecting leaf fails to
+     * compile here until its edge contribution is declared. Today the projecting set is exactly
+     * {@code {TableField, LookupTableField}} plus {@link ChildField.NestingField} recursion; every
+     * other leaf gets an explicit empty arm.
+     *
+     * <p>Edges attribute to {@code hostClass} (the hosting type class), not the field's
+     * {@code parentTypeName()}: a {@code NestingField}'s children emit into the outer table type's
+     * {@code $fields} method, so {@code hostClass} is threaded through the recursion unchanged.
+     */
+    private void addProjectionChildEdges(String hostClass, ChildField field) {
+        switch (field) {
+            // Inline-projecting leaves: the $fields switch arm composes Target.$fields(...) inline,
+            // so this type class references the target's projection class. A @nodeId-decoding filter
+            // additionally lifts a decode helper onto this class, reaching NodeIdEncoder precisely.
+            case ChildField.TableField f -> {
+                acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
+                if (filtersDecodeNodeId(f.filters())) {
+                    addNodeIdEncoderEdge(hostClass);
+                }
+            }
+            case ChildField.LookupTableField f -> {
+                acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
+                if (filtersDecodeNodeId(f.filters())) {
+                    addNodeIdEncoderEdge(hostClass);
+                }
+            }
+            // Nesting projections inline into the same outer type class; recurse with hostClass fixed.
+            case ChildField.NestingField f -> {
+                for (var child : f.nestedFields()) {
+                    addProjectionChildEdges(hostClass, child);
+                }
+            }
+            // Scalar column subquery (InlineColumnReferenceFieldEmitter, no $fields) and the computed
+            // arm (external user class via ClassName.bestGuess) reference no generated unit.
+            case ChildField.ColumnField ignored -> { }
+            case ChildField.ColumnReferenceField ignored -> { }
+            case ChildField.ParticipantColumnReferenceField ignored -> { }
+            case ChildField.CompositeColumnField ignored -> { }
+            case ChildField.CompositeColumnReferenceField ignored -> { }
+            case ChildField.ComputedField ignored -> { }
+            // DataLoader-backed / record-parent / polymorphic / service leaves are not emitted inline
+            // into this $fields method (TypeClassGenerator collects only TableField/LookupTableField);
+            // their projection edges are sourced from their own <parent>Fetchers unit in addFieldEdges.
+            case ChildField.SplitTableField ignored -> { }
+            case ChildField.SplitLookupTableField ignored -> { }
+            case ChildField.TableInterfaceField ignored -> { }
+            case ChildField.ServiceTableField ignored -> { }
+            case ChildField.RecordTableField ignored -> { }
+            case ChildField.RecordLookupTableField ignored -> { }
+            case ChildField.TableMethodField ignored -> { }
+            case ChildField.RecordTableMethodField ignored -> { }
+            case ChildField.InterfaceField ignored -> { }
+            case ChildField.UnionField ignored -> { }
+            case ChildField.ServiceRecordField ignored -> { }
+            case ChildField.RecordField ignored -> { }
+            case ChildField.RecordCompositeField ignored -> { }
+            case ChildField.PropertyField ignored -> { }
+            case ChildField.SingleRecordIdField ignored -> { }
+            case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
+            case ChildField.ErrorsField ignored -> { }
+        }
+    }
+
+    /**
+     * True when any of {@code filters} carries a call param whose extraction decodes a {@code @nodeId}
+     * argument, exactly the model predicate {@code CompositeDecodeHelperRegistry} lifts a decode helper
+     * on (see {@code ArgCallEmitter.buildNodeIdDecodeExtraction}). A multi-segment path wraps the leaf
+     * in a {@link CallSiteExtraction.NestedInputField}, so the leaf is inspected through it.
+     */
+    private static boolean filtersDecodeNodeId(List<WhereFilter> filters) {
+        return filters.stream()
+            .flatMap(f -> f.callParams().stream())
+            .anyMatch(p -> isNodeIdDecode(p.extraction()));
+    }
+
+    private static boolean isNodeIdDecode(CallSiteExtraction extraction) {
+        return extraction instanceof CallSiteExtraction.NodeIdDecodeKeys
+            || (extraction instanceof CallSiteExtraction.NestedInputField nif
+                && nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys);
+    }
+
+    private String graphitronClientExceptionFqcn() {
+        return units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronClientException");
     }
 
     private void addTypeClassEdge(String fetcher, ReturnTypeRef returnType) {

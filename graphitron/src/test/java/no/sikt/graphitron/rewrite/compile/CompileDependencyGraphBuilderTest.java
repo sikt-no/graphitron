@@ -3,13 +3,20 @@ package no.sikt.graphitron.rewrite.compile;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +47,44 @@ class CompileDependencyGraphBuilderTest {
             ClassName.get("jooq", "Tables"),
             List.of(),
             List.of());
+    }
+
+    private static TableRef languageTable() {
+        return new TableRef(
+            "language", "LANGUAGE",
+            ClassName.get("jooq.tables", "Language"),
+            ClassName.get("jooq.tables.records", "LanguageRecord"),
+            ClassName.get("jooq", "Tables"),
+            List.of(),
+            List.of());
+    }
+
+    private static ReturnTypeRef.TableBoundReturnType languageReturn() {
+        return new ReturnTypeRef.TableBoundReturnType("Language", languageTable(), new FieldWrapper.Single(true));
+    }
+
+    /** A standalone-lookup-shape inline table field on {@code Film} projecting {@code Language}. */
+    private static ChildField.TableField filmLanguageField(List<WhereFilter> filters) {
+        return new ChildField.TableField(
+            "Film", "language", null,
+            languageReturn(),
+            List.of(),          // empty joinPath -> standalone shape, parentCorrelation must be null
+            filters,
+            new OrderBySpec.None(), null, null);
+    }
+
+    /** A {@code @nodeId}-decoding filter, the shape CompositeDecodeHelperRegistry lifts a helper on. */
+    private static WhereFilter nodeIdDecodingFilter() {
+        var decode = new HelperRef.Decode(
+            ClassName.get("com.example.gen.util", "NodeIdEncoder"),
+            "decodeLanguage",
+            List.of(new ColumnRef("ID", "java.lang.Integer", "java.lang.Integer")),
+            "Language");
+        var param = new CallParam("id",
+            new CallSiteExtraction.SkipMismatchedElement(decode), false, "java.lang.Integer");
+        return new GeneratedConditionFilter(
+            "com.example.gen.conditions.LanguageConditions", "byId", languageTable(),
+            List.of(param), List.of());
     }
 
     /** A minimal two-type schema: {@code type Film @table} + {@code Query { films: [Film] }}. */
@@ -111,6 +156,84 @@ class CompileDependencyGraphBuilderTest {
         assertThat(g.directReferences(PKG + ".Graphitron")).contains(
             PKG + ".schema.GraphitronSchema",
             PKG + ".schema.GraphitronContext");
+    }
+
+    /**
+     * A two-type schema where {@code Film} has an inline {@code @reference} table field projecting
+     * {@code Language}. The {@code filters} let a case add a {@code @nodeId}-decoding filter.
+     */
+    private static GraphitronSchema filmProjectsLanguageSchema(List<WhereFilter> filters) {
+        var types = new LinkedHashMap<String, GraphitronType>();
+        types.put("Film", new GraphitronType.TableType("Film", null, filmTable()));
+        types.put("Language", new GraphitronType.TableType("Language", null, languageTable()));
+
+        var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
+        fields.put(FieldCoordinates.coordinates("Film", "language"), filmLanguageField(filters));
+
+        return new GraphitronSchema(types, fields);
+    }
+
+    @Test
+    void typeClassReferencesInlineProjectionTargetProjection() {
+        var g = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
+
+        // The Film type class's $fields composes Language.$fields(...) inline for the @reference
+        // field, so types.Film references types.Language (a same-package, nested-$L reference the
+        // R455 fix made the oracle see).
+        assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".types.Language");
+    }
+
+    @Test
+    void typeClassBlanketsGraphitronClientException() {
+        var g = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
+
+        // Every emitted type class carries the blanket frozen-scaffold edge (a THROW-mode decode
+        // helper on the class references it); the target is frozen, so the over-approximation is safe.
+        assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".schema.GraphitronClientException");
+        assertThat(g.directReferences(PKG + ".types.Language")).contains(PKG + ".schema.GraphitronClientException");
+    }
+
+    @Test
+    void typeClassReachesNodeIdEncoderOnlyWhenAnInlineFilterDecodesANodeId() {
+        var without = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
+        assertThat(without.directReferences(PKG + ".types.Film"))
+            .doesNotContain(PKG + ".util.NodeIdEncoder");
+
+        var with = CompileDependencyGraphBuilder.fromModel(
+            filmProjectsLanguageSchema(List.of(nodeIdDecodingFilter())), PKG);
+        // A @nodeId-decoding filter lifts a decode helper onto types.Film, reaching NodeIdEncoder
+        // precisely (the one per-type-growing singleton).
+        assertThat(with.directReferences(PKG + ".types.Film")).contains(PKG + ".util.NodeIdEncoder");
+    }
+
+    @Test
+    void nestingHostedInlineFieldAttributesEdgeToOuterTypeClass() {
+        // Film { details: FilmDetails { language: Language @reference } } — the nested plain object
+        // shares Film's table context and emits into Film's $fields, so the Language projection edge
+        // must attach to types.Film, not types.FilmDetails (which has no type class at all).
+        var types = new LinkedHashMap<String, GraphitronType>();
+        types.put("Film", new GraphitronType.TableType("Film", null, filmTable()));
+        types.put("Language", new GraphitronType.TableType("Language", null, languageTable()));
+
+        // The nested field's own parentTypeName is FilmDetails (its immediate SDL parent); the walk
+        // must still attribute its edge to the outer Film type class, not re-derive from parentTypeName.
+        var nestedLanguage = new ChildField.TableField(
+            "FilmDetails", "language", null,
+            languageReturn(), List.of(), List.of(), new OrderBySpec.None(), null, null);
+        var nesting = new ChildField.NestingField(
+            "Film", "details", null,
+            new ReturnTypeRef.TableBoundReturnType("FilmDetails", filmTable(), new FieldWrapper.Single(true)),
+            List.of(nestedLanguage));
+
+        var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
+        fields.put(FieldCoordinates.coordinates("Film", "details"), nesting);
+
+        var g = CompileDependencyGraphBuilder.fromModel(new GraphitronSchema(types, fields), PKG);
+
+        // The projection edge attaches to the outer host (types.Film), NOT the nested field's own
+        // parentTypeName (types.FilmDetails, which never hosts a $fields projection).
+        assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".types.Language");
+        assertThat(g.directReferences(PKG + ".types.FilmDetails")).doesNotContain(PKG + ".types.Language");
     }
 
     @Test
