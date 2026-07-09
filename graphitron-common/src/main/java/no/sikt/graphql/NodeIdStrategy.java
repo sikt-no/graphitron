@@ -3,6 +3,9 @@ package no.sikt.graphql;
 import org.jooq.*;
 import org.jooq.impl.UpdatableRecordImpl;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -166,7 +169,8 @@ public class NodeIdStrategy {
     }
 
     /**
-     * Check whether two strings are equal if decoded as node IDs. Returns {@code false} if decoding fails.
+     * Check whether two strings are equal when decoded as node IDs. Returns {@code false} unless
+     * <em>both</em> inputs are genuine node IDs that decode to the same value.
      *
      * <p>Used by the {@code _entities} query to match representation IDs from the router against
      * IDs produced by the local service. These may differ in base64 padding while still decoding
@@ -176,12 +180,50 @@ public class NodeIdStrategy {
      * // "QzoxCg==" and "QzoxCg" both decode to "C:1\n", so this returns true:
      * nodeIdStrategy.areEqualNodeIds("QzoxCg==", "QzoxCg");
      * }</pre>
+     *
+     * <p>Because this is a fallback used against plain {@code @key} values as well as real node
+     * IDs, it must never report two <em>different</em> plain keys as equal. Decoding is therefore
+     * strict (see {@link #decodeAsNodeId(String)}): inputs that are not valid base64url, whose
+     * bytes are not well-formed UTF-8, or that lack the {@code typeId:keys} separator are treated
+     * as "not a node ID" and never match. This guards against numeric keys such as
+     * {@code "12400006"} and {@code "52400006"}, which are both valid base64 but decode to
+     * malformed UTF-8; a lenient decoder collapses those bytes to identical U+FFFD replacement
+     * characters and wrongly reports them as equal.
      */
     public boolean areEqualNodeIds(String a, String b) {
-        try {
-            return dec(a).equals(dec(b));
-        } catch (Exception e) {
-            return false;
+        String decodedA = decodeAsNodeId(a);
+        return decodedA != null && decodedA.equals(decodeAsNodeId(b));
+    }
+
+    /**
+     * Strictly decode {@code s} as a node ID, or return {@code null} if it is not one.
+     *
+     * <p>Unlike {@link #dec(String)}, this rejects malformed UTF-8 rather than silently
+     * substituting U+FFFD replacement characters, and requires the decoded value to carry the
+     * {@code typeId:keys} separator that every ID produced by {@link #createId} contains. Plain
+     * {@code @key} values (numeric codes and the like) therefore decode to {@code null} and are
+     * never mistaken for a node ID.
+     */
+    private static String decodeAsNodeId(String s) {
+        if (s == null) {
+            return null;
         }
+        byte[] bytes;
+        try {
+            bytes = Base64.getUrlDecoder().decode(s);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        String decoded;
+        try {
+            decoded = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException e) {
+            return null;
+        }
+        return decoded.indexOf(':') >= 0 ? decoded : null;
     }
 }

@@ -115,4 +115,49 @@ class NodeIdStrategyTest {
     void returnsFalseWhenDecodingFails() {
         assertFalse(new NodeIdStrategy().areEqualNodeIds("@", "@"));
     }
+
+    @Test
+    @DisplayName("Distinct numeric @key values are not treated as equal node IDs")
+    void distinctNumericKeysAreNotEqualNodeIds() {
+        // Both are valid base64 but decode to malformed UTF-8. A lenient decoder collapses their
+        // bytes to identical U+FFFD replacement characters and wrongly reports them as equal,
+        // which mismatched federated entities keyed on numeric codes (e.g. organisasjonskode).
+        assertFalse(new NodeIdStrategy().areEqualNodeIds("12400006", "52400006"));
+    }
+
+    @Test
+    @DisplayName("Distinct short numeric @key values are not treated as equal node IDs")
+    void distinctShortNumericKeysAreNotEqualNodeIds() {
+        var nodeIdStrategy = new NodeIdStrategy();
+        assertFalse(nodeIdStrategy.areEqualNodeIds("104", "105"));
+        assertFalse(nodeIdStrategy.areEqualNodeIds("104", "204"));
+        assertFalse(nodeIdStrategy.areEqualNodeIds("105", "106"));
+    }
+
+    @Test
+    @DisplayName("A plain @key value is not equal to a real node ID")
+    void plainKeyIsNotEqualToNodeId() {
+        var realNodeId = new NodeIdStrategy().createId("Organisasjon", "12400006");
+        assertFalse(new NodeIdStrategy().areEqualNodeIds("12400006", realNodeId));
+    }
+
+    @Test
+    @DisplayName("Different real node IDs are not treated as equal")
+    void differentRealNodeIdsAreNotEqual() {
+        var nodeIdStrategy = new NodeIdStrategy();
+        var a = nodeIdStrategy.createId("Organisasjon", "12400006");
+        var b = nodeIdStrategy.createId("Organisasjon", "52400006");
+        assertFalse(nodeIdStrategy.areEqualNodeIds(a, b));
+    }
+
+    @Test
+    @DisplayName("A real node ID equals itself and its unpadded form")
+    void realNodeIdEqualsUnpaddedForm() {
+        var nodeIdStrategy = new NodeIdStrategy();
+        var id = nodeIdStrategy.createId("Organisasjon", "12400006");
+        assertTrue(nodeIdStrategy.areEqualNodeIds(id, id));
+        // createId already emits without padding; a padded copy must still compare equal.
+        var padded = id + "=".repeat((4 - id.length() % 4) % 4);
+        assertTrue(nodeIdStrategy.areEqualNodeIds(id, padded));
+    }
 }
