@@ -29,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R457` | @mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE | In Progress | 2026-07-09 | [plan](mutation-table-param-for-delete.md) |
+| `R457` | @mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE | In Review | 2026-07-09 | [plan](mutation-table-param-for-delete.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -239,7 +239,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture, blocked by [consumer-derived-input-tables](consumer-derived-input-tables.md)
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
-- `R457` [**@mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE**](mutation-table-param-for-delete.md) — In Progress, architecture
+- `R457` [**@mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE**](mutation-table-param-for-delete.md) — In Review, architecture
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
 - `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
 - `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup

@@ -1,7 +1,7 @@
 ---
 id: R457
 title: "@mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 6
 theme: model-cleanup
