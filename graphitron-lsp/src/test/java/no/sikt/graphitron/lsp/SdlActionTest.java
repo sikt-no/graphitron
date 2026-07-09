@@ -2,7 +2,8 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.code_action.SdlAction.RewriteResult;
 import no.sikt.graphitron.lsp.code_action.SdlActions;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 
@@ -130,7 +131,7 @@ class SdlActionTest {
         return new CompletionData(List.of(), List.of(), List.of(), NAMED_REFS);
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 }

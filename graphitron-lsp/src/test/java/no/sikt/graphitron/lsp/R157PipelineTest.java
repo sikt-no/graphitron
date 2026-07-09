@@ -10,7 +10,7 @@ import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -234,7 +234,7 @@ class R157PipelineTest {
     }
 
     private static List<org.eclipse.lsp4j.Diagnostic> diagnosticsFor(Artefacts artefacts, String source) {
-        var file = new WorkspaceFile(1, source);
+        var file = WorkspaceFileTestSupport.snapshot(source);
         return Diagnostics.compute("", file, artefacts.catalog(), artefacts.snapshot(),
             ValidationReport.empty());
     }

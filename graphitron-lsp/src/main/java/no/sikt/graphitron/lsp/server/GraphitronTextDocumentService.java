@@ -113,12 +113,13 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     private void publishDiagnosticsForRecalculate() {
         if (client == null) return;
         for (String uri : workspace.drainRecalculate()) {
-            workspace.get(uri).ifPresent(file -> {
-                var diagnostics = Diagnostics.compute(
-                    workspace.vocabulary(), uri, file, workspace.catalog(),
-                    workspace.snapshot(), workspace.validationReport());
+            var diagnostics = workspace.withView(uri, null, view ->
+                Diagnostics.compute(
+                    workspace.vocabulary(), uri, view, workspace.catalog(),
+                    workspace.snapshot(), workspace.validationReport()));
+            if (diagnostics != null) {
                 client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
-            });
+            }
         }
     }
 
@@ -130,65 +131,66 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     @Override
     public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(DefinitionParams params) {
         return CompletableFuture.supplyAsync(() -> {
-            var fileOpt = workspace.get(params.getTextDocument().getUri());
-            if (fileOpt.isEmpty()) return Either.forLeft(List.of());
-            var file = fileOpt.get();
-            var pos = Positions.resolve(file.source(),
-                params.getPosition().getLine(),
-                params.getPosition().getCharacter()).tsPoint();
-            return Definitions.compute(workspace.vocabulary(), file, workspace.catalog(),
-                    workspace.sourceIndex(), workspace.snapshot(), pos)
-                .or(() -> IntraSchemaDefinitions.compute(workspace, workspace.snapshot(), params.getTextDocument().getUri(), pos))
-                .or(() -> DeclarationDefinitions.compute(file, workspace.catalog(),
-                    workspace.sourceIndex(), workspace.snapshot(), pos))
-                .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
-                .orElseGet(() -> Either.forLeft(List.of()));
+            String uri = params.getTextDocument().getUri();
+            Either<List<? extends Location>, List<? extends LocationLink>> result =
+                workspace.withView(uri, null, file -> {
+                    var pos = Positions.resolve(file.source(),
+                        params.getPosition().getLine(),
+                        params.getPosition().getCharacter()).tsPoint();
+                    // IntraSchemaDefinitions takes its own withAllViews (the lock is
+                    // released before this lambda runs, so that is not re-entrant); it
+                    // returns a read-only Location, so a per-provider generation skew is
+                    // harmless here in a way it would not be for a composed edit.
+                    return Definitions.compute(workspace.vocabulary(), file, workspace.catalog(),
+                            workspace.sourceIndex(), workspace.snapshot(), pos)
+                        .or(() -> IntraSchemaDefinitions.compute(workspace, workspace.snapshot(), uri, pos))
+                        .or(() -> DeclarationDefinitions.compute(file, workspace.catalog(),
+                            workspace.sourceIndex(), workspace.snapshot(), pos))
+                        .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
+                        .orElseGet(() -> Either.forLeft(List.of()));
+                });
+            return result != null ? result : Either.forLeft(List.of());
         });
     }
 
     @Override
     public CompletableFuture<List<InlayHint>> inlayHint(InlayHintParams params) {
-        return CompletableFuture.supplyAsync(() -> {
-            var fileOpt = workspace.get(params.getTextDocument().getUri());
-            if (fileOpt.isEmpty()) return List.of();
-            return InlayHints.compute(
-                workspace.inlayHintConfig(), fileOpt.get(), workspace.snapshot(), params.getRange());
-        });
+        return CompletableFuture.supplyAsync(() ->
+            workspace.withView(params.getTextDocument().getUri(), List.of(), file ->
+                InlayHints.compute(
+                    workspace.inlayHintConfig(), file, workspace.snapshot(), params.getRange())));
     }
 
     @Override
     public CompletableFuture<Hover> hover(HoverParams params) {
-        return CompletableFuture.supplyAsync(() -> {
-            var fileOpt = workspace.get(params.getTextDocument().getUri());
-            if (fileOpt.isEmpty()) return null;
-            var file = fileOpt.get();
-            var pos = Positions.resolve(file.source(),
-                params.getPosition().getLine(),
-                params.getPosition().getCharacter()).tsPoint();
-            return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
-                workspace.sourceIndex(), workspace.snapshot(), pos,
-                workspace.inlayHintConfig().hoverClassification()).orElse(null);
-        });
+        return CompletableFuture.supplyAsync(() ->
+            workspace.withView(params.getTextDocument().getUri(), null, file -> {
+                var pos = Positions.resolve(file.source(),
+                    params.getPosition().getLine(),
+                    params.getPosition().getCharacter()).tsPoint();
+                return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
+                    workspace.sourceIndex(), workspace.snapshot(), pos,
+                    workspace.inlayHintConfig().hoverClassification()).orElse(null);
+            }));
     }
 
     @Override
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams params) {
-        return CompletableFuture.supplyAsync(() -> {
-            var fileOpt = workspace.get(params.getTextDocument().getUri());
-            if (fileOpt.isEmpty()) {
-                return Either.forLeft(List.of());
-            }
-            var file = fileOpt.get();
-            var pos = Positions.resolve(file.source(),
-                params.getPosition().getLine(),
-                params.getPosition().getCharacter()).tsPoint();
-            var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
-            if (directiveOpt.isEmpty()) {
-                return Either.forLeft(List.of());
-            }
-            var directive = directiveOpt.get();
-            return Either.forLeft(Completions.at(
-                workspace, directive, pos, params.getPosition(), file.source()));
-        });
+        return CompletableFuture.supplyAsync(() ->
+            workspace.withView(params.getTextDocument().getUri(),
+                Either.<List<CompletionItem>, CompletionList>forLeft(List.of()), file -> {
+                    // One snapshot feeds the position resolve, the directive scan, and
+                    // Completions.at, so completion can no longer tear against an edit
+                    // that lands between its own source and tree reads.
+                    var pos = Positions.resolve(file.source(),
+                        params.getPosition().getLine(),
+                        params.getPosition().getCharacter()).tsPoint();
+                    var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
+                    if (directiveOpt.isEmpty()) {
+                        return Either.forLeft(List.of());
+                    }
+                    return Either.forLeft(Completions.at(
+                        workspace, directiveOpt.get(), pos, params.getPosition(), file.source()));
+                }));
     }
 }

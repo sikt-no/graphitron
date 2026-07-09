@@ -65,6 +65,25 @@ public final class WorkspaceFile {
     }
 
     /**
+     * Capture an immutable {@link FileSnapshot} of this file's current
+     * generation: clone the native tree (a cheap refcounted {@code ts_tree_copy}
+     * whose lifetime is independent of this file's, so it survives the eager
+     * {@link Tree#close()} the next edit performs) and pair it with the current
+     * {@code source} and {@code version}. Because {@code source} is never mutated
+     * in place, capturing the three fields together yields an internally
+     * consistent triple.
+     *
+     * <p>Package-private: only {@link Workspace} calls this, while holding its
+     * lock, so the field reads get the happens-before edge from the same lock the
+     * mutators run under. The returned clone is a native resource the caller must
+     * {@link FileSnapshot#close() close}; {@link Workspace}'s lambda-scoped view
+     * accessors own that lifecycle.
+     */
+    FileSnapshot snapshot() {
+        return new FileSnapshot(tree.clone(), source, version);
+    }
+
+    /**
      * Apply a range edit. Incremental: the old tree informs the new parse
      * so unchanged subtrees are reused.
      *

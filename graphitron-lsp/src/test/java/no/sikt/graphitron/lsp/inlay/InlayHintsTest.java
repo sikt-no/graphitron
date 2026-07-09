@@ -1,7 +1,8 @@
 package no.sikt.graphitron.lsp.inlay;
 
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
@@ -306,11 +307,11 @@ class InlayHintsTest {
         );
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 
-    private static Range fullRange(WorkspaceFile file) {
+    private static Range fullRange(FileSnapshot file) {
         // Generous full-document range so the visibility filter passes for every node.
         return new Range(new Position(0, 0), new Position(10_000, 0));
     }

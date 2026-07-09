@@ -7,7 +7,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -83,7 +83,7 @@ public final class SdlActions {
      * candidate; the same-object className-absence check rejects
      * already-migrated sites.
      */
-    static Stream<Node> detectLegacyNameSites(WorkspaceFile file) {
+    static Stream<Node> detectLegacyNameSites(FileSnapshot file) {
         var vocab = LspVocabulary.load();
         var matches = new java.util.ArrayList<Node>();
         for (var directive : Directives.findAll(file.tree().getRootNode())) {
@@ -138,7 +138,7 @@ public final class SdlActions {
      * carrying the unresolved name otherwise.
      */
     static RewriteResult rewriteNameToClassName(
-        WorkspaceFile file, Node nameField, Map<String, String> namedReferences
+        FileSnapshot file, Node nameField, Map<String, String> namedReferences
     ) {
         Node valueNode = Nodes.childOfKind(nameField, VALUE);
         if (valueNode == null) {

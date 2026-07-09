@@ -2,7 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -40,7 +40,7 @@ class RejectionSeverityCoverageTest {
         var uri = ValidationReport.canonicalUri(path);
         var loc = new SourceLocation(1, 1, path);
         var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
-        var file = new WorkspaceFile(1, "type Foo { x: Int }\n");
+        var file = WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
 
         var unmapped = new ArrayList<String>();
         for (var permit : permits) {

@@ -4,7 +4,8 @@ import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import io.github.treesitter.jtreesitter.Point;
 import org.junit.jupiter.api.Test;
@@ -158,7 +159,7 @@ class SourceCadenceHoverAndDefinitionTest {
         assertThat(hoverText(workspace, file, methodPos)).contains("Second doc, moved down.");
     }
 
-    private static String hoverText(Workspace workspace, WorkspaceFile file, Point pos) {
+    private static String hoverText(Workspace workspace, FileSnapshot file, Point pos) {
         return Hovers.compute(LspVocabulary.load(), file, workspace.catalog(),
             workspace.sourceIndex(), workspace.snapshot(), pos, false)
             .orElseThrow().getContents().getRight().getValue();
@@ -180,11 +181,11 @@ class SourceCadenceHoverAndDefinitionTest {
         return new Workspace(new CompletionData(List.of(film), List.of(), List.of()));
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 
-    private static Point pointAt(WorkspaceFile file, int line, String token) {
+    private static Point pointAt(FileSnapshot file, int line, String token) {
         String source = new String(file.source(), StandardCharsets.UTF_8);
         String[] lines = source.split("\n", -1);
         int col = lines[line].indexOf(token);

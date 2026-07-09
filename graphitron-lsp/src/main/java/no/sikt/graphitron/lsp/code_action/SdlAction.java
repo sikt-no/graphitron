@@ -2,7 +2,7 @@ package no.sikt.graphitron.lsp.code_action;
 
 import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import org.eclipse.lsp4j.TextEdit;
 
 import java.util.Set;
@@ -58,7 +58,7 @@ public record SdlAction(
      */
     @FunctionalInterface
     public interface Detector {
-        Stream<Node> detect(WorkspaceFile file);
+        Stream<Node> detect(FileSnapshot file);
     }
 
     /**
@@ -68,7 +68,7 @@ public record SdlAction(
      */
     @FunctionalInterface
     public interface Rewrite {
-        RewriteResult rewrite(WorkspaceFile file, Node match);
+        RewriteResult rewrite(FileSnapshot file, Node match);
     }
 
     /**

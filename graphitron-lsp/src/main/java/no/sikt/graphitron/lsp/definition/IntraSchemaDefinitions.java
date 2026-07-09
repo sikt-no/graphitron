@@ -53,27 +53,35 @@ public final class IntraSchemaDefinitions {
     public static Optional<Location> compute(
         Workspace workspace, LspSchemaSnapshot snapshot, String cursorUri, Point pos
     ) {
-        var cursorFile = workspace.get(cursorUri).orElse(null);
-        if (cursorFile == null || cursorFile.tree() == null) return Optional.empty();
+        // withAllViews so the cursor-file leaf resolution and the workspace-wide
+        // declaration scan read one consistent generation of every open file; the
+        // views are closed for us when the lambda returns.
+        return workspace.withAllViews(views -> {
+            var cursorFile = views.get(cursorUri);
+            if (cursorFile == null) return Optional.<Location>empty();
 
-        Node leaf = cursorFile.tree().getRootNode().getDescendant(pos, pos).orElse(null);
-        if (leaf == null || !NAME.matches(leaf)) return Optional.empty();
-        Node parent = leaf.getParent().orElse(null);
-        if (parent == null || !NAMED_TYPE.matches(parent)) return Optional.empty();
+            Node leaf = cursorFile.tree().getRootNode().getDescendant(pos, pos).orElse(null);
+            if (leaf == null || !NAME.matches(leaf)) return Optional.<Location>empty();
+            Node parent = leaf.getParent().orElse(null);
+            if (parent == null || !NAMED_TYPE.matches(parent)) return Optional.<Location>empty();
 
-        String typeName = Nodes.text(leaf, cursorFile.source());
-        if (TypeNames.BUILTIN_SCALARS.contains(typeName)) return Optional.empty();
+            String typeName = Nodes.text(leaf, cursorFile.source());
+            if (TypeNames.BUILTIN_SCALARS.contains(typeName)) return Optional.<Location>empty();
 
-        for (var uri : workspace.openUris()) {
-            var file = workspace.get(uri).orElse(null);
-            if (file == null || file.tree() == null) continue;
-            if (!file.declaredTypes().contains(typeName)) continue;
-            var nameNode = DeclarationKind.findDefinition(file.tree().getRootNode(), file.source(), typeName);
-            if (nameNode.isPresent()) {
-                return Optional.of(locationOf(uri, nameNode.get(), file.source()));
+            for (var entry : views.entrySet()) {
+                var file = entry.getValue();
+                // findDefinition returns empty for a file that does not declare the
+                // type, so it doubles as the per-file guard; the snapshot no longer
+                // carries declaredTypes to pre-filter (it exists only for the
+                // workspace's own under-lock mutators), and the walk is cheap at LSP
+                // open-file counts.
+                var nameNode = DeclarationKind.findDefinition(file.tree().getRootNode(), file.source(), typeName);
+                if (nameNode.isPresent()) {
+                    return Optional.of(locationOf(entry.getKey(), nameNode.get(), file.source()));
+                }
             }
-        }
-        return snapshotFallback(snapshot, typeName);
+            return snapshotFallback(snapshot, typeName);
+        });
     }
 
     /**

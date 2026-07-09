@@ -3,8 +3,8 @@ package no.sikt.graphitron.lsp.code_action;
 import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.lsp.code_action.SdlAction.RewriteResult;
 import no.sikt.graphitron.lsp.parsing.Nodes;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.Workspace;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionParams;
@@ -76,63 +76,70 @@ public final class CodeActions {
     public static List<Either<Command, CodeAction>> compute(
         CodeActionParams params, Workspace workspace
     ) {
-        var fileOpt = workspace.get(params.getTextDocument().getUri());
-        if (fileOpt.isEmpty()) return List.of();
-        var file = fileOpt.get();
+        String fileUri = params.getTextDocument().getUri();
         var actions = SdlActions.all(workspace.catalog());
 
-        var out = new ArrayList<Either<Command, CodeAction>>();
-        for (var action : actions) {
-            // Materialise the detector eagerly: per-site filter, plus
-            // bulk activation, plus the empty-list guard, all walk the
-            // same list.
-            List<Node> matches = action.detector().detect(file).toList();
-            if (matches.isEmpty()) continue;
+        // One consistent generation of every open file: the cursor file's
+        // per-site and file-bulk actions and the workspace-bulk action all read
+        // the same snapshots, so a composed multi-document WorkspaceEdit can never
+        // pair a stale byte offset in one file with a fresh tree in another.
+        var out = workspace.withAllViews(views -> {
+            var file = views.get(fileUri);
+            if (file == null) return null;
+            var acc = new ArrayList<Either<Command, CodeAction>>();
+            for (var action : actions) {
+                // Materialise the detector eagerly: per-site filter, plus
+                // bulk activation, plus the empty-list guard, all walk the
+                // same list.
+                List<Node> matches = action.detector().detect(file).toList();
+                if (matches.isEmpty()) continue;
 
-            String fileUri = params.getTextDocument().getUri();
-            // Per-site: the cursor or selection range is intersected
-            // against each match. LSP code-action requests bring the
-            // request range; we pick matches whose byte range overlaps
-            // the request range in source-bytes terms.
-            for (var match : matches) {
-                if (!intersects(file, params.getRange(), match)) continue;
-                var result = action.rewrite().rewrite(file, match);
-                if (result instanceof RewriteResult.Edit edit) {
-                    out.add(Either.forRight(perSiteAction(action, fileUri, edit.edit())));
+                // Per-site: the cursor or selection range is intersected
+                // against each match. LSP code-action requests bring the
+                // request range; we pick matches whose byte range overlaps
+                // the request range in source-bytes terms.
+                for (var match : matches) {
+                    if (!intersects(file, params.getRange(), match)) continue;
+                    var result = action.rewrite().rewrite(file, match);
+                    if (result instanceof RewriteResult.Edit edit) {
+                        acc.add(Either.forRight(perSiteAction(action, fileUri, edit.edit())));
+                    }
+                }
+
+                // File-scoped bulk: composes every resolvable match in
+                // this document.
+                var fileSiteEdits = applyAll(action, file, matches);
+                if (!fileSiteEdits.isEmpty() || !allMatchesResolved(action, file, matches)) {
+                    acc.add(Either.forRight(fileBulkAction(
+                        action, fileUri, fileSiteEdits,
+                        countResolvable(action, file, matches),
+                        countSkipped(action, file, matches))));
+                }
+
+                // Workspace-scoped bulk: composes resolvable matches
+                // across every open file (including this one).
+                Map<String, List<TextEdit>> wsEdits = new LinkedHashMap<>();
+                int wsResolvable = 0;
+                int wsSkipped = 0;
+                for (var entry : views.entrySet()) {
+                    var wsFile = entry.getValue();
+                    var wsMatches = action.detector().detect(wsFile).toList();
+                    if (wsMatches.isEmpty()) continue;
+                    var edits = applyAll(action, wsFile, wsMatches);
+                    if (!edits.isEmpty()) wsEdits.put(entry.getKey(), edits);
+                    wsResolvable += countResolvable(action, wsFile, wsMatches);
+                    wsSkipped += countSkipped(action, wsFile, wsMatches);
+                }
+                if (wsResolvable > 0 || wsSkipped > 0) {
+                    acc.add(Either.forRight(workspaceBulkAction(
+                        action, wsEdits, wsResolvable, wsSkipped)));
                 }
             }
-
-            // File-scoped bulk: composes every resolvable match in
-            // this document.
-            var fileSiteEdits = applyAll(action, file, matches);
-            if (!fileSiteEdits.isEmpty() || !allMatchesResolved(action, file, matches)) {
-                out.add(Either.forRight(fileBulkAction(
-                    action, fileUri, fileSiteEdits,
-                    countResolvable(action, file, matches),
-                    countSkipped(action, file, matches))));
-            }
-
-            // Workspace-scoped bulk: composes resolvable matches
-            // across every open file (including this one).
-            Map<String, List<TextEdit>> wsEdits = new LinkedHashMap<>();
-            int wsResolvable = 0;
-            int wsSkipped = 0;
-            for (var uri : openUris(workspace)) {
-                var wsFileOpt = workspace.get(uri);
-                if (wsFileOpt.isEmpty()) continue;
-                var wsFile = wsFileOpt.get();
-                var wsMatches = action.detector().detect(wsFile).toList();
-                if (wsMatches.isEmpty()) continue;
-                var edits = applyAll(action, wsFile, wsMatches);
-                if (!edits.isEmpty()) wsEdits.put(uri, edits);
-                wsResolvable += countResolvable(action, wsFile, wsMatches);
-                wsSkipped += countSkipped(action, wsFile, wsMatches);
-            }
-            if (wsResolvable > 0 || wsSkipped > 0) {
-                out.add(Either.forRight(workspaceBulkAction(
-                    action, wsEdits, wsResolvable, wsSkipped)));
-            }
-        }
+            return acc;
+        });
+        // Cursor file not open: no SDL actions and, matching the prior behaviour,
+        // no lint quick-fixes either.
+        if (out == null) return List.of();
         // R398: the finding-keyed lint QuickFix branch, alongside the detector-driven SdlActions
         // above. It projects the LintFix the rule computed build-side straight off the
         // ValidationReport, sharing only the WorkspaceEdit / TextEdit / QuickFix emit primitives.
@@ -140,20 +147,7 @@ public final class CodeActions {
         return out;
     }
 
-    private static List<String> openUris(Workspace workspace) {
-        // Workspace doesn't expose an iteration view today; collect via
-        // the recalculation queue plus the requested file. The spec's
-        // workspace-bulk action is best-effort: it operates on every
-        // file the workspace knows about. Until Workspace exposes a
-        // dedicated openFiles() view, we fall back to the
-        // markAllForRecalculation pattern: it enqueues every open file,
-        // so draining gives us every URI without mutating diagnostics.
-        // To avoid actually triggering recalculation, we use a lighter
-        // path: iterate via reflection-free helper added in tandem.
-        return workspace.openUris();
-    }
-
-    private static boolean intersects(WorkspaceFile file, Range requestRange, Node match) {
+    private static boolean intersects(FileSnapshot file, Range requestRange, Node match) {
         if (requestRange == null) return true;
         Position matchStart = no.sikt.graphitron.lsp.parsing.Positions
             .toLspPosition(file.source(), match.getStartByte());
@@ -168,7 +162,7 @@ public final class CodeActions {
         return a.getCharacter() < b.getCharacter();
     }
 
-    private static List<TextEdit> applyAll(SdlAction action, WorkspaceFile file, List<Node> matches) {
+    private static List<TextEdit> applyAll(SdlAction action, FileSnapshot file, List<Node> matches) {
         return matches.stream()
             .map(m -> action.rewrite().rewrite(file, m))
             .filter(r -> r instanceof RewriteResult.Edit)
@@ -176,21 +170,21 @@ public final class CodeActions {
             .toList();
     }
 
-    private static int countResolvable(SdlAction action, WorkspaceFile file, List<Node> matches) {
+    private static int countResolvable(SdlAction action, FileSnapshot file, List<Node> matches) {
         return (int) matches.stream()
             .map(m -> action.rewrite().rewrite(file, m))
             .filter(r -> r instanceof RewriteResult.Edit)
             .count();
     }
 
-    private static int countSkipped(SdlAction action, WorkspaceFile file, List<Node> matches) {
+    private static int countSkipped(SdlAction action, FileSnapshot file, List<Node> matches) {
         return (int) matches.stream()
             .map(m -> action.rewrite().rewrite(file, m))
             .filter(r -> r instanceof RewriteResult.Skip)
             .count();
     }
 
-    private static boolean allMatchesResolved(SdlAction action, WorkspaceFile file, List<Node> matches) {
+    private static boolean allMatchesResolved(SdlAction action, FileSnapshot file, List<Node> matches) {
         return countSkipped(action, file, matches) == 0;
     }
 

@@ -9,7 +9,7 @@ import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
@@ -107,7 +107,7 @@ class FixtureCatalogTest {
 
     @Test
     void javaFieldNameProducesNoDiagnostic() {
-        var file = new WorkspaceFile(1, """
+        var file = WorkspaceFileTestSupport.snapshot("""
             type Foo @table(name: "film") {
                 x: Int @field(name: "FILM_ID")
             }
@@ -117,7 +117,7 @@ class FixtureCatalogTest {
 
     @Test
     void sqlColumnNameProducesNoDiagnostic() {
-        var file = new WorkspaceFile(1, """
+        var file = WorkspaceFileTestSupport.snapshot("""
             type Foo @table(name: "film") {
                 x: Int @field(name: "film_id")
             }
@@ -128,7 +128,7 @@ class FixtureCatalogTest {
 
     @Test
     void unknownColumnProducesDiagnostic() {
-        var file = new WorkspaceFile(1, """
+        var file = WorkspaceFileTestSupport.snapshot("""
             type Foo @table(name: "film") {
                 x: Int @field(name: "NO_SUCH_COL")
             }
@@ -149,7 +149,7 @@ class FixtureCatalogTest {
             .filter(r -> !r.inverse())
             .map(CompletionData.Reference::keyName)
             .findFirst().orElseThrow();
-        var file = new WorkspaceFile(1, String.format("""
+        var file = WorkspaceFileTestSupport.snapshot(String.format("""
             type Foo @table(name: "film") {
                 x: Int @reference(path: [{key: "%s"}])
             }

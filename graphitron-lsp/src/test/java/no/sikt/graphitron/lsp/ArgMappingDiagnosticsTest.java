@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -42,7 +42,7 @@ class ArgMappingDiagnosticsTest {
         String source = "type Query { f(a: Int, input: Int): Int "
             + "@service(service: {className: \"com.example.PriceService\", method: \"compute\", "
             + "argMapping: \"" + argMapping + "\"}) }\n";
-        var file = new WorkspaceFile(1, source);
+        var file = WorkspaceFileTestSupport.snapshot(source);
         return Diagnostics.compute("", file, data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
     }
 

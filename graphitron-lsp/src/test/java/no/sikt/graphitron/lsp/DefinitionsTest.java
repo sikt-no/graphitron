@@ -2,7 +2,8 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.definition.DefinitionTarget;
 import no.sikt.graphitron.lsp.definition.Definitions;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -328,7 +329,7 @@ class DefinitionsTest {
             Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
     }
 
-    private static Point pointAt(WorkspaceFile file, int line, String token) {
+    private static Point pointAt(FileSnapshot file, int line, String token) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         var lines = source.split("\n");
         int col = lines[line].indexOf(token);
@@ -338,8 +339,8 @@ class DefinitionsTest {
         return new Point(line, col + Math.max(1, token.length() / 2));
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 
     /**

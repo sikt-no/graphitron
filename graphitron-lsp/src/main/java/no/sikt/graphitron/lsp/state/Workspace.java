@@ -17,7 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -111,20 +110,57 @@ public final class Workspace {
         });
     }
 
-    public Optional<WorkspaceFile> get(String uri) {
+    /**
+     * Run {@code present} against an immutable {@link FileSnapshot} of the one
+     * open file at {@code uri}, or return {@code absent} if no such file is open.
+     *
+     * <p>The snapshot is taken under {@code lock} (so its {@code (tree, source,
+     * version)} triple is one consistent generation and gets the happens-before
+     * edge against the {@code didChange} mutators), the lock is released before
+     * {@code present} runs (so a slow feature computation does not serialise
+     * edits behind it), and the cloned tree is closed in a {@code finally}. The
+     * live {@link WorkspaceFile} never escapes: callers can only read the
+     * dispatch-thread-safe snapshot, and only for the duration of the lambda, so
+     * a clone can neither be leaked nor read after close.
+     */
+    public <R> R withView(String uri, R absent, java.util.function.Function<FileSnapshot, R> present) {
+        FileSnapshot view;
         synchronized (lock) {
-            return Optional.ofNullable(files.get(uri));
+            var file = files.get(uri);
+            if (file == null) {
+                return absent;
+            }
+            view = file.snapshot();
+        }
+        try {
+            return present.apply(view);
+        } finally {
+            view.close();
         }
     }
 
     /**
-     * Snapshot of every open file URI in registration order. Used by
-     * the workspace-scoped code-action provider to compose
-     * cross-document {@link org.eclipse.lsp4j.WorkspaceEdit}s.
+     * Run {@code present} against an immutable {@link FileSnapshot} of every open
+     * file, keyed by URI in registration order, all captured under one lock
+     * acquisition so a composed cross-document {@link org.eclipse.lsp4j.WorkspaceEdit}
+     * is computed against a single consistent generation of the whole workspace
+     * (never a per-file mix). Every clone is closed in a {@code finally}, including
+     * any taken before {@code present} threw. Used by the cross-document code-action
+     * and goto-definition paths.
      */
-    public List<String> openUris() {
-        synchronized (lock) {
-            return List.copyOf(files.keySet());
+    public <R> R withAllViews(java.util.function.Function<Map<String, FileSnapshot>, R> present) {
+        var views = new LinkedHashMap<String, FileSnapshot>();
+        try {
+            synchronized (lock) {
+                for (var entry : files.entrySet()) {
+                    views.put(entry.getKey(), entry.getValue().snapshot());
+                }
+            }
+            return present.apply(views);
+        } finally {
+            for (var view : views.values()) {
+                view.close();
+            }
         }
     }
 

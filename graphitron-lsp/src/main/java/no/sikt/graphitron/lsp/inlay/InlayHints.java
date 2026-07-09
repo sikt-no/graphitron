@@ -8,7 +8,7 @@ import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -63,7 +63,7 @@ public final class InlayHints {
      */
     @FunctionalInterface
     private interface InferredDirectiveRenderer {
-        void render(List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        void render(List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
                     Directives.Directive directive, String canonicalArgName);
     }
 
@@ -74,7 +74,7 @@ public final class InlayHints {
      * without a renderer; {@code InlayHintRendererCoverageTest} now fails the build
      * when an entry has no matching key here, the LSP-side mirror of the catalog's
      * sealed {@code AbsentArm}. The renderers stay LSP-side because they need
-     * {@link WorkspaceFile} / {@link LspSchemaSnapshot.Built} context the catalog
+     * {@link FileSnapshot} / {@link LspSchemaSnapshot.Built} context the catalog
      * {@code Entry} cannot carry.
      */
     private static final Map<String, InferredDirectiveRenderer> INFERRED_RENDERERS = Map.of(
@@ -89,7 +89,7 @@ public final class InlayHints {
     }
 
     public static List<InlayHint> compute(
-        InlayHintConfig config, WorkspaceFile file, LspSchemaSnapshot snapshot, Range visibleRange
+        InlayHintConfig config, FileSnapshot file, LspSchemaSnapshot snapshot, Range visibleRange
     ) {
         if (config == null || !config.anyEnabled()) return List.of();
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return List.of();
@@ -109,7 +109,7 @@ public final class InlayHints {
     // ===== Classification arm =====
 
     private static void collectClassificationHints(
-        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
         Node root, Range visibleRange
     ) {
         DeclarationKind.walkAll(root, typeDef -> {
@@ -156,7 +156,7 @@ public final class InlayHints {
     // ===== Inferred-directive arm =====
 
     private static void collectInferredDirectiveHints(
-        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
         Node root, Range visibleRange
     ) {
         var directives = Directives.findAll(root);
@@ -189,7 +189,7 @@ public final class InlayHints {
      * classification.
      */
     private static void collectAbsentDirectiveHints(
-        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
         Node root, Range visibleRange
     ) {
         boolean anyAbsentEligible = false;
@@ -230,7 +230,7 @@ public final class InlayHints {
     }
 
     private static void renderInferredTableNameHint(
-        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
@@ -248,7 +248,7 @@ public final class InlayHints {
     }
 
     private static void renderInferredFieldNameHint(
-        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
@@ -275,7 +275,7 @@ public final class InlayHints {
     }
 
     private static void renderInferredReferencePathHint(
-        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        List<InlayHint> out, FileSnapshot file, LspSchemaSnapshot.Built built,
         Directives.Directive directive, String canonicalArgName
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
@@ -373,7 +373,7 @@ public final class InlayHints {
         return true;
     }
 
-    private static InlayHint makeHint(WorkspaceFile file, Node anchor, String label, InlayHintKind kind) {
+    private static InlayHint makeHint(FileSnapshot file, Node anchor, String label, InlayHintKind kind) {
         // Anchor the hint at the end of the anchor node (so the ghost annotation appears
         // immediately after the directive name or declaration name).
         Position pos = Positions.toLspPosition(file.source(), anchor.getEndByte());

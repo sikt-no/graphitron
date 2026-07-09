@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.server.GraphitronLanguageServer;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
@@ -156,9 +157,10 @@ class TextDocumentServiceTest {
             new TextDocumentIdentifier(uri), new Position(0, 0)
         )).get(5, TimeUnit.SECONDS);
 
-        var file = workspace.get(uri).orElseThrow();
-        assertThat(new String(file.source())).startsWith("type Bar");
-        assertThat(file.version()).isEqualTo(2);
+        String content = workspace.withView(uri, null, v -> new String(v.source()));
+        int version = workspace.withView(uri, -1, FileSnapshot::version);
+        assertThat(content).startsWith("type Bar");
+        assertThat(version).isEqualTo(2);
     }
 
     @Test

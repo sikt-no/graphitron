@@ -1,7 +1,8 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.hover.Hovers;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.InputValueShape;
@@ -168,7 +169,7 @@ class HoversTest {
         Map.of());
     }
 
-    private static Point pointAt(WorkspaceFile file, int line, String token) {
+    private static Point pointAt(FileSnapshot file, int line, String token) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         var lines = source.split("\n");
         int col = lines[line].indexOf(token);
@@ -527,7 +528,7 @@ class HoversTest {
         );
     }
 
-    private static String lineSource(WorkspaceFile file, int line) {
+    private static String lineSource(FileSnapshot file, int line) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         return source.split("\n")[line];
     }
@@ -739,8 +740,8 @@ class HoversTest {
         return new CompletionData(List.of(film, language), List.of(), List.of());
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 
     private static CompletionData filmCatalog() {

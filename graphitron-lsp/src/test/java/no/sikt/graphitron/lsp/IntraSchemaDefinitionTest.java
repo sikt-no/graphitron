@@ -274,8 +274,11 @@ class IntraSchemaDefinitionTest {
     private static Optional<Location> compute(
         Workspace ws, String uri, String token, LspSchemaSnapshot snapshot
     ) {
-        var file = ws.get(uri).orElseThrow();
-        String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
+        String source = ws.withView(uri, null,
+            v -> new String(v.source(), java.nio.charset.StandardCharsets.UTF_8));
+        if (source == null) {
+            throw new AssertionError("uri '" + uri + "' is not open");
+        }
         int idx = source.indexOf(token);
         if (idx < 0) {
             throw new AssertionError("token '" + token + "' not in source of " + uri);

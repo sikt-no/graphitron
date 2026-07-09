@@ -3,7 +3,7 @@ package no.sikt.graphitron.lsp.definition;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -44,7 +44,7 @@ public final class DeclarationDefinitions {
     private DeclarationDefinitions() {}
 
     public static Optional<Location> compute(
-        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (file == null || file.tree() == null) return Optional.empty();

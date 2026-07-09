@@ -2,7 +2,8 @@ package no.sikt.graphitron.lsp;
 
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
@@ -243,7 +244,7 @@ class DeclarationDefinitionsTest {
             .isEmpty();
     }
 
-    private static java.util.Optional<org.eclipse.lsp4j.Location> compute(WorkspaceFile file, Point pos) {
+    private static java.util.Optional<org.eclipse.lsp4j.Location> compute(FileSnapshot file, Point pos) {
         return DeclarationDefinitions.compute(file, catalog(), index(), snapshot(), pos);
     }
 
@@ -318,7 +319,7 @@ class DeclarationDefinitionsTest {
         return new LspSchemaSnapshot.Built.Current(List.of(), types, Map.of(), classifications, Map.of());
     }
 
-    private static Point pointAt(WorkspaceFile file, int line, String token) {
+    private static Point pointAt(FileSnapshot file, int line, String token) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         var lines = source.split("\n");
         int col = lines[line].indexOf(token);
@@ -328,7 +329,7 @@ class DeclarationDefinitionsTest {
         return new Point(line, col + Math.max(1, token.length() / 2));
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 }

@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -28,12 +29,32 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class WorkspaceTest {
 
+    // Concrete-typed reads off the one open file's snapshot, scoped to the view
+    // lambda (get() is gone). Concrete return types keep AssertJ's overloaded
+    // assertThat unambiguous, which a generic <R> helper would not.
+
+    private static String source(Workspace ws, String uri) {
+        return ws.withView(uri, null, v -> new String(v.source(), java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private static int version(Workspace ws, String uri) {
+        return ws.withView(uri, -1, FileSnapshot::version);
+    }
+
+    private static boolean hasParseError(Workspace ws, String uri) {
+        return ws.withView(uri, false, v -> v.tree().getRootNode().hasError());
+    }
+
+    private static boolean isOpen(Workspace ws, String uri) {
+        return ws.withView(uri, false, v -> true);
+    }
+
     @Test
     void didOpenAddsFileAndEnqueuesIt() {
         var ws = new Workspace();
         ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }");
 
-        assertThat(ws.get("file:///a.graphqls")).isPresent();
+        assertThat(isOpen(ws, "file:///a.graphqls")).isTrue();
         assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
     }
 
@@ -46,9 +67,8 @@ class WorkspaceTest {
         var change = new TextDocumentContentChangeEvent("type Foo { y: Int }");
         ws.didChange("file:///a.graphqls", 2, List.of(change));
 
-        var file = ws.get("file:///a.graphqls").orElseThrow();
-        assertThat(new String(file.source())).contains("y: Int");
-        assertThat(file.version()).isEqualTo(2);
+        assertThat(source(ws, "file:///a.graphqls")).contains("y: Int");
+        assertThat(version(ws, "file:///a.graphqls")).isEqualTo(2);
         assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
     }
 
@@ -63,8 +83,7 @@ class WorkspaceTest {
         var change = new TextDocumentContentChangeEvent(range, "Bar");
         ws.didChange("file:///a.graphqls", 2, List.of(change));
 
-        var file = ws.get("file:///a.graphqls").orElseThrow();
-        assertThat(new String(file.source())).startsWith("type Bar");
+        assertThat(source(ws, "file:///a.graphqls")).startsWith("type Bar");
     }
 
     @Test
@@ -84,11 +103,10 @@ class WorkspaceTest {
         var change = new TextDocumentContentChangeEvent(range, "FILM");
         ws.didChange("file:///a.graphqls", 2, List.of(change));
 
-        var file = ws.get("file:///a.graphqls").orElseThrow();
-        assertThat(new String(file.source(), java.nio.charset.StandardCharsets.UTF_8))
+        assertThat(source(ws, "file:///a.graphqls"))
             .isEqualTo("type Foo @table(name: \"FILM\") { bar: Int }\n");
         // Tree must re-parse cleanly after a multi-byte edit.
-        assertThat(file.tree().getRootNode().hasError()).isFalse();
+        assertThat(hasParseError(ws, "file:///a.graphqls")).isFalse();
     }
 
     @Test
@@ -113,11 +131,10 @@ class WorkspaceTest {
         var change = new TextDocumentContentChangeEvent(range, "FILM");
         ws.didChange("file:///a.graphqls", 2, List.of(change));
 
-        var file = ws.get("file:///a.graphqls").orElseThrow();
-        assertThat(new String(file.source(), java.nio.charset.StandardCharsets.UTF_8))
+        assertThat(source(ws, "file:///a.graphqls"))
             .contains("@table(name: \"FILM\")")
             .contains("Tabell for å håndtere åremål");
-        assertThat(file.tree().getRootNode().hasError()).isFalse();
+        assertThat(hasParseError(ws, "file:///a.graphqls")).isFalse();
     }
 
     @Test
@@ -159,7 +176,7 @@ class WorkspaceTest {
 
         ws.didClose("file:///decl.graphqls");
 
-        assertThat(ws.get("file:///decl.graphqls")).isEmpty();
+        assertThat(isOpen(ws, "file:///decl.graphqls")).isFalse();
         assertThat(ws.drainRecalculate())
             .containsExactlyInAnyOrder("file:///decl.graphqls", "file:///dep.graphqls");
     }

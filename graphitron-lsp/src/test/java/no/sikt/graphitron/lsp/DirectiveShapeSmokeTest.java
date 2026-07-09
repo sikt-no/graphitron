@@ -8,7 +8,7 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -78,7 +78,7 @@ class DirectiveShapeSmokeTest {
         assertThat(methodItems).extracting(i -> i.getLabel()).contains("filmsByService");
 
         // Diagnostics: this schema is internally consistent; no errors.
-        var diags = Diagnostics.compute("", new WorkspaceFile(1, source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
         assertThat(diags).isEmpty();
     }
 
@@ -98,7 +98,7 @@ class DirectiveShapeSmokeTest {
             "filmsByService"
         );
 
-        var diags = Diagnostics.compute("", new WorkspaceFile(1, source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NotInClasspath");
@@ -121,7 +121,7 @@ class DirectiveShapeSmokeTest {
             "outerOverrideMethod"
         );
 
-        var diags = Diagnostics.compute("", new WorkspaceFile(1, source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var diags = Diagnostics.compute("", WorkspaceFileTestSupport.snapshot(source), data, LspSchemaSnapshot.unavailable(), ValidationReport.empty());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("ghostMethod");
@@ -140,7 +140,7 @@ class DirectiveShapeSmokeTest {
         var data = catalogWith("com.example.FooDto", null);
         Point cursor = pointInside(source, "com.example");
 
-        var hover = Hovers.compute(new WorkspaceFile(1, source), data,
+        var hover = Hovers.compute(WorkspaceFileTestSupport.snapshot(source), data,
             LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();

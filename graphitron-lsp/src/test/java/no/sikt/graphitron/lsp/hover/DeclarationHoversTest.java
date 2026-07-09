@@ -1,7 +1,8 @@
 package no.sikt.graphitron.lsp.hover;
 
 import io.github.treesitter.jtreesitter.Point;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
@@ -185,11 +186,11 @@ class DeclarationHoversTest {
             List.of(), Map.of(), Map.of(), fields, types);
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 
-    private static Point pointAt(WorkspaceFile file, int line, int col) {
+    private static Point pointAt(FileSnapshot file, int line, int col) {
         return new Point(line, col);
     }
 }

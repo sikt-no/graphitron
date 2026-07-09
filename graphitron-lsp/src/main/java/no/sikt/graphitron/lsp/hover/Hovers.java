@@ -12,7 +12,7 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.Descriptions;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
@@ -50,7 +50,7 @@ public final class Hovers {
     private Hovers() {}
 
     public static Optional<Hover> compute(
-        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
     ) {
         // The bundled vocabulary is the only one in scope today; the
         // workspace's vocabulary is wired through GraphitronTextDocumentService.
@@ -66,7 +66,7 @@ public final class Hovers {
      * it on per {@link no.sikt.graphitron.lsp.state.Workspace#inlayHintConfig()}.
      */
     public static Optional<Hover> compute(
-        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
+        LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         return compute(vocabulary, file, catalog, SourceWalker.Index.EMPTY, snapshot, pos, false);
@@ -79,7 +79,7 @@ public final class Hovers {
      * hover and goto-definition cannot disagree mid-edit.
      */
     public static Optional<Hover> compute(
-        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
+        LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
         SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Point pos,
         boolean classificationHoverEnabled
     ) {
@@ -132,7 +132,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> directiveNameHover(
-        DirectiveResolution resolution, Directives.Directive directive, WorkspaceFile file
+        DirectiveResolution resolution, Directives.Directive directive, FileSnapshot file
     ) {
         return switch (resolution) {
             case DirectiveResolution.Bundled bundled ->
@@ -161,7 +161,7 @@ public final class Hovers {
      * by design — hovers prefer stale info over silence.
      */
     private static Optional<Hover> userArgHover(
-        DirectiveShape shape, Directives.Directive directive, Point pos, WorkspaceFile file
+        DirectiveShape shape, Directives.Directive directive, Point pos, FileSnapshot file
     ) {
         for (var arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
@@ -179,7 +179,7 @@ public final class Hovers {
 
     private static Optional<Hover> richerHover(
         LspVocabulary vocabulary, SchemaCoordinate coord,
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
+        Directives.Directive directive, FileSnapshot file, CompletionData catalog,
         SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Point pos, Node rangeNode
     ) {
         var behavior = vocabulary.behaviorAt(coord);
@@ -205,7 +205,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> nodeTypeHover(
-        WorkspaceFile file, CompletionData catalog, Node valueNode
+        FileSnapshot file, CompletionData catalog, Node valueNode
     ) {
         String typeName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (typeName.isEmpty()) return Optional.empty();
@@ -247,7 +247,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> classNameHover(
-        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
+        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
     ) {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return Optional.empty();
@@ -256,7 +256,7 @@ public final class Hovers {
 
     private static Optional<Hover> methodHover(
         LspVocabulary vocabulary,
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
+        Directives.Directive directive, FileSnapshot file, CompletionData catalog,
         SourceWalker.Index sourceIndex, Point pos, Node valueNode, SchemaCoordinate classNameCoord
     ) {
         String methodName = Nodes.unquote(Nodes.text(valueNode, file.source()));
@@ -272,14 +272,14 @@ public final class Hovers {
     }
 
     private static Optional<Hover> tableHover(
-        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
+        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
     ) {
         String name = Nodes.unquote(Nodes.text(valueNode, file.source()));
         return catalog.getTable(name).map(t -> hover(file, valueNode, formatTable(t, sourceIndex)));
     }
 
     private static Optional<Hover> columnHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
+        Directives.Directive directive, FileSnapshot file, CompletionData catalog,
         SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Node valueNode
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
@@ -325,7 +325,7 @@ public final class Hovers {
 
     private static Optional<Hover> tableColumnHover(
         CompletionData catalog, String tableName, String columnName,
-        WorkspaceFile file, Node valueNode, SourceWalker.Index sourceIndex
+        FileSnapshot file, Node valueNode, SourceWalker.Index sourceIndex
     ) {
         var tableOpt = catalog.getTable(tableName);
         if (tableOpt.isEmpty()) return Optional.empty();
@@ -337,7 +337,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> slotHover(
-        List<TypeBackingShape.MemberSlot> slots, String memberName, WorkspaceFile file, Node valueNode
+        List<TypeBackingShape.MemberSlot> slots, String memberName, FileSnapshot file, Node valueNode
     ) {
         return slots.stream()
             .filter(s -> s.name().equals(memberName))
@@ -346,7 +346,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> fkHover(
-        WorkspaceFile file, CompletionData catalog, Node valueNode
+        FileSnapshot file, CompletionData catalog, Node valueNode
     ) {
         String fkName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         for (var table : catalog.tables()) {
@@ -362,7 +362,7 @@ public final class Hovers {
     }
 
     private static Optional<Hover> docstringHover(
-        LspVocabulary vocabulary, SchemaCoordinate coord, WorkspaceFile file, Node rangeNode
+        LspVocabulary vocabulary, SchemaCoordinate coord, FileSnapshot file, Node rangeNode
     ) {
         return vocabulary.descriptionOf(coord)
             .filter(d -> !d.isBlank())
@@ -504,7 +504,7 @@ public final class Hovers {
         return sb.toString();
     }
 
-    private static Hover hover(WorkspaceFile file, Node rangeNode, String markdown) {
+    private static Hover hover(FileSnapshot file, Node rangeNode, String markdown) {
         var content = new MarkupContent(MarkupKind.MARKDOWN, markdown);
         var start = Positions.toLspPosition(file.source(), rangeNode.getStartByte());
         var end = Positions.toLspPosition(file.source(), rangeNode.getEndByte());

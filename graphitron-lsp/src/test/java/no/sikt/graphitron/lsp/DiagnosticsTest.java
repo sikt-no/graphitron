@@ -1,7 +1,8 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -1424,8 +1425,8 @@ class DiagnosticsTest {
         );
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 
     /**
@@ -1436,7 +1437,7 @@ class DiagnosticsTest {
      * production callers to a backward-compat overload.
      */
     private static List<org.eclipse.lsp4j.Diagnostic> compute(
-        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot
     ) {
         return Diagnostics.compute("", file, catalog, snapshot, ValidationReport.empty());
     }

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
@@ -72,7 +72,7 @@ class LintSuppressionDiagnosticsParityTest {
 
         var output = new GraphQLRewriteGenerator(ctx).buildOutput();
         var uri = ValidationReport.canonicalUri(schema.toString());
-        var file = new WorkspaceFile(1, SDL);
+        var file = WorkspaceFileTestSupport.snapshot(SDL);
         return Diagnostics.compute(uri, file, output.artifacts().catalog(),
             output.artifacts().snapshot(), output.report());
     }

@@ -8,7 +8,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -70,17 +70,17 @@ public final class Definitions {
      * Back-compatible overload that loads the bundled vocabulary; the
      * service-half binding arm uses the canonical overlay. Production callers
      * pass the workspace vocabulary through
-     * {@link #compute(LspVocabulary, WorkspaceFile, CompletionData, SourceWalker.Index, LspSchemaSnapshot, Point)}.
+     * {@link #compute(LspVocabulary, FileSnapshot, CompletionData, SourceWalker.Index, LspSchemaSnapshot, Point)}.
      */
     public static Optional<Location> compute(
-        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         return compute(LspVocabulary.load(), file, catalog, sourceIndex, snapshot, pos);
     }
 
     public static Optional<Location> compute(
-        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
+        LspVocabulary vocabulary, FileSnapshot file, CompletionData catalog,
         SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Point pos
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);

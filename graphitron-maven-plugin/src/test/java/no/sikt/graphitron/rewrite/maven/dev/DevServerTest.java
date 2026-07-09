@@ -81,7 +81,7 @@ class DevServerTest {
             }
             // First connection closed; the workspace state from it must
             // outlive the connection (warm-state contract).
-            assertThat(workspace.get("file:///a.graphqls")).isPresent();
+            assertThat(workspace.withView("file:///a.graphqls", false, v -> true)).isTrue();
 
             try (var s2 = new Socket(InetAddress.getLoopbackAddress(), server.port())) {
                 var p2 = clientProxy(s2);

@@ -17,7 +17,7 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
@@ -81,14 +81,14 @@ public final class Diagnostics {
     );
 
     public static List<Diagnostic> compute(
-        String uri, WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot,
+        String uri, FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot,
         ValidationReport report
     ) {
         return compute(LspVocabulary.load(), uri, file, catalog, snapshot, report);
     }
 
     public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, String uri, WorkspaceFile file, CompletionData catalog,
+        LspVocabulary vocabulary, String uri, FileSnapshot file, CompletionData catalog,
         LspSchemaSnapshot snapshot, ValidationReport report
     ) {
         var out = new ArrayList<Diagnostic>();
@@ -165,7 +165,7 @@ public final class Diagnostics {
      * console / watch-mode formatter path is the sole surface for schema-wide errors.
      */
     private static List<Diagnostic> validatorDiagnostics(
-        String uri, WorkspaceFile file, LspSchemaSnapshot snapshot, ValidationReport report
+        String uri, FileSnapshot file, LspSchemaSnapshot snapshot, ValidationReport report
     ) {
         return switch (snapshot) {
             case LspSchemaSnapshot.Unavailable ignored -> List.of();
@@ -174,7 +174,7 @@ public final class Diagnostics {
         };
     }
 
-    private static List<Diagnostic> validatorDiagnosticsForCurrent(String uri, WorkspaceFile file, ValidationReport report) {
+    private static List<Diagnostic> validatorDiagnosticsForCurrent(String uri, FileSnapshot file, ValidationReport report) {
         if (!report.sourceUris().contains(uri)) {
             return List.of();
         }
@@ -255,7 +255,7 @@ public final class Diagnostics {
      * right balance.
      */
     private static Diagnostic validatorDiagnostic(
-        WorkspaceFile file, SourceLocation loc, DiagnosticSeverity severity, String message, String code
+        FileSnapshot file, SourceLocation loc, DiagnosticSeverity severity, String message, String code
     ) {
         var d = new Diagnostic(signatureRange(file, loc), message);
         d.setSeverity(severity);
@@ -282,7 +282,7 @@ public final class Diagnostics {
      * one (both report {@code multiLine=true} with no interior newlines) and is the dominant style
      * in this codebase's directive schema.
      */
-    private static Range signatureRange(WorkspaceFile file, SourceLocation loc) {
+    private static Range signatureRange(FileSnapshot file, SourceLocation loc) {
         var reanchored = descriptionNameRange(file, loc);
         if (reanchored != null) {
             return reanchored;
@@ -299,7 +299,7 @@ public final class Diagnostics {
      * is a {@code name} for every definition kind except {@code enum_value_definition}, which carries
      * an {@code enum_value} instead.
      */
-    private static Range descriptionNameRange(WorkspaceFile file, SourceLocation loc) {
+    private static Range descriptionNameRange(FileSnapshot file, SourceLocation loc) {
         if (file == null || file.tree() == null) {
             return null;
         }
@@ -344,7 +344,7 @@ public final class Diagnostics {
      */
     private static void validateUnknownArgs(
         Directives.Directive directive, DirectiveDefinition dirDef,
-        LspVocabulary vocabulary, WorkspaceFile file, List<Diagnostic> out
+        LspVocabulary vocabulary, FileSnapshot file, List<Diagnostic> out
     ) {
         for (var arg : directive.arguments()) {
             String argName = Nodes.text(arg.key(), file.source());
@@ -363,7 +363,7 @@ public final class Diagnostics {
 
     private static void descendUnknownArgs(
         Node node, String currentType,
-        LspVocabulary vocabulary, WorkspaceFile file, List<Diagnostic> out
+        LspVocabulary vocabulary, FileSnapshot file, List<Diagnostic> out
     ) {
         if (node == null) return;
         if (OBJECT_FIELD.matches(node)) {
@@ -398,7 +398,7 @@ public final class Diagnostics {
      */
     private static void validateRequiredArgs(
         Directives.Directive directive, DirectiveDefinition dirDef,
-        WorkspaceFile file, List<Diagnostic> out
+        FileSnapshot file, List<Diagnostic> out
     ) {
         var presentNames = new LinkedHashSet<String>();
         for (var arg : directive.arguments()) {
@@ -421,7 +421,7 @@ public final class Diagnostics {
      */
     private static void validateUnknownArgsAgainstSnapshot(
         Directives.Directive directive, DirectiveShape shape,
-        WorkspaceFile file, List<Diagnostic> out
+        FileSnapshot file, List<Diagnostic> out
     ) {
         for (var arg : directive.arguments()) {
             String argName = Nodes.text(arg.key(), file.source());
@@ -442,7 +442,7 @@ public final class Diagnostics {
      */
     private static void validateRequiredArgsAgainstSnapshot(
         Directives.Directive directive, DirectiveShape shape,
-        WorkspaceFile file, List<Diagnostic> out
+        FileSnapshot file, List<Diagnostic> out
     ) {
         var presentNames = new LinkedHashSet<String>();
         for (var arg : directive.arguments()) {
@@ -459,7 +459,7 @@ public final class Diagnostics {
 
     private static void dispatch(
         Directives.Directive directive, LspVocabulary.Leaf leaf, LspVocabulary vocabulary,
-        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
     ) {
         var behavior = vocabulary.behaviorAt(leaf.coord()).orElse(null);
         if (behavior == null) return;
@@ -491,7 +491,7 @@ public final class Diagnostics {
      * {@code Rejection.structural} when the type exists without {@code @node}.
      */
     private static void validateNodeType(
-        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         String typeName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (typeName.isEmpty()) return;
@@ -526,7 +526,7 @@ public final class Diagnostics {
      * errors via the build pipeline's diagnostics, not inline.
      */
     private static void validateScalarType(
-        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return;
@@ -548,7 +548,7 @@ public final class Diagnostics {
      */
     private static void validateScalarTypeClasspath(
         ScalarTypeResolver.ParsedDirectiveValue.Parsed parsed,
-        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         if (catalog.externalReferences().isEmpty()) return;
         boolean found = catalog.externalReferences().stream()
@@ -561,7 +561,7 @@ public final class Diagnostics {
     }
 
     private static void validateCatalogTable(
-        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         String tableName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (tableName.isEmpty()) return;
@@ -581,7 +581,7 @@ public final class Diagnostics {
      */
     private static void validateFieldMember(
         Directives.Directive directive, Node valueNode,
-        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
+        FileSnapshot file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (memberName.isEmpty()) return;
@@ -650,7 +650,7 @@ public final class Diagnostics {
 
     private static void validateColumnOnTable(
         CompletionData catalog, String tableName, String columnName,
-        Node valueNode, WorkspaceFile file, List<Diagnostic> out
+        Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         var table = catalog.getTable(tableName);
         if (table.isEmpty()) {
@@ -669,7 +669,7 @@ public final class Diagnostics {
 
     private static void validateMemberSlot(
         List<TypeBackingShape.MemberSlot> slots, String memberName, String kind,
-        String fqClassName, Node valueNode, WorkspaceFile file, List<Diagnostic> out
+        String fqClassName, Node valueNode, FileSnapshot file, List<Diagnostic> out
     ) {
         if (slots.isEmpty()) return;
         boolean matched = slots.stream().anyMatch(s -> s.name().equals(memberName));
@@ -680,7 +680,7 @@ public final class Diagnostics {
     }
 
     private static void validateCatalogFk(
-        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         String fkName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fkName.isEmpty()) return;
@@ -695,7 +695,7 @@ public final class Diagnostics {
     }
 
     private static void validateClassName(
-        Directives.Directive directive, Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Directives.Directive directive, Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         // R307 carve-out: @record is deprecated/ignored, so its className slot binds no class
         // and an unknown-class diagnostic would be noise. The ExternalCodeReference.className
@@ -721,7 +721,7 @@ public final class Diagnostics {
         LspVocabulary vocabulary,
         Directives.Directive directive, LspVocabulary.Leaf leaf,
         Behavior.MethodNameBinding mnb,
-        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         // @record / @enum bind ExternalCodeReference but the method slot
         // wraps a type, not a method invocation; skip (see DirectivePolicy).
@@ -779,7 +779,7 @@ public final class Diagnostics {
     private static void validateLegacyNameLeaves(
         LspVocabulary vocabulary,
         Directives.Directive directive, List<LspVocabulary.Leaf> leaves,
-        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         // R307 carve-out: @record is deprecated/ignored — it binds no class, so the legacy
         // ExternalCodeReference.name → className alias nudge is dead tooling for it. Keys on the
@@ -834,7 +834,7 @@ public final class Diagnostics {
      */
     private static void validateArgMapping(
         LspVocabulary vocabulary, Directives.Directive directive, LspVocabulary.Leaf leaf,
-        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
         Node valueNode = stringValueOf(leaf.valueNode());
         if (valueNode == null) return;
@@ -882,7 +882,7 @@ public final class Diagnostics {
 
     private static void validateArgMappingJavaParam(
         ArgMapping.Segment java, int contentStart, Set<String> paramNames,
-        Set<String> seenJava, WorkspaceFile file, List<Diagnostic> out
+        Set<String> seenJava, FileSnapshot file, List<Diagnostic> out
     ) {
         String name = java.text();
         if (!seenJava.add(name)) {
@@ -899,7 +899,7 @@ public final class Diagnostics {
 
     private static void validateArgMappingGraphqlArg(
         ArgMapping.Segment graphql, int contentStart, List<String> fieldArgs,
-        WorkspaceFile file, List<Diagnostic> out
+        FileSnapshot file, List<Diagnostic> out
     ) {
         if (fieldArgs.isEmpty()) return; // no field args known (pre-build or argument-less field)
         String value = graphql.text();
@@ -951,7 +951,7 @@ public final class Diagnostics {
     }
 
     private static Diagnostic byteDiagnostic(
-        WorkspaceFile file, int startByte, int endByte, DiagnosticSeverity severity, String message
+        FileSnapshot file, int startByte, int endByte, DiagnosticSeverity severity, String message
     ) {
         var start = Positions.toLspPosition(file.source(), startByte);
         var end = Positions.toLspPosition(file.source(), endByte);
@@ -961,7 +961,7 @@ public final class Diagnostics {
         return d;
     }
 
-    private static Diagnostic diagnostic(WorkspaceFile file, Node node, DiagnosticSeverity severity, String message) {
+    private static Diagnostic diagnostic(FileSnapshot file, Node node, DiagnosticSeverity severity, String message) {
         var start = Positions.toLspPosition(file.source(), node.getStartByte());
         var end = Positions.toLspPosition(file.source(), node.getEndByte());
         var d = new Diagnostic(new Range(start, end), message);
@@ -970,7 +970,7 @@ public final class Diagnostics {
         return d;
     }
 
-    private static Diagnostic diagnostic(WorkspaceFile file, Node node, String message) {
+    private static Diagnostic diagnostic(FileSnapshot file, Node node, String message) {
         return diagnostic(file, node, DiagnosticSeverity.Error, message);
     }
 }

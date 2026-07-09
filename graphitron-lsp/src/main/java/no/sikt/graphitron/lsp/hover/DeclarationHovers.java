@@ -7,7 +7,7 @@ import no.sikt.graphitron.lsp.inlay.LspClassificationLabels;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -49,7 +49,7 @@ public final class DeclarationHovers {
      * five-arg overload so the R371 declaration-name overlay lights up.
      */
     public static Optional<Hover> compute(
-        WorkspaceFile file, LspSchemaSnapshot snapshot, Point pos
+        FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
     ) {
         return compute(file, null, SourceWalker.Index.EMPTY, snapshot, pos);
     }
@@ -63,7 +63,7 @@ public final class DeclarationHovers {
      * unavailable, or neither a classification nor an overlay is available.
      */
     public static Optional<Hover> compute(
-        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        FileSnapshot file, CompletionData catalog, SourceWalker.Index sourceIndex,
         LspSchemaSnapshot snapshot, Point pos
     ) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
@@ -381,7 +381,7 @@ public final class DeclarationHovers {
     }
 
 
-    private static Hover hover(WorkspaceFile file, Node anchor, String markdown) {
+    private static Hover hover(FileSnapshot file, Node anchor, String markdown) {
         var content = new MarkupContent(MarkupKind.MARKDOWN, markdown);
         var start = Positions.toLspPosition(file.source(), anchor.getStartByte());
         var end = Positions.toLspPosition(file.source(), anchor.getEndByte());

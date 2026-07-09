@@ -2,7 +2,8 @@ package no.sikt.graphitron.lsp;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
-import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.lsp.state.FileSnapshot;
+import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
@@ -435,11 +436,11 @@ class ValidatorDiagnosticsTest {
         });
     }
 
-    private static WorkspaceFile file() {
-        return new WorkspaceFile(1, "type Foo { x: Int }\n");
+    private static FileSnapshot file() {
+        return WorkspaceFileTestSupport.snapshot("type Foo { x: Int }\n");
     }
 
-    private static WorkspaceFile file(String source) {
-        return new WorkspaceFile(1, source);
+    private static FileSnapshot file(String source) {
+        return WorkspaceFileTestSupport.snapshot(source);
     }
 }
