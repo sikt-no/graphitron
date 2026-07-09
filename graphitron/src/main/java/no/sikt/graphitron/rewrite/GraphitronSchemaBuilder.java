@@ -760,7 +760,12 @@ public class GraphitronSchemaBuilder {
      * {@link EntityResolutionBuilder}.
      */
     private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
-        Set<String> carveOut = encodedWriteTargetInputTypes(ctx);
+        Set<String> carveOut = new LinkedHashSet<>(encodedWriteTargetInputTypes(ctx));
+        // R457 commit 1 — DELETE has no field-relative write-target path yet (that lands in this same
+        // item's later commits), so the input's @table is still the sole write-target signal for every
+        // DELETE shape. Suppress the warning on DELETE-consumed inputs until the replacement exists;
+        // this carve-out is deleted again in R457's cutover commit once the wording names the field.
+        carveOut.addAll(deleteWriteTargetInputTypes(ctx));
         for (var type : ctx.schema.getAllTypesAsList()) {
             if (!(type instanceof GraphQLInputObjectType input)) continue;
             if (!input.hasAppliedDirective(DIR_TABLE)) continue;
@@ -812,6 +817,38 @@ public class GraphitronSchemaBuilder {
     private static boolean isEncoded(DmlReturnExpression expr) {
         return expr instanceof DmlReturnExpression.EncodedSingle
             || expr instanceof DmlReturnExpression.EncodedList;
+    }
+
+    /**
+     * R457 commit 1 — the SDL input-type names consumed by a {@code @mutation(typeName: DELETE)}
+     * field. Until this item's later commits give DELETE a field-relative write-target path
+     * ({@code @mutation(table:)} or a return-derived table), the input's {@code @table} is the sole
+     * signal naming the write target for <em>every</em> DELETE shape, so R332's D3 rationale (a false
+     * fire tells an author to delete their only signal and breaks the build) applies verbatim.
+     *
+     * <p>Deliberately stronger than the Backlog draft's "consumed only by DELETE": a conservative
+     * any-DELETE-consumer rule, because in commit 1 the return-derivation does not yet exist and the
+     * directive is genuinely load-bearing wherever a DELETE reads it. The three DELETE leaves carry an
+     * {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose accessor is {@code inputTypeName()}
+     * (not the {@code tableInputArg().typeName()} the encoded INSERT/UPSERT carve-out reads); the
+     * record-carrier DML leaves are INSERT/UPSERT-only by compact constructor, so these three arms are
+     * exhaustive over DELETE.
+     *
+     * <p>This carve-out set is <em>deleted again</em> in R457's cutover commit (additive-then-cutover):
+     * once the R332 wording names {@code @mutation(table:)} as the replacement, the warning fires on
+     * DELETE inputs too, driving migration.
+     */
+    private static Set<String> deleteWriteTargetInputTypes(BuildContext ctx) {
+        Set<String> carveOut = new LinkedHashSet<>();
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            switch (field) {
+                case MutationField.MutationDeleteTableField f -> carveOut.add(f.inputArg().inputTypeName());
+                case MutationField.MutationDeletePayloadField f -> carveOut.add(f.inputArg().inputTypeName());
+                case MutationField.MutationBulkDeletePayloadField f -> carveOut.add(f.inputArg().inputTypeName());
+                default -> { /* only the three DELETE leaves carry an InputArgRef write target */ }
+            }
+        }
+        return carveOut;
     }
 
     /**
