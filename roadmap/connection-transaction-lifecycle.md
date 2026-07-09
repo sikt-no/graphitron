@@ -7,7 +7,7 @@ priority: 3
 theme: service
 depends-on: []
 created: 2026-07-03
-last-updated: 2026-07-06
+last-updated: 2026-07-09
 ---
 
 # Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity
@@ -105,7 +105,7 @@ This revises R190's factory contract: from a per-request, consumer-built `DSLCon
 
 - **R45 (operation-divined tenant routing, Spec).** Routes through this item's runtime-held `Map<TenantId, DataSource>`. R45's sketched factory shape is stale in two independent ways and needs a sync edit during its own review: the `DataSource`/map parameters move to runtime construction, and the per-request factory gains the leading opaque claims parameter. Ownership split unchanged: this item owns acquisition, demarcation, and identity; R45 owns tenant classification, binding inference, and per-tenant partitioning of the batching machinery.
 - **R190 (schema-driven ExecutionInput factory, landed).** The contract this item revises additively; see the additivity paragraph and migration above.
-- **R428 (MCP in-process query execution).** Consumer of this item: feeds the runtime a `DataSource` from dev config; its rollback-everything mode is the provider's `ROLLBACK_ONLY` commit policy, consumed by name. Two of R428's statements are superseded and need a sync edit during its own review: its executor signature carries no claims payload (it must, to mount identity), and its prose keys session state off contextArgs, a coupling this item severs (claims and contextArguments are disjoint channels).
+- **R428 (MCP in-process query execution).** Consumer of this item: feeds the runtime a `DataSource` from dev config; its rollback-everything mode is the provider's `ROLLBACK_ONLY` commit policy, consumed by name. The sync edit this item once called for on R428 has landed: R428's executor entry point now carries the opaque `claims` payload (`execute(conn, dialect, query, variables, claims, contextArgs)`) and constructs this item's runtime with it, and its prose treats claims and contextArguments as disjoint channels. The two Specs stay consistent on that split; any change to either side's claims-vs-contextArgs handling re-checks the other.
 - **R410 (in-process incremental compile).** Independent; R428 sits on both.
 
 ## Slices and test tiers
