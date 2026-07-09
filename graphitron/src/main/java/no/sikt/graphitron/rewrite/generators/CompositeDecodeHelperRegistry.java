@@ -116,7 +116,7 @@ final class CompositeDecodeHelperRegistry {
         int arity = decode.outputColumnShape().size();
         // arity-1 binds the single key column directly; arity-N binds the typed Row<N> tuple.
         TypeName elementType = arity == 1
-            ? ClassName.bestGuess(decode.outputColumnShape().getFirst().columnClass())
+            ? decode.outputColumnShape().getFirst().columnType()
             : typedRow(decode.outputColumnShape());
         TypeName returnType = list
             ? ParameterizedTypeName.get(ClassName.get(List.class), elementType)
@@ -229,7 +229,7 @@ final class CompositeDecodeHelperRegistry {
         ClassName rowN = ClassName.get("org.jooq", "Row" + n);
         TypeName[] typeArgs = new TypeName[n];
         for (int i = 0; i < n; i++) {
-            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
+            typeArgs[i] = columns.get(i).columnType();
         }
         return ParameterizedTypeName.get(rowN, typeArgs);
     }
@@ -239,7 +239,7 @@ final class CompositeDecodeHelperRegistry {
         ClassName recordN = ClassName.get("org.jooq", "Record" + n);
         TypeName[] typeArgs = new TypeName[n];
         for (int i = 0; i < n; i++) {
-            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
+            typeArgs[i] = columns.get(i).columnType();
         }
         return ParameterizedTypeName.get(recordN, typeArgs);
     }

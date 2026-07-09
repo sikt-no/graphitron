@@ -484,7 +484,7 @@ class GeneratorUtils {
         var nullCheck = CodeBlock.builder();
         for (int i = 0; i < pkCols.size(); i++) {
             ColumnRef col = pkCols.get(i);
-            ClassName colType = ClassName.bestGuess(col.columnClass());
+            TypeName colType = col.columnType();
             String local = "fkVal" + i;
             out.addStatement("$T $L = (($T) $L).get($T.$L.$L)",
                 colType, local, RECORD, sourceExpr, tablesClass, tableField, col.javaName());
@@ -569,7 +569,7 @@ class GeneratorUtils {
                     out.addStatement("key.set($T.$L.$L, source.get($S, $T.class))",
                         tablesClass, tableField, col.javaName(),
                         reservedSourceAlias(col.sqlName()),
-                        ClassName.bestGuess(col.columnClass()));
+                        col.columnType());
                 }
                 yield out.build();
             }

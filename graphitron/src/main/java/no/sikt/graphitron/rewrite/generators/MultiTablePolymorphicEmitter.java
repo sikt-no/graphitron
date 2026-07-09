@@ -903,10 +903,10 @@ public final class MultiTablePolymorphicEmitter {
         // {@code ConnectionHelper.encodeCursor / decodeCursor} via {@code JSONB.toString()} +
         // {@code Convert.convert(String, JSONB.class)}.
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
-        ClassName pkColumnClass;
+        TypeName pkColumnClass;
         if (pkArity == 1) {
             var firstPk = participants.get(0).table().primaryKeyColumns().get(0);
-            pkColumnClass = ClassName.bestGuess(firstPk.columnClass());
+            pkColumnClass = firstPk.columnType();
         } else {
             pkColumnClass = JSONB;
         }
@@ -1057,7 +1057,7 @@ public final class MultiTablePolymorphicEmitter {
         b.add("    .select(\n");
         b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
         for (int s = 0; s < pkArity; s++) {
-            ClassName pkColClass = ClassName.bestGuess(firstParticipantPks.get(s).columnClass());
+            TypeName pkColClass = firstParticipantPks.get(s).columnType();
             b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL,
                 PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX, pkColClass);
         }
@@ -1165,7 +1165,7 @@ public final class MultiTablePolymorphicEmitter {
         for (var slot : fkJoin.slots()) {
             ColumnRef parentSide = slot.sourceSide();
             ColumnRef participantSide = slot.targetSide();
-            ClassName parentColClass = ClassName.bestGuess(parentSide.columnClass());
+            TypeName parentColClass = parentSide.columnType();
             if (i == 0) {
                 b.add("$L.$L.eq(parentRecord.get($T.name($S), $T.class))",
                     tableAlias, participantSide.javaName(), DSL, parentSide.sqlName(), parentColClass);
@@ -1553,7 +1553,7 @@ public final class MultiTablePolymorphicEmitter {
 
         // Participant PK (single column for connection mode — validator enforces).
         ColumnRef firstParticipantPk = participants.get(0).table().primaryKeyColumns().get(0);
-        ClassName participantPkClass = ClassName.bestGuess(firstParticipantPk.columnClass());
+        TypeName participantPkClass = firstParticipantPk.columnType();
 
         var b = CodeBlock.builder();
 
@@ -1850,7 +1850,7 @@ public final class MultiTablePolymorphicEmitter {
         var on = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             var col = columns.get(i);
-            var colClass = ClassName.bestGuess(col.columnClass());
+            var colClass = col.columnType();
             if (i == 0) {
                 on.add("$L.$L.eq(input.field($S, $T.class))",
                     tableLocal, col.javaName(), col.sqlName(), colClass);
@@ -1902,7 +1902,7 @@ public final class MultiTablePolymorphicEmitter {
         TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
         parentRowTypeArgs[0] = integerClass;
         for (int i = 0; i < parentKeyArity; i++) {
-            parentRowTypeArgs[i + 1] = ClassName.bestGuess(parentPkCols.get(i).columnClass());
+            parentRowTypeArgs[i + 1] = parentPkCols.get(i).columnType();
         }
         TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);

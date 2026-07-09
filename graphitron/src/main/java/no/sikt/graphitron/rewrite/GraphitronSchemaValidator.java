@@ -286,6 +286,23 @@ public class GraphitronSchemaValidator {
                     + "holds-records derivation and the re-projecting SELECT have drifted"),
                 out.location()));
         }
+        // R446 — an array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key
+        // element) would key the RowN / Set<K> tuple by array reference identity, so equal-content
+        // keys dedupe and match by reference and the batch mis-groups on a live request. The emitted
+        // code compiles but is silently wrong, so reject at validate time instead.
+        if (field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField bk && bk.sourceKey() != null) {
+            for (var col : bk.sourceKey().columns()) {
+                if (col.columnType() instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
+                    errors.add(new ValidationError(
+                        field.qualifiedName(),
+                        Rejection.structural("Field '" + field.qualifiedName() + "': DataLoader key column '"
+                            + col.sqlName() + "' is array-typed (" + col.columnClass() + "); array columns "
+                            + "cannot be used as batch key elements because Java arrays compare by reference "
+                            + "identity, so equal-content keys would mis-batch. Use a scalar key column."),
+                        field.location()));
+                }
+            }
+        }
         switch (field) {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField f        -> validateQueryLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField f         -> validateQueryTableField(f, types, errors);
@@ -441,6 +458,20 @@ public class GraphitronSchemaValidator {
     }
     private void validateNodeType(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType type, List<ValidationError> errors) {
         // Unresolved tables and unresolved @node key columns are caught by the builder (UnclassifiedType).
+        // R446 — an array-typed column used as a NodeId key column would be encoded/decoded and
+        // compared by array reference identity, so distinct rows with equal element content mis-match.
+        // Reject at validate time rather than emitting a NodeId encoder that mis-identifies at runtime.
+        for (var col : type.nodeKeyColumns()) {
+            if (col.columnType() instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
+                errors.add(ValidationError.forType(
+                    type.name(),
+                    Rejection.structural("@node key column '" + col.sqlName() + "' is array-typed ("
+                        + col.columnClass() + "); array columns cannot be used as NodeId key columns "
+                        + "because Java arrays compare by reference identity, so equal-content rows would "
+                        + "fail to match. Use a scalar key column."),
+                    type.location()));
+            }
+        }
     }
     private void validateResultType(no.sikt.graphitron.rewrite.model.GraphitronType.ResultType type, List<ValidationError> errors) {}
     private void validateRootType(no.sikt.graphitron.rewrite.model.GraphitronType.RootType type, List<ValidationError> errors) {}

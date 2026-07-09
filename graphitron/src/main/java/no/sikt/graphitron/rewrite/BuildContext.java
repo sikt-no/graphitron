@@ -1173,7 +1173,7 @@ class BuildContext {
         return fields.stream()
             .map(f -> catalog.findColumn(table, f.getName()))
             .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
-            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()))
             .toList();
     }
 
@@ -2558,7 +2558,7 @@ class BuildContext {
             }
             return new InputFieldResolution.Resolved(new InputField.ColumnField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond,
+                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
         // NodeId synthesis shim: scalar ID field with no @nodeId directive whose backing table
@@ -2831,7 +2831,7 @@ class BuildContext {
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
             var pkCols = catalog.findPkColumns(targetTableName).stream()
-                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()))
                 .toList();
             if (pkCols.isEmpty()) {
                 return new TargetKeys(null, null,

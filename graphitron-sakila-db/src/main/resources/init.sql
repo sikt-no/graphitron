@@ -654,6 +654,21 @@ INSERT INTO converter_campus (campus_id, campus_name, org_code) VALUES
     (2, 'Trondheim', 1120),
     (3, 'Gjøvik',    1120);
 
+-- R446 array-column fixture: a table carrying array-typed columns. jOOQ maps a PostgreSQL
+-- `boolean[]` to `Field<Boolean[]>`, whose `getType().getName()` is the JVM binary descriptor
+-- `[Ljava.lang.Boolean;` (not a source-form FQCN), which `ClassName.bestGuess` rejects. Any code
+-- generation that reconstructs this table's full row per column, notably the
+-- `SourceKey.Wrap.TableRecord` key-extraction arm, crashed with
+-- `IllegalArgumentException: couldn't make a guess for [Ljava.lang.Boolean;` before the type-lift.
+-- `id` is the scalar PK a TableRecord-keyed @service child batches on; `flags` / `tags` are the
+-- single-dimension array columns; `label` is a scalar control column.
+CREATE TABLE array_holder (
+    id     serial      PRIMARY KEY,
+    flags  boolean[]   NOT NULL DEFAULT '{}',
+    tags   text[],
+    label  varchar(50)
+);
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================

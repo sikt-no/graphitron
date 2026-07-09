@@ -1351,7 +1351,7 @@ class TypeBuilder {
                 resolvedKeyColumns = List.copyOf(sdlKeyColumns);
             } else {
                 var pk = ctx.catalog.findPkColumns(tableRef.tableName()).stream()
-                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()))
                     .toList();
                 if (pk.isEmpty()) {
                     return new UnclassifiedType(name, location, Rejection.structural(

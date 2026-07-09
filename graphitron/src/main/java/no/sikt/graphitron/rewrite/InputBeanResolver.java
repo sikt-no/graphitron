@@ -409,7 +409,7 @@ final class InputBeanResolver {
                 }
                 var ce = col.get();
                 columnBindings.add(new CallSiteExtraction.ColumnBinding(
-                    path, new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass())));
+                    path, new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType())));
             }
         }
         return null;

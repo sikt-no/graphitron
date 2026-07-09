@@ -1418,7 +1418,7 @@ class FieldBuilder {
                 "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
                     + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName())));
         }
-        var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
+        var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass(), col.get().columnType());
         String enumClassName;
         switch (enumMappingResolver.validateEnumFilter(typeName, columnRef)) {
             case EnumMappingResolver.EnumValidation.NotEnum n -> enumClassName = null;

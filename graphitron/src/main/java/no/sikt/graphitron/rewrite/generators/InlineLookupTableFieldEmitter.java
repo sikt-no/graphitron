@@ -120,7 +120,7 @@ public final class InlineLookupTableFieldEmitter {
         TypeName[] lookupTypeArgs = new TypeName[lookupArity];
         lookupTypeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < lookupCols.size(); i++) {
-            lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).columnClass());
+            lookupTypeArgs[i + 1] = lookupCols.get(i).columnType();
         }
         TypeName lookupRowType = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "Row" + lookupArity), lookupTypeArgs);

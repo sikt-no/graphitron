@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.ArrayHolderRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.Record1;
@@ -95,6 +96,18 @@ public class TestFilmService {
      * container unpeelable, rejecting at classify time.
      */
     public static List<String> getRatingWrongContainer(Set<Row1<Integer>> languageKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R446 fixture: typed-{@code TableRecord} source-shape keyed on {@code array_holder}, whose row
+     * carries array-typed columns ({@code flags boolean[]}, {@code tags text[]}). {@code Set<
+     * ArrayHolderRecord>} keys classify the wrap as {@code SourceKey.Wrap.TableRecord}, so the
+     * parent {@code $fields} SELECT reconstructs the full {@code array_holder} row per column. That
+     * per-column reconstruction is the R436 arm that crashed on {@code ClassName.bestGuess} for the
+     * array columns' binary descriptors before the catalog-boundary type-lift.
+     */
+    public static Map<ArrayHolderRecord, Integer> getArrayHolderRankByRecord(Set<ArrayHolderRecord> holderKeys) {
         throw new UnsupportedOperationException();
     }
 }

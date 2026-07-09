@@ -266,7 +266,7 @@ public final class SplitRowsMethodEmitter {
         TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
         parentRowTypeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+            parentRowTypeArgs[i + 1] = pkCols.get(i).columnType();
         }
         TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
@@ -737,7 +737,7 @@ public final class SplitRowsMethodEmitter {
         TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
         parentRowTypeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+            parentRowTypeArgs[i + 1] = pkCols.get(i).columnType();
         }
         TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
@@ -901,7 +901,7 @@ public final class SplitRowsMethodEmitter {
             TypeName[] lookupTypeArgs = new TypeName[lookupArity];
             lookupTypeArgs[0] = ClassName.get(Integer.class);
             for (int i = 0; i < lookupCols.size(); i++) {
-                lookupTypeArgs[i + 1] = ClassName.bestGuess(lookupCols.get(i).columnClass());
+                lookupTypeArgs[i + 1] = lookupCols.get(i).columnType();
             }
             TypeName lookupRowType = ParameterizedTypeName.get(rowClass(lookupArity), lookupTypeArgs);
             TypeName lookupRecordType = ParameterizedTypeName.get(recordClass(lookupArity), lookupTypeArgs);
@@ -944,7 +944,7 @@ public final class SplitRowsMethodEmitter {
             for (int i = 0; i < lookupCols.size(); i++) {
                 if (i > 0) lookupOnCond.add(".and(");
                 var col = lookupCols.get(i);
-                ClassName colType = ClassName.bestGuess(col.columnClass());
+                TypeName colType = col.columnType();
                 lookupOnCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
                     terminalAlias, col.javaName(),
                     i + 1, colType);
@@ -1451,7 +1451,7 @@ public final class SplitRowsMethodEmitter {
         rowTypeArgs[0] = ClassName.get(Integer.class);
         rowTypeArgs[1] = ClassName.get(Integer.class);
         for (int i = 0; i < pks.size(); i++) {
-            rowTypeArgs[i + 2] = ClassName.bestGuess(pks.get(i).columnClass());
+            rowTypeArgs[i + 2] = pks.get(i).columnType();
         }
         TypeName rowType = ParameterizedTypeName.get(rowClass(arity), rowTypeArgs);
         TypeName recordRowType = ParameterizedTypeName.get(recordClass(arity), rowTypeArgs);

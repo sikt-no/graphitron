@@ -279,7 +279,7 @@ public class TypeConditionsGenerator {
         ClassName rowN = ClassName.get("org.jooq", "Row" + n);
         TypeName[] typeArgs = new TypeName[n];
         for (int i = 0; i < n; i++) {
-            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
+            typeArgs[i] = columns.get(i).columnType();
         }
         return ParameterizedTypeName.get(rowN, typeArgs);
     }

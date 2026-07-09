@@ -889,7 +889,7 @@ public class JooqCatalog {
                     + "' which does not belong to this table");
             }
             var e = col.get();
-            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
+            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()));
         }
         return new NodeIdMetadataLookup.Present(new NodeIdMetadata(typeId, List.copyOf(resolved)));
     }
@@ -950,7 +950,7 @@ public class JooqCatalog {
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, te.table());
-                    return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
+                    return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable(), TypeName.get(col.getType()));
                 })
                 .toList())
             .orElse(java.util.List.of());
@@ -1063,7 +1063,7 @@ public class JooqCatalog {
             .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
+                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable(), TypeName.get(col.getType()));
             })
             .toList();
         return entries.stream().filter(e -> columnName.equalsIgnoreCase(e.javaName())).findFirst()
@@ -1233,7 +1233,7 @@ public class JooqCatalog {
             return pk.getFields().stream()
                 .map(f -> catalog.findColumn(table, f.getName()))
                 .<ColumnEntry>flatMap(Optional::stream)
-                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()))
                 .toList();
         }
 
@@ -1250,7 +1250,7 @@ public class JooqCatalog {
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName());
+                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName(), TypeName.get(col.getType()));
                 })
                 .toList();
         }
@@ -1313,12 +1313,27 @@ public class JooqCatalog {
      * Column resolution result.
      *
      * <p>{@code javaName} is the Java field name in the generated jOOQ table class
-     * (e.g. {@code "FILM_ID"}). {@code columnClass} is the fully qualified Java type name of the
-     * column (e.g. {@code "java.lang.Long"}). {@code sqlName} is the SQL column name used
-     * internally for filtering; it is not exposed beyond the catalog. {@code nullable} reflects
-     * the column's nullability as declared in the jOOQ data type.
+     * (e.g. {@code "FILM_ID"}). {@code columnClass} is jOOQ's raw {@code Field.getType().getName()}:
+     * a source-form FQCN for a scalar column (e.g. {@code "java.lang.Long"}), the JVM binary
+     * descriptor for an array column (e.g. {@code "[Ljava.lang.Boolean;"}). {@code sqlName} is the
+     * SQL column name used internally for filtering; it is not exposed beyond the catalog.
+     * {@code nullable} reflects the column's nullability as declared in the jOOQ data type.
+     * {@code columnType} is the same live {@code Class} decided once via {@code TypeName.get(...)}
+     * for codegen, so array columns emit a real {@code ArrayTypeName} rather than crashing
+     * {@code ClassName.bestGuess} (R446).
      */
-    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {}
+    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable, TypeName columnType) {
+        /**
+         * Convenience for hand-built scalar entries (tests) that only carry the source-form
+         * {@code columnClass} string: derives {@code columnType} via {@code ClassName.bestGuess}.
+         * Array columns must come through the reflection boundary, which supplies
+         * {@code TypeName.get(col.getType())}; see {@link ColumnRef}'s auxiliary constructor.
+         */
+        public ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {
+            this(javaName, columnClass, sqlName, nullable,
+                columnClass == null || columnClass.isBlank() ? null : ClassName.bestGuess(columnClass));
+        }
+    }
 
     /**
      * Sub-taxonomy of outcomes for {@link #findTable(String)}. Lookup failures fan out into

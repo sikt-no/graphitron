@@ -53,7 +53,7 @@ public final class MatchedKeys {
 
     private static MatchedKey toMatchedKey(JooqCatalog.KeyEntry key) {
         var columns = key.columns().stream()
-            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()))
             .toList();
         return key.primary()
             ? new MatchedKey.PrimaryKey(columns, key.keyName())

@@ -498,7 +498,7 @@ public final class FetcherEmitter {
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.field($T.name($S), $T.class));\n",
                     RECORD, DSL, DSL, pcrf.aliasName(),
-                    ClassName.bestGuess(pcrf.column().columnClass())));
+                    pcrf.column().columnType()));
         }
         if (field instanceof ChildField.ColumnReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.Direct) {
@@ -654,7 +654,7 @@ public final class FetcherEmitter {
                 if (i > 0) body.add(", ");
                 body.add("row.get($T.field($S, $T.class))",
                     DSL, pkColumns.get(i).sqlName(),
-                    ClassName.bestGuess(pkColumns.get(i).columnClass()));
+                    pkColumns.get(i).columnType());
             }
             body.add("));\n");
             body.add("    }\n");
@@ -667,7 +667,7 @@ public final class FetcherEmitter {
                 if (i > 0) body.add(", ");
                 body.add("source.get($T.field($S, $T.class))",
                     DSL, pkColumns.get(i).sqlName(),
-                    ClassName.bestGuess(pkColumns.get(i).columnClass()));
+                    pkColumns.get(i).columnType());
             }
             body.add(");\n");
         }

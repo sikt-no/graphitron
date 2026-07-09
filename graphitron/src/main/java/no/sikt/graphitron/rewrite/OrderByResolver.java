@@ -133,7 +133,7 @@ final class OrderByResolver {
         return new Resolved.Ok(new OrderBySpec.Fixed(
             pkCols.stream()
                 .map(ce -> new OrderBySpec.ColumnOrderEntry(
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()),
                     null,
                     OrderBySpec.SortDirection.ASC))
                 .toList(),
@@ -223,7 +223,7 @@ final class OrderByResolver {
         if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
         return colsOpt.get().stream()
             .map(ce -> new OrderBySpec.ColumnOrderEntry(
-                new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()),
                 null,
                 direction))
             .toList();
@@ -260,7 +260,7 @@ final class OrderByResolver {
             if (pkCols.isEmpty()) return null;
             return pkCols.stream()
                 .map(ce -> new OrderBySpec.ColumnOrderEntry(
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()),
                     null,
                     defaultDirection))
                 .toList();
@@ -283,7 +283,7 @@ final class OrderByResolver {
                 if (ceOpt.isEmpty()) return null;
                 var ce = ceOpt.get();
                 entries.add(new OrderBySpec.ColumnOrderEntry(
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), collation, entryDirection));
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()), collation, entryDirection));
             }
             return entries;
         }

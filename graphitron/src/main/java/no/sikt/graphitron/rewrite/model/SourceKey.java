@@ -204,7 +204,7 @@ public record SourceKey(
     private static TypeName jooqShape(String shape, List<ColumnRef> cols) {
         ClassName container = ClassName.get("org.jooq", shape + cols.size());
         TypeName[] args = cols.stream()
-            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .map(ColumnRef::columnType)
             .toArray(TypeName[]::new);
         return ParameterizedTypeName.get(container, args);
     }

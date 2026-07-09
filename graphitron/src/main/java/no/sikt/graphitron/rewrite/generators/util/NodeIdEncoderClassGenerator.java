@@ -216,7 +216,7 @@ public class NodeIdEncoderClassGenerator {
         for (int i = 0; i < ref.paramSignature().size(); i++) {
             ColumnRef col = ref.paramSignature().get(i);
             String paramName = "v" + i;
-            b.addParameter(ClassName.bestGuess(col.columnClass()), paramName);
+            b.addParameter(col.columnType(), paramName);
             argList.append(", ").append(paramName);
         }
         b.addStatement("return encode($S" + argList + ")", nt.typeId());

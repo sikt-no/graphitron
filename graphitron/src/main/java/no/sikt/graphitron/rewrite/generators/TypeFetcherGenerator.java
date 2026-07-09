@@ -1713,7 +1713,7 @@ public class TypeFetcherGenerator {
         var code = CodeBlock.builder().add("$T condition = ", CONDITION);
         for (int i = 0; i < slots.size(); i++) {
             var slot = slots.get(i);
-            ClassName columnType = ClassName.bestGuess(slot.sourceSide().columnClass());
+            TypeName columnType = slot.sourceSide().columnType();
             if (i > 0) code.add(".and(");
             code.add("table.$L.eq(parentRecord.get($T.name($S), $T.class))",
                 slot.targetSide().javaName(), DSL, slot.sourceSide().sqlName(), columnType);
@@ -2803,7 +2803,7 @@ public class TypeFetcherGenerator {
                 .endControlFlow();
             // The cell is typed to the column's Java type (Field<ColType>, not Field<?>) so it matches the
             // typed .values(Field<T1>, ...) overload the deduped INSERT column list produces.
-            var cellType = ParameterizedTypeName.get(fieldCn, ClassName.bestGuess(col.columnClass()));
+            var cellType = ParameterizedTypeName.get(fieldCn, col.columnType());
             locals.addStatement("$T $L", cellType, cellName);
             locals.beginControlFlow("if ($L.isEmpty())", listName)
                 .addStatement("$L = $T.defaultValue($T.$L.$L.getDataType())",

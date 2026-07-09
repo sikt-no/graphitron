@@ -134,7 +134,7 @@ final class SelectMethodBody {
         var on = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             var col = columns.get(i);
-            var colClass = ClassName.bestGuess(col.columnClass());
+            var colClass = col.columnType();
             if (i == 0) {
                 on.add("$L.$L.eq(input.field($S, $T.class))",
                     tableLocal, col.javaName(), col.sqlName(), colClass);

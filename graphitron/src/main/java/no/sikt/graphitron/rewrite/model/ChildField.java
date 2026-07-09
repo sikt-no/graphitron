@@ -282,7 +282,7 @@ public sealed interface ChildField extends OutputField
             if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new DomainReturnType.Plain(STRING_CLASS);
             }
-            return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
+            return new DomainReturnType.Plain(column.columnType());
         }
     }
 
@@ -311,7 +311,7 @@ public sealed interface ChildField extends OutputField
             if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new DomainReturnType.Plain(STRING_CLASS);
             }
-            return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
+            return new DomainReturnType.Plain(column.columnType());
         }
     }
 
@@ -348,7 +348,7 @@ public sealed interface ChildField extends OutputField
         /** The cross table joined to project this field — equivalent to {@code hop().targetTable()}. */
         public TableRef targetTable() { return hop.targetTable(); }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
+            return new DomainReturnType.Plain(column.columnType());
         }
     }
 
@@ -1101,7 +1101,7 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(
-                column != null ? ClassName.bestGuess(column.columnClass()) : OBJECT_CLASS);
+                column != null ? column.columnType() : OBJECT_CLASS);
         }
     }
 

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.Objects;
 
@@ -66,15 +67,19 @@ public sealed interface DomainReturnType
     }
 
     /**
-     * An explicit Java type with no jOOQ surface. {@link ClassName} (not {@link Class}) so the
-     * validator does not classload to compute equality; arm equality is FQN string equality.
+     * An explicit Java type with no jOOQ surface. {@link TypeName} (not {@link Class}) so the
+     * validator does not classload to compute equality; arm equality is {@code TypeName} string
+     * equality (a bare FQN for a {@link ClassName} scalar, {@code Foo[]} for an
+     * {@link no.sikt.graphitron.javapoet.ArrayTypeName} column type — R446). Widened from
+     * {@code ClassName} so array-typed column scalars carry their real type rather than crashing
+     * {@code ClassName.bestGuess}.
      */
-    record Plain(ClassName javaClass) implements DomainReturnType {
+    record Plain(TypeName javaClass) implements DomainReturnType {
         public Plain {
             Objects.requireNonNull(javaClass, "javaClass");
         }
         @Override public String toString() {
-            return "Plain(" + javaClass.canonicalName() + ")";
+            return "Plain(" + javaClass + ")";
         }
     }
 }
