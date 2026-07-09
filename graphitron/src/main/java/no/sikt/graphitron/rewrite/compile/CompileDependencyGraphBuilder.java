@@ -559,6 +559,13 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(connectionInstrumentation, graphitronRuntime);
         acc.addEdge(connectionInstrumentation, pinnedConnection);
         acc.addEdge(connectionInstrumentation, transactionProvider);
+        // R429 slice 4: the per-operation tenant-keyed connection carrier. Always emitted (generic over the
+        // erased tenant key); its edges to the runtime, the pinned connection, and the transaction provider
+        // are the tenant-keyed acquisition + provider-bound DSLContext seam R45's routed fetchers consume.
+        String tenantConnections = units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections");
+        acc.addEdge(tenantConnections, graphitronRuntime);
+        acc.addEdge(tenantConnections, pinnedConnection);
+        acc.addEdge(tenantConnections, transactionProvider);
         // R429 slice 3: when a <sessionState> block is configured the runtime constructor bakes
         // `new GraphitronSessionHook()` in place of SessionHook.NONE, and the impl implements the hook
         // seam. Conditionally emitted; the edges are inert (render-skipped) in schema-driven builds that
@@ -611,6 +618,8 @@ public final class CompileDependencyGraphBuilder {
         // R429 slice 2: the operation-typed transaction seam.
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation"));
+        // R429 slice 4: the per-operation tenant-keyed connection carrier (always emitted, generic).
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections"));
         // R429 slice 3: the concrete session hook the runtime bakes from <sessionState>. Conditionally
         // emitted (only when a <sessionState> block is configured), so it is absent from schema-driven
         // builds; modelling it unconditionally is superset-safe (the render skips units never emitted) and
