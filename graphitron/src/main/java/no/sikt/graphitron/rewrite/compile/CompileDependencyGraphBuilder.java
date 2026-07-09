@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -355,19 +356,15 @@ public final class CompileDependencyGraphBuilder {
     private void addProjectionChildEdges(String hostClass, ChildField field) {
         switch (field) {
             // Inline-projecting leaves: the $fields switch arm composes Target.$fields(...) inline,
-            // so this type class references the target's projection class. A @nodeId-decoding filter
-            // additionally lifts a decode helper onto this class, reaching NodeIdEncoder precisely.
+            // so this type class references the target's projection class. Its inline filters add
+            // further edges (generated condition class, NodeIdEncoder decode-helper lift).
             case ChildField.TableField f -> {
                 acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
-                if (filtersDecodeNodeId(f.filters())) {
-                    addNodeIdEncoderEdge(hostClass);
-                }
+                addInlineFilterEdges(hostClass, f.filters());
             }
             case ChildField.LookupTableField f -> {
                 acc.addEdge(hostClass, units.typeClass(f.returnType().returnTypeName()));
-                if (filtersDecodeNodeId(f.filters())) {
-                    addNodeIdEncoderEdge(hostClass);
-                }
+                addInlineFilterEdges(hostClass, f.filters());
             }
             // Nesting projections inline into the same outer type class; recurse with hostClass fixed.
             case ChildField.NestingField f -> {
@@ -403,6 +400,33 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.SingleRecordIdField ignored -> { }
             case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
             case ChildField.ErrorsField ignored -> { }
+        }
+    }
+
+    /**
+     * The edges an inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}'s
+     * filters contribute to the hosting type class, mirroring what
+     * {@code InlineTableFieldEmitter} / {@code FkTargetConditionEmitter.emitTerm} emit inline into the
+     * {@code $fields} switch arm:
+     *
+     * <ul>
+     *   <li>a Graphitron-<em>generated</em> condition method call ({@link GeneratedConditionFilter},
+     *       whose {@code className()} is the generated {@code <Type>Conditions} unit) references that
+     *       conditions class. Developer-supplied {@code ConditionFilter} /
+     *       {@code FkTargetConditionFilter} name a consumer-authored class (not a generated unit), so
+     *       they contribute no edge;</li>
+     *   <li>a {@code @nodeId}-decoding filter argument lifts a decode helper onto this class, reaching
+     *       {@code NodeIdEncoder} precisely (the one per-type-growing singleton).</li>
+     * </ul>
+     */
+    private void addInlineFilterEdges(String hostClass, List<WhereFilter> filters) {
+        for (var filter : filters) {
+            if (filter instanceof GeneratedConditionFilter gcf) {
+                acc.addEdge(hostClass, gcf.className());
+            }
+        }
+        if (filtersDecodeNodeId(filters)) {
+            addNodeIdEncoderEdge(hostClass);
         }
     }
 

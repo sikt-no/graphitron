@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.compile;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 
@@ -30,13 +31,29 @@ import java.util.regex.Pattern;
  * <p><b>How references are detected.</b> Two sources unioned:
  * <ol>
  *   <li>{@link TypeSpec#referencedClassNames()}: the structured {@code $T} references throughout the
- *       declaration <em>including bodies</em>. Unlike a rendered file's {@code import} list this sees
- *       <em>same-package</em> references (bare simple names with no import), so the connection-fetcher
- *       to edge-fetcher and type to participant-type edges the builder co-locates are visible. This is
- *       the load-bearing source.</li>
- *   <li>A literal-FQCN scan of the rendered source, for a class name baked into a {@code $L} literal
- *       (invisible to the structured walk because it is a string, not a typed reference).</li>
+ *       declaration <em>including bodies</em>. As of R455 the structured walk descends into {@code $L}
+ *       {@link CodeBlock} / anonymous-class / annotation args (so a {@code $T} nested arbitrarily deep
+ *       inside {@code $L} blocks is seen) and walks type-variable-bound declarations. Unlike a rendered
+ *       file's {@code import} list it also sees <em>same-package</em> references (bare simple names with
+ *       no import), so the connection-fetcher to edge-fetcher edges and the type to inline-projected
+ *       type edges the builder co-locates are visible. This is the load-bearing source.</li>
+ *   <li>A literal-FQCN scan of the rendered source, for a class name baked into a raw {@code $L}
+ *       {@code String} / {@code $S} argument (invisible to the structured walk because it is a string,
+ *       not a typed reference). Kept as-is; do <em>not</em> add a same-package simple-name literal scan,
+ *       which would over-collect (schema type-name string literals such as {@code b.name("Language")}
+ *       would demand spurious model edges).</li>
  * </ol>
+ *
+ * <p><b>Review-only residual.</b> After R455 closed the {@code $L}-block and type-variable-bound blind
+ * spots, the true residual shrinks to a generated type's simple name baked as a raw <em>code-bearing
+ * string</em> in a <em>same-package</em> unit (net 2's FQCN scan catches the cross-package form; a
+ * same-package bare simple name in a string is caught by neither net). No emitter produces this today.
+ * This is a <em>review-only</em> caveat, not an enforced contract: nothing mechanically prevents a
+ * future emitter from baking a same-package type name as a raw string, and prose that reads as a
+ * guarantee would go silently false. Discovery recipe: when adding an emitter that bakes generated
+ * code as a raw {@code $L} {@code String} / {@code $S} (rather than a {@code $T}), reference the target
+ * in the FQCN form net 2 can see, or extend this oracle. Prefer the {@code $T} structured form
+ * wherever possible so the reference stays visible to source (1) with no residual at all.
  */
 public final class TypeSpecReferenceWalk {
 

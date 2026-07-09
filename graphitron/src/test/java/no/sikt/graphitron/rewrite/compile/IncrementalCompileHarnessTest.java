@@ -58,6 +58,15 @@ class IncrementalCompileHarnessTest {
      * Base schema: exercises root table read, child table reference, connection, DML insert projection,
      * plus a node type with a {@code node(id:)} lookup so the oracle also covers the NodeType /
      * QueryNodeField arms and the precise NodeIdEncoder edges.
+     *
+     * <p>R455 corpus extension: {@code Language.films} is an inline list reference filtered by a
+     * {@code @nodeId}-decoding input. Its inline emit composes {@code Film.$fields(...)} (a same-package
+     * nested-{@code $L} projection the oracle was blind to before this item), lifts a decode helper onto
+     * the Language type class (exercising the {@code typeClass -> NodeIdEncoder} edge and the
+     * decode-helper lift), and calls a generated {@code FilmConditions} method (exercising the inline
+     * {@code typeClass -> conditions} edge). Nesting-hosted attribution is covered at unit tier in
+     * {@code CompileDependencyGraphBuilderTest}; the fetcher-owning-nesting-type wiring gap it would
+     * otherwise surface is a separate model-completeness item.
      */
     private static final String SCHEMA = """
         interface Node { id: ID! }
@@ -76,6 +85,11 @@ class IncrementalCompileHarnessTest {
 
         type Language @table(name: "language") {
           name: String
+          films(filter: FilmFilter): [Film!] @reference(path: [{key: "film_language_id_fkey"}])
+        }
+
+        input FilmFilter @table(name: "film") {
+          ids: [ID!] @nodeId(typeName: "Film")
         }
 
         input FilmInput @table(name: "film") { title: String }
@@ -104,6 +118,11 @@ class IncrementalCompileHarnessTest {
 
         type Language @table(name: "language") {
           name: String
+          films(filter: FilmFilter): [Film!] @reference(path: [{key: "film_language_id_fkey"}])
+        }
+
+        input FilmFilter @table(name: "film") {
+          ids: [ID!] @nodeId(typeName: "Film")
         }
 
         input FilmInput @table(name: "film") { title: String }

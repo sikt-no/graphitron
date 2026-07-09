@@ -207,6 +207,16 @@ class CompileDependencyGraphBuilderTest {
     }
 
     @Test
+    void typeClassReferencesGeneratedConditionClassOfInlineFilter() {
+        // The inline filter emits a generated FilmConditions/LanguageConditions method call into the
+        // $fields switch arm, so the host type class references that generated conditions unit.
+        var g = CompileDependencyGraphBuilder.fromModel(
+            filmProjectsLanguageSchema(List.of(nodeIdDecodingFilter())), PKG);
+        assertThat(g.directReferences(PKG + ".types.Film"))
+            .contains(PKG + ".conditions.LanguageConditions");
+    }
+
+    @Test
     void nestingHostedInlineFieldAttributesEdgeToOuterTypeClass() {
         // Film { details: FilmDetails { language: Language @reference } } — the nested plain object
         // shares Film's table context and emits into Film's $fields, so the Language projection edge

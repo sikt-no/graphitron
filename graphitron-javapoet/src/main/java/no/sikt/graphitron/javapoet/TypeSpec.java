@@ -33,6 +33,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -131,79 +132,108 @@ public final class TypeSpec {
 
     /**
      * Every {@link ClassName} this type references anywhere in its declaration: supertypes,
-     * implemented interfaces, member signatures (field types, method return/parameter/thrown types),
-     * annotations, and, crucially, the {@code $T} arguments baked into member <em>bodies</em>
-     * (initializers, method code, static/instance blocks) and nested types, recursively. Unlike the
-     * {@code import} list a rendered {@link JavaFile} exposes, this includes same-package references
-     * (which render as bare simple names with no import), so it is a faithful superset of the file's
-     * type dependencies. It cannot see a class name baked into a {@code $L} literal string, which is
-     * not a structured type reference; a caller needing those must scan the rendered source too.
+     * implemented interfaces, type-variable bounds (of the type and its methods), member signatures
+     * (field types, method return/parameter/thrown types), annotations, and, crucially, the
+     * {@code $T} arguments baked into member <em>bodies</em> (initializers, method code,
+     * static/instance blocks) and nested types, recursively. Member bodies are walked through their
+     * {@code $L} structure too: a {@link CodeBlock}, {@link TypeSpec} (anonymous class), or
+     * {@link AnnotationSpec} passed as a {@code $L} argument is descended into, so a {@code $T} nested
+     * arbitrarily deep inside {@code $L} blocks is visible. Unlike the {@code import} list a rendered
+     * {@link JavaFile} exposes, this includes same-package references (which render as bare simple
+     * names with no import), so it is a faithful superset of the file's structured type dependencies.
+     *
+     * <p>The one thing it cannot see is a class name baked into a <em>raw string</em> (a {@code $L}
+     * {@code String} or {@code $S} argument), which is not a structured type reference; a caller
+     * needing those must scan the rendered source too.
      */
     public Set<ClassName> referencedClassNames() {
         Set<ClassName> out = new LinkedHashSet<>();
-        collectTypeReferences(this, out);
+        // Identity-keyed visited set for type-variable declarations: self-referential bounds
+        // (T extends Comparable<T>) would otherwise recurse forever once declared type variables
+        // are walked. Shared across the whole type walk; over-collecting a bound seen from two
+        // scopes is harmless (this is a superset).
+        Set<TypeVariableName> seenTypeVars = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectTypeReferences(this, out, seenTypeVars);
         return out;
     }
 
-    private static void collectTypeReferences(TypeSpec type, Set<ClassName> out) {
-        collect(type.superclass, out);
-        for (TypeName i : type.superinterfaces) collect(i, out);
-        collectAnnotations(type.annotations, out);
+    private static void collectTypeReferences(TypeSpec type, Set<ClassName> out, Set<TypeVariableName> seenTypeVars) {
+        for (TypeVariableName v : type.typeVariables) collect(v, out, seenTypeVars);
+        collect(type.superclass, out, seenTypeVars);
+        for (TypeName i : type.superinterfaces) collect(i, out, seenTypeVars);
+        collectAnnotations(type.annotations, out, seenTypeVars);
         for (FieldSpec field : type.fieldSpecs) {
-            collect(field.type(), out);
-            collectAnnotations(field.annotations(), out);
-            collectCode(field.initializer(), out);
+            collect(field.type(), out, seenTypeVars);
+            collectAnnotations(field.annotations(), out, seenTypeVars);
+            collectCode(field.initializer(), out, seenTypeVars);
         }
         for (MethodSpec method : type.methodSpecs) {
-            collect(method.returnType(), out);
-            collectAnnotations(method.annotations(), out);
+            for (TypeVariableName v : method.typeVariables()) collect(v, out, seenTypeVars);
+            collect(method.returnType(), out, seenTypeVars);
+            collectAnnotations(method.annotations(), out, seenTypeVars);
             for (ParameterSpec p : method.parameters()) {
-                collect(p.type(), out);
-                collectAnnotations(p.annotations(), out);
+                collect(p.type(), out, seenTypeVars);
+                collectAnnotations(p.annotations(), out, seenTypeVars);
             }
-            for (TypeName e : method.exceptions()) collect(e, out);
-            collectCode(method.code(), out);
-            collectCode(method.defaultValue(), out);
+            for (TypeName e : method.exceptions()) collect(e, out, seenTypeVars);
+            collectCode(method.code(), out, seenTypeVars);
+            collectCode(method.defaultValue(), out, seenTypeVars);
         }
-        collectCode(type.staticBlock, out);
-        collectCode(type.initializerBlock, out);
-        for (TypeSpec nested : type.typeSpecs) collectTypeReferences(nested, out);
+        collectCode(type.staticBlock, out, seenTypeVars);
+        collectCode(type.initializerBlock, out, seenTypeVars);
+        for (TypeSpec nested : type.typeSpecs) collectTypeReferences(nested, out, seenTypeVars);
         for (TypeSpec constant : type.enumConstants.values()) {
-            if (constant != null) collectTypeReferences(constant, out);
+            if (constant != null) collectTypeReferences(constant, out, seenTypeVars);
         }
     }
 
-    private static void collectAnnotations(List<AnnotationSpec> annotations, Set<ClassName> out) {
+    private static void collectAnnotations(List<AnnotationSpec> annotations, Set<ClassName> out, Set<TypeVariableName> seenTypeVars) {
         for (AnnotationSpec annotation : annotations) {
-            collect(annotation.type(), out);
+            collect(annotation.type(), out, seenTypeVars);
             for (List<CodeBlock> members : annotation.members().values()) {
-                for (CodeBlock member : members) collectCode(member, out);
+                for (CodeBlock member : members) collectCode(member, out, seenTypeVars);
             }
         }
     }
 
-    private static void collectCode(CodeBlock code, Set<ClassName> out) {
+    private static void collectCode(CodeBlock code, Set<ClassName> out, Set<TypeVariableName> seenTypeVars) {
         if (code == null) return;
+        // $L args are stored opaque (CodeBlock.Builder.argToLiteral is identity), so a $T nested
+        // inside a $L CodeBlock / anonymous-class TypeSpec / AnnotationSpec is invisible unless we
+        // descend into it. $T args land as TypeName; $N / $S args land as String (a raw name, no
+        // structured reference) and fall through the default. Generators nest blocks as $L args
+        // pervasively (e.g. addStatement(CodeBlock) wraps the block as $L), so this recursion is
+        // load-bearing, not a corner case.
         for (Object arg : code.args()) {
-            if (arg instanceof TypeName typeName) collect(typeName, out);
+            switch (arg) {
+                case TypeName typeName -> collect(typeName, out, seenTypeVars);
+                case CodeBlock nested -> collectCode(nested, out, seenTypeVars);
+                case TypeSpec anonymous -> collectTypeReferences(anonymous, out, seenTypeVars);
+                case AnnotationSpec annotation -> collectAnnotations(List.of(annotation), out, seenTypeVars);
+                default -> { } // raw strings ($N/$S/$L-of-String), numbers, etc.: no structured reference
+            }
         }
     }
 
-    private static void collect(TypeName type, Set<ClassName> out) {
+    private static void collect(TypeName type, Set<ClassName> out, Set<TypeVariableName> seenTypeVars) {
         if (type == null) return;
         switch (type) {
             case ClassName c -> out.add(c);
             case ParameterizedTypeName p -> {
-                collect(p.rawType(), out);
-                for (TypeName arg : p.typeArguments()) collect(arg, out);
+                collect(p.rawType(), out, seenTypeVars);
+                for (TypeName arg : p.typeArguments()) collect(arg, out, seenTypeVars);
             }
-            case ArrayTypeName a -> collect(a.componentType(), out);
+            case ArrayTypeName a -> collect(a.componentType(), out, seenTypeVars);
             case TypeVariableName v -> {
-                for (TypeName bound : v.bounds()) collect(bound, out);
+                // Guard against self-referential bounds (T extends Comparable<T>): descend a given
+                // type variable's bounds at most once.
+                if (seenTypeVars.add(v)) {
+                    for (TypeName bound : v.bounds()) collect(bound, out, seenTypeVars);
+                }
             }
             case WildcardTypeName w -> {
-                for (TypeName bound : w.upperBounds()) collect(bound, out);
-                for (TypeName bound : w.lowerBounds()) collect(bound, out);
+                for (TypeName bound : w.upperBounds()) collect(bound, out, seenTypeVars);
+                for (TypeName bound : w.lowerBounds()) collect(bound, out, seenTypeVars);
             }
             default -> { } // primitives, void, boxed voids: no class reference
         }
