@@ -138,11 +138,11 @@ class FixtureWarningsGateTest {
      * one encoded-ID INSERT the fixture declares ({@code createKeyedNode(in: CreateKeyedNodeInput!): ID},
      * whose {@code KeyedNode @node} return carries no {@code @table} for a field-relative derivation to
      * collapse to) must <em>not</em> warn, while a projected consumer like {@code FilmCreateInput} must.
-     * R457 additionally carves out DELETE-consumed inputs (whose {@code @table} is still the sole
-     * write-target signal until the {@code @mutation(table:)} / return-derived path lands), so
-     * {@code FilmDeleteInput} must <em>not</em> warn either. When R97 Phase 2b makes the write target
-     * field-relative and empties the carve-out, the {@code CreateKeyedNodeInput} exclusion here flips,
-     * which is the intended signal.
+     * R457's cutover made DELETE-consumed inputs warn again (the field-relative {@code @mutation(table:)}
+     * path now exists as the replacement), so {@code FilmDeleteInput} warns and the advisory names
+     * {@code @mutation(table:)}. When R97 Phase 2b makes the INSERT/UPSERT write target field-relative
+     * and empties the encoded carve-out, the {@code CreateKeyedNodeInput} exclusion here flips, which is
+     * the intended signal.
      */
     @Test
     void tableOnInputDeprecationsCarveOutEncodedIdInsert() {
@@ -165,11 +165,15 @@ class FixtureWarningsGateTest {
         assertThat(deprecations).extracting(BuildWarning::message)
             .as("a projected-return INSERT input (FilmCreateInput -> Film / FilmPayload) warns")
             .anyMatch(m -> m.contains("'FilmCreateInput'"))
-            .as("a DELETE @table-on-input (FilmDeleteInput) is carved out and must not warn: R457 "
-                + "suppresses the advisory for DELETE-consumed inputs, whose @table is still the "
-                + "sole write-target signal until the @mutation(table:) / return-derived path lands")
-            .noneMatch(m -> m.contains("'FilmDeleteInput'"))
             .as("the encoded-ID INSERT input (CreateKeyedNodeInput -> ID) is carved out and must not warn")
             .noneMatch(m -> m.contains("'CreateKeyedNodeInput'"));
+
+        // R457 cutover: a DELETE @table-on-input now warns, and the advisory names @mutation(table:)
+        // as the replacement (the commit-1 suppression is retired now that the field-relative path exists).
+        assertThat(deprecations)
+            .filteredOn(w -> w.message().contains("'FilmDeleteInput'"))
+            .as("a DELETE @table-on-input (FilmDeleteInput) now warns, naming @mutation(table:)")
+            .isNotEmpty()
+            .allSatisfy(w -> assertThat(w.message()).contains("@mutation(table:"));
     }
 }

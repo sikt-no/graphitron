@@ -46,7 +46,7 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, nor on 
 | xref:directives/table.adoc[`@table`] (on `INPUT_OBJECT`)
 | Deprecated; `OBJECT` / `INTERFACE` unaffected
 | Rewrite v1
-| Remove `@table` from input types. The mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant. A build warning fires per `@table`-on-input usage, except encoded-ID / scalar-return INSERT/UPSERT, where the input's `@table` is still the only write-target signal until that derivation lands.
+| Remove `@table` from input types. The mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant. For a `@mutation(typeName: DELETE)` field, name the write target with xref:directives/mutation.adoc[`@mutation(table: "…")`] on the field instead. A build warning fires per `@table`-on-input usage, except encoded-ID / scalar-return INSERT/UPSERT, where the input's `@table` is still the only write-target signal until that derivation lands.
 
 | xref:directives/index-directive.adoc[`@index`]
 | Backward-compatibility alias

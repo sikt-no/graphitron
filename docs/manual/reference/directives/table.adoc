@@ -51,7 +51,9 @@ Applying `@table` to an input (`INPUT_OBJECT`) is deprecated and will be removed
 
 A mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant. Remove it. A non-fatal build warning fires per `@table`-on-input usage.
 
-One case still needs the directive for now: a mutation returning an *encoded ID or scalar* (e.g. `createFilm(...): ID`). There the return type carries no `@table`, so the input's `@table` is currently the only signal naming the write target, and the build does not warn on that usage yet. The other write shapes (returning a `@table` type, or a payload wrapping one) already derive the target from the return, so their inputs warn today.
+For a `@mutation(typeName: DELETE)` field, set the write target with xref:mutation.adoc[`@mutation(table: "…")`] on the field instead of `@table` on the input type. A `DELETE` cannot derive its table from the return type (the row is gone after the statement, so a `@table` return is not supported), and `@mutation(table:)` supersedes the input directive; a `DELETE` input still carrying `@table` earns this warning, naming `@mutation(table:)` as the replacement.
+
+One `INSERT`/`UPSERT` case still needs the directive for now: a mutation returning an *encoded ID or scalar* (e.g. `createFilm(...): ID`). There the return type carries no `@table`, so the input's `@table` is currently the only signal naming the write target, and the build does not warn on that usage yet. The other write shapes (returning a `@table` type, or a payload wrapping one) already derive the target from the return, so their inputs warn today.
 ====
 
 == Constraints

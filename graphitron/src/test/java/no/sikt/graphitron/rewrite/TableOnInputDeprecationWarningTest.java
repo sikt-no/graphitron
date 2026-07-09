@@ -88,10 +88,10 @@ class TableOnInputDeprecationWarningTest {
     // model the moment UPSERT lands, but there is nothing to pin here yet.
 
     @Test
-    void deleteConsumedInput_isSuppressed() {
-        // R457 commit 1: DELETE has no field-relative write-target path yet, so the input's @table is
-        // the sole signal naming the write target. Carved out until the @mutation(table:) / return-
-        // derived replacement lands (this assertion flips to expecting the warning in R457's cutover).
+    void deleteConsumedInput_warnsNamingMutationTableArg() {
+        // R457 cutover: DELETE now has a field-relative write-target path (@mutation(table:)), so its
+        // inputs are no longer carved out of the deprecation warning; the warning fires and names the
+        // replacement explicitly. (This is the flip the commit-1 carve-out anticipated.)
         var schema = TestSchemaHelper.buildSchema("""
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
             input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -103,9 +103,10 @@ class TableOnInputDeprecationWarningTest {
             .as("sanity: the ID-return DELETE classifies as a MutationDeleteTableField")
             .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField.class);
         assertThat(schema.warnings())
-            .extracting(BuildWarning::message)
-            .as("DELETE-consumed input is carved out of the deprecation warning until the field-relative path lands")
-            .noneMatch(m -> m.contains("FilmDeleteInput") && m.contains(DEPRECATION_FRAGMENT));
+            .filteredOn(w -> w.message().contains("FilmDeleteInput") && w.message().contains(DEPRECATION_FRAGMENT))
+            .as("DELETE-consumed input now warns, naming @mutation(table:) as the replacement")
+            .singleElement()
+            .satisfies(w -> assertThat(w.message()).contains("@mutation(table:"));
     }
 
     @Test

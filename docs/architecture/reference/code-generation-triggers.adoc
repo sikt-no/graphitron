@@ -173,7 +173,7 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
-| Input type with `@table` (deprecated on input; see `docs/manual/reference/directives/table.adoc`) | `TableInputType` | Used in mutation generation. A build warning fires per `@table`-on-input usage, except encoded-ID / scalar-return INSERT/UPSERT.
+| Input type with `@table` (deprecated on input; see `docs/manual/reference/directives/table.adoc`) | `TableInputType` | Used in mutation generation. A build warning fires per `@table`-on-input usage, except encoded-ID / scalar-return INSERT/UPSERT. A `DELETE`-consumed input warns and names `@mutation(table:)` as the replacement (R457).
 | Input type without `@table` (the `@service` / `@condition` / `@tableMethod` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
 | Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
@@ -486,7 +486,9 @@ the read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 
 | `@mutation(typeName: INSERT)`, returning `ID` or a `@table` type | `MutationInsertTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch)
 | `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch)
-| `@mutation(typeName: DELETE)`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`)
+| `@mutation(typeName: DELETE)`, returning `ID`, write target from the input's `@table` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, target shape `Column`)
+| `@mutation(typeName: DELETE, table: "…")`, returning `ID`, input carrying no `@table` | `MutationDeleteTableField` | As above; the write target is named on the field (R457) rather than on the input type. Byte-identical carrier to the `@table`-on-input form
+| `@mutation(typeName: INSERT\|UPDATE\|UPSERT, table: "…")` (`table:` on a non-DELETE verb) | `UnclassifiedField` (typed `MutationTableArgError.UnsupportedVerb`) | Validation error ; build fails. `table:` is wired for `DELETE` only
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record class-backed carrier (one recognized data field, optional errors-shaped field; the carrier's backing class is reflected from the producing field, not declared) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk `@table` input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order
