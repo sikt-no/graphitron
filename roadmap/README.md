@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R456` | Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads) | Ready | 2026-07-09 | [plan](workspacefile-read-vs-didchange-race.md) |
 | `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | Ready | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
 | `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | In Progress | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
-| `R453` | Reject sort-enum values missing @order/@index instead of silently skipping (empty ORDER BY breaks keyset pagination) | In Review | 2026-07-09 | [plan](sort-enum-missing-order-directive.md) |
 | `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Review | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
@@ -238,7 +237,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
-- `R453` [**Reject sort-enum values missing @order/@index instead of silently skipping (empty ORDER BY breaks keyset pagination)**](sort-enum-missing-order-directive.md) — In Review, bug
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
 - `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture, blocked by [consumer-derived-input-tables](consumer-derived-input-tables.md)
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
