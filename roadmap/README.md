@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R456` | Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads) | In Progress | 2026-07-09 | [plan](workspacefile-read-vs-didchange-race.md) |
+| `R456` | Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads) | In Review | 2026-07-09 | [plan](workspacefile-read-vs-didchange-race.md) |
 | `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | In Review | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
 | `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | In Progress | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
 | `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Review | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
@@ -316,7 +316,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R456` [**Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads)**](workspacefile-read-vs-didchange-race.md) — In Progress, bug
+- `R456` [**Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads)**](workspacefile-read-vs-didchange-race.md) — In Review, bug
 - `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
 - `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
