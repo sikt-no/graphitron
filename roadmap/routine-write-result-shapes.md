@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 3
 theme: service
-depends-on: [routine-mutation-write]
+depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09
 ---
