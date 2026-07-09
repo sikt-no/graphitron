@@ -152,6 +152,13 @@ class RejectionSeverityCoverageTest {
                             no.sikt.graphitron.javapoet.ClassName.bestGuess(
                                 "com.example.jooq.tables.records.FilmRecord")))));
         }
+        if (permit == Rejection.AuthorError.SortEnumMissingOrder.class) {
+            // R453: an @orderBy sort enum carrying values with no ordering directive. Two missing
+            // values exercise the accumulate-all multi-line message shape; Diagnostics.compute's
+            // switch on Rejection.AuthorError catches it uniformly (Error severity).
+            return new Rejection.AuthorError.SortEnumMissingOrder(
+                "ActorOrderField", List.of("LAST_NAME", "LAST_UPDATE"));
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

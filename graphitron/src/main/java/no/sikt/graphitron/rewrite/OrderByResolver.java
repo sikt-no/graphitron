@@ -308,11 +308,22 @@ final class OrderByResolver {
         var sortEnum = (GraphQLEnumType) GraphQLTypeUtil.unwrapNonNull(
             inputType.getFieldDefinition(ob.sortFieldName()).getType());
         var namedOrders = new ArrayList<OrderBySpec.NamedOrder>();
+        var missingOrder = new ArrayList<String>();
         for (var value : sortEnum.getValues()) {
-            if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) continue;
+            if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) {
+                // R453: a value with no ordering directive would be silently skipped, generating an
+                // empty ORDER BY when a request selects only such values (nondeterministic keyset
+                // pagination). Accumulate every missing value and reject after the loop; the docs
+                // already promise this per-value build failure.
+                missingOrder.add(value.getName());
+                continue;
+            }
             OrderBySpec.Fixed order = resolveEnumValueOrderSpec(value, tableSqlName, errors);
             if (order == null) return new Resolved.Rejected(Rejection.structural(errors.get(errors.size() - 1)));
             namedOrders.add(new OrderBySpec.NamedOrder(value.getName(), order));
+        }
+        if (!missingOrder.isEmpty()) {
+            return new Resolved.Rejected(Rejection.sortEnumMissingOrder(sortEnum.getName(), missingOrder));
         }
         var baseResolved = resolveDefaultOrderSpec(fieldDef, tableSqlName);
         if (baseResolved instanceof Resolved.Rejected r) return r;

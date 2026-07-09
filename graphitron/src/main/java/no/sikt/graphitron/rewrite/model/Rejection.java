@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, ErrorChannelWalkerError, WireCoercionError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, ErrorChannelWalkerError, WireCoercionError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -225,6 +225,47 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 DomainReturnType domainReturnType
             ) {}
         }
+
+        /**
+         * R453: a sort enum bound to an {@code @orderBy} argument carries one or more values that
+         * declare neither {@code @order} nor {@code @index}. Each such value would be silently
+         * skipped by {@link no.sikt.graphitron.rewrite.OrderByResolver}, producing no
+         * {@link OrderBySpec.NamedOrder}; a request selecting only unannotated values then generates
+         * an empty ORDER BY, which on a paginated connection makes keyset pagination slice a
+         * nondeterministic set (rows duplicate or vanish across pages). The docs already promise a
+         * per-value build failure here, so this arm aligns code with that promise.
+         *
+         * <p>Carries the sort enum's type name plus the typed list of unannotated value names (all
+         * of them, accumulated in enum-declaration order, not fail-fast); downstream tooling (LSP
+         * fix-its) reads the missing-value list off the arm rather than parsing prose. The
+         * rejection fires from {@code OrderByResolver.resolveOrderByArgSpec} at the parse boundary,
+         * making the empty-ORDER-BY state unrepresentable in the model ({@code namedOrders} is
+         * complete by construction). A <em>fully</em> unannotated enum never reaches the resolver:
+         * {@code FieldBuilder.classifyOrderByArg}'s {@code anyMatch} detection fails and the
+         * argument is already rejected as unclassified; only partial annotation slips through to
+         * here.
+         */
+        record SortEnumMissingOrder(String enumTypeName, List<String> missingValues)
+                implements AuthorError {
+            public SortEnumMissingOrder {
+                missingValues = List.copyOf(missingValues);
+            }
+
+            @Override public String message() {
+                var sb = new StringBuilder()
+                    .append("sort enum '").append(enumTypeName)
+                    .append("' is used with @orderBy but these values declare no ordering directive:");
+                for (String value : missingValues) {
+                    sb.append("\n  - ").append(value);
+                }
+                sb.append("\n  Every value of an @orderBy-bound enum must declare exactly one of index, fields, or primaryKey via @order.");
+                return sb.toString();
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new SortEnumMissingOrder(prefix + enumTypeName, missingValues);
+            }
+        }
     }
 
     /**
@@ -413,6 +454,16 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      */
     static Rejection contextArgumentTypeConflict(String name, List<ConflictSite> sites) {
         return new AuthorError.TypeConflict(name, sites);
+    }
+
+    /**
+     * {@link AuthorError.SortEnumMissingOrder} factory. Produced by
+     * {@link no.sikt.graphitron.rewrite.OrderByResolver} when a sort enum bound to {@code @orderBy}
+     * carries one or more values declaring neither {@code @order} nor {@code @index}.
+     * {@code missingValues} accumulates every unannotated value in enum-declaration order.
+     */
+    static Rejection sortEnumMissingOrder(String enumTypeName, List<String> missingValues) {
+        return new AuthorError.SortEnumMissingOrder(enumTypeName, missingValues);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

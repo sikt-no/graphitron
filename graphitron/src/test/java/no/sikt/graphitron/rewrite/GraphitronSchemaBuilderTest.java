@@ -4437,6 +4437,67 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    /**
+     * R453 — a sort enum bound to {@code @orderBy} with one value carrying {@code @order} and one
+     * carrying no ordering directive rejects with a build error naming the unannotated value. The
+     * unannotated value would otherwise be silently skipped by {@code OrderByResolver}, generating
+     * an empty ORDER BY (nondeterministic keyset pagination); the docs already promise this
+     * per-value build failure.
+     */
+    @Test
+    void r453_partiallyAnnotatedSortEnumRejectsNamingUnannotatedValue() {
+        var schema = build("""
+            enum ActorOrderField { FIRST_NAME @order(index: "IDX_ACTOR_LAST_NAME") LAST_NAME }
+            enum Direction { ASC DESC }
+            input ActorOrder { sortField: ActorOrderField! direction: Direction! }
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+                actors(order: ActorOrder @orderBy): [Actor!]!
+            }
+            type Query { filmActor: FilmActor }
+            """);
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        assertThat(errors)
+            .extracting(ValidationError::message)
+            .as("expected a build error naming the unannotated sort-enum value")
+            .anyMatch(m -> m.contains("ActorOrderField")
+                && m.contains("LAST_NAME")
+                && m.contains("no ordering directive"));
+    }
+
+    /**
+     * R453 — two or more unannotated values accumulate into a single rejection listing every
+     * missing value, rather than failing fast on the first. Pins the accumulate-all behaviour.
+     */
+    @Test
+    void r453_multipleUnannotatedValuesAccumulateIntoOneRejection() {
+        var schema = build("""
+            enum ActorOrderField { FIRST_NAME @order(index: "IDX_ACTOR_LAST_NAME") LAST_NAME LAST_UPDATE }
+            enum Direction { ASC DESC }
+            input ActorOrder { sortField: ActorOrderField! direction: Direction! }
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+                actors(order: ActorOrder @orderBy): [Actor!]!
+            }
+            type Query { filmActor: FilmActor }
+            """);
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        var missingOrderRejections = errors.stream()
+            .map(ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.Rejection.AuthorError.SortEnumMissingOrder)
+            .map(r -> (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.SortEnumMissingOrder) r)
+            .toList();
+        assertThat(missingOrderRejections)
+            .as("both unannotated values must ride a single rejection, not fail-fast on the first")
+            .hasSize(1);
+        // The validator threads a "Field '<parent>.<field>': " prefix onto enumTypeName via
+        // prefixedWith (the RecordBindingMultiProducer precedent); the typed missingValues list
+        // stays clean for downstream tooling.
+        assertThat(missingOrderRejections.get(0).enumTypeName()).contains("ActorOrderField");
+        assertThat(missingOrderRejections.get(0).missingValues())
+            .containsExactly("LAST_NAME", "LAST_UPDATE");
+    }
+
     // ===== P4: InputType classification =====
 
     enum InputTypeCase implements ClassificationCase {
