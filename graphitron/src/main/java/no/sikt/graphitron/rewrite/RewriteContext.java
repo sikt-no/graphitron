@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -57,7 +58,8 @@ public record RewriteContext(
     List<Path> classpathRoots,
     ClassLoader codegenLoader,
     List<Path> compileSourceRoots,
-    LintConfig lintConfig
+    LintConfig lintConfig,
+    SessionStateConfig sessionStateConfig
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -87,6 +89,9 @@ public record RewriteContext(
         // Lint suppression is null-tolerant: only the build mojos populate it from the <lint> block;
         // every other caller (unit tier, LSP/MCP dev-loop) defaults to no suppression (R408).
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
+        // Session-state config is null-tolerant: only the build mojos populate it from the
+        // <sessionState> block; every other caller defaults to no configured hook (SessionHook.NONE).
+        sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
     }
 
     /**
@@ -98,7 +103,19 @@ public record RewriteContext(
     public RewriteContext withLintConfig(LintConfig lintConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig);
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig);
+    }
+
+    /**
+     * Returns a copy of this context with {@code sessionStateConfig} replaced. The other fields are
+     * shared by reference (all immutable or defensively copied by the canonical constructor). Lets a
+     * caller that built a context through a convenience constructor layer the {@code <sessionState>}
+     * configuration on afterwards without re-threading every field.
+     */
+    public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig);
     }
 
     /**
@@ -121,7 +138,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader,
-            compileSourceRoots, LintConfig.empty());
+            compileSourceRoots, LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
@@ -144,7 +161,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader, List.of(),
-            LintConfig.empty());
+            LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
@@ -165,7 +182,7 @@ public record RewriteContext(
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
             namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
-            LintConfig.empty());
+            LintConfig.empty(), SessionStateConfig.none());
     }
 
     /**
@@ -186,7 +203,7 @@ public record RewriteContext(
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
             namedReferences, List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
-            LintConfig.empty());
+            LintConfig.empty(), SessionStateConfig.none());
     }
 
     private static Path defaultResourcesDirectory(Path outputDirectory) {

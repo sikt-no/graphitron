@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
@@ -88,6 +89,18 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     LintBinding lint;
 
+    /**
+     * Session identity (R429 slice 3). A {@code <sessionState>} block naming how per-request identity
+     * is mounted on the pinned connection: either consumer-authored database callables
+     * ({@code <connect call>} / {@code <disconnect call>}, with an optional OUT {@code handle}) or the
+     * Postgres {@code <variables>} sugar ({@code <variable name claim>}) that generates both hook
+     * halves. Threaded through {@link RewriteContext}; {@code ConnectionRuntimeClassGenerator} emits the
+     * concrete hook from it. An unpaired or handle-inconsistent block fails the build. Omit to mount no
+     * identity ({@code SessionHook.NONE}).
+     */
+    @Parameter
+    SessionStateBinding sessionState;
+
     @FunctionalInterface
     protected interface GeneratorCall {
         void invoke(GraphQLRewriteGenerator gen);
@@ -159,7 +172,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resolveClasspathRoots(),
             codegenLoader,
             resolveCompileSourceRoots(),
-            buildLintConfig()
+            buildLintConfig(),
+            buildSessionStateConfig()
         );
     }
 
@@ -181,6 +195,54 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         } catch (IllegalArgumentException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
+    }
+
+    /**
+     * Builds the {@link SessionStateConfig} from the {@code <sessionState>} block, mapping the POM
+     * binding into the raw shape {@code SessionStateConfig.from(...)} reconciles and validates. The
+     * pairing, handle-consistency, and one-form-only rejections live in the config object (a
+     * {@code pom.xml} defect has no SDL coordinate), which throws {@link IllegalArgumentException}; this
+     * wraps it as a {@link MojoExecutionException}. Returns {@link SessionStateConfig#none()} when the
+     * block is omitted (mounts no identity: {@code SessionHook.NONE}).
+     */
+    private SessionStateConfig buildSessionStateConfig() throws MojoExecutionException {
+        if (sessionState == null) {
+            return SessionStateConfig.none();
+        }
+        var connect = toRawHook(sessionState.connect);
+        var disconnect = toRawHook(sessionState.disconnect);
+        try {
+            var variables = new ArrayList<SessionStateConfig.Variable>();
+            if (sessionState.variables != null) {
+                for (var v : sessionState.variables) {
+                    if (v == null) continue;
+                    variables.add(new SessionStateConfig.Variable(trimOrNull(v.name), trimOrNull(v.claim)));
+                }
+            }
+            return SessionStateConfig.from(connect, disconnect, variables);
+        } catch (IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Maps a POM {@code <connect>}/{@code <disconnect>} element to the raw shape: {@code null} when the
+     * element is absent, a {@link SessionStateConfig.RawHook} with a {@code null} call when it is present
+     * but empty (the unmount-free marker).
+     */
+    private static SessionStateConfig.RawHook toRawHook(SessionStateBinding.HookBinding hook) {
+        if (hook == null) {
+            return null;
+        }
+        return new SessionStateConfig.RawHook(trimOrNull(hook.call), hook.handle);
+    }
+
+    private static String trimOrNull(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static Stream<String> trimmedNonBlank(List<String> raw) {

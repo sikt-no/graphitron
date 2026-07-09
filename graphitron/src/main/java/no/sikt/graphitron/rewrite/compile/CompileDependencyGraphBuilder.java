@@ -559,6 +559,13 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(connectionInstrumentation, graphitronRuntime);
         acc.addEdge(connectionInstrumentation, pinnedConnection);
         acc.addEdge(connectionInstrumentation, transactionProvider);
+        // R429 slice 3: when a <sessionState> block is configured the runtime constructor bakes
+        // `new GraphitronSessionHook()` in place of SessionHook.NONE, and the impl implements the hook
+        // seam. Conditionally emitted; the edges are inert (render-skipped) in schema-driven builds that
+        // configure no session state, and accurate once slice 5 turns the block on.
+        String sessionHookImpl = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook");
+        acc.addEdge(graphitronRuntime, sessionHookImpl);
+        acc.addEdge(sessionHookImpl, sessionHook);
         addNodeLookupAndEntityDispatchEdges(schemaClass, context);
     }
 
@@ -604,6 +611,11 @@ public final class CompileDependencyGraphBuilder {
         // R429 slice 2: the operation-typed transaction seam.
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation"));
+        // R429 slice 3: the concrete session hook the runtime bakes from <sessionState>. Conditionally
+        // emitted (only when a <sessionState> block is configured), so it is absent from schema-driven
+        // builds; modelling it unconditionally is superset-safe (the render skips units never emitted) and
+        // pre-covers the sakila migration in slice 5, which turns the block on.
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
     }
 
     private String nodeIdEncoderFqcn() {

@@ -317,6 +317,20 @@
                             </schemaInputs>
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>${outputPackage}</outputPackage>
+                            <!--
+                                R429 slice 3: mount per-request identity on the pinned connection with the
+                                Postgres <variables> sugar. Generates a GraphitronSessionHook whose connect
+                                sets app.user_id from the JWT's sub claim and whose disconnect clears it;
+                                exercised end-to-end against RLS in SessionHookExecutionTest.
+                            -->
+                            <sessionState>
+                                <variables>
+                                    <variable>
+                                        <name>app.user_id</name>
+                                        <claim>sub</claim>
+                                    </variable>
+                                </variables>
+                            </sessionState>
                         </configuration>
                     </execution>
                     <!--

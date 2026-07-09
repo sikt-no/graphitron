@@ -72,6 +72,11 @@ The following parameters apply to every goal:
 | `LintBinding`
 | (none)
 | Lint suppression. A `<lint>` block naming rule ids to silence everywhere (`<disabledRules>`) and type-name globs to skip in the SDL lint engine (`<excludedTypes>`). Applied build-side, so the build log, the `graphitron:dev` editor squiggles, and the MCP `diagnostics` tool suppress identically. A disabled rule id that resolves to no rule fails the build with the list of valid ids. Omit the block to lint every author-owned type with every rule. See xref:#silencing-lint-warnings[Silencing lint warnings].
+
+| `sessionState`
+| `SessionStateBinding`
+| (none)
+| Session identity (R429). A `<sessionState>` block naming how per-request identity is mounted on the pinned connection: either consumer-authored database callables (`<connect call>` / `<disconnect call>`, with an optional OUT `handle`) or the Postgres `<variables>` sugar (`<variable name claim>`) that generates both hook halves. Graphitron emits a `SessionHook` from the block that runs at connection acquisition and release. An unpaired or handle-inconsistent block fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
 |===
 
 == `dev`-goal parameters
@@ -207,6 +212,84 @@ The `<lint>` block carries two list children:
 | `List<String>` (`<type>` entries)
 | Type-name globs whose matching types the SDL lint engine skips. Engine-scoped: a classifier advisory on an excluded type still fires and must be silenced through `disabledRules`.
 |===
+
+[#session-identity]
+== Session identity
+
+When you run the owned-connection engine (`runtime.newGraphQL(schema)`), graphitron pins one database connection per GraphQL operation. A `<sessionState>` block tells it how to mount per-request identity on that connection, at acquisition, and unmount it at release, so every generated query and mutation runs under the caller's identity without any per-fetcher wiring. Omit the block and no identity is mounted.
+
+There are two forms; configure one, not both.
+
+=== Function-hook form
+
+Name consumer-authored database callables. `connect` mounts identity from the opaque claims payload (typically the request's JWT); `disconnect` unmounts it. This is the form to use on Oracle, and whenever identity lives behind a privilege fence (a definer-rights package, VPD, RAS):
+
+[source,xml]
+----
+<configuration>
+  <sessionState>
+    <connect>                          <!-- (p_claims IN, p_handle OUT) -->
+      <call>Pk_Ras.Connect</call>
+      <handle>true</handle>
+    </connect>
+    <disconnect>                       <!-- (p_handle IN) -->
+      <call>Pk_Ras.Disconnect</call>
+      <handle>true</handle>
+    </disconnect>
+  </sessionState>
+</configuration>
+----
+
+`<handle>true</handle>` declares that `connect` returns an opaque OUT handle (for example a RAS session id) that `disconnect` is later called with. It must be declared on both sides or neither; a handle produced by one side and not bound by the other fails the build. Everything domain-shaped, claim parsing, entitlement filtering, session management, lives inside the callables, in the database's own language; graphitron only guarantees the pair runs at mount and unmount.
+
+Identity that mounts must unmount, so a `<connect>` without a `<disconnect>` fails the build. A genuinely unmount-free design opts out explicitly with an empty `<disconnect/>`:
+
+[source,xml]
+----
+<sessionState>
+  <connect><call>Pk.SetContext</call></connect>
+  <disconnect/> <!-- explicit unmount-free opt-out -->
+</sessionState>
+----
+
+=== Postgres `<variables>` sugar
+
+For the common Postgres case, graphitron generates both hook halves from a list of session variables, so you write no SQL:
+
+[source,xml]
+----
+<sessionState>
+  <variables>
+    <variable>
+      <name>app.user_id</name>
+      <claim>sub</claim>
+    </variable>
+    <variable>
+      <name>app.tenant</name>
+      <claim>tenant</claim>
+    </variable>
+  </variables>
+</sessionState>
+----
+
+`connect` sets each variable from the named claim in the payload JSON in a single round trip (`set_config('app.user_id', ...->>'sub', false)`); `disconnect` clears exactly those variables. Both halves come from the one variable list, so they cannot drift.
+
+[cols="1,1,3",options="header"]
+|===
+| Child | Type | Description
+
+| `name`
+| `String` (`<name>` element)
+| The Postgres session variable (GUC) to set, for example `app.user_id`. Your RLS policies read it with `current_setting('app.user_id', true)`.
+
+| `claim`
+| `String` (`<claim>` element)
+| The claim key read from the payload JSON, for example `sub`.
+|===
+
+A claim absent from the payload sets the variable to the empty string, and `disconnect` clears each variable to the empty string rather than to `NULL` (Postgres cannot restore a touched session variable to unset). Your RLS policies must therefore treat both `NULL` and the empty string as "no identity" to stay fail-closed, for example with `NULLIF(current_setting('app.user_id', true), '') IS NULL`.
+
+The sugar generates PostgreSQL. If you build the runtime with a non-Postgres dialect, `Graphitron.runtime(dataSource, dialect)` fails immediately with a clear message rather than at the first request; use the function-hook form for other dialects.
 
 == `validate`-goal sentinel
 

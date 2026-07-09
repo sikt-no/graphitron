@@ -49,8 +49,8 @@ The `<sessionState>` block in the plugin `<configuration>` names two database ca
 
 ```xml
 <sessionState>
-  <connect call="Pk_Ras.Connect"/>       <!-- (p_claims IN, p_handle OUT) -->
-  <disconnect call="Pk_Ras.Disconnect"/> <!-- (p_handle IN) -->
+  <connect><call>Pk_Ras.Connect</call><handle>true</handle></connect>       <!-- (p_claims IN, p_handle OUT) -->
+  <disconnect><call>Pk_Ras.Disconnect</call><handle>true</handle></disconnect> <!-- (p_handle IN) -->
 </sessionState>
 ```
 
@@ -70,7 +70,7 @@ Everything domain-shaped lives inside the hook, in the database's own language, 
 ```xml
 <sessionState>
   <variables>
-    <variable name="app.user_id" claim="sub"/>
+    <variable><name>app.user_id</name><claim>sub</claim></variable>
   </variables>
 </sessionState>
 ```

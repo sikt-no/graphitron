@@ -1,12 +1,20 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig.FunctionHooks;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig.None;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig.Unmount;
+import no.sikt.graphitron.rewrite.session.SessionStateConfig.Variables;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.StringJoiner;
 
 /**
  * R429 slice 1 — emits the connection-lifecycle runtime substrate into the consumer's
@@ -55,19 +63,47 @@ import java.util.List;
  * which links back here.
  *
  * <h2>Session hooks (slice 3)</h2>
- * Slice 1 wires {@code SessionHook.NONE} (a no-op null-object: mounts and unmounts nothing) so the
- * no-{@code <sessionState>} path never branches on a nullable hook. Slice 3 regenerates the runtime
- * to bake the configured connect/disconnect callables (Postgres {@code <variables>} sugar or the
- * function-hook form) into the {@code sessionHook} field; that change is additive to this surface.
+ * With no {@code <sessionState>} configured the runtime bakes {@code SessionHook.NONE} (a no-op
+ * null-object: mounts and unmounts nothing) so the path never branches on a nullable hook. A
+ * configured {@link SessionStateConfig} additionally emits a concrete
+ * {@value #SESSION_HOOK_IMPL_CLASS_NAME} the runtime constructor bakes in place of {@code NONE}:
+ * <ul>
+ *   <li><b>Function-hook form</b> ({@link FunctionHooks}) calls consumer-authored database callables via
+ *       JDBC {@link java.sql.CallableStatement}; a declared OUT handle is captured by connect and bound
+ *       by disconnect. An {@link Unmount.UnmountFree} disconnect is the explicit unmount-free opt-out
+ *       (an empty disconnect body).</li>
+ *   <li><b>Postgres {@code <variables>} sugar</b> ({@link Variables}) emits both hook halves from one
+ *       resolved variable set: connect issues a single-round-trip {@code set_config(...)} per variable
+ *       reading the claim from the payload JSON, disconnect clears exactly those variables (to the empty
+ *       string). Both halves come from the same carrier, so "disconnect clears exactly what connect set"
+ *       is structural. This form additionally guards its dialect: the runtime constructor fails closed
+ *       when built with a non-Postgres dialect.</li>
+ * </ul>
+ * The emitter forks on an exhaustive {@code switch} over the sealed {@link SessionStateConfig}, so a
+ * fourth form becomes a compile error at this seam.
+ *
+ * <h3>Postgres GUC clear semantics (why {@code set_config(name, '', false)}, not {@code RESET})</h3>
+ * A never-set custom GUC reads back {@code NULL}, but once a placeholder GUC has been set in a session
+ * both {@code RESET} and {@code set_config(name, NULL, false)} leave it as the empty string, not
+ * {@code NULL} (Postgres cannot restore a touched placeholder GUC to unset). {@code RESET} therefore
+ * buys no fail-closed advantage here, so disconnect uses {@code set_config(name, '', false)}: it is
+ * symmetric with connect (same mechanism, one carrier) and deterministic. The fail-closed guarantee
+ * lives in the documented RLS-policy pattern, which must treat {@code NULL} and the empty string
+ * identically as "no identity".
  */
 public final class ConnectionRuntimeClassGenerator {
 
     public static final String RUNTIME_CLASS_NAME = "GraphitronRuntime";
     public static final String PINNED_CONNECTION_CLASS_NAME = "PinnedConnection";
     public static final String SESSION_HOOK_CLASS_NAME = "SessionHook";
+    /** The concrete {@code SessionHook} emitted from a configured {@code <sessionState>} block (slice 3). */
+    public static final String SESSION_HOOK_IMPL_CLASS_NAME = "GraphitronSessionHook";
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
+    private static final ClassName CALLABLE_STATEMENT = ClassName.get("java.sql", "CallableStatement");
+    private static final ClassName PREPARED_STATEMENT = ClassName.get("java.sql", "PreparedStatement");
+    private static final ClassName JDBC_TYPES = ClassName.get("java.sql", "Types");
     private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
     private static final ClassName EXECUTOR = ClassName.get("java.util.concurrent", "Executor");
     private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
@@ -76,18 +112,41 @@ public final class ConnectionRuntimeClassGenerator {
     private ConnectionRuntimeClassGenerator() {}
 
     /**
-     * @param outputPackage the consumer's root output package; the three classes are emitted into
+     * @param outputPackage the consumer's root output package; the classes are emitted into
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronContext})
+     * @param sessionState  the resolved {@code <sessionState>} config: {@link None} keeps
+     *                      {@code SessionHook.NONE}; {@link FunctionHooks}/{@link Variables} additionally
+     *                      emit a concrete {@link #SESSION_HOOK_IMPL_CLASS_NAME} the runtime bakes in
      */
-    public static List<TypeSpec> generate(String outputPackage) {
+    public static List<TypeSpec> generate(String outputPackage, SessionStateConfig sessionState) {
         String schemaPackage = outputPackage + ".schema";
         var sessionHook = ClassName.get(schemaPackage, SESSION_HOOK_CLASS_NAME);
+        var sessionHookImpl = ClassName.get(schemaPackage, SESSION_HOOK_IMPL_CLASS_NAME);
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
         var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
-        return List.of(
-            sessionHook(sessionHook),
-            pinnedConnection(pinnedConnection, sessionHook),
-            runtime(sessionHook, pinnedConnection, instrumentation));
+
+        // The runtime bakes SessionHook.NONE for the no-config path, or `new GraphitronSessionHook()` when
+        // a hook is configured; the Postgres <variables> sugar additionally requires a Postgres dialect,
+        // enforced at construction (fail loud at wiring time, not at the first request).
+        CodeBlock hookInitializer = sessionState instanceof None
+            ? CodeBlock.of("$T.NONE", sessionHook)
+            : CodeBlock.of("new $T()", sessionHookImpl);
+        boolean requiresPostgres = sessionState instanceof Variables;
+
+        var units = new ArrayList<TypeSpec>();
+        units.add(sessionHook(sessionHook));
+        units.add(pinnedConnection(pinnedConnection, sessionHook));
+        units.add(runtime(sessionHook, pinnedConnection, instrumentation, hookInitializer, requiresPostgres));
+        TypeSpec impl = sessionHookImpl(sessionHook, sessionState);
+        if (impl != null) {
+            units.add(impl);
+        }
+        return List.copyOf(units);
+    }
+
+    /** Back-compatible overload for callers that mount no identity (unit-tier drivers, no {@code <sessionState>}). */
+    public static List<TypeSpec> generate(String outputPackage) {
+        return generate(outputPackage, SessionStateConfig.none());
     }
 
     /** The connect/disconnect seam. Open interface: slice 1 fakes it, slice 3 generates the concrete impl. */
@@ -312,7 +371,8 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /** The application-scoped runtime holding the DataSource, dialect, and baked session hook. */
-    private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection, ClassName instrumentation) {
+    private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection, ClassName instrumentation,
+                                    CodeBlock hookInitializer, boolean requiresPostgres) {
         var dataSourceField = FieldSpec.builder(DATA_SOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build();
         var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build();
         var hookField = FieldSpec.builder(sessionHook, "sessionHook", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -322,14 +382,26 @@ public final class ConnectionRuntimeClassGenerator {
             .initializer("$T::run", Runnable.class)
             .build();
 
-        var constructor = MethodSpec.constructorBuilder()
+        var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "dataSource")
             .addParameter(SQL_DIALECT, "dialect")
             .addStatement("this.dataSource = $T.requireNonNull(dataSource, $S)", OBJECTS, "dataSource")
-            .addStatement("this.dialect = $T.requireNonNull(dialect, $S)", OBJECTS, "dialect")
-            .addComment("Slice 3 replaces NONE with the connect/disconnect hook baked from <sessionState>.")
-            .addStatement("this.sessionHook = $T.NONE", sessionHook)
+            .addStatement("this.dialect = $T.requireNonNull(dialect, $S)", OBJECTS, "dialect");
+        if (requiresPostgres) {
+            // The <variables> sugar bakes PostgreSQL set_config statements at build time, but the dialect
+            // arrives only here at construction; guard fail-closed so a mismatched dialect fails loudly at
+            // wiring time rather than as a first-request SQL error days after the build passed.
+            constructorBuilder
+                .beginControlFlow("if (dialect.family() != $T.POSTGRES)", SQL_DIALECT)
+                .addStatement("throw new $T($S + dialect + $S)", IllegalStateException.class,
+                    "The <sessionState> <variables> sugar generates PostgreSQL set_config statements, but the "
+                        + "configured dialect is ",
+                    "; use the <connect>/<disconnect> function-hook form for other dialects.")
+                .endControlFlow();
+        }
+        var constructor = constructorBuilder
+            .addStatement("this.sessionHook = $L", hookInitializer)
             .addJavadoc("Builds the application-scoped runtime over a consumer-owned {@code DataSource} and\n"
                 + "dialect. The consumer (or their framework) still owns pool creation and tuning; the\n"
                 + "runtime owns acquisition, transactions, and identity on top of it.\n"
@@ -393,5 +465,158 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(acquire)
             .addMethod(newGraphQL)
             .build();
+    }
+
+    /**
+     * Emits the concrete {@code SessionHook} baked into the runtime, or {@code null} for {@link None}
+     * (the runtime uses {@code SessionHook.NONE}). Forks on an exhaustive {@code switch} over the sealed
+     * config so a fourth form is a compile error here.
+     */
+    private static TypeSpec sessionHookImpl(ClassName sessionHook, SessionStateConfig config) {
+        return switch (config) {
+            case None ignored -> null;
+            case FunctionHooks fh -> functionHookImpl(sessionHook, fh);
+            case Variables v -> variablesHookImpl(sessionHook, v);
+        };
+    }
+
+    /** The function-hook form: connect/disconnect call consumer-authored DB callables via {@link java.sql.CallableStatement}. */
+    private static TypeSpec functionHookImpl(ClassName sessionHook, FunctionHooks fh) {
+        boolean producesHandle = fh.unmount() instanceof Unmount.PairedDisconnect pd && pd.handle();
+
+        String connectSql = "{ call " + fh.connectCall() + "(?" + (producesHandle ? ", ?" : "") + ") }";
+        var connect = MethodSpec.methodBuilder("connect")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(String.class)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(String.class, "claims")
+            .addException(SQL_EXCEPTION)
+            .beginControlFlow("try ($T cs = connection.prepareCall($S))", CALLABLE_STATEMENT, connectSql)
+            .addStatement("cs.setString(1, claims)");
+        if (producesHandle) {
+            connect.addStatement("cs.registerOutParameter(2, $T.VARCHAR)", JDBC_TYPES)
+                .addStatement("cs.execute()")
+                .addStatement("return cs.getString(2)");
+        } else {
+            connect.addStatement("cs.execute()")
+                .addStatement("return null");
+        }
+        var connectMethod = connect.endControlFlow()
+            .addJavadoc("Mounts identity by calling {@code $L}, passing the opaque claims payload.$L\n",
+                fh.connectCall(),
+                producesHandle ? " Captures the OUT handle it returns." : "")
+            .build();
+
+        var disconnect = functionDisconnect(fh.unmount());
+
+        return TypeSpec.classBuilder(SESSION_HOOK_IMPL_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addSuperinterface(sessionHook)
+            .addJavadoc("Generated {@code SessionHook} for the function-hook {@code <sessionState>} form:\n"
+                + "connect calls {@code $L} and disconnect $L. Both are consumer-authored database callables;\n"
+                + "graphitron only guarantees the pair runs at mount and unmount.\n",
+                fh.connectCall(),
+                fh.unmount() instanceof Unmount.PairedDisconnect pd ? "calls {@code " + pd.call() + "}" : "is the unmount-free opt-out")
+            .addMethod(connectMethod)
+            .addMethod(disconnect)
+            .build();
+    }
+
+    /** The disconnect half of the function-hook form: a paired callable, or the unmount-free no-op. */
+    private static MethodSpec functionDisconnect(Unmount unmount) {
+        var disconnect = MethodSpec.methodBuilder("disconnect")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(void.class)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(String.class, "handle")
+            .addException(SQL_EXCEPTION);
+        return switch (unmount) {
+            case Unmount.PairedDisconnect pd -> {
+                String disconnectSql = "{ call " + pd.call() + "(" + (pd.handle() ? "?" : "") + ") }";
+                disconnect.beginControlFlow("try ($T cs = connection.prepareCall($S))", CALLABLE_STATEMENT, disconnectSql);
+                if (pd.handle()) {
+                    disconnect.addStatement("cs.setString(1, handle)");
+                }
+                yield disconnect.addStatement("cs.execute()")
+                    .endControlFlow()
+                    .addJavadoc("Unmounts identity by calling {@code $L}$L.\n",
+                        pd.call(), pd.handle() ? ", bound to the handle connect returned" : "")
+                    .build();
+            }
+            case Unmount.UnmountFree ignored -> disconnect
+                .addComment("Unmount-free opt-out (empty <disconnect/>): connect mounts identity that this")
+                .addComment("hook deliberately does not unmount. Slice 6's generation-time warning names this.")
+                .addJavadoc("No-op: the {@code <sessionState>} config opted out of unmounting with an empty\n"
+                    + "{@code <disconnect/>}. Identity mounted by connect is not unmounted here.\n")
+                .build();
+        };
+    }
+
+    /**
+     * The Postgres {@code <variables>} sugar: both halves emitted from the one resolved variable set.
+     * Connect issues one {@code set_config} per variable in a single round trip, reading each claim from
+     * the payload JSON; disconnect clears exactly those variables to the empty string.
+     */
+    private static TypeSpec variablesHookImpl(ClassName sessionHook, Variables config) {
+        var vars = config.variables();
+
+        StringJoiner connectSets = new StringJoiner(", ", "select ", " from (select cast(? as jsonb) as c) claims");
+        StringJoiner disconnectSets = new StringJoiner(", ", "select ", "");
+        for (var v : vars) {
+            connectSets.add("set_config('" + sqlLiteral(v.name()) + "', c ->> '" + sqlLiteral(v.claim()) + "', false)");
+            disconnectSets.add("set_config('" + sqlLiteral(v.name()) + "', '', false)");
+        }
+        String connectSql = connectSets.toString();
+        String disconnectSql = disconnectSets.toString();
+
+        var connect = MethodSpec.methodBuilder("connect")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(String.class)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(String.class, "claims")
+            .addException(SQL_EXCEPTION)
+            .beginControlFlow("try ($T ps = connection.prepareStatement($S))", PREPARED_STATEMENT, connectSql)
+            .addStatement("ps.setString(1, claims)")
+            .addStatement("ps.execute()")
+            .endControlFlow()
+            .addComment("The <variables> sugar carries no handle: session GUCs are cleared by name at disconnect.")
+            .addStatement("return null")
+            .addJavadoc("Mounts identity by setting each configured session variable from the claims JSON in a\n"
+                + "single round trip. A claim absent from the payload sets the variable to the empty string,\n"
+                + "which the RLS policy must treat as no identity (fail closed).\n")
+            .build();
+
+        var disconnect = MethodSpec.methodBuilder("disconnect")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(void.class)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(String.class, "handle")
+            .addException(SQL_EXCEPTION)
+            .beginControlFlow("try ($T ps = connection.prepareStatement($S))", PREPARED_STATEMENT, disconnectSql)
+            .addStatement("ps.execute()")
+            .endControlFlow()
+            .addJavadoc("Clears exactly the variables connect set, to the empty string. Emitted from the same\n"
+                + "variable set as connect, so the two cannot drift.\n")
+            .build();
+
+        return TypeSpec.classBuilder(SESSION_HOOK_IMPL_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addSuperinterface(sessionHook)
+            .addJavadoc("Generated {@code SessionHook} for the Postgres {@code <variables>} {@code <sessionState>}\n"
+                + "sugar: connect sets each session variable from the claims JSON, disconnect clears them. Both\n"
+                + "halves are emitted from one resolved variable set, so disconnect clears exactly what connect\n"
+                + "set. The runtime that bakes this hook fails closed when built with a non-Postgres dialect.\n")
+            .addMethod(connect)
+            .addMethod(disconnect)
+            .build();
+    }
+
+    /** Escapes a value for embedding inside a single-quoted SQL string literal by doubling single quotes. */
+    private static String sqlLiteral(String value) {
+        return value.replace("'", "''");
     }
 }

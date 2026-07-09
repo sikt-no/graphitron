@@ -306,7 +306,7 @@ public class GraphQLRewriteGenerator {
         write(PolymorphicSelectionSetClassGenerator.generate(),                                   "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
-        write(ConnectionRuntimeClassGenerator.generate(outputPackage),                             "schema",     emittedThisRun);
+        write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig()),    "schema",     emittedThisRun);
         write(GraphitronTransactionProviderGenerator.generate(outputPackage),                       "schema",     emittedThisRun);
         write(GraphitronConnectionInstrumentationGenerator.generate(outputPackage),                 "schema",     emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);

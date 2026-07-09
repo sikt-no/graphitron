@@ -161,7 +161,9 @@ class ConnectionLifecycleExecutionTest {
         return ExecutionInput.newExecutionInput()
             .query(query)
             .graphQLContext(b -> {
-                b.put(GraphitronConnectionInstrumentation.CLAIMS_KEY, "test-claims");
+                // Valid JSON claims: since this module configures the Postgres <variables> sugar
+                // (<sessionState> in the pom), the generated connect hook parses the payload as jsonb.
+                b.put(GraphitronConnectionInstrumentation.CLAIMS_KEY, "{\"sub\":\"test-user\"}");
                 b.put(GraphitronContext.class, GraphitronContext.GraphitronContextImpl.INSTANCE);
                 b.put("userId", "test-user");
             })
