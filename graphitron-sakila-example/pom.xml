@@ -206,18 +206,21 @@
         <!--
             jOOQ's Configuration exposes org.jooq.conf.Settings, a JAXB-generated class
             annotated with @XmlElement / @XmlAccessorType / @XmlType / @XmlSchemaType.
-            jOOQ declares jakarta.xml.bind-api as <optional>, so it is not on the test
+            jOOQ declares jakarta.xml.bind-api as <optional>, so it is not on the
             classpath transitively. Without it javac cannot resolve those annotation
-            methods while compiling tests that touch jOOQ types and floods the build
-            with "Cannot find annotation method 'defaultValue()' in type
-            'jakarta.xml.bind.annotation.XmlElement'" warnings. Pulling the API jar in
-            at test scope silences them; we never need JAXB at runtime.
+            methods while compiling code that touches jOOQ Configuration and floods the
+            build with "Cannot find annotation method 'defaultValue()' in type
+            'jakarta.xml.bind.annotation.XmlElement'" warnings, which -Werror rejects.
+            Scope is <provided> (compile + test, never runtime): R429's generated
+            GraphitronConnectionInstrumentation installs a custom TransactionProvider on a
+            jOOQ Configuration, so the API is needed on the main generated-sources compile
+            classpath, not only the test one. We never need JAXB at runtime.
         -->
         <dependency>
             <groupId>jakarta.xml.bind</groupId>
             <artifactId>jakarta.xml.bind-api</artifactId>
             <version>4.0.2</version>
-            <scope>test</scope>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 

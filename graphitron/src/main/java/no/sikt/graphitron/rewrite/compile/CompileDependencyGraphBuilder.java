@@ -550,6 +550,15 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(graphitronRuntime, pinnedConnection);
         acc.addEdge(graphitronRuntime, sessionHook);
         acc.addEdge(pinnedConnection, sessionHook);
+        // R429 slice 2: the operation-typed transaction seam. The runtime's newGraphQL(schema) attaches
+        // the instrumentation, which binds a DSLContext through the transaction provider over the pinned
+        // connection. Same schema-invariant, ABI-frozen character as the slice-1 substrate.
+        String transactionProvider = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider");
+        String connectionInstrumentation = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation");
+        acc.addEdge(graphitronRuntime, connectionInstrumentation);
+        acc.addEdge(connectionInstrumentation, graphitronRuntime);
+        acc.addEdge(connectionInstrumentation, pinnedConnection);
+        acc.addEdge(connectionInstrumentation, transactionProvider);
         addNodeLookupAndEntityDispatchEdges(schemaClass, context);
     }
 
@@ -592,6 +601,9 @@ public final class CompileDependencyGraphBuilder {
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
+        // R429 slice 2: the operation-typed transaction seam.
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider"));
+        acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation"));
     }
 
     private String nodeIdEncoderFqcn() {

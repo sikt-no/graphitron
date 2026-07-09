@@ -48,8 +48,17 @@ class ConnectionRuntimeClassGeneratorTest {
 
     @BeforeAll
     static void compileEmittedRuntime() {
+        // Since slice 2 the runtime's newGraphQL(schema) references the connection instrumentation,
+        // which in turn references the transaction provider: the R429 emitted classes are one connected
+        // cluster, so they compile together. This test still only drives the slice-1 classes below.
         Map<String, TypeSpec> units = new LinkedHashMap<>();
         for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE)) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         harness = EmittedCodeHarness.compile(units);

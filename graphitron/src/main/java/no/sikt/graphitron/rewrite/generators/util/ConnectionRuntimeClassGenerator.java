@@ -26,9 +26,9 @@ import java.util.List;
  * Connection setup is application-scoped ({@code GraphitronRuntime}, built once at wiring time via
  * {@code Graphitron.runtime(dataSource, dialect)}); identity is acquisition-scoped
  * ({@code PinnedConnection}, one per operation). {@code PinnedConnection} carries <em>no</em>
- * transaction concept: commit-vs-rollback and read-only-vs-writable are the orthogonal transaction
- * axis that R429 slice 2's acquisition handles + {@code TransactionProvider} layer over this seam.
- * The connect OUT value is the only thing called a "handle" here.
+ * transaction concept: the commit-policy axis (commit-vs-rollback) is the orthogonal transaction
+ * concern that R429 slice 2's {@code TransactionProvider} + execution instrumentation layer over this
+ * seam. The connect OUT value is the only thing called a "handle" here.
  *
  * <h2>The lifecycle contract (unit-pinned in {@code ConnectionRuntimeClassGeneratorTest})</h2>
  * <ul>
@@ -83,10 +83,11 @@ public final class ConnectionRuntimeClassGenerator {
         String schemaPackage = outputPackage + ".schema";
         var sessionHook = ClassName.get(schemaPackage, SESSION_HOOK_CLASS_NAME);
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
+        var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
         return List.of(
             sessionHook(sessionHook),
             pinnedConnection(pinnedConnection, sessionHook),
-            runtime(sessionHook, pinnedConnection));
+            runtime(sessionHook, pinnedConnection, instrumentation));
     }
 
     /** The connect/disconnect seam. Open interface: slice 1 fakes it, slice 3 generates the concrete impl. */
@@ -291,8 +292,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addSuperinterface(AutoCloseable.class)
             .addJavadoc("One pinned connection with per-request identity mounted for its acquisition-scoped\n"
-                + "lifetime. Carries no transaction concept (R429 slice 2's read-only/writable acquisition\n"
-                + "handles + {@code TransactionProvider} compose over this seam). See\n"
+                + "lifetime. Carries no transaction concept (R429 slice 2's {@code TransactionProvider} +\n"
+                + "execution instrumentation compose over this seam). See\n"
                 + "{@code ConnectionRuntimeClassGenerator} for the full lifecycle contract.\n")
             .addField(connectionField)
             .addField(hookField)
@@ -311,7 +312,7 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /** The application-scoped runtime holding the DataSource, dialect, and baked session hook. */
-    private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection) {
+    private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection, ClassName instrumentation) {
         var dataSourceField = FieldSpec.builder(DATA_SOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build();
         var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build();
         var hookField = FieldSpec.builder(sessionHook, "sessionHook", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -351,17 +352,38 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return $T.acquire(dataSource, sessionHook, claims, abortExecutor)", pinnedConnection)
             .addJavadoc("Pins one connection from the {@code DataSource} and mounts identity on it from the\n"
                 + "opaque {@code claims} payload. Fail-closed. The caller releases the returned\n"
-                + "{@code PinnedConnection} exactly once at operation completion; R429 slice 2 wires this\n"
-                + "into graphql-java execution instrumentation so consumers register nothing.\n"
+                + "{@code PinnedConnection} exactly once at operation completion; the execution\n"
+                + "instrumentation wired by {@link #newGraphQL} does this, so consumers register nothing.\n"
                 + "@param claims the opaque per-request claims payload (typically the JWT), never parsed here\n")
+            .build();
+
+        var graphQL = ClassName.get("graphql", "GraphQL");
+        var graphQLBuilder = ClassName.get("graphql", "GraphQL", "Builder");
+        var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
+        var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(graphQLBuilder)
+            .addParameter(graphQLSchema, "schema")
+            .addStatement("return $T.newGraphQL(schema).instrumentation(new $T(this))", graphQL, instrumentation)
+            .addJavadoc("Builds a {@link graphql.GraphQL.Builder} over {@code schema} with the connection-lifecycle\n"
+                + "instrumentation already attached: every operation pins a connection, mounts identity, runs\n"
+                + "in an operation-typed transaction, and releases at completion, with no registration by the\n"
+                + "consumer. This is the owned-connection engine assembly; pair it with\n"
+                + "{@code Graphitron.buildSchema(...)}: {@code var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();}.\n"
+                + "\n"
+                + "<p>The escape-hatch engine ({@code Graphitron.newGraphQL()}) attaches no instrumentation;\n"
+                + "there the caller owns the {@code DSLContext}, transactions, and identity.\n"
+                + "@param schema the {@link graphql.schema.GraphQLSchema} from {@code Graphitron.buildSchema(...)}\n"
+                + "@return a builder with the owned-connection instrumentation attached, ready for {@code .build()}\n")
             .build();
 
         return TypeSpec.classBuilder(RUNTIME_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Application-scoped runtime that owns the connection lifecycle: built once at wiring\n"
                 + "time via {@code Graphitron.runtime(dataSource, dialect)}, it pins one connection per\n"
-                + "operation, mounts and unmounts per-request identity through the {@link $T} seam, and (in\n"
-                + "slice 2) demarcates operation-typed transactions. Holds no per-request state.\n", sessionHook)
+                + "operation, mounts and unmounts per-request identity through the {@link $T} seam, and\n"
+                + "demarcates operation-typed transactions (via the instrumentation {@link #newGraphQL} attaches).\n"
+                + "Holds no per-request state.\n", sessionHook)
             .addField(dataSourceField)
             .addField(dialectField)
             .addField(hookField)
@@ -369,6 +391,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(constructor)
             .addMethod(dialectAccessor)
             .addMethod(acquire)
+            .addMethod(newGraphQL)
             .build();
     }
 }
