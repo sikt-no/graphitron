@@ -4,7 +4,7 @@ title: "@mutation(table:) parameter for DELETE write-target; retire @table-on-in
 status: In Review
 bucket: architecture
 priority: 6
-theme: model-cleanup
+theme: mutation-write
 depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09

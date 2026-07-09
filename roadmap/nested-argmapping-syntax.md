@@ -4,7 +4,7 @@ title: "Nested @argMapping syntax via GraphQLSelectionParser"
 status: Backlog
 bucket: feature
 priority: 4
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-05-27
 last-updated: 2026-05-27

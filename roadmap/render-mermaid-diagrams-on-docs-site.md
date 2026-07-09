@@ -2,6 +2,7 @@
 id: R326
 title: "Render Mermaid diagrams on the published docs site"
 status: Backlog
+theme: docs
 bucket: tech-debt
 depends-on: []
 created: 2026-06-17

@@ -4,7 +4,7 @@ title: "Widen string-carrier intermediates onto Rejection (R58 follow-up)"
 status: Backlog
 bucket: architecture
 priority: 6
-theme: structural-refactor
+theme: diagnostics
 depends-on: []
 ---
 

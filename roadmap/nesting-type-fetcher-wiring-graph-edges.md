@@ -4,7 +4,7 @@ title: "Model the schema-shape to fetcher wiring edge for fetcher-owning nesting
 status: Backlog
 bucket: bug
 priority: 3
-theme: structural-refactor
+theme: dev-loop
 depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09

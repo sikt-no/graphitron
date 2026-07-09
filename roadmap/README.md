@@ -177,51 +177,102 @@ _Items parked until a blocking concern is resolved or re-prioritised. Set `defer
 
 Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a closed set; bucket and theme are orthogonal.
 
-### interface-union
+### classification-model
 
-- `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
-- `R458` [**Per-participant explicit join paths on multi-table interface/union child fields**](per-participant-multitable-child-join-paths.md) — Ready, architecture
-- `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
-- `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
+- `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
+- `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
+- `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
+- `R432` [**Collapse SplitTableField and RecordTableField into one source-gated leaf**](collapse-split-and-record-table-leaves.md) — Backlog, structural, blocked by [decompose-sourcekey](decompose-sourcekey.md)
+- `R431` [**Decompose SourceKey onto the model's facts**](decompose-sourcekey.md) — Backlog, structural
+- `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model**](dissolve-reentry-leaves-dimensional-emit.md) — Spec, architecture, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)
+- `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
+- `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Spec, architecture
+- `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture, blocked by [consumer-derived-input-tables](consumer-derived-input-tables.md)
+- `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
+- `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
+- `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
+- `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
+- `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md) — Backlog, cleanup
+- `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
+- `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
+- `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
+- `R174` [**graphitron-javapoet: emit records, sealed/permits, package-info.java**](javapoet-record-sealed-package-info-support.md) — Backlog, architecture
+- `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md) — Spec
+
+### diagnostics
+
+- `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
+- `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
+- `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
+- `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
+- `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
+- `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
+- `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md) — Backlog, Typed rejection chain
+- `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md) — Backlog, bugs
+- `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md) — Backlog, architecture
+
+### routine
+
+- `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
+- `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
+- `R447` [**Routine chains: remaining fetch-form breadth**](routine-chain-fetch-form-breadth.md) — Backlog, feature
 
 ### nodeid
 
-- `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
-- `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
+- `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
+- `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
 - `R420` [**Support list-valued @nodeId+@reference on INSERT inputs (row fan-out)**](list-nodeid-reference-insert-fanout.md) — Backlog, feature
 
+### interface-union
+
+- `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
+- `R458` [**Per-participant explicit join paths on multi-table interface/union child fields**](per-participant-multitable-child-join-paths.md) — Ready, architecture
+- `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
+- `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
+- `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
+
 ### service
 
-- `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — In Progress, architecture
-- `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
-- `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
-- `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
-- `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
+- `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
+- `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
-- `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
-- `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
-- `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
+- `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
+- `R277` [**Support @tableMethod under a table-bound NestingField**](tablemethod-under-nested-type.md) — Backlog, feature
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
-- `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R448` [**Routine chains: ordering, binding, and corpus residue**](routine-chain-residue.md) — Backlog, improvement
-- `R447` [**Routine chains: remaining fetch-form breadth**](routine-chain-fetch-form-breadth.md) — Backlog, feature
+- `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
+- `R240` [**Type-token threading on MethodRef.StaticOnly + ReturnTypeRef.TableBoundReturnType**](tablemethod-return-type-token-threading.md) — Backlog, architecture
+- `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md) — Backlog, architecture
+- `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md) — Backlog, architecture
+- `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md) — Spec
+- `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md) — Backlog, architecture
 
-### mutations-errors
+### mutation-write
 
-- `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
-- `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
-- `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
+- `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
+- `R457` [**@mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE**](mutation-table-param-for-delete.md) — In Review, architecture
+- `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
 - `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
 - `R145` [**Cardinality safety story for UPSERT under the multiRow: regime**](mutation-cardinality-safety-upsert.md) — Backlog, architecture
+- `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md) — Spec
+- `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md) — Backlog, cleanup
+
+### error-channel
+
+- `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
+- `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
+- `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
+- `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
+- `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md) — Backlog, structural
+- `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md) — Backlog, architecture
 
 ### pagination
 
@@ -232,120 +283,87 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
 - `R208` [**Retire the @asConnection(connectionName:) deprecated argument**](retire-connection-name-override.md) — Backlog, cleanup
 
-### model-cleanup
+### runtime-connection
 
-- `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
-- `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
-- `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture, blocked by [consumer-derived-input-tables](consumer-derived-input-tables.md)
-- `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
-- `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
-- `R457` [**@mutation(table:) parameter for DELETE write-target; retire @table-on-input for DELETE**](mutation-table-param-for-delete.md) — In Review, architecture
-- `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
-- `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
-- `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup
-- `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
+- `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — In Progress, architecture
+- `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
+- `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
+- `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 
-### structural-refactor
+### lsp
+
+- `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
+- `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
+- `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
+- `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
+- `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
+- `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
+- `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
+
+### dev-loop
 
 - `R455` [**Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee**](completeness-oracle-reference-walk-blind-spots.md) — In Review, bug
-- `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
-- `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
+- `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R459` [**Model the schema-shape to fetcher wiring edge for fetcher-owning nesting types in CompileDependencyGraphBuilder**](nesting-type-fetcher-wiring-graph-edges.md) — Backlog, bug
-- `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
-- `R432` [**Collapse SplitTableField and RecordTableField into one source-gated leaf**](collapse-split-and-record-table-leaves.md) — Backlog, structural, blocked by [decompose-sourcekey](decompose-sourcekey.md)
-- `R431` [**Decompose SourceKey onto the model's facts**](decompose-sourcekey.md) — Backlog, structural
-- `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model**](dissolve-reentry-leaves-dimensional-emit.md) — Spec, architecture, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)
-- `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
-- `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
-- `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Spec, architecture
-- `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
-- `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
-- `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
-- `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
-- `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
-- `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
+- `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
+
+### codegen-correctness
+
+- `R288` [**Inline TableInterfaceField and TableMethodField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
-- `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
+- `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
+- `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md) — Backlog, cleanup
+
+### model-cleanup
+
+- `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
 - `R359` [**Guard ColumnRef.sqlName() comparisons against case-sensitivity drift**](column-sqlname-comparison-case-guard.md) — Backlog, cleanup
-- `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
-- `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
-- `R387` [**Migrate TypeConditionsGeneratorTest off code-string assertions on generated method bodies**](type-conditions-test-code-string-migration.md) — Backlog, testing
-- `R443` [**Post-R438 stale-reference residue: ConditionResolution javadoc + fkjoin-alias-dead-storage item**](post-r438-stale-reference-residue.md) — Backlog, structural
-- `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
-- `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
-- `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
 - `R239` [**Lift ColumnField.parentTable from emitter parameter to record component**](column-field-parent-table-record-component.md) — Backlog, architecture
-- `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
-- `R277` [**Support @tableMethod under a table-bound NestingField**](tablemethod-under-nested-type.md) — Backlog, feature
-- `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
-- `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
-- `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
-- `R240` [**Type-token threading on MethodRef.StaticOnly + ReturnTypeRef.TableBoundReturnType**](tablemethod-return-type-token-threading.md) — Backlog, architecture
-- `R174` [**graphitron-javapoet: emit records, sealed/permits, package-info.java**](javapoet-record-sealed-package-info-support.md) — Backlog, architecture
+- `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 - `R280` [**Typed non-empty carrier for fetcher-registration bodies**](fetcher-bodies-nonempty-carrier.md) — Backlog, cleanup
-- `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
-- `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Spec, architecture
-- `R117` [**Graphitron knowledge base programme: DuckDB as queryable model**](knowledge-base-programme.md) — Backlog, architecture
-- `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture, blocked by [capability-catalog](capability-catalog.md)
-
-### docs
-
-- `R346` [**Regenerate and guard the generated supported-directives migration doc against directive-set drift**](supported-directives-regen-guard.md) — Ready, tech-debt
-- `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
-- `R394` [**roadmap-tool verify tripwires throw BuildFailure, not System.exit**](roadmap-tool-tripwire-buildfailure.md) — Backlog, docs
-- `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
-- `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
-- `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
-- `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
-- `R404` [**Reintroduce @sourceRow documentation when it enters the supported surface**](reintroduce-sourcerow-docs.md) — Backlog, docs
-- `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
-
-### testing
-
-- `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
 
 ### legacy-migration
 
 - `R360` [**Retire the @enum directive; infer enum Java backing from producers**](retire-enum-directive.md) — Backlog, cleanup
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
-- `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
 
-### lsp
+### docs
 
-- `R430` [**LSP publishes graphitron:dev compile diagnostics against generated-file URIs**](lsp-compile-diagnostics-publish.md) — Backlog, feature
-- `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
-- `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
-- `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
-- `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
-- `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
-- `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
-- `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
+- `R346` [**Regenerate and guard the generated supported-directives migration doc against directive-set drift**](supported-directives-regen-guard.md) — Ready, tech-debt
+- `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
+- `R443` [**Post-R438 stale-reference residue: ConditionResolution javadoc + fkjoin-alias-dead-storage item**](post-r438-stale-reference-residue.md) — Backlog, structural
+- `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
+- `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
+- `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
+- `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
+- `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md) — Backlog, architecture
+- `R289` [**Correct KeyNodeSynthesiser opt-out javadoc: @key(resolvable: false) does not keep a type out of _Entity**](keynodesynthesiser-resolvable-false-entity-doc.md) — Backlog, bug
+- `R404` [**Reintroduce @sourceRow documentation when it enters the supported surface**](reintroduce-sourcerow-docs.md) — Backlog, docs
+- `R326` [**Render Mermaid diagrams on the published docs site**](render-mermaid-diagrams-on-docs-site.md) — Backlog, tech-debt
+- `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
 
-### (untagged)
+### tooling
 
-- `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
-- `R373` [**Capture test stdout/stderr to per-class files via Surefire redirectTestOutputToFile**](surefire-redirect-test-output.md)
-- `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md)
-- `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
-- `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
-- `R289` [**Correct KeyNodeSynthesiser opt-out javadoc: @key(resolvable: false) does not keep a type out of _Entity**](keynodesynthesiser-resolvable-false-entity-doc.md)
-- `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md)
-- `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
-- `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
-- `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
-- `R288` [**Inline TableInterfaceField and TableMethodField children (currently N+1)**](inline-interface-and-tablemethod-children.md)
-- `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md)
-- `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md)
-- `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
-- `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md)
-- `R326` [**Render Mermaid diagrams on the published docs site**](render-mermaid-diagrams-on-docs-site.md)
-- `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
-- `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
-- `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
-- `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md)
+- `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
+- `R394` [**roadmap-tool verify tripwires throw BuildFailure, not System.exit**](roadmap-tool-tripwire-buildfailure.md) — Backlog, docs
+- `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
+- `R373` [**Capture test stdout/stderr to per-class files via Surefire redirectTestOutputToFile**](surefire-redirect-test-output.md) — Backlog, testing
+- `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
+- `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Spec, architecture
+- `R117` [**Graphitron knowledge base programme: DuckDB as queryable model**](knowledge-base-programme.md) — Backlog, architecture
+- `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture, blocked by [capability-catalog](capability-catalog.md)
+
+### testing
+
+- `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
+- `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
+- `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
+- `R387` [**Migrate TypeConditionsGeneratorTest off code-string assertions on generated method bodies**](type-conditions-test-code-string-migration.md) — Backlog, testing
+- `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
+- `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
+- `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
 
 
 ---

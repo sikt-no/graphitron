@@ -4,7 +4,7 @@ title: "Multi-tenant fan-out: run one field across many tenants and union the re
 status: Backlog
 bucket: architecture
 priority: 6
-theme: service
+theme: runtime-connection
 depends-on: [tenant-routing-and-execution-input, connection-transaction-lifecycle]
 last-updated: 2026-07-03
 ---

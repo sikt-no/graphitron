@@ -3,7 +3,7 @@ id: R117
 title: "Graphitron knowledge base programme: DuckDB as queryable model"
 status: Backlog
 bucket: architecture
-theme: structural-refactor
+theme: tooling
 depends-on: []
 ---
 

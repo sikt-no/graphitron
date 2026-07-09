@@ -4,7 +4,7 @@ title: "Let bare-entity query fields host @error so decode and other client erro
 status: Backlog
 bucket: architecture
 priority: 4
-theme: mutations-errors
+theme: error-channel
 depends-on: []
 created: 2026-06-29
 last-updated: 2026-06-29

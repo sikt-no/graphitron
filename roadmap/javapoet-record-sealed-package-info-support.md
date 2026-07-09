@@ -4,7 +4,7 @@ title: "graphitron-javapoet: emit records, sealed/permits, package-info.java"
 status: Backlog
 bucket: architecture
 priority: 9
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-05-17
 last-updated: 2026-05-17

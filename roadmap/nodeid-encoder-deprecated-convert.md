@@ -4,7 +4,7 @@ title: "Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder
 status: Backlog
 bucket: tech-debt
 priority: 4
-theme: model-cleanup
+theme: nodeid
 depends-on: []
 created: 2026-06-01
 last-updated: 2026-06-01

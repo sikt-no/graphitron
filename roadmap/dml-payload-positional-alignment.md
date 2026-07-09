@@ -2,6 +2,7 @@
 id: R242
 title: DML payload positional input/output alignment
 status: Spec
+theme: mutation-write
 depends-on: []
 created: 2026-05-26
 last-updated: 2026-06-15

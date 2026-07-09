@@ -4,7 +4,7 @@ title: "Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-tr
 status: Backlog
 bucket: structural
 priority: 4
-theme: structural-refactor
+theme: service
 depends-on: []
 created: 2026-06-30
 last-updated: 2026-06-30

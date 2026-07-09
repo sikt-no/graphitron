@@ -55,17 +55,24 @@ public final class Main {
      * accompanying docs.
      */
     static final List<String> VALID_THEMES = List.of(
-        "interface-union",
+        "classification-model",
+        "diagnostics",
+        "routine",
         "nodeid",
+        "interface-union",
         "service",
-        "mutations-errors",
+        "mutation-write",
+        "error-channel",
         "pagination",
+        "runtime-connection",
+        "lsp",
+        "dev-loop",
+        "codegen-correctness",
         "model-cleanup",
-        "structural-refactor",
-        "docs",
-        "testing",
         "legacy-migration",
-        "lsp"
+        "docs",
+        "tooling",
+        "testing"
     );
 
     private Main() {}

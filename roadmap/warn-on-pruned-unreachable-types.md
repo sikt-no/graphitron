@@ -4,7 +4,7 @@ title: "Warn on pruned unreachable output types instead of dropping them silentl
 status: Backlog
 bucket: architecture
 priority: 5
-theme: structural-refactor
+theme: diagnostics
 depends-on: []
 created: 2026-06-17
 last-updated: 2026-06-17

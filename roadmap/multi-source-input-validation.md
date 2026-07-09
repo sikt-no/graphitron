@@ -4,7 +4,7 @@ title: "Multi-source input validation: SDL directives + DB CHECK + Jakarta on a 
 status: Backlog
 bucket: architecture
 priority: 7
-theme: mutations-errors
+theme: mutation-write
 depends-on: [catalog-check-constraint-validation]
 ---
 

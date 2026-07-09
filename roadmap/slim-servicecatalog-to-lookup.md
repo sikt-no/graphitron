@@ -4,7 +4,7 @@ title: "Slim ServiceCatalog down to a lookup primitive"
 status: Backlog
 bucket: architecture
 priority: 5
-theme: structural-refactor
+theme: service
 depends-on: []
 ---
 

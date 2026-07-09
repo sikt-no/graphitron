@@ -4,7 +4,7 @@ title: "Compound mutations: parent entity row + child normalised rows in one INS
 status: Backlog
 bucket: architecture
 priority: 8
-theme: mutations-errors
+theme: mutation-write
 depends-on: []
 last-updated: 2026-05-23
 ---

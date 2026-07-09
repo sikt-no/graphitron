@@ -2,6 +2,7 @@
 id: R245
 title: "Wire @condition through to mutation WHERE (emit half + new placements)"
 status: Backlog
+theme: mutation-write
 bucket: cleanup
 depends-on: []
 created: 2026-05-27

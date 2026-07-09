@@ -4,7 +4,7 @@ title: "Typed non-empty carrier for fetcher-registration bodies"
 status: Backlog
 bucket: cleanup
 priority: 30
-theme: structural-refactor
+theme: model-cleanup
 depends-on: []
 created: 2026-06-05
 last-updated: 2026-06-05

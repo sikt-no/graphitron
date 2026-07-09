@@ -4,7 +4,7 @@ title: Decompose `TypeFetcherGenerator`
 status: Backlog
 bucket: architecture
 priority: 11
-theme: structural-refactor
+theme: model-cleanup
 depends-on: []
 ---
 

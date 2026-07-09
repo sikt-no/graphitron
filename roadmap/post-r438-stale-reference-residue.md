@@ -4,7 +4,7 @@ title: "Post-R438 stale-reference residue: ConditionResolution javadoc + fkjoin-
 status: Backlog
 bucket: structural
 priority: 5
-theme: structural-refactor
+theme: docs
 depends-on: []
 created: 2026-07-08
 last-updated: 2026-07-08

@@ -4,7 +4,7 @@ title: "Input-side nesting-projection classification (NestingType mirror)"
 status: Backlog
 bucket: architecture
 priority: 4
-theme: model-cleanup
+theme: classification-model
 depends-on: [consumer-derived-input-tables]
 created: 2026-06-19
 last-updated: 2026-06-22

@@ -2,6 +2,7 @@
 id: R274
 title: "OutcomeType carries its success projection so the nullability invariant lives on the carrier"
 status: Backlog
+theme: error-channel
 bucket: structural
 depends-on: []
 created: 2026-06-02

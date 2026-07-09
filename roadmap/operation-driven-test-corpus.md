@@ -3,7 +3,7 @@ id: R112
 title: "Operation-driven test corpus, capability catalog, and runtime trace"
 status: Spec
 bucket: architecture
-theme: structural-refactor
+theme: tooling
 depends-on: [capability-catalog]
 ---
 

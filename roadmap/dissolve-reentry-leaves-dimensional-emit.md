@@ -4,7 +4,7 @@ title: "Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching o
 status: Spec
 bucket: architecture
 priority: 4
-theme: structural-refactor
+theme: classification-model
 depends-on: [coordinate-lowers-to-datafetcher-queryparts, decompose-sourcekey, collapse-split-and-record-table-leaves]
 created: 2026-06-15
 last-updated: 2026-07-04

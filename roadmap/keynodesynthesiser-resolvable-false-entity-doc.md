@@ -2,6 +2,7 @@
 id: R289
 title: "Correct KeyNodeSynthesiser opt-out javadoc: @key(resolvable: false) does not keep a type out of _Entity"
 status: Backlog
+theme: docs
 bucket: bug
 depends-on: []
 created: 2026-06-09

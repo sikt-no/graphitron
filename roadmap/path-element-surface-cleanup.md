@@ -4,7 +4,7 @@ title: "Tidy @reference path-element surface: separate join-shape from WHERE-fil
 status: Backlog
 bucket: cleanup
 priority: 6
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-05-23
 last-updated: 2026-05-23

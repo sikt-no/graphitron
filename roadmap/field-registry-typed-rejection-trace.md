@@ -2,6 +2,7 @@
 id: R209
 title: "FieldRegistry classify-input trace loses typed Rejection payload"
 status: Backlog
+theme: diagnostics
 bucket: Typed rejection chain
 depends-on: []
 created: 2026-05-21

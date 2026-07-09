@@ -2,6 +2,7 @@
 id: R219
 title: "Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule"
 status: Backlog
+theme: service
 bucket: architecture
 depends-on: []
 created: 2026-05-21

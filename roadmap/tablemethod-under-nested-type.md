@@ -4,7 +4,7 @@ title: "Support @tableMethod under a table-bound NestingField"
 status: Backlog
 bucket: feature
 priority: 6
-theme: structural-refactor
+theme: service
 depends-on: []
 created: 2026-06-03
 last-updated: 2026-06-03

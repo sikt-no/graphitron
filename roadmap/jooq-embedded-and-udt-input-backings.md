@@ -4,7 +4,7 @@ title: "Support jOOQ embedded and UDT records as non-table input backings"
 status: Backlog
 bucket: architecture
 priority: 1
-theme: model-cleanup
+theme: classification-model
 depends-on: []
 created: 2026-05-23
 last-updated: 2026-05-23

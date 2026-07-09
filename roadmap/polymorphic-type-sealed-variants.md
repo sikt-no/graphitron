@@ -4,7 +4,7 @@ title: "Polymorphic type classification: sealed union-type variants over Partici
 status: Backlog
 bucket: structural-refactor
 priority: 6
-theme: structural-refactor
+theme: interface-union
 depends-on: []
 created: 2026-06-04
 last-updated: 2026-06-05

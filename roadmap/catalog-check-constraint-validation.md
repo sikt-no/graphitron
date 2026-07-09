@@ -4,7 +4,7 @@ title: "Surface database CHECK constraints as Jakarta validation rules"
 status: Spec
 bucket: architecture
 priority: 8
-theme: mutations-errors
+theme: mutation-write
 depends-on: []
 ---
 

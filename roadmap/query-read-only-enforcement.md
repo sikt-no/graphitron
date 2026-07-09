@@ -4,7 +4,7 @@ title: "Targeted read-only enforcement for query paths graphitron does not contr
 status: Backlog
 bucket: architecture
 priority: 5
-theme: service
+theme: runtime-connection
 depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09

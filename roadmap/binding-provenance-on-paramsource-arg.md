@@ -2,6 +2,7 @@
 id: R218
 title: "Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly"
 status: Backlog
+theme: service
 bucket: architecture
 depends-on: []
 created: 2026-05-21

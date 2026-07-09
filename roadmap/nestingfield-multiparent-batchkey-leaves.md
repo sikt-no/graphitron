@@ -4,7 +4,7 @@ title: "Multi-parent NestingField sharing: BatchKey leaves"
 status: Backlog
 bucket: architecture
 priority: 6
-theme: model-cleanup
+theme: classification-model
 depends-on: []
 created: 2026-06-17
 last-updated: 2026-06-17

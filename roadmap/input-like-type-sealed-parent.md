@@ -4,7 +4,7 @@ title: "Fold InputType and TableInputType under sealed parent InputLikeType"
 status: Backlog
 bucket: architecture
 priority: 4
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-05-17
 last-updated: 2026-05-17

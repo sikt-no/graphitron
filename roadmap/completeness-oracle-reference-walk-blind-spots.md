@@ -4,7 +4,7 @@ title: "Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph com
 status: In Review
 bucket: bug
 priority: 2
-theme: structural-refactor
+theme: dev-loop
 depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09

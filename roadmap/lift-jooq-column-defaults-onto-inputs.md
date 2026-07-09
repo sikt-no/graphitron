@@ -4,7 +4,7 @@ title: "Lift jOOQ column defaults onto input fields connected to that column"
 status: Backlog
 bucket: architecture
 priority: 4
-theme: structural-refactor
+theme: mutation-write
 depends-on: []
 ---
 

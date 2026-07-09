@@ -4,7 +4,7 @@ title: "Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep muta
 status: Backlog
 bucket: cleanup
 priority: 7
-theme: structural-refactor
+theme: interface-union
 depends-on: []
 ---
 

@@ -4,7 +4,7 @@ title: "Emit text-mapped-enum fields as the GraphQL enum type, not String"
 status: Backlog
 bucket: architecture
 priority: 5
-theme: structural-refactor
+theme: codegen-correctness
 depends-on: []
 created: 2026-05-22
 last-updated: 2026-05-22

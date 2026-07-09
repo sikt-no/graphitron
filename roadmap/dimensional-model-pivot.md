@@ -4,7 +4,7 @@ title: "Dimensional model pivot: slots over cross-product permits"
 status: Spec
 bucket: structural
 priority: 3
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-05-21
 last-updated: 2026-07-04

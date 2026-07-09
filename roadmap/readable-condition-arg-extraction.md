@@ -4,7 +4,7 @@ title: "Generated @condition arg extraction is an unreadable nested-ternary one-
 status: Backlog
 bucket: Backlog
 priority: 3
-theme: structural-refactor
+theme: model-cleanup
 depends-on: []
 created: 2026-06-18
 last-updated: 2026-06-18

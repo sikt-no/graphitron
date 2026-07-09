@@ -4,7 +4,7 @@ title: "Cardinality safety story for UPSERT under the multiRow: regime"
 status: Backlog
 bucket: architecture
 priority: 13
-theme: mutations-errors
+theme: mutation-write
 depends-on: []
 ---
 

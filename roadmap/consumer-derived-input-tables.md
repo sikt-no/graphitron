@@ -4,7 +4,7 @@ title: "Deprecate @table on input types; consumer-derived tables + argMapping gr
 status: Backlog
 bucket: architecture
 priority: 6
-theme: model-cleanup
+theme: classification-model
 depends-on: []
 ---
 

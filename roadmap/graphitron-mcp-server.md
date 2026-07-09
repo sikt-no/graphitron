@@ -3,7 +3,7 @@ id: R118
 title: "Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev"
 status: Backlog
 bucket: feature
-theme: lsp
+theme: dev-loop
 depends-on: []
 ---
 

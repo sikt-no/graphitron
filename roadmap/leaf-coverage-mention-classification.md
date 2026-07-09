@@ -3,7 +3,7 @@ id: R107
 title: "Classify leaf mentions in inference-axis-coverage report"
 status: Backlog
 bucket: validation
-theme: structural-refactor
+theme: tooling
 depends-on: []
 ---
 

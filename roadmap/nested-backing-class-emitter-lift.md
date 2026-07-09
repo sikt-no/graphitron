@@ -4,7 +4,7 @@ title: "Nested backing class emits $-qualified names at the no-Class-in-hand emi
 status: Backlog
 bucket: bug
 priority: 7
-theme: interface-union
+theme: codegen-correctness
 depends-on: []
 created: 2026-07-01
 last-updated: 2026-07-01

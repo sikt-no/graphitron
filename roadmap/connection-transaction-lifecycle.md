@@ -4,7 +4,7 @@ title: "Graphitron owns the connection lifecycle: application runtime, operation
 status: In Progress
 bucket: architecture
 priority: 3
-theme: service
+theme: runtime-connection
 depends-on: []
 created: 2026-07-03
 last-updated: 2026-07-09

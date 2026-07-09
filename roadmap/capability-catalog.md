@@ -3,7 +3,7 @@ id: R115
 title: "Enumerate the capabilities graphitron delivers"
 status: Spec
 bucket: architecture
-theme: structural-refactor
+theme: tooling
 depends-on: []
 ---
 

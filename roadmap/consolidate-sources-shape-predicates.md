@@ -2,6 +2,7 @@
 id: R220
 title: "Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate"
 status: Backlog
+theme: service
 bucket: architecture
 depends-on: []
 created: 2026-05-21

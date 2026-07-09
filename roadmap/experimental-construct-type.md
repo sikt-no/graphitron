@@ -4,7 +4,7 @@ title: "Implement @experimental_constructType"
 status: Backlog
 bucket: feature
 priority: 5
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 ---
 

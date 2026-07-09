@@ -4,7 +4,7 @@ title: "Mojo-configured custom Bean Validation factory"
 status: Backlog
 bucket: architecture
 priority: 6
-theme: service
+theme: mutation-write
 depends-on: []
 created: 2026-05-20
 last-updated: 2026-05-20

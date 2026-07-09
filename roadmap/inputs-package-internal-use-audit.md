@@ -4,7 +4,7 @@ title: "Audit: forbid service-side references to <outputPackage>.inputs.*"
 status: Backlog
 bucket: architecture
 priority: 8
-theme: mutations-errors
+theme: mutation-write
 depends-on: []
 created: 2026-05-17
 last-updated: 2026-05-17

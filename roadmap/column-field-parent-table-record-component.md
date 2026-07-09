@@ -4,7 +4,7 @@ title: "Lift ColumnField.parentTable from emitter parameter to record component"
 status: Backlog
 bucket: architecture
 priority: 6
-theme: structural-refactor
+theme: model-cleanup
 depends-on: []
 created: 2026-05-25
 last-updated: 2026-06-26

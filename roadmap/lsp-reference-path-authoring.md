@@ -4,7 +4,7 @@ title: "LSP-guided @reference path authoring"
 status: Spec
 bucket: architecture
 priority: 5
-theme: structural-refactor
+theme: lsp
 depends-on: []
 created: 2026-06-25
 last-updated: 2026-06-25

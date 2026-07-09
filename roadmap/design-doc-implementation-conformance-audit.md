@@ -2,6 +2,7 @@
 id: R207
 title: "Audit design-doc claims for implementation conformance"
 status: Backlog
+theme: docs
 bucket: architecture
 depends-on: []
 created: 2026-05-21

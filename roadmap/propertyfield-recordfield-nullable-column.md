@@ -2,6 +2,7 @@
 id: R51
 title: "Split PropertyField/RecordField on parent-kind instead of nullable column"
 status: Backlog
+theme: classification-model
 bucket: cleanup
 priority: 5
 depends-on: []

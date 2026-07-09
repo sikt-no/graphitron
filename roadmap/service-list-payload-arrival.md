@@ -4,7 +4,7 @@ title: Fix the @service list-payload N+1 by deriving many-arrival for list-retur
 status: Spec
 bucket: structural
 priority: 4
-theme: structural-refactor
+theme: service
 depends-on: []
 created: 2026-06-14
 last-updated: 2026-06-14

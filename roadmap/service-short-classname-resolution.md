@@ -4,7 +4,7 @@ title: "Short class-name resolution for `@service` and `@externalField` (legacy 
 status: Backlog
 bucket: cleanup
 priority: 7
-theme: legacy-migration
+theme: service
 depends-on: []
 ---
 

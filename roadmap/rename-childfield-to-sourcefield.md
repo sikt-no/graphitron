@@ -4,7 +4,7 @@ title: "Rename ChildField to SourceField (carrier-named field hierarchy)"
 status: Backlog
 bucket: structural
 priority: 4
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-06-13
 last-updated: 2026-06-13

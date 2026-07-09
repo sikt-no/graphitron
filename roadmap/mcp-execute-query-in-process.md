@@ -4,7 +4,7 @@ title: "MCP tool executes GraphQL against generated resolvers in-process (graphi
 status: Spec
 bucket: feature
 priority: 3
-theme: lsp
+theme: dev-loop
 depends-on: [connection-transaction-lifecycle]
 created: 2026-07-03
 last-updated: 2026-07-06

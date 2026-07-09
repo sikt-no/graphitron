@@ -2,6 +2,7 @@
 id: R252
 title: "Multi-file federation fixture coverage for schema.graphqls emission"
 status: Backlog
+theme: testing
 depends-on: []
 created: 2026-05-27
 last-updated: 2026-05-27

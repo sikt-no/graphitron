@@ -4,7 +4,7 @@ title: "Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec s
 status: Backlog
 bucket: cleanup
 priority: 50
-theme: docs
+theme: tooling
 depends-on: []
 created: 2026-05-16
 last-updated: 2026-05-16

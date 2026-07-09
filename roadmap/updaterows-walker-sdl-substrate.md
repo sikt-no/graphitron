@@ -4,7 +4,7 @@ title: "UpdateRowsWalker raw-SDL substrate absorption"
 status: Backlog
 bucket: structural
 priority: 4
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-05-29
 last-updated: 2026-05-29

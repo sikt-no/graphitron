@@ -4,7 +4,7 @@ title: "Routine write result shapes: procedures, scalar/void routines, single-no
 status: Backlog
 bucket: feature
 priority: 3
-theme: service
+theme: routine
 depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09

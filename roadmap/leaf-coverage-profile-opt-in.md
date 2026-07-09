@@ -4,7 +4,7 @@ title: "Flip leaf-coverage profile activation to opt-in"
 status: Backlog
 bucket: cleanup
 priority: 5
-theme: structural-refactor
+theme: tooling
 depends-on: []
 ---
 

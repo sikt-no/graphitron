@@ -2,6 +2,7 @@
 id: R288
 title: "Inline TableInterfaceField and TableMethodField children (currently N+1)"
 status: Backlog
+theme: codegen-correctness
 bucket: bug
 priority: 4
 depends-on: []

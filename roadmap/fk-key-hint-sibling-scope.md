@@ -4,7 +4,7 @@ title: "Scope unknownForeignKeyRejection FK candidate hint to the structurally r
 status: Backlog
 bucket: bug
 priority: 5
-theme: structural-refactor
+theme: diagnostics
 depends-on: []
 created: 2026-06-08
 last-updated: 2026-06-08

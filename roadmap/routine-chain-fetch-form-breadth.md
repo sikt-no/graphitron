@@ -3,7 +3,7 @@ id: R447
 title: "Routine chains: remaining fetch-form breadth"
 status: Backlog
 bucket: feature
-theme: service
+theme: routine
 depends-on: []
 created: 2026-07-08
 last-updated: 2026-07-08

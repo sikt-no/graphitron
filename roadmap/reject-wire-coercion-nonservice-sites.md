@@ -4,7 +4,7 @@ title: "Wire-coercion cast guard for @condition and @externalField (R261 Slice 2
 status: Backlog
 bucket: architecture
 priority: 2
-theme: structural-refactor
+theme: diagnostics
 depends-on: [dimensional-model-pivot]
 created: 2026-07-01
 last-updated: 2026-07-01

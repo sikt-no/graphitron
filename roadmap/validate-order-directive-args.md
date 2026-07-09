@@ -4,7 +4,7 @@ title: "Validate @order/@defaultOrder: empty directive and @index coexistence"
 status: Backlog
 bucket: validation
 priority: 5
-theme: model-cleanup
+theme: diagnostics
 depends-on: []
 created: 2026-05-19
 last-updated: 2026-05-20

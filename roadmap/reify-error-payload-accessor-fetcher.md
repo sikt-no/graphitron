@@ -2,6 +2,7 @@
 id: R304
 title: "Reify @error PayloadAccessor errors fetcher into a named method"
 status: Backlog
+theme: error-channel
 bucket: architecture
 depends-on: []
 created: 2026-06-14

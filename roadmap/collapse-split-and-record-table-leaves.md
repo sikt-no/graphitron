@@ -4,7 +4,7 @@ title: "Collapse SplitTableField and RecordTableField into one source-gated leaf
 status: Backlog
 bucket: structural
 priority: 4
-theme: structural-refactor
+theme: classification-model
 depends-on: [decompose-sourcekey]
 created: 2026-07-04
 last-updated: 2026-07-04

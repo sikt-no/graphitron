@@ -4,7 +4,7 @@ title: "The Graphitron data model"
 status: Spec
 bucket: structural
 priority: 3
-theme: structural-refactor
+theme: classification-model
 depends-on: []
 created: 2026-06-18
 last-updated: 2026-07-05

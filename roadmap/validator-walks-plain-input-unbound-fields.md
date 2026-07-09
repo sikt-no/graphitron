@@ -2,6 +2,7 @@
 id: R221
 title: "Validator walks PlainInputArg.fields() for UnboundField rejection"
 status: Backlog
+theme: diagnostics
 bucket: architecture
 depends-on: []
 created: 2026-05-21

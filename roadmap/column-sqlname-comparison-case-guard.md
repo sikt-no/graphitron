@@ -4,7 +4,7 @@ title: "Guard ColumnRef.sqlName() comparisons against case-sensitivity drift"
 status: Backlog
 bucket: cleanup
 priority: 5
-theme: structural-refactor
+theme: model-cleanup
 depends-on: []
 created: 2026-06-23
 last-updated: 2026-06-23

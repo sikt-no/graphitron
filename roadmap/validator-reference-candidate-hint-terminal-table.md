@@ -4,7 +4,7 @@ title: "BuildContext nested-input candidate-hint draws from path-origin table in
 status: Backlog
 bucket: bug
 priority: 5
-theme: structural-refactor
+theme: diagnostics
 depends-on: []
 created: 2026-05-23
 last-updated: 2026-05-23

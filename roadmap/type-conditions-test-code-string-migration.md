@@ -4,7 +4,7 @@ title: "Migrate TypeConditionsGeneratorTest off code-string assertions on genera
 status: Backlog
 bucket: testing
 priority: 5
-theme: structural-refactor
+theme: testing
 depends-on: []
 created: 2026-06-26
 last-updated: 2026-06-26

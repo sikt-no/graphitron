@@ -4,7 +4,7 @@ title: "Operation-divined tenant routing: tenant-column bindings select the per-
 status: Spec
 bucket: architecture
 priority: 5
-theme: service
+theme: runtime-connection
 depends-on: [connection-transaction-lifecycle]
 last-updated: 2026-07-03
 ---

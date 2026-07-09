@@ -4,7 +4,7 @@ title: "redaction reference id derives from OTel trace_id (via MDC) when present
 status: Backlog
 bucket: enhancement
 priority: 3
-theme: mutations-errors
+theme: error-channel
 depends-on: []
 created: 2026-07-02
 last-updated: 2026-07-02

@@ -4,7 +4,7 @@ title: "Honor @field(name:) in @error type extra-field accessor matching against
 status: Backlog
 bucket: bug
 priority: 5
-theme: service
+theme: error-channel
 depends-on: []
 created: 2026-05-20
 last-updated: 2026-05-20

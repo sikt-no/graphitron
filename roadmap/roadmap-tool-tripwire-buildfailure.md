@@ -4,7 +4,7 @@ title: "roadmap-tool verify tripwires throw BuildFailure, not System.exit"
 status: Backlog
 bucket: docs
 priority: 5
-theme: docs
+theme: tooling
 depends-on: []
 created: 2026-06-26
 last-updated: 2026-06-26

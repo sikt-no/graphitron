@@ -4,7 +4,7 @@ title: "Scrub residual BatchKey.X references from sakila-service / sakila-exampl
 status: Backlog
 bucket: cleanup
 priority: 9
-theme: model-cleanup
+theme: docs
 depends-on: []
 ---
 

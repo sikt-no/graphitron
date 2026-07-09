@@ -4,7 +4,7 @@ title: "Type-token threading on MethodRef.StaticOnly + ReturnTypeRef.TableBoundR
 status: Backlog
 bucket: architecture
 priority: 7
-theme: structural-refactor
+theme: service
 depends-on: []
 created: 2026-05-25
 last-updated: 2026-06-26

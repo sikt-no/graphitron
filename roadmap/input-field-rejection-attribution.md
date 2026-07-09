@@ -2,6 +2,7 @@
 id: R213
 title: "Plain-input field rejections attributed to consumer field, losing input-field source location"
 status: Backlog
+theme: diagnostics
 bucket: bugs
 depends-on: []
 created: 2026-05-21

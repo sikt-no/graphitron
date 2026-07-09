@@ -2,6 +2,7 @@
 id: R180
 title: Centralize ResultType column-read emission for @record parents
 status: Spec
+theme: classification-model
 depends-on: []
 created: 2026-05-19
 last-updated: 2026-05-19

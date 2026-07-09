@@ -4,7 +4,7 @@ title: "Add a typeName-first decode-helper entry point so resolveDecodeHelperFor
 status: Backlog
 bucket: cleanup
 priority: 3
-theme: model-cleanup
+theme: nodeid
 depends-on: []
 created: 2026-05-30
 last-updated: 2026-05-30

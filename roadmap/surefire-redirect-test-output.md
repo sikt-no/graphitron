@@ -2,6 +2,7 @@
 id: R373
 title: "Capture test stdout/stderr to per-class files via Surefire redirectTestOutputToFile"
 status: Backlog
+theme: tooling
 bucket: testing
 depends-on: []
 created: 2026-06-25
