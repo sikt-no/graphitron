@@ -1,7 +1,7 @@
 ---
 id: R458
 title: "Per-participant explicit join paths on multi-table interface/union child fields"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: interface-union
