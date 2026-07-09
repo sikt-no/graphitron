@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | Spec | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
 | `R453` | Reject sort-enum values missing @order/@index instead of silently skipping (empty ORDER BY breaks keyset pagination) | Spec | 2026-07-09 | [plan](sort-enum-missing-order-directive.md) |
-| `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Progress | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
+| `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Review | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -196,7 +196,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R451` [**Routine writes: @routine on Mutation commits before the follow-up query**](routine-mutation-write.md) — In Progress, feature
+- `R451` [**Routine writes: @routine on Mutation commits before the follow-up query**](routine-mutation-write.md) — In Review, feature
 - `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — Ready, architecture
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature, blocked by [routine-mutation-write](routine-mutation-write.md)
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
