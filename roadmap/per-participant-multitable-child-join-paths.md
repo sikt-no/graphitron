@@ -5,7 +5,7 @@ status: Ready
 bucket: architecture
 priority: 3
 theme: interface-union
-depends-on: [multitable-child-reference-where-drop]
+depends-on: []
 created: 2026-07-09
 last-updated: 2026-07-09
 ---

@@ -14,13 +14,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R452` | Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields | In Review | 2026-07-09 | [plan](multitable-child-reference-where-drop.md) |
 | `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | In Review | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
 | `R451` | Routine writes: @routine on Mutation commits before the follow-up query | In Review | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](routine-mutation-write.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R458` | Per-participant explicit join paths on multi-table interface/union child fields <sub>blocked by: [multitable-child-reference-where-drop](multitable-child-reference-where-drop.md)</sub> | Ready | 2026-07-09 | [plan](per-participant-multitable-child-join-paths.md) |
+| `R458` | Per-participant explicit join paths on multi-table interface/union child fields | Ready | 2026-07-09 | [plan](per-participant-multitable-child-join-paths.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R429` | Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity | In Progress | 2026-07-09 <sub>created 2026-07-03</sub> | [plan](connection-transaction-lifecycle.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
@@ -180,9 +179,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R452` [**Reject or emit parent-FK WHERE for condition/multi-hop @reference paths on multitable polymorphic child fields**](multitable-child-reference-where-drop.md) — In Review, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
-- `R458` [**Per-participant explicit join paths on multi-table interface/union child fields**](per-participant-multitable-child-join-paths.md) — Ready, architecture, blocked by [multitable-child-reference-where-drop](multitable-child-reference-where-drop.md)
+- `R458` [**Per-participant explicit join paths on multi-table interface/union child fields**](per-participant-multitable-child-join-paths.md) — Ready, architecture
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
 
