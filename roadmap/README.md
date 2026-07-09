@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R446` | Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors | Ready | 2026-07-08 | [plan](array-column-typename-codegen.md) |
+| `R446` | Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors | In Progress | 2026-07-09 <sub>created 2026-07-08</sub> | [plan](array-column-typename-codegen.md) |
 | `R451` | Routine writes: @routine on Mutation commits before the follow-up query <sub>blocked by: [routine-chain-classification-edges](routine-chain-classification-edges.md)</sub> | Spec | 2026-07-08 | [plan](routine-mutation-write.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
@@ -192,7 +192,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R446` [**Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors**](array-column-typename-codegen.md) — Ready, bug
+- `R446` [**Codegen crashes on array-typed columns: ClassName.bestGuess rejects jOOQ array class descriptors**](array-column-typename-codegen.md) — In Progress, bug
 - `R451` [**Routine writes: @routine on Mutation commits before the follow-up query**](routine-mutation-write.md) — Spec, feature, blocked by [routine-chain-classification-edges](routine-chain-classification-edges.md)
 - `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — Ready, architecture
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
