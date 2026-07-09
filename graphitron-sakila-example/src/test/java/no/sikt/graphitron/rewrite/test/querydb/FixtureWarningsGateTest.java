@@ -138,8 +138,11 @@ class FixtureWarningsGateTest {
      * one encoded-ID INSERT the fixture declares ({@code createKeyedNode(in: CreateKeyedNodeInput!): ID},
      * whose {@code KeyedNode @node} return carries no {@code @table} for a field-relative derivation to
      * collapse to) must <em>not</em> warn, while a projected consumer like {@code FilmCreateInput} must.
-     * When R97 Phase 2b makes the write target field-relative and empties the carve-out, the
-     * {@code CreateKeyedNodeInput} exclusion here flips, which is the intended signal.
+     * R457 additionally carves out DELETE-consumed inputs (whose {@code @table} is still the sole
+     * write-target signal until the {@code @mutation(table:)} / return-derived path lands), so
+     * {@code FilmDeleteInput} must <em>not</em> warn either. When R97 Phase 2b makes the write target
+     * field-relative and empties the carve-out, the {@code CreateKeyedNodeInput} exclusion here flips,
+     * which is the intended signal.
      */
     @Test
     void tableOnInputDeprecationsCarveOutEncodedIdInsert() {
@@ -162,8 +165,10 @@ class FixtureWarningsGateTest {
         assertThat(deprecations).extracting(BuildWarning::message)
             .as("a projected-return INSERT input (FilmCreateInput -> Film / FilmPayload) warns")
             .anyMatch(m -> m.contains("'FilmCreateInput'"))
-            .as("a DELETE @table-on-input (FilmDeleteInput) warns; the carve-out is INSERT/UPSERT-only")
-            .anyMatch(m -> m.contains("'FilmDeleteInput'"))
+            .as("a DELETE @table-on-input (FilmDeleteInput) is carved out and must not warn: R457 "
+                + "suppresses the advisory for DELETE-consumed inputs, whose @table is still the "
+                + "sole write-target signal until the @mutation(table:) / return-derived path lands")
+            .noneMatch(m -> m.contains("'FilmDeleteInput'"))
             .as("the encoded-ID INSERT input (CreateKeyedNodeInput -> ID) is carved out and must not warn")
             .noneMatch(m -> m.contains("'CreateKeyedNodeInput'"));
     }
