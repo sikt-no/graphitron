@@ -1580,10 +1580,27 @@ class TypeBuilder {
     }
 
     /**
-     * Resolves a list of raw input fields against a {@link TableRef} into a {@link TableInputType}.
+     * R457 — the narrow field-resolution fact a table-relative input-field resolution produces:
+     * either the resolved {@link InputField} list or the accumulated-failure prose. Deliberately
+     * <em>not</em> a synthesized {@link TableInputType} (which additionally carries
+     * {@code name}/{@code location}/{@code inputType}/{@code InputRecordShape}, all type-registry
+     * concerns): the field-derived DELETE write-target path in {@code FieldBuilder} needs only the
+     * fields, so landing a full {@code TableInputType} nowhere would make one model type mean two
+     * things. Shared by {@link #buildTableInputType} and the DELETE classifiers.
      */
-    GraphitronType buildTableInputType(String name, SourceLocation location,
-            List<GraphQLInputObjectField> fields, TableRef tableRef, GraphQLInputObjectType inputType) {
+    sealed interface InputFieldsResolution {
+        record Resolved(List<InputField> fields) implements InputFieldsResolution {}
+        record Failed(String reason) implements InputFieldsResolution {}
+    }
+
+    /**
+     * Resolves a list of raw input fields against a {@link TableRef} into fully-classified
+     * {@link InputField}s (or the accumulated-failure prose). The single home of the input-field
+     * classification loop, shared by {@link #buildTableInputType} (the {@code @table}-on-input path)
+     * and the field-derived DELETE write-target path in {@code FieldBuilder} (R457), so both routes
+     * classify identical schema defects identically.
+     */
+    InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields, TableRef tableRef) {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         var conditionErrors = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputField>();
@@ -1608,20 +1625,33 @@ class TypeBuilder {
                 .findFirst()
                 .map(c -> candidateHint(c, ctx.catalog.columnJavaNamesOf(tableRef.tableName())))
                 .orElse("");
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint));
+            return new InputFieldsResolution.Failed(
+                "mapped to table '" + tableRef.tableName() + "' — unresolvable fields: " + reasons + hint);
         }
         if (!conditionErrors.isEmpty()) {
-            return new UnclassifiedType(name, location, Rejection.structural(
+            return new InputFieldsResolution.Failed(
                 "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
-                + String.join("; ", conditionErrors)));
+                + String.join("; ", conditionErrors));
         }
+        return new InputFieldsResolution.Resolved(List.copyOf(resolvedFields));
+    }
+
+    /**
+     * Resolves a list of raw input fields against a {@link TableRef} into a {@link TableInputType}.
+     */
+    GraphitronType buildTableInputType(String name, SourceLocation location,
+            List<GraphQLInputObjectField> fields, TableRef tableRef, GraphQLInputObjectType inputType) {
+        var fieldsResolution = resolveInputFields(name, fields, tableRef);
+        if (fieldsResolution instanceof InputFieldsResolution.Failed failed) {
+            return new UnclassifiedType(name, location, Rejection.structural(failed.reason()));
+        }
+        var resolvedFields = ((InputFieldsResolution.Resolved) fieldsResolution).fields();
         var shape = buildInputRecordShape(name, inputType);
         if (shape == null) {
             return new UnclassifiedType(name, location, Rejection.structural(
                 "mapped to table '" + tableRef.tableName() + "' — input-record component types could not be resolved"));
         }
-        return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields), inputType, shape);
+        return new TableInputType(name, location, tableRef, resolvedFields, inputType, shape);
     }
 
     /**

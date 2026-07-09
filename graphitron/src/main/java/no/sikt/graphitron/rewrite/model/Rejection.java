@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, ErrorChannelWalkerError, WireCoercionError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,

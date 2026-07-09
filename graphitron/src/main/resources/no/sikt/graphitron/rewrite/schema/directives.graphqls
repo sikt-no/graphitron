@@ -225,8 +225,16 @@ cannot silently broadcast; `multiRow: true` opts into that broadcast deliberatel
 `typeName: INSERT` (INSERT has no WHERE clause to multiply over), on `typeName: UPDATE`
 (broadcast UPDATE is not supported; cover a PK or UK), and on `typeName: UPSERT` (refused under
 the new regime; see R145).
+
+`table`: the SQL table a `@mutation(typeName: DELETE)` deletes from, named on the consuming field.
+This is the preferred way to give a DELETE its write target: a bare `ID` / `Boolean` / count return
+carries no table, so `@mutation(table: "film")` names it directly (the field-level analogue of
+`@service(argMapping:)`). It supersedes the deprecated `@table` on the DELETE's input type; when both
+are present the field-level `table:` wins and the input's `@table` is outranked. Currently wired for
+`typeName: DELETE` only; supplying it on any other verb is rejected (INSERT/UPDATE/UPSERT derive their
+write target by other means). See R457.
 """
-directive @mutation(typeName: MutationType!, multiRow: Boolean = false) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false, table: String) on FIELD_DEFINITION
 
 """
 Marks a list field as a Relay cursor-paginated connection. The rewrite pipeline synthesizes

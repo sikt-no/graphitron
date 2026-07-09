@@ -4322,6 +4322,21 @@ class FieldBuilder {
                 }
             }
             if (kind != null) {
+                // R457 — @mutation(table:) is wired only for the verbs in TABLE_ARG_SUPPORTED_VERBS
+                // (a one-element {DELETE} set today). On any other verb it is an unimplemented
+                // classification; silently ignoring an author-written directive argument is the
+                // green-build-wrong-intent failure mode the axioms forbid, so reject loudly with a
+                // typed, sealed rejection (stable LSP code). The classifier and `mvn graphitron:validate`
+                // read the same set (validate runs this classifier), so a future generalisation is a
+                // single edit point here.
+                if (MutationInputResolver.parseMutationTableArg(fieldDef).isPresent()
+                        && !TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        new no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb(
+                            kind.name(),
+                            TABLE_ARG_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
+                }
+
                 // R246 / R258: every @mutation(typeName: UPDATE) classifies through the
                 // UpdateRowsWalker, not MutationInputResolver. Branch here on leaf identity (the
                 // return type) before the shared resolveInput call: the direct-@table/ID-return
@@ -4517,6 +4532,11 @@ class FieldBuilder {
         switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
             case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
             case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+            // R457 — UPDATE has no field-relative write-target path; a non-@table input rejects
+            // exactly as it did before the RawArg arm existed.
+            case DmlWalkerInputArgResolution.RawArg raw -> {
+                return rawArgUpdateRejection(parentTypeName, name, location, fieldDef, raw);
+            }
         }
         boolean list = inputArg.list();
 
@@ -4572,10 +4592,31 @@ class FieldBuilder {
         };
     }
 
-    /** Outcome of {@link #resolveDmlWalkerInputArg}: the resolved arg surface or a typed rejection. */
+    /**
+     * R457 — the {@code @mutation} verbs whose classifier reads {@code @mutation(table:)} as a
+     * field-relative write target. A one-element {@code {DELETE}} set today; the classifier's
+     * unsupported-verb guard and `mvn graphitron:validate` (which runs the classifier) both read it,
+     * so generalising the parameter to another verb is a single edit here.
+     */
+    private static final Set<DmlKind> TABLE_ARG_SUPPORTED_VERBS = Set.of(DmlKind.DELETE);
+
+    /**
+     * Outcome of {@link #resolveDmlWalkerInputArg}: the resolved {@code @table}-input arg surface, a
+     * raw (non-{@code @table}) input arg surface, or a typed rejection.
+     *
+     * <p>R457 — {@code RawArg} makes "the single input arg is not a {@code TableInputType}" a normal
+     * outcome rather than an immediate structural reject. UPDATE callers translate it to today's
+     * rejection verbatim (byte-identical behaviour); the DELETE classifiers own the fallback that
+     * resolves the write target from {@code @mutation(table:)} and re-derives the input fields against
+     * it. Carries only the slim arg facts plus the {@link GraphitronType.InputType} verdict (whose
+     * {@code schemaType()} yields the raw {@link graphql.schema.GraphQLInputObjectField}s), never a
+     * synthesized {@code TableInputType}.
+     */
     private sealed interface DmlWalkerInputArgResolution {
         record Resolved(GraphitronType.TableInputType tit,
                         no.sikt.graphitron.rewrite.model.InputArgRef inputArg) implements DmlWalkerInputArgResolution {}
+        record RawArg(String argName, String argTypeName, boolean list,
+                      GraphitronType.InputType inputType) implements DmlWalkerInputArgResolution {}
         record Rejected(GraphitronField field) implements DmlWalkerInputArgResolution {}
     }
 
@@ -4591,12 +4632,21 @@ class FieldBuilder {
      * <p>{@code multiRow} handling is the caller's concern, since it diverges by verb: UPDATE
      * rejects it outright (the dispatch does so before calling this), DELETE turns it into the
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm (the walker does so).
+     *
+     * <p>R457 — this method stays verb-agnostic. "The single input arg is not a
+     * {@code TableInputType}" is now a <em>normal</em> outcome ({@link DmlWalkerInputArgResolution.RawArg})
+     * rather than an immediate structural reject, because a DELETE can carry its write target on
+     * {@code @mutation(table:)} instead of on the input's {@code @table}. The verb-divergent handling
+     * of that arm lives in the callers: UPDATE translates it back to today's rejection verbatim, the
+     * DELETE classifiers own the field-relative fallback. A genuinely non-input-object argument (a
+     * scalar/enum), more-than-one input argument, and {@code @condition}-on-arg remain structural
+     * rejections here for both verbs.
      */
     private DmlWalkerInputArgResolution resolveDmlWalkerInputArg(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name, SourceLocation location) {
-        // Resolve the single @table input argument's slim surface, rejecting the shape constraints
-        // that are the arg's property rather than per-field admissibility.
-        GraphitronType.TableInputType foundTit = null;
+        // Resolve the single input argument's slim surface, rejecting the shape constraints that are
+        // the arg's property rather than per-field admissibility.
+        GraphitronType foundInput = null;
         String argName = null;
         String argTypeName = null;
         boolean list = false;
@@ -4604,9 +4654,13 @@ class FieldBuilder {
             var argType = arg.getType();
             boolean argList = GraphQLTypeUtil.unwrapNonNull(argType) instanceof GraphQLList;
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(argType)).getName();
-            // R317 slice 3e — registry-free look-ahead at the @mutation arg's input type.
+            // R317 slice 3e — registry-free look-ahead at the @mutation arg's input type. A @table
+            // input classifies as TableInputType; a plain input object as the sibling InputType
+            // (PojoInputType et al) — both are input objects with a schemaType(), but neither is a
+            // subtype of the other. A non-input-object argument (a scalar/enum) is the shape error.
             var resolvedType = typeBuilder.lookAheadVerdict(typeName);
-            if (!(resolvedType instanceof GraphitronType.TableInputType tit)) {
+            if (!(resolvedType instanceof GraphitronType.TableInputType)
+                    && !(resolvedType instanceof GraphitronType.InputType)) {
                 return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation fields only accept @table input arguments; found '" + arg.getName()
                     + "' of type '" + typeName + "'")));
@@ -4615,22 +4669,41 @@ class FieldBuilder {
                 return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@condition on a @mutation field argument is not supported")));
             }
-            if (foundTit != null) {
+            if (foundInput != null) {
                 return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation field has more than one @table input argument")));
             }
-            foundTit = tit;
+            foundInput = resolvedType;
             argName = arg.getName();
             argTypeName = typeName;
             list = argList;
         }
-        if (foundTit == null) {
+        if (foundInput == null) {
             return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 Rejection.structural("no @table input argument found on @mutation field")));
         }
-        var inputArg = new no.sikt.graphitron.rewrite.model.InputArgRef(
-            argName, argTypeName, foundTit.table(), list);
-        return new DmlWalkerInputArgResolution.Resolved(foundTit, inputArg);
+        if (foundInput instanceof GraphitronType.TableInputType tit) {
+            var inputArg = new no.sikt.graphitron.rewrite.model.InputArgRef(
+                argName, argTypeName, tit.table(), list);
+            return new DmlWalkerInputArgResolution.Resolved(tit, inputArg);
+        }
+        // No @table on the input: a normal outcome for DELETE (the write target comes from
+        // @mutation(table:)); UPDATE translates this back to today's "only accept @table" rejection.
+        return new DmlWalkerInputArgResolution.RawArg(argName, argTypeName, list, (GraphitronType.InputType) foundInput);
+    }
+
+    /**
+     * R457 — the "@mutation fields only accept @table input arguments" rejection an UPDATE classifier
+     * produces when it meets a {@link DmlWalkerInputArgResolution.RawArg} (a non-{@code @table} input
+     * object). Byte-identical to the message {@link #resolveDmlWalkerInputArg} emitted for the same
+     * shape before R457 made the arm a normal outcome, so UPDATE behaviour is unchanged.
+     */
+    private GraphitronField rawArgUpdateRejection(
+            String parentTypeName, String name, SourceLocation location, GraphQLFieldDefinition fieldDef,
+            DmlWalkerInputArgResolution.RawArg raw) {
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+            "@mutation fields only accept @table input arguments; found '" + raw.argName()
+            + "' of type '" + raw.argTypeName() + "'"));
     }
 
     /**
@@ -4654,6 +4727,11 @@ class FieldBuilder {
         switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
             case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
             case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+            // R457 — UPDATE has no field-relative write-target path; a non-@table input rejects
+            // exactly as it did before the RawArg arm existed.
+            case DmlWalkerInputArgResolution.RawArg raw -> {
+                return rawArgUpdateRejection(parentTypeName, name, location, fieldDef, raw);
+            }
         }
 
         // Invariant #14/#15 return-type validation (shared with the resolveInput path).
@@ -4724,23 +4802,139 @@ class FieldBuilder {
     }
 
     /**
+     * Outcome of {@link #resolveDeleteWriteTarget}: the resolved DELETE write target (the jOOQ table,
+     * the input fields resolved against it, and the slim {@link InputArgRef} arg surface) or a typed
+     * rejection. R457 — the precedence and diagnostics that produce it are DELETE-only, so they live
+     * here rather than in the verb-agnostic {@link #resolveDmlWalkerInputArg}.
+     */
+    private sealed interface DeleteWriteTarget {
+        record Resolved(TableRef writeTarget, List<InputField> inputFields,
+                        no.sikt.graphitron.rewrite.model.InputArgRef inputArg) implements DeleteWriteTarget {}
+        record Rejected(GraphitronField field) implements DeleteWriteTarget {}
+    }
+
+    /**
+     * R457 — resolves a {@code @mutation(typeName: DELETE)} field's write target and the input fields
+     * against it, by the DELETE precedence: {@code @mutation(table:)} (the preferred, field-relative
+     * override), then the input type's {@code @table} (the deprecated migration bridge). There is
+     * deliberately <em>no</em> return-derived rung: a DELETE cannot carry its table on the return type
+     * (the row is gone after the statement, so a {@code @table} return is rejected upstream; see
+     * R287), so every DELETE that lacks {@code @table} on its input must name the table with
+     * {@code @mutation(table:)}.
+     *
+     * <p>An input {@code @table} that disagrees with {@code @mutation(table:)} is silently outranked,
+     * never cross-checked: R332 already nudges the input directive's removal, and promoting a
+     * directive the deprecation path wants migrated quietly into a build-breaking conflict participant
+     * would invert that.
+     *
+     * <p>On the field-derived path (write target from {@code @mutation(table:)}, no {@code @table} on
+     * the input), the input fields are resolved through {@link TypeBuilder#resolveInputFields} (shared
+     * with {@code buildTableInputType}) and then the {@code validateTableInputType} input-field
+     * rejections are mirrored at this call site, since a field-derived input never lands in that
+     * registry walk (the R330 validator-mirror obligation).
+     */
+    private DeleteWriteTarget resolveDeleteWriteTarget(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name, SourceLocation location) {
+        // 1. Arg surface. A @table input arrives as Resolved (tit); a non-@table input as RawArg.
+        GraphitronType.TableInputType tit = null;
+        GraphitronType.InputType rawInput = null;
+        String argName;
+        String argTypeName;
+        boolean list;
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return new DeleteWriteTarget.Rejected(r.field()); }
+            case DmlWalkerInputArgResolution.Resolved ok -> {
+                tit = ok.tit();
+                argName = ok.inputArg().name();
+                argTypeName = ok.inputArg().inputTypeName();
+                list = ok.inputArg().list();
+            }
+            case DmlWalkerInputArgResolution.RawArg raw -> {
+                rawInput = raw.inputType();
+                argName = raw.argName();
+                argTypeName = raw.argTypeName();
+                list = raw.list();
+            }
+        }
+
+        // 2. @mutation(table:) — the preferred, field-relative write target (R457 rung 2).
+        Optional<TableRef> mutationTable = Optional.empty();
+        var tableArg = MutationInputResolver.parseMutationTableArg(fieldDef);
+        if (tableArg.isPresent()) {
+            var resolved = svc.resolveTable(tableArg.get());
+            if (resolved.isEmpty()) {
+                return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    ctx.unknownTableRejection(tableArg.get())));
+            }
+            mutationTable = resolved;
+        }
+
+        // 3. Precedence: @mutation(table:) (preferred) > input @table (deprecated migration bridge).
+        TableRef writeTarget;
+        if (mutationTable.isPresent()) {
+            writeTarget = mutationTable.get();
+        } else if (tit != null) {
+            writeTarget = tit.table();
+        } else {
+            // No live source resolved. Lead the message with the preferred replacement (R457).
+            return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@mutation(typeName: DELETE) field '" + name + "' has no write target: name the table "
+                + "to delete from with @mutation(table: \"<table>\") on this field (preferred), or "
+                + "annotate the input type '" + argTypeName + "' with @table (deprecated). A DELETE "
+                + "cannot derive its table from the return type — the row is gone after the statement, "
+                + "so a @table return is not supported (see R287).")));
+        }
+
+        // 4. Input fields against the write target.
+        List<InputField> inputFields;
+        if (tit != null && writeTarget.equals(tit.table())) {
+            // The input's @table already resolved its fields against this same table, and the registry
+            // TableInputType walk enforces the validator-side input-field rejections on it. Reuse both.
+            inputFields = tit.inputFields();
+        } else {
+            // Field-derived path: resolve the raw input fields against the field-named table, then
+            // mirror the validator's input-field rejections here (R330 validator-mirror obligation) —
+            // a field-derived input never lands in GraphitronSchemaValidator.validateTableInputType.
+            var schemaInput = tit != null ? tit.schemaType() : rawInput.schemaType();
+            var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
+            if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
+                return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural(failed.reason())));
+            }
+            inputFields = ((TypeBuilder.InputFieldsResolution.Resolved) fieldsResolution).fields();
+            var mirrored = GraphitronSchemaValidator.collectInputFieldRejections(inputFields);
+            if (!mirrored.isEmpty()) {
+                return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    mirrored.getFirst().rejection()));
+            }
+        }
+
+        var inputArg = new no.sikt.graphitron.rewrite.model.InputArgRef(argName, argTypeName, writeTarget, list);
+        return new DeleteWriteTarget.Resolved(writeTarget, inputFields, inputArg);
+    }
+
+    /**
      * R266 — classifies a direct-@table/ID-return {@code @mutation(typeName: DELETE)} field into a
      * {@link MutationField.MutationDeleteTableField}. The DELETE analogue of
-     * {@link #classifyUpdateTableField}: resolves the slim {@link InputArgRef} arg surface, validates
-     * the return type, resolves the ID-return encoder, then runs {@code DeleteRowsWalker} for the
-     * PK-or-UK identification. Unlike UPDATE, {@code multiRow: true} is admitted (the walker turns it
-     * into the {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm). A pre-check
-     * failure or a walker {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed
+     * {@link #classifyUpdateTableField}: resolves the write target and input fields (R457 precedence:
+     * {@code @mutation(table:)}, then the input's {@code @table}), validates the return type, resolves
+     * the ID-return encoder, then runs {@code DeleteRowsWalker} for the PK-or-UK identification.
+     * Unlike UPDATE, {@code multiRow: true} is admitted (the walker turns it into the
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm). A pre-check failure or a
+     * walker {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed
      * {@code DeleteRowsError} arm verbatim for the LSP projector.
      */
     private GraphitronField classifyDeleteTableField(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef returnType) {
-        GraphitronType.TableInputType foundTit;
+        TableRef writeTarget;
+        List<InputField> inputFields;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
-        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
-            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
-            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+        switch (resolveDeleteWriteTarget(fieldDef, parentTypeName, name, location)) {
+            case DeleteWriteTarget.Rejected r -> { return r.field(); }
+            case DeleteWriteTarget.Resolved ok -> {
+                writeTarget = ok.writeTarget(); inputFields = ok.inputFields(); inputArg = ok.inputArg();
+            }
         }
         boolean list = inputArg.list();
 
@@ -4753,7 +4947,7 @@ class FieldBuilder {
         // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
-            String tableSqlName = foundTit.table().tableName();
+            String tableSqlName = writeTarget.tableName();
             // R317 slice 2 — the one-to-many by-table node index in place of the registry scan;
             // the implicit ID encoder is well-defined only for a single-node table.
             var nodesOnTable = ctx.nodes.forTable(tableSqlName);
@@ -4773,7 +4967,7 @@ class FieldBuilder {
         // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, inputArg.name());
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
@@ -4803,11 +4997,14 @@ class FieldBuilder {
     private GraphitronField classifyDeletePayloadField(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef.ResultReturnType returnType) {
-        GraphitronType.TableInputType foundTit;
+        TableRef writeTarget;
+        List<InputField> inputFields;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
-        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
-            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
-            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+        switch (resolveDeleteWriteTarget(fieldDef, parentTypeName, name, location)) {
+            case DeleteWriteTarget.Rejected r -> { return r.field(); }
+            case DeleteWriteTarget.Resolved ok -> {
+                writeTarget = ok.writeTarget(); inputFields = ok.inputFields(); inputArg = ok.inputArg();
+            }
         }
 
         // Invariant #14/#15 return-type validation (shared with the resolveInput path).
@@ -4835,7 +5032,7 @@ class FieldBuilder {
         // legacy ordering where resolveInput's PK-coverage check rejected before the reclassify ran.
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, inputArg.name());
         if (walkerResult instanceof no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
         }

@@ -222,6 +222,9 @@ public final class Diagnostics {
         if (rejection instanceof no.sikt.graphitron.rewrite.model.DeleteRowsError dre) {
             return dre.lspCode();
         }
+        if (rejection instanceof no.sikt.graphitron.rewrite.model.MutationTableArgError mtae) {
+            return mtae.lspCode();
+        }
         if (rejection instanceof no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError ecwe) {
             return ecwe.lspCode();
         }

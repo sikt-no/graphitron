@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
@@ -152,6 +153,21 @@ final class MutationInputResolver {
         if (arg == null) return false;
         Object value = arg.getValue();
         return value instanceof Boolean b && b;
+    }
+
+    /**
+     * R457 — reads {@code @mutation(table:)} off the field's directive application. Returns the SQL
+     * table name the consuming field names as its write target, or empty when the argument is absent
+     * or set to {@code null}. The write-target-relevant verb (DELETE) resolves this against the jOOQ
+     * catalog; other verbs reject its presence (see {@code FieldBuilder}'s unsupported-verb guard).
+     */
+    static Optional<String> parseMutationTableArg(GraphQLFieldDefinition fieldDef) {
+        var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
+        if (dir == null) return Optional.empty();
+        var arg = dir.getArgument(ARG_TABLE_REF);
+        if (arg == null) return Optional.empty();
+        Object value = arg.getValue();
+        return value instanceof String s && !s.isBlank() ? Optional.of(s) : Optional.empty();
     }
 
     /**

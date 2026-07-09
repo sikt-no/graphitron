@@ -284,6 +284,13 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
+        // R457: MutationTableArgError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
+        // lspCodeOf forwards the stable graphitron.mutation-table-arg.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb.class) {
+            return new no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb(
+                "INSERT", List.of("DELETE"));
+        }
         // R244: ErrorChannelWalkerError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards each arm's stable graphitron.error-channel.* code.

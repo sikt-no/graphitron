@@ -530,9 +530,25 @@ public class GraphitronSchemaValidator {
         // flat field map, so the validateField walk doesn't reach them; iterate the type's input
         // fields here to surface UnboundField + @condition(override:false) shapes the classifier
         // admits structurally but the validator rejects.
-        for (var field : type.inputFields()) {
+        errors.addAll(collectInputFieldRejections(type.inputFields()));
+    }
+
+    /**
+     * R457 — the input-field validator-side rejections ({@link #validateInputFieldRecursive}) as a
+     * standalone list, so a call site that resolves input fields against a table <em>outside</em> the
+     * registry {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType} walk (the
+     * field-derived DELETE write-target path in {@code FieldBuilder}) can enforce the identical rule.
+     * This is the R330 validator-mirror obligation: a field-derived DELETE input never lands in
+     * {@link #validateTableInputType}, so the same broken input would reject on the
+     * {@code @table}-on-input path and slip through on the field-derived path unless both routes drain
+     * this one walk. Both do.
+     */
+    static List<ValidationError> collectInputFieldRejections(List<no.sikt.graphitron.rewrite.model.InputField> fields) {
+        var errors = new java.util.ArrayList<ValidationError>();
+        for (var field : fields) {
             validateInputFieldRecursive(field, errors);
         }
+        return errors;
     }
 
     /**
@@ -542,7 +558,7 @@ public class GraphitronSchemaValidator {
      * {@link no.sikt.graphitron.rewrite.model.InputField.NestingField} so nested plain inputs
      * inside an {@code @table} input are walked too.
      */
-    private void validateInputFieldRecursive(no.sikt.graphitron.rewrite.model.InputField field, List<ValidationError> errors) {
+    private static void validateInputFieldRecursive(no.sikt.graphitron.rewrite.model.InputField field, List<ValidationError> errors) {
         switch (field) {
             case no.sikt.graphitron.rewrite.model.InputField.UnboundField uf -> validateInputUnboundField(uf, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField nf -> {
@@ -1243,7 +1259,7 @@ public class GraphitronSchemaValidator {
     private void validateInputColumnField(no.sikt.graphitron.rewrite.model.InputField.ColumnField field, List<ValidationError> errors) {
         // Column resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
     }
-    private void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
+    private static void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).
         // R330: an FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
         // join path (QueryConditionsGenerator.emitFkTargetExists), which requires every hop to be a
@@ -1291,7 +1307,7 @@ public class GraphitronSchemaValidator {
      * precondition here so a non-Fk / unresolved hop fails at validate time with a directed message
      * rather than as an emitter IllegalStateException.
      */
-    private void validateInputCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField field, List<ValidationError> errors) {
+    private static void validateInputCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField field, List<ValidationError> errors) {
         if (field.condition().isPresent() && !field.joinPath().isEmpty()
                 && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
             errors.add(new ValidationError(
@@ -1314,7 +1330,7 @@ public class GraphitronSchemaValidator {
      * classifier admits this shape so consumer-side rejection paths stay uniform; the validator
      * rejects it at the field's source location with a directed diagnostic.
      */
-    private void validateInputUnboundField(no.sikt.graphitron.rewrite.model.InputField.UnboundField field, List<ValidationError> errors) {
+    private static void validateInputUnboundField(no.sikt.graphitron.rewrite.model.InputField.UnboundField field, List<ValidationError> errors) {
         if (field.condition().isPresent() && !field.condition().get().override()) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
