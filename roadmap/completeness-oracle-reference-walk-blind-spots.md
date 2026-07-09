@@ -1,7 +1,7 @@
 ---
 id: R455
 title: "Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: structural-refactor
