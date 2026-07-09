@@ -1,7 +1,7 @@
 ---
 id: R456
 title: "Guard WorkspaceFile source/tree reads against concurrent didChange edit/swap/close (use-after-free and torn reads)"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: lsp
