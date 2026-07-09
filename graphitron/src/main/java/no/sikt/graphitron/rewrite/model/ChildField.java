@@ -678,7 +678,10 @@ public sealed interface ChildField extends OutputField
      *
      * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
-     * are absent from the map; they contribute no SQL branch.
+     * are absent from the map; they contribute no SQL branch. Each value is a
+     * {@link ParticipantFkPath} carrying the resolved single-hop FK column pairs (R452): the
+     * classifier decided the shape is supported once, and the emitter cannot represent an
+     * unsupported one.
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
@@ -699,7 +702,7 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        java.util.Map<String, List<JoinStep>> participantJoinPaths,
+        java.util.Map<String, ParticipantFkPath> participantJoinPaths,
         SourceKey parentSourceKey,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
@@ -730,7 +733,7 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        java.util.Map<String, List<JoinStep>> participantJoinPaths,
+        java.util.Map<String, ParticipantFkPath> participantJoinPaths,
         SourceKey parentSourceKey,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType

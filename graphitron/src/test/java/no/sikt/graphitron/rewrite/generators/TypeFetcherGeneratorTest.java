@@ -27,6 +27,7 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ParticipantFkPath;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -2100,7 +2101,7 @@ class TypeFetcherGeneratorTest {
     // auto-discovered FK back to the parent table. The fetcher opens with
     // Record parentRecord = (Record) env.getSource() to read parent-side PK values.
 
-    private static java.util.Map<String, List<JoinStep>> filmActorChildJoinPaths() {
+    private static java.util.Map<String, ParticipantFkPath> filmActorChildJoinPaths() {
         // film_actor → film via film_actor_film_id_fkey: source columns sit on film_actor side.
         // film_actor → actor via film_actor_actor_id_fkey: same shape. The FK source columns on
         // the parent (FilmActor) side must coincide with FilmActor's PK by sqlName so the
@@ -2109,21 +2110,14 @@ class TypeFetcherGeneratorTest {
         // filmActorParentTableForBatched), so both FKs source from last_update on the parent
         // side. The participant-side targetColumns name and type are immaterial to the unit test
         // (the emitter does not consume them for the parent-input lookup).
-        var filmActorTable = TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
-            List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
-        var filmTable = filmTableWithPk();
-        var actorTable = TestFixtures.tableRef("actor", "ACTOR", "Actor",
-            List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")));
         // FK direction: film_actor (source/FK holder) → film (target/PK side) and similarly for actor.
-        var filmFk = TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"),
-            filmActorTable, List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")),
-            filmTable, List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")), null, "related_0");
-        var actorFk = TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_actor_id_fkey"),
-            filmActorTable, List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")),
-            actorTable, List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")), null, "related_1");
         return java.util.Map.of(
-            "Film", List.<JoinStep>of(filmFk),
-            "Actor", List.<JoinStep>of(actorFk));
+            "Film", TestFixtures.participantFkPath(
+                List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")),
+                List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
+            "Actor", TestFixtures.participantFkPath(
+                List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")),
+                List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))));
     }
 
     private static no.sikt.graphitron.rewrite.model.TableRef filmActorParentTableForList() {
@@ -2513,39 +2507,16 @@ class TypeFetcherGeneratorTest {
             List.of(new ColumnRef(pkSqlName, pkUpper, "java.lang.Integer")));
     }
 
-    private static java.util.Map<String, List<JoinStep>> compositePkParentJoinPaths() {
-        var parent = compositePkParentTable();
-        var note = TestFixtures.tableRef("project_note", "PROJECT_NOTE", "ProjectNote",
-            List.of(
-                new ColumnRef("note_id", "NOTE_ID", "java.lang.Integer"),
-                new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
-                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
-        var event = TestFixtures.tableRef("project_event", "PROJECT_EVENT", "ProjectEvent",
-            List.of(
-                new ColumnRef("event_id", "EVENT_ID", "java.lang.Integer"),
-                new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
-                new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")));
+    private static java.util.Map<String, ParticipantFkPath> compositePkParentJoinPaths() {
         // FK: ProjectNote.(org_id, project_id) -> Project.(org_id, project_id) — composite,
-        // position-aligned per the fkJoin.sourceColumns()/targetColumns() contract.
-        var noteFk = TestFixtures.fkJoin(TestFixtures.foreignKeyRef("project_note_project_fkey"),
-            note,
-            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
-                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
-            parent,
-            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
-                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
-            null, "items_0");
-        var eventFk = TestFixtures.fkJoin(TestFixtures.foreignKeyRef("project_event_project_fkey"),
-            event,
-            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
-                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
-            parent,
-            List.of(new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
-                    new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer")),
-            null, "items_1");
+        // position-aligned. Same (source, target) column orientation the retired fkJoin fixtures
+        // carried (org_id/project_id coincide on both sides), so the emitted lookups are unchanged.
+        var pair = List.of(
+            new ColumnRef("org_id", "ORG_ID", "java.lang.Integer"),
+            new ColumnRef("project_id", "PROJECT_ID", "java.lang.Integer"));
         return java.util.Map.of(
-            "ProjectNote", List.<JoinStep>of(noteFk),
-            "ProjectEvent", List.<JoinStep>of(eventFk));
+            "ProjectNote", TestFixtures.participantFkPath(pair, pair),
+            "ProjectEvent", TestFixtures.participantFkPath(pair, pair));
     }
 
     private static ChildField.InterfaceField compositePkChildInterfaceConnectionField() {

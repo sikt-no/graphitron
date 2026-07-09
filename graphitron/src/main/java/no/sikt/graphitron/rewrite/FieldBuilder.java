@@ -972,15 +972,14 @@ class FieldBuilder {
 
         if (elementType instanceof InterfaceType interfaceType) {
             // Per-participant FK auto-discovery from parent table to each participant's table.
-            // parsePath looks for a unique FK between the two and falls back to a directive-
-            // stated path when the @reference path: array is non-empty. The auto-discovery
-            // branch is the expected one; an explicit shared @reference path would apply
-            // ambiguously across heterogeneous participants, so callers should not declare one
-            // on multi-table interface child fields.
+            // resolveChildPolymorphicJoinPaths is the R452 gate: it rejects a field-level
+            // @reference (which cannot express per-participant joins), a same-table participant,
+            // and zero/multi-FK auto-discovery failures, so only the auto-discovered single-hop
+            // FK shape reaches the emitter.
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
                 location, parentTableType.table(), interfaceType.participants());
-            if (resolved.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(resolved.error()));
+            if (resolved.rejection() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, resolved.rejection());
             }
             var pkCols = parentTableType.table().primaryKeyColumns();
             if (pkCols.isEmpty()) {
@@ -1003,8 +1002,8 @@ class FieldBuilder {
         if (elementType instanceof UnionType unionType) {
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
                 location, parentTableType.table(), unionType.participants());
-            if (resolved.error() != null) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(resolved.error()));
+            if (resolved.rejection() != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, resolved.rejection());
             }
             var pkCols = parentTableType.table().primaryKeyColumns();
             if (pkCols.isEmpty()) {
@@ -6133,9 +6132,8 @@ class FieldBuilder {
 
         var paths = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
             location, resolved.hubTable(), participants);
-        if (paths.error() != null) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.structural(paths.error()));
+        if (paths.rejection() != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, paths.rejection());
         }
 
         if (isInterface) {
@@ -6738,42 +6736,114 @@ class FieldBuilder {
     }
 
     /**
-     * Carries the result of {@link #resolveChildPolymorphicJoinPaths}: a per-participant
-     * {@code Map<String, List<JoinStep>>} keyed by typename, or a non-null error message when
-     * any participant's FK cannot be uniquely auto-discovered.
+     * The roadmap slug of the deferred capability R452's rejections point authors at: per-participant
+     * explicit join paths on multi-table interface/union child fields (multi-FK disambiguation,
+     * condition joins, multi-hop chains, same-table self-FK participants). File basename under
+     * {@code roadmap/}, no extension.
      */
-    private record ChildPolymorphicJoinPaths(java.util.Map<String, List<JoinStep>> paths, String error) {
-        static ChildPolymorphicJoinPaths ok(java.util.Map<String, List<JoinStep>> paths) {
+    private static final String PER_PARTICIPANT_JOIN_PATHS_SLUG = "per-participant-multitable-child-join-paths";
+
+    /**
+     * Carries the result of {@link #resolveChildPolymorphicJoinPaths}: a per-participant
+     * {@code Map<String, ParticipantFkPath>} keyed by typename (each value the resolved single-hop
+     * FK column pairs), or a non-null {@link Rejection} when the field carries a directive the
+     * auto-discovery arm cannot honour, a participant's FK cannot be uniquely auto-discovered, or a
+     * participant is same-table as the parent/hub.
+     */
+    private record ChildPolymorphicJoinPaths(
+            java.util.Map<String, no.sikt.graphitron.rewrite.model.ParticipantFkPath> paths, Rejection rejection) {
+        static ChildPolymorphicJoinPaths ok(
+                java.util.Map<String, no.sikt.graphitron.rewrite.model.ParticipantFkPath> paths) {
             return new ChildPolymorphicJoinPaths(paths, null);
         }
-        static ChildPolymorphicJoinPaths fail(String error) {
-            return new ChildPolymorphicJoinPaths(java.util.Map.of(), error);
+        static ChildPolymorphicJoinPaths fail(Rejection rejection) {
+            return new ChildPolymorphicJoinPaths(java.util.Map.of(), rejection);
         }
     }
 
     /**
-     * Resolves the per-participant FK chain from {@code parentTable} to each
+     * Resolves the per-participant single-hop FK correlation from {@code parentTable} to each
      * {@link ParticipantRef.TableBound} participant's table. Each call to
      * {@link BuildContext#parsePath} for a different target table picks up a different
      * auto-discovered FK, so heterogeneous participants (each on its own table with its own
-     * FK back to the parent) yield a distinct path per branch.
+     * FK back to the parent) yield a distinct correlation per branch.
      *
-     * <p>Returns an error result when any participant fails (zero or multiple FKs between the
-     * pair); the field is then classified as {@link UnclassifiedField}. {@link ParticipantRef.Unbound}
-     * participants are skipped and produce no map entry.
+     * <p>Single choke point for all four producers (interface / union × table-backed / record-backed
+     * parent). It is also the R452 build-time gate: the only supported shape on a multi-table
+     * interface/union child field is the auto-discovered single-hop FK, so this method rejects every
+     * richer shape here rather than letting the emitter lower it to an arbitrary-participant-row
+     * result on a green build.
+     *
+     * <ul>
+     *   <li><b>Rule 1a</b> — a field-level {@code @reference} is rejected structurally: a single
+     *       stated path applies the same hops to every participant, so it is terminal-correct for at
+     *       most one, and per-participant paths cannot be expressed this way. Author-correctable by
+     *       removing the directive.</li>
+     *   <li><b>Rule 1b</b> — a same-table participant (participant table equals parent/hub table)
+     *       produces an empty auto-path ({@code parsePath} skips FK discovery when source and target
+     *       match), which would lower to "no WHERE"; rejected as a deferred capability keyed to the
+     *       follow-up item's slug (a self-FK participant is a legitimate schema, not an author
+     *       error).</li>
+     *   <li><b>Rule 1c</b> — a zero-FK / multi-FK auto-discovery failure carries the generic
+     *       {@code fkCountMessage} steer toward {@code @reference}; wrapped here with multi-table-child
+     *       context so authors are pointed at the deferred capability instead of into rule 1a.</li>
+     * </ul>
+     *
+     * <p>{@link ParticipantRef.Unbound} participants are skipped and produce no map entry.
      */
     private ChildPolymorphicJoinPaths resolveChildPolymorphicJoinPaths(
             GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
             SourceLocation location, TableRef parentTable, List<ParticipantRef> participants) {
-        var paths = new java.util.LinkedHashMap<String, List<JoinStep>>();
+        // Rule 1a: a field-level @reference cannot express a distinct join per participant.
+        if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
+            return ChildPolymorphicJoinPaths.fail(Rejection.structural(
+                "Field '" + parentTypeName + "." + fieldName + "': an explicit @reference is not "
+                + "supported on a multi-table interface/union child field. Per-participant join paths "
+                + "are auto-discovered (one unique single-hop foreign key from each participant table "
+                + "to the parent table '" + parentTable.tableName() + "'); a field-level @reference "
+                + "applies one stated path to every participant, so it can be terminal-correct for at "
+                + "most one and cannot express a distinct join per participant. Remove the @reference "
+                + "directive. Per-participant explicit join paths are a deferred capability — see "
+                + "roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+        }
+        var paths = new java.util.LinkedHashMap<String, no.sikt.graphitron.rewrite.model.ParticipantFkPath>();
         for (var p : participants) {
             if (!(p instanceof ParticipantRef.TableBound tb)) continue;
             var parsed = ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table());
             if (parsed.hasError()) {
-                return ChildPolymorphicJoinPaths.fail(
-                    "participant '" + tb.typeName() + "': " + parsed.errorMessage());
+                // Rule 1c: fkCountMessage's generic "add a @reference directive" steer leads straight
+                // into rule 1a on these fields; redirect authors to the deferred capability.
+                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
+                    "participant '" + tb.typeName() + "': " + parsed.errorMessage()
+                    + ". Note: an explicit @reference is not supported on multi-table interface/union "
+                    + "child fields (per-participant join paths are auto-discovered); per-participant "
+                    + "explicit join paths are a deferred capability — see roadmap/"
+                    + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
             }
-            paths.put(tb.typeName(), parsed.elements());
+            if (parsed.elements().isEmpty()) {
+                // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and
+                // target tables match, so no parent→participant correlation is derivable; a
+                // self-FK participant needs the deferred per-participant-path capability.
+                return ChildPolymorphicJoinPaths.fail(Rejection.deferred(
+                    "Field '" + parentTypeName + "." + fieldName + "': participant '" + tb.typeName()
+                    + "' is backed by the same table as the parent/hub ('" + parentTable.tableName()
+                    + "'), so no foreign-key correlation from parent to participant can be "
+                    + "auto-discovered. Same-table (self-FK) participants need a per-participant "
+                    + "explicit join path",
+                    PER_PARTICIPANT_JOIN_PATHS_SLUG));
+            }
+            var pairs = singleHopFkColumnPairs(parsed.elements());
+            if (pairs.isEmpty()) {
+                // Unreachable with rule 1a in place: auto-discovery only produces a single-hop FK
+                // hop. Kept so the ParticipantFkPath non-empty-slots invariant is never violated by a
+                // future producer change rather than crashing in the emitter.
+                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
+                    "Field '" + parentTypeName + "." + fieldName + "': participant '" + tb.typeName()
+                    + "' resolved to an unsupported multi-table child join shape (only a single-hop "
+                    + "foreign key is supported). Per-participant explicit join paths are a deferred "
+                    + "capability — see roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+            }
+            paths.put(tb.typeName(), new no.sikt.graphitron.rewrite.model.ParticipantFkPath(pairs.get().slots()));
         }
         return ChildPolymorphicJoinPaths.ok(paths);
     }
@@ -6805,20 +6875,35 @@ class FieldBuilder {
     }
 
     /**
+     * The single-hop-FK shape predicate shared by the single-table {@link ChildField.TableInterfaceField}
+     * arm ({@link #validateSingleHopFkJoin}) and the multi-table interface/union child arm
+     * ({@link #resolveChildPolymorphicJoinPaths}) (R452 rule 1d). Returns the {@link On.ColumnPairs}
+     * when {@code path} is exactly one {@link JoinStep.Hop} keyed by column pairs with at least one
+     * slot; empty otherwise. Callers phrase their own per-arm rejection message.
+     */
+    private static Optional<On.ColumnPairs> singleHopFkColumnPairs(List<JoinStep> path) {
+        if (path.size() != 1) return Optional.empty();
+        if (!(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs pairs)) {
+            return Optional.empty();
+        }
+        if (pairs.slotCount() == 0) return Optional.empty();
+        return Optional.of(pairs);
+    }
+
+    /**
      * Validates that a join path for a {@link ChildField.TableInterfaceField} is a single
      * FK-derived step. Returns an error message if the path is multi-hop or
-     * contains a condition join, or {@code null} if the path is valid.
+     * contains a condition join, or {@code null} if the path is valid. The shape decision goes
+     * through {@link #singleHopFkColumnPairs}; the two failure messages are distinguished here.
      */
     private static String validateSingleHopFkJoin(List<JoinStep> path, String fieldName) {
+        if (singleHopFkColumnPairs(path).isPresent()) return null;
         if (path.size() != 1) {
             return "Field '" + fieldName + "': TableInterfaceField @reference paths must be a single FK hop "
-                + "(multi-hop paths are not yet supported — see stub-interface-union-fetchers.md)";
+                + "(multi-hop paths are not yet supported)";
         }
-        if (!(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs)) {
-            return "Field '" + fieldName + "': TableInterfaceField @reference paths must use a foreign key "
-                + "(condition-join paths are not yet supported — see stub-interface-union-fetchers.md)";
-        }
-        return null;
+        return "Field '" + fieldName + "': TableInterfaceField @reference paths must use a foreign key "
+            + "(condition-join paths are not yet supported)";
     }
 
     // ===== Inner records =====

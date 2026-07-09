@@ -1347,9 +1347,17 @@ public class GraphitronSchemaValidator {
     /**
      * No-op: all path elements are guaranteed resolved by the builder (unresolved paths produce
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead).
+     *
+     * <p>Path <em>shape</em> is likewise gated at classification time, not here: the single-table
+     * {@code TableInterfaceField} arm through {@code FieldBuilder.validateSingleHopFkJoin} and the
+     * multi-table interface/union child arm through {@code FieldBuilder.resolveChildPolymorphicJoinPaths}
+     * (R452), the latter carrying its resolved single-hop FK slots as a
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantFkPath} so an unsupported join shape is
+     * unrepresentable downstream. There is no reference-path shape rule left for the validator to
+     * enforce.
      */
     private void validateReferencePath(String fieldName, SourceLocation location, List<JoinStep> path, List<ValidationError> errors) {
-        // All elements are resolved — builder rejects unresolved paths at classification time.
+        // All elements are resolved and the join-path shape is gated in the builder; nothing to check.
     }
 
     /**

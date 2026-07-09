@@ -518,6 +518,27 @@ public final class TestFixtures {
             new On.ColumnPairs(new On.Keying.ForeignKey(fk), slots), originTable, whereFilter, alias);
     }
 
+    /**
+     * R452: builds the resolved single-hop FK carrier
+     * ({@link no.sikt.graphitron.rewrite.model.ParticipantFkPath}) a multi-table polymorphic
+     * interface/union child field holds per participant, from parent-side / participant-side column
+     * lists ({@code parentColumns[i]} → {@code slot.sourceSide()}, {@code participantColumns[i]} →
+     * {@code slot.targetSide()}). Same orientation convention as {@link #fkJoin}.
+     */
+    public static no.sikt.graphitron.rewrite.model.ParticipantFkPath participantFkPath(
+            List<ColumnRef> parentColumns, List<ColumnRef> participantColumns) {
+        if (parentColumns.size() != participantColumns.size()) {
+            throw new IllegalArgumentException(
+                "participantFkPath fixture: parent/participant column arity mismatch ("
+                + parentColumns.size() + " vs " + participantColumns.size() + ")");
+        }
+        List<JoinSlot.FkSlot> slots = new ArrayList<>(parentColumns.size());
+        for (int i = 0; i < parentColumns.size(); i++) {
+            slots.add(new JoinSlot.FkSlot(parentColumns.get(i), participantColumns.get(i)));
+        }
+        return new no.sikt.graphitron.rewrite.model.ParticipantFkPath(slots);
+    }
+
     /** True when the step is a {@link JoinStep.Hop} joining on FK-derived column pairs. */
     public static boolean isFkHop(JoinStep step) {
         return step instanceof JoinStep.Hop h && h.on() instanceof On.ColumnPairs;

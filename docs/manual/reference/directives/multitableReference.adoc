@@ -21,9 +21,9 @@ Drop the directive (and its `ReferencesForType` argument tree) and model the mul
 
 * xref:discriminate.adoc[`@discriminate`] on the interface or union picks the right implementation per row.
 * xref:discriminator.adoc[`@discriminator`] on the implementation declares the row-level discriminator value.
-* xref:reference.adoc[`@reference`] on the field describes the FK-driven join (single hop, or multiple hops when the path traverses join tables).
+* For a *single-table* interface reached through an FK chain, xref:reference.adoc[`@reference`] on the field describes the FK-driven join (single hop, or multiple hops when the path traverses join tables). For a *multi-table* interface or union child field, the per-branch join is auto-discovered from FK metadata and a field-level `@reference` is instead rejected (a single stated path cannot express a distinct join per participant); see xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types].
 
-The rewrite resolves the per-implementation join paths automatically from `@reference` and the catalog's FK metadata; the schema author does not enumerate them.
+For the multi-table child case the rewrite resolves the per-implementation join paths automatically from the catalog's FK metadata (one unique single-hop FK from each participant table back to the parent); the schema author does not enumerate them and does not add a field-level `@reference`.
 
 == Diagnostic
 

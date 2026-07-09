@@ -74,7 +74,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
+            participants, Map.of(), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
         assertThat(validate(field)).isEmpty();
     }
 
@@ -86,7 +86,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Kpis", noPk, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Kpis", List.of()), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
+            participants, Map.of(), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.occupants': participant 'Kpis' has no primary key");
     }
@@ -98,7 +98,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Bar", BAR, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Bar", List.of()), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
+            participants, Map.of(), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.occupants': primary-key arity mismatch");
     }
@@ -112,7 +112,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Bar", "occupantsConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(BAR), BAR, resultTypeFor(BAR));
+            participants, Map.of(), rowKeyedFor(BAR), BAR, resultTypeFor(BAR));
         var parentType = new GraphitronType.TableType("Bar", null, BAR);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
@@ -126,7 +126,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
+            participants, Map.of(), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
         var parentType = new GraphitronType.TableType("Address", null, ADDRESS);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
@@ -140,7 +140,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupantsConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
+            participants, Map.of(), rowKeyedFor(ADDRESS), ADDRESS, resultTypeFor(ADDRESS));
         var parentType = new GraphitronType.TableType("Address", null, ADDRESS);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
@@ -191,7 +191,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Wide", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", wrapper),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(wide), wide, resultTypeFor(wide));
+            participants, Map.of(), rowKeyedFor(wide), wide, resultTypeFor(wide));
         var parentType = new GraphitronType.TableType("Wide", null, wide);
         return validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
     }
@@ -218,7 +218,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("PojoParent", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), parentSourceKey, wideHub, resultTypeFor(wideHub));
+            participants, Map.of(), parentSourceKey, wideHub, resultTypeFor(wideHub));
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'PojoParent.occupants': multi-table interface/union child field whose parent "
                 + "type 'PojoParent' has a parent key with 22 columns exceeds jOOQ's typed Row22 "
