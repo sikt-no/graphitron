@@ -1,7 +1,7 @@
 ---
 id: R308
 title: "Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict"
-status: Spec
+status: Ready
 bucket: structural
 priority: 4
 theme: service
