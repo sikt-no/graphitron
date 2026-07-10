@@ -70,6 +70,28 @@ class LintRuleRegistryCoverageTest {
     }
 
     @Test
+    void everyCodegenAdvisoryRuleExists() {
+        // The R429 codegen-config advisories are emitted at report assembly from the <sessionState>
+        // config (SessionStateWarnings), not from a visitor or a classifier site; this pins the CODEGEN
+        // set so a new one is a deliberate registry edit, mirroring the classifier assertion above.
+        var codegen = Arrays.stream(LintRule.values())
+            .filter(r -> r.source() == LintRule.Source.CODEGEN)
+            .map(LintRule::id)
+            .toList();
+        assertThat(codegen).containsExactlyInAnyOrder(
+            "no-session-state",
+            "session-state-convention-fence");
+    }
+
+    @Test
+    void codegenAdvisoriesAreNotRegisteredAsVisitors() {
+        var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
+        assertThat(registered)
+            .as("codegen-config advisories are emitted at report assembly, never registered to a visitor")
+            .noneMatch(r -> r.source() == LintRule.Source.CODEGEN);
+    }
+
+    @Test
     void ruleIdsAreUniqueAndKebabCase() {
         List<String> ids = Arrays.stream(LintRule.values()).map(LintRule::id).toList();
         assertThat(ids).doesNotHaveDuplicates();

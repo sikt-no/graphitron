@@ -98,6 +98,12 @@ class FixtureWarningsGateTest {
             // lint findings above. Their presence and carve-out on the real example are pinned by
             // tableOnInputDeprecationsCarveOutEncodedIdInsert below.
             .filter(w -> !isTableOnInputDeprecation(w))
+            // R429: the codegen-config <sessionState> advisories are derived from the Mojo config (this
+            // gate constructs its own RewriteContext with no <sessionState>, so the no-session-state
+            // advisory fires) and are owned and asserted directly on SessionStateConfig by
+            // SessionStateWarningsTest, so segregate them here like the ENGINE lint findings above.
+            .filter(w -> !(w instanceof BuildWarning.LintFinding lf
+                && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.CODEGEN))
             .toList();
 
         // Exactly one expected advisory: a new accidental warning grows this list and fails here.

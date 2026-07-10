@@ -400,6 +400,12 @@ public class GraphQLRewriteGenerator {
         // federation @link injector's generator-owned definitions at the same boundary.
         all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
             .run(attributed.registry(), attributed.injectedNames()));
+        // R429 codegen-config advisories about the owned-connection runtime's identity posture, derived
+        // from the <sessionState> config and whether the schema uses @service. Folded in here so they ride
+        // the same suppression, LSP replay, and MCP projection as every other warning.
+        boolean hasService = schema.fields().values().stream()
+            .anyMatch(f -> f instanceof no.sikt.graphitron.rewrite.model.ServiceField);
+        all.addAll(no.sikt.graphitron.rewrite.session.SessionStateWarnings.forConfig(ctx.sessionStateConfig(), hasService));
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
         // covers both channels, so a classifier advisory is suppressible by rule id like any other

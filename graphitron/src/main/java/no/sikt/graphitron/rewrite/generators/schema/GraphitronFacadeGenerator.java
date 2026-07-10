@@ -46,6 +46,9 @@ public final class GraphitronFacadeGenerator {
 
     public static final String CLASS_NAME = "Graphitron";
 
+    private static final String LOGGER_FIELD = "LOGGER";
+    private static final String ESCAPE_HATCH_NOTICE_FIELD = "ESCAPE_HATCH_NOTICE_LOGGED";
+
     private GraphitronFacadeGenerator() {}
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, boolean federationLink) {
@@ -102,9 +105,20 @@ public final class GraphitronFacadeGenerator {
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, ownedExecutionInputJavadoc(contextArgs));
 
+        // R429 slice 6: the escape-hatch engine attaches no connection-lifecycle instrumentation, so on
+        // this path the caller owns transaction demarcation and session identity and graphitron's
+        // owned-connection guarantees do not apply. Emit that notice once at wiring time (guarded so it
+        // fires once per process even if the engine is rebuilt).
         var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphQLBuilder)
+            .beginControlFlow("if ($N.compareAndSet(false, true))", ESCAPE_HATCH_NOTICE_FIELD)
+            .addStatement("$N.warn($S)", LOGGER_FIELD,
+                "Graphitron.newGraphQL() builds the low-opinion escape-hatch engine: it attaches no "
+                    + "connection-lifecycle instrumentation, so you own transaction demarcation and database "
+                    + "session identity, and Graphitron's owned-connection guarantees do not apply. For the "
+                    + "managed path use Graphitron.runtime(dataSource, dialect).newGraphQL(schema).")
+            .endControlFlow()
             .addStatement("return $T.newGraphQL(buildSchema(customizer -> {}))", graphQL)
             .addJavadoc(newGraphQLJavadoc())
             .build();
@@ -121,9 +135,26 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(runtimeJavadoc())
             .build();
 
+        var self = ClassName.get(outputPackage, CLASS_NAME);
+        var logger = ClassName.get("org.slf4j", "Logger");
+        var loggerFactory = ClassName.get("org.slf4j", "LoggerFactory");
+        var atomicBoolean = ClassName.get("java.util.concurrent.atomic", "AtomicBoolean");
+        var loggerField = no.sikt.graphitron.javapoet.FieldSpec.builder(
+                logger, LOGGER_FIELD, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.getLogger($T.class)", loggerFactory, self)
+            .build();
+        var escapeHatchNoticeField = no.sikt.graphitron.javapoet.FieldSpec.builder(
+                atomicBoolean, ESCAPE_HATCH_NOTICE_FIELD, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("new $T(false)", atomicBoolean)
+            .addJavadoc("Guards the escape-hatch caller-owns-everything notice so {@link #newGraphQL()}\n"
+                + "logs it once per process, not once per call.\n")
+            .build();
+
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc(classJavadoc())
+            .addField(loggerField)
+            .addField(escapeHatchNoticeField)
             .addMethod(buildSchema)
             .addMethod(newExecutionInput)
             .addMethod(newOwnedExecutionInput)
@@ -226,6 +257,12 @@ public final class GraphitronFacadeGenerator {
         return "Builds a {@link graphql.GraphQL.Builder} for the zero-configuration default case,\n"
             + "equivalent to {@code GraphQL.newGraphQL(buildSchema(b -> {}))}. Chain {@code .build()}\n"
             + "to obtain the engine: {@code var graphql = Graphitron.newGraphQL().build();}.\n"
+            + "\n"
+            + "<p>This is the low-opinion escape-hatch engine: it attaches no connection-lifecycle\n"
+            + "instrumentation, so the caller owns transaction demarcation and database session identity\n"
+            + "and Graphitron's owned-connection guarantees do not apply. It logs that once at wiring time.\n"
+            + "For the managed path (one connection pinned per operation, identity mounted, transactions\n"
+            + "demarcated) build the engine from {@code Graphitron.runtime(dataSource, dialect).newGraphQL(schema)}.\n"
             + "\n"
             + "<p>Returns a builder rather than a built {@link graphql.GraphQL} so callers can still\n"
             + "attach instrumentation or execution strategies before {@code .build()}. Consumers that\n"

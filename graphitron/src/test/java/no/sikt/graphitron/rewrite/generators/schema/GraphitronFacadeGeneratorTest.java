@@ -158,6 +158,30 @@ class GraphitronFacadeGeneratorTest {
     }
 
     @Test
+    void newGraphQL_emitsCallerOwnsEverythingNoticeOncePerProcess() {
+        // R429 slice 6: the escape-hatch engine attaches no instrumentation, so the caller owns
+        // transactions and identity; newGraphQL() warns that once, guarded by the AtomicBoolean so a
+        // rebuilt engine does not re-log it.
+        var body = findFirstMethod("newGraphQL", false).code().toString();
+        assertThat(body)
+            .contains("ESCAPE_HATCH_NOTICE_LOGGED.compareAndSet(false, true)")
+            .contains("LOGGER.warn(")
+            .contains("escape-hatch engine")
+            .contains("owned-connection guarantees do not apply");
+    }
+
+    @Test
+    void generatedClass_carriesTheLoggerAndEscapeHatchNoticeGuardFields() {
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
+        assertThat(spec.fieldSpecs()).extracting(f -> f.name())
+            .contains("LOGGER", "ESCAPE_HATCH_NOTICE_LOGGED");
+        var guard = spec.fieldSpecs().stream()
+            .filter(f -> f.name().equals("ESCAPE_HATCH_NOTICE_LOGGED"))
+            .findFirst().orElseThrow();
+        assertThat(guard.type().toString()).isEqualTo("java.util.concurrent.atomic.AtomicBoolean");
+    }
+
+    @Test
     void newGraphQL_isPresentExactlyOnceInFederationBuild() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0);
         var newGraphQLCount = spec.methodSpecs().stream()

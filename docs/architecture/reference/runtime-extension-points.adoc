@@ -1,22 +1,98 @@
 = Runtime Extension Points
 
-Generated code is intentionally simple: no auth checks, no transaction
-management, no tenant-aware connection routing. These concerns belong at
-runtime, injected through `GraphitronContext` without touching generated
-code.
+Generated code contains no authorization checks: the database is the
+enforcement point (see xref:../../security.adoc[the Security Model] and
+<<row-level-security,Row-Level Security and the integrity gradient>> below).
+Everything else about how a request reaches the database, connection
+acquisition, transaction demarcation, and mounting the caller's identity, comes
+in one of two shapes, and this document is the reference for both:
 
-This document is the reference for the rewrite-emitted `GraphitronContext`
-interface. For the minimal wiring that stands up a working endpoint, see
-xref:../../manual/tutorial/index.adoc[the tutorial]; this file picks up where
-that leaves off.
+* *The owned-connection path (R429, recommended).* Graphitron owns the
+  connection lifecycle. You give it a `DataSource` and a dialect once; per
+  request it pins one connection, mounts the caller's identity on it through
+  database session hooks you configure, commits each mutation field
+  independently, and unmounts and releases at completion. See
+  <<owned-connection-path,The owned-connection path>>.
+* *The escape-hatch path.* You bring your own `DSLContext` per request and own
+  transaction demarcation and identity yourself; Graphitron's owned-connection
+  guarantees do not apply. This is the lower-opinion path built on
+  `GraphitronContext`. See <<escape-hatch-path,The escape-hatch path>>.
+
+Both paths read per-request values the same way, through the emitted
+`GraphitronContext` and the `Graphitron.newExecutionInput(...)` /
+`Graphitron.newOwnedExecutionInput(...)` factories. For the minimal wiring that
+stands up a working endpoint, see xref:../../manual/tutorial/index.adoc[the
+tutorial]; this file picks up where that leaves off.
 
 '''
 
-== GraphitronContext
+[#owned-connection-path]
+== The owned-connection path
+
+Build the runtime once at wiring time over your pooled `DataSource` and jOOQ
+dialect; you (or your framework) still own pool creation and tuning, Graphitron
+owns acquisition, transactions, and identity on top of it:
+
+[source,java]
+----
+var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);
+var engine  = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+----
+
+`runtime.newGraphQL(schema)` attaches the connection-lifecycle instrumentation,
+so you register nothing else. Per request you pass only the opaque claims
+payload (and any declared `contextArguments`):
+
+[source,java]
+----
+var input = Graphitron.newOwnedExecutionInput(claims, userId).query(q).build();
+----
+
+For that operation Graphitron pins one connection, runs your connect hook to
+mount identity, executes (each top-level mutation field in its own transaction
+that commits or rolls back independently, queries in autocommit), then runs your
+disconnect hook and releases the connection. A connection whose unmount failed
+is evicted, never returned to the pool.
+
+=== Session identity through `<sessionState>`
+
+Identity goes to the database, not to Java. The claims payload you pass is
+handed untouched to a connect callable you name in the plugin's
+`<sessionState>` configuration; a paired disconnect callable clears it.
+Graphitron parses nothing about the payload, the database does. See
+xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
+identity] for the two configuration forms (the function-hook form for
+Oracle/RAS or any privilege-fenced package, and the Postgres `<variables>`
+sugar) and the pairing rules.
+
+If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
+build time (`no-session-state`): an unsecured direct-to-database API is a
+data-exposure risk. Silence that rule only if the API is intentionally
+unsecured or uses the escape hatch exclusively.
+
+=== Per-tenant routing
+
+For database-per-tenant deployments, build the runtime over a default
+`DataSource` plus a `Map<TenantId, DataSource>`; Graphitron pins one connection
+per distinct divined tenant within an operation and mounts identity on each. The
+schema-side inference that divines the tenant key is R45's tenant-column work;
+the runtime seam it rides is part of this path.
+
+[#escape-hatch-path]
+== The escape-hatch path: GraphitronContext
+
+On the escape-hatch path you bring your own `DSLContext` per request through
+`Graphitron.newExecutionInput(dsl, ...)` and own transaction demarcation and
+identity yourself; Graphitron's owned-connection guarantees do not apply. The
+escape-hatch engine (`Graphitron.newGraphQL()`) attaches no connection-lifecycle
+instrumentation and logs a one-time notice to that effect at wiring time. This
+is the right path when you already own a request-scoped `DSLContext` (an
+existing transaction manager, a framework-provided connection) and want
+Graphitron to use it rather than acquire its own.
 
 `GraphitronContext` is the sealed per-request contract every generated DataFetcher reads from. It is _emitted_ per app under `<outputPackage>.schema` and sealed to permit only the generator's own `GraphitronContextImpl` singleton (nested inside the interface to inherit same-compilation-unit permits); apps no longer implement it directly. The extension surface moves to the points where per-request values cross the boundary:
 
-* *Per-request `DSLContext`*: pass it as the first parameter of `Graphitron.newExecutionInput(dsl, ...)`. Per-tenant routing is the subject of R45's tenant-column work; until that lands, single-tenant apps pass a single `DSLContext` per request.
+* *Per-request `DSLContext`*: pass it as the first parameter of `Graphitron.newExecutionInput(dsl, ...)`. On the owned-connection path you do not supply one, the instrumentation produces it from the pinned connection.
 * *Per-request `contextArgument` values*: pass each one as a typed parameter to `Graphitron.newExecutionInput(...)`. The factory's parameter list reflects the schema's declared `contextArguments` and their reflected Java types, so the consumer's request-entry code threads each value through a typed slot rather than stashing arbitrary entries on `GraphQLContext` by hand.
 * *Custom validator factory*: covered by a follow-up Mojo configuration item (R192). The default reads `Validation.buildDefaultValidatorFactory().getValidator()`; this is unchanged by R190 and the single existing override point is currently unused, so no migration is required.
 
@@ -100,11 +176,14 @@ Every generated query method calls `getDslContext(env)` to obtain the
 `DSLContext` for executing SQL. The default impl reads
 `env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's
 `defaultDsl` parameter. This is the only impl; the sealed interface closes off
-ad-hoc overrides. To return a tenant-specific `DSLContext` per request, build
-the right `DSLContext` at request entry and pass it to
-`Graphitron.newExecutionInput(dsl, ...)` (reintroduced under R45's
-tenant-column work). The same shape composes with PostgreSQL row-level
-security; see <<row-level-security,Row-Level Security>> below.
+ad-hoc overrides. On the escape-hatch path you build the right per-request
+`DSLContext` at request entry and pass it to
+`Graphitron.newExecutionInput(dsl, ...)`; on the owned-connection path the
+instrumentation produces the `DSLContext` from the pinned connection and
+per-tenant routing is the runtime's `Map<TenantId, DataSource>` seam
+(<<owned-connection-path,above>>). The same shape composes with PostgreSQL
+row-level security; see <<row-level-security,Row-Level Security and the
+integrity gradient>> below.
 
 === `getContextArgument`: passing runtime values into generated methods
 
@@ -205,49 +284,104 @@ metrics collection, or query rewriting. Register a listener on
 https://www.jooq.org/doc/latest/manual/sql-execution/execute-listeners/[jOOQ ExecuteListener documentation]
 for the full lifecycle and available hooks.
 
-=== Row-Level Security
+'''
 
-Graphitron's security model designates the database as the enforcement
-point. Row-level security (RLS) is the recommended mechanism: policies
-filter rows transparently based on session context, with no changes to
-generated queries.
+[#row-level-security]
+== Row-Level Security and the integrity gradient
 
-Most relational databases support a form of row-level security. The example
-below uses PostgreSQL.
+*RLS-assumed is a stated principle.* Graphitron cannot enforce that the
+database enforces row access; it assumes it, and says so. Generated code issues
+plain `SELECT` statements and carries no authorization logic; row-level
+security (RLS/VPD) is the recommended enforcement mechanism, filtering rows
+transparently from session state with no change to generated queries. Consumers
+who do not use RLS remain responsible for exposing only safe surfaces (views,
+restricted schemas). If a mounted identity is wrong or absent, the failure is a
+data-exposure failure, not a confusing-UI failure, so the safe posture is fail
+closed: an RLS policy must treat both a `NULL` and an empty session variable as
+"no identity" and deny.
 
-The connection point is `getDslContext`: set the session context before
-returning the `DSLContext`, and RLS policies read those values for every
-query.
+*The integrity gradient.* How tamper-resistant the mounted identity is varies by
+dialect and pattern, and it is a spectrum, not a yes/no. Choosing where on it to
+sit is the load-bearing security decision.
+
+* *Enforced fence* (strongest). Oracle package-bound contexts and RAS: code on
+  the connection cannot set identity state except through a trusted definer-rights
+  package. Configure this with the function-hook `<sessionState>` form.
+* *Convention fence.* Plain PostgreSQL GUCs set by the `<variables>` sugar (or a
+  `SECURITY DEFINER` function that writes them): any SQL on the connection can
+  overwrite them, so the real guarantee is that Graphitron generates every
+  statement and any `@service` code on the connection behaves. The combination
+  "Postgres `<variables>` sugar + `@service` methods in the schema" earns a loud
+  build-time note (`session-state-convention-fence`), because that is the
+  convention fence with consumer code on the connection.
+* *Cryptographic fence.* Available on both dialects through the function-hook
+  form: pass the raw signed token as the claims payload, verify the signature
+  inside the database, and have policies read identity only through verified
+  state, so even arbitrary SQL on the connection cannot forge another user's
+  identity.
+
+=== On the owned-connection path
+
+Identity is mounted by your configured `<sessionState>` connect hook (see
+<<owned-connection-path,above>>); your RLS policies read whatever it set. For
+the Postgres `<variables>` sugar the connect hook runs
+`set_config(name, ..., false)` per request and the disconnect hook clears it, so
+a fail-closed policy reads:
 
 [source,sql]
 ----
--- ILLUSTRATIVE: PostgreSQL RLS policy
+-- ILLUSTRATIVE: PostgreSQL RLS policy, fail-closed on unset/empty identity
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation ON documents
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+CREATE POLICY caller_isolation ON documents
+    USING (owner_id = NULLIF(current_setting('app.user_id', true), ''));
 ----
+
+Generated code is unaware of RLS: it issues plain `SELECT` statements on the
+pinned connection and the database enforces the policies automatically.
+
+=== On the escape-hatch path
+
+You own the session state: set it on the `DSLContext` you return before handing
+it to `Graphitron.newExecutionInput(dsl, ...)`. Hold a single connection for the
+request so the `SET` and every query share it:
 
 [source,java]
 ----
-// ILLUSTRATIVE: setting session context in getDslContext
-@Override
-public DSLContext getDslContext(DataFetchingEnvironment env) {
-    String tenantId = env.getGraphQlContext().get("tenantId");
-
-    // Hold a single connection for the request so the SET and all queries share it.
-    // Use set_config with isLocal=true (transaction-scoped) for connection pool safety:
-    // this resets automatically when the transaction ends rather than persisting on the
-    // connection after it returns to the pool.
-    Connection conn = dataSource.getConnection();
-    DSLContext ctx = DSL.using(conn, SQLDialect.POSTGRES);
-    ctx.execute("SELECT set_config('app.tenant_id', ?, true)", tenantId);
-    return ctx;
-}
+// ILLUSTRATIVE: setting session context on the escape-hatch DSLContext
+Connection conn = dataSource.getConnection();
+DSLContext ctx = DSL.using(conn, SQLDialect.POSTGRES);
+ctx.execute("SELECT set_config('app.user_id', ?, true)", userId); // isLocal=true: transaction-scoped
+var input = Graphitron.newExecutionInput(ctx, /* contextArguments... */).query(q).build();
 ----
 
-Generated code is unaware of RLS: it issues plain `SELECT` statements, and
-the database enforces the policies automatically.
+=== Producing the claims payload
+
+On the owned-connection path you pass an opaque claims string to
+`Graphitron.newOwnedExecutionInput(claims, ...)`; no auth-framework type enters
+generated code. From MicroProfile JWT (or any JWS bearer) the two forms come
+straight off the injected `JsonWebToken`, and which you pick is the
+integrity-gradient decision:
+
+* *Signed compact token* (cryptographic fence): pass `jwt.getRawToken()`. Your
+  connect hook verifies the signature and reads claims in-database, so the
+  identity holds even against distrusted SQL on the connection.
+* *Bare claims JSON* (what the `<variables>` sugar expects): the payload segment
+  of a JWS already is the claims JSON, so decode it with the JDK alone, no JSON
+  parser:
+
+[source,java]
+----
+String claims = new String(
+    Base64.getUrlDecoder().decode(jwt.getRawToken().split("\\.")[1]),
+    StandardCharsets.UTF_8);
+return Graphitron.newOwnedExecutionInput(claims);
+----
+
+`getRawToken()` returns the three-segment compact serialization, not JSON;
+passing it where claims JSON is expected fails at the hook's `jsonb` cast. If
+your platform hands you an encrypted token (JWE), the payload segment is
+ciphertext; rebuild the claims JSON from the platform's claim accessors instead.
 
 '''
 

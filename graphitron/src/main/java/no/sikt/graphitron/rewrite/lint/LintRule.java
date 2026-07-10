@@ -35,14 +35,22 @@ public enum LintRule {
     // Classifier-owned advisories (surfaced and tagged here, not re-derived; no engine visitor).
     SPLITQUERY_REDUNDANT_ON_RECORD_PARENT("splitquery-redundant-on-record-parent", Source.CLASSIFIER),
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
-    ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER);
+    ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
+
+    // Codegen-config advisories (R429): derived from the Mojo <sessionState> config at report assembly,
+    // not from the AST and not from a per-field classifier verdict, so neither an engine visitor nor a
+    // classifier-tagged advisory. Emitted from GraphQLRewriteGenerator via SessionStateWarnings.
+    NO_SESSION_STATE("no-session-state", Source.CODEGEN),
+    SESSION_STATE_CONVENTION_FENCE("session-state-convention-fence", Source.CODEGEN);
 
     /** Where a rule's findings originate, and therefore whether the engine registry owns it. */
     public enum Source {
         /** An engine visitor over the AST; registered in {@link LintRules}, asserted by the coverage test. */
         ENGINE,
         /** A classifier verdict tagged at its existing emit site; never registered to a visitor. */
-        CLASSIFIER
+        CLASSIFIER,
+        /** A codegen-config advisory derived at report assembly (R429 {@code <sessionState>}); no visitor, no classifier site. */
+        CODEGEN
     }
 
     private final String id;
