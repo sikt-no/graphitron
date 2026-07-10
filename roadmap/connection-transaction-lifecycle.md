@@ -1,7 +1,7 @@
 ---
 id: R429
 title: "Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: runtime-connection
@@ -11,6 +11,15 @@ last-updated: 2026-07-10
 ---
 
 # Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity
+
+## Review feedback (In Review → Ready, 2026-07-10)
+
+Independent review of the six shipped slices (f68666c, 776f0d9, 3a0f0dd, da38754, 5bb881f, c2664aa). The delivery is close: build green under `-Plocal-db`, all spec-named test tiers present and behaviour-driven (EmittedCodeHarness over emitted bytes, fake-JDBC call logs, real-Postgres RLS probes; no code-string assertions), config rejections and all three notices land as specified, the R428 cross-reference sync is in, and the docs rewrite covers both paths, the RLS-assumed principle, and the integrity gradient. Two material gaps block Done; two minor items ride along.
+
+1. **Sakila app migration didn't ship (spec → diff gap).** The migration section and slice 5 both promise "the sakila example migrates to the runtime form as the first client, resolving its claims payload from the authenticated request." What landed is test-level only: `ConnectionLifecycleExecutionTest` drives the owned path end to end, but `SakilaGraphitronApplication` (graphitron-sakila-example/src/main/.../app/SakilaGraphitronApplication.java:35) still wires the escape hatch `Graphitron.newExecutionInput(DSL.using(dataSource, ...), "test-user")` over the default `engineBuilder()`. The reference adapter, the thing consumers copy, now demonstrates the low-opinion path and logs the caller-owns-everything notice at every startup, contradicting the docs' "recommended" framing. The `GraphitronApplication.engineBuilder()` SPI seam exists precisely for this: override it with `Graphitron.runtime(dataSource, POSTGRES).newGraphQL(schema())` and switch `newExecutionInput()` to `Graphitron.newOwnedExecutionInput(claims, "test-user")` (hard-coded claims JSON is fine where "test-user" already is; the pom's `<variables>` sugar is already configured). Alternatively, if the app-level migration is deliberately out of scope, say so in the spec and get that re-scoping signed off; the current text promises it.
+2. **Acquisition never normalizes autocommit, and the lifecycle guarantee silently assumes it (soundness).** `PinnedConnection.acquire` runs the connect hook on the connection exactly as the pool hands it out; only the mutation-path `TransactionProvider` ever touches autocommit. On Postgres, `set_config`/`SET` are transactional: they revert with a rolled-back transaction. If a consumer's pool is configured autocommit=false (Agroal and Hikari both support this), the sugar's mount runs inside an implicit never-committed transaction, a mutation field's rollback reverts the mounted identity mid-operation (later fields silently see no identity), and after an intermediate commit the disconnect hook's clears at release sit in an uncommitted transaction that the pool's return-rollback reverts, so identity can survive on the pooled connection. Graphitron's own path is saved only by connect-always-overwrites; the spec's "gone before the connection returns to the pool" / "provably unmounted" guarantee is broken for any other borrower. Fix is one line plus a unit assertion: in `acquire`, normalize `connection.setAutoCommit(true)` before invoking the connect hook (ConnectionRuntimeClassGenerator.java, `pinnedConnection` acquire emission), making the "queries run in autocommit" contract enforced rather than assumed. Add a line to the integrity-gradient docs if the normalization is deliberately rejected.
+3. *Minor:* `ConnectionLifecycleExecutionTest`'s class javadoc (lines ~36-40) still says slice 5's factory "does not exist yet" while `ownedInput` now calls it; true it up.
+4. *Minor (housekeeping):* the slice list below was never collapsed to `shipped at <sha>` notes; on the next pass, collapse shipped slices and leave only the rework items above as open work, per workflow housekeeping.
 
 ## In one paragraph
 
