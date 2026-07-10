@@ -36,7 +36,8 @@ what it does at runtime, is decided by uncoordinated wrapper reads that never se
   `FieldBuilder.buildPayloadCarrierRecordTableField` key `SourceKey.Cardinality` and
   `LoaderRegistration.Dispatch` off the **data field's** wrapper alone.
 
-Empirical outcomes per sub-shape (scratch classification + emit runs, 2026-07-10):
+Empirical outcomes per sub-shape (scratch classification + emit runs, 2026-07-10; the a1 verdict
+re-verified against HEAD with a printed `ResultReturnType`):
 
 - **Silently admitted, broken at runtime:**
   - `[Payload]` + single `@table` data field + producer returning a bare record: the root fetcher
@@ -66,6 +67,31 @@ yet supported"; `GraphitronSchemaBuilderTest.DML_RECORD_PAYLOAD_LIST_REJECTED`) 
 family outright. The asymmetry stands, with the corrected reading: the `@service` seat admits a
 superset it can only partially honour, and cannot say which subset it honours because carrier
 arrival is not a modelled input to the verdict.
+
+### Mechanism note: which read to change (a1 silent admit)
+
+The a1 silent admit is subtle and cost one review round-trip to pin, so the exact chain is recorded
+here. There are **two independent bindings on the payload**, answering to different gates:
+
+- The payload **data field's** `ServiceEmitted` grounding (`RecordBindingResolver.groundServicePayloadBinding`)
+  peels one container level off the method return and matches the data field's record class,
+  **regardless of the carrier wrapper**; it grounds in both a1 and the coherent a2, and only drives
+  the data field's `RecordTableField`.
+- The payload **type's** result-axis binding (`RecordBindingResolver.groundProducerResult` →
+  `addResultObservation` → `resultMemo`, consumed at `TypeBuilder.buildResultType` via
+  `resolveResult`) is what populates the payload `ResultType`'s `fqClassName`, and it **is** gated
+  by `producerBindLevel`: `BindsWrapper` grounds it, `NoBind` grounds nothing.
+
+For a1 (`[Payload]` carrier, single-record producer), `producerBindLevel` returns `NoBind` because
+the carrier's list-ness disagrees with the producer's single return, so `resultMemo` stays absent
+and the payload's `ResultType.fqClassName` is **null**. `checkServiceReturnMatchesPayload` is
+correctly gated and simply returns early on the null `fqClassName` (it never reaches its
+carrier-wrapper comparison), so it is **not** the read to change. **The mechanism to fix is the
+`producerBindLevel` `NoBind` arm dropping the backing silently** on a carrier-vs-producer
+cardinality disagreement: that silent drop is what lets an incoherent shape through with no strict
+check ever firing. The coherent a2 case takes the `BindsWrapper` arm (cardinalities agree), grounds
+`fqClassName`, and the strict check passes. So the shape verdict below replaces the `NoBind`-silent-drop
+decision, not the `checkServiceReturnMatchesPayload` gate.
 
 ## Spec
 
