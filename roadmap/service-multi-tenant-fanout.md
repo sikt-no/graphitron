@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: runtime-connection
-depends-on: [tenant-routing-and-execution-input, connection-transaction-lifecycle]
+depends-on: [tenant-routing-and-execution-input]
 last-updated: 2026-07-03
 ---
 

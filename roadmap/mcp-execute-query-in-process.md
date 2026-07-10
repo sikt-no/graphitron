@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 3
 theme: dev-loop
-depends-on: [connection-transaction-lifecycle]
+depends-on: []
 created: 2026-07-03
 last-updated: 2026-07-06
 ---

@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: runtime-connection
-depends-on: [connection-transaction-lifecycle]
+depends-on: []
 last-updated: 2026-07-03
 ---
 
