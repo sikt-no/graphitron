@@ -32,10 +32,10 @@ class GraphitronFacadeGeneratorTest {
     }
 
     @Test
-    void generatedClass_exposesBuildSchemaNewExecutionInputNewGraphQLAndRuntime() {
+    void generatedClass_exposesBuildSchemaBothFactoriesNewGraphQLAndRuntime() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactly("buildSchema", "newExecutionInput", "newGraphQL", "runtime");
+            .containsExactly("buildSchema", "newExecutionInput", "newOwnedExecutionInput", "newGraphQL", "runtime");
     }
 
     @Test
@@ -112,6 +112,39 @@ class GraphitronFacadeGeneratorTest {
             .contains("b.put(org.jooq.DSLContext.class, defaultDsl)")
             .contains("com.example.schema.GraphitronContext.GraphitronContextImpl.INSTANCE")
             .contains("new org.dataloader.DataLoaderRegistry()");
+    }
+
+    // ===== newOwnedExecutionInput (R429 owned-connection path) =====
+
+    @Test
+    void newOwnedExecutionInput_emptySchemaTakesSingleStringClaimsParameter() {
+        var owned = ownedFactory(emptySchema());
+        assertThat(owned.parameters()).hasSize(1);
+        assertThat(owned.parameters().get(0).name()).isEqualTo("claims");
+        assertThat(owned.parameters().get(0).type().toString()).isEqualTo("java.lang.String");
+        assertThat(owned.returnType().toString()).isEqualTo("graphql.ExecutionInput.Builder");
+        assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void newOwnedExecutionInput_bodyStashesClaimsUnderTheInstrumentationKey_notADslContext() {
+        var body = ownedFactory(emptySchema()).code().toString();
+        // The owned path publishes the opaque claims under the instrumentation's CLAIMS_KEY constant
+        // (single-sourced with the read site) and the singleton, but never a DSLContext (the
+        // instrumentation produces that from the pinned connection).
+        assertThat(body)
+            .contains("java.util.Objects.requireNonNull(claims")
+            .contains("com.example.schema.GraphitronConnectionInstrumentation.CLAIMS_KEY, claims")
+            .contains("com.example.schema.GraphitronContext.GraphitronContextImpl.INSTANCE")
+            .contains("new org.dataloader.DataLoaderRegistry()")
+            .doesNotContain("DSLContext.class");
+    }
+
+    private static no.sikt.graphitron.javapoet.MethodSpec ownedFactory(no.sikt.graphitron.rewrite.GraphitronSchema schema) {
+        return GraphitronFacadeGenerator.generate(schema, "com.example").get(0).methodSpecs().stream()
+            .filter(m -> m.name().equals("newOwnedExecutionInput"))
+            .findFirst()
+            .orElseThrow();
     }
 
     // ===== newGraphQL =====

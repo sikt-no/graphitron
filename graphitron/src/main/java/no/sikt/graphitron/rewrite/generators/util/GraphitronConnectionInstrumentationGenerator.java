@@ -29,7 +29,7 @@ import java.util.List;
  * <h2>Per-operation sequence ({@link #beginExecuteOperation})</h2>
  * <ol>
  *   <li>Read the opaque claims payload from the {@code graphQLContext} under {@link #CLAIMS_KEY} (the
- *       one key slice 5's {@code runtime.newExecutionInput(claims, ...)} factory writes; shared as a
+ *       one key slice 5's {@code Graphitron.newOwnedExecutionInput(claims, ...)} factory writes; shared as a
  *       named constant so read and write cannot drift).</li>
  *   <li>{@code runtime.acquire(claims)} pins one connection and runs the connect hook; a throwing
  *       connect fails closed here, before any SQL, surfaced as a request error.</li>
@@ -96,9 +96,9 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var claimsKey = FieldSpec.builder(String.class, CLAIMS_KEY_FIELD, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("$S", CLAIMS_KEY_VALUE)
             .addJavadoc("The {@code graphQLContext} key the opaque per-request claims payload is published\n"
-                + "under. Read here at acquisition; written by slice 5's\n"
-                + "{@code runtime.newExecutionInput(claims, ...)} factory. One constant so the two sites\n"
-                + "cannot drift on the key string.\n")
+                + "under. Read here at acquisition; written by the\n"
+                + "{@code Graphitron.newOwnedExecutionInput(claims, ...)} factory. One constant so the two\n"
+                + "sites cannot drift on the key string.\n")
             .build();
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();

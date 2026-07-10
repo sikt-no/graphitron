@@ -4,11 +4,8 @@ import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
-import no.sikt.graphitron.generated.schema.GraphitronConnectionInstrumentation;
-import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
-import org.dataloader.DataLoaderRegistry;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
@@ -151,23 +148,17 @@ class ConnectionLifecycleExecutionTest {
     // ===== helpers =====
 
     /**
-     * Assembles a per-request {@code ExecutionInput} for the owned-connection path: the opaque claims,
-     * the sealed {@code GraphitronContext} singleton, and the {@code userId} contextArgument, plus a
-     * fresh {@code DataLoaderRegistry}. The instrumentation publishes the pinned {@code DSLContext}
-     * itself, so none is supplied here. Slice 5's {@code runtime.newExecutionInput(claims, ...)} factory
-     * will subsume this.
+     * Assembles a per-request {@code ExecutionInput} for the owned-connection path via the emitted
+     * {@code Graphitron.newOwnedExecutionInput(claims, userId)} factory (R429 slice 5), the first client
+     * of that factory. It stashes the opaque claims under the instrumentation's key, the sealed
+     * {@code GraphitronContext} singleton, and the {@code userId} contextArgument, plus a fresh
+     * {@code DataLoaderRegistry}; the instrumentation publishes the pinned {@code DSLContext} itself.
+     * Valid JSON claims because this module configures the Postgres {@code <variables>} sugar, so the
+     * generated connect hook parses the payload as {@code jsonb}.
      */
     private ExecutionInput.Builder ownedInput(String query) {
-        return ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(b -> {
-                // Valid JSON claims: since this module configures the Postgres <variables> sugar
-                // (<sessionState> in the pom), the generated connect hook parses the payload as jsonb.
-                b.put(GraphitronConnectionInstrumentation.CLAIMS_KEY, "{\"sub\":\"test-user\"}");
-                b.put(GraphitronContext.class, GraphitronContext.GraphitronContextImpl.INSTANCE);
-                b.put("userId", "test-user");
-            })
-            .dataLoaderRegistry(new DataLoaderRegistry());
+        return Graphitron.newOwnedExecutionInput("{\"sub\":\"test-user\"}", "test-user")
+            .query(query);
     }
 
     /** A DataSource that hands out real connections and counts each acquisition. */

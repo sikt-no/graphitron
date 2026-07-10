@@ -60,4 +60,37 @@ class GraphitronFacadeGeneratorPipelineTest {
             .containsExactly("org.jooq.DSLContext", "java.lang.Long", "java.lang.String");
         assertThat(newExecutionInput.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
+
+    @Test
+    void ownedFactory_leadsWithStringClaimsThenTheSameContextArguments() {
+        // The owned-connection factory (R429) carries the opaque claims first, then the identical
+        // alphabetical contextArgument list. Distinct name from the escape-hatch newExecutionInput, so a
+        // caller passing a DSLContext cannot silently reach the owned path.
+        String sdl = """
+            type Film @table(name: "film") {
+                ratingByUser: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "getRatingByUser"
+                }, contextArguments: ["userId"])
+                ratingByFnr: String @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
+                    method: "getRatingByFnr"
+                }, contextArguments: ["fnr"])
+            }
+            type Query { film: Film }
+            """;
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
+
+        MethodSpec owned = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("newOwnedExecutionInput"))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(owned.parameters()).extracting(p -> p.name())
+            .containsExactly("claims", "fnr", "userId");
+        assertThat(owned.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("java.lang.String", "java.lang.Long", "java.lang.String");
+        assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+    }
 }

@@ -24,15 +24,23 @@ import java.util.function.Consumer;
  * {@code .subscription()}, {@code .clearDirectives()}, or the replace overload
  * {@code .codeRegistry(GraphQLCodeRegistry)}) lives on the emitted method's own javadoc.
  *
- * <p>The facade also exposes one schema-driven {@code newExecutionInput} factory whose parameter
- * list reflects the schema's declared {@code contextArguments}: a {@code DSLContext defaultDsl}
- * first, then one typed parameter per contextArgument name (alphabetical), read from the cached
- * {@link GraphitronSchema#contextArguments()} classification.
+ * <p>The facade exposes two schema-driven per-request factories whose parameter lists both reflect
+ * the schema's declared {@code contextArguments} (one typed parameter per contextArgument name,
+ * alphabetical, read from the cached {@link GraphitronSchema#contextArguments()} classification):
+ * <ul>
+ *   <li>{@code newExecutionInput(DSLContext defaultDsl, ...)}, the R190 low-opinion escape hatch, where
+ *       the caller brings the {@code DSLContext} and owns transactions and identity; and</li>
+ *   <li>{@code newOwnedExecutionInput(String claims, ...)}, the R429 owned-connection path, where the
+ *       caller brings only the opaque claims and the execution instrumentation pins the connection,
+ *       mounts identity, and produces the {@code DSLContext}.</li>
+ * </ul>
+ * They are distinct names, not overloads, so a caller cannot silently opt out of the owned-path
+ * guarantees by passing a {@code DSLContext}; the escape-hatch name is frozen by additive-by-construction.
  *
  * <p>R190 collapsed the legacy two-overload shape ({@code (GraphitronContext)} +
- * {@code (DSLContext)}) into this single typed entry point. The sealed
+ * {@code (DSLContext)}) into the typed escape-hatch entry point. The sealed
  * {@code GraphitronContext} now permits only the generated {@code GraphitronContextImpl}
- * singleton; the factory IS the per-request wiring point.
+ * singleton; the factories ARE the per-request wiring point.
  */
 public final class GraphitronFacadeGenerator {
 
@@ -70,9 +78,29 @@ public final class GraphitronFacadeGenerator {
         // so both consumers see one producer.
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
 
-        var newExecutionInput = buildNewExecutionInput(
+        var instrumentation = ClassName.get(schemaPackage,
+            no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
+        String claimsKeyField =
+            no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator.CLAIMS_KEY_FIELD;
+
+        // The escape-hatch factory (R190): the caller brings a DSLContext and owns transactions and
+        // identity. Additive-by-construction keeps its name and shape frozen.
+        var newExecutionInput = buildExecutionInputFactory(
+            "newExecutionInput", dslContext, "defaultDsl",
+            CodeBlock.of("b.put($T.class, defaultDsl);", dslContext),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, dslContext, contextArgs);
+            dataLoaderRegistry, contextArgs, escapeHatchJavadoc(contextArgs));
+
+        // The owned-connection factory (R429): the caller brings only the opaque claims; the execution
+        // instrumentation pins the connection, mounts identity, and produces the DSLContext. Distinct
+        // name (not an overload of newExecutionInput) so a caller cannot silently opt out of graphitron's
+        // guarantees by passing a DSLContext to what they think is the owned path. Writes the claims under
+        // the instrumentation's own CLAIMS_KEY constant so the write and read sites cannot drift.
+        var newOwnedExecutionInput = buildExecutionInputFactory(
+            "newOwnedExecutionInput", ClassName.get(String.class), "claims",
+            CodeBlock.of("b.put($T.$L, claims);", instrumentation, claimsKeyField),
+            graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
+            dataLoaderRegistry, contextArgs, ownedExecutionInputJavadoc(contextArgs));
 
         var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -98,6 +126,7 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(classJavadoc())
             .addMethod(buildSchema)
             .addMethod(newExecutionInput)
+            .addMethod(newOwnedExecutionInput)
             .addMethod(newGraphQL)
             .addMethod(runtime);
 
@@ -132,38 +161,46 @@ public final class GraphitronFacadeGenerator {
         return generate(schema, outputPackage, false);
     }
 
-    private static MethodSpec buildNewExecutionInput(
+    /**
+     * Emits one {@code ExecutionInput.Builder} factory. The two factories, the escape-hatch
+     * {@code newExecutionInput(DSLContext, ...)} and the owned-path {@code newOwnedExecutionInput(String
+     * claims, ...)}, differ only in their leading parameter and the single {@code graphQLContext} entry
+     * it produces ({@code firstPut}); everything schema-shaped (the alphabetical contextArgument
+     * parameters, their null-checks, the {@code GraphitronContext} singleton, the empty
+     * {@code DataLoaderRegistry}) is identical and single-sourced here so the two cannot drift.
+     */
+    private static MethodSpec buildExecutionInputFactory(
+            String methodName, ClassName firstParamType, String firstParamName, CodeBlock firstPut,
             ClassName graphitronContext, ClassName graphitronContextImpl,
             ClassName executionInput, ClassName executionInputBuilder,
-            ClassName dataLoaderRegistry, ClassName dslContext,
-            List<ResolvedContextArg> contextArgs) {
-        var method = MethodSpec.methodBuilder("newExecutionInput")
+            ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs, String javadoc) {
+        var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(executionInputBuilder)
-            .addParameter(dslContext, "defaultDsl");
+            .addParameter(firstParamType, firstParamName);
         for (ResolvedContextArg arg : contextArgs) {
             method.addParameter(arg.javaType(), arg.name());
         }
-        method.addStatement("$T.requireNonNull(defaultDsl, $S)", Objects.class, "defaultDsl");
+        method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
         for (ResolvedContextArg arg : contextArgs) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, arg.name(), arg.name());
         }
 
-        // Build the graphQLContext lambda body: stash DSLContext under DSLContext.class, each
-        // contextArgument under its string name, and the singleton GraphitronContextImpl under
-        // GraphitronContext.class. The downstream `graphitronContext(env)` helper retrieves the
-        // singleton by typed key; per-request values flow through env.getGraphQlContext() reads
-        // inside the singleton's default methods.
+        // Build the graphQLContext lambda body: the factory-specific first entry (a DSLContext for the
+        // escape hatch, the claims payload for the owned path), then each contextArgument under its string
+        // name, then the singleton GraphitronContextImpl under GraphitronContext.class. The downstream
+        // `graphitronContext(env)` helper retrieves the singleton by typed key; per-request values flow
+        // through env.getGraphQlContext() reads inside the singleton's default methods.
         method.addCode("return $T.newExecutionInput()\n", executionInput);
         method.addCode("    .graphQLContext(b -> {\n");
-        method.addCode("        b.put($T.class, defaultDsl);\n", dslContext);
+        method.addCode("        $L\n", firstPut);
         for (ResolvedContextArg arg : contextArgs) {
             method.addCode("        b.put($S, $L);\n", arg.name(), arg.name());
         }
         method.addCode("        b.put($T.class, $T.INSTANCE);\n", graphitronContext, graphitronContextImpl);
         method.addCode("    })\n");
         method.addCode("    .dataLoaderRegistry(new $T());\n", dataLoaderRegistry);
-        method.addJavadoc(newExecutionInputJavadoc(contextArgs));
+        method.addJavadoc(javadoc);
         return method.build();
     }
 
@@ -175,10 +212,10 @@ public final class GraphitronFacadeGenerator {
             + "{@code var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);}.\n"
             + "\n"
             + "<p>This is the opinionated path (R429): per request you call\n"
-            + "{@code runtime.newExecutionInput(claims, ...)} and graphitron acquires the connection,\n"
-            + "runs the connect hook, and releases at completion. The lower-opinion escape hatch is the\n"
-            + "static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller owns the\n"
-            + "{@code DSLContext}, transaction demarcation, and identity state.\n"
+            + "{@code Graphitron.newOwnedExecutionInput(claims, ...)} and graphitron acquires the\n"
+            + "connection, runs the connect hook, and releases at completion. The lower-opinion escape\n"
+            + "hatch is the static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller\n"
+            + "owns the {@code DSLContext}, transaction demarcation, and identity state.\n"
             + "@param dataSource the consumer's pooled {@code DataSource} (the consumer owns pool\n"
             + "creation and tuning); must not be {@code null}\n"
             + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
@@ -212,12 +249,18 @@ public final class GraphitronFacadeGenerator {
             + "surface over schema construction and per-request input shaping.\n";
     }
 
-    private static String newExecutionInputJavadoc(List<ResolvedContextArg> contextArgs) {
+    private static String escapeHatchJavadoc(List<ResolvedContextArg> contextArgs) {
         var sb = new StringBuilder();
-        sb.append("Builds an {@link graphql.ExecutionInput.Builder} pre-wired with the per-request\n");
-        sb.append("jOOQ {@code DSLContext} and any declared {@code contextArguments}, plus an empty\n");
-        sb.append("{@link org.dataloader.DataLoaderRegistry} (required by graphql-java; generated\n");
-        sb.append("fetchers populate it lazily on first lookup).\n");
+        sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the low-opinion escape-hatch path,\n");
+        sb.append("pre-wired with a caller-supplied jOOQ {@code DSLContext} and any declared\n");
+        sb.append("{@code contextArguments}, plus an empty {@link org.dataloader.DataLoaderRegistry}\n");
+        sb.append("(required by graphql-java; generated fetchers populate it lazily on first lookup).\n");
+        sb.append("\n");
+        sb.append("<p>On this path <em>the caller owns everything</em>: transaction demarcation and session\n");
+        sb.append("identity are the caller's responsibility and graphitron's owned-connection guarantees do\n");
+        sb.append("not apply. For the opinionated path where graphitron pins the connection, mounts identity,\n");
+        sb.append("and demarcates transactions, use {@link #newOwnedExecutionInput} with the engine from\n");
+        sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)}.\n");
         sb.append("\n");
         sb.append("<p>The parameter list reflects the schema's declared {@code contextArguments} in\n");
         sb.append("alphabetical order. The body null-checks every parameter and populates the per-request\n");
@@ -233,13 +276,39 @@ public final class GraphitronFacadeGenerator {
         sb.append("the factory's empty registry if you need to supply a pre-populated one.\n");
         sb.append("@param defaultDsl the {@code DSLContext} every fetch in this request should use;\n");
         sb.append("must not be {@code null}\n");
+        appendContextArgParams(sb, contextArgs);
+        sb.append("@return a builder ready for {@code .query(...).build()}\n");
+        return sb.toString();
+    }
+
+    private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs) {
+        var sb = new StringBuilder();
+        sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path (R429):\n");
+        sb.append("pass only the opaque {@code claims} payload (typically the JWT) and any declared\n");
+        sb.append("{@code contextArguments}. Unlike {@link #newExecutionInput}, no {@code DSLContext} is\n");
+        sb.append("supplied here; the execution instrumentation wired by\n");
+        sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} pins one connection per operation,\n");
+        sb.append("mounts identity from the claims, produces the {@code DSLContext}, demarcates the\n");
+        sb.append("operation's transactions, and releases at completion. Pair this factory with that engine.\n");
+        sb.append("\n");
+        sb.append("<p>The {@code claims} are stashed under the instrumentation's own request-claims key and\n");
+        sb.append("are never parsed here; the connect hook interprets them in the database. An empty\n");
+        sb.append("{@link org.dataloader.DataLoaderRegistry} is attached (generated fetchers populate it\n");
+        sb.append("lazily). The contextArgument parameters, in alphabetical order, are null-checked and\n");
+        sb.append("read back the same way as on the escape-hatch path.\n");
+        sb.append("@param claims the opaque per-request claims payload (typically the JWT); must not be\n");
+        sb.append("{@code null}\n");
+        appendContextArgParams(sb, contextArgs);
+        sb.append("@return a builder ready for {@code .query(...).build()}\n");
+        return sb.toString();
+    }
+
+    private static void appendContextArgParams(StringBuilder sb, List<ResolvedContextArg> contextArgs) {
         for (ResolvedContextArg arg : contextArgs) {
             sb.append("@param ").append(arg.name())
               .append(" the per-request value for {@code contextArgument \"")
               .append(arg.name()).append("\"}; must not be {@code null}\n");
         }
-        sb.append("@return a builder ready for {@code .query(...).build()}\n");
-        return sb.toString();
     }
 
     private static String buildSchemaJavadoc(boolean federationLink) {

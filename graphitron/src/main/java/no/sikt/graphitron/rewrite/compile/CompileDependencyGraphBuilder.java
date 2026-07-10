@@ -559,6 +559,9 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(connectionInstrumentation, graphitronRuntime);
         acc.addEdge(connectionInstrumentation, pinnedConnection);
         acc.addEdge(connectionInstrumentation, transactionProvider);
+        // R429 slice 5: the facade's owned-path factory (newOwnedExecutionInput) publishes the claims
+        // under the instrumentation's CLAIMS_KEY constant, so the facade references that class.
+        acc.addEdge(facade, connectionInstrumentation);
         // R429 slice 4: the per-operation tenant-keyed connection carrier. Always emitted (generic over the
         // erased tenant key); its edges to the runtime, the pinned connection, and the transaction provider
         // are the tenant-keyed acquisition + provider-bound DSLContext seam R45's routed fetchers consume.
