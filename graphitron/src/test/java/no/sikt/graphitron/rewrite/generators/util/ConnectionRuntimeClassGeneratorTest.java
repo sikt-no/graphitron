@@ -87,7 +87,7 @@ class ConnectionRuntimeClassGeneratorTest {
         Object pinned = acquire(ds, hook, "claims-payload");
         release(pinned);
 
-        assertThat(events).containsExactly("getConnection", "connect", "disconnect:H1", "close");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
     }
 
     @Test
@@ -101,7 +101,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
         // Connection acquired, connect attempted and failed, connection evicted (aborted) rather than
         // returned; disconnect never runs and no connection is handed back for SQL.
-        assertThat(events).containsExactly("getConnection", "connect", "abort");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "abort");
     }
 
     @Test
@@ -116,7 +116,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
         // Disconnect attempted and failed, so the physical connection is aborted, never close()d back
         // into the pool.
-        assertThat(events).containsExactly("getConnection", "connect", "disconnect:H1", "abort");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "abort");
     }
 
     @Test
@@ -128,18 +128,18 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned); // e.g. cancellation signal
         release(pinned); // e.g. completion signal
 
-        assertThat(events).containsExactly("getConnection", "connect", "disconnect:H1", "close");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
     }
 
     @Test
     void release_isOutcomeAgnostic_disconnectFiresOnEveryCompletionPath() throws Throwable {
         // Success path: the operation completed and the caller releases.
         List<String> success = driveRelease(() -> { /* normal completion */ });
-        assertThat(success).containsExactly("getConnection", "connect", "disconnect:H1", "close");
+        assertThat(success).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
 
         // Error path: the operation threw; the caller still releases in its finally.
         List<String> error = driveRelease(() -> { throw new RuntimeException("operation failed"); });
-        assertThat(error).containsExactly("getConnection", "connect", "disconnect:H1", "close");
+        assertThat(error).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:H1", "close");
     }
 
     @Test
@@ -150,7 +150,7 @@ class ConnectionRuntimeClassGeneratorTest {
         Object pinned = acquire(ds, hook, "claims-payload");
         release(pinned);
 
-        assertThat(events).containsExactly("getConnection", "connect", "disconnect:null", "close");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "connect", "disconnect:null", "close");
     }
 
     @Test
@@ -164,7 +164,44 @@ class ConnectionRuntimeClassGeneratorTest {
 
         // No <sessionState> configured -> SessionHook.NONE: the connection is opened and returned to the
         // pool, and no identity is ever mounted (no connect/disconnect touches our recording hook).
-        assertThat(events).containsExactly("getConnection", "close");
+        assertThat(events).containsExactly("getConnection", "setAutoCommit:true", "close");
+    }
+
+    // ===== hooks run outside any transaction (structural guarantee) =====
+
+    @Test
+    void acquire_normalizesAutoCommit_beforeConnectHookRuns() throws Throwable {
+        // The fake DataSource hands out connections with autocommit=false (a pool can be configured
+        // that way); acquire must normalize before connect, or on Postgres the mount's set_config
+        // would sit in an implicit never-committed transaction and revert with a later rollback.
+        DataSource ds = fakeDataSource();
+        Object hook = fakeHook("H1", null, null);
+
+        acquire(ds, hook, "claims-payload");
+
+        assertThat(events)
+            .as("autocommit is normalized after pinning and before the connect hook")
+            .startsWith("getConnection", "setAutoCommit:true", "connect");
+    }
+
+    @Test
+    void release_operationLeftTransactionOpen_settlesBeforeDisconnectHookRuns() throws Throwable {
+        DataSource ds = fakeDataSource();
+        Object hook = fakeHook("H1", null, null);
+
+        Object pinned = acquire(ds, hook, "claims-payload");
+        // Simulate an operation that died mid-mutation: the provider turned autocommit off and never
+        // settled. Release must roll back and restore autocommit before the disconnect hook, so the
+        // hook's clears commit immediately instead of being reverted by the pool's return-rollback.
+        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        connection.setAutoCommit(false);
+        release(pinned);
+
+        assertThat(events).containsExactly(
+            "getConnection", "setAutoCommit:true", "connect",
+            "setAutoCommit:false",                       // the simulated abandoned mutation transaction
+            "rollback", "setAutoCommit:true",            // release settles before unmounting
+            "disconnect:H1", "close");
     }
 
     // --- driving helpers -------------------------------------------------------------------------
@@ -223,10 +260,16 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     private Connection fakeConnection(List<String> log) {
+        // Starts autocommit=false: pools (Agroal, Hikari) can be configured to hand out connections
+        // that way, and the lifecycle must normalize rather than trust the pool's configuration.
+        boolean[] autoCommit = {false};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "close" -> { log.add("close"); yield null; }
                 case "abort" -> { log.add("abort"); yield null; }
+                case "setAutoCommit" -> { autoCommit[0] = (Boolean) args[0]; log.add("setAutoCommit:" + args[0]); yield null; }
+                case "getAutoCommit" -> autoCommit[0];
+                case "rollback" -> { log.add("rollback"); yield null; }
                 default -> objectMethodOrDefault(proxy, method, args, "fakeConnection");
             });
     }

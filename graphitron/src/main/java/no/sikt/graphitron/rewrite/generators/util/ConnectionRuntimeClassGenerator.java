@@ -42,16 +42,31 @@ import java.util.StringJoiner;
  *
  * <h2>The lifecycle contract (unit-pinned in {@code ConnectionRuntimeClassGeneratorTest})</h2>
  * <ul>
- *   <li><b>Acquire.</b> {@code DataSource.getConnection()}, then the connect hook with the opaque
- *       claims, capturing its OUT handle. <b>Fail closed:</b> if connect throws (it may have
- *       partially mounted session state first), the connection is evicted, never returned, and the
- *       failure propagates before any operation SQL runs.</li>
- *   <li><b>Release.</b> The disconnect hook fires on <em>every</em> completion path (success, error,
+ *   <li><b>Acquire.</b> {@code DataSource.getConnection()}, then {@code setAutoCommit(true)}, then
+ *       the connect hook with the opaque claims, capturing its OUT handle. <b>Fail closed:</b> if
+ *       connect throws (it may have partially mounted session state first), the connection is
+ *       evicted, never returned, and the failure propagates before any operation SQL runs.</li>
+ *   <li><b>Release.</b> Any transaction the operation left open is rolled back and autocommit
+ *       restored, then the disconnect hook fires on <em>every</em> completion path (success, error,
  *       cancellation) bound to the captured handle; release is idempotent. <b>Evict on unmount
  *       failure:</b> if disconnect throws or cannot run, the physical connection is aborted and
  *       never returned to the pool, so a connection whose identity cannot be proven unmounted gets
  *       no next borrower.</li>
  * </ul>
+ *
+ * <h3>Hooks run outside any transaction (structural guarantee)</h3>
+ * Session identity is connection-scoped state, never transactional state: neither mount nor unmount
+ * may depend on any transaction's outcome. Both lifecycle ends enforce this rather than assume it.
+ * Acquire normalizes autocommit before connect, so a pool configured autocommit=false (Agroal and
+ * Hikari both support this) cannot put the mount inside an implicit never-committed transaction; on
+ * Postgres {@code set_config}/{@code SET} are transactional, so an in-transaction mount would revert
+ * with a mutation field's rollback and an in-transaction clear would be reverted by the pool's
+ * return-rollback, leaving identity alive for the next borrower. Release settles any transaction the
+ * operation left open before disconnect, so the clears commit immediately. This is what makes the
+ * {@code <variables>} sugar's mounts and clears take effect regardless of pool configuration; the
+ * matching contract for consumer-authored function hooks (session-scoped state only, no reliance on
+ * a surrounding transaction) is documented on the {@code SessionHook} javadocs and in
+ * {@code runtime-extension-points.adoc}.
  * Eviction uses {@link java.sql.Connection#abort(java.util.concurrent.Executor)} (JDBC, valid Java
  * 17): pool wrappers (Agroal/HikariCP) honour it as a true physical evict where {@code close()}
  * merely reclaims the connection to the pool. The runtime supplies a same-thread executor.
@@ -268,6 +283,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("$T connection = dataSource.getConnection()", CONNECTION)
             .addStatement("String handle")
             .beginControlFlow("try")
+            .addComment("Hooks run outside any transaction, structurally: normalize autocommit so a pool")
+            .addComment("configured autocommit=false cannot put the mount inside an implicit never-committed")
+            .addComment("transaction (on Postgres, set_config/SET revert with a rolled-back transaction).")
+            .addStatement("connection.setAutoCommit(true)")
             .addStatement("handle = hook.connect(connection, claims)")
             .nextControlFlow("catch ($T connectFailure)", Throwable.class)
             .addComment("Fail closed: connect may have partially mounted session state before throwing.")
@@ -276,8 +295,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw rethrow(connectFailure)")
             .endControlFlow()
             .addStatement("return new $T(connection, hook, handle, abortExecutor)", pinnedConnection)
-            .addJavadoc("Pins one connection and mounts identity on it. Fail-closed: a throwing connect\n"
-                + "hook evicts the connection and propagates before any operation SQL runs.\n")
+            .addJavadoc("Pins one connection, normalizes it to autocommit, and mounts identity on it. The\n"
+                + "connect hook therefore always runs outside any transaction, whatever the pool's\n"
+                + "autocommit configuration. Fail-closed: a throwing connect hook (or a failed\n"
+                + "normalization) evicts the connection and propagates before any operation SQL runs.\n")
             .build();
 
         var connectionAccessor = MethodSpec.methodBuilder("connection")
@@ -295,6 +316,14 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .addStatement("released = true")
             .beginControlFlow("try")
+            .addComment("Hooks run outside any transaction, structurally: if the operation left a transaction")
+            .addComment("open (e.g. it died mid-mutation before the provider settled), roll it back and restore")
+            .addComment("autocommit first, so the disconnect's clears take effect immediately rather than")
+            .addComment("sitting in an uncommitted transaction the pool's return-rollback would revert.")
+            .beginControlFlow("if (!connection.getAutoCommit())")
+            .addStatement("connection.rollback()")
+            .addStatement("connection.setAutoCommit(true)")
+            .endControlFlow()
             .addStatement("hook.disconnect(connection, handle)")
             .nextControlFlow("catch ($T disconnectFailure)", Throwable.class)
             .addComment("Identity cannot be proven unmounted: evict the physical connection, never return it.")
@@ -302,9 +331,11 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw rethrow(disconnectFailure)")
             .endControlFlow()
             .addStatement("closeReturningToPool(connection)")
-            .addJavadoc("Unmounts identity and releases the connection. Fires disconnect on every completion\n"
-                + "path (success, error, cancellation); idempotent, so a redundant cancel-then-complete\n"
-                + "release unmounts exactly once. Evicts on disconnect failure.\n")
+            .addJavadoc("Unmounts identity and releases the connection, settling any transaction the operation\n"
+                + "left open first so the disconnect hook runs outside any transaction. Fires disconnect on\n"
+                + "every completion path (success, error, cancellation); idempotent, so a redundant\n"
+                + "cancel-then-complete release unmounts exactly once. Evicts on disconnect failure (and on\n"
+                + "a failed pre-disconnect settle, which equally leaves identity unprovable).\n")
             .build();
 
         var close = MethodSpec.methodBuilder("close")
