@@ -95,6 +95,19 @@ A hook that violates the first two points can leave identity mounted for the
 pool's next borrower or drop it mid-operation; both are security defects, not
 performance defects.
 
+Because graphitron cannot verify the second point from outside, it does not
+trust documentation alone. Unless the configuration declares
+`<stateSurvivesTransactions>true</stateSurvivesTransactions>`, a paired
+function hook is re-fired after each top-level mutation-field settle
+(disconnect with the old handle, connect capturing a fresh one, in autocommit),
+so a settle can never leave stale or reverted identity for the field's
+read-back or later mutation fields. Queries never settle, so the safe default
+never taxes the read path. The `<variables>` sugar needs no declaration: its
+mounts commit immediately in autocommit and session-scoped variables survive
+settles, so it opts in structurally. See
+xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
+identity] for the configuration.
+
 If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
 build time (`no-session-state`): an unsecured direct-to-database API is a
 data-exposure risk. Silence that rule only if the API is intentionally

@@ -19,7 +19,10 @@ import java.util.List;
  * }</pre>
  * A {@code <handle>true</handle>} on both sides means connect produces an OUT handle that disconnect
  * binds; it must be declared on both or neither. An empty {@code <disconnect/>} (no {@code <call>}) is
- * the explicit unmount-free opt-out.
+ * the explicit unmount-free opt-out. An optional
+ * {@code <stateSurvivesTransactions>true</stateSurvivesTransactions>} sibling declares the mounted
+ * state survives transaction settles, keeping acquisition-scoped mounting; undeclared pairs are
+ * re-fired after each top-level settle (the safe default).
  *
  * <p><b>Postgres {@code <variables>} sugar</b> generates both hook halves from one variable set, so a
  * consumer writes no SQL:
@@ -40,6 +43,15 @@ public class SessionStateBinding {
     HookBinding disconnect;
     /** The {@code <variables>} sugar entries (Postgres form). */
     List<VariableBinding> variables;
+    /**
+     * The declared survival opt-in (function-hook form only): {@code true} confirms the connect
+     * callable's mounted state survives transaction commit and rollback, so acquisition-scoped
+     * mounting suffices. Absent or {@code false}, graphitron re-fires the hook pair after each
+     * top-level transaction settle (the safe default; queries never settle, so the read path is
+     * untaxed). Declaring it with the {@code <variables>} sugar fails the build: the sugar's
+     * survival is structural.
+     */
+    Boolean stateSurvivesTransactions;
 
     /** One {@code <connect>} / {@code <disconnect>} callable: a database call name and optional handle flag. */
     public static class HookBinding {

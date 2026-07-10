@@ -31,7 +31,8 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
     /**
      * The function-hook form: consumer-authored database callables named by {@code <connect call>} /
      * {@code <disconnect call>}. {@code connectCall} mounts identity from the claims payload; the
-     * {@link Unmount} says how (and whether) identity is unmounted.
+     * {@link Unmount} says how (and whether) identity is unmounted, and carries the declared survival
+     * opt-in where a balanced pair exists (see {@link Unmount.PairedDisconnect#survivesTransactions}).
      */
     record FunctionHooks(String connectCall, Unmount unmount) implements SessionStateConfig {
         public FunctionHooks {
@@ -73,15 +74,37 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
     /**
      * How the function-hook form unmounts identity. Sealed so "handle produced but not bound" is
      * unrepresentable: the handle boolean lives on {@link PairedDisconnect}, and {@link UnmountFree}
-     * carries none.
+     * carries none. The survival opt-in lives here too, for the same reason: "this mount/unmount pair
+     * can be re-fired around a transaction settle" is a fact about a balanced pair, so only
+     * {@link PairedDisconnect} can assert or decline it; an {@link UnmountFree} hook has no pair to
+     * re-fire and never does.
      */
     sealed interface Unmount permits Unmount.PairedDisconnect, Unmount.UnmountFree {
-        /** A disconnect callable unmounts identity; {@code handle} is true iff connect produces an OUT handle it binds. */
-        record PairedDisconnect(String call, boolean handle) implements Unmount {
+        /**
+         * A disconnect callable unmounts identity; {@code handle} is true iff connect produces an OUT
+         * handle it binds.
+         *
+         * <p>{@code survivesTransactions} is the declared survival opt-in
+         * ({@code <stateSurvivesTransactions>true</stateSurvivesTransactions>}): the consumer confirms
+         * the connect callable's mounted state survives transaction commit and rollback, so
+         * acquisition-scoped mounting suffices. Unconfirmed (the default), graphitron cannot assume
+         * survival and re-fires the pair (disconnect with the old handle, connect capturing a new one)
+         * after each top-level transaction settle, so a settle can never leave stale or reverted
+         * identity. Queries run in autocommit and never settle, so the re-fire never taxes the read
+         * path. The {@code <variables>} sugar needs no flag: its {@code set_config} mounts run in
+         * autocommit (enforced at acquisition) and session-scoped GUCs survive settles, so it opts in
+         * structurally.
+         */
+        record PairedDisconnect(String call, boolean handle, boolean survivesTransactions) implements Unmount {
             public PairedDisconnect {
                 if (call == null || call.isBlank()) {
                     throw new IllegalArgumentException("<disconnect> requires a non-blank <call>");
                 }
+            }
+
+            /** Convenience constructor for the unconfirmed default (re-fire after each settle). */
+            public PairedDisconnect(String call, boolean handle) {
+                this(call, handle, false);
             }
         }
 
@@ -100,6 +123,14 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
     }
 
     /**
+     * Convenience overload of {@link #from(RawHook, RawHook, List, Boolean)} with no declared
+     * survival opt-in (the safe default: unconfirmed function hooks re-fire after each settle).
+     */
+    static SessionStateConfig from(RawHook connect, RawHook disconnect, List<Variable> variables) {
+        return from(connect, disconnect, variables, null);
+    }
+
+    /**
      * Reconciles the raw {@code <sessionState>} shape into a validated config, or throws
      * {@link IllegalArgumentException} naming the offending combination. A {@code null} hook means the
      * element was absent; a {@link RawHook} with a {@code null} call means the element was present but
@@ -108,8 +139,11 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
      * @param connect   the {@code <connect>} element, or {@code null} if absent
      * @param disconnect the {@code <disconnect>} element, or {@code null} if absent
      * @param variables  the {@code <variables>} entries, empty if the block is absent
+     * @param stateSurvivesTransactions the {@code <stateSurvivesTransactions>} element, or {@code null}
+     *                                  if absent; only meaningful on the function-hook form
      */
-    static SessionStateConfig from(RawHook connect, RawHook disconnect, List<Variable> variables) {
+    static SessionStateConfig from(RawHook connect, RawHook disconnect, List<Variable> variables,
+                                   Boolean stateSurvivesTransactions) {
         boolean hasFunction = connect != null || disconnect != null;
         boolean hasVariables = variables != null && !variables.isEmpty();
 
@@ -117,6 +151,16 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
             throw new IllegalArgumentException(
                 "<sessionState> configures both <variables> and <connect>/<disconnect>; choose one form "
                     + "(the <variables> sugar or the function-hook callables), not both");
+        }
+        if (stateSurvivesTransactions != null && !hasFunction) {
+            // The flag answers a question only consumer-authored hooks raise: the <variables> sugar's
+            // survival is structural (autocommit mounts of session-scoped GUCs), and with no hooks there
+            // is no state to survive. A declaration that can mean nothing fails loud, like the pairing rules.
+            throw new IllegalArgumentException(
+                "<stateSurvivesTransactions> applies only to the function-hook form (<connect>/<disconnect>); "
+                    + (hasVariables
+                        ? "the <variables> sugar survives transaction settles structurally and needs no declaration"
+                        : "there are no hooks whose state it could describe"));
         }
         if (hasVariables) {
             return new Variables(variables);
@@ -148,6 +192,14 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
                     "<connect handle=\"true\"> produces a handle, but the empty <disconnect/> opt-out binds "
                         + "none; a produced handle must be bound by a <disconnect call=\"...\">");
             }
+            if (stateSurvivesTransactions != null) {
+                // Survival is a fact about a balanced mount/unmount pair; the unmount-free opt-out has no
+                // pair to re-fire, so there is no fallback the declaration could opt out of.
+                throw new IllegalArgumentException(
+                    "<stateSurvivesTransactions> requires a paired <disconnect call=\"...\">; the empty "
+                        + "<disconnect/> opt-out has no mount/unmount pair to re-fire around a transaction "
+                        + "settle, so the declaration describes nothing");
+            }
             return new FunctionHooks(connect.call(), Unmount.UnmountFree.INSTANCE);
         }
         if (connect.handle() != disconnect.handle()) {
@@ -155,7 +207,8 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
                 "handle must be declared on both <connect> and <disconnect> or neither; a handle produced "
                     + "by connect and not bound by disconnect (or bound but never produced) is a mismatch");
         }
-        return new FunctionHooks(connect.call(), new Unmount.PairedDisconnect(disconnect.call(), disconnect.handle()));
+        return new FunctionHooks(connect.call(), new Unmount.PairedDisconnect(
+            disconnect.call(), disconnect.handle(), Boolean.TRUE.equals(stateSurvivesTransactions)));
     }
 
     /**

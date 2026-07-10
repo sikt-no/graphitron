@@ -219,7 +219,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                     variables.add(new SessionStateConfig.Variable(trimOrNull(v.name), trimOrNull(v.claim)));
                 }
             }
-            return SessionStateConfig.from(connect, disconnect, variables);
+            return SessionStateConfig.from(connect, disconnect, variables, sessionState.stateSurvivesTransactions);
         } catch (IllegalArgumentException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }

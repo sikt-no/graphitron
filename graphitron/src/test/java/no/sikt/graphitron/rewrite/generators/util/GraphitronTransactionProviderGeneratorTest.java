@@ -129,11 +129,40 @@ class GraphitronTransactionProviderGeneratorTest {
             "commit", "setAutoCommit:true");
     }
 
+    @Test
+    void settleCompletionCallback_runsAfterEveryTopLevelSettle_neverOnSavepoints() throws Throwable {
+        // The callback is opaque to the provider (commit policy stays its one axis); the acquisition
+        // machinery wires the session-identity re-fire through it. It must run after autocommit is
+        // restored (so the re-fire executes outside the settled transaction), on both settle outcomes,
+        // and never for nested savepoint settles.
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit, () -> events.add("afterSettle"));
+        begin(provider);    // top-level
+        begin(provider);    // nested savepoint
+        commit(provider);   // nested: no settle, no callback
+        commit(provider);   // top-level settle: callback fires after autocommit restore
+        begin(provider);    // second top-level transaction on the same provider
+        rollback(provider); // rollback settles too
+
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false",
+            "setSavepoint",
+            "releaseSavepoint",
+            "commit", "setAutoCommit:true", "afterSettle",
+            "getAutoCommit", "setAutoCommit:false",
+            "rollback", "setAutoCommit:true", "afterSettle");
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
 
     private Object newProvider(Connection connection, Object policy) throws Throwable {
         Class<?> policyClass = policy.getClass();
         return providerClass.getConstructor(Connection.class, policyClass).newInstance(connection, policy);
+    }
+
+    private Object newProvider(Connection connection, Object policy, Runnable afterSettle) throws Throwable {
+        Class<?> policyClass = policy.getClass();
+        return providerClass.getConstructor(Connection.class, policyClass, Runnable.class)
+            .newInstance(connection, policy, afterSettle);
     }
 
     private void begin(Object provider) throws Throwable { invokeTx(provider, "begin"); }

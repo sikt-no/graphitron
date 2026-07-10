@@ -76,7 +76,7 @@ The following parameters apply to every goal:
 | `sessionState`
 | `SessionStateBinding`
 | (none)
-| Session identity (R429). A `<sessionState>` block naming how per-request identity is mounted on the pinned connection: either consumer-authored database callables (`<connect call>` / `<disconnect call>`, with an optional OUT `handle`) or the Postgres `<variables>` sugar (`<variable name claim>`) that generates both hook halves. Graphitron emits a `SessionHook` from the block that runs at connection acquisition and release. An unpaired or handle-inconsistent block fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
+| Session identity (R429). A `<sessionState>` block naming how per-request identity is mounted on the pinned connection: either consumer-authored database callables (`<connect call>` / `<disconnect call>`, with an optional OUT `handle`, plus the optional `<stateSurvivesTransactions>` survival declaration) or the Postgres `<variables>` sugar (`<variable name claim>`) that generates both hook halves. Graphitron emits a `SessionHook` from the block that runs at connection acquisition and release; an undeclared function-hook pair is additionally re-fired after each mutation-field transaction settle. An unpaired or handle-inconsistent block fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
 |===
 
 == `dev`-goal parameters
@@ -253,6 +253,23 @@ Identity that mounts must unmount, so a `<connect>` without a `<disconnect>` fai
   <disconnect/> <!-- explicit unmount-free opt-out -->
 </sessionState>
 ----
+
+==== Transaction survival and the settle re-fire
+
+Graphitron cannot see whether the state your connect callable mounts actually survives a transaction commit or rollback (identity parked in commit-sensitive storage would not). By default it therefore assumes it may not, and re-fires the pair, disconnect with the old handle, connect capturing a fresh one, after each top-level mutation-field transaction settles, so the field's payload read-back and later mutation fields always see mounted identity. Query operations run in autocommit and never settle, so this safe default costs nothing on the read path; what it costs per mutation field is one extra pair of callable round trips riding the field's commit.
+
+If your callables mount plain session-scoped state (RAS sessions, VPD contexts, session variables), declare it and keep acquisition-scoped mounting with no re-fire:
+
+[source,xml]
+----
+<sessionState>
+  <connect><call>Pk_Ras.Connect</call><handle>true</handle></connect>
+  <disconnect><call>Pk_Ras.Disconnect</call><handle>true</handle></disconnect>
+  <stateSurvivesTransactions>true</stateSurvivesTransactions>
+</sessionState>
+----
+
+The declaration is a statement about your database code that graphitron trusts; declare it only when the mounted state is genuinely session-scoped (see xref:../../architecture/reference/runtime-extension-points.adoc#hook-state-contract[the hook state contract]). It applies only to a paired function hook: declaring it with the `<variables>` sugar fails the build (the sugar survives settles structurally and needs no declaration), as does declaring it with the empty `<disconnect/>` opt-out (an unmount-free hook has no pair to re-fire).
 
 === Postgres `<variables>` sugar
 

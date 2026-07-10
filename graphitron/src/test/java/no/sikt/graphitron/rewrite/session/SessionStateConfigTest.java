@@ -117,6 +117,49 @@ class SessionStateConfigTest {
     }
 
     @Test
+    void stateSurvivesTransactions_declaredOnPairedForm_confirmsSurvival() {
+        var confirmed = SessionStateConfig.from(
+            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of(), true);
+        assertThat(confirmed).isInstanceOfSatisfying(FunctionHooks.class, fh ->
+            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false, true)));
+
+        // Absent (the 3-arg overload) and explicit false both mean unconfirmed: the re-fire fallback.
+        var absent = SessionStateConfig.from(
+            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of());
+        assertThat(absent).isInstanceOfSatisfying(FunctionHooks.class, fh ->
+            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false, false)));
+        var declined = SessionStateConfig.from(
+            new RawHook("Pk.Connect", false), new RawHook("Pk.Disconnect", false), List.of(), false);
+        assertThat(declined).isInstanceOfSatisfying(FunctionHooks.class, fh ->
+            assertThat(fh.unmount()).isEqualTo(new Unmount.PairedDisconnect("Pk.Disconnect", false, false)));
+    }
+
+    @Test
+    void stateSurvivesTransactions_withVariablesSugar_rejected() {
+        assertThatThrownBy(() -> SessionStateConfig.from(
+            null, null, List.of(new Variable("app.user_id", "sub")), true))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("survives transaction settles structurally");
+    }
+
+    @Test
+    void stateSurvivesTransactions_withNoHooks_rejected() {
+        assertThatThrownBy(() -> SessionStateConfig.from(null, null, List.of(), true))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("no hooks whose state it could describe");
+    }
+
+    @Test
+    void stateSurvivesTransactions_withUnmountFreeOptOut_rejected() {
+        // Survival is a fact about a balanced pair; the unmount-free form has no pair to re-fire, so
+        // the declaration (either value) describes nothing and fails loud.
+        assertThatThrownBy(() -> SessionStateConfig.from(
+            new RawHook("Pk.SetContext", false), new RawHook(null, false), List.of(), true))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("requires a paired <disconnect");
+    }
+
+    @Test
     void variable_blankNameOrClaim_rejected() {
         assertThatThrownBy(() -> new Variable("", "sub"))
             .isInstanceOf(IllegalArgumentException.class)

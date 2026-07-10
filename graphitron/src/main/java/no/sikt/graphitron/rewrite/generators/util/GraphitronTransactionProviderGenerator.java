@@ -36,6 +36,13 @@ import java.util.List;
  * rolls it back regardless. A site opens a transaction to write; it does not get to choose
  * commit-versus-rollback.
  *
+ * <p>Session identity stays orthogonal: the provider carries an opaque settle-completion
+ * {@link Runnable} it runs after each top-level settle (autocommit already restored), and knows
+ * nothing about hooks, handles, or claims. The acquisition machinery wires
+ * {@code PinnedConnection#afterSettle} through it, which re-fires unconfirmed session hooks so a
+ * settle can never leave stale or reverted identity; savepoint settles never trigger it, and query
+ * operations never construct a transaction, so the read path is untaxed.
+ *
  * <h2>Single-connection safety</h2>
  * The provider instance is built per operation over the pinned connection and holds its own nesting
  * depth and savepoint stack. That is sound because SQL for one operation runs sequentially on the
@@ -76,6 +83,11 @@ public final class GraphitronTransactionProviderGenerator {
 
         var connectionField = FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
+        var afterSettleField = FieldSpec.builder(Runnable.class, "afterSettle", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("Settle-completion callback, run after each top-level transaction settles and\n"
+                + "autocommit is restored. Opaque to the provider (commit policy stays the one axis it\n"
+                + "owns); the acquisition machinery wires the session-identity re-fire through it.\n")
+            .build();
         var savepointsField = FieldSpec.builder(savepointDeque, "savepoints", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", ARRAY_DEQUE)
             .build();
@@ -86,10 +98,23 @@ public final class GraphitronTransactionProviderGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addParameter(CONNECTION, "connection")
             .addParameter(commitPolicy, "commitPolicy")
+            .addStatement("this(connection, commitPolicy, () -> { })")
+            .addJavadoc("Builds a provider with no settle-completion callback; see the canonical constructor.\n")
+            .build();
+
+        var canonicalConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(commitPolicy, "commitPolicy")
+            .addParameter(Runnable.class, "afterSettle")
             .addStatement("this.connection = connection")
             .addStatement("this.commitPolicy = commitPolicy")
+            .addStatement("this.afterSettle = afterSettle")
             .addJavadoc("Builds a provider over the pinned {@code connection} applying {@code commitPolicy}\n"
-                + "to every top-level transaction it demarcates. One instance per operation.\n")
+                + "to every top-level transaction it demarcates, running {@code afterSettle} after each\n"
+                + "top-level settle (once autocommit is restored). One instance per operation. The callback\n"
+                + "is opaque here; the acquisition machinery passes the pinned connection's settle hook\n"
+                + "({@code PinnedConnection#afterSettle}), which re-fires unconfirmed session hooks.\n")
             .build();
 
         var begin = MethodSpec.methodBuilder("begin")
@@ -159,9 +184,14 @@ public final class GraphitronTransactionProviderGenerator {
             .addStatement("connection.commit()")
             .endControlFlow()
             .addStatement("connection.setAutoCommit(priorAutoCommit)")
+            .addComment("Settle-completion callback, outside the transaction just closed (autocommit is")
+            .addComment("restored): the seam the session-identity re-fire rides. Top-level only; savepoint")
+            .addComment("settles never reach here.")
+            .addStatement("afterSettle.run()")
             .addJavadoc("Closes the top-level transaction: rolls back when the transaction {@code failed} or\n"
                 + "the {@link CommitPolicy} is {@link CommitPolicy#ROLLBACK_ONLY}, otherwise commits, then\n"
-                + "restores the prior autocommit. The one commit-policy seam.\n")
+                + "restores the prior autocommit and runs the settle-completion callback. The one\n"
+                + "commit-policy seam.\n")
             .build();
 
         var commitPolicyEnum = TypeSpec.enumBuilder(COMMIT_POLICY_ENUM_NAME)
@@ -185,10 +215,12 @@ public final class GraphitronTransactionProviderGenerator {
             .addType(commitPolicyEnum)
             .addField(connectionField)
             .addField(policyField)
+            .addField(afterSettleField)
             .addField(savepointsField)
             .addField(depthField)
             .addField(priorAutoCommitField)
             .addMethod(constructor)
+            .addMethod(canonicalConstructor)
             .addMethod(begin)
             .addMethod(commit)
             .addMethod(rollback)
