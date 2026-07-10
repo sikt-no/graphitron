@@ -1172,15 +1172,13 @@ class TypeBuilder {
      *       {@code _Any.type.getCoercing()} source. The schema generator inlines a
      *       {@code GraphQLScalarType.newScalar()...build()} registration; directive-argument
      *       slots reference the scalar via {@code GraphQLTypeReference.typeRef(name)}.</li>
-     *   <li><b>{@code @scalarType(scalar: "FQN.FIELD")}</b> on the SDL scalar: the resolver looks
-     *       up the named class + field through {@link BuildContext#codegenLoader}, validates the
-     *       field, and reflects on the {@code Coercing<I, O>} type parameters.</li>
-     *   <li><b>Extended-scalars convention layer</b>: the SDL name is matched against the
-     *       resolver's built-in convention table (e.g. {@code BigDecimal} →
-     *       {@code graphql.scalars.ExtendedScalars.GraphQLBigDecimal}). The convention only
-     *       resolves when the named constant is on the consumer's classpath.</li>
-     *   <li><b>Unresolved</b>: hard validation error with a message naming the scalar and
-     *       pointing at {@code @scalarType(scalar:)} as the fix.</li>
+     *   <li><b>{@code @scalarType(scalar: "FQN.FIELD")}</b> on the SDL scalar: the single explicit
+     *       binding path for any non-spec, non-federation scalar. The resolver looks up the named
+     *       class + field through {@link BuildContext#codegenLoader}, validates the field, and
+     *       reflects on the {@code Coercing<I, O>} type parameters.</li>
+     *   <li><b>Unresolved</b>: a directive-less non-spec/non-federation scalar is a hard validation
+     *       error with a message naming the scalar and pointing at {@code @scalarType(scalar:)} as
+     *       the fix.</li>
      * </ul>
      */
     private GraphitronType classifyScalarType(graphql.schema.GraphQLScalarType scalarType) {
@@ -1241,24 +1239,13 @@ class TypeBuilder {
             return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
 
-        // Phase 3 convention layer: try the extended-scalars table before escalating. The table
-        // resolves when both the SDL name is recognised AND the named constant is on the
-        // consumer's classpath; the second clause produces a ClassNotFound rejection the
-        // unresolved escalation collapses into a single author-facing message.
-        var convention = ScalarTypeResolver.resolveByConvention(name, ctx.codegenLoader());
-        if (convention instanceof ScalarResolution.Successful s) {
-            return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, s, scalarType);
-        }
-
-        // Unresolved: scalar is neither a spec built-in, a federation-namespace name, an
-        // @scalarType-declared scalar, nor in the extended-scalars convention table (with the
-        // artifact on classpath). Surface as a hard validation error with the fix in the message.
+        // Unresolved: scalar is neither a spec built-in, a federation-namespace name, nor an
+        // @scalarType-declared scalar. Surface as a hard validation error with the single fix
+        // in the message.
         return new UnclassifiedType(name, location, Rejection.structural(
             "scalar '" + name + "' is not resolvable to a Java type. Add "
                 + "@" + DIR_SCALAR_TYPE + "(" + ARG_SCALAR + ": \"fully.qualified.Class.FIELD\") "
-                + "pointing at a public static final GraphQLScalarType, or add "
-                + "graphql-java-extended-scalars to the project classpath if the SDL name "
-                + "matches a convention-table entry."));
+                + "pointing at a public static final GraphQLScalarType."));
     }
 
     /**

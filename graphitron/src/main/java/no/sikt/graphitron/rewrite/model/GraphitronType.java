@@ -454,10 +454,9 @@ public sealed interface GraphitronType
      *       field, erased Coercing) surfaces as {@link UnclassifiedType} instead.</li>
      * </ul>
      *
-     * <p>Consumer scalars without {@code @scalarType} (and not on the convention layer's
-     * recognized-name table once Phase 3 ships) are not classified — the classifier returns
-     * {@code null} for them, mirroring pre-R101 behaviour, so the build stays green for
-     * consumers who haven't reached for the new directive.
+     * <p>Consumer scalars without {@code @scalarType} (and not federation-namespaced) are not
+     * classified — the classifier returns {@code null} for them, mirroring pre-R101 behaviour, so
+     * the build stays green for consumers who haven't reached for the directive.
      *
      * <p>{@code schemaType} is the graphql-java object referenced from the assembled schema at
      * classification time; emitters read directive applications through it (when they need to).

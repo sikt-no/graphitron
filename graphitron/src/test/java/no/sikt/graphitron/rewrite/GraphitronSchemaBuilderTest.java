@@ -4172,7 +4172,7 @@ class GraphitronSchemaBuilderTest {
                 + "fra/til params bind one level in to the same-named nested fields, producing the "
                 + "depth-1 PathExpr the explicit-argMapping sibling produces (liftsList=false scalar leaves)",
             """
-            scalar BigDecimal
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
             input SokVerdiRange { fra: BigDecimal  til: BigDecimal }
             input FilmVerdiFilter @table(name: "film") {
               range: SokVerdiRange
@@ -4204,7 +4204,7 @@ class GraphitronSchemaBuilderTest {
                 + "schema with argMapping spelled out produces the identical PathExpr chain, pinning "
                 + "that the inference fills in exactly the path the author would otherwise write",
             """
-            scalar BigDecimal
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
             input SokVerdiRange { fra: BigDecimal  til: BigDecimal }
             input FilmVerdiFilter @table(name: "film") {
               range: SokVerdiRange
@@ -4232,7 +4232,7 @@ class GraphitronSchemaBuilderTest {
                 + "whose liftsList is COMPUTED true (via ArgBindingMap.isListShaped) — the scalar case "
                 + "above leaves it false either way, so only this case separates computed from hardcoded",
             """
-            scalar BigDecimal
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
             input SokVerdiListRange { verdier: [BigDecimal] }
             input FilmVerdiListFilter @table(name: "film") {
               range: SokVerdiListRange
@@ -4260,7 +4260,7 @@ class GraphitronSchemaBuilderTest {
                 + "(two candidates across slots) → inference yields, leaving 'fra' unbound, so the "
                 + "existing name-mismatch rejection fires rather than an arbitrary binding",
             """
-            scalar BigDecimal
+            scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
             input VerdiRangeA { fra: BigDecimal }
             input VerdiRangeB { fra: BigDecimal }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -5833,7 +5833,9 @@ class GraphitronSchemaBuilderTest {
         },
 
         UNANNOTATED_NON_SPEC_SCALAR_ESCALATES(
-            "non-spec scalar with no @scalarType and not in convention table → UnclassifiedType",
+            "non-spec, non-federation scalar with no @scalarType → UnclassifiedType with the "
+                + "@scalarType-pointing structural rejection (the single-path contract; there is no "
+                + "convention fallback, so a re-added fallback fails this)",
             """
             scalar Money
             type Query { x: Money }
@@ -5843,46 +5845,19 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason())
                     .contains("scalar 'Money'")
                     .contains("@scalarType")
-                    .contains("graphql-java-extended-scalars");
+                    .contains("fully.qualified.Class.FIELD");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(); }
         },
 
-        CONVENTION_LAYER_RESOLVES_BIG_DECIMAL(
-            "non-spec scalar 'BigDecimal' with extended-scalars on classpath → ScalarType via convention",
-            """
-            scalar BigDecimal
-            type Query { x: BigDecimal }
-            """,
-            schema -> {
-                var t = (ScalarType) schema.type("BigDecimal");
-                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("GraphQLBigDecimal");
-                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantOwner().toString())
-                    .isEqualTo("graphql.scalars.ExtendedScalars");
-                assertThat(t.resolution().javaType().toString()).isEqualTo("java.math.BigDecimal");
-            }),
-
-        CONVENTION_LAYER_RESOLVES_UUID(
-            "non-spec scalar 'UUID' with extended-scalars on classpath → ScalarType via convention",
-            """
-            scalar UUID
-            type Query { x: UUID }
-            """,
-            schema -> {
-                var t = (ScalarType) schema.type("UUID");
-                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("UUID");
-                assertThat(t.resolution().javaType().toString()).isEqualTo("java.util.UUID");
-            }),
-
-        DIRECTIVE_BEATS_CONVENTION(
-            "scalar named 'BigDecimal' with @scalarType wins over the convention layer",
+        DIRECTIVE_ALIASES_TO_DIFFERENT_CONSTANT(
+            "scalar named 'BigDecimal' with @scalarType pointing at a differently-named constant → Synthesised",
             """
             scalar BigDecimal @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
             type Query { x: BigDecimal }
             """,
             schema -> {
-                // Directive resolves to Money, not the convention table's GraphQLBigDecimal. The
-                // SDL name 'BigDecimal' differs from the Money constant's intrinsic name, so the
+                // The SDL name 'BigDecimal' differs from the Money constant's intrinsic name, so the
                 // scalar registers under 'BigDecimal' (Synthesised) borrowing Money's coercing
                 // rather than registering the constant under 'Money'.
                 var t = (ScalarType) schema.type("BigDecimal");

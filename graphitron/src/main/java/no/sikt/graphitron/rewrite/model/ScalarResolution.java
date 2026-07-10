@@ -33,13 +33,12 @@ import no.sikt.graphitron.javapoet.TypeName;
  *   <li>Federation-namespace scalars ({@code federation__FieldSet}, etc.) that have no
  *       public-static-final form on the consumer classpath at all; the coercing is borrowed from
  *       {@code _Any.type}.</li>
- *   <li>Aliasing scalar declarations whose SDL name differs from the intrinsic
+ *   <li>Aliasing {@code @scalarType} declarations whose SDL name differs from the intrinsic
  *       {@code getName()} of the constant they resolve to: a
  *       {@code scalar LocalDate @scalarType(scalar: "...ExtendedScalars.Date")} (constant named
- *       {@code Date}), or a {@code GraphQL}-prefixed convention name like {@code GraphQLBigDecimal}
- *       (constant named {@code BigDecimal}). Registering the constant directly would register the
- *       scalar under the constant's name, leaving every {@code typeRef(sdlName)} unresolved at
- *       schema build; the coercing is borrowed from the resolved constant itself.</li>
+ *       {@code Date}, SDL name {@code LocalDate}). Registering the constant directly would
+ *       register the scalar under the constant's name, leaving every {@code typeRef(sdlName)}
+ *       unresolved at schema build; the coercing is borrowed from the resolved constant itself.</li>
  * </ul>
  *
  * <p>Registering under the SDL name keeps directive-argument {@code GraphQLTypeReference}s and

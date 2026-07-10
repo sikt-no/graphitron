@@ -153,17 +153,39 @@ public record CompletionData(
      * back {@code @field(name:)} completions / diagnostics / hovers under
      * reflection-bound SDL types whose backing class is a Java
      * record.
+     *
+     * <p>{@code scalarConstants} lists this class's {@code public static}
+     * {@code GraphQLScalarType} fields (R464); it backs {@code @scalarType(scalar:)}
+     * completion, which composes {@code className + "." + fieldName} for each.
      */
     public record ExternalReference(
         String name,
         String className,
         String description,
         List<Method> methods,
-        List<RecordComponent> recordComponents
+        List<RecordComponent> recordComponents,
+        List<ScalarConstant> scalarConstants
     ) {
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
+            scalarConstants = List.copyOf(scalarConstants);
+        }
+
+        /**
+         * Back-compat constructor defaulting {@code scalarConstants} to an empty
+         * list. Keeps existing LSP / test callers that build
+         * {@link ExternalReference} without the R464 scalar-constant slot
+         * compiling unchanged.
+         */
+        public ExternalReference(
+            String name,
+            String className,
+            String description,
+            List<Method> methods,
+            List<RecordComponent> recordComponents
+        ) {
+            this(name, className, description, methods, recordComponents, List.of());
         }
     }
 
@@ -174,6 +196,17 @@ public record CompletionData(
      * class file, read by {@link ClasspathScanner}.
      */
     public record RecordComponent(String name, String displayType) {}
+
+    /**
+     * One {@code public static GraphQLScalarType} field on an
+     * {@link ExternalReference} — the field name only; the owning class FQN is
+     * {@link ExternalReference#className()}, so {@code @scalarType(scalar:)}
+     * completion composes {@code className + "." + fieldName} (matching the
+     * {@link RecordComponent} / {@link Method} shape). Source: the JVM field
+     * table read by {@link ClasspathScanner}, matching on the exact
+     * {@code GraphQLScalarType} field descriptor (R464).
+     */
+    public record ScalarConstant(String fieldName) {}
 
     /**
      * Method on an {@link ExternalReference}. Carries the bytecode-derived

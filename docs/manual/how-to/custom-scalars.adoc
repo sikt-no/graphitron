@@ -4,7 +4,7 @@
 
 GraphQL leans on a small set of built-in scalars (`Int`, `Float`, `String`, `Boolean`, `ID`); real schemas usually need more (`UUID`, `Date`, `DateTime`, `JSON`, `Long`). Graphitron itself never coerces values; it leaves coercion to graphql-java by emitting `GraphQLTypeReference.typeRef("<name>")` everywhere a scalar is referenced. The reference is resolved against a `GraphQLScalarType` registered on the synthesized schema, and Graphitron's scalar resolver does that registration for you so the `buildSchema(...)` customizer does not have to.
 
-This recipe walks through declaring the scalar in the SDL, pointing the `@scalarType(scalar:)` directive at a `public static final GraphQLScalarType` constant on the classpath, and the convention-table shortcut that lets you omit the directive entirely for shapes covered by `graphql-java-extended-scalars`. The full directive surface (per-arm rejection reasons, LSP completion, classpath-visibility rules) is on the xref:../reference/directives/scalarType.adoc[`@scalarType` directive reference]; this recipe is the worked example.
+This recipe walks through declaring the scalar in the SDL and pointing the `@scalarType(scalar:)` directive at a `public static final GraphQLScalarType` constant on the classpath. `@scalarType` is the single explicit way to bind any non-spec, non-federation scalar. The full directive surface (per-arm rejection reasons, LSP completion, classpath-visibility rules) is on the xref:../reference/directives/scalarType.adoc[`@scalarType` directive reference]; this recipe is the worked example.
 
 == Declare the scalar and bind it in one place
 
@@ -28,28 +28,22 @@ Graphitron loads each named class via the project-aware codegen classloader, rea
 The class the directive points at must be on the *codegen* classpath: the consumer module's `target/classes`, a reactor sibling's `target/classes`, or a declared dependency. Classes from `<plugin><dependencies>` are not visible because they live on the plugin classloader, not the project classloader.
 ====
 
-== Skip the directive when extended-scalars covers the shape
+== Reuse a library constant
 
-`graphql-java-extended-scalars` ships ready-made constants for most common shapes. If the SDL name matches one of the 30 entries in graphitron's convention table _and_ `graphql.scalars.ExtendedScalars` is on the consumer's compile classpath, the directive is optional: a bare `scalar UUID` resolves to `ExtendedScalars.UUID` automatically. Both the bare (`scalar BigDecimal`) and `GraphQL`-prefixed (`scalar GraphQLBigDecimal`) names map to the same constant.
+`graphql-java-extended-scalars` ships ready-made constants for most common shapes. Point `@scalarType` at the constant you want; the SDL name is yours to choose and need not match the constant's own name (an aliasing declaration registers under the SDL name, borrowing the constant's coercing).
 
 [source,graphql]
 ----
-# Resolves to ExtendedScalars.UUID via the convention table:
-scalar UUID
-
-# Same, but explicit — useful as the canonical form when you want the
-# resolution path to be obvious at read time:
-scalar UUID @scalarType(scalar: "graphql.scalars.ExtendedScalars.UUID")
+scalar UUID       @scalarType(scalar: "graphql.scalars.ExtendedScalars.UUID")
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
 ----
 
-Pick whichever form you prefer. The directive wins over the convention layer, so a consumer who imports extended-scalars but wants `BigDecimal` modeled as their own `Money` wrapper just writes:
+The same directive binds a consumer's own constant just as well, so modeling `BigDecimal` as your own `Money` wrapper is a one-line change:
 
 [source,graphql]
 ----
 scalar BigDecimal @scalarType(scalar: "com.example.Scalars.MONEY")
 ----
-
-and the directive's `MONEY` constant beats the conventional `ExtendedScalars.GraphQLBigDecimal`.
 
 == Build your own `GraphQLScalarType` for a unique domain shape
 
@@ -85,13 +79,13 @@ The `Coercing<Internal, External>` parameters let you choose the Java side (`Int
 
 == Resolution order and failure modes
 
-Graphitron's scalar resolver tries three layers in order; first hit wins:
+Graphitron's scalar resolver recognises two implicit paths plus the directive:
 
 . *Spec built-ins.* `Int`, `Float`, `String`, `Boolean`, `ID` resolve through a closed table baked into the resolver. `@scalarType` on a spec built-in name is a hard validation error (directive conflict).
-. *`@scalarType(scalar:)` directive.* The consumer's explicit reference, takes precedence over the convention layer.
-. *graphql-java-extended-scalars convention.* SDL name matches a convention-table entry _and_ the artifact is on the compile classpath.
+. *Federation-namespaced scalars* (e.g. `_FieldSet`) are auto-wired when the SDL declares an Apollo Federation `@link`; do not redeclare them with `@scalarType`.
+. *`@scalarType(scalar:)` directive.* The single explicit binding path for every other scalar.
 
-If none of the three layers produces a hit, the scalar is unresolved and the build fails with a validation error pointing at `@scalarType(scalar:)` or extended-scalars as the fix. There is no silent fallback to `Object`.
+A non-spec, non-federation scalar with no `@scalarType` is unresolved and the build fails with a validation error naming `@scalarType(scalar:)` as the fix. There is no silent fallback to `Object`.
 
 Field-level rejection reasons are surfaced with per-arm messages: `FieldNotFound`, `FieldNotAccessible`, `NullAtCodegen`, `NotAScalarType`, `CoercingErased`. The directive reference catalogues each one.
 
@@ -103,12 +97,12 @@ The customizer is still the right place for *non-scalar* additional types and fo
 
 == Editor support
 
-The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaration with the convention-table FQNs, preferring the entry that matches the SDL name when one exists. Diagnostics surface malformed references (no dot) and unknown classes (FQN whose class part is not on the compile classpath scan) inline; field-level failures (`FieldNotFound`, `CoercingErased`, etc.) surface during the build.
+The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaration from the `GraphQLScalarType` constants scanned off the codegen classpath (your own and any library's), preferring one whose field name matches the SDL scalar name when it exists. Diagnostics surface malformed references (no dot) and unknown classes (FQN whose class part is not on the compile classpath scan) inline; field-level failures (`FieldNotFound`, `CoercingErased`, etc.) surface during the build.
 
 == Constraints
 
 * `@scalarType` is only valid on `scalar` declarations. Applying it to a spec built-in (`Int`, `Float`, `String`, `Boolean`, `ID`) is a directive-conflict validation error: the GraphQL spec and graphql-java already bind these names.
-* The SDL `scalar <Name>` declaration is what makes the name resolvable in the SDL; the `@scalarType(scalar:)` directive (or the convention-table fallback) is what makes the *reference* resolvable in the built schema. The SDL name and the registered `GraphQLScalarType` constant's `name()` must match exactly.
+* The SDL `scalar <Name>` declaration is what makes the name resolvable in the SDL; the `@scalarType(scalar:)` directive is what makes the *reference* resolvable in the built schema. When the SDL name matches the constant's own `name()` the constant is registered directly; when it differs, the scalar registers under the SDL name borrowing the constant's coercing (an aliasing declaration).
 * The referenced class must be on the codegen classpath (consumer module's `target/classes`, any reactor sibling's `target/classes`, or a declared dependency). Plugin-classpath visibility does not count.
 * The referenced field must be `public static`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`.
 * The constant's `Coercing<I, O>` must declare concrete type parameters; raw, `Object`-erased, or anonymous-class declarations whose `I` resolves to `Object` are rejected with a `CoercingErased` reason.

@@ -1427,9 +1427,8 @@ class ServiceCatalog {
      *
      * <p>Phase 3: routes scalars through {@code ctx.types} so the classifier's
      * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} is the single source of
-     * truth for the Java type binding. Consumer scalars resolved via {@code @scalarType} or the
-     * extended-scalars convention layer produce their resolved Java type FQN instead of the
-     * previous {@code null}-fallback.
+     * truth for the Java type binding. Consumer scalars resolved via {@code @scalarType} produce
+     * their resolved Java type FQN instead of the previous {@code null}-fallback.
      */
     private String mapToJavaTypeName(GraphQLInputType t) {
         GraphQLType current = t;

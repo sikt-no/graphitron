@@ -43,10 +43,10 @@ public sealed interface Behavior {
 
     /**
      * {@code @scalarType(scalar:)} binding: completes against the
-     * extended-scalars convention table (preferring the entry that matches
-     * the enclosing {@code scalar X} declaration's name), and validates the
-     * shape of the FQN plus that the named class is present in the catalog's
-     * external-reference scan.
+     * {@code GraphQLScalarType} constants scanned off the codegen classpath
+     * (preferring one whose field name matches the enclosing {@code scalar X}
+     * declaration's name), and validates the shape of the FQN plus that the
+     * named class is present in the catalog's external-reference scan.
      */
     record ScalarTypeBinding() implements Behavior {}
 

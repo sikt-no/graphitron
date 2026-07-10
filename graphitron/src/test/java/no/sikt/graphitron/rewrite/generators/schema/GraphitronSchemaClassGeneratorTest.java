@@ -665,8 +665,8 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void scalarRegistration_unresolvedNonSpecScalar_emitsNoAdditionalType() {
-        // A scalar without @scalarType in Phase 2 is left unclassified (Phase 3's convention
-        // layer will lift these). The schema generator must not emit an additionalType for it.
+        // A non-spec, non-federation scalar without @scalarType is left unclassified. The schema
+        // generator must not emit an additionalType for it.
         var body = buildBody("""
             scalar Money
             type Query { s: String, m: Money }

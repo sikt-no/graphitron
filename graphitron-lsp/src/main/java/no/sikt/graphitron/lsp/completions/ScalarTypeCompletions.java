@@ -5,7 +5,6 @@ import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
-import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
@@ -13,23 +12,24 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Completion for {@code @scalarType(scalar: "|")} on a {@code scalar X}
- * declaration. Suggests entries from
- * {@link ScalarTypeResolver#conventionTable()}, prioritising the FQN
- * whose convention-table key matches the enclosing scalar's SDL name.
+ * declaration. Suggests {@code className.fieldName} for each
+ * {@code public static GraphQLScalarType} constant found on the consumer's
+ * codegen classpath, prioritising the constant whose field name matches the
+ * enclosing scalar's SDL name.
  *
- * <p>The convention layer is the easy-onramp story: if the consumer has
- * {@code graphql-java-extended-scalars} on the classpath, the matching
- * convention FQN is the single right answer. We do not try to enumerate
- * static {@code GraphQLScalarType} fields off the consumer's compile
- * classpath here. {@link CompletionData.ExternalReference} carries
- * methods but not field metadata, so the catalog cannot tell us which
- * classes expose scalar constants. Consumers binding a custom scalar
- * type fall back to typing the FQN by hand; the diagnostic surface
- * (in {@code Diagnostics}) tells them whether the class exists.
+ * <p>The candidates come from the classpath scan carried on
+ * {@link CompletionData.ExternalReference#scalarConstants()} (R464): the scan
+ * enumerates the {@code GraphQLScalarType} fields actually on the classpath,
+ * so it surfaces the consumer's own scalar constants
+ * ({@code com.example.Scalars.MONEY}) as well as any library's, with no
+ * coupling to {@code graphql-java-extended-scalars}. The scan sees the field
+ * type, not its runtime value; a suggested constant may still fail to bind
+ * (null at codegen, erased {@code Coercing}), which the authored-value
+ * diagnostics in {@code Diagnostics} report. That is the same best-effort
+ * contract method completion already lives under.
  */
 public final class ScalarTypeCompletions {
 
@@ -51,17 +51,26 @@ public final class ScalarTypeCompletions {
             .flatMap(n -> TypeContext.declaredNameOf(n, source))
             .orElse(null);
 
-        var table = ScalarTypeResolver.conventionTable();
-        Set<String> fqns = new LinkedHashSet<>();
-        if (scalarName != null) {
-            String preferred = table.get(scalarName);
-            if (preferred != null) fqns.add(preferred);
+        // Field-name match for the enclosing `scalar X` is offered first (case-insensitive,
+        // so `scalar UUID` prefers `...ExtendedScalars.UUID`); everything else follows.
+        var preferred = new LinkedHashSet<String>();
+        var rest = new LinkedHashSet<String>();
+        for (CompletionData.ExternalReference ref : data.externalReferences()) {
+            for (CompletionData.ScalarConstant constant : ref.scalarConstants()) {
+                String fqn = ref.className() + "." + constant.fieldName();
+                if (scalarName != null && constant.fieldName().equalsIgnoreCase(scalarName)) {
+                    preferred.add(fqn);
+                } else {
+                    rest.add(fqn);
+                }
+            }
         }
-        fqns.addAll(table.values());
+        var fqns = new LinkedHashSet<String>(preferred);
+        fqns.addAll(rest);
         var items = new ArrayList<CompletionItem>(fqns.size());
         for (String fqn : fqns) {
             items.add(CompletionItems.replacing(
-                fqn, CompletionItemKind.Constant, context.replaceRange(), "extended-scalars convention"));
+                fqn, CompletionItemKind.Constant, context.replaceRange(), "GraphQLScalarType constant"));
         }
         return items;
     }

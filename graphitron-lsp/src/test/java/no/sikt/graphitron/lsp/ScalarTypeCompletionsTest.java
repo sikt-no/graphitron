@@ -17,54 +17,70 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Completion for {@code @scalarType(scalar:)} on a {@code scalar X} declaration.
- * Convention-table FQNs are the candidate set; the entry matching the
- * enclosing scalar's SDL name (when present) is offered first.
+ * Candidates are the {@code className.fieldName} of every {@code GraphQLScalarType}
+ * constant carried on {@link CompletionData.ExternalReference#scalarConstants()}
+ * (the classpath scan); the constant whose field name matches the enclosing
+ * scalar's SDL name (case-insensitive) is offered first.
  */
 class ScalarTypeCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
-    private static final CompletionData DATA = CompletionData.empty();
+
+    // Source of truth is `data`, not a static table (R464): two scanned classes, a library's
+    // extended-scalars holder and a consumer's own scalar holder, each carrying scalar constants.
+    private static final CompletionData DATA = new CompletionData(
+        List.of(),
+        List.of(),
+        List.of(
+            new CompletionData.ExternalReference(
+                "graphql.scalars.ExtendedScalars", "graphql.scalars.ExtendedScalars", "",
+                List.of(), List.of(),
+                List.of(
+                    new CompletionData.ScalarConstant("GraphQLBigDecimal"),
+                    new CompletionData.ScalarConstant("DateTime"),
+                    new CompletionData.ScalarConstant("UUID"))),
+            new CompletionData.ExternalReference(
+                "com.example.Scalars", "com.example.Scalars", "",
+                List.of(), List.of(),
+                List.of(new CompletionData.ScalarConstant("MONEY")))));
 
     @Test
-    void scalarMatchingConventionEntryPrefersExtendedScalarsFqn() {
-        String source = "scalar BigDecimal @scalarType(scalar: \"\")\n";
+    void offersScannedConstantsAsClassDotFieldItems() {
+        String source = "scalar Foo @scalarType(scalar: \"\")\n";
+        Point cursor = new Point(0, source.lastIndexOf('"'));
+
+        var items = run(source, cursor);
+
+        // Every scanned constant is offered, including the consumer's own (com.example.Scalars.MONEY),
+        // which a hardcoded extended-scalars table could never surface.
+        assertThat(items).extracting(CompletionItem::getLabel)
+            .contains(
+                "graphql.scalars.ExtendedScalars.GraphQLBigDecimal",
+                "graphql.scalars.ExtendedScalars.DateTime",
+                "graphql.scalars.ExtendedScalars.UUID",
+                "com.example.Scalars.MONEY");
+    }
+
+    @Test
+    void scalarMatchingConstantFieldNameOfferedFirst() {
+        String source = "scalar UUID @scalarType(scalar: \"\")\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor);
 
         assertThat(items).isNotEmpty();
-        assertThat(items.get(0).getLabel())
-            .isEqualTo("graphql.scalars.ExtendedScalars.GraphQLBigDecimal");
-        assertThat(items).extracting(CompletionItem::getLabel)
-            .contains("graphql.scalars.ExtendedScalars.DateTime");
+        assertThat(items.get(0).getLabel()).isEqualTo("graphql.scalars.ExtendedScalars.UUID");
     }
 
     @Test
-    void scalarMatchingPrefixedFormPrefersSameConstant() {
-        String source = "scalar GraphQLBigDecimal @scalarType(scalar: \"\")\n";
+    void fieldNameMatchIsCaseInsensitive() {
+        String source = "scalar uuid @scalarType(scalar: \"\")\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor);
 
-        assertThat(items.get(0).getLabel())
-            .isEqualTo("graphql.scalars.ExtendedScalars.GraphQLBigDecimal");
-    }
-
-    @Test
-    void unknownScalarNameStillSuggestsConventionTable() {
-        String source = "scalar Money @scalarType(scalar: \"\")\n";
-        Point cursor = new Point(0, source.lastIndexOf('"'));
-
-        var items = run(source, cursor);
-
-        assertThat(items).extracting(CompletionItem::getLabel)
-            .contains("graphql.scalars.ExtendedScalars.GraphQLBigDecimal",
-                "graphql.scalars.ExtendedScalars.DateTime",
-                "graphql.scalars.ExtendedScalars.UUID");
-        // No convention entry matches Money, so the first item is just the
-        // first deduplicated FQN; assert no Money-specific FQN was invented.
-        assertThat(items).extracting(CompletionItem::getLabel)
-            .noneMatch(l -> l.contains("Money"));
+        // scalar uuid matches the UUID constant case-insensitively, so it leads.
+        assertThat(items.get(0).getLabel()).isEqualTo("graphql.scalars.ExtendedScalars.UUID");
     }
 
     @Test

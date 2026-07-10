@@ -261,6 +261,43 @@ class ClasspathScannerTest {
     }
 
     @Test
+    void populatesScalarConstantsForPublicStaticGraphQLScalarTypeFields(@TempDir Path classes) throws IOException {
+        // R464: @scalarType completion is fed by the public static GraphQLScalarType fields
+        // scanned off the classpath. Only fields whose exact type descriptor is
+        // graphql.schema.GraphQLScalarType and that are public + static surface; a differently
+        // typed static field, a non-static field, and a non-public field are all ignored.
+        var fqn = "com.example.Scalars";
+        var scalarDesc = ClassDesc.of("graphql.schema.GraphQLScalarType");
+        var stringDesc = ClassDesc.of("java.lang.String");
+        int pubStaticFinal = ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC | ClassFile.ACC_FINAL;
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL)
+            .withField("MONEY", scalarDesc, pubStaticFinal)
+            .withField("NOT_A_SCALAR", stringDesc, pubStaticFinal)                                 // wrong field type
+            .withField("INSTANCE_SCALAR", scalarDesc, ClassFile.ACC_PUBLIC)                         // not static
+            .withField("PRIVATE_SCALAR", scalarDesc, ClassFile.ACC_PRIVATE | ClassFile.ACC_STATIC)  // not public
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).scalarConstants())
+            .extracting(CompletionData.ScalarConstant::fieldName)
+            .containsExactly("MONEY");
+    }
+
+    @Test
+    void plainClassLeavesScalarConstantsEmpty(@TempDir Path classes) throws IOException {
+        writePublicClass(classes, "com.example.Plain");
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).scalarConstants()).isEmpty();
+    }
+
+    @Test
     void skipsNonClassBytesGracefully(@TempDir Path classes) throws IOException {
         writePublicClass(classes, "com.example.Real");
         // A file ending in `.class` that isn't a valid classfile should not

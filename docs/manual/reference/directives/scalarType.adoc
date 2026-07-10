@@ -35,13 +35,13 @@ The generator produces an input record with a `java.math.BigDecimal` component, 
 
 == Resolution order
 
-Graphitron's scalar resolver tries three layers in order, first hit wins:
+Graphitron's scalar resolver recognises two implicit paths plus the directive:
 
 . *Spec built-ins.* `Int`, `Float`, `String`, `Boolean`, `ID` resolve through a closed table baked into the resolver. `@scalarType` on a spec built-in name is a hard validation error.
-. *`@scalarType(scalar:)` directive.* The consumer's explicit reference. Beats the convention layer, so a consumer who imports extended-scalars but wants `BigDecimal` modeled as their own `Money` wrapper just declares `scalar BigDecimal @scalarType(scalar: "com.example.Scalars.MONEY")` and the directive wins.
-. *graphql-java-extended-scalars convention.* When the SDL name matches one of the 30 entries in `ScalarTypeResolver`'s convention table _and_ `graphql.scalars.ExtendedScalars` is on the consumer's compile classpath, the scalar resolves automatically. Both the bare (`scalar BigDecimal`) and `GraphQL`-prefixed (`scalar GraphQLBigDecimal`) names map to `ExtendedScalars.GraphQLBigDecimal`.
+. *Federation-namespaced scalars* (e.g. `_FieldSet`) are auto-wired when the SDL declares an Apollo Federation `@link`; do not redeclare them with `@scalarType`.
+. *`@scalarType(scalar:)` directive.* The single explicit binding path for every other scalar; point it at a library constant (`scalar UUID @scalarType(scalar: "graphql.scalars.ExtendedScalars.UUID")`) or your own (`scalar BigDecimal @scalarType(scalar: "com.example.Scalars.MONEY")`).
 
-If none of the three layers produces a hit, the scalar is unresolved and the build fails with an error pointing at `@scalarType(scalar:)` or extended-scalars as the fix. There is no silent fallback to `Object`.
+A non-spec, non-federation scalar with no `@scalarType` is unresolved and the build fails with an error naming `@scalarType(scalar:)` as the fix. There is no silent fallback to `Object`.
 
 == Migration
 
@@ -56,7 +56,7 @@ Consumers upgrading to the resolver-driven additional-type registration must *re
 
 == Editor support
 
-The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaration with the convention-table FQNs, preferring the entry that matches `X` when one exists. Diagnostics surface malformed references (no dot) and unknown classes (FQN whose class part is not on the compile classpath scan) inline; field-level failures (`FieldNotFound`, `CoercingErased`, etc.) surface during the build.
+The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaration from the `GraphQLScalarType` constants scanned off the codegen classpath (your own and any library's), preferring one whose field name matches `X` when it exists. Diagnostics surface malformed references (no dot) and unknown classes (FQN whose class part is not on the compile classpath scan) inline; field-level failures (`FieldNotFound`, `CoercingErased`, etc.) surface during the build.
 
 == See also
 

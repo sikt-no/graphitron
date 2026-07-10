@@ -69,9 +69,8 @@ public final class RowsMethodShape {
      * Java type for one of the five GraphQL spec built-ins; {@code null} for custom
      * scalars and enums. Routed through {@link ScalarTypeResolver#builtInJavaType(String)}
      * so the producer-side scalar Java-type mapping has one source of truth across the
-     * codebase. Phase 2's {@code @scalarType} directive and Phase 3's extended-scalars
-     * convention layer surface custom-scalar Java types through the same resolver; callers
-     * that wire those phases route their non-null branches through the resolver as well.
+     * codebase. The {@code @scalarType} directive surfaces custom-scalar Java types through the
+     * same resolver; callers route their non-null branches through the resolver as well.
      */
     public static TypeName standardScalarJavaType(String graphqlScalarName) {
         return ScalarTypeResolver.builtInJavaType(graphqlScalarName);

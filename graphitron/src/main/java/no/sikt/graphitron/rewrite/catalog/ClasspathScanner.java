@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.lang.classfile.Attributes;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.ClassModel;
+import java.lang.classfile.FieldModel;
 import java.lang.classfile.MethodModel;
 import java.lang.classfile.attribute.MethodParametersAttribute;
 import java.lang.classfile.attribute.RecordAttribute;
@@ -49,6 +50,9 @@ public final class ClasspathScanner {
 
     /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for R368's condition fact. */
     private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
+
+    /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion (R464). */
+    private static final String GRAPHQL_SCALAR_TYPE_DESCRIPTOR = "Lgraphql/schema/GraphQLScalarType;";
 
     private ClasspathScanner() {}
 
@@ -121,7 +125,38 @@ public final class ClasspathScanner {
         if (jooqPrefix != null && fqn.startsWith(jooqPrefix)) return null;
         var methods = readMethods(cm);
         var recordComponents = readRecordComponents(cm);
-        return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents);
+        var scalarConstants = readScalarConstants(cm);
+        return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents, scalarConstants);
+    }
+
+    /**
+     * Reads {@code public static} fields whose JVM type descriptor is exactly
+     * {@code Lgraphql/schema/GraphQLScalarType;} so the LSP can complete
+     * {@code @scalarType(scalar:)} from the {@code GraphQLScalarType} constants
+     * actually present on the consumer's codegen classpath (their own and any
+     * library's), rather than a hardcoded convention list (R464).
+     *
+     * <p>Exact descriptor compare, not assignability, mirroring
+     * {@link #JOOQ_CONDITION_DESCRIPTOR}: the parse-only scan resolves no type
+     * hierarchy, and the constant is declared as {@code GraphQLScalarType}
+     * directly, so exact match is both sufficient and all the scanner can do.
+     * {@code final} is intentionally not required: the reflective resolver binds
+     * a non-final constant just as well, so requiring it here would drop a
+     * genuinely resolvable completion candidate. The scan sees the field
+     * <em>type</em>, not its runtime value or {@code Coercing} generics; it
+     * offers a candidate FQN, and the reflective resolver / diagnostics remain
+     * the source of truth that rejects a null-at-codegen or erased constant at
+     * build time (the same best-effort contract method completion lives under).
+     */
+    private static List<CompletionData.ScalarConstant> readScalarConstants(ClassModel cm) {
+        var constants = new ArrayList<CompletionData.ScalarConstant>();
+        for (FieldModel f : cm.fields()) {
+            if (!f.flags().has(AccessFlag.PUBLIC)) continue;
+            if (!f.flags().has(AccessFlag.STATIC)) continue;
+            if (!GRAPHQL_SCALAR_TYPE_DESCRIPTOR.equals(f.fieldTypeSymbol().descriptorString())) continue;
+            constants.add(new CompletionData.ScalarConstant(f.fieldName().stringValue()));
+        }
+        return List.copyOf(constants);
     }
 
     /**

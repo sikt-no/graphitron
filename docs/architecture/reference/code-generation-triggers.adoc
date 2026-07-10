@@ -179,9 +179,8 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
 | GraphQL `scalar` type with `@scalarType(scalar:)` | `ScalarType` | No generation; the consumer's `public static final GraphQLScalarType` constant is registered on the synthesized schema via `.additionalType(...)`. Graphitron reflects on the constant's `Coercing<I, O>` to recover the Java type used for input-record components, service params, and `Field<X>` projections.
-| GraphQL `scalar` type matching the extended-scalars convention table (no directive, `graphql-java-extended-scalars` on the classpath) | `ScalarType` | Same as above, but the constant FQN is read from `ScalarTypeResolver`'s 30-entry convention table (`scalar BigDecimal` → `ExtendedScalars.GraphQLBigDecimal`, etc.).
 | Spec built-in scalar (`Int` / `Float` / `String` / `Boolean` / `ID`) | `ScalarType` | Same registration shape; Java type comes from a closed table (the spec binds these names). `@scalarType` on a spec built-in is a hard validation error (directive conflict).
-| GraphQL `scalar` type with no directive and no convention-table entry | `UnclassifiedType` | Validation error pointing at `@scalarType(scalar:)` or extended-scalars as the fix; no silent fallback to `Object`.
+| Non-spec / non-federation `scalar` with no `@scalarType` | `UnclassifiedType` | Validation error pointing at `@scalarType(scalar:)` as the single fix; no silent fallback to `Object`.
 | Generated `*Connection` type (from `@asConnection` transform) | `ConnectionType` | Pagination wrapper; pairs with `EdgeType` and `PageInfoType` below
 | Generated `*Edge` type | `EdgeType` | Edge wrapper carrying `node` + `cursor` for the connection
 | Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper

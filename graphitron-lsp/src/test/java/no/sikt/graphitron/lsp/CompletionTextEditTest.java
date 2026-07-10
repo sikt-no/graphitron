@@ -153,10 +153,15 @@ class CompletionTextEditTest {
         int innerStart = source.indexOf("\"graphql.scalars.\"") + 1;
         Point cursor = new Point(0, innerStart + "graphql.scalars".length());
 
+        var data = new CompletionData(List.of(), List.of(), List.of(
+            new CompletionData.ExternalReference(
+                "graphql.scalars.ExtendedScalars", "graphql.scalars.ExtendedScalars", "",
+                List.of(), List.of(),
+                List.of(new CompletionData.ScalarConstant("DateTime")))));
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> ScalarTypeCompletions.generate(VOCAB, CompletionData.empty(), ctx, dir, bytes));
+            (ctx, dir, bytes) -> ScalarTypeCompletions.generate(VOCAB, data, ctx, dir, bytes));
 
-        // Convention table has DateTime → graphql.scalars.ExtendedScalars.DateTime.
+        // The scan carries DateTime on graphql.scalars.ExtendedScalars → composed FQN.
         assertTextEditRange(items, "graphql.scalars.ExtendedScalars.DateTime",
             new Range(new Position(0, innerStart), new Position(0, innerStart + "graphql.scalars.".length())));
     }
