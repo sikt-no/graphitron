@@ -1,7 +1,7 @@
 ---
 id: R459
 title: "Model the schema-shape to fetcher wiring edge for fetcher-owning nesting types in CompileDependencyGraphBuilder"
-status: Ready
+status: In Review
 bucket: bug
 priority: 3
 theme: dev-loop
@@ -83,8 +83,8 @@ nested fields (absent from `schema.fields()`). Folding them in is not a routing 
 `SplitTableField` routed through `addFieldEdges`' `TableTargetField` arm would call
 `addConditionsEdge(fetcher, "FilmMeta")`, whose `hasSqlGeneratingField` reads the empty
 `schema.fieldsOf("FilmMeta")`, so conditions attribution over coordinate-less nested types needs its
-own design, the same `fieldsOf` blindness that causes this bug. File a Backlog stub for it as part
-of this item, and give the stub a concrete failing pin to close against: a harness fixture with a
+own design, the same `fieldsOf` blindness that causes this bug. Filed as Backlog **R462**
+(`nested-fetcher-outgoing-field-edges`) with the concrete failing pin: a harness fixture with a
 nested `@splitQuery` (or composite-`@nodeId`) field that turns the completeness oracle red once the
 R459 registration lands. This item's own fixture must NOT exercise that gap (see Tests).
 
@@ -122,4 +122,16 @@ project off one seam. Not blocking this item; name it in the walk's javadoc.
 2. Oracle green on the extended harness corpus; unit case pinning the edges; full reactor green
    under `-Plocal-db`.
 3. Follow-up Backlog stub filed for the nested per-field outgoing edges, carrying the
-   oracle-reddening fixture sketch.
+   oracle-reddening fixture sketch (R462, `nested-fetcher-outgoing-field-edges`).
+
+## Implementation notes (landed)
+
+- `CompileDependencyGraphBuilder.addNestedFetcherNodes()` (called from `build()` between
+  `addTypeProjectionEdges` and `addBlanketAndWiringEdges`) walks `TableBackedType` roots' `NestingField`
+  trees, dedups nested types by name, recurses into inner `NestingField`s unconditionally, and registers
+  `units.fetchers(name)` gated on a mirrored `nestedTypeOwnsFetchers` predicate. The wiring loop then
+  supplies `schemaShape → fetcher`, `schemaClass → fetcher`, and the blanket edges for free.
+- Unit: `CompileDependencyGraphBuilderTest.fetcherOwningNestingTypeRegistersFetcherNodeAndWiringEdges`.
+- Pipeline: `IncrementalCompileHarnessTest` `SCHEMA`/`SCHEMA_EDITED` gain `Film.meta: FilmMeta { language:
+  Language @reference }`. Verified while implementing that disabling the walk left exactly the one
+  `FilmMetaType → FilmMetaFetchers` oracle gap (single-valued inline `TableField`, no per-field gap).

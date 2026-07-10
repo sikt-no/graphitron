@@ -69,6 +69,7 @@ public final class CompileDependencyGraphBuilder {
             addFieldEdges(field);
         }
         addTypeProjectionEdges();
+        addNestedFetcherNodes();
         addBlanketAndWiringEdges();
     }
 
@@ -486,6 +487,80 @@ public final class CompileDependencyGraphBuilder {
         if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
             addNodeIdEncoderEdge(fetcher);
         }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // Nested fetcher nodes: a dedicated mirror of TypeFetcherGenerator's nested-fetcher emit seam.
+    // ------------------------------------------------------------------------------------------------
+
+    /**
+     * Registers the {@code <Type>Fetchers} node a fetcher-owning nesting type contributes (R459). A
+     * plain-object nesting type that owns a fetcher (any nested field that is not
+     * {@link GraphitronField.UnclassifiedField}, per R303) emits a {@code <Type>Fetchers} class, and
+     * its schema-shape wiring class references it ({@code FilmMetaType → FilmMetaFetchers}). Those
+     * nested types are absent from {@code schema.types()} and their fields are absent from both
+     * {@code schema.fields()} and {@code schema.fieldsOf(...)} (they live only on the
+     * {@link ChildField.NestingField}), so neither {@link #addTypeNodes} nor {@link #addFieldEdges}
+     * can reach them; the node must be registered from where the {@code NestingField} tree is walked.
+     *
+     * <p>Mirrors {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}'s
+     * {@code collectNestedFetcherClasses} reachability verbatim: iterate the
+     * {@link GraphitronType.TableBackedType} roots, walk each root's {@code fieldsOf} for
+     * {@link ChildField.NestingField}, dedup nested types by name across the whole schema, recurse
+     * into inner {@code NestingField}s unconditionally, and register {@code units.fetchers(name)}
+     * gated on {@link #nestedTypeOwnsFetchers}. The gate is mirrored (not imported from
+     * {@code FetcherEmitter}) to preserve this builder's no-generator-coupling discipline, the same
+     * enforcement class as its {@link #filtersDecodeNodeId} / {@link #hasSqlGeneratingField} mirrors,
+     * with the {@link TypeSpecReferenceWalk} oracle as the drift catch for corpus-covered shapes.
+     *
+     * <p>Registering the node is the whole fix: {@link #addBlanketAndWiringEdges} runs last and
+     * snapshots the fetcher nodes at that point, so its existing wiring loop then adds
+     * {@code schemaShape → ownFetcher}, {@code schemaClass → fetcher}, and the blanket
+     * frozen-scaffold / {@code GraphitronContext} edges with no new edge code.
+     *
+     * <p>Collapse target (named, not blocking): R459 is the third independent re-walk of the
+     * {@code NestingField} tree (this walk, the {@link #addProjectionChildEdges} projection walk, and
+     * the emitter) and the third copy of the fetcher-ownership fact. A future item, in the spirit of
+     * the {@code InlineProjectingField} note on {@link #addTypeProjectionEdges}, should expose nested
+     * fetcher-owning types (and their fields) as a derived view on {@link GraphitronSchema} so
+     * emitter, projection walk, and builder project off one seam.
+     */
+    private void addNestedFetcherNodes() {
+        var seen = new java.util.LinkedHashSet<String>();
+        for (var type : schema.types().values()) {
+            if (type instanceof GraphitronType.TableBackedType) {
+                for (var field : schema.fieldsOf(type.name())) {
+                    if (field instanceof ChildField.NestingField nf) {
+                        addNestedFetcherNode(nf, seen);
+                    }
+                }
+            }
+        }
+    }
+
+    private void addNestedFetcherNode(ChildField.NestingField nf, java.util.Set<String> seen) {
+        String nestedTypeName = nf.returnType().returnTypeName();
+        if (seen.add(nestedTypeName) && nestedTypeOwnsFetchers(nf.nestedFields())) {
+            acc.addNode(units.fetchers(nestedTypeName));
+        }
+        // Recurse into inner nesting unconditionally (the outer type may already be seen).
+        for (var nested : nf.nestedFields()) {
+            if (nested instanceof ChildField.NestingField innerNf) {
+                addNestedFetcherNode(innerNf, seen);
+            }
+        }
+    }
+
+    /**
+     * Mirror of {@code FetcherEmitter.nestedTypeOwnsFetchers}: a nested plain-object type owns a
+     * fetcher when it carries any classified field. Post-classification this is effectively always
+     * true for a reachable {@code NestingField} (an unclassified nested field collapses the whole
+     * {@code NestingField} to {@link GraphitronField.UnclassifiedField} in {@code FieldBuilder}, and
+     * an empty plain object is invalid GraphQL), so the gate exists for parity with the emit site,
+     * not because a fetcher-less nesting type is a live case (no negative test pins the false branch).
+     */
+    private static boolean nestedTypeOwnsFetchers(List<? extends GraphitronField> nestedFields) {
+        return nestedFields.stream().anyMatch(f -> !(f instanceof GraphitronField.UnclassifiedField));
     }
 
     // ------------------------------------------------------------------------------------------------

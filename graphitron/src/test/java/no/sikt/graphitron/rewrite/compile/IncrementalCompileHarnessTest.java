@@ -65,8 +65,15 @@ class IncrementalCompileHarnessTest {
      * the Language type class (exercising the {@code typeClass -> NodeIdEncoder} edge and the
      * decode-helper lift), and calls a generated {@code FilmConditions} method (exercising the inline
      * {@code typeClass -> conditions} edge). Nesting-hosted attribution is covered at unit tier in
-     * {@code CompileDependencyGraphBuilderTest}; the fetcher-owning-nesting-type wiring gap it would
-     * otherwise surface is a separate model-completeness item.
+     * {@code CompileDependencyGraphBuilderTest}.
+     *
+     * <p>R459 corpus extension: {@code Film.meta: FilmMeta} is a fetcher-owning plain-object nesting
+     * type ({@code FilmMeta { language: Language @reference }}); FilmMeta shares Film's table context,
+     * emits a {@code FilmMetaFetchers} class its {@code FilmMetaType} schema-shape wires, and its one
+     * nested field is an inline single-valued {@code TableField} whose reified read references no
+     * generated unit, so the fixture exercises exactly the schema-shape-to-fetcher wiring edge (the
+     * node the {@code addNestedFetcherNodes} walk registers) and not the deferred nested-fetcher
+     * per-field outgoing gap (filed separately as a Backlog stub).
      */
     private static final String SCHEMA = """
         interface Node { id: ID! }
@@ -80,6 +87,11 @@ class IncrementalCompileHarnessTest {
         type Film implements Node @table(name: "film") @node {
           id: ID! @nodeId
           title: String
+          language: Language @reference(path: [{key: "film_language_id_fkey"}])
+          meta: FilmMeta
+        }
+
+        type FilmMeta {
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
         }
 
@@ -113,6 +125,11 @@ class IncrementalCompileHarnessTest {
           id: ID! @nodeId
           title: String
           description: String
+          language: Language @reference(path: [{key: "film_language_id_fkey"}])
+          meta: FilmMeta
+        }
+
+        type FilmMeta {
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
         }
 

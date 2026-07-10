@@ -247,6 +247,47 @@ class CompileDependencyGraphBuilderTest {
     }
 
     @Test
+    void fetcherOwningNestingTypeRegistersFetcherNodeAndWiringEdges() {
+        // R459: Film { meta: FilmMeta { language: Language @reference } } — FilmMeta is a plain-object
+        // nesting type owning a classified field, so it emits a FilmMetaFetchers class its FilmMetaType
+        // schema-shape wires (FilmMetaType -> FilmMetaFetchers). The nested type is absent from
+        // schema.types() and its fields from schema.fieldsOf(...), so the node must be registered by the
+        // dedicated NestingField walk, not addTypeNodes/addFieldEdges.
+        var types = new LinkedHashMap<String, GraphitronType>();
+        types.put("Film", new GraphitronType.TableType("Film", null, filmTable()));
+        types.put("Language", new GraphitronType.TableType("Language", null, languageTable()));
+        // The NestingType entry gives the schema-shape node (FilmMetaType); schemaType is unread here.
+        types.put("FilmMeta", new GraphitronType.NestingType("FilmMeta", null, null));
+
+        var nestedLanguage = new ChildField.TableField(
+            "FilmMeta", "language", null,
+            languageReturn(), List.of(), List.of(), new OrderBySpec.None(), null, null);
+        var nesting = new ChildField.NestingField(
+            "Film", "meta", null,
+            new ReturnTypeRef.TableBoundReturnType("FilmMeta", filmTable(), new FieldWrapper.Single(true)),
+            List.of(nestedLanguage));
+
+        var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
+        fields.put(FieldCoordinates.coordinates("Film", "meta"), nesting);
+
+        var g = CompileDependencyGraphBuilder.fromModel(new GraphitronSchema(types, fields), PKG);
+
+        // The nested fetcher node exists (registered by the NestingField walk).
+        assertThat(g.nodes()).contains(PKG + ".fetchers.FilmMetaFetchers");
+        // Its schema-shape wiring class references it (schemaShape -> ownFetcher), added by the
+        // wiring loop once the node is present.
+        assertThat(g.directReferences(PKG + ".schema.FilmMetaType"))
+            .contains(PKG + ".fetchers.FilmMetaFetchers");
+        // The schema class wires the nested fetcher (schemaClass -> fetcher).
+        assertThat(g.directReferences(PKG + ".schema.GraphitronSchema"))
+            .contains(PKG + ".fetchers.FilmMetaFetchers");
+        // The blanket GraphitronContext edge covers the nested fetcher too (spot-checked).
+        assertThat(g.directReferences(PKG + ".fetchers.FilmMetaFetchers"))
+            .contains(PKG + ".schema.GraphitronContext");
+        // No negative empty-nestedFields case: vacuous, since the classifier cannot produce one.
+    }
+
+    @Test
     void reverseEdgesMirrorForwardEdges() {
         var g = CompileDependencyGraphBuilder.fromModel(filmQuerySchema(), PKG);
 
