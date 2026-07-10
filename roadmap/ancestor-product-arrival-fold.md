@@ -1,7 +1,7 @@
 ---
 id: R463
 title: "Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild"
-status: Backlog
+status: Spec
 bucket: structural
 theme: classification-model
 depends-on: []
@@ -104,7 +104,8 @@ absorbing always-correct arm.
   stops being baked into leaf identity. Forward obligation recorded for that chain: the moment an
   emit branch consumes `OnlyChild`, the derivation needs an enforcer on the emit side (a validator
   mirror, or R314 goal 3's by-construction non-drift, which is the preferred direction).
-- R308 (Ready) models carrier arrival on the `@service` payload seat only; its seat-level fact and
+- R308 (In Progress as of 2026-07-10) models carrier arrival on the `@service` payload seat only;
+  its seat-level fact and
   this fold must agree where both are defined. Both read the same SDL wrapper, so agreement is by
   construction; whichever item lands second states it.
 
