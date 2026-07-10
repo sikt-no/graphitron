@@ -242,6 +242,8 @@ Name consumer-authored database callables. `connect` mounts identity from the op
 
 `<handle>true</handle>` declares that `connect` returns an opaque OUT handle (for example a RAS session id) that `disconnect` is later called with. It must be declared on both sides or neither; a handle produced by one side and not bound by the other fails the build. Everything domain-shaped, claim parsing, entitlement filtering, session management, lives inside the callables, in the database's own language; graphitron only guarantees the pair runs at mount and unmount.
 
+Your callables must set and reset *session-scoped* connection state, never transaction-scoped state. On Postgres use `set_config(key, value, false)`, never `SET LOCAL` or `set_config(..., true)`; Oracle RAS attach/detach and VPD context calls are session operations and already comply. Neither callable may rely on a surrounding transaction committing or rolling back, and both may assume graphitron invokes them outside any open transaction: acquisition normalizes the connection to autocommit before `connect`, and release settles any transaction the operation left open before `disconnect`. See xref:../../architecture/reference/runtime-extension-points.adoc#hook-state-contract[the hook state contract] for why a transaction-scoped mount is a security defect over a pooled connection.
+
 Identity that mounts must unmount, so a `<connect>` without a `<disconnect>` fails the build. A genuinely unmount-free design opts out explicitly with an empty `<disconnect/>`:
 
 [source,xml]

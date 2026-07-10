@@ -65,6 +65,36 @@ identity] for the two configuration forms (the function-hook form for
 Oracle/RAS or any privilege-fenced package, and the Postgres `<variables>`
 sugar) and the pairing rules.
 
+[#hook-state-contract]
+==== The hook state contract: session-scoped, never transactional
+
+Session identity is connection-scoped state, and your hooks must treat it that
+way. Graphitron cannot see inside a connect or disconnect routine you author, so
+the contract is stated here and holds for every function-hook `<sessionState>`:
+
+* *Set and reset session-scoped state only.* On Postgres that means
+  `set_config(key, value, false)` (the third argument `false` means
+  session-scoped), never `SET LOCAL` and never `set_config(..., true)`, both of
+  which are transaction-scoped and vanish at the next commit or rollback.
+  Oracle RAS attach/detach and VPD context calls are session operations and
+  already comply.
+* *Do not rely on a surrounding transaction.* Neither mount nor unmount may
+  depend on any transaction committing or rolling back: no state that a commit
+  wipes (for example a global temporary table declared
+  `ON COMMIT DELETE ROWS`), no work left uncommitted for a later commit to
+  persist.
+* *You may assume no transaction is open.* Graphitron invokes both hooks
+  outside any open transaction, structurally: acquisition normalizes the pinned
+  connection to autocommit before connect runs (so a pool configured
+  autocommit=false cannot put your mount inside an implicit never-committed
+  transaction), and release settles any transaction the operation left open
+  before disconnect runs (so your clears take effect immediately rather than
+  being reverted by the pool's return-rollback).
+
+A hook that violates the first two points can leave identity mounted for the
+pool's next borrower or drop it mid-operation; both are security defects, not
+performance defects.
+
 If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
 build time (`no-session-state`): an unsecured direct-to-database API is a
 data-exposure risk. Silence that rule only if the API is intentionally

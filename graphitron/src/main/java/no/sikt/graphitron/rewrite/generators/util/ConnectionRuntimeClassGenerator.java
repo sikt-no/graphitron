@@ -196,7 +196,13 @@ public final class ConnectionRuntimeClassGenerator {
                 + "id) that {@link #disconnect} is later called with. Runs before any operation SQL. May\n"
                 + "throw to reject the request (missing claim, unknown person, unentitled role); the\n"
                 + "runtime then fails closed.\n"
-                + "@param connection the pinned connection, before any operation SQL\n"
+                + "\n"
+                + "<p><b>State contract:</b> must set <em>session-scoped</em> connection state only\n"
+                + "(Postgres {@code set_config(key, value, false)}, never {@code SET LOCAL}; Oracle RAS\n"
+                + "attach is a session operation and complies), and must not rely on a surrounding\n"
+                + "transaction committing or rolling back. May assume it is invoked outside any open\n"
+                + "transaction: the runtime normalizes the connection to autocommit before this call.\n"
+                + "@param connection the pinned connection, normalized to autocommit, before any operation SQL\n"
                 + "@param claims the opaque, unvalidated claims payload (never parsed by graphitron)\n"
                 + "@return an opaque handle to thread to {@link #disconnect}, or {@code null} if none\n")
             .build();
@@ -210,7 +216,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("Unmounts the identity {@link #connect} mounted, bound to the {@code handle} connect\n"
                 + "returned (or {@code null}). Fires on every release path. If this throws or cannot run,\n"
                 + "the runtime evicts the physical connection rather than returning tainted state to the pool.\n"
-                + "@param connection the still-pinned connection\n"
+                + "\n"
+                + "<p><b>State contract:</b> must reset <em>session-scoped</em> connection state only, and\n"
+                + "must not rely on a surrounding transaction committing or rolling back. May assume it is\n"
+                + "invoked outside any open transaction: the runtime settles any transaction the operation\n"
+                + "left open (rollback, restore autocommit) before this call, so the clears take effect\n"
+                + "immediately.\n"
+                + "@param connection the still-pinned connection, outside any open transaction\n"
                 + "@param handle the opaque handle {@link #connect} returned, or {@code null}\n")
             .build();
 
@@ -243,9 +255,12 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("The consumer-owned database session-identity seam: a connect callable mounts\n"
                 + "per-request identity on the pinned connection from the opaque claims payload and returns\n"
                 + "an optional handle; a paired disconnect callable unmounts it. Both are the database's own\n"
-                + "language (RAS/VPD on Oracle, {@code set_config} on Postgres); graphitron only guarantees\n"
-                + "the pair runs at mount and unmount. Slice 3 generates the concrete implementation from\n"
-                + "{@code <sessionState>} configuration; {@link #NONE} is the no-op default.\n")
+                + "language (RAS/VPD on Oracle, {@code set_config} on Postgres); graphitron guarantees the\n"
+                + "pair runs at mount and unmount, outside any open transaction. Identity is connection-scoped\n"
+                + "state, never transactional state: hooks set and reset session-scoped state and never depend\n"
+                + "on a transaction's outcome (see the state contract on each method). Slice 3 generates the\n"
+                + "concrete implementation from {@code <sessionState>} configuration; {@link #NONE} is the\n"
+                + "no-op default.\n")
             .addMethod(connect)
             .addMethod(disconnect)
             .addField(none)
