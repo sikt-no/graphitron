@@ -1,13 +1,13 @@
 ---
 id: R429
 title: "Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: runtime-connection
 depends-on: []
 created: 2026-07-03
-last-updated: 2026-07-09
+last-updated: 2026-07-10
 ---
 
 # Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity
