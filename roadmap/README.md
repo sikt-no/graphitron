@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R455` | Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee | In Review | 2026-07-09 | [plan](completeness-oracle-reference-walk-blind-spots.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -302,7 +301,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### dev-loop
 
-- `R455` [**Fix TypeSpecReferenceWalk blind spots that falsify the compile-graph completeness oracle superset guarantee**](completeness-oracle-reference-walk-blind-spots.md) — In Review, bug
 - `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R459` [**Model the schema-shape to fetcher wiring edge for fetcher-owning nesting types in CompileDependencyGraphBuilder**](nesting-type-fetcher-wiring-graph-edges.md) — Backlog, bug
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
