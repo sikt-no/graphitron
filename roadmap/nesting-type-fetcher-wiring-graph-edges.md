@@ -1,7 +1,7 @@
 ---
 id: R459
 title: "Model the schema-shape to fetcher wiring edge for fetcher-owning nesting types in CompileDependencyGraphBuilder"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: dev-loop
