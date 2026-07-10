@@ -109,6 +109,15 @@ final class RecordBindingResolver {
      */
     private final Map<String, ProducerBinding.ServiceEmitted> serviceEmittedMemo = new LinkedHashMap<>();
 
+    /**
+     * R308: the {@code @service} producer's arrival cardinality per payload SDL type, decided once
+     * at this reflection boundary (from {@link #isMultiCardinalityReturn}) and read by the classify-
+     * time shape verdict. A separate axis from {@link ProducerBinding.ServiceEmitted#cardinality()}
+     * (which is the payload's <em>data-field</em> arrival), so the two same-typed cardinalities are
+     * never conflated on one accessor.
+     */
+    private final Map<String, SourceKey.Cardinality> serviceCarrierProducerArrivalMemo = new LinkedHashMap<>();
+
     RecordBindingResolver(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = Objects.requireNonNull(ctx);
         this.svc = Objects.requireNonNull(svc);
@@ -152,6 +161,15 @@ final class RecordBindingResolver {
      */
     Optional<ProducerBinding.ServiceEmitted> resolveServiceEmitted(String sdlTypeName) {
         return Optional.ofNullable(serviceEmittedMemo.get(sdlTypeName));
+    }
+
+    /**
+     * R308: the {@code @service} producer's arrival cardinality for a payload SDL type, or empty when
+     * no {@code @service} field returns that type. Consumed by the classify-time shape verdict at the
+     * {@code @service} carrier seat ({@code FieldBuilder.scanServiceCarrierShape}).
+     */
+    Optional<SourceKey.Cardinality> resolveServiceCarrierProducerArrival(String sdlTypeName) {
+        return Optional.ofNullable(serviceCarrierProducerArrivalMemo.get(sdlTypeName));
     }
 
     /**
@@ -237,11 +255,25 @@ final class RecordBindingResolver {
         // @table-backed-SDL guard, shouldBind) live in groundProducerResult, shared with
         // @externalField / ComputedField, which take the same return rules as a @service field.
         Class<?> retElement = peelReturnElement(method.getGenericReturnType());
-        groundProducerResult(field, retElement, isMultiCardinalityReturn(method.getGenericReturnType()),
+        boolean producerIsMulti = isMultiCardinalityReturn(method.getGenericReturnType());
+        groundProducerResult(field, retElement, producerIsMulti,
             () -> new ProducerBinding.RootService(
                 retElement, parent.getName(), field.getName(), className, methodName, loc));
 
         String resultSdl = unwrappedTypeName(field.getType());
+
+        // R308: the @service producer's arrival cardinality, decided once here at the reflection
+        // boundary from the same isMultiCardinalityReturn peel producerBindLevel already consumes,
+        // and carried as a typed fact keyed by the payload SDL type. The classify-time shape verdict
+        // (FieldBuilder.scanServiceCarrierShape / BuildContext.ServiceCarrierShape) reads this rather
+        // than re-deriving producer multi-ness from MethodRef.returnType() at the seat (a different
+        // substrate that would have to replicate every container peel). Stored for every @service
+        // field with an object-nameable return; the seat only consults it once the payload is a
+        // recognised carrier, so a non-carrier producer's stored arrival is inert.
+        if (resultSdl != null) {
+            serviceCarrierProducerArrivalMemo.putIfAbsent(resultSdl,
+                producerIsMulti ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE);
+        }
 
         // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
         // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed

@@ -32,7 +32,7 @@ public sealed interface ChildField extends OutputField
      * {@link Source.Child} wrapping this field's {@link #sourceShape()}. R316 slice 2 conservatively
      * builds the {@link Source.Child} (arrival {@code Many}) absorbing arm: every re-fetch field
      * batches, which is always correct as a one-element batch. The {@link Source.OnlyChild} inline-skip
-     * arm stays unreached until R279 / R308 compute the true ancestor-product cardinality that would let
+     * arm stays unreached until R463 computes the true ancestor-product cardinality that would let
      * a field declare it.
      */
     @Override default Source source() {

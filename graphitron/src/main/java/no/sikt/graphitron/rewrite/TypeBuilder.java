@@ -163,6 +163,15 @@ class TypeBuilder {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceEmitted(sdlTypeName);
     }
 
+    /**
+     * R308: the {@code @service} producer's arrival cardinality for a payload SDL type, decided once
+     * at the reflection boundary and read by the classify-time shape verdict at the {@code @service}
+     * carrier seat. Mirrors {@link #serviceEmittedBinding}.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.SourceKey.Cardinality> serviceCarrierProducerArrival(String sdlTypeName) {
+        return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceCarrierProducerArrival(sdlTypeName);
+    }
+
     // ===== Type map construction =====
 
     /**

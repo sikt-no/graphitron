@@ -326,6 +326,22 @@ class RejectionSeverityCoverageTest {
                 "com.example.jooq.enums.MpaaRating", List.of("PG_13"), List.of("G", "PG", "R"),
                 "input-bean field 'rating' of method 'createFilm'");
         }
+        // R308: ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
+        // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
+        // severity), and lspCodeOf forwards each arm's stable graphitron.service-carrier-shape.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch(
+                "FilmPayload", "Mutation", "runFilms",
+                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY,
+                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.ONE,
+                "com.example.FilmService", "runFilm");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.DataFieldArrivalConflict.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.DataFieldArrivalConflict(
+                "FilmListPayload", "Mutation", "runFilmsList", "films", "Film",
+                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY,
+                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
+        }
         return null;
     }
 }

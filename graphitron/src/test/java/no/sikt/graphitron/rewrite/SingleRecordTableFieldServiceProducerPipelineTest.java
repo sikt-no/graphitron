@@ -2,9 +2,11 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -371,7 +373,100 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             .containsExactly("actor_id", "film_id");
     }
 
+    /**
+     * R308: the coherent <em>list</em> carrier ({@code @service ...: [FilmPayload]}) whose payload has
+     * a single {@code @table} data field, produced by {@code List<FilmRecord>}. graphql-java iterates
+     * the producer list into the {@code [FilmPayload]} list, so each element is one payload whose
+     * single {@code film} resolves through a {@code LOAD_ONE} that coalesces into one batched
+     * rows-method query. This shape worked by accident before R308 (no test exercised it at any tier);
+     * the shape verdict now admits it explicitly and this test pins the RecordTableField model +
+     * LOAD_ONE dispatch. Contrast the single-carrier {@code FilmListPayload { films: [Film!] }} above,
+     * whose list data field is filled by the same producer list.
+     */
+    @Test
+    void serviceProducer_listCarrier_singleTableDataField_admitsBatchedLoadOne() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            type Query { x: String }
+            type Mutation {
+                runFilms: [FilmPayload]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+
+        assertThat(schema.field("Mutation", "runFilms"))
+            .isInstanceOf(MutationField.MutationServiceRecordField.class);
+        var dataField = schema.field("FilmPayload", "film");
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(rtf.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(rtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        // Each payload element's single film re-fetches through LOAD_ONE; graphql-java coalesces the
+        // per-element loads into one batched rows-method query (proven end-to-end at the execution tier).
+        assertThat(rtf.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
+        assertThat(schema.diagnostics()).isEmpty();
+    }
+
     // ===== Rejection cases =====
+
+    /**
+     * R308 (a1, formerly a silent admit): a <em>list</em> carrier ({@code [FilmPayload]}) with a single
+     * {@code @table} data field, produced by a <em>single</em> {@code FilmRecord}. graphql-java cannot
+     * iterate a single record into the {@code [FilmPayload]} list, so list coercion fails at runtime.
+     * The shape verdict rejects at classify time with the typed
+     * {@link ServiceCarrierShapeError.ProducerArrivalMismatch}, naming the carrier-vs-producer arrival
+     * mismatch and the {@code List<…>} fix (before R308 the return-match gate short-circuited on the
+     * null {@code fqClassName} and this shape built green).
+     */
+    @Test
+    void serviceProducer_listCarrier_singleProducer_rejectsProducerArrivalMismatch() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            type Query { x: String }
+            type Mutation {
+                runFilms: [FilmPayload]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+            }
+            """);
+
+        var mutField = schema.field("Mutation", "runFilms");
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var rejection = ((UnclassifiedField) mutField).rejection();
+        assertThat(rejection).isInstanceOf(ServiceCarrierShapeError.ProducerArrivalMismatch.class);
+        assertThat(rejection.message())
+            .contains("[FilmPayload]", "single value", "List<…>", "runFilm");
+    }
+
+    /**
+     * R308 (a2, formerly a silent admit broken at runtime): a <em>list</em> carrier
+     * ({@code [FilmListPayload]}) whose {@code @table} data field is <em>itself</em> a list
+     * ({@code films: [Film!]}), produced by a flat {@code List<FilmRecord>}. The producer list is
+     * consumed element-by-element into the {@code [FilmListPayload]} carrier, so a single record reaches
+     * each payload and cannot populate the list-valued {@code films} — the per-element
+     * {@code ClassCastException} the acceptance axiom forbids. The shape verdict rejects with the typed
+     * {@link ServiceCarrierShapeError.DataFieldArrivalConflict}.
+     */
+    @Test
+    void serviceProducer_listCarrier_listDataField_rejectsDataFieldArrivalConflict() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmListPayload { films: [Film!] }
+            type Query { x: String }
+            type Mutation {
+                runFilms: [FilmListPayload]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+
+        var mutField = schema.field("Mutation", "runFilms");
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var rejection = ((UnclassifiedField) mutField).rejection();
+        assertThat(rejection).isInstanceOf(ServiceCarrierShapeError.DataFieldArrivalConflict.class);
+        assertThat(rejection.message())
+            .contains("[FilmListPayload]", "films", "element-by-element");
+    }
 
     /**
      * Wrong element type: @service returns {@code List<LanguageRecord>} for a carrier whose

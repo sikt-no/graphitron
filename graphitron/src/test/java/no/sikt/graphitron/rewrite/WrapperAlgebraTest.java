@@ -55,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@link Source.OnlyChild} the {@code One} identity, {@link Source.Child} the {@code Many} absorber).
  *       The independent truth is the SDL's <em>root operation types</em>: a field on a root type folds the
  *       empty product ({@code Root}); every other field has at least one ancestor. R305 conservatively
- *       hard-codes the {@code Many} absorber ({@link Source.Child}) for every nested field until R279 / R308
+ *       hard-codes the {@code Many} absorber ({@link Source.Child}) for every nested field until R463
  *       compute the true ancestor-product (which is the only thing that would let a field reach
  *       {@link Source.OnlyChild}); this test asserts the algebra at that conservative strength and
  *       documents the deferral, so it cannot drift back into a free cardinality enum.</li>
@@ -166,16 +166,16 @@ class WrapperAlgebraTest {
                 } else {
                     // Every nested field has at least one ancestor. R305 hard-codes the Many absorber
                     // (Child) for all of them; OnlyChild (the One identity) is producible but unreached
-                    // until R279 / R308 compute the true ancestor-product fold (Source.OnlyChild javadoc).
+                    // until R463 computes the true ancestor-product fold (Source.OnlyChild javadoc).
                     assertThat(out.source())
                         .as("%s: a nested field's arrival cardinality is the Many absorber (Child) until "
-                            + "R279/R308 compute the ancestor-product fold that would reach OnlyChild", coord)
+                            + "R463 computes the ancestor-product fold that would reach OnlyChild", coord)
                         .isInstanceOf(Source.Child.class);
                 }
             });
         }
         // The mirror is only meaningful if the corpus exercises both the empty-product (Root) and the
-        // absorbing (Child) ends of the fold. OnlyChild is the documented R279/R308 gap.
+        // absorbing (Child) ends of the fold. OnlyChild is the documented R463 gap.
         assertThat(observedSources)
             .as("the corpus must exercise both the Root (empty product) and Child (Many absorber) ends of the fold")
             .contains(Source.Child.class)

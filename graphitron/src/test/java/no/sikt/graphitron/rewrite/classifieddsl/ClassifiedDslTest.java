@@ -78,11 +78,11 @@ class ClassifiedDslTest {
      * Source wrapper arms the model declares but no fixture reaches, each with the reason. The
      * {@link Source.OnlyChild} ({@code One} arrival) is producible but conservatively unreached: R305
      * hard-codes the {@code Many} absorbing element ({@link Source.Child}) for every source field until
-     * R279 / R308 compute the true ancestor-product fold.
+     * R463 computes the true ancestor-product fold.
      */
     private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of(
         "OnlyChild", "The One arrival is producible but conservatively unreached: R305 hard-codes the "
-            + "Many absorbing element (Child) for every source field until R279 / R308 compute the true "
+            + "Many absorbing element (Child) for every source field until R463 computes the true "
             + "ancestor-product fold.");
 
     /**

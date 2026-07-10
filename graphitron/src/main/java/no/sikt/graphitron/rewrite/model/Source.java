@@ -26,7 +26,7 @@ import java.util.Objects;
  * </ul>
  *
  * <p>R316 slice 2 builds {@link Child} for every {@link ChildField} (R305 conservatively hard-codes the
- * {@code Many} absorbing element until R279 / R308 compute the true ancestor-product fold); {@link OnlyChild}
+ * {@code Many} absorbing element until R463 computes the true ancestor-product fold); {@link OnlyChild}
  * is producible but conservatively unreached. {@link SourceShape} stays the shape wrapped by the nested
  * arms; its internal reshaping (the reflected {@code Record} facts) is the downstream {@code SourceKey}
  * work, not this slice. R316 slice 4 retired the {@code carrier} axis and migrated the R281 corpus onto
@@ -53,7 +53,7 @@ public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Chi
 
     /**
      * Exactly one source object arrives (arrival {@code One}): the field's SQL runs directly, single
-     * invocation, no DataLoader. Producible but conservatively unreached until R279 / R308 compute the
+     * invocation, no DataLoader. Producible but conservatively unreached until R463 computes the
      * true ancestor-product cardinality that would let a field declare it (R305 hard-codes {@link Child}).
      */
     record OnlyChild(SourceShape shape) implements Source {

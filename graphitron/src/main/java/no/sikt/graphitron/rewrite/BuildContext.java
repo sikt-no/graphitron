@@ -578,6 +578,40 @@ class BuildContext {
     }
 
     /**
+     * R308 — the single classify-time verdict over an {@code @service} carrier's shape triple:
+     * (carrier field wrapper, {@code @service} producer return shape, payload data-field wrapper).
+     * In the style of {@link DmlPayloadScan}, but its {@link Reject} arm carries a typed
+     * {@link no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError} (with the disagreeing arrival
+     * axes and a stable LSP code) rather than a composed reason string — {@code DmlPayloadScan.Reject(String)}
+     * is the debt this deliberately does not replicate.
+     *
+     * <p>Computed at the {@code @service} payload seat by {@code FieldBuilder.scanServiceCarrierShape},
+     * which folds the carrier arrival (read once from the carrier field's SDL wrapper), the producer
+     * arrival (the typed fact decided at the R96 reflection boundary,
+     * {@link TypeBuilder#serviceCarrierProducerArrival}), and the data-field arrival (the canonical
+     * {@link #scanStructuralServiceCarrierPayload} shape). The verdict replaces the uncoordinated
+     * wrapper reads that used to decide list-carrier admission (the {@code RecordBindingResolver}
+     * {@code NoBind}-silent-drop, the {@code checkServiceReturnMatchesPayload} carrier-wrapper read,
+     * the data-field wrapper key) as the single authority.
+     *
+     * <ul>
+     *   <li>{@link Coherent}: a single carrier ({@code Payload}), or a list carrier
+     *       ({@code [Payload]}) whose producer returns a collection and whose {@code @table}-element
+     *       data field is single. The shape keeps its exact current classification and emit; no
+     *       downstream consumer changes.</li>
+     *   <li>{@link Reject}: an incoherent list carrier; carries the typed
+     *       {@link no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError}.</li>
+     *   <li>{@link NotApplicable}: not a producer-backed carrier (the seat falls through to its
+     *       existing non-carrier classification).</li>
+     * </ul>
+     */
+    public sealed interface ServiceCarrierShape {
+        record Coherent() implements ServiceCarrierShape {}
+        record Reject(no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError error) implements ServiceCarrierShape {}
+        record NotApplicable() implements ServiceCarrierShape {}
+    }
+
+    /**
      * R310 — the answer to "would this payload classify as a DML carrier were it not for a
      * forbidden directive on its data field". Returned by {@link #diagnoseForbiddenCarrierDirective}
      * so the {@code @mutation} return-type diagnostic can name the offending field and directive

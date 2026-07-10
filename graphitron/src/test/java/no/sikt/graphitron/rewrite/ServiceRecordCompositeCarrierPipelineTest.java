@@ -1,8 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -122,6 +124,38 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(rc.returnType().wrapper().isList()).isFalse();
         assertThat(rc.envelope()).isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
         assertThat(schema.diagnostics()).isEmpty();
+    }
+
+    /**
+     * R308 — the class-backed list-carrier arrival mismatch (formerly a misleading rejection): a
+     * <em>list</em> carrier ({@code [CreateFilmsPayload]}) over a class-backed composite payload,
+     * produced by a <em>single</em> composite ({@code createFilmWithActors}). Before R308 the
+     * {@code NoBind}-silent-drop left the payload unbacked and only the generic dangling-type-reference
+     * rule rejected it (never naming the cardinality cause). The shape verdict now rejects at the seat
+     * with the typed {@link ServiceCarrierShapeError.ProducerArrivalMismatch} — the same arm the
+     * {@code @table}-data-field a1 case lands, since both are the one fact "carrier arrival disagrees
+     * with producer arrival" — naming the {@code List<…>} fix.
+     */
+    @Test
+    void listCarrier_classBacked_singleProducer_rejectsProducerArrivalMismatch() {
+        var schema = TestSchemaHelper.buildSchema(TABLES + """
+            type CreateFilmsPayload {
+                results: [CreateFilmsResult]
+                errors: [CreateError]
+            }
+            type Query { x: String }
+            type Mutation {
+                createFilms: [CreateFilmsPayload]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmWithActors"})
+            }
+            """);
+
+        var mut = schema.field("Mutation", "createFilms");
+        assertThat(mut).isInstanceOf(UnclassifiedField.class);
+        var rejection = ((UnclassifiedField) mut).rejection();
+        assertThat(rejection).isInstanceOf(ServiceCarrierShapeError.ProducerArrivalMismatch.class);
+        assertThat(rejection.message())
+            .contains("[CreateFilmsPayload]", "single value", "List<…>", "createFilmWithActors");
     }
 
     @Test

@@ -231,6 +231,9 @@ public final class Diagnostics {
         if (rejection instanceof no.sikt.graphitron.rewrite.model.WireCoercionError wce) {
             return wce.lspCode();
         }
+        if (rejection instanceof no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError scse) {
+            return scse.lspCode();
+        }
         return null;
     }
 

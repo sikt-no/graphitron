@@ -80,6 +80,7 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -3389,6 +3390,17 @@ class FieldBuilder {
         if (exceptionsReason != null) {
             return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(exceptionsReason));
         }
+        // R308: the @service carrier shape verdict — the single authority for whether a list-returning
+        // carrier admits. It fires even when the payload's ResultReturnType.fqClassName is null (the a1
+        // silent admit, where producerBindLevel's NoBind left it unbound and the return-match gate
+        // below short-circuits), and its typed ProducerArrivalMismatch pre-empts the two misleading
+        // record-handoff rejections checkServiceReturnMatchesPayload would otherwise produce.
+        switch (scanServiceCarrierShape(returnType, method, parentTypeName, fieldName)) {
+            case BuildContext.ServiceCarrierShape.Reject r ->
+                { return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, r.error()); }
+            case BuildContext.ServiceCarrierShape.Coherent ignored -> { }
+            case BuildContext.ServiceCarrierShape.NotApplicable ignored -> { }
+        }
         String returnTypeReason = checkServiceReturnMatchesPayload(returnType, method);
         if (returnTypeReason != null) {
             return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(returnTypeReason));
@@ -3463,6 +3475,80 @@ class FieldBuilder {
         return "@service method '" + method.className() + "." + method.methodName()
             + "' must return '" + sdlPayloadTypeName + "' to match the field's "
             + "declared payload type — got '" + method.returnType() + "'";
+    }
+
+    /**
+     * R308 — the single classify-time shape verdict for an {@code @service} carrier field, over the
+     * triple (carrier field wrapper, {@code @service} producer return shape, payload data-field
+     * wrapper). It is the sole authority for whether a <em>list-returning</em> carrier admits; a
+     * single carrier is always coherent and left to its existing classification, so every coherent
+     * shape's model and emit stay byte-for-byte unchanged.
+     *
+     * <p>Reads three axes, each from its one home: carrier arrival straight off the carrier field's
+     * SDL wrapper here; producer arrival from the typed fact decided once at the R96 reflection
+     * boundary ({@link TypeBuilder#serviceCarrierProducerArrival}); data-field arrival from the
+     * canonical {@link BuildContext#scanStructuralServiceCarrierPayload} shape. This replaces the
+     * uncoordinated wrapper reads that previously decided list-carrier admission (the
+     * {@code RecordBindingResolver.producerBindLevel} {@code NoBind}-silent-drop, and the
+     * carrier-wrapper read inside {@link #checkServiceReturnMatchesPayload}), none of which ever saw
+     * the whole triple.
+     *
+     * <p>A list carrier rejects when the producer returns a single value
+     * ({@link ServiceCarrierShapeError.ProducerArrivalMismatch}: graphql-java cannot iterate a single
+     * value into the {@code [Payload]} list), or when a {@code @table}-element data field is itself a
+     * list ({@link ServiceCarrierShapeError.DataFieldArrivalConflict}: the flat producer list is
+     * consumed element-by-element into the carrier, so a single record reaches each payload and cannot
+     * populate a list data field — the per-element {@code ClassCastException}). Class-backed composite
+     * and ID-element data fields re-nest per element and stay coherent.
+     */
+    private BuildContext.ServiceCarrierShape scanServiceCarrierShape(
+            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
+            String parentTypeName, String fieldName) {
+        if (typeBuilder == null) return new BuildContext.ServiceCarrierShape.NotApplicable();
+        String payloadSdl = returnType.returnTypeName();
+        if (payloadSdl == null) return new BuildContext.ServiceCarrierShape.NotApplicable();
+        // Only a producer-backed carrier gets a verdict; a non-carrier @service return falls through
+        // to its existing classification untouched.
+        if (typeBuilder.carrierBinding(payloadSdl) instanceof TypeBuilder.CarrierBinding.NotACarrier) {
+            return new BuildContext.ServiceCarrierShape.NotApplicable();
+        }
+        // Carrier arrival: the one home is the carrier field's own SDL wrapper.
+        SourceKey.Cardinality carrierArrival = returnType.wrapper().isList()
+            ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+        // A single carrier is always coherent: the producer's return (single value or collection) is
+        // the single payload's source and the data field consumes it. Every existing @service carrier
+        // shape is single-arrival, so this arm leaves them byte-for-byte unchanged.
+        if (carrierArrival == SourceKey.Cardinality.ONE) {
+            return new BuildContext.ServiceCarrierShape.Coherent();
+        }
+        // List carrier [Payload]: graphql-java iterates the producer's return into the list, so each
+        // element becomes one payload. Producer arrival must be a collection (MANY); an absent fact
+        // (no @service producer observed for this payload) reads as ONE and rejects, which is correct
+        // — a list carrier with no collection producer cannot be filled.
+        SourceKey.Cardinality producerArrival = typeBuilder
+            .serviceCarrierProducerArrival(payloadSdl)
+            .orElse(SourceKey.Cardinality.ONE);
+        if (producerArrival == SourceKey.Cardinality.ONE) {
+            return new BuildContext.ServiceCarrierShape.Reject(
+                new ServiceCarrierShapeError.ProducerArrivalMismatch(
+                    payloadSdl, parentTypeName, fieldName, carrierArrival, producerArrival,
+                    method.className(), method.methodName()));
+        }
+        // Producer is a collection. A @table-element data field that is itself a list cannot be
+        // demultiplexed out of the flat producer list (each payload element is a single record).
+        // Class-backed composite (RecordElement) and ID-element data fields re-nest per element and
+        // are coherent, so the conflict is scoped to the Table element kind.
+        if (ctx.scanStructuralServiceCarrierPayload(payloadSdl)
+                instanceof BuildContext.DmlPayloadScan.Admit admit
+                && admit.element() instanceof BuildContext.DmlElementKind.Table tableElement
+                && GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList) {
+            return new BuildContext.ServiceCarrierShape.Reject(
+                new ServiceCarrierShapeError.DataFieldArrivalConflict(
+                    payloadSdl, parentTypeName, fieldName,
+                    admit.dataField().getName(), tableElement.elementTypeName(),
+                    carrierArrival, SourceKey.Cardinality.MANY));
+        }
+        return new BuildContext.ServiceCarrierShape.Coherent();
     }
 
     /**
