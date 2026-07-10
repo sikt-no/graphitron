@@ -33,11 +33,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>These run the real generated engine over a {@code GraphitronRuntime} built on a
  * {@link DataSource} (not the escape-hatch {@code Graphitron.newExecutionInput(dsl, ...)} form): the
- * instrumentation acquires the connection and publishes the pinned {@code DSLContext}. Because slice
- * 5's ergonomic {@code runtime.newExecutionInput(claims, ...)} factory does not exist yet, the
- * per-request {@code graphQLContext} (claims, the sealed context singleton, the {@code userId}
- * contextArgument) is assembled directly here; slice 5 will replace {@link #ownedInput} with the
- * factory.
+ * instrumentation acquires the connection and publishes the pinned {@code DSLContext}. Per-request
+ * assembly goes through slice 5's owned-path factory, {@code Graphitron.newOwnedExecutionInput(claims,
+ * userId)}, via {@link #ownedInput}; this class is that factory's first client.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
