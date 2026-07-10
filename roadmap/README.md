@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R429` | Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity | Ready | 2026-07-10 <sub>created 2026-07-03</sub> | [plan](connection-transaction-lifecycle.md) |
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | Ready | 2026-07-09 | [plan](per-participant-multitable-child-join-paths.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
+| `R429` | Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity | In Progress | 2026-07-10 <sub>created 2026-07-03</sub> | [plan](connection-transaction-lifecycle.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R308` | Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict | In Review | 2026-07-10 <sub>created 2026-06-14</sub> | [plan](service-list-payload-arrival.md) |
@@ -286,7 +286,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### runtime-connection
 
-- `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — Ready, architecture
+- `R429` [**Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity**](connection-transaction-lifecycle.md) — In Progress, architecture
 - `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
