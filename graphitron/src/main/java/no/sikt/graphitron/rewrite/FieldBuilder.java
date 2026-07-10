@@ -3526,7 +3526,7 @@ class FieldBuilder {
         // (no @service producer observed for this payload) reads as ONE and rejects, which is correct
         // — a list carrier with no collection producer cannot be filled.
         SourceKey.Cardinality producerArrival = typeBuilder
-            .serviceCarrierProducerArrival(payloadSdl)
+            .serviceCarrierProducerArrival(parentTypeName, fieldName)
             .orElse(SourceKey.Cardinality.ONE);
         if (producerArrival == SourceKey.Cardinality.ONE) {
             return new BuildContext.ServiceCarrierShape.Reject(

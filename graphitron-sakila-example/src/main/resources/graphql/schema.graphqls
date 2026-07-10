@@ -2831,6 +2831,21 @@ type Mutation {
             method: "filmById"
         })
 
+    # R308 execution-tier fixture (service-list-payload-arrival.md): the coherent LIST carrier —
+    # a @service field returning [FilmServicePayload] whose single @table data field `film` is
+    # produced by a List<FilmRecord>. graphql-java iterates the producer list into the
+    # [FilmServicePayload] list (each FilmRecord becomes one payload), and each payload's single
+    # `film` re-fetches through LOAD_ONE; graphql-java coalesces the per-element load() calls within
+    # one dispatch cycle into a single batched rows-method query, so the whole traversal fires exactly
+    # two SELECTs (the producer's, then one batched data-field re-fetch) regardless of the id count.
+    # Distinct from serviceFilmsByIds (a single FilmsServicePayload carrier whose list data field is
+    # filled by the same producer list).
+    serviceFilmsByIdsAsPayloads(ids: [Int!]!): [FilmServicePayload]
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+            method: "filmsByIds"
+        })
+
     # R275 source-record carrier with an error channel: the producer returns a bare FilmRecord,
     # the payload pairs `film` (SingleRecordTableField, OUTCOME_SUCCESS envelope) with `errors`.
     # id 999 throws the mapped @error (ErrorList arm -> film null, typed error); any other id
