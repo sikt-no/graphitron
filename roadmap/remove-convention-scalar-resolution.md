@@ -1,7 +1,7 @@
 ---
 id: R464
 title: "Remove convention-based scalar resolution; require @scalarType for non-spec scalars"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 4
 theme: classification-model
