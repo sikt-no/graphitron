@@ -1,7 +1,7 @@
 ---
 id: R465
 title: "Upgrade federation-graphql-java-support 6.0->6.2 and extended-scalars 22->24"
-status: Spec
+status: Ready
 bucket: tech-debt
 priority: 4
 theme: classification-model
