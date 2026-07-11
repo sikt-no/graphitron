@@ -1,7 +1,7 @@
 ---
 id: R465
 title: "Upgrade federation-graphql-java-support 6.0->6.2 and extended-scalars 22->24"
-status: Ready
+status: In Review
 bucket: tech-debt
 priority: 4
 theme: classification-model
@@ -33,3 +33,7 @@ No generator source, no generated-output, and no test changes are expected. The 
 * `mvn install -Plocal-db` is green across the full reactor (build-fixtures -> test -> compile-spec -> execute-spec), including `graphitron-sakila-example` (Java 17 generated-output guard) and `graphitron-docs`.
 * No lingering reference to the deleted `ScalarTypeResolverTest.conventionTable_coversEveryExtendedScalarsField` guard or the convention table anywhere in the tree (already true post-R464; re-confirm as a grep after the bump).
 * No new or modified test is required; if the bump surfaces an unexpected failure, that failure defines follow-up scope rather than being patched over inside this item.
+
+## Implementation
+
+Shipped: both version properties in the root `pom.xml` dependency-management block bumped (`federation-graphql-java-support` 6.0.0 -> 6.2.0, `graphql-java-extended-scalars` 22.0 -> 24.0); `graphql-java` untouched at 25.0. No generator, generated-output, or test changes were needed, exactly as scoped. A tree-wide grep confirms no live source, test, or user-facing doc still references the convention table or the deleted `conventionTable_coversEveryExtendedScalarsField` drift guard (the only hits are this spec, the R464 changelog entry, and regenerated `docs/target/` artifacts). Full `mvn install -Plocal-db` is green across all 13 modules, including `graphitron-sakila-example` and `graphitron-docs`.
