@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) | Ready | 2026-07-11 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | Ready | 2026-07-09 | [plan](per-participant-multitable-child-join-paths.md) |
-| `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) | In Review | 2026-07-11 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R308` | Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict | In Review | 2026-07-10 <sub>created 2026-06-14</sub> | [plan](service-list-payload-arrival.md) |
@@ -308,7 +308,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### dev-loop
 
-- `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — In Review, feature
+- `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Ready, feature
 - `R462` [**Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder**](nested-fetcher-outgoing-field-edges.md) — Backlog, bug
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 

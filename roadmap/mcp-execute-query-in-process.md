@@ -1,7 +1,7 @@
 ---
 id: R428
 title: "MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: dev-loop
@@ -197,6 +197,46 @@ R460-adjacent; the user doc scopes the claim).
 `buildSchema(schemaCustomizer, federationCustomizer)` and an entity fetcher, so executing `_entities`
 against a federated schema is a follow-on: generate a federation-aware executor variant. V0 targets the
 non-federation path; flag `_entities` execution as a known gap.
+
+## Review feedback (In Review -> Ready, 2026-07-11)
+
+Independent In Review gate; sent back for rework. Two material findings, both must be resolved before
+the next In Review handoff.
+
+1. **Build is red (automatic rework).** `mvn install -Plocal-db` fails at
+   `graphitron-maven-plugin`: `MojoDocCoverageTest.everyMojoParameterHasADocRowAndViceVersa`
+   (MojoDocCoverageTest.java:111) reports the new editable Mojo parameter `devDatabase`
+   (`DevMojo.java:121`, slice 4) has no matching row in
+   `docs/manual/reference/mojo-configuration.adoc`. Slice 4 added user docs to
+   `mcp-agent-context.adoc` / `dev-loop.adoc` but missed the audited reference table.
+   Fix: add the `devDatabase` row (and any nested sub-parameters the audit expects) to
+   `mojo-configuration.adoc`, then confirm the full `-Plocal-db` reactor is green.
+
+2. **Code-string assertions on generated method bodies (review-enforced ban).**
+   `GraphitronDevExecutorGeneratorTest` asserts on `executeMethod(...).code().toString()` in five
+   tests: `execute_wiresTheRuntimeEngineWithRollbackOnlyCommitPolicy`,
+   `execute_buildsOwnedInputAndReturnsToSpecificationJson`,
+   `noSessionState_normalizesNullClaimsInsteadOfFailing`,
+   `sessionStateConfigured_failsLoudOnMissingClaims`, and
+   `contextArguments_bindAlphabeticallyIntoTheOwnedFactoryCall`. These pin generated *implementation*
+   text (`new ...GraphitronRuntime(...)`, `.query(query)`, `engine.execute(input)`,
+   `if (claims == null || claims.isBlank())`, the binding strings), which
+   `development-principles.adoc` bans at every tier ("Code-string assertions on generated method
+   bodies are banned at every tier ... review-enforced at test-review time"). The sibling pipeline
+   test already documents the rule and omits them; the unit test must do the same. The behaviours
+   these strings stand in for are already pinned behaviourally: ROLLBACK_ONLY / observable-write /
+   fail-loud claims by `DevExecuteExecutionTest` (execution tier), the deferred topology by
+   `GraphitronTransactionProviderGeneratorTest`, and alphabetical binding by the L5 sakila-example
+   compile against the facade's typed factory. Fix: drop or convert the five body-string tests;
+   keep the structural `MethodSpec`/`TypeSpec` assertions (signature, federation gate, helper
+   emission, nested DataSource), which are not body-string assertions and are fine.
+
+Not blocking, but note for the next pass: the deferred-rollback `ROLLBACK_ONLY` topology and its
+stated fidelity limit (no mid-operation `afterSettle` re-fire; `release()` at
+`ConnectionRuntimeClassGenerator` rollback+autocommit-restore discards the deferred transaction) were
+reviewed and are architecturally sound; the R429 contract-change flag is satisfied. The
+`GraphitronDevExecutor` generator, `DevQueryExecutor` host boundary, and `ExecuteTool` wiring are
+otherwise aligned with the spec.
 
 ## Slices and test tiers (implementation status)
 
