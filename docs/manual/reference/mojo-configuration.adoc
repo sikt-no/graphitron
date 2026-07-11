@@ -77,6 +77,11 @@ The following parameters apply to every goal:
 | `SessionStateBinding`
 | (none)
 | Session identity (R429). A `<sessionState>` block naming how per-request identity is mounted on the pinned connection: either consumer-authored database callables (`<connect call>` / `<disconnect call>`, with an optional OUT `handle`, plus the optional `<stateSurvivesTransactions>` survival declaration) or the Postgres `<variables>` sugar (`<variable name claim>`) that generates both hook halves. Graphitron emits a `SessionHook` from the block that runs at connection acquisition and release; an undeclared function-hook pair is additionally re-fired after each mutation-field transaction settle. An unpaired or handle-inconsistent block fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
+
+| `devDatabase`
+| `DevDatabaseBinding`
+| (none)
+| Dev database for the MCP `execute` tool (`dev` goal only, R428). A `<devDatabase>` block carrying plain connection coordinates: `<url>`, `<user>`, `<password>`, `<dialect>` (explicit and enumerated, `POSTGRES` or `ORACLE`, never defaulted), the `<claims>` payload handed to the `<sessionState>` connect hook (inline, or `@/path/to/file`; the file is re-read on every call), and the `<allowClaimsOverride>` opt-in for a per-call claims argument (default off). Environment variables override the POM on every field (`GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`, `GRAPHITRON_DEV_CLAIMS`, `GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE`), so credentials stay out of the checked-in file. With no url from either source the `execute` tool is simply absent and every other dev tool works without it; a url with a missing or unsupported dialect fails the goal. See xref:../how-to/mcp-agent-context.adoc#execute-tool[Run a query without an app server].
 |===
 
 == `dev`-goal parameters
