@@ -1,7 +1,7 @@
 ---
 id: R428
 title: "MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: dev-loop
