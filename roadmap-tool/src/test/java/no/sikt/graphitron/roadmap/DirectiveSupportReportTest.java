@@ -1,10 +1,14 @@
 package no.sikt.graphitron.roadmap;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pins the SDL directive parser. The fixtures here cover the surface
@@ -225,5 +229,87 @@ class DirectiveSupportReportTest {
         assertThat(fragment)
             .contains("None. Every directive declared in legacy graphitron")
             .contains("No directive shared with legacy has changed argument shape");
+    }
+
+    @Test
+    void renderMigrationSupportedParagraphDropsUnbackedFixtureClaim() {
+        // R346 decision 2: the Supported paragraph must not assert per-directive fixture
+        // coverage (nothing pins that invariant in migration mode); it states the real
+        // criterion (declared + supported) and keeps only the test-backed "documented" clause.
+        var d = new DirectiveSupportReport.Directive("table",
+            List.of(new DirectiveSupportReport.Arg("name", "String!", null)),
+            List.of("OBJECT"));
+        String fragment = DirectiveSupportReport.renderMigration(
+            List.of(d), List.of(d), java.util.Set.of());
+        assertThat(fragment)
+            .doesNotContain("exercised by at least one execution-tier or")
+            .doesNotContain("pipeline-tier test fixture");
+        assertThat(fragment)
+            .contains("The rewrite generator declares and supports the following directives.")
+            .contains("Each is documented in the architecture chapter:");
+    }
+
+    /**
+     * A minimal legacy/rewrite pair whose migration diff exercises all three arm shapes
+     * (legacy-only directive, rewrite-only arg, legacy-only arg), so the round-trip below
+     * verifies against non-trivial content rather than an empty fragment.
+     */
+    private static void writeDirectiveFixtures(Path legacy, Path rewrite) throws Exception {
+        Files.writeString(legacy, """
+            directive @field(name: String!, javaName: String) on FIELD_DEFINITION
+            directive @experimental_procedureCall on FIELD_DEFINITION
+            """);
+        Files.writeString(rewrite, """
+            directive @field(name: String!) on FIELD_DEFINITION
+            """);
+    }
+
+    @Test
+    void verifyReturnsZeroWhenOutputMatchesRegeneratedContent(@TempDir Path dir) throws Exception {
+        Path legacy = dir.resolve("legacy.graphqls");
+        Path rewrite = dir.resolve("rewrite.graphqls");
+        Path out = dir.resolve("fragment.adoc");
+        writeDirectiveFixtures(legacy, rewrite);
+
+        // Generate the fragment, then verify it against itself: an up-to-date file passes.
+        int gen = DirectiveSupportReport.run(List.of(
+            legacy.toString(), rewrite.toString(), dir.toString(),
+            "--mode=migration", "--output=" + out));
+        assertThat(gen).isZero();
+
+        int verify = DirectiveSupportReport.run(List.of(
+            legacy.toString(), rewrite.toString(), dir.toString(),
+            "--mode=migration", "--output=" + out, "--verify"));
+        assertThat(verify).isZero();
+    }
+
+    @Test
+    void verifyFailsWhenOutputDriftsFromRegeneratedContent(@TempDir Path dir) throws Exception {
+        Path legacy = dir.resolve("legacy.graphqls");
+        Path rewrite = dir.resolve("rewrite.graphqls");
+        Path out = dir.resolve("fragment.adoc");
+        writeDirectiveFixtures(legacy, rewrite);
+
+        Files.writeString(out, "// stale hand-edited content that no longer matches the generator\n");
+
+        // Drift throws BuildFailure (not a non-zero return) so exec-maven-plugin surfaces a clean
+        // BUILD FAILURE rather than a bare System.exit; this is the guard that would have caught
+        // the @routine / @scalarType drift that motivated R346.
+        assertThatThrownBy(() -> DirectiveSupportReport.run(List.of(
+            legacy.toString(), rewrite.toString(), dir.toString(),
+            "--mode=migration", "--output=" + out, "--verify")))
+            .isInstanceOf(BuildFailure.class);
+    }
+
+    @Test
+    void verifyRequiresOutputPath(@TempDir Path dir) throws Exception {
+        Path legacy = dir.resolve("legacy.graphqls");
+        Path rewrite = dir.resolve("rewrite.graphqls");
+        writeDirectiveFixtures(legacy, rewrite);
+
+        int rc = DirectiveSupportReport.run(List.of(
+            legacy.toString(), rewrite.toString(), dir.toString(),
+            "--mode=migration", "--verify"));
+        assertThat(rc).isEqualTo(64);
     }
 }

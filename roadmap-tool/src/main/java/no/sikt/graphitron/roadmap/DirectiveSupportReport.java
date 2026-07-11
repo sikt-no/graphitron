@@ -94,9 +94,14 @@ final class DirectiveSupportReport {
      *   <li>{@code --output=<path>} — write to file instead of stdout. Required when
      *       {@code --mode=migration} is set in CI; the docs build's verify-mode reads
      *       the regenerated content from disk.</li>
+     *   <li>{@code --verify} — regenerate in memory and compare against the committed
+     *       {@code --output} file, failing the build with a "regenerate with: ..."
+     *       diagnostic on any difference instead of writing. Requires {@code --output}.
+     *       This is the drift guard R346 wires into the {@code roadmap-tool} verify
+     *       phase; it mirrors {@code leaf-coverage --verify}.</li>
      * </ul>
      *
-     * <p>The internal report (default) stays consumer-stable: the new flag is purely
+     * <p>The internal report (default) stays consumer-stable: the new flags are purely
      * additive, and the existing positional shape continues to work.
      */
     static int run(List<String> args) throws IOException {
@@ -105,7 +110,7 @@ final class DirectiveSupportReport {
                 "usage: directive-support <legacy-directives.graphqls>"
                     + " <rewrite-directives.graphqls>"
                     + " <fixture-dir>[:<fixture-dir>...]"
-                    + " [--mode=migration] [--output=<path>]");
+                    + " [--mode=migration] [--output=<path>] [--verify]");
             return 64;
         }
         Path legacyFile = Path.of(args.get(0)).toAbsolutePath().normalize();
@@ -115,10 +120,12 @@ final class DirectiveSupportReport {
             fixtureDirs.add(Path.of(s).toAbsolutePath().normalize());
         }
         boolean migration = false;
+        boolean verify = false;
         Path outputFile = null;
         for (int i = 3; i < args.size(); i++) {
             String a = args.get(i);
             if ("--mode=migration".equals(a)) migration = true;
+            else if ("--verify".equals(a)) verify = true;
             else if (a.startsWith("--output=")) outputFile = Path.of(a.substring("--output=".length()));
             else {
                 System.err.println("directive-support: unknown arg: " + a);
@@ -134,6 +141,10 @@ final class DirectiveSupportReport {
             System.err.println("not a file: " + rewriteFile);
             return 64;
         }
+        if (verify && outputFile == null) {
+            System.err.println("directive-support: --verify requires --output=<path> to compare against.");
+            return 64;
+        }
 
         List<Directive> legacy = parseDirectives(Files.readString(legacyFile));
         List<Directive> rewrite = parseDirectives(Files.readString(rewriteFile));
@@ -142,6 +153,23 @@ final class DirectiveSupportReport {
         String rendered = migration
             ? renderMigration(legacy, rewrite, fixtureUses)
             : render(legacy, rewrite, fixtureUses);
+
+        if (verify) {
+            String existing = Files.exists(outputFile) ? Files.readString(outputFile) : "";
+            if (!existing.equals(rendered)) {
+                System.err.println("directive-support report at " + outputFile + " is out of date. Regenerate with:");
+                System.err.println("  " + REGENERATE_COMMAND);
+                // Throw rather than return non-zero (which the Main dispatcher turns into a
+                // System.exit): exec-maven-plugin's `java` goal runs in-process, so System.exit
+                // would kill the Maven JVM before it prints BUILD FAILURE. The exception lets the
+                // plugin wrap it as MojoExecutionException; the stderr above stays readable in the
+                // execution's INFO block. Mirrors LeafCoverageReport / Main.runVerify.
+                throw new BuildFailure("directive-support report drift");
+            }
+            System.out.println("directive-support report is up to date: " + outputFile);
+            return 0;
+        }
+
         if (outputFile != null) {
             Files.createDirectories(outputFile.getParent());
             Files.writeString(outputFile, rendered);
@@ -151,6 +179,19 @@ final class DirectiveSupportReport {
         }
         return 0;
     }
+
+    /**
+     * Project-relative regenerate command printed when {@code --verify} finds drift. Kept as a
+     * fixed, repo-root-relative string (mirroring {@code LeafCoverageReport}) so CI logs and
+     * local error prints read identically and a contributor can copy-paste it, rather than
+     * echoing the absolute {@code ${project.basedir}} paths the pinned pom execution passes.
+     */
+    static final String REGENERATE_COMMAND =
+        "mvn -pl roadmap-tool exec:java -Dexec.args='directive-support"
+            + " roadmap-tool/src/main/resources/legacy-directives.graphqls"
+            + " graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls"
+            + " graphitron/src/test/resources --mode=migration"
+            + " --output=docs/manual/_generated/supported-directives.adoc'";
 
     /**
      * Strips block strings ({@code """..."""}) and line comments ({@code # ...})
@@ -552,9 +593,14 @@ final class DirectiveSupportReport {
         out.append("// Regenerate via the verify-mode CI guard. Never edit by hand.\n\n");
 
         out.append("=== Supported directives\n\n");
-        out.append("The rewrite generator declares the following directives. Each is documented in ")
-           .append("the architecture chapter and exercised by at least one execution-tier or ")
-           .append("pipeline-tier test fixture:\n\n");
+        // Criterion is "declared by the rewrite generator and on the v1 advertised surface"
+        // (the list gates on rewriteByName.containsKey minus the rejected/withheld sets below),
+        // not "exercised by a fixture": migration mode never computes the fixture-use signal into
+        // this list, so claiming per-directive fixture coverage here asserts an invariant nothing
+        // pins (R346, decision 2). The "documented in the architecture chapter" clause stays: it
+        // is pinned by DirectiveDocCoverageTest's declared-directive to reference-page bijection.
+        out.append("The rewrite generator declares and supports the following directives. ")
+           .append("Each is documented in the architecture chapter:\n\n");
         var supported = allNames.stream()
             .filter(n -> rewriteByName.containsKey(n))
             .filter(n -> !REJECTED_ON_USE.contains(n))

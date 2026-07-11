@@ -127,7 +127,8 @@ public final class Main {
         System.err.println("  status      <roadmap-dir> <R<n>-or-slug> <new-state>");
         System.err.println("  render-adoc <roadmap-dir> <output-dir>");
         System.err.println("  directive-support <legacy-directives.graphqls>"
-            + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]");
+            + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]"
+            + " [--mode=migration] [--output=<path>] [--verify]");
         System.err.println("  leaf-coverage <root-dir> [--verify] [--mode=migration]"
             + " [--output=<path>]");
         System.err.println("  check-adoc-tables <root-dir>...");
