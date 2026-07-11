@@ -19,14 +19,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit-tier tests for {@link GraphitronDevExecutorGenerator}: the JDK-only {@code execute}
- * signature (the reflection boundary the dev-loop host pins), the ROLLBACK_ONLY runtime wiring,
- * the sessionState-driven fail-loud arm, the alphabetical contextArgument binding, and the
- * federation emission gate.
+ * signature (the reflection boundary the dev-loop host pins), the federation emission gate, the
+ * contextArgs-helper emission rule, and the nested single-connection {@code DataSource} shape.
+ * Structural {@code MethodSpec}/{@code TypeSpec} assertions only; code-string assertions on
+ * generated method bodies are banned at every tier (development-principles.adoc,
+ * review-enforced), so body behaviour is pinned where it runs instead:
+ *
+ * <ul>
+ *   <li>ROLLBACK_ONLY engine wiring, the observable-write/no-trace mutation, variables binding,
+ *       the fail-loud missing-claims arm, and verbatim connect-hook errors:
+ *       {@code DevExecuteExecutionTest} (execution tier, real Postgres).</li>
+ *   <li>The deferred observe-then-discard transaction topology:
+ *       {@code GraphitronTransactionProviderGeneratorTest} (compiled and driven).</li>
+ *   <li>Alphabetical contextArgument binding: the executor's call into the facade's typed
+ *       {@code newOwnedExecutionInput} is type-checked by the L5 compile gate over the
+ *       sakila-example schemas (a mis-ordered binding with distinct types fails that compile),
+ *       with the signature-stability half pinned by the sibling
+ *       {@code GraphitronDevExecutorGeneratorPipelineTest}.</li>
+ *   <li>The no-sessionState normalize arm (null claims accepted when no hook is configured):
+ *       compiled by the same L5 gate via sakila-example's multischema variant, which configures
+ *       no {@code <sessionState>}.</li>
+ * </ul>
  *
  * <p>Schemas with contextArguments are hand-built through the canonical record constructor (a
- * {@link ContextArgumentClassifier.Classification} injected directly) so the binding shape is
- * testable without the classifier; the classifier-driven path is covered by the sibling
- * {@code GraphitronDevExecutorGeneratorPipelineTest}.
+ * {@link ContextArgumentClassifier.Classification} injected directly) so signature stability under
+ * declared contextArguments is testable without the classifier.
  */
 @UnitTier
 class GraphitronDevExecutorGeneratorTest {
@@ -93,61 +110,22 @@ class GraphitronDevExecutorGeneratorTest {
     }
 
     @Test
-    void execute_wiresTheRuntimeEngineWithRollbackOnlyCommitPolicy() {
-        var body = executeMethod(generate(emptySchema(), SessionStateConfig.none())).code().toString();
-        assertThat(body)
-            .contains("new com.example.schema.GraphitronRuntime(new SingleConnectionDataSource(connection), org.jooq.SQLDialect.valueOf(dialect))")
-            .contains("graphql.GraphQL.newGraphQL(com.example.Graphitron.buildSchema(builder -> {}))")
-            .contains("new com.example.schema.GraphitronConnectionInstrumentation(runtime, com.example.schema.GraphitronTransactionProvider.CommitPolicy.ROLLBACK_ONLY)");
-    }
-
-    @Test
-    void execute_buildsOwnedInputAndReturnsToSpecificationJson() {
-        var body = executeMethod(generate(emptySchema(), SessionStateConfig.none())).code().toString();
-        assertThat(body)
-            .contains("com.example.Graphitron.newOwnedExecutionInput(claimsPayload)")
-            .contains(".query(query)")
-            .contains(".variables(variables == null ? java.util.Map.of() : variables)")
-            .contains("engine.execute(input)")
-            .contains("return org.jooq.tools.json.JSONValue.toJSONString(result.toSpecification())");
-    }
-
-    @Test
-    void noSessionState_normalizesNullClaimsInsteadOfFailing() {
-        var body = executeMethod(generate(emptySchema(), SessionStateConfig.none())).code().toString();
-        assertThat(body)
-            .contains("claims == null ? \"\" : claims")
-            .doesNotContain("IllegalStateException");
-    }
-
-    @Test
-    void sessionStateConfigured_failsLoudOnMissingClaims() {
-        // Fail loud, never skip: running without the connect hook would execute under a different
-        // security posture than production. The message points at the config knob.
-        var sessionState = new SessionStateConfig.Variables(
-            List.of(new SessionStateConfig.Variable("app.user_id", "sub")));
-        var body = executeMethod(generate(emptySchema(), sessionState)).code().toString();
-        assertThat(body)
-            .contains("if (claims == null || claims.isBlank())")
-            .contains("IllegalStateException")
-            .contains("GRAPHITRON_DEV_CLAIMS");
-    }
-
-    @Test
-    void contextArguments_bindAlphabeticallyIntoTheOwnedFactoryCall() {
-        // Same resolved() iteration order as the facade's factory parameters (fnr before userId),
-        // so position in this call always matches the factory's parameter list.
-        var schema = schemaWithContextArgs(
-            new ResolvedContextArg("fnr", ClassName.get(Long.class), List.of()),
-            new ResolvedContextArg("userId", ClassName.get(String.class), List.of()));
-        var body = executeMethod(generate(schema, SessionStateConfig.none())).code().toString();
-        String fnrBinding = "(java.lang.Long) requiredContextArg(contextArgs, \"fnr\", java.lang.Long.class)";
-        String userIdBinding = "(java.lang.String) requiredContextArg(contextArgs, \"userId\", java.lang.String.class)";
-        assertThat(body)
-            .contains("com.example.Graphitron.newOwnedExecutionInput(claimsPayload,")
-            .contains(fnrBinding)
-            .contains(userIdBinding);
-        assertThat(body.indexOf(fnrBinding)).isLessThan(body.indexOf(userIdBinding));
+    void executeSignature_isIdenticalRegardlessOfSessionStateAndContextArguments() {
+        // The schema-varying facts (sessionState fail-loud arm, contextArgument binding) are
+        // absorbed into the body; the host reflects one fixed shape. Compare the two extremes
+        // structurally: same parameter names and types either way.
+        var plain = executeMethod(generate(emptySchema(), SessionStateConfig.none()));
+        var loaded = executeMethod(generate(
+            schemaWithContextArgs(
+                new ResolvedContextArg("fnr", ClassName.get(Long.class), List.of()),
+                new ResolvedContextArg("userId", ClassName.get(String.class), List.of())),
+            new SessionStateConfig.Variables(
+                List.of(new SessionStateConfig.Variable("app.user_id", "sub")))));
+        assertThat(loaded.parameters()).extracting(p -> p.name())
+            .isEqualTo(plain.parameters().stream().map(p -> p.name()).toList());
+        assertThat(loaded.parameters()).extracting(p -> p.type().toString())
+            .isEqualTo(plain.parameters().stream().map(p -> p.type().toString()).toList());
+        assertThat(loaded.returnType()).isEqualTo(plain.returnType());
     }
 
     @Test

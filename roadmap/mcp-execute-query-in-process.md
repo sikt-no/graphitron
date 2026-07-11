@@ -203,6 +203,24 @@ non-federation path; flag `_entities` execution as a known gap.
 Independent In Review gate; sent back for rework. Two material findings, both must be resolved before
 the next In Review handoff.
 
+**Rework resolution (2026-07-11, implementer session).** Both findings addressed:
+finding 1 at `43de546` (the `devDatabase` row in `mojo-configuration.adoc`; the row crossed the
+reviewer's flip in flight) and finding 2 in this pass (`GraphitronDevExecutorGeneratorTest` drops all
+five body-string tests; the class javadoc now maps each dropped behaviour to its live enforcer, and a
+new structural test pins signature stability across sessionState/contextArgument variation). A third
+fix landed from live end-to-end exercise of the tool (dev server + MCP client + real queries against
+the sandbox Postgres): the spec's claim that "the consumer's JDBC driver is already on the
+R410-resolved classpath" is false in practice. The driver conventionally lives at runtime scope
+(plain apps) or only at test scope (Quarkus apps: the extension resolves the real driver at Quarkus
+build time, outside the Maven graph; sakila-example carries `org.postgresql:postgresql` at test scope
+only). `DevMojo` now resolves `ResolutionScope.TEST` (the superset; the incremental compiler's
+compile classpath is unaffected) and the execute loader's classpath widens compile-first with the
+runtime/test elements, so main classes always shadow test classes. Verified live: `execute` over MCP
+returns real query data, a mutation returns its inserted row while an independent connection sees
+zero persisted, and the per-call claims override is rejected with the opt-in pointer.
+`graphitron-sakila-example`'s POM gains plugin-level graphitron configuration so `mvn graphitron:dev`
+works from the CLI (the docs name that POM the canonical dev-loop example).
+
 1. **Build is red (automatic rework).** `mvn install -Plocal-db` fails at
    `graphitron-maven-plugin`: `MojoDocCoverageTest.everyMojoParameterHasADocRowAndViceVersa`
    (MojoDocCoverageTest.java:111) reports the new editable Mojo parameter `devDatabase`

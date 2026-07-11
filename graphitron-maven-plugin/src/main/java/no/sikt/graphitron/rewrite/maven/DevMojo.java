@@ -37,6 +37,7 @@ import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -75,9 +76,16 @@ import java.util.function.Consumer;
  * <p>Stop with Ctrl+C. See {@code getting-started.md}'s "Dev loop" for the
  * editor-side recipes.
  */
+// TEST resolution (not COMPILE like the sibling goals): the R428 execute tool's classloader needs
+// the consumer's JDBC driver, and the driver is conventionally NOT on the compile classpath: a
+// plain app has it at runtime scope, and a Quarkus app often has no driver in its Maven graph at
+// all (the extension resolves it at Quarkus build time) except the test-scope driver its
+// jOOQ-codegen/database tests already use. TEST is the superset scope, so the compile classpath
+// the incremental compiler scans is unaffected, and the execute loader orders main elements first
+// so test classes can never shadow production ones.
 @Mojo(
     name = "dev",
-    requiresDependencyResolution = ResolutionScope.COMPILE,
+    requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true
 )
 public class DevMojo extends AbstractRewriteMojo {
@@ -344,8 +352,30 @@ public class DevMojo extends AbstractRewriteMojo {
         var wiring = new DevQueryExecutor.Wiring(
             ctx.outputPackage(),
             resolveGraphitronClassesDirectory(ctx.basedir()),
-            resolveCompileClasspath());
+            resolveExecutionClasspath());
         return new ExecuteTool.Config(wiring, devDb.db(), devDb.allowClaimsOverride());
+    }
+
+    /**
+     * The executor loader's classpath: the compile classpath the incremental compiler already
+     * scans (first, so main classes always win), widened with the runtime- and test-scoped
+     * elements (available because this goal resolves {@code TEST}, the superset scope). The
+     * widening is what puts the consumer's JDBC driver on the loader: a plain app carries the
+     * driver at runtime scope, and a Quarkus app typically carries it only at test scope (the
+     * extension resolves the real driver at Quarkus build time, outside the Maven graph), so the
+     * compile classpath alone never sees it.
+     */
+    private List<Path> resolveExecutionClasspath() throws MojoExecutionException {
+        var paths = new LinkedHashSet<>(resolveCompileClasspath());
+        try {
+            for (String element : project.getTestClasspathElements()) {
+                paths.add(Path.of(element).toAbsolutePath().normalize());
+            }
+        } catch (org.apache.maven.artifact.DependencyResolutionRequiredException e) {
+            throw new MojoExecutionException(
+                "Failed to assemble the execution classpath for the dev execute tool.", e);
+        }
+        return new ArrayList<>(paths);
     }
 
     /** The reconciled dev database coordinates, before the executor wiring joins them. */

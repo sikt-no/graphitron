@@ -79,7 +79,6 @@ A set of **tools** the agent calls to answer questions:
 `catalog.search` is much stronger when your jOOQ-generated catalog carries table and column comments. Enable comment generation in your jOOQ codegen configuration so the database's own documentation feeds the search; without comments, search still works on table and column names alone.
 ====
 
-[#setup]
 [#execute-tool]
 == Run a query without an app server
 
@@ -97,7 +96,7 @@ The configuration is plain connection coordinates. In the plugin:
 </devDatabase>
 ----
 
-Or via environment variables, which override the POM so credentials stay out of the checked-in file: `GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`. The JDBC driver is the one your application already depends on; nothing extra to install.
+Or via environment variables, which override the POM so credentials stay out of the checked-in file: `GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`. The JDBC driver is one your project already has: any scope works (your application's runtime dependency, or the test-scope driver your database tests use; Quarkus apps typically only have the latter in their Maven graph).
 
 **Row-level security still applies.** If your schema mounts identity (graphitron's `<sessionState>` connect hook), give the dev tool a claims payload via `GRAPHITRON_DEV_CLAIMS`: the same string your connect function expects in production (claims JSON, or a genuinely issued dev token if your function verifies signatures). Use `@/path/to/file` to keep tokens out of environment listings; the file is re-read on every call, so edits apply immediately. The tool runs your real connect function and sees only what the mounted identity is permitted, just like your running service. If claims are required and missing, the tool says so loudly instead of running unsecured; if your connect function rejects the payload, you get its error message verbatim, so you can fix the payload and retry.
 
@@ -105,6 +104,7 @@ Or via environment variables, which override the POM so credentials stay out of 
 
 Three current limits: federation subgraphs are not yet supported by `execute` (every other tool works on them); writes cannot be persisted (rollback is unconditional by design); and the rollback guarantee covers mutation-field transactions, so a *query*-path `@service` or `@routine` that writes runs outside it, exactly as it runs outside graphitron's transaction demarcation in production.
 
+[#setup]
 == Connect your agent
 
 The server speaks the Model Context Protocol over Streamable HTTP at `http://127.0.0.1:8488/mcp`. Any MCP-aware agent that supports HTTP transport can connect.

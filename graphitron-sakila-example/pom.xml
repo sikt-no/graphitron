@@ -303,6 +303,27 @@
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${project.version}</version>
+                <!-- Plugin-level configuration so `mvn graphitron:dev` works from the CLI against the
+                     main schema (the docs name this POM as the canonical worked example for the dev
+                     loop). Mirrors the rewrite-generate execution below; per-execution configuration
+                     overrides it, so the federated/multischema executions are unaffected. -->
+                <configuration>
+                    <schemaInputs>
+                        <schemaInput>
+                            <pattern>src/main/resources/graphql/schema.graphqls</pattern>
+                        </schemaInput>
+                    </schemaInputs>
+                    <jooqPackage>${jooqPackage}</jooqPackage>
+                    <outputPackage>${outputPackage}</outputPackage>
+                    <sessionState>
+                        <variables>
+                            <variable>
+                                <name>app.user_id</name>
+                                <claim>sub</claim>
+                            </variable>
+                        </variables>
+                    </sessionState>
+                </configuration>
                 <executions>
                     <execution>
                         <id>rewrite-generate</id>
