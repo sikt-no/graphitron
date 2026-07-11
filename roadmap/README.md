@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | Ready | 2026-07-09 | [plan](per-participant-multitable-child-join-paths.md) |
-| `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | In Progress | 2026-07-11 <sub>created 2026-06-19</sub> | [plan](supported-directives-regen-guard.md) |
+| `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | In Review | 2026-07-11 <sub>created 2026-06-19</sub> | [plan](supported-directives-regen-guard.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R308` | Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict | In Review | 2026-07-10 <sub>created 2026-06-14</sub> | [plan](service-list-payload-arrival.md) |
@@ -339,7 +339,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R346` [**Regenerate and guard the generated supported-directives migration doc against directive-set drift**](supported-directives-regen-guard.md) — In Progress, tech-debt
+- `R346` [**Regenerate and guard the generated supported-directives migration doc against directive-set drift**](supported-directives-regen-guard.md) — In Review, tech-debt
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R443` [**Post-R438 stale-reference residue: ConditionResolution javadoc + fkjoin-alias-dead-storage item**](post-r438-stale-reference-residue.md) — Backlog, structural
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup

@@ -1,7 +1,7 @@
 ---
 id: R346
 title: "Regenerate and guard the generated supported-directives migration doc against directive-set drift"
-status: In Progress
+status: In Review
 bucket: tech-debt
 priority: 3
 theme: docs
