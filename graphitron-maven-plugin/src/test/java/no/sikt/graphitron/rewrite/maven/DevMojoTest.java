@@ -280,6 +280,100 @@ class DevMojoTest {
             .isEmpty();
     }
 
+    // ---- R428: <devDatabase> reconciliation (env wins over pom; degrade vs fail-loud) ----
+
+    @Test
+    void devDatabase_absent_disablesTheExecuteToolQuietly() throws Exception {
+        var mojo = new DevMojo();
+        mojo.environment = Map.of();
+        assertThat(mojo.resolveDevDatabase()).isNull();
+    }
+
+    @Test
+    void devDatabase_fromPom_resolvesAllFields() throws Exception {
+        var mojo = new DevMojo();
+        mojo.environment = Map.of();
+        mojo.devDatabase = binding("jdbc:postgresql://localhost/dev", "dev", "secret", "postgres",
+            "{\"sub\":\"u\"}", true);
+
+        var resolved = mojo.resolveDevDatabase();
+        assertThat(resolved.db().url()).isEqualTo("jdbc:postgresql://localhost/dev");
+        assertThat(resolved.db().user()).isEqualTo("dev");
+        assertThat(resolved.db().password()).isEqualTo("secret");
+        // The dialect normalizes to the enumerated upper-case form.
+        assertThat(resolved.db().dialect()).isEqualTo("POSTGRES");
+        assertThat(resolved.db().claims()).isEqualTo("{\"sub\":\"u\"}");
+        assertThat(resolved.allowClaimsOverride()).isTrue();
+    }
+
+    @Test
+    void devDatabase_envOverridesPomOnEveryField() throws Exception {
+        var mojo = new DevMojo();
+        mojo.devDatabase = binding("jdbc:pom:url", "pom-user", "pom-pass", "POSTGRES", "pom-claims", true);
+        mojo.environment = Map.of(
+            "GRAPHITRON_DEV_DB_URL", "jdbc:env:url",
+            "GRAPHITRON_DEV_DB_USER", "env-user",
+            "GRAPHITRON_DEV_DB_PASSWORD", "env-pass",
+            "GRAPHITRON_DEV_DB_DIALECT", "ORACLE",
+            "GRAPHITRON_DEV_CLAIMS", "env-claims",
+            "GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE", "false");
+
+        var resolved = mojo.resolveDevDatabase();
+        assertThat(resolved.db().url()).isEqualTo("jdbc:env:url");
+        assertThat(resolved.db().user()).isEqualTo("env-user");
+        assertThat(resolved.db().password()).isEqualTo("env-pass");
+        assertThat(resolved.db().dialect()).isEqualTo("ORACLE");
+        assertThat(resolved.db().claims()).isEqualTo("env-claims");
+        assertThat(resolved.allowClaimsOverride()).isFalse();
+    }
+
+    @Test
+    void devDatabase_envAloneIsEnough_noPomBlockNeeded() throws Exception {
+        var mojo = new DevMojo();
+        mojo.environment = Map.of(
+            "GRAPHITRON_DEV_DB_URL", "jdbc:env:url",
+            "GRAPHITRON_DEV_DB_DIALECT", "POSTGRES");
+
+        var resolved = mojo.resolveDevDatabase();
+        assertThat(resolved.db().url()).isEqualTo("jdbc:env:url");
+        assertThat(resolved.allowClaimsOverride()).isFalse();
+    }
+
+    @Test
+    void devDatabase_urlWithoutDialect_failsLoud_neverDefaulted() {
+        // A half-configured dev database is a config bug, not a degrade case; and the dialect is
+        // explicit and enumerated per the R428 spec (graphitron is multi-dialect, Sikt runs Oracle).
+        var mojo = new DevMojo();
+        mojo.environment = Map.of("GRAPHITRON_DEV_DB_URL", "jdbc:env:url");
+        assertThatThrownBy(mojo::resolveDevDatabase)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("dialect")
+            .hasMessageContaining("never defaulted");
+    }
+
+    @Test
+    void devDatabase_unsupportedDialect_failsLoudNamingTheSupportedSet() {
+        var mojo = new DevMojo();
+        mojo.environment = Map.of();
+        mojo.devDatabase = binding("jdbc:pom:url", null, null, "MYSQL", null, null);
+        assertThatThrownBy(mojo::resolveDevDatabase)
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("MYSQL")
+            .hasMessageContaining("POSTGRES and ORACLE");
+    }
+
+    private static DevDatabaseBinding binding(String url, String user, String password,
+            String dialect, String claims, Boolean allowClaimsOverride) {
+        var binding = new DevDatabaseBinding();
+        binding.url = url;
+        binding.user = user;
+        binding.password = password;
+        binding.dialect = dialect;
+        binding.claims = claims;
+        binding.allowClaimsOverride = allowClaimsOverride;
+        return binding;
+    }
+
     private static RewriteContext contextFor(Path basedir, Path schemaFile) {
         // Both failure modes occur during schema load, before any jOOQ catalog work,
         // so the jooq package / output directory values are never exercised.

@@ -143,7 +143,7 @@ Notes:
 [#mcp]
 == Connect your agent to the MCP server
 
-The same `mvn graphitron:dev` process that serves the LSP also runs an MCP server on `http://127.0.0.1:8488/mcp` (Streamable HTTP, loopback only). An MCP-aware agent (Claude Code, Cursor) connected to it gets read-only context about your project: it can search the bundled manual (`docs.search`), discover tables in your jOOQ catalog (`catalog.search`, `catalog.describe`), inspect the classified schema, `@service` / `@condition` / `@record` bindings, and the current validation diagnostics, plus a `+/mcp__graphitron__about+` slash command that orients it on the loop.
+The same `mvn graphitron:dev` process that serves the LSP also runs an MCP server on `http://127.0.0.1:8488/mcp` (Streamable HTTP, loopback only). An MCP-aware agent (Claude Code, Cursor) connected to it gets read-only context about your project: it can search the bundled manual (`docs.search`), discover tables in your jOOQ catalog (`catalog.search`, `catalog.describe`), inspect the classified schema, `@service` / `@condition` / `@record` bindings, and the current validation diagnostics, plus a `+/mcp__graphitron__about+` slash command that orients it on the loop. Point the dev loop at a database and the agent can also run queries against your generated resolvers in-process (the `execute` tool; mutations always roll back), closing the loop from schema edit to real query result without an app server. See xref:mcp-agent-context.adoc#execute-tool[Run a query without an app server].
 
 For Claude Code, run the line the dev server prints on startup:
 

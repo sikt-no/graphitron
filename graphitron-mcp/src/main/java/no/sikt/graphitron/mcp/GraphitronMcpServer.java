@@ -134,6 +134,21 @@ public final class GraphitronMcpServer implements AutoCloseable {
         InetSocketAddress address, Workspace workspace,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig
     ) throws IOException {
+        this(address, workspace, embedderWarm, docsWarm, ragConfig, null);
+    }
+
+    /**
+     * The full production form: the five-arg server plus the R428 {@code execute} tool
+     * configuration. When {@code executeConfig} is {@code null} (no dev database configured), the
+     * {@code execute} tool is not registered at all, the stronger form of the degrade-gracefully
+     * posture: the RAG tools stay advertised and degrade, the execute tool is simply absent, and
+     * every other tool keeps working with no database.
+     */
+    public GraphitronMcpServer(
+        InetSocketAddress address, Workspace workspace,
+        AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig,
+        ExecuteTool.Config executeConfig
+    ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
         // The catalog index needs the shared embedder warm and a cache location; without both, the
         // tool stays advertised but degrades (the structured-only path), mirroring docs.search.
@@ -161,18 +176,25 @@ public final class GraphitronMcpServer implements AutoCloseable {
         // tools(false) / resources(false, false) booleans are the listChanged (and, for resources,
         // subscribe) capabilities; the seam never mutates the tool or resource list at runtime, so
         // they stay false even though the tools and resource read live state.
+        // The tool list is fixed for the server's lifetime (listChanged stays false); the one
+        // conditional entry is the R428 execute tool, present exactly when a dev database is
+        // configured.
+        var tools = new java.util.ArrayList<>(List.of(
+            statusTool(workspace),
+            catalogTablesTool(workspace), catalogDescribeTool(workspace),
+            servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
+            schemaTool(workspace), diagnosticsTool(workspace), edgesTool(workspace),
+            docsSearchTool.specification(), catalogSearchTool()));
+        if (executeConfig != null) {
+            tools.add(new ExecuteTool(executeConfig).specification());
+        }
         this.mcpServer = McpServer.sync(transportProvider)
             .serverInfo(SERVER_NAME, version())
             .instructions(instructions)
             .capabilities(McpSchema.ServerCapabilities.builder()
                 .prompts(false).tools(false).resources(false, false).build())
             .prompts(aboutPrompt(aboutText))
-            .tools(
-                statusTool(workspace),
-                catalogTablesTool(workspace), catalogDescribeTool(workspace),
-                servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
-                schemaTool(workspace), diagnosticsTool(workspace), edgesTool(workspace),
-                docsSearchTool.specification(), catalogSearchTool())
+            .tools(tools)
             .resources(directivesResource(workspace, bundledDirectives))
             .build();
 

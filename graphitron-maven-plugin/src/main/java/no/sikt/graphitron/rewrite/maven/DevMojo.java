@@ -13,6 +13,8 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
 import no.sikt.graphitron.rewrite.compile.IncrementalCompiler;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
+import no.sikt.graphitron.mcp.DevQueryExecutor;
+import no.sikt.graphitron.mcp.ExecuteTool;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
 import no.sikt.graphitron.mcp.rag.Embedder;
@@ -37,6 +39,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -108,6 +111,20 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     @Parameter(property = "graphitron.dev.compile", defaultValue = "true")
     boolean compile = true;
+
+    /**
+     * R428 — the dev database the MCP {@code execute} tool runs queries against. Optional: with no
+     * {@code <devDatabase>} url (and no {@code GRAPHITRON_DEV_DB_URL} env override) the execute tool
+     * is simply absent and every other dev tool works with no database. See
+     * {@link DevDatabaseBinding} for the block shape and the env-wins override set.
+     */
+    @Parameter
+    DevDatabaseBinding devDatabase;
+
+    // The environment the <devDatabase> reconciler reads its overrides from. Production is
+    // System.getenv(); package-private so DevMojoTest can inject a map without mutating the JVM's
+    // real environment.
+    Map<String, String> environment = System.getenv();
 
     private SchemaWatcher schemaWatcher;
     private SchemaWatcher classpathWatcher;
@@ -185,7 +202,8 @@ public class DevMojo extends AbstractRewriteMojo {
         this.schemaDebounce = new DebounceExecutor(debounceMs);
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
-        bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())));
+        bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
+            buildExecuteToolConfig(initialCtx));
         // Seed the source-position index so goto-definition / hover work before
         // the first .java edit; the source watcher refreshes it on the source
         // cadence thereafter. The walk (and its cache) is owned by the workspace.
@@ -252,7 +270,8 @@ public class DevMojo extends AbstractRewriteMojo {
         }
     }
 
-    private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig)
+    private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig,
+        ExecuteTool.Config executeConfig)
         throws MojoExecutionException {
         try {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);
@@ -290,7 +309,8 @@ public class DevMojo extends AbstractRewriteMojo {
         // message names the MCP port and gives recovery guidance, mirroring the LSP arm's contract.
         try {
             this.mcpServer = new GraphitronMcpServer(
-                new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm, ragConfig);
+                new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm, ragConfig,
+                executeConfig);
         } catch (IOException e) {
             // The partial-startup unwind must reach the warms too, not just the LSP socket: warm
             // cleanup otherwise lives only in cleanup() (the normal Ctrl+C stop), which this exception
@@ -303,6 +323,81 @@ public class DevMojo extends AbstractRewriteMojo {
                 "graphitron:dev: MCP port " + mcpPort + " is already in use (or could not be bound). "
                     + "Stop the other graphitron:dev session occupying it, then retry.", e);
         }
+    }
+
+    /**
+     * Reconciles the {@code <devDatabase>} block with its environment overrides into the R428
+     * execute-tool configuration; env wins over the POM on every field, so credentials stay out of
+     * the checked-in file. Returns {@code null}, and the execute tool is simply not registered,
+     * when no url is configured from either source (the degrade-gracefully arm: every other MCP
+     * tool works with no database). A url with a missing or unsupported dialect fails the goal
+     * loudly instead: the dialect is explicit and enumerated ({@code POSTGRES} / {@code ORACLE}),
+     * never defaulted, and a half-configured dev database is a config bug, not a degrade case.
+     * The claims payload stays raw here (inline or {@code @file}); the tool resolves the
+     * {@code @file} form per call so file edits apply without a restart.
+     */
+    ExecuteTool.Config buildExecuteToolConfig(RewriteContext ctx) throws MojoExecutionException {
+        DevDatabase devDb = resolveDevDatabase();
+        if (devDb == null) {
+            return null;
+        }
+        var wiring = new DevQueryExecutor.Wiring(
+            ctx.outputPackage(),
+            resolveGraphitronClassesDirectory(ctx.basedir()),
+            resolveCompileClasspath());
+        return new ExecuteTool.Config(wiring, devDb.db(), devDb.allowClaimsOverride());
+    }
+
+    /** The reconciled dev database coordinates, before the executor wiring joins them. */
+    record DevDatabase(DevQueryExecutor.DbConfig db, boolean allowClaimsOverride) {}
+
+    /**
+     * The pure half of {@link #buildExecuteToolConfig}: merges the {@code <devDatabase>} block
+     * with its environment overrides (env wins on every field) and validates the dialect. Returns
+     * {@code null} when no url is configured from either source.
+     */
+    DevDatabase resolveDevDatabase() throws MojoExecutionException {
+        String url = firstNonBlank(environment.get("GRAPHITRON_DEV_DB_URL"),
+            devDatabase == null ? null : devDatabase.url);
+        if (url == null) {
+            getLog().info("graphitron:dev: no dev database configured (<devDatabase> url or "
+                + "GRAPHITRON_DEV_DB_URL); the MCP execute tool is disabled, every other tool "
+                + "works without it.");
+            return null;
+        }
+        String dialect = firstNonBlank(environment.get("GRAPHITRON_DEV_DB_DIALECT"),
+            devDatabase == null ? null : devDatabase.dialect);
+        if (dialect == null) {
+            throw new MojoExecutionException(
+                "graphitron:dev: a dev database url is configured but no dialect. The dialect is "
+                    + "explicit and enumerated, never defaulted: set <devDatabase><dialect>POSTGRES"
+                    + "</dialect> (or ORACLE), or GRAPHITRON_DEV_DB_DIALECT.");
+        }
+        String normalizedDialect = dialect.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!normalizedDialect.equals("POSTGRES") && !normalizedDialect.equals("ORACLE")) {
+            throw new MojoExecutionException(
+                "graphitron:dev: unsupported dev database dialect '" + dialect
+                    + "'; POSTGRES and ORACLE are the supported values.");
+        }
+        String user = firstNonBlank(environment.get("GRAPHITRON_DEV_DB_USER"),
+            devDatabase == null ? null : devDatabase.user);
+        String password = firstNonBlank(environment.get("GRAPHITRON_DEV_DB_PASSWORD"),
+            devDatabase == null ? null : devDatabase.password);
+        String claims = firstNonBlank(environment.get("GRAPHITRON_DEV_CLAIMS"),
+            devDatabase == null ? null : devDatabase.claims);
+        boolean allowClaimsOverride = environment.containsKey("GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE")
+            ? Boolean.parseBoolean(environment.get("GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE"))
+            : devDatabase != null && Boolean.TRUE.equals(devDatabase.allowClaimsOverride);
+        return new DevDatabase(
+            new DevQueryExecutor.DbConfig(url, user, password, normalizedDialect, claims),
+            allowClaimsOverride);
+    }
+
+    private static String firstNonBlank(String env, String pom) {
+        if (env != null && !env.isBlank()) {
+            return env;
+        }
+        return pom != null && !pom.isBlank() ? pom : null;
     }
 
     private Set<Path> startSchemaWatcher(RewriteContext ctx, Workspace workspace) throws MojoExecutionException {

@@ -135,6 +135,25 @@ class GraphitronMcpServerTest {
     }
 
     @Test
+    void executeToolIsAdvertisedExactlyWhenADevDatabaseIsConfigured() throws Exception {
+        // The R428 degrade-gracefully posture, stronger than the RAG tools' advertised-but-degrading:
+        // with no dev database the execute tool is simply absent (pinned by the containsExactlyInAnyOrder
+        // in statusToolIsAdvertisedAndReportsUnavailableByDefault); with one configured it appears.
+        var executeConfig = new ExecuteTool.Config(
+            new DevQueryExecutor.Wiring("com.example", java.nio.file.Path.of("target/graphitron-classes"),
+                List.of()),
+            new DevQueryExecutor.DbConfig("jdbc:postgresql://localhost/dev", "dev", "dev", "POSTGRES", null),
+            false);
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), null, null, null, executeConfig);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var tools = client.listTools().tools();
+            assertThat(tools).extracting(McpSchema.Tool::name).contains("execute");
+        }
+    }
+
+    @Test
     void statusToolReflectsLiveBuiltCurrentSnapshot() throws Exception {
         // Drive a successful build into the live workspace before the call: the same handle the
         // server holds, so the tool reads Built/Current off it without any re-push.
