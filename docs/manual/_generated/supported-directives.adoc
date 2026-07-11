@@ -3,7 +3,7 @@
 
 === Supported directives
 
-The rewrite generator declares the following directives. Each is documented in the architecture chapter and exercised by at least one execution-tier or pipeline-tier test fixture:
+The rewrite generator declares and supports the following directives. Each is documented in the architecture chapter:
 
 * `@asConnection`
 * `@condition`
@@ -57,4 +57,5 @@ The following directives have argument-shape changes between legacy and rewrite.
 ==== `@mutation`
 
 * + multiRow: Boolean = false  (rewrite only)
+* + table: String  (rewrite only)
 

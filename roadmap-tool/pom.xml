@@ -101,6 +101,25 @@
                             <commandlineArgs>check-adoc-tables ${project.basedir}/..</commandlineArgs>
                         </configuration>
                     </execution>
+                    <execution>
+                        <!-- Fail the build if the generated supported-directives migration fragment
+                             (docs/manual/_generated/supported-directives.adoc) has drifted from what
+                             the directive-support migration mode would emit today. This is the guard the
+                             fragment's own header promised but that never existed, so it silently drifted
+                             (missing @routine / @scalarType, a stale @mutation shape) every time a directive
+                             changed (R346). The legacy directive set is read from a frozen in-tree snapshot
+                             (legacy-directives.graphqls) rather than the legacy graphitron-common module, so
+                             the verify path stays inside the rewrite tree. The fixtures positional is required
+                             by the CLI but vestigial in migration mode (it feeds only the internal report), so
+                             the rewrite test-resources root is passed as a stable, valid value. Regenerate with
+                             the same args without the verify flag (see DirectiveSupportReport.REGENERATE_COMMAND). -->
+                        <id>verify-supported-directives</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <commandlineArgs>directive-support ${project.basedir}/src/main/resources/legacy-directives.graphqls ${project.basedir}/../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls ${project.basedir}/../graphitron/src/test/resources --mode=migration --output=${project.basedir}/../docs/manual/_generated/supported-directives.adoc --verify</commandlineArgs>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>
