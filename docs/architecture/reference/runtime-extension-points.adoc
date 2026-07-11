@@ -104,7 +104,11 @@ so a settle can never leave stale or reverted identity for the field's
 read-back or later mutation fields. Queries never settle, so the safe default
 never taxes the read path. The `<variables>` sugar needs no declaration: its
 mounts commit immediately in autocommit and session-scoped variables survive
-settles, so it opts in structurally. See
+settles, so it opts in structurally. One scoped exception: the dev-only
+`ROLLBACK_ONLY` commit policy (the R428 execute tool) defers a single operation
+transaction across field boundaries, so nothing settles mid-operation and the
+re-fire never runs there; dev execution does not exercise an unconfirmed
+re-fire pair between mutation fields. See
 xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
 identity] for the configuration.
 

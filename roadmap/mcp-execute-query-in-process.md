@@ -15,7 +15,7 @@ last-updated: 2026-07-11
 ## In one paragraph
 
 The `graphitron:dev` MCP server today lets an agent *discover* (catalog, schema, code, diagnostics per
-R118) and, once R410 lands, will *compile* the generated resolvers in-process. What it still cannot do is
+R118) and *compile* (R410, shipped) the generated resolvers in-process. What it still cannot do is
 answer the question that actually closes the authoring loop: **what does this query return?** Today that
 requires standing up Quarkus (or any app server) with a live datasource and running the query by hand. This
 item adds an MCP tool that executes a GraphQL query/mutation **against the generated resolvers, in-process,
@@ -125,8 +125,9 @@ caller's JWT) is handed to a consumer-owned database *connect hook* at acquisiti
 - **The hook is the validator, and its errors are the feedback loop.** The tool surfaces connect-hook
   failures verbatim as the tool result. An agent that supplies a payload missing a claim gets the hook's
   own error message and corrects the payload; no graphitron-side payload validation exists, by design.
-- **Rollback-by-default is R429's `ROLLBACK_ONLY` commit policy**, consumed by name; no emission changes,
-  and exploration cannot persist writes.
+- **Rollback-by-default is R429's `ROLLBACK_ONLY` commit policy**, consumed by name; exploration cannot
+  persist writes. (The "no emission changes" expectation did not survive contact with the shipped DML
+  two-step; see the deferred-rollback implementation decision below.)
 
 **Security posture.** The dev tool grants no capability the dev database credentials do not already grant:
 whoever holds them can call the connect hook with any payload, because the hook validates *entitlement*
@@ -142,11 +143,34 @@ verifies token signatures in-database (R429's cryptographic fence) will reject h
 correctly; the dev claims payload there must be a genuinely issued dev token. Graphitron does not soften this, because a hook with a dev-mode bypass
 would be a hole in the production fence.
 
-If R429's runtime has not landed when R428 is implemented, the fallback is R428's minimal host-side
-connection handling (open connection, `setAutoCommit(false)`, rollback in `finally`) with the execute tool
-refusing to run when `<sessionState>` is configured (the fail-loud rule above; without R429 there is no
-hook machinery to honor it). R429 then subsumes the fallback. This keeps R428 shippable without blocking on
-the larger runtime item.
+R429 shipped before implementation began, so the R429-not-landed fallback this section used to carry is
+moot and was removed; the executor consumes the real runtime machinery.
+
+**Implementation decision: the deferred-rollback realization of `ROLLBACK_ONLY` (reviewer, note the R429
+contract change).** The shipped R449/R451 DML fetchers are a two-step (write inside
+`dsl.transactionResult(...)`, then a post-settle SELECT projecting the payload) precisely so the response
+observes committed state. Under `ROLLBACK_ONLY`'s original realization (settle each field by rolling back),
+the post-settle read-back found nothing: `createFilm` returned `null` data with no errors, falsifying this
+spec's "write operations are observable" promise (caught at the execution tier against real Postgres, and
+unfixable from the executor side: per-field commits cannot be un-committed). Fixed by changing only the
+`ROLLBACK_ONLY` arms of the generated transaction provider to a dev observe-then-discard topology: the
+operation transaction opens once and defers across field settles, each field boundary becomes a savepoint
+(field independence preserved; a failed field discards exactly its own writes), read-backs run inside the
+open transaction and observe the writes, and the already-shipped `PinnedConnection.release` discards the
+whole transaction before the disconnect hook. `COMMIT` behavior is byte-identical and no production path
+constructs a `ROLLBACK_ONLY` provider, but this *is* a behavioral-contract change to an R429-shipped
+artifact (top-level commit no longer restores autocommit or fires the settle seam under this policy), so it
+is flagged here for the In Review gate rather than pre-answered by the enum javadoc's R428 assignment.
+
+**Stated fidelity limitation (from the principles-architect consult).** Holding the operation transaction
+open structurally conflicts with the per-settle session-identity re-fire contract (hooks assume autocommit,
+no open transaction), so under `ROLLBACK_ONLY` the inter-field re-fire never fires: dev mode does not
+exercise a consumer's unconfirmed connect/disconnect re-fire pair between mutation fields. Mounted identity
+itself is unaffected (session-scoped state established at acquire; the release rollback cannot revert it).
+This is documented in the provider javadoc and pinned by a provider unit test rather than left silent.
+Relatedly, the "always rolled back" promise is scoped to mutation-field transactions: a *query*-path
+`@service`/`@routine` that writes runs in autocommit and escapes the policy entirely (pre-existing,
+R460-adjacent; the user doc scopes the claim).
 
 ## Considered and rejected
 
@@ -174,26 +198,43 @@ the larger runtime item.
 against a federated schema is a follow-on: generate a federation-aware executor variant. V0 targets the
 non-federation path; flag `_entities` execution as a known gap.
 
-## Slices and test tiers
+## Slices and test tiers (implementation status)
 
-1. **`GraphitronDevExecutor` generator.** Emit the fixed-signature executor as a sibling consumer of the
-   classified model (context-arg binding reads the same classification `GraphitronFacadeGenerator` reads).
-   `@UnitTier` on the generator; `@PipelineTier` asserting the emitted call binds a realistic schema's
-   contextArguments in R190 order. Folds into R410's generated closure so the incremental engine compiles it.
-2. **Host execution path.** Connection open from config, `setAutoCommit(false)`, rollback-in-`finally`,
-   reflect the one JDK-typed entry point, marshal the JSON result. `@UnitTier` over a synthetic executor;
-   the reflection boundary is JDK-types-only so the test needs no generated classpath.
-3. **Claims and session hooks.** Executor constructs the R429 runtime with `ROLLBACK_ONLY`; claims
-   payload passed through opaquely; fail-loud when `<sessionState>` is configured and no claims are
-   supplied; connect-hook failures surfaced verbatim as the tool result. `@UnitTier` on the fail-loud and
-   error-surfacing rules; a Postgres round-trip asserting an RLS-scoped read sees only the rows the
-   configured claims permit and that rollback leaves no trace.
-4. **DB configuration + degrade-gracefully.** pom `<configuration>` and env resolution (env wins), explicit
-   dialect, claims payload (inline and `@file` forms) and the opt-in per-call claims-override flag
-   (default off), tool absent/disabled with a clear message when unconfigured. `DevMojoTest` extension.
-5. **Execution-tier integration.** A real query and a real mutation (rolled back) against the sakila example
-   DB through the tool, asserting the returned JSON matches a direct in-app execution, the fidelity check
-   that the tool sees what the app sees.
+1. **`GraphitronDevExecutor` generator.** Shipped at `5488bc4`. `GraphitronDevExecutorGeneratorTest`
+   (unit: JDK-only signature pin, ROLLBACK_ONLY wiring, fail-loud vs normalize arms, alphabetical binding,
+   federation gate) + `GraphitronDevExecutorGeneratorPipelineTest` (classifier-driven schema keeps the
+   signature fixed). Emission decisions: `ExecutionResult.toSpecification()` serialized via
+   `org.jooq.tools.json.JSONValue` (jOOQ is always on the generated classpath, so the spec's String-return
+   signature holds with no new dependency); federation schemas get no executor (the follow-on variant named
+   below); the compile graph models the unit unconditionally (superset-safe, GraphitronSessionHook
+   precedent) with precise edges, covered by the R410 completeness oracle.
+2. **Host execution path.** Shipped at `ae91f86` (`DevQueryExecutor` in graphitron-mcp). Fresh
+   platform-parented `URLClassLoader` per call over `target/graphitron-classes` + the consumer compile
+   classpath (always the current compile round's bytecode, no staleness bookkeeping); JDBC driver discovered
+   via `ServiceLoader` on the project loader (DriverManager resolves against the plugin realm and is
+   bypassed); TCCL pointed at the generated world during the call; executor-side failures surfaced with
+   their own message verbatim. The spec's `setAutoCommit(false)`/rollback-in-`finally` (R429-fallback
+   residue) became a defense-in-depth leftover-transaction rollback before close; R429's machinery owns
+   transactions inside. `DevQueryExecutorTest` drives a synthetic executor + fake driver compiled at test
+   time.
+3. **Claims and session hooks.** Shipped across `5488bc4` (generated fail-loud arm, opaque pass-through),
+   `ae91f86` (verbatim error surfacing), and the deferred-rollback provider change (below). Execution-tier
+   Postgres round-trip in `DevExecuteExecutionTest`: valid claims mount through the real `<variables>` hook
+   (fail-closed runtime, so success proves the mount), malformed claims surface Postgres's own jsonb error
+   (the payload demonstrably reached the real hook), missing claims fail loudly naming
+   `GRAPHITRON_DEV_CLAIMS`, and rollback leaves no trace. The RLS-scoping half of the hook contract stays
+   pinned by `SessionHookExecutionTest` on the same emitted hook.
+4. **DB configuration + degrade-gracefully.** Shipped at `29420c8`. `<devDatabase>` block + env-wins
+   overrides (`GRAPHITRON_DEV_DB_URL/_USER/_PASSWORD/_DIALECT`, `GRAPHITRON_DEV_CLAIMS`,
+   `GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE`); explicit enumerated dialect (missing/unsupported fails the
+   goal loudly; absent url disables quietly); claims `@file` resolved per call; per-call claims override
+   rejected unless opted in; the execute tool registered on `GraphitronMcpServer` exactly when configured
+   (absent, not degrading). `DevMojoTest` + `ExecuteToolTest` + `GraphitronMcpServerTest` extensions; user
+   docs moved from this plan's first-client draft into `mcp-agent-context.adoc` / `dev-loop.adoc`.
+5. **Execution-tier integration.** `DevExecuteExecutionTest` (sakila example, real Postgres): the fidelity
+   check (executor JSON byte-equal to a direct in-app owned-path execution), variables binding, the
+   observable-write + no-trace mutation proof, and field independence under the deferred topology (good
+   field's payload visible, bad field errors, nothing persists).
 
 ## Non-goals
 

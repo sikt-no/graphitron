@@ -103,7 +103,7 @@ Or via environment variables, which override the POM so credentials stay out of 
 
 **No database configured?** The `execute` tool simply does not appear; every other dev tool (schema, catalog, diagnostics, docs) works with no database at all.
 
-Two current limits: federation subgraphs are not yet supported by `execute` (every other tool works on them), and writes cannot be persisted (rollback is unconditional by design).
+Three current limits: federation subgraphs are not yet supported by `execute` (every other tool works on them); writes cannot be persisted (rollback is unconditional by design); and the rollback guarantee covers mutation-field transactions, so a *query*-path `@service` or `@routine` that writes runs outside it, exactly as it runs outside graphitron's transaction demarcation in production.
 
 == Connect your agent
 

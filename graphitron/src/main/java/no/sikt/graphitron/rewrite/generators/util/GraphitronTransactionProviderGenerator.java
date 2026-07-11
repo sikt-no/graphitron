@@ -32,8 +32,11 @@ import java.util.List;
  * {@code dsl.transactionResult(...)} opens a writable transaction through this provider. Query
  * operations run in autocommit and never reach it (R429 drops blanket read-only enforcement; the
  * targeted successor is R460). {@link CommitPolicy} is global provider configuration, never
- * site-declared: {@code COMMIT} persists a successful top-level transaction, {@code ROLLBACK_ONLY}
- * rolls it back regardless. A site opens a transaction to write; it does not get to choose
+ * site-declared: {@code COMMIT} persists a successful top-level transaction; {@code ROLLBACK_ONLY}
+ * (R428's dev mode) defers one operation transaction across field settles, savepoint-scoping each
+ * field, so the generated DML two-step's post-settle payload read-back observes the uncommitted
+ * write, and the whole transaction is discarded by {@code PinnedConnection#release} at operation
+ * completion. A site opens a transaction to write; it does not get to choose
  * commit-versus-rollback.
  *
  * <p>Session identity stays orthogonal: the provider carries an opaque settle-completion
@@ -47,9 +50,20 @@ import java.util.List;
  * The provider instance is built per operation over the pinned connection and holds its own nesting
  * depth and savepoint stack. That is sound because SQL for one operation runs sequentially on the
  * dispatch thread ({@code RowsMethodCall} emits synchronous batch loaders); no two transactions on
- * the pinned connection are ever open concurrently. Top-level begin sets autocommit false; nested
- * begins push a savepoint. Top-level commit/rollback restores autocommit; nested ones release or roll
- * back to the savepoint.
+ * the pinned connection are ever open concurrently. Under {@code COMMIT}, top-level begin sets
+ * autocommit false, top-level commit/rollback settles and restores autocommit, and nested begins are
+ * savepoint-scoped. Under {@code ROLLBACK_ONLY} (the dev observe-then-discard topology), the first
+ * top-level begin opens the one operation transaction, every field boundary (and nested begin) is a
+ * savepoint, no depth-0 settle ever closes the transaction, and {@code PinnedConnection#release}
+ * discards the whole thing at operation completion.
+ *
+ * <h2>Stated fidelity limitation of the deferred topology</h2>
+ * Holding the operation transaction open structurally conflicts with the per-settle session-identity
+ * re-fire contract (hooks assume autocommit and no open transaction), so under {@code ROLLBACK_ONLY}
+ * the {@code afterSettle} seam never fires mid-operation: dev execution does not exercise a
+ * consumer's unconfirmed connect/disconnect re-fire pair between mutation fields. Mounted identity
+ * itself is unaffected (session-scoped state established at acquire, which the release rollback
+ * cannot revert). Pinned by the generator's unit test, named in the dev-tool user doc.
  */
 public final class GraphitronTransactionProviderGenerator {
 
@@ -123,7 +137,16 @@ public final class GraphitronTransactionProviderGenerator {
             .returns(void.class)
             .addParameter(TRANSACTION_CONTEXT, "ctx")
             .beginControlFlow("try")
-            .beginControlFlow("if (depth == 0)")
+            .beginControlFlow("if (depth == 0 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
+            .addComment("Deferred-rollback dev mode (R428): open the operation transaction once and keep")
+            .addComment("it open across field settles, so post-settle read-backs observe the writes; each")
+            .addComment("field boundary is a savepoint. PinnedConnection.release discards the whole")
+            .addComment("transaction and restores autocommit at operation completion.")
+            .beginControlFlow("if (connection.getAutoCommit())")
+            .addStatement("connection.setAutoCommit(false)")
+            .endControlFlow()
+            .addStatement("savepoints.push(connection.setSavepoint())")
+            .nextControlFlow("else if (depth == 0)")
             .addComment("Top-level: a mutation field opens a writable transaction by turning autocommit off.")
             .addStatement("priorAutoCommit = connection.getAutoCommit()")
             .addStatement("connection.setAutoCommit(false)")
@@ -143,8 +166,13 @@ public final class GraphitronTransactionProviderGenerator {
             .addParameter(TRANSACTION_CONTEXT, "ctx")
             .beginControlFlow("try")
             .addStatement("depth--")
-            .beginControlFlow("if (depth == 0)")
-            .addComment("Top-level: the commit policy decides persist-vs-discard (ROLLBACK_ONLY discards).")
+            .beginControlFlow("if (depth == 0 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
+            .addComment("Deferred-rollback: the field settles by releasing its savepoint; the operation")
+            .addComment("transaction stays open so later read-backs observe the writes, and nothing settles")
+            .addComment("until release, so afterSettle (the session-identity re-fire seam) stays unfired.")
+            .addStatement("connection.releaseSavepoint(savepoints.pop())")
+            .nextControlFlow("else if (depth == 0)")
+            .addComment("Top-level: the commit policy decides persist-vs-discard.")
             .addStatement("settle(false)")
             .nextControlFlow("else")
             .addStatement("connection.releaseSavepoint(savepoints.pop())")
@@ -161,11 +189,13 @@ public final class GraphitronTransactionProviderGenerator {
             .addParameter(TRANSACTION_CONTEXT, "ctx")
             .beginControlFlow("try")
             .addStatement("depth--")
-            .beginControlFlow("if (depth == 0)")
+            .beginControlFlow("if (depth == 0 && commitPolicy != $T.ROLLBACK_ONLY)", commitPolicy)
             .addComment("Top-level failure: roll the whole transaction back and restore autocommit.")
             .addComment("failed == true forces a rollback regardless of the commit policy.")
             .addStatement("settle(true)")
             .nextControlFlow("else")
+            .addComment("Nested, or a deferred-rollback field: discard exactly this scope's writes and")
+            .addComment("keep the enclosing (or operation) transaction open.")
             .addStatement("connection.rollback(savepoints.pop())")
             .endControlFlow()
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
@@ -178,7 +208,7 @@ public final class GraphitronTransactionProviderGenerator {
             .returns(void.class)
             .addParameter(boolean.class, "failed")
             .addException(SQL_EXCEPTION)
-            .beginControlFlow("if (failed || commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
+            .beginControlFlow("if (failed)")
             .addStatement("connection.rollback()")
             .nextControlFlow("else")
             .addStatement("connection.commit()")
@@ -188,10 +218,11 @@ public final class GraphitronTransactionProviderGenerator {
             .addComment("restored): the seam the session-identity re-fire rides. Top-level only; savepoint")
             .addComment("settles never reach here.")
             .addStatement("afterSettle.run()")
-            .addJavadoc("Closes the top-level transaction: rolls back when the transaction {@code failed} or\n"
-                + "the {@link CommitPolicy} is {@link CommitPolicy#ROLLBACK_ONLY}, otherwise commits, then\n"
-                + "restores the prior autocommit and runs the settle-completion callback. The one\n"
-                + "commit-policy seam.\n")
+            .addJavadoc("Closes the top-level transaction under the {@code COMMIT} policy: rolls back when\n"
+                + "the transaction {@code failed}, otherwise commits, then restores the prior autocommit\n"
+                + "and runs the settle-completion callback. Unreachable under\n"
+                + "{@link CommitPolicy#ROLLBACK_ONLY}, whose field boundaries are savepoint-scoped and\n"
+                + "whose one real transaction is discarded at release.\n")
             .build();
 
         var commitPolicyEnum = TypeSpec.enumBuilder(COMMIT_POLICY_ENUM_NAME)
@@ -199,9 +230,13 @@ public final class GraphitronTransactionProviderGenerator {
             .addEnumConstant("COMMIT")
             .addEnumConstant("ROLLBACK_ONLY")
             .addJavadoc("Global commit policy for every top-level transaction. {@code COMMIT} persists a\n"
-                + "successful transaction; {@code ROLLBACK_ONLY} rolls it back regardless of success, which is\n"
-                + "R428's rollback-everything dev mode (execute a mutation, observe its result, persist\n"
-                + "nothing). Provider configuration, never chosen per site.\n")
+                + "successful transaction; {@code ROLLBACK_ONLY} is R428's rollback-everything dev mode\n"
+                + "(execute a mutation, observe its result, persist nothing): the operation transaction is\n"
+                + "opened once and deferred across field settles (each field boundary is a savepoint), so\n"
+                + "post-settle payload read-backs observe the uncommitted writes, and the whole transaction\n"
+                + "is discarded when the pinned connection is released. One stated fidelity limit: nothing\n"
+                + "settles mid-operation, so the per-settle session-identity re-fire never fires under this\n"
+                + "policy. Provider configuration, never chosen per site.\n")
             .build();
 
         return TypeSpec.classBuilder(CLASS_NAME)

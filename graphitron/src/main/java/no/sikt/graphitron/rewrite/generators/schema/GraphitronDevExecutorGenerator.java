@@ -289,9 +289,12 @@ public final class GraphitronDevExecutorGenerator {
             + "\n"
             + "<p>Execution goes through the same owned-connection machinery a real application\n"
             + "uses ({@code GraphitronRuntime}, the connection instrumentation, the session hooks),\n"
-            + "with one deliberate divergence: the commit policy is {@code ROLLBACK_ONLY}, so every\n"
-            + "mutation transaction settles by rolling back and dev exploration never persists a\n"
-            + "write.\n";
+            + "with the {@code ROLLBACK_ONLY} commit policy's deliberate divergences: one deferred\n"
+            + "operation transaction with savepoint-scoped mutation fields instead of per-field\n"
+            + "commits (so payload read-backs observe the writes), everything discarded at release\n"
+            + "(dev exploration never persists a write), and consequently no inter-field\n"
+            + "session-identity re-fire (nothing settles mid-operation; see the commit policy's\n"
+            + "javadoc).\n";
     }
 
     private static String executeJavadoc(boolean mountsIdentity, List<ResolvedContextArg> contextArgs) {

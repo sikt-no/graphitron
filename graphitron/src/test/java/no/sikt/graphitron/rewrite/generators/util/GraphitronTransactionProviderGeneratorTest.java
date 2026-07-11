@@ -81,13 +81,58 @@ class GraphitronTransactionProviderGeneratorTest {
     }
 
     @Test
-    void topLevel_rollbackOnlyPolicy_rollsBackEvenOnCommit() throws Throwable {
-        // ROLLBACK_ONLY is R428's rollback-everything dev mode: a successful transaction still discards.
+    void rollbackOnly_defersTheTransactionAndSavepointsTheField() throws Throwable {
+        // ROLLBACK_ONLY is R428's rollback-everything dev mode: the operation transaction opens
+        // once and stays open across the field's settle (no commit, no rollback, no autocommit
+        // restore here), so the generated DML two-step's post-settle read-back observes the write.
+        // PinnedConnection.release discards the whole transaction at operation completion.
         Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
         begin(provider);
         commit(provider);
 
-        assertThat(events).containsExactly("getAutoCommit", "setAutoCommit:false", "rollback", "setAutoCommit:true");
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint", "releaseSavepoint");
+    }
+
+    @Test
+    void rollbackOnly_secondField_reusesTheOpenTransaction() throws Throwable {
+        // A second top-level field must not re-open the deferred transaction: its writes join the
+        // same open transaction (visible to later read-backs), scoped by its own savepoint.
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
+        begin(provider);
+        commit(provider);
+        begin(provider);
+        commit(provider);
+
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint", "releaseSavepoint",
+            "getAutoCommit", "setSavepoint", "releaseSavepoint");
+    }
+
+    @Test
+    void rollbackOnly_failedField_rollsBackToItsSavepointOnly() throws Throwable {
+        // Field independence survives in dev mode: a failed field discards exactly its own writes
+        // and the operation transaction stays open for the fields after it.
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
+        begin(provider);
+        rollback(provider);
+
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint", "rollbackToSavepoint");
+    }
+
+    @Test
+    void rollbackOnly_neverFiresTheSettleCallback() throws Throwable {
+        // Nothing settles until release under the deferred realization, so the session-identity
+        // re-fire seam stays unfired; mounted identity is session-scoped state the eventual
+        // release rollback cannot revert.
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly, () -> events.add("afterSettle"));
+        begin(provider);
+        commit(provider);
+        begin(provider);
+        rollback(provider);
+
+        assertThat(events).doesNotContain("afterSettle");
     }
 
     @Test
@@ -183,10 +228,17 @@ class GraphitronTransactionProviderGeneratorTest {
         Object savepoint = Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{java.sql.Savepoint.class},
             (p, m, a) -> objectMethodOrDefault(p, m, a, "savepoint"));
+        // Stateful autocommit so the deferred-rollback arm's reuse of an already-open transaction
+        // is observable (a second field's begin must not re-open it).
+        var autoCommit = new java.util.concurrent.atomic.AtomicBoolean(true);
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
-                case "getAutoCommit" -> { events.add("getAutoCommit"); yield true; }
-                case "setAutoCommit" -> { events.add("setAutoCommit:" + args[0]); yield null; }
+                case "getAutoCommit" -> { events.add("getAutoCommit"); yield autoCommit.get(); }
+                case "setAutoCommit" -> {
+                    events.add("setAutoCommit:" + args[0]);
+                    autoCommit.set((Boolean) args[0]);
+                    yield null;
+                }
                 case "commit" -> { events.add("commit"); yield null; }
                 case "rollback" -> {
                     events.add(args != null && args.length == 1 ? "rollbackToSavepoint" : "rollback");

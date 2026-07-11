@@ -39,7 +39,10 @@ import java.util.List;
  *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit (R429 drops blanket
  *       read-only enforcement; the targeted successor is R460). <b>Mutation operations</b> let each
  *       field's shipped {@code dsl.transactionResult(...)} be the per-field writable boundary through
- *       the provider, committing or rolling back independently under the commit policy.</li>
+ *       the provider: under {@code COMMIT} each field's transaction commits or rolls back
+ *       independently; under {@code ROLLBACK_ONLY} (R428's dev mode) the provider's deferred
+ *       observe-then-discard topology savepoint-scopes each field inside one operation transaction
+ *       that release discards.</li>
  *   <li>On completion (success, error, cancellation) release the pinned connection (disconnect hook,
  *       then return-or-evict). Release is idempotent.</li>
  * </ol>
@@ -119,7 +122,8 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("this.runtime = runtime")
             .addStatement("this.commitPolicy = commitPolicy")
             .addJavadoc("Builds the instrumentation over {@code runtime} with an explicit commit policy;\n"
-                + "{@code ROLLBACK_ONLY} is R428's rollback-everything dev mode.\n")
+                + "{@code ROLLBACK_ONLY} is R428's rollback-everything dev mode (see its enum constant\n"
+                + "for the deferred observe-then-discard topology and its stated fidelity limits).\n")
             .build();
 
         var createState = MethodSpec.methodBuilder("createState")
