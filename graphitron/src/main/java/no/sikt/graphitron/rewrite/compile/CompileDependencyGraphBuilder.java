@@ -651,6 +651,14 @@ public final class CompileDependencyGraphBuilder {
         String sessionHookImpl = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook");
         acc.addEdge(graphitronRuntime, sessionHookImpl);
         acc.addEdge(sessionHookImpl, sessionHook);
+        // R428: the dev-loop query executor drives the facade's schema build and owned-input factory
+        // through the R429 runtime with an explicit ROLLBACK_ONLY commit policy. Conditionally emitted
+        // (non-federation schemas only), so the edges are inert (render-skipped) in federation builds.
+        String devExecutor = units.rootUnit("GraphitronDevExecutor");
+        acc.addEdge(devExecutor, facade);
+        acc.addEdge(devExecutor, graphitronRuntime);
+        acc.addEdge(devExecutor, connectionInstrumentation);
+        acc.addEdge(devExecutor, transactionProvider);
         addNodeLookupAndEntityDispatchEdges(schemaClass, context);
     }
 
@@ -703,6 +711,9 @@ public final class CompileDependencyGraphBuilder {
         // builds; modelling it unconditionally is superset-safe (the render skips units never emitted) and
         // pre-covers the sakila migration in slice 5, which turns the block on.
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
+        // R428: the dev-loop query executor beside the facade. Conditionally emitted (non-federation
+        // schemas only); modelling it unconditionally is superset-safe, same as GraphitronSessionHook.
+        acc.addNode(units.rootUnit("GraphitronDevExecutor"));
     }
 
     private String nodeIdEncoderFqcn() {

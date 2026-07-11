@@ -27,6 +27,7 @@ import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronDevExecutorGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
@@ -320,6 +321,7 @@ public class GraphQLRewriteGenerator {
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage, federationLink), "schema", emittedThisRun);
         write(GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink),          "",           emittedThisRun);
+        write(GraphitronDevExecutorGenerator.generate(schema, outputPackage, ctx.sessionStateConfig(), federationLink), "",  emittedThisRun);
         write(TypeClassGenerator.generate(schema, outputPackage),                                 "types",      emittedThisRun);
         write(TypeConditionsGenerator.generate(schema, outputPackage),                            "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
