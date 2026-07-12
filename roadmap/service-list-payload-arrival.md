@@ -1,13 +1,13 @@
 ---
 id: R308
 title: "Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict"
-status: In Review
+status: Ready
 bucket: structural
 priority: 4
 theme: service
 depends-on: []
 created: 2026-06-14
-last-updated: 2026-07-10
+last-updated: 2026-07-12
 ---
 
 # Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict
@@ -146,3 +146,30 @@ decision, not the `checkServiceReturnMatchesPayload` gate.
   javadoc, `Source.OnlyChild` javadoc, the `WrapperAlgebraTest` pin) point at R463 after this
   item lands.
 - Full aggregator green (`mvn install -Plocal-db`), graphitron-lsp included.
+
+## Review 2026-07-12: rework requested (one coverage gap)
+
+Independent In Review pass (session_01KR4kWDyVPexp2oC5aekHCW) over 1481592 + 0803628. The shape
+verdict, the typed `ServiceCarrierShapeError` sub-seal, the LSP wiring, the forward-reference
+retargets to R463, and the execution-tier two-SELECT batching proof all deliver the spec; the full
+reactor is green (unpiped exit 0). One acceptance item did not ship:
+
+- **The coherent class-backed list carrier is unpinned.** "Fixtures for every sub-shape above"
+  includes the working shape "class-backed producers returning `List<Payload>` (plain properties,
+  and with a `@table` data field)". No fixture at any tier drives a `[Payload]` carrier with a
+  `List<Dto>` producer through the verdict's Coherent arm: the pipeline pins cover the `@table`
+  data-field coherent shape (`serviceProducer_listCarrier_singleTableDataField_admitsBatchedLoadOne`,
+  plus the sakila `serviceFilmsByIdsAsPayloads` execution fixture) and all reject arms, but the only
+  class-backed list-carrier test is the *reject* (`listCarrier_classBacked_singleProducer_rejectsProducerArrivalMismatch`).
+  This matters beyond completeness: commit 0803628 itself fixed a false *reject* of a coherent list
+  carrier that only surfaced because the `@table` variant had a fixture; the class-backed sibling
+  has no such tripwire, so a future verdict change could false-reject it with a green build.
+  Fix shape: one pipeline test in `ServiceRecordCompositeCarrierPipelineTest` with
+  `createFilms: [CreateFilmsPayload]` over `TestServiceStub.createFilmsWithActors`
+  (`List<TestFilmWithActorsDto>`, producer arrival MANY -> Coherent), asserting the field classifies
+  (`MutationServiceRecordField`), the payload/data-field model is unchanged from the single-carrier
+  sibling (`JavaRecordType` / `RecordCompositeField`), and `diagnostics()` is empty. A plain-properties
+  variant (no `@table` children) completes the sub-shape pair if a suitable stub exists or is trivial
+  to add.
+
+No other rework: rejection coverage, corpus byte-identity, and the R463 retargets are complete.
