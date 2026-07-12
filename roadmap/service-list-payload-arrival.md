@@ -1,7 +1,7 @@
 ---
 id: R308
 title: "Model carrier arrival on the @service payload seat: one coherent list-payload shape verdict"
-status: In Review
+status: Ready
 bucket: structural
 priority: 4
 theme: service
@@ -218,3 +218,37 @@ the class-backed sibling of `serviceProducer_listCarrier_listDataField_rejectsDa
 The coherent single-carrier list data field (`listArrival_classifiesPayloadResultAndDataField`, whose
 one payload's list projects the whole producer list) is unaffected: single carriers return `Coherent`
 before the conflict branch.
+
+## Review 2026-07-12 (round 2): rework requested (doc drift from the arm widening)
+
+Independent In Review pass (session_01KR4kWDyVPexp2oC5aekHCW) over cbe34fb + 324e69c. Round 1's
+finding is fully resolved and the rework went beyond it soundly: the coherent class-backed pin is
+exactly the requested tripwire and it immediately caught a third false reject
+(`checkServiceReturnMatchesPayload` overwriting `isList` with the R329 data-field wrapper); the
+`Coherent(producerArrival)` fix is thesis-aligned (the verdict now genuinely owns the cardinality
+read, making the javadoc claim true); and re-investigating the deferred list-data-field shape and
+widening `DataFieldArrivalConflict` to `RecordElement` was the right call — verified against
+`FetcherEmitter.buildRecordCompositeFetcherValue`, it is the a2 crash, and admitting it would have
+shipped the acceptance axiom's forbidden shape. I traced all four carrier/data-field cardinality
+combinations through the new `requiredProducerArrival` derivation: byte-identical on every prior
+shape except the two corrected verdicts, as claimed. Full reactor green (unpiped exit 0).
+
+One finding: **324e69c widened the reject arm but two prose surfaces still state the pre-widening
+facts**, contradicting the shipped code.
+
+- `docs/architecture/explanation/typed-rejection.adoc:75`, two clauses: "fires when a list
+  carrier's `@table`-element data field is itself a list produced by a flat `List<Record>`" (the
+  arm now also fires for a class-backed `RecordElement` data field over a flat collection), and the
+  closing "class-backed composite and ID-element data fields re-nest per element and stay coherent"
+  (now only the ID element does; the class-backed composite is the new reject). This is the
+  canonical rejection-taxonomy page and renders to the public docs site; the
+  `SealedHierarchyDocCoverageTest` checks only permit-name presence, so prose accuracy is
+  review-enforced, and this prose now misdescribes which shapes reject.
+- `FieldBuilder.scanServiceCarrierShape` method javadoc (FieldBuilder.java:3504-3506): the same
+  "Class-backed composite and ID-element data fields re-nest per element and stay coherent"
+  sentence, directly contradicting the method's own body comment at :3558 ("only the ID element
+  re-nests per element and stays coherent").
+
+Fix shape: align both passages with 324e69c's own wording (the `ServiceCarrierShapeError.DataFieldArrivalConflict`
+javadoc in the same commit is the accurate model text to mirror). No code, test, or model changes
+requested; everything else is approve-ready.
