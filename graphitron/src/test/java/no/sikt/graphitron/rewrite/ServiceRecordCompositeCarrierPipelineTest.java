@@ -158,6 +158,77 @@ class ServiceRecordCompositeCarrierPipelineTest {
             .contains("[CreateFilmsPayload]", "single value", "List<…>", "createFilmWithActors");
     }
 
+    /**
+     * R308 — the coherent class-backed list carrier (the working sub-shape the rework pins). A
+     * <em>list</em> carrier ({@code [CreateFilmsPayload]}) whose payload has a <em>single</em>
+     * composite data field ({@code result: CreateFilmsResult}), produced by a <em>collection</em>
+     * ({@code createFilmsWithActors} returning {@code List<TestFilmWithActorsDto>}): carrier arrival
+     * {@code MANY} agrees with producer arrival {@code MANY}, so graphql-java iterates the producer's
+     * list into the {@code [CreateFilmsPayload]} carrier, one composite per payload element, and each
+     * payload's single {@code result} projects that one composite. This is the class-backed sibling of
+     * the {@code @table}-element coherent list carrier
+     * {@code SingleRecordTableFieldServiceProducerPipelineTest#serviceProducer_listCarrier_singleTableDataField_admitsBatchedLoadOne}
+     * ({@code [FilmPayload] { film: Film }} over {@code List<FilmRecord>}): both are a list carrier over
+     * a collection producer with a single per-element data field, the only coherent list-carrier data
+     * shape (the list-data-field variant is the a2 {@code DataFieldArrivalConflict} reject).
+     *
+     * <p>The shape verdict's {@code Coherent} arm admits it and the payload/data-field model is
+     * byte-for-byte the single-carrier sibling {@link #singleArrival_classifiesDataFieldAsRecordComposite}:
+     * a class-backed {@code JavaRecordType} payload and a single source-passthrough
+     * {@code RecordCompositeField} data field, no diagnostics. Before this rework the shape false-rejected:
+     * {@code checkServiceReturnMatchesPayload} re-levelled the expected producer cardinality onto the
+     * data-field wrapper alone (an R329 read that predates list carriers), so a single data field made it
+     * expect a single-value producer and reject the {@code List<…>} producer. Commit 0803628 fixed the
+     * mirror-image false reject for the {@code @table} variant, which only surfaced because that variant
+     * had a fixture; this is the missing class-backed tripwire.
+     */
+    @Test
+    void listCarrier_classBacked_collectionProducer_admitsCoherentComposite() {
+        var schema = TestSchemaHelper.buildSchema(TABLES + """
+            type CreateFilmsPayload {
+                result: CreateFilmsResult
+                errors: [CreateError]
+            }
+            type Query { x: String }
+            type Mutation {
+                createFilms: [CreateFilmsPayload]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
+            }
+            """);
+
+        // The field classifies (no rejection) as a service-record field with the typed Outcome channel.
+        var mut = schema.field("Mutation", "createFilms");
+        assertThat(mut).isInstanceOf(MutationField.MutationServiceRecordField.class);
+        assertThat(((MutationField.MutationServiceRecordField) mut).errorChannel()).isPresent();
+
+        // The payload/data-field model is unchanged from the single-carrier sibling: a class-backed
+        // JavaRecordType naming the composite, a single RecordCompositeField with the OUTCOME_SUCCESS
+        // envelope.
+        assertThat(schema.type("CreateFilmsPayload")).isInstanceOf(GraphitronType.JavaRecordType.class);
+        assertThat(((GraphitronType.JavaRecordType) schema.type("CreateFilmsPayload")).fqClassName())
+            .isEqualTo("no.sikt.graphitron.rewrite.TestFilmWithActorsDto");
+        assertThat(schema.type("CreateFilmsResult")).isInstanceOf(GraphitronType.JavaRecordType.class);
+
+        var data = schema.field("CreateFilmsPayload", "result");
+        assertThat(data).isInstanceOf(ChildField.RecordCompositeField.class);
+        var rc = (ChildField.RecordCompositeField) data;
+        assertThat(rc.returnType().wrapper().isList()).isFalse();
+        assertThat(rc.returnType().fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestFilmWithActorsDto");
+        assertThat(rc.envelope()).isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+
+        // The composite's @field-mapped @table children still resolve through the record-backed
+        // accessor path, unchanged by the list carrier.
+        var film = schema.field("CreateFilmsResult", "film");
+        assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
+        assertThat(((ChildField.RecordTableField) film).sourceKey().target().tableName()).isEqualTo("film");
+        var actors = schema.field("CreateFilmsResult", "actors");
+        assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
+        assertThat(((ChildField.RecordTableField) actors).sourceKey().cardinality())
+            .isEqualTo(SourceKey.Cardinality.MANY);
+
+        assertThat(schema.diagnostics()).isEmpty();
+    }
+
     @Test
     void noErrorsField_dataFieldUsesDirectEnvelope() {
         // Without an errors field the producer returns the composite list bare (no Outcome wrapper),

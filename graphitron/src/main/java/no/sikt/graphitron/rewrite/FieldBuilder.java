@@ -3395,13 +3395,16 @@ class FieldBuilder {
         // silent admit, where producerBindLevel's NoBind left it unbound and the return-match gate
         // below short-circuits), and its typed ProducerArrivalMismatch pre-empts the two misleading
         // record-handoff rejections checkServiceReturnMatchesPayload would otherwise produce.
+        java.util.Optional<SourceKey.Cardinality> verdictProducerArrival;
         switch (scanServiceCarrierShape(returnType, method, parentTypeName, fieldName)) {
             case BuildContext.ServiceCarrierShape.Reject r ->
                 { return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, r.error()); }
-            case BuildContext.ServiceCarrierShape.Coherent ignored -> { }
-            case BuildContext.ServiceCarrierShape.NotApplicable ignored -> { }
+            case BuildContext.ServiceCarrierShape.Coherent c ->
+                verdictProducerArrival = java.util.Optional.of(c.producerArrival());
+            case BuildContext.ServiceCarrierShape.NotApplicable ignored ->
+                verdictProducerArrival = java.util.Optional.empty();
         }
-        String returnTypeReason = checkServiceReturnMatchesPayload(returnType, method);
+        String returnTypeReason = checkServiceReturnMatchesPayload(returnType, method, verdictProducerArrival);
         if (returnTypeReason != null) {
             return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(returnTypeReason));
         }
@@ -3434,23 +3437,24 @@ class FieldBuilder {
      *
      * <p>R329 — for a two-level record-composite carrier ({@link TypeBuilder.CarrierBinding.ClassBacked}),
      * the payload's backing class names the per-element composite, and the method returns
-     * {@code List<composite>} (or {@code composite}) keyed on the carrier's <em>data field</em>
-     * cardinality, not the payload field's wrapper (which is always a single object). The expected
-     * cardinality is re-levelled to the data field, mirroring {@code RecordBindingResolver}'s
-     * {@code ProducerBindLevel.BindsDataFieldElement}; a single-data-field carrier whose producer
-     * returns a {@code List} (or vice versa) is the cardinality near-miss, named here.
+     * {@code List<composite>} (or {@code composite}) keyed on whether the producer must yield a
+     * collection. R308 — that cardinality is no longer re-derived here from the carrier / data-field
+     * wrappers; it is the {@code verdictProducerArrival} the shape verdict
+     * ({@link BuildContext.ServiceCarrierShape.Coherent#producerArrival()}) decided once at the
+     * carrier-arrival home and carried down. This check now does only its residual job, the producer
+     * <em>element-type</em> comparison. When there is no carrier verdict ({@code NotApplicable}: a plain
+     * class-backed {@code @service} payload that is not a producer-backed carrier) the arrival is the
+     * return's own SDL wrapper. A single-cardinality shape whose producer returns a {@code List} (or
+     * vice versa) is the cardinality near-miss, named here.
      */
     private String checkServiceReturnMatchesPayload(
-            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method) {
+            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
+            java.util.Optional<SourceKey.Cardinality> verdictProducerArrival) {
         if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) return null;
         if (result.fqClassName() == null) return null;
-        boolean isList = returnType.wrapper().isList();
-        if (typeBuilder.carrierBinding(result.returnTypeName()) instanceof TypeBuilder.CarrierBinding.ClassBacked
-                && ctx.scanStructuralServiceCarrierPayload(result.returnTypeName())
-                    instanceof BuildContext.DmlPayloadScan.Admit admit
-                && admit.element() instanceof BuildContext.DmlElementKind.RecordElement) {
-            isList = GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList;
-        }
+        boolean isList = verdictProducerArrival
+            .map(arrival -> arrival == SourceKey.Cardinality.MANY)
+            .orElseGet(() -> returnType.wrapper().isList());
         // R370: build the expected payload ClassName structurally, not via bestGuess over the
         // binary fqClassName. A nested backing class has a `$`-qualified binary name
         // (Outer$Nested); bestGuess splits only on `.` and would carry it as a single simple name,
@@ -3515,11 +3519,20 @@ class FieldBuilder {
         // Carrier arrival: the one home is the carrier field's own SDL wrapper.
         SourceKey.Cardinality carrierArrival = returnType.wrapper().isList()
             ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+        // The cardinality the SDL shape requires the producer's return to have — carried on Coherent so
+        // the downstream return-type match reads this one fact instead of re-deriving it. A collection
+        // is required when the carrier is a list ([Payload], one composite per element) or when an R329
+        // class-backed record-composite data field is itself a list (a single carrier whose data field
+        // projects the whole producer list). This is the read checkServiceReturnMatchesPayload used to
+        // do for itself; it now lives once, here, at the carrier-arrival home.
+        SourceKey.Cardinality requiredProducerArrival =
+            carrierArrival == SourceKey.Cardinality.MANY || recordCompositeDataFieldIsList(payloadSdl)
+                ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
         // A single carrier is always coherent: the producer's return (single value or collection) is
         // the single payload's source and the data field consumes it. Every existing @service carrier
         // shape is single-arrival, so this arm leaves them byte-for-byte unchanged.
         if (carrierArrival == SourceKey.Cardinality.ONE) {
-            return new BuildContext.ServiceCarrierShape.Coherent();
+            return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
         }
         // List carrier [Payload]: graphql-java iterates the producer's return into the list, so each
         // element becomes one payload. Producer arrival must be a collection (MANY); an absent fact
@@ -3548,7 +3561,24 @@ class FieldBuilder {
                     admit.dataField().getName(), tableElement.elementTypeName(),
                     carrierArrival, SourceKey.Cardinality.MANY));
         }
-        return new BuildContext.ServiceCarrierShape.Coherent();
+        return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
+    }
+
+    /**
+     * R308 / R329 — true when the payload is a class-backed record-composite carrier whose data field
+     * is itself a list ({@code Payload { results: [Result] }}), the one shape besides a list carrier
+     * that requires the {@code @service} producer to return a collection. Factored out of
+     * {@link #scanServiceCarrierShape} so the carrier-arrival home computes the required producer
+     * cardinality once; only the {@code RecordElement} element kind re-nests per element (the
+     * {@code Table} kind's list data field is the a2 {@link ServiceCarrierShapeError.DataFieldArrivalConflict}
+     * reject, handled separately).
+     */
+    private boolean recordCompositeDataFieldIsList(String payloadSdl) {
+        return typeBuilder.carrierBinding(payloadSdl) instanceof TypeBuilder.CarrierBinding.ClassBacked
+            && ctx.scanStructuralServiceCarrierPayload(payloadSdl)
+                instanceof BuildContext.DmlPayloadScan.Admit admit
+            && admit.element() instanceof BuildContext.DmlElementKind.RecordElement
+            && GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList;
     }
 
     /**

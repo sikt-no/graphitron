@@ -173,3 +173,35 @@ reactor is green (unpiped exit 0). One acceptance item did not ship:
   to add.
 
 No other rework: rejection coverage, corpus byte-identity, and the R463 retargets are complete.
+
+## Rework 2026-07-12: coherent class-backed list carrier pinned, and a false reject it exposed fixed
+
+Writing the requested pin surfaced that the prescribed shape does **not** work today: the true
+sibling of the `@table` coherent list carrier
+(`serviceProducer_listCarrier_singleTableDataField_admitsBatchedLoadOne`, `[FilmPayload] { film: Film }`,
+single data field) is the class-backed `[CreateFilmsPayload] { result: CreateFilmsResult }` (single
+data field) over `createFilmsWithActors` (`List<TestFilmWithActorsDto>`), and it false-rejected with
+"@service method … must return TestFilmWithActorsDto … got List<TestFilmWithActorsDto>". Cause:
+`FieldBuilder.checkServiceReturnMatchesPayload` still re-derived the expected producer cardinality
+from wrappers, **overwriting** `isList` with the R329 data-field wrapper alone (a read that predated
+list carriers), so a list carrier + single data field expected a single-value producer and rejected
+the `List<…>`. This is exactly the uncoordinated read the Spec bullet named for replacement, and the
+`scanServiceCarrierShape` javadoc already (falsely) claimed the verdict had replaced it.
+
+Fix (thesis-aligned, per `principles-architect`): the shape verdict now owns the required producer
+cardinality. `ServiceCarrierShape.Coherent` carries `producerArrival` (computed once at the
+carrier-arrival home: MANY for a list carrier, or a single carrier whose R329 record-composite data
+field is itself a list; ONE otherwise); `checkServiceReturnMatchesPayload` consumes that one fact and
+retains only the producer element-type comparison, no longer reading wrappers for cardinality. The
+javadoc claim is now true. Behaviour is byte-identical on every prior shape (the single-data-field
+false reject is the only changed verdict); full reactor green (`mvn install -Plocal-db`, exit 0),
+2669 + execution-tier fixtures included.
+
+Pinned: `listCarrier_classBacked_collectionProducer_admitsCoherentComposite` in
+`ServiceRecordCompositeCarrierPipelineTest` (the tripwire the review asked for). The plain-properties
+class-backed **non-carrier** list (`[Dto]` grounded directly, no data field) already reads
+`NotApplicable` and admits via the return's own SDL wrapper, unaffected by this change; it needs no
+new stub. Note (coverage debt, out of scope, same axis): the class-backed **list**-data-field carrier
+(`[CreateFilmsPayload] { results: [CreateFilmsResult] }`) is coherent-by-verdict (RecordElement
+re-nests) but unpinned, carrying the same "future verdict change false-rejects with a green build"
+exposure; file a follow-up if desired.

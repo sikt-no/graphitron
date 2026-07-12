@@ -598,7 +598,10 @@ class BuildContext {
      *   <li>{@link Coherent}: a single carrier ({@code Payload}), or a list carrier
      *       ({@code [Payload]}) whose producer returns a collection and whose {@code @table}-element
      *       data field is single. The shape keeps its exact current classification and emit; no
-     *       downstream consumer changes.</li>
+     *       downstream consumer changes. It carries {@link Coherent#producerArrival() producerArrival},
+     *       the cardinality the SDL shape requires the {@code @service} producer to return, so the
+     *       downstream return-type match ({@code FieldBuilder.checkServiceReturnMatchesPayload}) reads
+     *       that one fact instead of re-deriving it from the carrier / data-field wrappers.</li>
      *   <li>{@link Reject}: an incoherent list carrier; carries the typed
      *       {@link no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError}.</li>
      *   <li>{@link NotApplicable}: not a producer-backed carrier (the seat falls through to its
@@ -606,7 +609,15 @@ class BuildContext {
      * </ul>
      */
     public sealed interface ServiceCarrierShape {
-        record Coherent() implements ServiceCarrierShape {}
+        /**
+         * @param producerArrival the cardinality the SDL shape requires the {@code @service}
+         *   producer's return to have ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}
+         *   for a list carrier {@code [Payload]}, or a single carrier whose R329 data field is itself a
+         *   list; {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#ONE} otherwise). Decided
+         *   once at the verdict and carried, so no downstream consumer re-derives carrier arrival from
+         *   the wrapper.
+         */
+        record Coherent(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality producerArrival) implements ServiceCarrierShape {}
         record Reject(no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError error) implements ServiceCarrierShape {}
         record NotApplicable() implements ServiceCarrierShape {}
     }
