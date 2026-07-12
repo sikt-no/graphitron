@@ -193,15 +193,28 @@ cardinality. `ServiceCarrierShape.Coherent` carries `producerArrival` (computed 
 carrier-arrival home: MANY for a list carrier, or a single carrier whose R329 record-composite data
 field is itself a list; ONE otherwise); `checkServiceReturnMatchesPayload` consumes that one fact and
 retains only the producer element-type comparison, no longer reading wrappers for cardinality. The
-javadoc claim is now true. Behaviour is byte-identical on every prior shape (the single-data-field
-false reject is the only changed verdict); full reactor green (`mvn install -Plocal-db`, exit 0),
-2669 + execution-tier fixtures included.
+javadoc claim is now true. Behaviour is byte-identical on every prior shape except the two
+list-carrier verdicts corrected below; full reactor green (`mvn install -Plocal-db`, exit 0),
+execution-tier fixtures included.
 
-Pinned: `listCarrier_classBacked_collectionProducer_admitsCoherentComposite` in
-`ServiceRecordCompositeCarrierPipelineTest` (the tripwire the review asked for). The plain-properties
-class-backed **non-carrier** list (`[Dto]` grounded directly, no data field) already reads
-`NotApplicable` and admits via the return's own SDL wrapper, unaffected by this change; it needs no
-new stub. Note (coverage debt, out of scope, same axis): the class-backed **list**-data-field carrier
-(`[CreateFilmsPayload] { results: [CreateFilmsResult] }`) is coherent-by-verdict (RecordElement
-re-nests) but unpinned, carrying the same "future verdict change false-rejects with a green build"
-exposure; file a follow-up if desired.
+Pinned coherent: `listCarrier_classBacked_collectionProducer_admitsCoherentComposite` in
+`ServiceRecordCompositeCarrierPipelineTest` (the tripwire the review asked for), the class-backed
+sibling of the `@table` single-data-field coherent list carrier. The plain-properties class-backed
+**non-carrier** list (`[Dto]` grounded directly, no data field) already reads `NotApplicable` and
+admits via the return's own SDL wrapper, unaffected; it needs no new stub.
+
+The class-backed **list-data-field** list carrier is now **rejected**, not deferred. Investigating it
+(the initially-deferred coverage item) showed it is not coherent: `[CreateFilmsPayload] { results:
+[CreateFilmsResult] }` over a flat `List<TestFilmWithActorsDto>` iterates one composite into each
+payload, and the source-passthrough data fetcher (`FetcherEmitter.buildRecordCompositeFetcherValue`)
+then casts that single composite to `List<Composite>`, a per-request `ClassCastException` after a
+green build, the exact a2 anti-pattern the acceptance axiom forbids, and the same semantic hole
+(`one flat producer list cannot say which composites belong to which payload element`; filling it
+needs a `List<List<…>>` producer the model has no shape for) that makes the `@table` twin reject. The
+`DataFieldArrivalConflict` arm was scoped to the `@table` element kind; that scoping was the real
+defect. It now fires for `RecordElement` too (only the ID element re-nests per element and stays
+coherent). Pinned reject: `listCarrier_classBacked_listDataField_rejectsDataFieldArrivalConflict`,
+the class-backed sibling of `serviceProducer_listCarrier_listDataField_rejectsDataFieldArrivalConflict`.
+The coherent single-carrier list data field (`listArrival_classifiesPayloadResultAndDataField`, whose
+one payload's list projects the whole producer list) is unaffected: single carriers return `Coherent`
+before the conflict branch.

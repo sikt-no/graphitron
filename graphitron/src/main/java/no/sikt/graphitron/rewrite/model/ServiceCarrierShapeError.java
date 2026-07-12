@@ -72,14 +72,19 @@ public sealed interface ServiceCarrierShapeError extends Rejection.AuthorError p
 
     /**
      * A list-returning carrier field ({@code @service ...: [Payload]}, arrival
-     * {@link SourceKey.Cardinality#MANY}) whose {@code @table}-element data field is itself a list
-     * (arrival {@link SourceKey.Cardinality#MANY}), produced by a flat {@code List<Record>}. The
-     * producer's flat list is consumed element-by-element to build the {@code [Payload]} carrier, so a
-     * single produced record reaches each {@code Payload} and cannot also populate a list-valued data
-     * field: the emitter's per-element key extraction casts that single record to {@code Iterable<?>}
-     * and {@code ClassCastException}s on every request (a defensive runtime cast failing after a green
-     * build, the acceptance axiom's forbidden shape). Beneath the crash sits a semantic hole — one flat
-     * producer list cannot say which records belong to which payload element. Distinct from
+     * {@link SourceKey.Cardinality#MANY}) whose data field is itself a list (arrival
+     * {@link SourceKey.Cardinality#MANY}), produced by a flat collection. The producer's flat list is
+     * consumed element-by-element to build the {@code [Payload]} carrier, so a single produced value
+     * reaches each {@code Payload} and cannot also populate a list-valued data field, and
+     * {@code ClassCastException}s on every request (a defensive runtime cast failing after a green build,
+     * the acceptance axiom's forbidden shape). Both admitting element kinds crash this way: a
+     * {@code @table}-element data field ({@code List<Record>} producer) on the emitter's per-element key
+     * extraction casting the single record to {@code Iterable<?>}; a class-backed record-composite
+     * ({@code RecordElement}) data field ({@code List<Composite>} producer) on the source-passthrough
+     * casting one composite to {@code List<Composite>} ({@code FetcherEmitter.buildRecordCompositeFetcherValue}).
+     * Beneath the crash sits a semantic hole: one flat producer list cannot say which values belong to
+     * which payload element, and filling the shape would need a {@code List<List<…>>} producer the model
+     * does not have. Only an ID-element data field re-nests per element and stays coherent. Distinct from
      * {@link ProducerArrivalMismatch} because it is a different axis pairing (data-field arrival vs. a
      * flat producer list that cannot re-nest per carrier element), so it earns its own arm.
      */
@@ -99,7 +104,7 @@ public sealed interface ServiceCarrierShapeError extends Rejection.AuthorError p
                 + ") whose data field '" + payloadTypeName + "." + dataFieldName
                 + "' is itself a list of '" + dataFieldElementType + "' (arrival " + dataFieldArrival
                 + "); the producer's flat list is consumed element-by-element to build the '["
-                + payloadTypeName + "]' carrier, so a single produced record reaches each '"
+                + payloadTypeName + "]' carrier, so a single produced value reaches each '"
                 + payloadTypeName + "' and cannot also populate a list-valued '" + dataFieldName
                 + "'. Make the data field single ('" + dataFieldElementType + "' instead of '["
                 + dataFieldElementType + "]'), or make the carrier field single ('" + payloadTypeName

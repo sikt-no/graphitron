@@ -229,6 +229,46 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(schema.diagnostics()).isEmpty();
     }
 
+    /**
+     * R308 — the class-backed sibling of the {@code @table} a2 reject
+     * ({@code SingleRecordTableFieldServiceProducerPipelineTest#serviceProducer_listCarrier_listDataField_rejectsDataFieldArrivalConflict}):
+     * a <em>list</em> carrier ({@code [CreateFilmsPayload]}) whose class-backed composite data field is
+     * <em>itself</em> a list ({@code results: [CreateFilmsResult]}), produced by a flat
+     * {@code List<TestFilmWithActorsDto>}. graphql-java iterates that flat list into the
+     * {@code [CreateFilmsPayload]} carrier, so one composite reaches each payload; the source-passthrough
+     * data fetcher then casts that single composite to {@code List<Composite>}
+     * ({@code FetcherEmitter.buildRecordCompositeFetcherValue}) and {@code ClassCastException}s on every
+     * request — the acceptance axiom's forbidden shape. Filling it would need a {@code List<List<Dto>>}
+     * producer the model does not have. This is the same semantic hole as the {@code @table} twin, so the
+     * verdict rejects with the typed {@link ServiceCarrierShapeError.DataFieldArrivalConflict}, not a
+     * silent admit; the {@code DataFieldArrivalConflict} arm is no longer scoped to the {@code @table}
+     * element kind. (Contrast the coherent single-data-field
+     * {@link #listCarrier_classBacked_collectionProducer_admitsCoherentComposite} above, and the coherent
+     * <em>single</em>-carrier list data field {@link #listArrival_classifiesPayloadResultAndDataField},
+     * whose one payload's list projects the whole producer list.)
+     */
+    @Test
+    void listCarrier_classBacked_listDataField_rejectsDataFieldArrivalConflict() {
+        var schema = TestSchemaHelper.buildSchema(TABLES + """
+            type CreateFilmsPayload {
+                results: [CreateFilmsResult]
+                errors: [CreateError]
+            }
+            type Query { x: String }
+            type Mutation {
+                createFilms: [CreateFilmsPayload]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
+            }
+            """);
+
+        var mut = schema.field("Mutation", "createFilms");
+        assertThat(mut).isInstanceOf(UnclassifiedField.class);
+        var rejection = ((UnclassifiedField) mut).rejection();
+        assertThat(rejection).isInstanceOf(ServiceCarrierShapeError.DataFieldArrivalConflict.class);
+        assertThat(rejection.message())
+            .contains("[CreateFilmsPayload]", "results", "element-by-element", "CreateFilmsResult");
+    }
+
     @Test
     void noErrorsField_dataFieldUsesDirectEnvelope() {
         // Without an errors field the producer returns the composite list bare (no Outcome wrapper),

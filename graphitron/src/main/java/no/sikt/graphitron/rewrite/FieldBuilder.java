@@ -3547,18 +3547,26 @@ class FieldBuilder {
                     payloadSdl, parentTypeName, fieldName, carrierArrival, producerArrival,
                     method.className(), method.methodName()));
         }
-        // Producer is a collection. A @table-element data field that is itself a list cannot be
-        // demultiplexed out of the flat producer list (each payload element is a single record).
-        // Class-backed composite (RecordElement) and ID-element data fields re-nest per element and
-        // are coherent, so the conflict is scoped to the Table element kind.
+        // Producer is a collection. A data field that is itself a list cannot be demultiplexed out of
+        // the flat producer list: the list is consumed element-by-element to build the [Payload]
+        // carrier, so a single value (one record for a @table element, one composite for a class-backed
+        // RecordElement) reaches each payload and cannot also populate a list data field — the
+        // @table element crashes on the per-element key-extraction cast to Iterable, the RecordElement
+        // on the source-passthrough cast of one composite to List<Composite> (FetcherEmitter's
+        // buildRecordCompositeFetcherValue). Filling it would need a producer returning List<List<…>>
+        // (one inner list per carrier element), which the single-level producer cannot provide. Both
+        // are the a2 conflict; only the ID element re-nests per element and stays coherent.
         if (ctx.scanStructuralServiceCarrierPayload(payloadSdl)
                 instanceof BuildContext.DmlPayloadScan.Admit admit
-                && admit.element() instanceof BuildContext.DmlElementKind.Table tableElement
-                && GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList) {
+                && GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList
+                && (admit.element() instanceof BuildContext.DmlElementKind.Table
+                    || admit.element() instanceof BuildContext.DmlElementKind.RecordElement)) {
+            String dataFieldElementType =
+                ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(admit.dataField().getType())).getName();
             return new BuildContext.ServiceCarrierShape.Reject(
                 new ServiceCarrierShapeError.DataFieldArrivalConflict(
                     payloadSdl, parentTypeName, fieldName,
-                    admit.dataField().getName(), tableElement.elementTypeName(),
+                    admit.dataField().getName(), dataFieldElementType,
                     carrierArrival, SourceKey.Cardinality.MANY));
         }
         return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
@@ -3566,12 +3574,13 @@ class FieldBuilder {
 
     /**
      * R308 / R329 — true when the payload is a class-backed record-composite carrier whose data field
-     * is itself a list ({@code Payload { results: [Result] }}), the one shape besides a list carrier
-     * that requires the {@code @service} producer to return a collection. Factored out of
-     * {@link #scanServiceCarrierShape} so the carrier-arrival home computes the required producer
-     * cardinality once; only the {@code RecordElement} element kind re-nests per element (the
-     * {@code Table} kind's list data field is the a2 {@link ServiceCarrierShapeError.DataFieldArrivalConflict}
-     * reject, handled separately).
+     * is itself a list ({@code Payload { results: [Result] }}). Under a <em>single</em> carrier this is
+     * the coherent R329 shape whose single payload's list data field projects the whole producer list,
+     * so it requires the {@code @service} producer to return a collection; the carrier-arrival home uses
+     * this to compute {@code requiredProducerArrival} once, before the single-carrier early return.
+     * (Under a <em>list</em> carrier the same list data field is instead the a2
+     * {@link ServiceCarrierShapeError.DataFieldArrivalConflict} reject — one composite per payload
+     * element cannot fill a list — so this predicate never gates a list-carrier Coherent verdict.)
      */
     private boolean recordCompositeDataFieldIsList(String payloadSdl) {
         return typeBuilder.carrierBinding(payloadSdl) instanceof TypeBuilder.CarrierBinding.ClassBacked
