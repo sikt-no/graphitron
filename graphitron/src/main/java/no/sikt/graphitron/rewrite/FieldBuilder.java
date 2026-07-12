@@ -3499,11 +3499,13 @@ class FieldBuilder {
      *
      * <p>A list carrier rejects when the producer returns a single value
      * ({@link ServiceCarrierShapeError.ProducerArrivalMismatch}: graphql-java cannot iterate a single
-     * value into the {@code [Payload]} list), or when a {@code @table}-element data field is itself a
-     * list ({@link ServiceCarrierShapeError.DataFieldArrivalConflict}: the flat producer list is
-     * consumed element-by-element into the carrier, so a single record reaches each payload and cannot
-     * populate a list data field — the per-element {@code ClassCastException}). Class-backed composite
-     * and ID-element data fields re-nest per element and stay coherent.
+     * value into the {@code [Payload]} list), or when the data field is itself a list
+     * ({@link ServiceCarrierShapeError.DataFieldArrivalConflict}: the flat producer list is consumed
+     * element-by-element into the carrier, so a single value reaches each payload and cannot populate a
+     * list data field, the per-element {@code ClassCastException}). That conflict fires for both a
+     * {@code @table}-element and a class-backed record-composite ({@code RecordElement}) data field, the
+     * two element kinds a list carrier admits; only an ID-element data field re-nests per element and
+     * stays coherent.
      */
     private BuildContext.ServiceCarrierShape scanServiceCarrierShape(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
