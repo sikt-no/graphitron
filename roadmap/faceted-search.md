@@ -5,7 +5,7 @@ status: Ready
 priority: 7
 theme: pagination
 depends-on: []
-last-updated: 2026-06-26
+last-updated: 2026-07-13
 ---
 
 # Faceted search on `@asConnection`: `@asFacet` directive
@@ -19,7 +19,8 @@ last-updated: 2026-06-26
 > facet plan on `ConnectionResult` and a `ConnectionHelper.facets` resolver
 > issues one `UNION ALL` aggregate query per request, each arm computing one
 > facet's counts under its filter-minus-self predicate. This rides the
-> connection machinery exactly as `totalCount` does today, leaving the
+> connection machinery as `totalCount` does today (at the `ConnectionResult`
+> / `ConnectionHelper` runtime layer), leaving the
 > general-dispatch `Operation.Facet` arm unpopulated behind the ConnectionType
 > quarantine for R314 to fold in later (see *Contained approach* below).
 > Phase 1 spike confirmed the `UNION ALL` shape over `GROUPING SETS`
@@ -150,7 +151,7 @@ the current ones; the retired names appear only to mark what moved.
   the synthesised types via `additionalType(...)`. Nothing there knows
   about facets yet.
 - **Per-type Connection metadata lives on `GraphitronType.ConnectionType`**
-  (`model/GraphitronType.java:511`), a sealed arm implementing
+  (`model/GraphitronType.java:510`), a sealed arm implementing
   `EmitsPerTypeFile`, carrying `name`, `elementTypeName`, `edgeTypeName`,
   `itemNullable`, `shareable`, and the `GraphQLObjectType schemaType`.
   `FieldWrapper.Connection` (`model/FieldWrapper.java:73`) is now a slim
@@ -158,7 +159,7 @@ the current ones; the retired names appear only to mark what moved.
   only per-carrier-site facts; `connectionName` and `itemNullable` moved to
   `ConnectionType`. **This is the structural reason facet specs belong on
   `ConnectionType`, not the wrapper** (see Phase 3).
-- `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:4402`) emits a
+- `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:5081`) emits a
   single keyset-paginated SELECT, builds the full `condition` via
   `buildConditionCall(qtf, tableLocal, ...)`, and wraps the result as
   `new ConnectionResult(result, page, tableLocal, condition)`. No secondary
@@ -191,7 +192,7 @@ the current ones; the retired names appear only to mark what moved.
   (`PlatformIdField`, named in the old draft, is gone; `UnboundField` is
   new.)
 - `BuildContext` lists every directive the rewrite reads in its `DIR_*`
-  constant block (`:79`); there is no `DIR_FACET`. `DIR_AS_CONNECTION`,
+  constant block (`:102`); there is no `DIR_FACET`. `DIR_AS_CONNECTION`,
   `ARG_CONNECTION_NAME`, `ARG_DEFAULT_FIRST_VALUE` are present.
 - Conditions are generated into per-query `QueryConditions` /
   `MutationConditions` classes (`QueryConditionsGenerator`), one
@@ -236,24 +237,44 @@ the current ones; the retired names appear only to mark what moved.
 
 ## Contained approach: facets ride the connection machinery, like `totalCount`
 
-R333 ("The Graphitron data model") places faceting on the **operation** axis:
-`Operation.Facet` is a modeled-but-unpopulated arm, sibling to `Operation.Count`
-(`totalCount`) and `Operation.Paginate`, "behind the ConnectionType quarantine."
-The quarantine is the fact that connections are not yet lowered through the
-general `(source, operation, target)` dispatch; they are emitted as a
-self-contained unit (`ConnectionPromoter` + the connection fetcher + `ConnectionHelper`),
-and `totalCount` already computes its own aggregate *inside* that unit without
-populating `Operation.Count`.
+Faceting sits on the **operation** axis, but the shipped code and the R333
+spec now say that in two different vocabularies, and the plan must not
+conflate them:
+
+- **Shipped code (R316's operation seal).** `Operation.Facet`
+  (`model/Operation.java:93`) is a modeled-but-unpopulated arm, sibling to
+  `Operation.Count` (`totalCount`, `:90`) and `Operation.Paginate`; the class
+  Javadoc places both connection aggregates "behind the ConnectionType
+  quarantine." The quarantine is the fact that connections are not yet
+  lowered through the general `(source, operation, target)` dispatch; they
+  are emitted as a self-contained unit (`ConnectionPromoter` + the connection
+  fetcher + `ConnectionHelper`), and `totalCount` already computes its own
+  aggregate *inside* that unit without populating `Operation.Count`.
+- **R333's current spec (the fact model).** R333 normalizes R316's operation
+  enum away: `coordinate -> operation` is a 0..N *set* whose member kinds are
+  `select` / `join` / `paginate` / `condition` / `orderBy` / `serviceCall` /
+  DML, and `@asConnection` lowers to `operation: paginate` in its
+  directive-coverage audit. `Count` and `Facet` appear in R333 only in its
+  R316-axis normalization table (a mechanical mapping of the old enum arms
+  onto the set), **not** in the operation-kind catalog or the member-to-seam
+  crosswalk: R333's target vocabulary carries no aggregate member at all, for
+  facets *or* for `totalCount`. "Quarantine" survives only in
+  `Operation.java`'s Javadoc.
 
 This plan deliberately takes the **contained** route: facets ride the same
-connection machinery as `totalCount`, and `Operation.Facet` stays unpopulated.
-The justification is that this is not new debt, it is the *same shape* as a
-feature already shipped (`totalCount`), and it dissolves the *same way*: when
-R314 lowers the connection quarantine onto the general dispatch, the contained
-facet emit folds into `Operation.Facet` exactly as the contained count emit
-folds into `Operation.Count`. The two move together or not at all. Until then,
-facets do not block on R333/R314, and they do not deepen the quarantine beyond
-the precedent `totalCount` already set.
+connection machinery as `totalCount`, and `Operation.Facet` stays
+unpopulated. The original justification (not new debt, the same shape as a
+shipped feature, dissolving the same way) survives the R333 rewrite and gets
+stronger: populating `Operation.Facet` now would populate an arm R333's
+normalized operation set *drops*, wiring facets into a vocabulary with a
+demolition date. The contained route is also how R333 already implicitly
+treats the whole connection-aggregate family: `totalCount` has no fact, no
+operation member, and no directive-coverage row (it is not
+directive-triggered); the aggregates live inside the connection unit, and
+R314 folds them into whatever aggregate operation member the fact model mints
+when it lowers connections. The two aggregates move together or not at all.
+Until then, facets do not block on R333/R314, and they do not deepen the
+quarantine beyond the precedent `totalCount` already set.
 
 Concretely, this rules out two tempting-but-wrong shapes:
 - **No `FacetedConnectionType`.** Faceting is an operation fact, not a
@@ -262,7 +283,68 @@ Concretely, this rules out two tempting-but-wrong shapes:
   the target axis that R316 split apart.
 - **No premature `Operation.Facet` population.** Wiring facets through general
   dispatch now would mean dissolving the connection quarantine ahead of R314,
-  which is exactly the large structural program the contained route avoids.
+  which is exactly the large structural program the contained route avoids;
+  and per the above, the arm itself is not carried forward by R333's target
+  vocabulary, so populating it would build onto a condemned axis.
+
+What `ConnectionType.facets()` is, precisely: a **contained view carrier,
+not the fact's normalized home**. `totalCount` is precedent at the runtime
+layer (`ConnectionResult` / `ConnectionHelper`), but it sets no
+`ConnectionType` precedent; it carries nothing on the per-type model entry.
+Facets do need per-facet resolved bindings (column, scalar, nullability), and
+in R333's terms those are the *use-site resolved* projection of the authored
+`@asFacet` fact: the directive is authored at the filter input type's member
+coordinate (definition-keyed), while the resolved binding is a derived join
+over (input member coordinate, consuming `@asConnection` coordinate), which
+is why the promoter resolves one `List<FacetSpec>` per Connection type
+against that carrier's table. Landing the resolved list on `ConnectionType`
+is acceptable exactly because R333 treats the `GraphitronType` entries as
+denormalized views over facts, views that dissolve: when R314 lowers the
+connection unit, `facets()` re-sources onto the operation fact with the rest
+of the view. Framed as the fact's permanent home it would be the
+operation-onto-target re-fusion this section rules out; framed as the view
+carrier it is the additive "capability adds a fact" move R333 endorses.
+
+### R333 handshake (synced 2026-07-13)
+
+R13's Ready sign-off (2026-06-26) predates R333's rewrite (last-updated
+2026-07-05). Besides the re-grounding above, three R333 commitments bear on
+this plan:
+
+- **Directive coverage.** R333 claims closure over *active* directives
+  ("every active directive's effect has an owning fact"), and its precedent
+  for unshipped directives is `@capability` / `@exemplifies`: reserve the
+  slot, join the audit table on ship. `@asFacet` is in the same position; an
+  unshipped directive is not a closure gap. When Phase 2 lands, R333's
+  *Directive coverage* table gains an `@asFacet` row (a one-line edit to a
+  living Spec); the honest owning-fact entry today is the contained
+  connection unit (`ConnectionType.facets()` as view carrier), with the
+  operation-fact home deliberately undecided until R314 mints the aggregate
+  member. Note for that future fold: the facet aggregate is a separate query
+  with its own per-arm WHERE, so its operation home is a distinct aggregate
+  operation at its own anchor, not a sub-fact of `paginate`.
+- **Definition-keyed vs use-keyed rejections.** R333's natural-keys and
+  *Input coordinates* sections split input-field facts into the authored fact
+  at the input type's member coordinate and the use-site binding as a derived
+  join over (input member coordinate, consuming coordinate). Phase 3's
+  rejection split follows that axis, not an implementation limitation:
+  directive co-occurrence (`@asFacet` alongside `@reference` / `@condition`,
+  or missing `@field`) is authored-directive presence, definition-keyed, the
+  promoter's job; the binding-kind rejections (composite / `[ID!] @nodeId`
+  reference arms) fold in use-site resolution, so their principled home is
+  `GraphitronSchemaValidator`, where the classified `InputField` arm is in
+  hand; and "not reached via any `@asConnection` field" is the purely
+  use-keyed case.
+- **The projection seam and method-graph closure.** The new `FacetsType` /
+  `FacetValueType` arms must project through `CatalogBuilder`'s exhaustive
+  switch, which R333 names as *the* seam feeding the language server and the
+  knowledge surface; updating it is what keeps the facet types describable
+  outside code generation, not codegen bookkeeping. And Phase 4's generated
+  fragments (`<field>FacetBaseCondition`, `<field>Facet_<g>Condition`, the
+  `facets` resolver and delegate) form a closed method sub-graph in R333's
+  back-half sense: every name called is a method we emit, the fetcher makes
+  no decision the generated conditions could have made, and these seams are
+  precisely what folds into the eventual facet operation.
 
 ### Verification
 
@@ -316,7 +398,9 @@ Concretely, this rules out two tempting-but-wrong shapes:
   `elementTypeName` / `edgeTypeName` on `ConnectionType`. The deprecation
   of `@asConnection(connectionName:)` ("each connection field owns its
   own Connection type") means per-type and per-carrier coincide, so there
-  is no ambiguity.
+  is no ambiguity. Under R333 the entry is a *view carrier*, not the
+  fact's normalized home; see *Contained approach* for the precise
+  framing and the R314 re-sourcing path.
 - **Single directive-declaration file.** `@asFacet` is declared in
   rewrite's own `directives.graphqls`. The schema loader auto-injects it
   before classification.
@@ -327,8 +411,11 @@ Concretely, this rules out two tempting-but-wrong shapes:
   (unlike the original draft's "extend an existing record" framing), so it
   touches `VariantCoverageTest` and the exhaustive `GraphitronType` switches
   (`CatalogBuilder`, `GraphitronSchemaValidator`, `FetcherRegistrationsEmitter`).
-  An implementer may collapse the two into one synthesised-object arm to
-  hold leaf count down; decide during Phase 2.
+  The `CatalogBuilder` switch is not bookkeeping: R333 names its exhaustive
+  projection as the seam feeding the language server and the knowledge
+  surface, so the new arms must project through it for hover / describe to
+  stay complete. An implementer may collapse the two into one
+  synthesised-object arm to hold leaf count down; decide during Phase 2.
 - **Per-facet self-predicate stripping** needs the condition built
   compositionally. The generated `QueryConditions.<field>Condition` folds
   all argument predicates into one, so the fetcher cannot ask it to skip a
@@ -757,7 +844,7 @@ classifier/validator rejection logic below.
 
 #### `BuildContext` — new directive constant
 
-Add to the `DIR_*` constant block (`:79`):
+Add to the `DIR_*` constant block (`:102`):
 
 ```java
 static final String DIR_FACET = "asFacet";
@@ -815,12 +902,22 @@ Reject:
   `CompositeColumnReferenceField` carrying
   `CallSiteExtraction.NodeIdDecodeKeys`). The v1 SQL emitter only
   understands direct-column facets. A shallow directive-level check in the
-  promoter catches the co-occurrence cases; the binding-kind cases
-  (composite / reference) are known once the input field classifies, so
-  defer those to `GraphitronSchemaValidator` if the promoter cannot see the
-  classified `InputField` arm at synthesis time.
-- `@asFacet` on a field whose enclosing input type is not reached via an
-  `@asConnection` field (the `facets` expansion would be dead schema).
+  promoter catches the co-occurrence cases (definition-keyed:
+  authored-directive presence at the input type's member coordinate); the
+  binding-kind cases (composite / reference) fold in use-site resolution, so
+  their principled home is `GraphitronSchemaValidator`, where the classified
+  `InputField` arm is in hand; that placement is prescribed by R333's
+  definition-keyed / use-keyed split, not just a workaround for what the
+  promoter can see at synthesis time.
+- `@asFacet` on a field whose enclosing input type is not reached via *any*
+  `@asConnection` field (the `facets` expansion would be dead schema). A
+  filter input type shared by a connection consumer and a non-connection
+  consumer is fine: `@asFacet` surfaces facets at the connection use sites
+  and is inert at the others; the rejection fires only when no use site is
+  an `@asConnection` field. (This is R333's definition-keyed / use-keyed
+  split: the directive is authored at the input type's member coordinate,
+  its validity is a derived join over the consuming coordinates. See the
+  *R333 handshake* under Contained approach.)
 
 Surface rejections as a classification error with a message naming the
 field (the rewrite's existing `UnclassifiedField` / validator-error
@@ -829,7 +926,7 @@ already use, so facet errors read consistently with them).
 
 #### `GraphitronSchemaValidator`
 
-`validateConnectionType` (`GraphitronSchemaValidator.java:353`) is the
+`validateConnectionType` (`GraphitronSchemaValidator.java:507`) is the
 natural home for any rejection that needs the classified input surface (the
 composite / reference binding cases above). Add the rule there if the
 promoter-level check cannot reach the binding kind.
@@ -905,7 +1002,7 @@ typed `QueryConditions` boundary (the adapter half of the adapter/composer
 pair). (Which class owns these follows wherever the connection's filter
 condition is generated today; mirror that.)
 
-#### `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:4402`): build the plan
+#### `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:5081`): build the plan
 
 Today the fetcher builds the full `condition` and wraps
 `new ConnectionResult(result, page, tableLocal, condition)`. When
@@ -977,7 +1074,7 @@ the existing `ConnectionHelper` cursor code.
 `nodes` / `pageInfo` and, behind a gate, `totalCount`. Add a `facets`
 registration behind a has-facets gate (`!ct.facets().isEmpty()`), parallel
 to the `totalCount` SDL-presence gate. `ConnectionFetcherClassGenerator`
-(`:38`) adds a `facets` delegate under the same gate. The `*FacetValue`
+(`:44`) adds a `facets` delegate under the same gate. The `*FacetValue`
 types need no explicit fetcher wiring.
 
 ### Success Criteria
@@ -1268,7 +1365,7 @@ reviewers can confirm the v1 design does not foreclose it.
 - `rewrite/ConnectionPromoter.java`: Phase 2 extension point.
   `synthesiseForField` / `promotionFor` / `buildSynthesisedConnection`
   grow the facet arm and register the facet types.
-- `rewrite/model/GraphitronType.java:511`: `ConnectionType` (carries the
+- `rewrite/model/GraphitronType.java:510`: `ConnectionType` (carries the
   new `List<FacetSpec>`); new `FacetsType` / `FacetValueType` arms.
 - `rewrite/model/FieldWrapper.java:73`: `Connection` is the slim 2-arg
   per-site record; facets do **not** go here (see Phase 3 rationale).
@@ -1277,18 +1374,20 @@ reviewers can confirm the v1 design does not foreclose it.
   facet-specific change needed once they are `EmitsPerTypeFile` arms).
 - `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`:
   target for the `@asFacet` directive declaration.
-- `rewrite/generators/TypeFetcherGenerator.java:4402`
+- `rewrite/generators/TypeFetcherGenerator.java:5081`
   (`buildQueryConnectionFetcher`): Phase 4 builds the facet plan onto
   `ConnectionResult`.
 - `rewrite/generators/util/ConnectionResultClassGenerator.java` /
   `ConnectionHelperClassGenerator.java`: the `(table, condition)` +
   `totalCount` precedent the facet plan + `facets` resolver extend.
-- `rewrite/generators/util/ConnectionFetcherClassGenerator.java:38` and
+- `rewrite/generators/util/ConnectionFetcherClassGenerator.java:44` and
   `rewrite/generators/schema/FetcherRegistrationsEmitter.java:137`: the
   `facets` delegate + registration, behind a has-facets gate.
 - `rewrite/generators/QueryConditionsGenerator.java`: the additive
   `<field>FacetBaseCondition` (non-facet base condition).
-- `rewrite/BuildContext.java:79`: `DIR_*` constants (add `DIR_FACET`).
-- `rewrite/model/Operation.java:92`: `Operation.Facet`, the
-  general-dispatch home this plan deliberately leaves unpopulated (see
-  *Contained approach*); R314 folds the contained emit into it.
+- `rewrite/BuildContext.java:102`: `DIR_*` constants (add `DIR_FACET`).
+- `rewrite/model/Operation.java:93`: `Operation.Facet`, R316's operation-axis
+  arm this plan deliberately leaves unpopulated (see *Contained approach*).
+  R333 dissolves that enum into the `coordinate -> operation` set (reserving a
+  `facet` member in its normalization table); R314 folds the contained emit
+  into whatever member the fact model lands on.

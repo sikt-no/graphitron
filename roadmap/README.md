@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
+| `R13` | Faceted search on `@asConnection` | Ready | 2026-07-13 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
