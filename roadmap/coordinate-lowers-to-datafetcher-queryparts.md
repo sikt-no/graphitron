@@ -103,7 +103,7 @@ erDiagram
     }
     JOIN_STEP {
         int stepIndex
-        on on "sealed: FkJoin (column slots) | ConditionJoin (predicate) | LiftedHop (lifted slots)"
+        on on "sealed On: ColumnPairs | Predicate | Lateral (on Hop; LiftedHop carries lifted slots; shipped by R438/R435)"
     }
     TABLE_EXPR {
         enum arm "Catalog | MethodCall | RoutineCall (sealed; MethodCall/RoutineCall carry a callable + arg bindings)"
@@ -708,7 +708,7 @@ are orthogonal, a 2x2:
 | **Table** | `Single(Table)`, e.g. `film.language` | `List(Table)`, e.g. `actor.films` |
 
 Today's `ColumnReferenceField` is only the top-left corner (`OutputField.single(Column)`,
-`ChildField.java:133`); **`List(Column)` is the missing corner**, a list of one scalar drawn from the
+`ChildField.java:142`); **`List(Column)` is the missing corner**, a list of one scalar drawn from the
 to-many child rows. With it, column-ref and table-ref differ *only* in `target.shape`, and `Single` / `List`
 differ *only* in direction; `resolvedTable` is the destination table B in every cell. A `List(Column)` child
 reference is not a cheap scalar variant: being to-many it needs the same machinery as a to-many table field
@@ -727,8 +727,8 @@ destination column) and the `join`'s path, and those must agree (the column's ta
 destination). That agreement is a referential-integrity check between the `target` fact and the `join`
 operation, the FK-as-join-graph point made concrete.
 
-The worked example is the additive proof, visible in the leaf records. `ColumnField` (`ChildField.java:262`)
-and `ColumnReferenceField` (`:288`) are component-identical except the reference variant adds `joinPath`
+The worked example is the additive proof, visible in the leaf records. `ColumnField` (`ChildField.java:275`)
+and `ColumnReferenceField` (`:301`) are component-identical except the reference variant adds `joinPath`
 (and `parentCorrelation`): same `source` (`Table`), same `target` (`Single(Column)`), same column and
 compaction. They are one `(source, target)` pair whose operation sets differ by exactly one `join` minted by
 the `reference` fact: `{select}` versus `{join, select}`. Not two leaf types: the same coordinate facts
@@ -818,7 +818,7 @@ owns the path and ON predicate (parent columns + the class's FK metadata), termi
 `tableExpr` renders `resolvedTable` wherever it enters, the FROM at a root field, or the terminal join step's
 table at a child. Disjoint inputs (FK / parent columns versus field arguments), disjoint pieces of the query.
 The classifier already builds the child case this way: `@tableMethod` reuses the `@reference` path parser and
-then asserts the path's terminus equals the method's return table (`FieldBuilder.java:5503-5512`). That
+then asserts the path's terminus equals the method's return table (`FieldBuilder.java:5634`). That
 assertion is the composition, a referential-integrity constraint of the same family as `resolvedTable`'s
 coincidence invariant:
 
@@ -891,15 +891,19 @@ own provenance, gated by the **source object** shape (*Reading the source object
 `Lift` changes only *where the source-side values come from*, not the path or the evidence: the lifted columns
 are real catalog columns (the first FK hop's source-side columns, or the leaf PK when there is no
 `@reference`), so the FK chain navigates from them exactly as for a jOOQ parent, and the resolver reuses
-`parsePath` with a null start (`SourceRowDirectiveResolver.java:265`). The lift's `RowN` arity and column types
+`parsePath` with a null start (`SourceRowDirectiveResolver.java:266`). The lift's `RowN` arity and column types
 must equal that derived tuple, the same integrity-check family. The no-`@reference` case is the trivial path
 where the lifted tuple *is* the leaf PK (fetch the child directly); `@reference` present walks the FK chain
 from the lifted columns. Unlike `@enum`, `@sourceRow` cannot be retired, a DTO's key extraction is opaque Java,
 not catalog-inferable, so the directive stays as the authoring surface while the model absorbs it as the
 `Lift` arm, the mirror of the `RoutineCall` target arm.
 
-So the `@reference` path *is* the join graph, and the old flat `JoinStep` variants are the two axes: `FkJoin`
-= (`Catalog` target, `ColumnPairs` from FK); `ConditionJoin` = (target, `Predicate`). New capability is a new
+So the `@reference` path *is* the join graph. The old flat `JoinStep` variants conflated the two axes
+(`FkJoin` = `Catalog` target + `ColumnPairs` from FK; `ConditionJoin` = target + `Predicate`); R438 shipped
+the decomposition as `JoinStep.Hop(TableExpr target, On on)` and deleted the flat variants, and R435 added
+`On.Lateral` and the name-matched key for hops adjacent to a routine result, so this part of the model is
+now the code's shape, not a proposal. `TableExpr.MethodCall` (`@tableMethod`) is the arm not yet built.
+New capability is a new
 *target* arm (`RoutineCall`), a new *source-side* provenance (`Lift`), or a new `on` derivation (PK/UK
 name-match), not a new step type. A routine node
 can sit anywhere: the projected terminus (its result is the field's type, a function-backed query), an
@@ -1547,7 +1551,9 @@ chain began from the narrower "one DataFetcher + one or more QueryParts" instinc
 resolve side but names the SQL unit one level too fine. A 2026-06-18 session walking the actual emitters
 sharpened it to the model this spec now leads with: **the codegen command is the emitted Java method, and
 the full emit target is a referentially-closed graph of those methods.** The threads below record the
-chain; each is a claim grounded in a current emitter, with the code coordinate that pins it.
+chain; each is a claim grounded in a current emitter, with the code coordinate that pins it. The line
+numbers were measured 2026-06-18/19 and drift with trunk; the class and member names are the stable
+citations (all re-verified live 2026-07-13).
 
 **A. `SplitTableField` and `RecordTableField` are component-identical (measured).** Both records carry
 the same eleven components (`parentTypeName, name, location, returnType, joinPath, filters, orderBy,
@@ -1591,7 +1597,7 @@ method-command kinds and their granularities:
 `$fields` is type-granular and a *fold*: it absorbs its own scalar and inline fields, recurses through
 every `NestingField` into the nested type's fields in the same method (`TypeClassGenerator` NestingField
 arm at `:301-303`; nested types get no own class, `:146`), and opts in the `SourceKey` columns that Split
-children need projected into this parent SELECT (`collectRequiredProjectionColumns`, `:341`). Granularity
+children need projected into this parent SELECT (`collectRequiredProjection`). Granularity
 is heterogeneous across command kinds, and that is the point: each command sits at the granularity of the
 method it renders. The leaf zoo is what you get from forcing a single field-granular model to source all
 of these kinds at once.
@@ -1640,7 +1646,7 @@ closure turns on:
   reads `BatchKeyField.rowsMethodName()` (`model/BatchKeyField.java:42`, whose javadoc states the contract
   outright: "the fetcher and the rows method agree on this name"); the `$fields` to join/condition edges
   read `MethodRef.methodName()` off a `{className, methodName}` model value (`JoinPathEmitter`); the
-  type-condition reads `GeneratedConditionField.methodName()`. This is exactly thread F's "core owns the
+  type-condition reads `GeneratedConditionFilter.methodName()`. This is exactly thread F's "core owns the
   name on both ends," already shipped for these edges. `MethodRef` is the decoupling primitive: a call site
   reads the name blind, knowing neither the producer nor the derivation.
 - **Regime 2, formula-reconstructed** (the string retyped at each end, no shared locus). `$fields` is a
@@ -1727,7 +1733,7 @@ governs *which* methods exist in the target.
 
 ### Emitter inventory (grounding for E and F)
 
-The twenty `*Emitter` classes divide by what they emit:
+The twenty-two `*Emitter` classes divide by what they emit:
 
 - *Resolve side (DataFetcher), field-granular or finer:* `FetcherEmitter` (one field to one DataFetcher),
   `DataLoaderFetcherEmitter` (one DataLoader-backed DataFetcher method), `ServiceMethodCallEmitter` /
@@ -1735,7 +1741,8 @@ The twenty `*Emitter` classes divide by what they emit:
   `InputBeanInstantiationEmitter` / `JooqRecordInstantiationEmitter` (boundary helpers).
 - *SQL projection arms (pieces of `$fields`):* `InlineColumnReferenceFieldEmitter`,
   `InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`.
-- *SQL sub-SELECT fragments (shared):* `JoinPathEmitter`, `ArgCallEmitter`, `LookupValuesJoinEmitter`.
+- *SQL sub-SELECT fragments (shared):* `JoinPathEmitter`, `ArgCallEmitter`, `LookupValuesJoinEmitter`,
+  `RoutineCallEmitter` (R435), `FkTargetConditionEmitter` (R330).
 - *SQL anchors (launch a SELECT, call `$fields`):* `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter`
   (plus the root and lookup paths in `TypeFetcherGenerator` and `SelectMethodBody`).
 - *Schema side (SDL and wiring):* `AppliedDirectiveEmitter`, `DirectiveDefinitionEmitter`,
@@ -1748,7 +1755,7 @@ outbound `$fields` edges. That split is the evidence for E and F.
 
 `SplitTableField` / `RecordTableField` is the cheapest honest demonstration of the cut. Both child sides
 lower to the same `load<X>` rows-method and the same fetcher; Split's only extra is the key projection,
-which relocates to the parent type's `$fields` (where `collectRequiredProjectionColumns` already puts it).
+which relocates to the parent type's `$fields` (where `collectRequiredProjection` already puts it).
 Collapsing the two with zero residue, gated on `sourceShape`, retires one cross-product axis with no
 generator rewrite and produces the lowering's first executable proof. It is the smallest instance of
 cross-anchor key relocation, so it exercises the address-as-name-resolution machinery on exactly one
@@ -1864,9 +1871,12 @@ The gaps, in resolution order:
   (a) the SDL surface is *not* a `@oneOf` path element; it is order-significant, repeatable `@routine` /
   `@reference` co-occurrence, the field's directive list read left to right *being* the linearized join graph
   (`ReferenceElement` untouched); (b) the root-iff-routine guard becomes R435's explicit
-  first-application-supplies-the-head validator. Both directives are unused, so this is greenfield, and the
-  existing `@routine` code is broken not because the routine result is projected, but because that is the
-  *only* shape it allows, with no composition; R435 is the Backlog item that supplies the composition.
+  first-application-supplies-the-head validator. (When that residue was filed both directives were unused
+  and the pre-R435 `@routine` code allowed only the projected-result shape, with no composition.) **R435 has
+  since shipped (Done; see `changelog.md`)**, landing the composition on this model's own vocabulary
+  (`TableExpr.RoutineCall`, `JoinStep.Hop`, `On.Lateral`, the name-matched key), with follow-ups R449
+  (classification edges), R450 (split-path hop-0 filter binding), and R451 (routine writes) also Done;
+  `@tableMethod`'s `MethodCall` arm remains the unbuilt residue.
 - **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
   pair per *whole emitted method*; arm-renderers fold into a pair. *Which* methods exist in the target is
   governed by the seam-placement rule, not by a fixed count.
@@ -1879,7 +1889,7 @@ The gaps, in resolution order:
   ancestors transparent (a split grandchild under an inline child threading its key to the grandparent's
   SELECT)? **Partly resolved by threads F/H:** addressing is core-side name resolution, and the
   parent-key projection is already implemented as "opt these columns into the parent type's `$fields`"
-  (`collectRequiredProjectionColumns`, `TypeClassGenerator:341`). The open residue is the
+  (`collectRequiredProjection` in `TypeClassGenerator`). The open residue is the
   grandchild-through-inline-ancestor threading, not the primitive.
 - **Re-query unification. Resolved (2026-07-04): full merge, laundered key.** The keyed re-query is
   one primitive, `f(keys, correlation)`: `VALUES(idx, key...)` joined to the target over a
@@ -1903,7 +1913,7 @@ The gaps, in resolution order:
 - **DataFetcher totality vs synthetic nodes. Resolved (2026-07-04): confirmed against the emit.**
   Every coordinate has exactly one DataFetcher (an SDL field has one resolver), so there is no
   "synthetic DataFetcher"; and there is likewise no synthetic *coordinate* in the current emit: the
-  parent-key projection rides `collectRequiredProjectionColumns` into the parent type's `$fields`
+  parent-key projection rides `collectRequiredProjection` into the parent type's `$fields`
   (a QueryPart owned by the splitting coordinate, addressed to the enclosing anchor), and the
   `__idx__` scatter column is a synthetic *column* inside one query scope, never a fabricated SDL
   field. The model asserts this as an invariant: coordinates come only from the SDL.
