@@ -27,7 +27,7 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.ParticipantFkPath;
+import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -2101,7 +2101,7 @@ class TypeFetcherGeneratorTest {
     // auto-discovered FK back to the parent table. The fetcher opens with
     // Record parentRecord = (Record) env.getSource() to read parent-side PK values.
 
-    private static java.util.Map<String, ParticipantFkPath> filmActorChildJoinPaths() {
+    private static java.util.Map<String, ParticipantCorrelation> filmActorChildJoinPaths() {
         // film_actor → film via film_actor_film_id_fkey: source columns sit on film_actor side.
         // film_actor → actor via film_actor_actor_id_fkey: same shape. The FK source columns on
         // the parent (FilmActor) side must coincide with FilmActor's PK by sqlName so the
@@ -2507,7 +2507,7 @@ class TypeFetcherGeneratorTest {
             List.of(new ColumnRef(pkSqlName, pkUpper, "java.lang.Integer")));
     }
 
-    private static java.util.Map<String, ParticipantFkPath> compositePkParentJoinPaths() {
+    private static java.util.Map<String, ParticipantCorrelation> compositePkParentJoinPaths() {
         // FK: ProjectNote.(org_id, project_id) -> Project.(org_id, project_id) — composite,
         // position-aligned. Same (source, target) column orientation the retired fkJoin fixtures
         // carried (org_id/project_id coincide on both sides), so the emitted lookups are unchanged.

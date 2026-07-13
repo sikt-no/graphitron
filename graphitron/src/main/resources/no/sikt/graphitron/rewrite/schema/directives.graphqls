@@ -150,6 +150,29 @@ directive @reference(
 ) repeatable on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
+Declares an explicit join path for one participant of a multi-table interface or union child field.
+
+By default the rewrite auto-discovers each participant's join as the single foreign key from the
+participant's table to the parent's table; `@referenceFor` replaces that discovery for the named
+participant only. Use it when a participant has more than one foreign key to the parent (pick one
+with `{key:}`), is reached through an intermediate table (chain multiple elements), correlates by a
+non-foreign-key predicate (`{condition:}`), or shares the parent's own table (state the
+self-referencing `{key:}`).
+
+Repeated applications are keyed by `type` and are independent, one per participant; each `path` is
+that participant's complete path from the parent's table. This is the opposite of repeated
+`@reference` applications, which concatenate into one running chain. Declaring the same `type` twice
+is a build error. Participants you do not name keep automatic discovery.
+"""
+directive @referenceFor(
+  """Name of the participant type this path applies to. Case sensitive."""
+  type: String!
+
+  """Join path from the parent type's table to this participant's table, read as the same element grammar as @reference."""
+  path: [ReferenceElement!]!
+) repeatable on FIELD_DEFINITION
+
+"""
 Removed. `@multitableReference` is no longer supported. The directive stays declared here only so
 the GraphQL parser does not fail with an "unknown directive" error; the rewrite classifier rejects
 any application with a "no longer supported" message. Remove any use of this directive from your

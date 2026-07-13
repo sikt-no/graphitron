@@ -683,9 +683,12 @@ public sealed interface ChildField extends OutputField
      * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
      * are absent from the map; they contribute no SQL branch. Each value is a
-     * {@link ParticipantFkPath} carrying the resolved single-hop FK column pairs (R452): the
-     * classifier decided the shape is supported once, and the emitter cannot represent an
-     * unsupported one.
+     * {@link ParticipantCorrelation} carrying the resolved parent→participant correlation (R452,
+     * generalized R458): the classifier decided the shape is supported once, and the emitter cannot
+     * represent an unsupported one. Through R458 slice 1 every value is a
+     * {@link ParticipantCorrelation.KeyTupleWhere} (single-hop FK, auto-discovered or
+     * {@code @referenceFor}-disambiguated); the {@link ParticipantCorrelation.JoinedCorrelation}
+     * arm arrives with slices 2/3.
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
@@ -706,7 +709,7 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        java.util.Map<String, ParticipantFkPath> participantJoinPaths,
+        java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
         SourceKey parentSourceKey,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
@@ -737,7 +740,7 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        java.util.Map<String, ParticipantFkPath> participantJoinPaths,
+        java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
         SourceKey parentSourceKey,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType

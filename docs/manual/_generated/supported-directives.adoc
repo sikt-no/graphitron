@@ -23,6 +23,7 @@ The rewrite generator declares and supports the following directives. Each is do
 * `@orderBy`
 * `@record`
 * `@reference`
+* `@referenceFor`
 * `@routine`
 * `@scalarType`
 * `@service`

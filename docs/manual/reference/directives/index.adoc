@@ -29,6 +29,7 @@ a|
 * xref:orderBy.adoc[`@orderBy`]
 * xref:record.adoc[`@record`] _(deprecated, ignored, remove from the schema)_
 * xref:reference.adoc[`@reference`]
+* xref:referenceFor.adoc[`@referenceFor`]
 * xref:routine.adoc[`@routine`]
 * xref:scalarType.adoc[`@scalarType`]
 * xref:service.adoc[`@service`]

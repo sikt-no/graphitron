@@ -113,6 +113,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
@@ -126,6 +128,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NOT_GENERATED;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE_FOR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
@@ -2114,6 +2117,31 @@ class FieldBuilder {
 
     GraphitronField classifyField(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
             Class<?> parentBackingClass) {
+        var result = classifyFieldInner(fieldDef, parentTypeName, parentType, parentBackingClass);
+        // R458 placement gate: @referenceFor is only meaningful on a multi-table interface/union
+        // child field (the only site resolveChildPolymorphicJoinPaths reads it). On any other field
+        // the directive is silently ignored by classification, so a field that carries it yet
+        // classifies successfully as something other than an InterfaceField / UnionField (a plain
+        // field, a single-table discriminated polymorphic field, a root field, …) is a misplacement.
+        // A genuine multi-table polymorphic child whose route failed is an UnclassifiedField carrying
+        // its own route rejection, which is left intact.
+        if (fieldDef.hasAppliedDirective(DIR_REFERENCE_FOR)
+                && !(result instanceof UnclassifiedField)
+                && !(result instanceof InterfaceField)
+                && !(result instanceof UnionField)) {
+            return new UnclassifiedField(parentTypeName,
+                fieldDef.getName(), locationOf(fieldDef), fieldDef, Rejection.structural(
+                    "Field '" + parentTypeName + "." + fieldDef.getName() + "': @referenceFor is only "
+                    + "valid on a multi-table interface/union child field. It states a per-participant "
+                    + "join path, which has no meaning on this field (single-table discriminated "
+                    + "polymorphic fields, non-polymorphic fields, and root fields have no participant "
+                    + "set to bind a path to). Remove the @referenceFor directive."));
+        }
+        return result;
+    }
+
+    private GraphitronField classifyFieldInner(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
+            Class<?> parentBackingClass) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -2141,7 +2169,7 @@ class FieldBuilder {
         if (fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE)) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
                 List.of(DIR_MULTITABLE_REFERENCE),
-                "@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path."));
+                "@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path. For a per-participant join path that auto-discovery cannot derive, use @referenceFor(type:, path:) instead (one application per participant)."));
         }
 
         if (!(parentType instanceof RootType)) {
@@ -7066,16 +7094,24 @@ class FieldBuilder {
     private static final String PER_PARTICIPANT_JOIN_PATHS_SLUG = "per-participant-multitable-child-join-paths";
 
     /**
+     * A one-line {@code @referenceFor} usage sketch, appended to R452's rule 1b / 1c steers so the
+     * author sees the sanctioned surface, not just the deferred-capability pointer (R458 slice 1).
+     */
+    private static final String REFERENCE_FOR_USAGE_SKETCH =
+        "State an explicit per-participant path with @referenceFor(type: \"<Participant>\", "
+        + "path: [{key: \"<fk>\"}]).";
+
+    /**
      * Carries the result of {@link #resolveChildPolymorphicJoinPaths}: a per-participant
-     * {@code Map<String, ParticipantFkPath>} keyed by typename (each value the resolved single-hop
-     * FK column pairs), or a non-null {@link Rejection} when the field carries a directive the
-     * auto-discovery arm cannot honour, a participant's FK cannot be uniquely auto-discovered, or a
-     * participant is same-table as the parent/hub.
+     * {@code Map<String, ParticipantCorrelation>} keyed by typename (each value the resolved
+     * parent→participant correlation), or a non-null {@link Rejection} when a participant's FK cannot
+     * be uniquely auto-discovered, a {@code @referenceFor} route is malformed or names an unknown
+     * participant, or a route resolves to a shape whose emitter has not yet shipped.
      */
     private record ChildPolymorphicJoinPaths(
-            java.util.Map<String, no.sikt.graphitron.rewrite.model.ParticipantFkPath> paths, Rejection rejection) {
+            java.util.Map<String, no.sikt.graphitron.rewrite.model.ParticipantCorrelation> paths, Rejection rejection) {
         static ChildPolymorphicJoinPaths ok(
-                java.util.Map<String, no.sikt.graphitron.rewrite.model.ParticipantFkPath> paths) {
+                java.util.Map<String, no.sikt.graphitron.rewrite.model.ParticipantCorrelation> paths) {
             return new ChildPolymorphicJoinPaths(paths, null);
         }
         static ChildPolymorphicJoinPaths fail(Rejection rejection) {
@@ -7084,90 +7120,229 @@ class FieldBuilder {
     }
 
     /**
-     * Resolves the per-participant single-hop FK correlation from {@code parentTable} to each
-     * {@link ParticipantRef.TableBound} participant's table. Each call to
-     * {@link BuildContext#parsePath} for a different target table picks up a different
-     * auto-discovered FK, so heterogeneous participants (each on its own table with its own
-     * FK back to the parent) yield a distinct correlation per branch.
+     * Resolves the per-participant parent→participant correlation from {@code parentTable} to each
+     * {@link ParticipantRef.TableBound} participant's table, producing the sealed
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation} carrier the multi-table
+     * polymorphic emitter dispatches on.
      *
      * <p>Single choke point for all four producers (interface / union × table-backed / record-backed
-     * parent). It is also the R452 build-time gate: the only supported shape on a multi-table
-     * interface/union child field is the auto-discovered single-hop FK, so this method rejects every
-     * richer shape here rather than letting the emitter lower it to an arbitrary-participant-row
-     * result on a green build.
+     * parent). It is also the R452 build-time gate generalized by R458: a participant's correlation is
+     * either auto-discovered (the single unique FK from the participant's table to the parent's) or
+     * stated explicitly with {@code @referenceFor}. Every shape the emitter cannot yet lower is
+     * rejected here rather than lowered to an arbitrary-participant-row result on a green build.
      *
      * <ul>
      *   <li><b>Rule 1a</b> — a field-level {@code @reference} is rejected structurally: a single
      *       stated path applies the same hops to every participant, so it is terminal-correct for at
-     *       most one, and per-participant paths cannot be expressed this way. Author-correctable by
-     *       removing the directive.</li>
-     *   <li><b>Rule 1b</b> — a same-table participant (participant table equals parent/hub table)
-     *       produces an empty auto-path ({@code parsePath} skips FK discovery when source and target
-     *       match), which would lower to "no WHERE"; rejected as a deferred capability keyed to the
-     *       follow-up item's slug (a self-FK participant is a legitimate schema, not an author
-     *       error).</li>
+     *       most one. {@code @referenceFor} is the sanctioned per-participant surface; the message
+     *       names it.</li>
+     *   <li><b>{@code @referenceFor} routes</b> — each application binds one participant's complete
+     *       path. Duplicate {@code type:} and unknown / non-table-bound {@code type:} reject
+     *       structurally. A route's path is resolved via
+     *       {@link BuildContext#parseExplicitPath}; a resolution error or terminal-target mismatch
+     *       rejects naming the participant. A single-hop FK route lowers to
+     *       {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere} (multi-FK
+     *       disambiguation and same-table self-FK, both shipped in slice 1). A multi-hop route is a
+     *       DEFERRED rejection keyed to slice 2; a condition (predicate) hop to slice 3 — their
+     *       emitter arms have not shipped, so the classifier physically cannot construct
+     *       {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} yet.</li>
+     *   <li><b>Rule 1b</b> — a same-table participant with no {@code @referenceFor} produces an empty
+     *       auto-path ({@code parsePath} skips FK discovery when source and target match); now a live
+     *       structural steer to {@code @referenceFor} (self-FK is author-correctable in slice 1), not
+     *       a deferred capability.</li>
      *   <li><b>Rule 1c</b> — a zero-FK / multi-FK auto-discovery failure carries the generic
-     *       {@code fkCountMessage} steer toward {@code @reference}; wrapped here with multi-table-child
-     *       context so authors are pointed at the deferred capability instead of into rule 1a.</li>
+     *       {@code fkCountMessage} steer; wrapped here with multi-table-child context and a live
+     *       {@code @referenceFor} steer (multi-FK disambiguation is what slice 1 ships).</li>
      * </ul>
      *
-     * <p>{@link ParticipantRef.Unbound} participants are skipped and produce no map entry.
+     * <p>Per-participant errors are aggregated rather than short-circuited on the first, so the
+     * author sees every failing participant in one build. {@link ParticipantRef.Unbound} participants
+     * are skipped and produce no map entry.
      */
     private ChildPolymorphicJoinPaths resolveChildPolymorphicJoinPaths(
             GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
             SourceLocation location, TableRef parentTable, List<ParticipantRef> participants) {
+        String fieldLabel = "Field '" + parentTypeName + "." + fieldName + "'";
         // Rule 1a: a field-level @reference cannot express a distinct join per participant.
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
             return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                "Field '" + parentTypeName + "." + fieldName + "': an explicit @reference is not "
-                + "supported on a multi-table interface/union child field. Per-participant join paths "
-                + "are auto-discovered (one unique single-hop foreign key from each participant table "
-                + "to the parent table '" + parentTable.tableName() + "'); a field-level @reference "
-                + "applies one stated path to every participant, so it can be terminal-correct for at "
-                + "most one and cannot express a distinct join per participant. Remove the @reference "
-                + "directive. Per-participant explicit join paths are a deferred capability — see "
-                + "roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                fieldLabel + ": an explicit @reference is not supported on a multi-table "
+                + "interface/union child field. Per-participant join paths are auto-discovered (one "
+                + "unique single-hop foreign key from each participant table to the parent table '"
+                + parentTable.tableName() + "'); a field-level @reference applies one stated path to "
+                + "every participant, so it can be terminal-correct for at most one and cannot express "
+                + "a distinct join per participant. Remove the @reference directive and, where "
+                + "auto-discovery is insufficient, state a per-participant path with @referenceFor. "
+                + "See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
         }
-        var paths = new java.util.LinkedHashMap<String, no.sikt.graphitron.rewrite.model.ParticipantFkPath>();
+
+        // Valid @referenceFor `type:` targets are the field's table-bound participants.
+        var tableBoundByName = new java.util.LinkedHashMap<String, ParticipantRef.TableBound>();
+        for (var p : participants) {
+            if (p instanceof ParticipantRef.TableBound tb) tableBoundByName.put(tb.typeName(), tb);
+        }
+
+        // Read @referenceFor applications, keyed by participant type. Repeated applications are
+        // independent (one per participant); a duplicate type: is a build error, not a merge.
+        var explicitRoutes = new java.util.LinkedHashMap<String, List<?>>();
+        for (var app : fieldDef.getAppliedDirectives(DIR_REFERENCE_FOR)) {
+            var typeArg = app.getArgument(ARG_TYPE);
+            String type = typeArg != null && typeArg.getValue() != null ? typeArg.getValue().toString() : null;
+            if (type == null || type.isBlank()) {
+                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
+                    fieldLabel + ": a @referenceFor application is missing its 'type' argument."));
+            }
+            if (explicitRoutes.containsKey(type)) {
+                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
+                    fieldLabel + ": @referenceFor names participant '" + type + "' more than once. "
+                    + "Repeated @referenceFor applications are independent, one per participant; each "
+                    + "participant may have at most one route (unlike @reference, they do not "
+                    + "concatenate)."));
+            }
+            if (!tableBoundByName.containsKey(type)) {
+                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
+                    fieldLabel + ": @referenceFor names '" + type + "', which is not a table-bound "
+                    + "participant of the field's return type. Valid participant names: "
+                    + tableBoundByName.keySet() + "."));
+            }
+            var pathArg = app.getArgument(ARG_PATH);
+            Object pathValue = pathArg != null ? pathArg.getValue() : null;
+            List<?> elements = pathValue instanceof List<?> l ? l
+                : pathValue != null ? List.of(pathValue) : List.of();
+            explicitRoutes.put(type, elements);
+        }
+
+        var paths = new java.util.LinkedHashMap<String, no.sikt.graphitron.rewrite.model.ParticipantCorrelation>();
+        var errors = new java.util.ArrayList<Rejection>();
         for (var p : participants) {
             if (!(p instanceof ParticipantRef.TableBound tb)) continue;
-            var parsed = ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table());
-            if (parsed.hasError()) {
-                // Rule 1c: fkCountMessage's generic "add a @reference directive" steer leads straight
-                // into rule 1a on these fields; redirect authors to the deferred capability.
-                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                    "participant '" + tb.typeName() + "': " + parsed.errorMessage()
-                    + ". Note: an explicit @reference is not supported on multi-table interface/union "
-                    + "child fields (per-participant join paths are auto-discovered); per-participant "
-                    + "explicit join paths are a deferred capability — see roadmap/"
-                    + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+            String type = tb.typeName();
+            boolean explicit = explicitRoutes.containsKey(type);
+            var parsed = explicit
+                ? ctx.parseExplicitPath(explicitRoutes.get(type), fieldName, parentTable.tableName(),
+                    tb.table().tableName(), tb.table(), /*isList=*/false)
+                : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table());
+
+            var outcome = classifyParticipantRoute(explicit, parsed, tb, fieldLabel, parentTable);
+            if (outcome.rejection() != null) {
+                errors.add(outcome.rejection());
+            } else {
+                paths.put(type, outcome.correlation());
             }
-            if (parsed.elements().isEmpty()) {
-                // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and
-                // target tables match, so no parent→participant correlation is derivable; a
-                // self-FK participant needs the deferred per-participant-path capability.
-                return ChildPolymorphicJoinPaths.fail(Rejection.deferred(
-                    "Field '" + parentTypeName + "." + fieldName + "': participant '" + tb.typeName()
-                    + "' is backed by the same table as the parent/hub ('" + parentTable.tableName()
-                    + "'), so no foreign-key correlation from parent to participant can be "
-                    + "auto-discovered. Same-table (self-FK) participants need a per-participant "
-                    + "explicit join path",
+        }
+        if (!errors.isEmpty()) {
+            return ChildPolymorphicJoinPaths.fail(aggregateChildPolymorphicErrors(errors));
+        }
+        return ChildPolymorphicJoinPaths.ok(paths);
+    }
+
+    /** One participant's route outcome: a resolved correlation or a rejection (exactly one non-null). */
+    private record ParticipantRouteOutcome(
+            no.sikt.graphitron.rewrite.model.ParticipantCorrelation correlation, Rejection rejection) {
+        static ParticipantRouteOutcome ok(no.sikt.graphitron.rewrite.model.ParticipantCorrelation c) {
+            return new ParticipantRouteOutcome(c, null);
+        }
+        static ParticipantRouteOutcome fail(Rejection r) {
+            return new ParticipantRouteOutcome(null, r);
+        }
+    }
+
+    /**
+     * Classifies one participant's resolved path (explicit {@code @referenceFor} route or
+     * auto-discovered) into a {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation} or a
+     * per-participant rejection. Slice 1 lowers only single-hop FK routes (to
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere}); multi-hop and
+     * condition routes are DEFERRED to slices 2 and 3.
+     */
+    private ParticipantRouteOutcome classifyParticipantRoute(boolean explicit, BuildContext.ParsedPath parsed,
+            ParticipantRef.TableBound tb, String fieldLabel, TableRef parentTable) {
+        String type = tb.typeName();
+        if (explicit) {
+            if (parsed.hasError()) {
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    fieldLabel + ": @referenceFor route for participant '" + type + "' could not be "
+                    + "resolved: " + parsed.errorMessage() + "."));
+            }
+            if (parsed.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    fieldLabel + ": @referenceFor route for participant '" + type + "' does not land "
+                    + "on that participant's table. " + mismatch.diagnostic()));
+            }
+            // Condition (predicate) hop → slice 3; else multi-hop → slice 2; else single-hop FK ships.
+            if (parsed.elements().stream().anyMatch(
+                    e -> e instanceof JoinStep.Hop h && h.on() instanceof On.Predicate)) {
+                return ParticipantRouteOutcome.fail(Rejection.deferred(
+                    fieldLabel + ": @referenceFor route for participant '" + type + "' correlates by a "
+                    + "condition (non-foreign-key predicate). Condition correlation on multi-table "
+                    + "child fields is a deferred capability (slice 3)",
+                    PER_PARTICIPANT_JOIN_PATHS_SLUG));
+            }
+            if (parsed.elements().size() > 1) {
+                return ParticipantRouteOutcome.fail(Rejection.deferred(
+                    fieldLabel + ": @referenceFor route for participant '" + type + "' is a multi-hop "
+                    + "key chain (" + parsed.elements().size() + " hops). Multi-hop chains on "
+                    + "multi-table child fields are a deferred capability (slice 2)",
                     PER_PARTICIPANT_JOIN_PATHS_SLUG));
             }
             var pairs = singleHopFkColumnPairs(parsed.elements());
             if (pairs.isEmpty()) {
-                // Unreachable with rule 1a in place: auto-discovery only produces a single-hop FK
-                // hop. Kept so the ParticipantFkPath non-empty-slots invariant is never violated by a
-                // future producer change rather than crashing in the emitter.
-                return ChildPolymorphicJoinPaths.fail(Rejection.structural(
-                    "Field '" + parentTypeName + "." + fieldName + "': participant '" + tb.typeName()
-                    + "' resolved to an unsupported multi-table child join shape (only a single-hop "
-                    + "foreign key is supported). Per-participant explicit join paths are a deferred "
-                    + "capability — see roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    fieldLabel + ": @referenceFor route for participant '" + type + "' did not resolve "
+                    + "to a single-hop foreign key. See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
             }
-            paths.put(tb.typeName(), new no.sikt.graphitron.rewrite.model.ParticipantFkPath(pairs.get().slots()));
+            return ParticipantRouteOutcome.ok(
+                new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get()));
         }
-        return ChildPolymorphicJoinPaths.ok(paths);
+
+        // Auto-discovery arm (no @referenceFor for this participant).
+        if (parsed.hasError()) {
+            // Rule 1c: fkCountMessage's generic "add a @reference directive" steer leads straight into
+            // rule 1a on these fields; steer to @referenceFor (multi-FK disambiguation ships in slice 1).
+            return ParticipantRouteOutcome.fail(Rejection.structural(
+                "participant '" + type + "': " + parsed.errorMessage()
+                + ". Note: an explicit @reference is not supported on multi-table interface/union child "
+                + "fields; auto-discovery could not derive a single FK for this participant. "
+                + REFERENCE_FOR_USAGE_SKETCH + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+        }
+        if (parsed.elements().isEmpty()) {
+            // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and target
+            // tables match. Now a live structural steer to @referenceFor: a self-FK participant is
+            // author-correctable in slice 1 by stating the self-referencing key.
+            return ParticipantRouteOutcome.fail(Rejection.structural(
+                fieldLabel + ": participant '" + type + "' is backed by the same table as the "
+                + "parent/hub ('" + parentTable.tableName() + "'), so no foreign-key correlation from "
+                + "parent to participant can be auto-discovered. State the self-referencing key with "
+                + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}]). See roadmap/"
+                + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+        }
+        var pairs = singleHopFkColumnPairs(parsed.elements());
+        if (pairs.isEmpty()) {
+            // Unreachable with rule 1a in place: auto-discovery only produces a single-hop FK hop. Kept
+            // so the KeyTupleWhere non-empty-slots invariant is never violated by a future producer
+            // change rather than crashing in the emitter.
+            return ParticipantRouteOutcome.fail(Rejection.structural(
+                fieldLabel + ": participant '" + type + "' resolved to an unsupported multi-table child "
+                + "join shape (only a single-hop foreign key is auto-discovered). " + REFERENCE_FOR_USAGE_SKETCH
+                + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+        }
+        return ParticipantRouteOutcome.ok(
+            new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get()));
+    }
+
+    /**
+     * Folds per-participant route rejections into one. A single failing participant yields its own
+     * rejection verbatim (so the exact structural / deferred kind and message survive); multiple
+     * failures join their messages, structural-dominates-deferred (any author-fixable failure makes
+     * the aggregate an author error).
+     */
+    private Rejection aggregateChildPolymorphicErrors(List<Rejection> errors) {
+        if (errors.size() == 1) return errors.get(0);
+        String joined = errors.stream().map(Rejection::message)
+            .collect(java.util.stream.Collectors.joining("; "));
+        boolean anyStructural = errors.stream().anyMatch(r -> !(r instanceof Rejection.Deferred));
+        return anyStructural
+            ? Rejection.structural(joined)
+            : Rejection.deferred(joined, PER_PARTICIPANT_JOIN_PATHS_SLUG);
     }
 
     /** Collects the non-null discriminator values from all table-backed participants

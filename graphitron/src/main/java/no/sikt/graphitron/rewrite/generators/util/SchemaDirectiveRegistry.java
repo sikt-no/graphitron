@@ -46,6 +46,7 @@ public final class SchemaDirectiveRegistry {
         "nodeId",
         "field",
         "reference",
+        "referenceFor",
         "error",
         "tableMethod",
         "defaultOrder",

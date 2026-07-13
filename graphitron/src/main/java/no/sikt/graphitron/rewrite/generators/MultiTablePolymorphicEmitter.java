@@ -14,7 +14,7 @@ import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.ParticipantFkPath;
+import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -497,7 +497,7 @@ public final class MultiTablePolymorphicEmitter {
      *       available at this cardinality (one record per parent invocation; nothing to dedup).</li>
      * </ul>
      *
-     * @param participantJoinPaths typename-keyed {@link ParticipantFkPath} (resolved single-hop FK
+     * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} (resolved single-hop FK
      *                              column pairs) from the parent table to each
      *                              {@link ParticipantRef.TableBound} participant. The classifier
      *                              admits only the auto-discovered single-hop FK shape (R452).
@@ -519,7 +519,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName,
             List<ParticipantRef> participants,
-            Map<String, ParticipantFkPath> participantJoinPaths,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
             SourceKey parentSourceKey,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
@@ -580,7 +580,7 @@ public final class MultiTablePolymorphicEmitter {
      * connections; parent PK arity 1..21 for the batched form (parent PK + idx fits in
      * {@code Row22}; validator rejects above).
      *
-     * @param participantJoinPaths typename-keyed {@link ParticipantFkPath} (resolved single-hop FK
+     * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} (resolved single-hop FK
      *                              column pairs) from the parent table to each
      *                              {@link ParticipantRef.TableBound} participant. Must be
      *                              {@code Map.of()} when {@code parentKey} is null;
@@ -601,7 +601,7 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<WhereFilter>> participantFilters,
-            Map<String, ParticipantFkPath> participantJoinPaths,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
             int defaultPageSize,
             SourceKey parentSourceKey,
             TableRef parentKeyOwnerTable,
@@ -728,7 +728,7 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildScalarPerParentFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
-            Map<String, ParticipantFkPath> participantJoinPaths,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
             SourceKey parentSourceKey,
             boolean isList, String outputPackage) {
 
@@ -1080,10 +1080,10 @@ public final class MultiTablePolymorphicEmitter {
      * <p>For the child-fetcher form, each branch additionally carries a
      * {@code .where(<parent-FK predicate>)} restricting that participant to rows whose FK
      * matches the carrier {@code parentRecord}'s PK. The predicate is derived from the
-     * resolved single-hop FK column pairs each {@link ParticipantFkPath} carries. The classifier
+     * resolved single-hop FK column pairs each {@link ParticipantCorrelation} carries. The classifier
      * rejects every shape but the auto-discovered single FK hop (a field-level {@code @reference},
      * a same-table participant, and zero/multi-FK failures all fail at build time — R452), and the
-     * {@link ParticipantFkPath} carrier makes an unsupported shape unrepresentable here, so this
+     * {@link ParticipantCorrelation} carrier makes an unsupported shape unrepresentable here, so this
      * emitter has no multi-hop / condition-join arm to guard.
      *
      * <p>The result is declared as {@code Result<? extends Record>} so jOOQ's typed
@@ -1093,7 +1093,7 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock buildStage1Block(
             TypeFetcherEmissionContext ctx,
             List<ParticipantRef.TableBound> participants,
-            Map<String, ParticipantFkPath> participantJoinPaths,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
             Map<String, List<WhereFilter>> participantFilters,
             CompositeDecodeHelperRegistry registry) {
         var b = CodeBlock.builder();
@@ -1141,11 +1141,29 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
+     * The resolved single-hop FK slots for a {@link ParticipantCorrelation.KeyTupleWhere}, the only
+     * arm slice 1 lowers here. Exhaustive dispatch on the {@link ParticipantCorrelation} seal: the
+     * {@link ParticipantCorrelation.JoinedCorrelation} arm cannot reach these key-tuple-WHERE
+     * emitters (the classifier rejects multi-hop and condition routes with a DEFERRED message until
+     * slices 2/3 ship the joining emit), so its arm throws rather than silently mis-lowering.
+     */
+    private static java.util.List<no.sikt.graphitron.rewrite.model.JoinSlot.FkSlot> keyTupleWhereSlots(
+            ParticipantCorrelation correlation) {
+        return switch (correlation) {
+            case ParticipantCorrelation.KeyTupleWhere k -> k.slots();
+            case ParticipantCorrelation.JoinedCorrelation ignored -> throw new IllegalStateException(
+                "JoinedCorrelation is not emittable by the key-tuple-WHERE forms; the classifier "
+                + "rejects multi-hop and condition @referenceFor routes with a DEFERRED message "
+                + "until R458 slices 2/3 ship the joining emit.");
+        };
+    }
+
+    /**
      * Builds the parent-FK WHERE predicate for one stage-1 branch in the child-fetcher form, or
      * returns {@code null} when no joinPath applies (root-fetcher form, or the participant is
      * absent from {@code participantJoinPaths}).
      *
-     * <p>Consumes the {@link ParticipantFkPath}'s resolved FK slots directly (single-hop FK is the
+     * <p>Consumes the {@link ParticipantCorrelation.KeyTupleWhere}'s resolved FK slots directly (single-hop FK is the
      * only shape the classifier admits — R452): per-slot AND-chain
      * {@code <participantTable>.<slot.targetSide()>.eq(parentRecord.get(DSL.name("<slot.sourceSide().sqlName()>"), <Type>.class))}.
      * Synthesis-time slot orientation means the parent side is always {@code slot.sourceSide()} and
@@ -1157,17 +1175,18 @@ public final class MultiTablePolymorphicEmitter {
      * cleanly without an unchecked cast.
      */
     private static CodeBlock branchParentFkWhere(ParticipantRef.TableBound participant,
-            Map<String, ParticipantFkPath> participantJoinPaths) {
-        var path = participantJoinPaths.get(participant.typeName());
+            Map<String, ParticipantCorrelation> participantJoinPaths) {
+        var correlation = participantJoinPaths.get(participant.typeName());
         // null only for the root-fetcher form (empty map) or a participant absent from the map;
         // both are legitimate "no parent WHERE". A present entry carries non-empty FK slots by
         // construction (R452), so there is no unsupported-shape arm to guard here.
-        if (path == null) return null;
+        if (correlation == null) return null;
+        var slots = keyTupleWhereSlots(correlation);
 
         String tableAlias = "stage1_" + participant.typeName();
         var b = CodeBlock.builder();
         int i = 0;
-        for (var slot : path.slots()) {
+        for (var slot : slots) {
             ColumnRef parentSide = slot.sourceSide();
             ColumnRef participantSide = slot.targetSide();
             TypeName parentColClass = parentSide.columnType();
@@ -1533,7 +1552,7 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildBatchedConnectionRowsMethod(
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
-            Map<String, ParticipantFkPath> participantJoinPaths,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
             int defaultPageSize, SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
 
@@ -1736,7 +1755,7 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * B4c-2 per-branch JOIN predicate: per-slot equality AND-chain
      * {@code <participant>.<slot.targetSide()>.eq(parentInput.field(<slot.sourceSide().sqlName()>, <Type>.class))}
-     * across the {@link ParticipantFkPath}'s resolved FK slots. Single-hop FK only — the classifier
+     * across the {@link ParticipantCorrelation.KeyTupleWhere}'s resolved FK slots. Single-hop FK only — the classifier
      * admits no other shape (R452), so the former {@code (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on()}
      * blind cast (an accidental {@code ClassCastException} enforcer) is gone: the carrier type makes
      * an unsupported shape unrepresentable.
@@ -1749,12 +1768,13 @@ public final class MultiTablePolymorphicEmitter {
      * structurally impossible because no two parallel lists are paired.
      */
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
-            Map<String, ParticipantFkPath> participantJoinPaths, TableRef parentKeyOwnerTable) {
-        var path = participantJoinPaths.get(participant.typeName());
+            Map<String, ParticipantCorrelation> participantJoinPaths, TableRef parentKeyOwnerTable) {
+        var correlation = participantJoinPaths.get(participant.typeName());
+        var slots = keyTupleWhereSlots(correlation);
         String tableAlias = "stage1_" + participant.typeName();
         var b = CodeBlock.builder();
         int i = 0;
-        for (var slot : path.slots()) {
+        for (var slot : slots) {
             ColumnRef parentCol = slot.sourceSide();
             ColumnRef participantCol = slot.targetSide();
             // Lookup by sqlName + the owner column's DataType so converter-backed parent keys
@@ -1959,7 +1979,7 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildBatchedListRowsMethod(
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
-            Map<String, ParticipantFkPath> participantJoinPaths,
+            Map<String, ParticipantCorrelation> participantJoinPaths,
             SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
 

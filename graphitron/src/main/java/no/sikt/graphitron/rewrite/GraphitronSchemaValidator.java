@@ -1368,8 +1368,8 @@ public class GraphitronSchemaValidator {
      * <p>Path <em>shape</em> is likewise gated at classification time, not here: the single-table
      * {@code TableInterfaceField} arm through {@code FieldBuilder.validateSingleHopFkJoin} and the
      * multi-table interface/union child arm through {@code FieldBuilder.resolveChildPolymorphicJoinPaths}
-     * (R452), the latter carrying its resolved single-hop FK slots as a
-     * {@link no.sikt.graphitron.rewrite.model.ParticipantFkPath} so an unsupported join shape is
+     * (R452, R458), the latter carrying its resolved correlation as a
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation} so an unsupported join shape is
      * unrepresentable downstream. There is no reference-path shape rule left for the validator to
      * enforce.
      */

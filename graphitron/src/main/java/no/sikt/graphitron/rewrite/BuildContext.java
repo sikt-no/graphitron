@@ -87,6 +87,7 @@ class BuildContext {
     static final String DIR_NODE_ID             = "nodeId";
     static final String DIR_FIELD               = "field";
     static final String DIR_REFERENCE           = "reference";
+    static final String DIR_REFERENCE_FOR       = "referenceFor";
     static final String DIR_ERROR               = "error";
     static final String DIR_TABLE_METHOD        = "tableMethod";
     static final String DIR_ROUTINE             = "routine";
@@ -117,6 +118,7 @@ class BuildContext {
     static final String ARG_TYPE_ID            = "typeId";
     static final String ARG_KEY_COLUMNS        = "keyColumns";
     static final String ARG_TYPE_NAME          = "typeName";
+    static final String ARG_TYPE               = "type";
     static final String ARG_SCALAR             = "scalar";
     static final String ARG_PATH               = "path";
     static final String ARG_KEY                = "key";
@@ -1353,6 +1355,41 @@ class BuildContext {
         // invariant this check protects, so its two FieldBuilder callers (TableBoundReturnType,
         // TableInterfaceType) consume the verdict and reject on Mismatch. R381's LSP layer reads the
         // same projection. This keeps the predicate single-sourced and scoped to where it applies.
+        var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName, startSqlTableName, targetSqlTableName, returnTableRef);
+        return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
+    }
+
+    /**
+     * Resolves an <em>explicit</em>, already-extracted list of {@code @reference}-grammar path
+     * elements ({@code {table:}}/{@code {key:}}/{@code {condition:}} maps) for a stated
+     * {@code (startSqlTableName, targetSqlTableName)} pair, returning the same {@link ParsedPath}
+     * shape as {@link #parsePath} — resolved {@link JoinStep}s, an error message, and the
+     * terminal-target verdict against {@code returnTableRef}.
+     *
+     * <p>This is the {@code @referenceFor} entry point (R458): unlike {@link #parsePath} it does
+     * <em>not</em> read {@code @reference} applications off a container (the caller supplies the
+     * element list from one {@code @referenceFor} application's {@code path:} argument), and it does
+     * <em>not</em> apply empty-path FK auto-discovery — a {@code @referenceFor} application states a
+     * complete path, so an element-less list is an author error rather than an inference trigger.
+     * The element-resolution walk ({@link #resolvePathElements}) and terminal-target verdict
+     * ({@link #computeTerminalTargetVerdict}) are shared with {@link #parsePath} unchanged, so a
+     * self-referential {@code {key:}} on a same-table participant resolves through the same
+     * synthesis (with {@code selfRefFkOnSource = !isList}) that auto-discovery would use.
+     */
+    ParsedPath parseExplicitPath(List<?> elements, String fieldName, String startSqlTableName,
+            String targetSqlTableName, TableRef returnTableRef, boolean isList) {
+        if (elements.stream().noneMatch(v -> v instanceof Map<?, ?>)) {
+            return new ParsedPath(List.of(),
+                "path must carry at least one reference element ({table:}, {key:}, or {condition:})",
+                new TerminalTargetVerdict.NotApplicable());
+        }
+        var resolvedElements = new ArrayList<JoinStep>();
+        var errors = new ArrayList<String>();
+        resolvePathElements(elements, fieldName, startSqlTableName, targetSqlTableName, isList,
+            /*stepIndexBase=*/0, /*endsChain=*/true, resolvedElements, errors);
+        if (!errors.isEmpty()) {
+            return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
+        }
         var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName, startSqlTableName, targetSqlTableName, returnTableRef);
         return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
     }

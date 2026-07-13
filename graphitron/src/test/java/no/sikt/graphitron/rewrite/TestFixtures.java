@@ -519,13 +519,15 @@ public final class TestFixtures {
     }
 
     /**
-     * R452: builds the resolved single-hop FK carrier
-     * ({@link no.sikt.graphitron.rewrite.model.ParticipantFkPath}) a multi-table polymorphic
-     * interface/union child field holds per participant, from parent-side / participant-side column
-     * lists ({@code parentColumns[i]} → {@code slot.sourceSide()}, {@code participantColumns[i]} →
-     * {@code slot.targetSide()}). Same orientation convention as {@link #fkJoin}.
+     * R452 / R458: builds the resolved single-hop FK correlation carrier
+     * ({@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere}) a multi-table
+     * polymorphic interface/union child field holds per participant, from parent-side /
+     * participant-side column lists ({@code parentColumns[i]} → {@code slot.sourceSide()},
+     * {@code participantColumns[i]} → {@code slot.targetSide()}). Same orientation convention as
+     * {@link #fkJoin}. The {@link On.Keying} is a {@code NameMatchedKey} placeholder: the key-tuple
+     * WHERE emit reads only the slots, never the keying provenance.
      */
-    public static no.sikt.graphitron.rewrite.model.ParticipantFkPath participantFkPath(
+    public static no.sikt.graphitron.rewrite.model.ParticipantCorrelation participantFkPath(
             List<ColumnRef> parentColumns, List<ColumnRef> participantColumns) {
         if (parentColumns.size() != participantColumns.size()) {
             throw new IllegalArgumentException(
@@ -536,7 +538,8 @@ public final class TestFixtures {
         for (int i = 0; i < parentColumns.size(); i++) {
             slots.add(new JoinSlot.FkSlot(parentColumns.get(i), participantColumns.get(i)));
         }
-        return new no.sikt.graphitron.rewrite.model.ParticipantFkPath(slots);
+        return new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(
+            new On.ColumnPairs(new On.Keying.NameMatchedKey("fixture_key"), slots));
     }
 
     /** True when the step is a {@link JoinStep.Hop} joining on FK-derived column pairs. */

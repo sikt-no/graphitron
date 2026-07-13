@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.ParticipantFkPath;
+import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -145,11 +145,11 @@ class MultiTableChildReferencePathRejectionPipelineTest {
     // ===== Rule 1b: same-table participant is a deferred capability =====
 
     @Test
-    void interfaceChild_sameTableParticipant_deferredRejection() {
+    void interfaceChild_sameTableParticipant_withoutReferenceFor_steersToReferenceFor() {
         // FilmSelf is backed by the same table (film) as the parent/hub. parsePath skips FK
-        // auto-discovery when source and target tables match, so no correlation is derivable; a
-        // self-FK participant is a legitimate schema the deferred capability can serve, not an
-        // author error.
+        // auto-discovery when source and target tables match, so no correlation is auto-derivable.
+        // With @referenceFor shipping the self-FK route in slice 1, this is now an author-correctable
+        // structural steer (state the self-referencing key), not a deferred capability.
         var schema = TestSchemaHelper.buildSchema("""
             interface FilmThing { rowId: Int }
             type FilmSelf implements FilmThing @table(name: "film") { rowId: Int @field(name: "film_id") }
@@ -158,11 +158,11 @@ class MultiTableChildReferencePathRejectionPipelineTest {
             type Query { film: Film }
             """);
         var rejection = rejectionOf(schema.field("Film", "thing"));
-        assertThat(rejection).isInstanceOf(Rejection.Deferred.class);
+        assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
             .contains("FilmSelf")
             .contains("same table as the parent/hub ('film')")
-            .contains("no foreign-key correlation")
+            .contains("@referenceFor(type: \"FilmSelf\"")
             .contains(SLUG_POINTER);
     }
 
@@ -206,7 +206,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
             .contains(SLUG_POINTER);
     }
 
-    // ===== Control: the auto-discovered fixture still classifies, carrying ParticipantFkPath =====
+    // ===== Control: the auto-discovered fixture still classifies, carrying KeyTupleWhere =====
 
     @Test
     void interfaceChild_autoDiscovered_classifiesWithNonEmptyFkPathCarrier() {
@@ -217,8 +217,9 @@ class MultiTableChildReferencePathRejectionPipelineTest {
         var field = (ChildField.InterfaceField) schema.field("Film", "referrers");
         assertThat(field.participantJoinPaths().keySet())
             .containsExactlyInAnyOrder("Inventory", "Content");
-        for (ParticipantFkPath pfp : field.participantJoinPaths().values()) {
-            assertThat(pfp.slots()).isNotEmpty();
+        for (ParticipantCorrelation correlation : field.participantJoinPaths().values()) {
+            assertThat(correlation).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
+            assertThat(((ParticipantCorrelation.KeyTupleWhere) correlation).slots()).isNotEmpty();
         }
     }
 

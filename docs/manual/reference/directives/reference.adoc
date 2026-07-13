@@ -116,6 +116,7 @@ On its own this form is a stylistic choice. It exists for composition with xref:
 * xref:../../tutorial/04-joining-tables.adoc[Tutorial page 4: Joining tables] introduces single-hop and multi-hop references.
 * xref:../../how-to/join-with-references.adoc[How-to: Join with references] for recipe-shaped variants.
 * xref:discriminate.adoc[`@discriminate`] / xref:discriminator.adoc[`@discriminator`] for the union/interface variant. See xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] for the supported shapes.
+* xref:referenceFor.adoc[`@referenceFor`] for the per-participant join path on a multi-table interface/union child field (where a field-level `@reference` is rejected). Note the opposite repetition semantics: `@reference` applications concatenate; `@referenceFor` applications are independent, one per participant.
 * xref:table.adoc[`@table`] establishes the table binding both endpoints rely on.
 * xref:routine.adoc[`@routine`] contributes a database-function node to the same chain; the chain rule and the routine-bearing shapes live there.
 

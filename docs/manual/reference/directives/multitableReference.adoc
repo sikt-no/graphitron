@@ -4,7 +4,7 @@
 
 `@multitableReference` was the legacy generator's escape hatch for fields returning a multi-table interface or union, where a single FK path could not describe the join because each implementation lived in a different table. The schema author declared a separate `@reference`-shaped `routes` entry per implementation type. The rewrite no longer supports the directive: multi-table interface dispatch is generated from xref:discriminate.adoc[`@discriminate`] / xref:discriminator.adoc[`@discriminator`] (with xref:reference.adoc[`@reference`] for the FK-driven join), without a separate per-route description.
 
-The directive name is still parsed (so existing schemas don't fail with "unknown directive `@multitableReference`"), but every application is rejected at classify time with a clear message: `@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path.` Remove every occurrence from your schema and model the dispatch through `@discriminate` / `@discriminator`.
+The directive name is still parsed (so existing schemas don't fail with "unknown directive `@multitableReference`"), but every application is rejected at classify time with a clear message: `@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path. For a per-participant join path that auto-discovery cannot derive, use @referenceFor(type:, path:) instead (one application per participant).` Remove every occurrence from your schema and model the dispatch through `@discriminate` / `@discriminator`, using xref:referenceFor.adoc[`@referenceFor`] where a participant's join is not auto-discoverable.
 
 == SDL signature
 
@@ -22,8 +22,9 @@ Drop the directive (and its `ReferencesForType` argument tree) and model the mul
 * xref:discriminate.adoc[`@discriminate`] on the interface or union picks the right implementation per row.
 * xref:discriminator.adoc[`@discriminator`] on the implementation declares the row-level discriminator value.
 * For a *single-table* interface reached through an FK chain, xref:reference.adoc[`@reference`] on the field describes the FK-driven join (single hop, or multiple hops when the path traverses join tables). For a *multi-table* interface or union child field, the per-branch join is auto-discovered from FK metadata and a field-level `@reference` is instead rejected (a single stated path cannot express a distinct join per participant); see xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types].
+* When auto-discovery cannot derive a participant's join, xref:referenceFor.adoc[`@referenceFor`] is the successor to `@multitableReference`'s per-route paths: one application per participant, stating that participant's complete path (multi-FK disambiguation, same-table self-FK, and, as they ship, condition and multi-hop routes). Unlike the retired `routes:` input-wrapper list, `@referenceFor` states one fact at its natural grain (`type:` + `path:`).
 
-For the multi-table child case the rewrite resolves the per-implementation join paths automatically from the catalog's FK metadata (one unique single-hop FK from each participant table back to the parent); the schema author does not enumerate them and does not add a field-level `@reference`.
+For the multi-table child case the rewrite resolves the per-implementation join paths automatically from the catalog's FK metadata (one unique single-hop FK from each participant table back to the parent); the schema author does not enumerate them and does not add a field-level `@reference`. Where auto-discovery is insufficient, `@referenceFor` states the path for that participant only.
 
 == Diagnostic
 
@@ -31,7 +32,7 @@ Any application of `@multitableReference` produces a build-time rejection:
 
 [source,text]
 ----
-@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path.
+@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path. For a per-participant join path that auto-discovery cannot derive, use @referenceFor(type:, path:) instead (one application per participant).
 ----
 
 The rejection fires before the rest of the field's classification runs, so the message is the first thing the build emits for that field. Schemas that still carry `@multitableReference` annotations must remove every occurrence to compile under the rewrite.
@@ -46,6 +47,7 @@ The rejection fires before the rest of the field's classification runs, so the m
 
 * xref:discriminate.adoc[`@discriminate`] and xref:discriminator.adoc[`@discriminator`] for the type-resolution mechanism that supersedes the per-route description.
 * xref:reference.adoc[`@reference`] for the single-table FK-driven join.
+* xref:referenceFor.adoc[`@referenceFor`] is the successor for per-participant join paths on a multi-table interface/union child field.
 * xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers union and interface patterns end-to-end.
 * xref:../../how-to/migrating-from-legacy.adoc[How-to: Migrating from the legacy generator] covers the full directive-by-directive migration matrix, including the rejected-stub directives.
 

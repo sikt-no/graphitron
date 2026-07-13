@@ -52,6 +52,7 @@ a|
 * xref:directives/orderBy.adoc[`@orderBy`]
 * xref:directives/record.adoc[`@record`] _(deprecated, ignored, remove from the schema)_
 * xref:directives/reference.adoc[`@reference`]
+* xref:directives/referenceFor.adoc[`@referenceFor`]
 * xref:directives/service.adoc[`@service`]
 * xref:directives/splitQuery.adoc[`@splitQuery`]
 * xref:directives/table.adoc[`@table`]
