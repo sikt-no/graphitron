@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R463` | Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild | Ready | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](ancestor-product-arrival-fold.md) |
+| `R463` | Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild | In Progress | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](ancestor-product-arrival-fold.md) |
 
 ---
 
@@ -201,7 +201,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
 - `R174` [**graphitron-javapoet: emit records, sealed/permits, package-info.java**](javapoet-record-sealed-package-info-support.md) — Backlog, architecture
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md) — Spec
-- `R463` [**Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild**](ancestor-product-arrival-fold.md) — Ready, structural
+- `R463` [**Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild**](ancestor-product-arrival-fold.md) — In Progress, structural
 
 ### diagnostics
 

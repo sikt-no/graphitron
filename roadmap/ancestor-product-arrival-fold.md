@@ -1,7 +1,7 @@
 ---
 id: R463
 title: "Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild"
-status: Ready
+status: In Progress
 bucket: structural
 theme: classification-model
 depends-on: []
