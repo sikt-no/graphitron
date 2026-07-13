@@ -18,9 +18,16 @@ their factories (`unknownForeignKey`, `unknownTypeName`, `unknownEnumConstant`,
 `unknownNodeIdKeyColumn`, `unknownColumn`) already exist for. R58 Phase D shipped the factories;
 this plan adds the carrier widenings so the typed values reach consumers.
 
-> R58 is currently *In Review*. If R58 reverts, R66 Phase A reverts with it (the producer-side
-> factories disappear). The dependency is captured in prose rather than `depends-on:` because
-> the factories are merged on the working branch.
+R58 is Done (see the changelog), so its factories are settled surface; the original reversion
+hedge is struck. Anchor note (2026-07-13): the carrier audit below is re-verified as still
+accurate at the symbol level, but `BuildContext.java` has roughly tripled since filing, so the
+bare line numbers in items 1-5 have drifted; re-derive them from the named symbols at pickup.
+Current definition anchors: `record ParsedPath(..., String errorMessage, ...)` at
+`BuildContext.java:1037` with the sibling `record ChainSegment(..., String errorMessage)` at
+`:1403` (a sixth string carrier of the same shape, added after filing; fold it into Phase A),
+`record Unresolved(..., String reason)` at `InputFieldResolution.java:20`,
+`record UnboundArg(...)` at `ArgumentRef.java:218`, and
+`record Mismatch(Rejection rejection)` at `EnumMappingResolver.java:76`.
 
 ## Carrier audit
 

@@ -1,33 +1,39 @@
 ---
 id: R170
-title: "Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)"
+title: "Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)"
 status: Backlog
 bucket: testing
 priority: 4
 theme: testing
-depends-on: []
+depends-on: [multi-source-input-validation]
 created: 2026-05-16
-last-updated: 2026-05-16
+last-updated: 2026-07-13
 ---
 
-# Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)
+# Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R98-blocked)
 
 Split out from R12 (`error-handling-parity`)'s "Test fixture updates for
 source-direct dispatch" bullet. R12 lifted `ValidationHandler` channel
 support and the Jakarta pre-execution validation step into the per-fetcher
-catch path. Execute-tier coverage is blocked on R94
-(`emit-input-records`): the pre-step today calls
-`validator.validate(env.getArgument(name))`, which receives a `Map<?, ?>`
-(or a raw scalar); neither carries Jakarta annotations, so the validator
-returns no violations and the wire path is a no-op end-to-end. R94 emits
-each SDL `input` type as a graphitron-internal Java record under
-`<outputPackage>.inputs`, coerces the map at the fetcher boundary, and
-gives the validator a real annotated bean to inspect; once R94 lands this
-fixture becomes a one-line addition to the sakila execute-tier driver.
+catch path.
 
-Scope: an `@service` mutation whose input declares Jakarta constraints, an
-`@error` type with `{handler: VALIDATION}`, and an execute-tier driver
-covering the violation path (constraint produces a typed error via
-`ConstraintViolations.toGraphQLError`) and the happy path. Pipeline-tier
-coverage of the emit shape is already pinned in `TypeFetcherGeneratorTest`
-and `FetcherPipelineTest`.
+The original blocker, R94 (`emit-input-records`), has shipped: each SDL
+`input` type is now emitted as a graphitron-internal Java class under
+`<outputPackage>.inputs`, the fetcher boundary coerces the incoming map via
+`fromMap`, and the validator pre-step walks the typed instance instead of a
+raw `Map`. What remains missing is constraint *content*: the emitted classes
+carry no Jakarta annotations, so `validator.validate(<typed>)` still returns
+no violations and the wire path is a no-op end-to-end. Attaching constraints
+(SDL validation directives merged into a `ConstraintSet`, registered
+programmatically via `ConstraintMapping`) is R98
+(`multi-source-input-validation`). Per R94's Done note, this fixture picks up
+the live invalid-input round-trip the moment R98 ships its first SDL
+constraint; at that point it becomes a one-line addition to the sakila
+execute-tier driver.
+
+Scope: an `@service` mutation whose input declares constraints (via whatever
+surface R98 lands), an `@error` type with `{handler: VALIDATION}`, and an
+execute-tier driver covering the violation path (constraint produces a typed
+error via `ConstraintViolations.toGraphQLError`) and the happy path.
+Pipeline-tier coverage of the emit shape is already pinned in
+`TypeFetcherGeneratorTest` and `FetcherPipelineTest`.

@@ -1,6 +1,6 @@
 ---
 id: R24
-title: "`NodeIdReferenceField` JOIN-projection form"
+title: "Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnReferenceField / CompositeColumnReferenceField)"
 status: Backlog
 bucket: cleanup
 priority: 13
@@ -8,9 +8,11 @@ theme: nodeid
 depends-on: []
 ---
 
-# `NodeIdReferenceField` JOIN-projection form
+# Rooted-at-parent NodeId reference JOIN-projection emitter
 
-R50 shipped two of the three rooted shapes named in *Variant-by-variant collapse → Single-hop emission, two shapes*: rooted-at-child emission (FK-mirror, no JOIN, parent's FK columns encode directly) and the classifier-side resolution for rooted-at-parent (phase g-B produces `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` with `compaction = NodeIdEncodeKeys` and a resolved `joinPath`). What did *not* ship is the matching emitter: `FetcherEmitter#dataFetcherValue` carries runtime `UnsupportedOperationException` stubs for both arms (lines 140-162), so a schema that reaches one of the rooted-at-parent shapes builds without a validator-side rejection but throws at runtime.
+(Title symbol re-anchored 2026-07-13: the original `NodeIdReferenceField` carrier was renamed by R50 to the column-shaped `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` pair; the file keeps its slug because the in-code `Rejection.Deferred` planSlug points here.)
+
+R50 shipped two of the three rooted shapes named in *Variant-by-variant collapse → Single-hop emission, two shapes*: rooted-at-child emission (FK-mirror, no JOIN, parent's FK columns encode directly) and the classifier-side resolution for rooted-at-parent (phase g-B produces `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` with `compaction = NodeIdEncodeKeys` and a resolved `joinPath`). What did *not* ship is the matching emitter. Both rooted-at-parent arms now surface as build-time typed deferrals naming this item, an improvement over the runtime `UnsupportedOperationException` stubs the original write-up described: `CompositeColumnReferenceField` sits in `TypeFetcherGenerator.STUBBED_VARIANTS` (the `Map.entry` around `TypeFetcherGenerator.java:310`, planSlug = this file's slug), and the arity-1 `ColumnReferenceField` with `NodeIdEncodeKeys` plus a non-empty `joinPath` is deferred per-shape in `GraphitronSchemaValidator.validateColumnReferenceField` (`GraphitronSchemaValidator.java:837`+).
 
 R24 absorbs the remaining emitter work, expanded beyond its original framing:
 
@@ -21,6 +23,6 @@ Both arms route through the same column-shaped carriers R50 introduced (`ChildFi
 
 Re-spec when a real schema reaches one of the shapes; pin the load-bearing structure (multi-hop path, condition-join path, non-mirroring FK) here before re-spec'ing. R50 (`lift-nodeid-out-of-model`, shipped) introduced the `ChildField.ColumnReferenceField` / `CompositeColumnReferenceField` carriers with `compaction = CallSiteCompaction.NodeIdEncodeKeys` and the rooted-at-parent fixture in `nodeidfixture` (`parent_node` + `child_ref`); the changelog entry preserves the originating context.
 
-## Coordination with R40
+## Coordination with R40 (shipped)
 
-R40 ([`argument-level-nodeid.md`](argument-level-nodeid.md)) is the symmetric input-side feature: argument-level `@nodeId` decoding for both same-table (lookup) and FK-target (filter) shapes. R40 introduces `ArgumentRef.ScalarArg.ColumnReferenceArg` / `CompositeColumnReferenceArg` mirroring the input-field FK-target carriers R50 already shipped, and lifts the input-field resolver in `BuildContext.classifyInputField:916-1043` into a shared helper consumed by both input-fields and arg-level paths. Both R24 and R40 thread `joinPath: List<JoinStep>` (R50 phase g-B) and share the `parent_node` + `child_ref` execution fixture, but they do *not* share emitter code (R24 = output-side encode emitter; R40 = input-side decode + filter projection). Neither blocks the other; when R24 lands its JOIN-with-projection emitter, any `joinPath` threading helper that falls out may be worth lifting to a place R40's input-side filter projection can also reach. Multi-hop FK-target on the input side is filed parallel to R24's multi-hop arm.
+R40 (argument-level `@nodeId`, Done; its item file is deleted, see the changelog) was the symmetric input-side feature: argument-level `@nodeId` decoding for both same-table (lookup) and FK-target (filter) shapes. Its `ColumnReferenceArg` carriers live in `ArgumentRef.java` today. R24 and R40 thread the same `joinPath: List<JoinStep>` (R50 phase g-B) and share the `parent_node` + `child_ref` execution fixture, but they do *not* share emitter code (R24 = output-side encode emitter; R40 = input-side decode + filter projection). When R24 lands its JOIN-with-projection emitter, any `joinPath` threading helper that falls out may be worth lifting to a place the shipped input-side filter projection can also reach. The pathological FK-target input-side case remains separately filed as R57 (`nodeid-fk-target-arg-join-translation`).

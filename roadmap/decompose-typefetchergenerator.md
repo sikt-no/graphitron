@@ -10,12 +10,16 @@ depends-on: []
 
 # Decompose `TypeFetcherGenerator`
 
-`TypeFetcherGenerator.java` is 1 646 lines, one public entry point
-(`generate(GraphitronSchema)`), and ~30 private methods that implement
-per-field-variant emitters plus shared helpers. It is the counterpart to
-the now-shipped `FieldBuilder` decomposition (R6, see
+`TypeFetcherGenerator.java` is a single multi-thousand-line file (6 900
+lines as of 2026-07-13, up from 1 646 when this item was filed; re-measure
+at pickup, the count only grows) with one public entry point
+(`generate(GraphitronSchema)`) and well over a hundred private methods that
+implement per-field-variant emitters plus shared helpers. It is the
+counterpart to the now-shipped `FieldBuilder` decomposition (R6, see
 [`changelog.md`](changelog.md)): a central generator that has accumulated
-coverage faster than its file shape can absorb.
+coverage faster than its file shape can absorb, and it has grown roughly
+4x since filing, so the LOC profile proposed below needs to be re-run
+against the real file rather than trusting any figure written here.
 
 ## Question to answer
 
@@ -38,10 +42,10 @@ method would settle it.
 
 ## Coordinates with
 
-- R6 `decompose-fieldbuilder` (shipped, see [`changelog.md`](changelog.md))
-  — same shape question, different file. R6 set the precedent: lift each
+- R6 `decompose-fieldbuilder` (shipped, see [`changelog.md`](changelog.md)):
+  same shape question, different file. R6 set the precedent: lift each
   cross-cutting concern into a sibling resolver returning a sealed
   `Resolved`; the same shape applies here per-variant emitter.
-- [`source-orientation-javadocs.md`](source-orientation-javadocs.md) — a
+- [`source-orientation-javadocs.md`](source-orientation-javadocs.md) (R35): a
   class-level Javadoc with a `## Layout` table is the partial-mitigation
   option if decomposition is deferred indefinitely.
