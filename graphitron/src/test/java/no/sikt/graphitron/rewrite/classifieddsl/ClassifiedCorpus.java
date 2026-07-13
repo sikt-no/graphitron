@@ -73,7 +73,7 @@ public final class ClassifiedCorpus {
         new Example("enum-column", """
             enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
             type Film @table(name: "film") {
-              rating: Rating @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+              rating: Rating @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
             }
             type Query { film: Film }
             """),
@@ -91,8 +91,8 @@ public final class ClassifiedCorpus {
             }
 
             type City @table(name: "city") @classifiedType(as: TableType) {
-              country: Country @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
-              countrySplit: Country @splitQuery @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+              country: Country @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
+              countrySplit: Country @splitQuery @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
             }
 
             type Query {
@@ -112,7 +112,7 @@ public final class ClassifiedCorpus {
             type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
             type Store @table(name: "store") {
               customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
-                @classified(source: Child, operation: Lookup, target: List, targetShape: Table)
+                @classified(source: OnlyChild, operation: Lookup, target: List, targetShape: Table)
             }
             type Query { store: Store }
             """),
@@ -137,7 +137,7 @@ public final class ClassifiedCorpus {
             }
 
             type Film @table(name: "film") {
-              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+              title: String @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
               details: FilmDetails
             }
 
@@ -172,7 +172,7 @@ public final class ClassifiedCorpus {
 
             type Film @table(name: "film") {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
               details: FilmDetails
             }
 
@@ -242,7 +242,7 @@ public final class ClassifiedCorpus {
         new Example("result-backing", """
             type PojoBacked @classifiedType(as: Backed) { id: ID }
             type JavaRecordBacked @classifiedType(as: JavaRecordType) {
-              name: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              name: String @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
             type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
             type Query {
@@ -264,8 +264,8 @@ public final class ClassifiedCorpus {
          */
         new Example("error-field", """
             type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-              path: [String!]! @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
-              message: String! @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              path: [String!]! @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              message: String! @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
             type Query { err: MyError }
             """),
@@ -284,7 +284,7 @@ public final class ClassifiedCorpus {
             enum Severity { LOW HIGH }
             type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
                 @classifiedType(as: ErrorType) {
-              path: [String!]! @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              path: [String!]! @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
               message: String!
               severity: Severity!
             }
@@ -301,7 +301,7 @@ public final class ClassifiedCorpus {
         new Example("nesting", """
             type FilmDetails @classifiedType(as: NestingType) { title: String description: String }
             type Film @table(name: "film") {
-              details: FilmDetails @classified(source: Child, operation: Nest, target: Single, targetShape: Table)
+              details: FilmDetails @classified(source: OnlyChild, operation: Nest, target: Single, targetShape: Table)
             }
             type Query { film: Film }
             """),
@@ -331,7 +331,7 @@ public final class ClassifiedCorpus {
             interface Named @classifiedType(as: InterfaceType) { name: String }
             type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
             type Customer @table(name: "customer") {
-              address: Named @classified(source: Child, operation: Fetch, target: Single, targetShape: Interface)
+              address: Named @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Interface)
             }
             type Query {
               customer: Customer
@@ -345,7 +345,7 @@ public final class ClassifiedCorpus {
             type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
             union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
             type FilmActor @table(name: "film_actor") {
-              related: FilmOrActor @classified(source: Child, operation: Fetch, target: Single, targetShape: Union)
+              related: FilmOrActor @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Union)
             }
             type Query {
               filmActor: FilmActor
@@ -432,7 +432,7 @@ public final class ClassifiedCorpus {
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") {
-              media: MediaItem @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+              media: MediaItem @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
             }
             type Query {
               inventory: Inventory
@@ -489,10 +489,10 @@ public final class ClassifiedCorpus {
         new Example("reference-and-computed", """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
               computedRating: String
                 @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
-                @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
             }
             type Query { film: Film }
             """),
@@ -508,7 +508,7 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type FilmActor @table(name: "film_actor") {
               actors(actor_id: [Int!]! @lookupKey): [Actor!]!
-                @classified(source: Child, operation: Lookup, target: List, targetShape: Table)
+                @classified(source: OnlyChild, operation: Lookup, target: List, targetShape: Table)
             }
             type Query {
               filmActor: FilmActor
@@ -621,7 +621,7 @@ public final class ClassifiedCorpus {
             type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
               contentId: Int! @field(name: "CONTENT_ID")
               rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
-                @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
             }
             type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
               contentId: Int! @field(name: "CONTENT_ID")
@@ -709,7 +709,7 @@ public final class ClassifiedCorpus {
             }
             union DeleteFilmsError = FilmErr
             type FilmIdsPayload {
-              filmIds: [ID] @nodeId(typeName: "Film") @classified(source: Child, operation: Fetch, target: List, targetShape: Column, sourceShape: Record)
+              filmIds: [ID] @nodeId(typeName: "Film") @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Column, sourceShape: Record)
               errors: [DeleteFilmsError]
             }
             type Query { x: String }
@@ -752,7 +752,7 @@ public final class ClassifiedCorpus {
             }
             type CreateFilmsPayload @classifiedType(as: JavaRecordType) {
               results: [CreateFilmsResult]
-                @classified(source: Child, operation: Fetch, target: List, targetShape: Record, sourceShape: Record)
+                @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Record, sourceShape: Record)
               errors: [CreateFilmsErr]
             }
             type Query { x: String }
@@ -837,7 +837,7 @@ public final class ClassifiedCorpus {
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails { title: String }
-            type FilmPayload { film: Film @classified(source: Child, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record) }
+            type FilmPayload { film: Film @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }
@@ -862,6 +862,151 @@ public final class ClassifiedCorpus {
               createFilmPayload(in: FilmCreateInput!): FilmPayload
                 @mutation(typeName: INSERT)
                 @classified(source: Mutation, operation: Insert, target: Single, targetShape: Record)
+            }
+            """),
+
+        /*
+         * R463 arrival-fold edge cases. The fixtures below pin the ancestor-product arrival fold's
+         * corners with hand-asserted arrivals (source OnlyChild = One, Child = Many), each isolating one
+         * rule so a regression in the fold surfaces on the specific case rather than diffusely. They are
+         * corpus-only (no doc query); the dimensional verdict is the whole lesson.
+         */
+
+        /*
+         * Deep single chain (One). Query.film (single) -> Film -> Film.language (single @reference) ->
+         * Language: no list wrapper and no fan-in anywhere on the chain, so arrival stays the One
+         * identity all the way down. Both the intermediate object edge (Film.language) and the terminal
+         * column (Language.name) fold to OnlyChild.
+         */
+        new Example("arrival-deep-single-chain", """
+            type Language @table(name: "language") {
+              name: String @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type Film @table(name: "film") {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
+            }
+            type Query {
+              film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+            }
+            """),
+
+        /*
+         * List ancestor (Many). A single list wrapper anywhere above a type absorbs the whole subtree to
+         * Many: Query.films is a list, so Film arrives Many, and its single @reference child Language
+         * inherits Many through the tensor (Many (x) One = Many). Both Film.language and Language.name are
+         * Child even though the Film -> Language edge is itself single.
+         */
+        new Example("arrival-list-ancestor", """
+            type Language @table(name: "language") {
+              name: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type Film @table(name: "film") {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+            }
+            type Query {
+              films: [Film!]! @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
+            }
+            """),
+
+        /*
+         * Fan-in of two single edges (Many). Film reaches Language over both of its FKs (language_id and
+         * original_language_id); each edge is single, but two coordinates co-materialize Language
+         * instances in one request, so the multi-edge rule folds Language to Many with no fixed point.
+         * The Film -> Language edges are themselves OnlyChild (Film arrives One from the single root),
+         * demonstrating that fan-in is a property of the reached type, not of the reaching edge.
+         */
+        new Example("arrival-fan-in", """
+            type Language @table(name: "language") {
+              name: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type Film @table(name: "film") {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
+              originalLanguage: Language @reference(path: [{key: "film_original_language_id_fkey"}])
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table)
+            }
+            type Query {
+              film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+            }
+            """),
+
+        /*
+         * Recursion (Many). Store and Staff reach each other over the store <-> staff FK cycle
+         * (store.manager_staff_id, staff.store_id). A reachable cycle implies a second reaching edge
+         * (Store is reached by Query.store and by Staff.store), so the multi-edge rule folds both to Many
+         * without a fixed point; every field on both types is Child.
+         */
+        new Example("arrival-recursion", """
+            type Staff @table(name: "staff") {
+              store: Store @reference(path: [{key: "staff_store_id_fkey"}])
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+            }
+            type Store @table(name: "store") {
+              manager: Staff @reference(path: [{key: "store_manager_staff_id_fkey"}])
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+            }
+            type Query {
+              store: Store @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+            }
+            """),
+
+        /*
+         * A @node-seeded type (Many). Film carries @node, so node/entity lookups arrive batched
+         * regardless of how few field edges reach it: even reached by a single root query, its arrival is
+         * the absorbing Many, so Film.title is Child. This is the seed arm of the fold, distinct from the
+         * multi-edge and list-ancestor arms above.
+         */
+        new Example("arrival-node-seeded", """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
+                @classifiedType(as: NodeType) {
+              id: ID! @nodeId
+              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type Query {
+              film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+            }
+            """),
+
+        /*
+         * Connection ancestor (Many). The many-ness of a Relay connection's element arrives through the
+         * connection type's edges/nodes list edges, not through the (single) connection field: Query.films
+         * returns a single FilmsConnection, but Film is reached through the FilmsEdge.node / nodes list, so
+         * Film arrives Many and Film.title is Child. The connection-internal fields stay generator-only
+         * (no @classified); the lesson is the arrival the edges list transmits.
+         */
+        new Example("arrival-connection-ancestor", """
+            type Film @table(name: "film") {
+              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type FilmsConnection {
+              edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo!
+            }
+            type FilmsEdge { cursor: String! node: Film! }
+            type PageInfo {
+              hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
+            }
+            type Query { films: FilmsConnection }
+            """),
+
+        /*
+         * Single mutation payload carrier (One). A single-carrier @service payload arrives once: the
+         * payload type is reached by exactly one single mutation field, so it folds to One and its @table
+         * data field is OnlyChild(Record) (a re-fetch off the produced record). Complements the bulk /
+         * fan-in Record carriers elsewhere in the corpus, which stay Child.
+         */
+        new Example("arrival-single-payload-carrier", """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload {
+              film: Film
+                @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
+            }
+            type Query { x: String }
+            type Mutation {
+              runFilm: FilmPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
             }
             """));
 

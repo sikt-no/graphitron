@@ -25,8 +25,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             MutationField.MutationUpdatePayloadField, MutationField.MutationBulkUpdatePayloadField,
             MutationField.MutationDeletePayloadField, MutationField.MutationBulkDeletePayloadField {
 
-    /** Every {@code MutationField} leaf is on the {@code Mutation} root, so the source is {@link Source.Root.Mutation}. */
-    @Override default Source source() { return new Source.Root.Mutation(); }
+    /**
+     * Every {@code MutationField} leaf is on the {@code Mutation} root, so the source is
+     * {@link Source.Root.Mutation}; the root is the empty product and ignores {@code parentArrival}.
+     */
+    @Override default Source source(Arrival parentArrival) { return new Source.Root.Mutation(); }
 
     @Override default Operation operation() {
         return switch (this) {

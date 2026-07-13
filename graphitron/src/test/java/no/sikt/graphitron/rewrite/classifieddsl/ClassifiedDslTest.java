@@ -75,15 +75,13 @@ class ClassifiedDslTest {
     }
 
     /**
-     * Source wrapper arms the model declares but no fixture reaches, each with the reason. The
-     * {@link Source.OnlyChild} ({@code One} arrival) is producible but conservatively unreached: R305
-     * hard-codes the {@code Many} absorbing element ({@link Source.Child}) for every source field until
-     * R463 computes the true ancestor-product fold.
+     * Source wrapper arms the model declares but no fixture reaches, each with the reason. Empty since
+     * R463: the ancestor-product arrival fold makes {@link Source.OnlyChild} ({@code One} arrival)
+     * reachable, so every source wrapper arm ({@code Query} / {@code Mutation} / {@code OnlyChild} /
+     * {@code Child}) is now exercised by a corpus fixture. An arm that later becomes unreachable rejoins
+     * this list with its reason; an entry a fixture exercises must be removed (asserted below).
      */
-    private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of(
-        "OnlyChild", "The One arrival is producible but conservatively unreached: R305 hard-codes the "
-            + "Many absorbing element (Child) for every source field until R463 computes the true "
-            + "ancestor-product fold.");
+    private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of();
 
     /**
      * Operation arms the model declares but the current leaf set cannot populate, each with the reason no

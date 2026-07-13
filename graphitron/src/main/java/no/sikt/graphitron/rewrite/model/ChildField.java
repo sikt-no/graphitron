@@ -28,15 +28,19 @@ public sealed interface ChildField extends OutputField
             ChildField.ErrorsField {
 
     /**
-     * Every {@code ChildField} leaf is on a non-root parent type, so the source arrives as a
-     * {@link Source.Child} wrapping this field's {@link #sourceShape()}. R316 slice 2 conservatively
-     * builds the {@link Source.Child} (arrival {@code Many}) absorbing arm: every re-fetch field
-     * batches, which is always correct as a one-element batch. The {@link Source.OnlyChild} inline-skip
-     * arm stays unreached until R463 computes the true ancestor-product cardinality that would let
-     * a field declare it.
+     * Every {@code ChildField} leaf is on a non-root parent type, so the source arrives wrapping this
+     * field's {@link #sourceShape()}. R463 folds the true ancestor-product arrival: when the parent
+     * type's {@code parentArrival} is {@link Arrival#ONE} exactly one source object reaches this field's
+     * fetcher, so the arm is {@link Source.OnlyChild} (single arrival, direct SQL); otherwise it is the
+     * {@link Source.Child} absorbing arm (arrival {@code Many}, DataLoader-batched, always correct as a
+     * one-element batch). The arm is a derived view of a parent-grain fact the caller supplies (every
+     * field on one parent folds the same way), not a stored per-leaf component; see
+     * {@link OutputField#source(Arrival)} and {@link GraphitronSchema#sourceOf}.
      */
-    @Override default Source source() {
-        return new Source.Child(sourceShape());
+    @Override default Source source(Arrival parentArrival) {
+        return parentArrival == Arrival.ONE
+            ? new Source.OnlyChild(sourceShape())
+            : new Source.Child(sourceShape());
     }
 
     /**

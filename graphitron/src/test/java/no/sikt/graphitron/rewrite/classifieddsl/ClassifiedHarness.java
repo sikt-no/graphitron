@@ -115,7 +115,9 @@ public final class ClassifiedHarness {
                 + "); the corpus asserts successful classification only.");
         }
         DimensionTuple expected = new DimensionTuple(sourceArg(d), operationArg(d), targetArg(d));
-        DimensionTuple actual = DimensionTuple.of(out);
+        // R463 — the arrival arm is the parent-type ancestor-product fold, read through the schema's
+        // sourceOf seam (a leaf cannot compute its own arm). operation / target stay leaf-derived.
+        DimensionTuple actual = DimensionTuple.of(out, schema.sourceOf(parentType, fieldName));
         return new FieldCase(parentType, fieldName, expected, actual, out.getClass());
     }
 

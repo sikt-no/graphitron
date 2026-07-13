@@ -315,9 +315,15 @@ public class GraphitronSchemaBuilder {
         Map<String, EntityResolution> entitiesByType =
             EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled,
                 ctx::addWarning, ctx::addDiagnostic);
+        // R463 — the ancestor-product arrival fold, computed once over the assembled (pre-connection-
+        // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk order,
+        // so it is computed here and threaded onto the schema for OutputField.source(Arrival) consumers
+        // to read through GraphitronSchema.sourceOf. No generator reads it (emit stays leaf-identity
+        // dispatch), so populating OnlyChild changes no generated code.
+        var arrivals = ArrivalIndex.compute(ctx.schema).byName();
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
-            ctx.diagnostics());
+            ctx.diagnostics(), arrivals);
         return new BuildResult(model, rebuiltAssembled);
     }
 

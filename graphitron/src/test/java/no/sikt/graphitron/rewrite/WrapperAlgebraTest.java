@@ -53,12 +53,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Source half</b> ({@link #sourceWrapperIsTheFoldOfAncestorTargetWrappers()}): {@code source.wrapper}
  *       is the fold of the ancestors' target wrappers ({@link Source.Root} the empty product,
  *       {@link Source.OnlyChild} the {@code One} identity, {@link Source.Child} the {@code Many} absorber).
- *       The independent truth is the SDL's <em>root operation types</em>: a field on a root type folds the
- *       empty product ({@code Root}); every other field has at least one ancestor. R305 conservatively
- *       hard-codes the {@code Many} absorber ({@link Source.Child}) for every nested field until R463
- *       compute the true ancestor-product (which is the only thing that would let a field reach
- *       {@link Source.OnlyChild}); this test asserts the algebra at that conservative strength and
- *       documents the deferral, so it cannot drift back into a free cardinality enum.</li>
+ *       R463 makes the fold real (the ancestor-product arrival index, read through
+ *       {@code GraphitronSchema.sourceOf}), so this half no longer asserts a hard-coded conservative arm.
+ *       Reimplementing the fold test-side would be a drifting second copy, and a simplified one would be
+ *       vacuous, so instead it pins the laws that stay independently checkable: the <em>Root law</em> (a
+ *       field on an SDL root operation type folds the empty product, {@code Root}), the <em>grain law</em>
+ *       (arrival is a function of the parent typename alone, so every {@link OutputField} on one parent
+ *       carries the same arrival arm), and a <em>coverage floor</em> requiring {@link Source.OnlyChild},
+ *       {@link Source.Child}, and a {@link Source.Root} arm all observed across the corpus.</li>
  * </ul>
  */
 @PipelineTier
@@ -154,31 +156,43 @@ class WrapperAlgebraTest {
             var registry = TestSchemaHelper.parseRegistryWithPrelude(example.sdl());
             var roots = rootOperationTypeNames(registry);
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
+
+            // The arrival arm observed per parent type: the grain law requires it to be uniform.
+            var armByParent = new java.util.LinkedHashMap<String, Class<? extends Source>>();
             schema.fields().forEach((coord, field) -> {
-                if (!(field instanceof OutputField out)) return;
-                observedSources.add(out.source().getClass());
+                if (!(field instanceof OutputField)) return;
+                Source source = schema.sourceOf(coord);
+                observedSources.add(source.getClass());
                 boolean onRoot = roots.contains(coord.getTypeName());
                 if (onRoot) {
-                    // Empty product: a root field has no ancestor, so the fold yields Root.
-                    assertThat(out.source())
+                    // Root law — empty product: a root field has no ancestor, so the fold yields Root.
+                    assertThat(source)
                         .as("%s: a field on a root operation type folds the empty product -> Source.Root", coord)
                         .isInstanceOf(Source.Root.class);
                 } else {
-                    // Every nested field has at least one ancestor. R305 hard-codes the Many absorber
-                    // (Child) for all of them; OnlyChild (the One identity) is producible but unreached
-                    // until R463 computes the true ancestor-product fold (Source.OnlyChild javadoc).
-                    assertThat(out.source())
-                        .as("%s: a nested field's arrival cardinality is the Many absorber (Child) until "
-                            + "R463 computes the ancestor-product fold that would reach OnlyChild", coord)
-                        .isInstanceOf(Source.Child.class);
+                    // A nested field's arrival is OnlyChild (One) or Child (Many); never Root.
+                    assertThat(source)
+                        .as("%s: a nested field's arrival is OnlyChild or Child, never Root", coord)
+                        .isInstanceOfAny(Source.OnlyChild.class, Source.Child.class);
+                }
+                // Grain law: arrival is a function of the parent typename alone, so every field on one
+                // parent carries the same arrival arm. A parent that produced two different arms means
+                // the fold leaked below parent grain.
+                var prior = armByParent.putIfAbsent(coord.getTypeName(), source.getClass());
+                if (prior != null) {
+                    assertThat(source.getClass())
+                        .as("%s: arrival is parent-grain, so every field on '%s' must carry the same arrival arm",
+                            coord, coord.getTypeName())
+                        .isEqualTo(prior);
                 }
             });
         }
-        // The mirror is only meaningful if the corpus exercises both the empty-product (Root) and the
-        // absorbing (Child) ends of the fold. OnlyChild is the documented R463 gap.
+        // Coverage floor: the corpus must exercise all three arms of the fold for the laws to be
+        // meaningful. R463 makes OnlyChild reachable, so it is no longer a documented gap.
         assertThat(observedSources)
-            .as("the corpus must exercise both the Root (empty product) and Child (Many absorber) ends of the fold")
-            .contains(Source.Child.class)
+            .as("the corpus must exercise the Root (empty product), OnlyChild (One identity), and Child "
+                + "(Many absorber) arms of the arrival fold")
+            .contains(Source.OnlyChild.class, Source.Child.class)
             .containsAnyOf(Source.Root.Query.class, Source.Root.Mutation.class);
     }
 

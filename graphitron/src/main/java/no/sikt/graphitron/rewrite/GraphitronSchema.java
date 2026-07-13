@@ -1,9 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.rewrite.model.Arrival;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.Source;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -37,6 +40,13 @@ import java.util.Map;
  * {@link ValidationError} stream it emits today, so which schemas pass or fail is unchanged while a
  * verdict read after the walk equals the verdict classification produced. Empty for every
  * test-constructed schema and every error-free build.
+ *
+ * <p>{@link #arrivals} (R463) is the ancestor-product arrival fold, a typename-keyed index computed
+ * once over the assembled SDL ({@code ArrivalIndex}). It is the ancestor fact {@link #sourceOf} threads
+ * into {@link OutputField#source(Arrival)} to pick the {@code OnlyChild} / {@code Child} arm; arrival is
+ * a parent-typename-grain fact, so it lives here rather than as a per-leaf component. Empty for
+ * test-constructed schemas, which then fold every nested field to the conservative absorbing
+ * {@link Arrival#MANY} ({@code Child}).
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -45,31 +55,61 @@ public record GraphitronSchema(
     Map<String, EntityResolution> entitiesByType,
     List<BuildWarning> warnings,
     ContextArgumentClassifier.Classification contextArguments,
-    List<ValidationError> diagnostics
+    List<ValidationError> diagnostics,
+    Map<String, Arrival> arrivals
 ) {
 
     /**
      * Two-arg convenience constructor: groups fields by {@code parentTypeName} automatically,
      * preserving insertion order (declaration order when the fields map is a {@link LinkedHashMap}).
-     * No entity resolutions, no warnings.
+     * No entity resolutions, no warnings, empty arrival index (every nested field folds to
+     * {@link Arrival#MANY}).
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
-            ContextArgumentClassifier.classify(fields.values()), List.of());
+            ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of());
     }
 
     /**
      * Convenience constructor used by {@link GraphitronSchemaBuilder}: same field-grouping as the
-     * two-arg form but preserves the {@code warnings} list and the build-time {@code diagnostics}
-     * the immutable validate phase accumulated.
+     * two-arg form but preserves the {@code warnings} list, the build-time {@code diagnostics} the
+     * immutable validate phase accumulated, and the {@code arrivals} arrival index (R463).
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals) {
+        this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
+            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals));
+    }
+
+    /**
+     * Five-arg convenience constructor (pre-R463 shape, retained for tests): no arrival index, so
+     * every nested field folds to the conservative {@link Arrival#MANY} ({@code Child}).
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
                             Map<String, EntityResolution> entitiesByType,
                             List<BuildWarning> warnings,
                             List<ValidationError> diagnostics) {
-        this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics));
+        this(types, fields, entitiesByType, warnings, diagnostics, Map.of());
+    }
+
+    /**
+     * Seven-arg convenience constructor (the pre-R463 canonical shape, retained for tests that supply
+     * a pre-grouped {@code fieldsByType} and an explicit {@link ContextArgumentClassifier.Classification}):
+     * no arrival index.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, List<GraphitronField>> fieldsByType,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            ContextArgumentClassifier.Classification contextArguments,
+                            List<ValidationError> diagnostics) {
+        this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of());
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
@@ -92,6 +132,27 @@ public record GraphitronSchema(
      */
     public GraphitronType type(String typeName) {
         return types.get(typeName);
+    }
+
+    /**
+     * R463 — the field's {@code source} arrival endpoint, folding the parent type's ancestor-product
+     * {@link Arrival} into {@link OutputField#source(Arrival)}. The single seam consumers read the
+     * arrival arm through: a nested field on a {@link Arrival#ONE} parent yields {@link Source.OnlyChild},
+     * else {@link Source.Child}; a root field yields {@link Source.Root} (the empty product ignores the
+     * arrival). A missing arrival entry folds to the absorbing {@link Arrival#MANY}, so an incompletely
+     * indexed schema can never mint a spurious {@code OnlyChild}. Returns {@code null} when the coordinate
+     * is absent or does not classify to an {@link OutputField}.
+     */
+    public Source sourceOf(FieldCoordinates coord) {
+        if (!(fields.get(coord) instanceof OutputField out)) {
+            return null;
+        }
+        return out.source(arrivals.getOrDefault(coord.getTypeName(), Arrival.MANY));
+    }
+
+    /** {@link #sourceOf(FieldCoordinates)} keyed by type/field name. */
+    public Source sourceOf(String typeName, String fieldName) {
+        return sourceOf(FieldCoordinates.coordinates(typeName, fieldName));
     }
 
     /**

@@ -38,15 +38,23 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
 
     /**
      * The {@code source} dimension (R316): the field's <em>arrival endpoint</em>, a wrapper around a
-     * {@link SourceShape} whose arm is the arrival cardinality. Defaulted per arrival ({@link QueryField}
-     * → {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, {@link ChildField}
-     * → {@link Source.Child}); the {@code Query} / {@code Mutation} split under {@link Source.Root} is the
-     * legality gate over {@link #operation()} (write operations only on {@code Mutation},
-     * {@link Operation.NodeResolve} only on {@code Query}). The arm is the emit-strategy dispatch
-     * ({@link Source.Child} → DataLoader,
+     * {@link SourceShape} whose arm is the arrival cardinality. A <em>storage-free, derived</em> view of
+     * the field's identity plus the {@code parentArrival} the caller supplies ({@link QueryField} →
+     * {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, both ignoring the
+     * argument since a root is the empty product; {@link ChildField} → {@link Source.OnlyChild} when the
+     * parent's arrival is {@link Arrival#ONE}, else {@link Source.Child}). The {@code Query} /
+     * {@code Mutation} split under {@link Source.Root} is the legality gate over {@link #operation()}
+     * (write operations only on {@code Mutation}, {@link Operation.NodeResolve} only on {@code Query}).
+     * The arm is the emit-strategy dispatch ({@link Source.Child} → DataLoader,
      * {@link Source.Root} / {@link Source.OnlyChild} → direct).
+     *
+     * <p>Arrival is a parent-typename-grain fact (R463): every field on one parent folds the same arm,
+     * so it is passed in rather than stored per-leaf (a parent-grain fact copied to child grain is the
+     * derived-fact drift smell). Consumers read the fold through {@link GraphitronSchema#sourceOf}, which
+     * threads the pre-computed {@code ArrivalIndex}; a leaf holding no ancestor fact cannot compute its
+     * own arm.
      */
-    Source source();
+    Source source(Arrival parentArrival);
 
     /**
      * The {@code operation} dimension (R316): the verb this field <em>performs</em>, a sealed
@@ -103,8 +111,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * held at the source, because the field holds a domain record rather than the projected columns.
      * <strong>Derived</strong> from a bare catalog {@link TargetShape.Table} target combined with
      * <em>holds-records</em>, not switched on leaf identity. "Holds records" is two cases on the
-     * catalog-vs-domain split: the source <em>received</em> a record (a {@link Source.OnlyChild} /
-     * {@link Source.Child} arm with {@link SourceShape#Record}), or a service / DML-write
+     * catalog-vs-domain split: the source <em>received</em> a record (a {@link ChildField} whose
+     * {@link ChildField#sourceShape()} is {@link SourceShape#Record}, which the {@link Source.OnlyChild} /
+     * {@link Source.Child} arm wraps regardless of arrival), or a service / DML-write
      * {@link Operation} <em>produced</em> one mid-field. Either way the field re-projects the table by
      * correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx, key...)} join
      * with {@code ORDER BY idx}).
@@ -129,11 +138,11 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         if (!(target().shape() instanceof TargetShape.Table)) {
             return false;
         }
-        boolean receivedRecord = switch (source()) {
-            case Source.OnlyChild(var shape) -> shape == SourceShape.Record;
-            case Source.Child(var shape) -> shape == SourceShape.Record;
-            case Source.Root ignored -> false;
-        };
+        // R463 — read the received-record fact off the leaf's own source shape rather than off
+        // source(): arrival (OnlyChild vs Child) is arrival-agnostic here (the retired switch treated
+        // both nested arms identically), so requiresReFetch does not need the ancestor arrival the
+        // arm now depends on. A RootField has no source shape and never received a record.
+        boolean receivedRecord = this instanceof ChildField cf && cf.sourceShape() == SourceShape.Record;
         boolean producedRecord = switch (operation()) {
             case Operation.ServiceCall ignored -> true;
             case Operation.Insert ignored -> true;

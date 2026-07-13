@@ -32,8 +32,11 @@ public sealed interface QueryField extends RootField
             QueryField.QueryServicePolymorphicField,
             QueryField.QueryServiceTableInterfaceField {
 
-    /** Every {@code QueryField} leaf is on the {@code Query} root, so the source is {@link Source.Root.Query}. */
-    @Override default Source source() { return new Source.Root.Query(); }
+    /**
+     * Every {@code QueryField} leaf is on the {@code Query} root, so the source is
+     * {@link Source.Root.Query}; the root is the empty product and ignores {@code parentArrival}.
+     */
+    @Override default Source source(Arrival parentArrival) { return new Source.Root.Query(); }
 
     @Override default Operation operation() {
         return switch (this) {

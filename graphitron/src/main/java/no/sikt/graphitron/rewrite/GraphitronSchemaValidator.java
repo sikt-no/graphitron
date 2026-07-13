@@ -37,7 +37,7 @@ public class GraphitronSchemaValidator {
         var types = schema.types();
         var errors = new ArrayList<ValidationError>();
         types.values().forEach(type -> validateType(type, types, errors));
-        schema.fields().values().forEach(field -> validateField(field, types, errors));
+        schema.fields().values().forEach(field -> validateField(field, schema, types, errors));
         validateNestingParentCompat(schema, errors);
         validateLocalContextErrorsFieldGuards(schema, errors);
         validateOutcomeTypeShape(schema, errors);
@@ -268,7 +268,7 @@ public class GraphitronSchemaValidator {
         };
     }
 
-    private void validateField(GraphitronField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateField(GraphitronField field, GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // R290 / R305 — re-fetch derivation mirror. The @table re-projecting SELECT is derived once
         // from Table mapping x holds-records on the field (OutputField.requiresReFetch); the
         // generator's per-leaf fetcher arms emit it. This mirror pins the single-homed derivation
@@ -280,7 +280,8 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(
                 out.qualifiedName(),
                 Rejection.invalidSchema("Field '" + out.qualifiedName() + "': re-fetch derivation (operation "
-                    + out.operation() + " x target " + out.target() + " x source " + out.source()
+                    + out.operation() + " x target " + out.target() + " x source "
+                    + schema.sourceOf(out.parentTypeName(), out.name())
                     + " -> requiresReFetch=" + out.requiresReFetch() + ") disagrees with the generator's "
                     + "re-fetch dispatch for " + out.getClass().getSimpleName() + "; the Table-mapping x "
                     + "holds-records derivation and the re-projecting SELECT have drifted"),
