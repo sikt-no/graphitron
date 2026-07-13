@@ -1,7 +1,7 @@
 ---
 id: R13
 title: "Faceted search on `@asConnection`"
-status: Ready
+status: In Progress
 priority: 7
 theme: pagination
 depends-on: []
