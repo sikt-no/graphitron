@@ -1,13 +1,13 @@
 ---
 id: R461
 title: "Unify the four divergent SDL-field-to-Java-accessor resolution implementations behind one resolver"
-status: Backlog
+status: Spec
 bucket: structural
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-07-10
-last-updated: 2026-07-10
+last-updated: 2026-07-13
 ---
 
 # Unify the four divergent SDL-field-to-Java-accessor resolution implementations behind one resolver
@@ -42,12 +42,28 @@ Consolidation:
 
 - **`ClassAccessorResolver` remains the single home** and grows a shared **candidate enumeration**: given `(backingClass, accessorBaseName, order)`, the ordered stream of name-candidate members under the unified rule set below. The name rules, the `is`-gate, and the member filter live only here.
 - **`resolve(...)` keeps its signature and reduction** (first name+shape+return match), now consuming the shared enumeration. It thereby picks up the member filters `collectAccessorMatches` already applies and `resolve` today lacks: skip bridge and synthetic methods and members declared by `Object`. (A bridge method's erased return type can currently win the name match in `resolve`; that is a latent bug in the canonical copy, not just cross-copy drift.)
-- **A new probe entry point** covers the discovery direction, replacing both `findAccessorReturnType` and `inferAccessorName`: same candidate enumeration and parameter-shape rule, no expected-return input, returns a typed result carrying the resolved `Method` / `Field`, its real member name, and its generic return type. `propagateResultChildren` / `propagateInputChildren` (`RecordBindingResolver.java:731/766`) call it once per field and use the single result for both the child-class grounding and `ParentAccessor.accessorName`. The two `RecordBindingResolver` helpers are deleted.
+- **A new probe entry point** covers the discovery direction, replacing both `findAccessorReturnType` and `inferAccessorName`: same candidate enumeration and parameter-shape rule, no expected-return input. Its result is a sealed outcome, `Grounded(member, memberName, genericReturnType) | NoMatch(reason)`, never a nullable `Type` like the helper it replaces (builder-step results are sealed). It is a distinct sub-taxonomy from `AccessorResolution`, not a reuse of it: there is no expected-return input and no arm-kind discrimination for the walk to switch on, so reusing `AccessorResolution` would carry arms the consumer cannot receive. `propagateResultChildren` / `propagateInputChildren` (`RecordBindingResolver.java:731/766`) call it once per field and use the single `Grounded` result for both the child-class grounding and `ParentAccessor.accessorName`. The two `RecordBindingResolver` helpers are deleted.
 - **`collectAccessorMatches` keeps its reduction** (collect all, then `Ambiguous` / `CardinalityMismatch`) and its table-identity and cardinality classification; those are jOOQ-catalog concerns and stay in `FieldBuilder`. Its per-member name matching and filtering move onto the shared candidate enumeration so the name rules cannot drift. The item title says "one resolver"; the accurate statement is one candidate model with two reductions, and the ambiguity reduction is deliberately preserved.
+
+### Where each rule lives on the enumeration/reduction seam
+
+The placement of the parameter-shape rule and the public-field fallback decides between two failure modes (principles-architect finding 2). If they live only in the reductions, the arity rule stays duplicated and can drift again; if the enumeration applies them unconditionally, record-source derivation silently gains candidates it structurally cannot emit (`SourceKey.Reader.AccessorCall` emits `parent.method()` with no environment or arguments, and `AccessorMatch` has no `Field` arm). Neither is acceptable, so the enumeration is **parametric in the candidate kinds a consumer accepts**, typed so each reduction's switch is exhaustive over only the arms it can consume:
+
+- The **property-read reduction** (`resolve`) and the **probe** request all kinds: zero-arg, per-argument, single-`DataFetchingEnvironment` methods, and the public-field fallback.
+- The **record-source reduction** (`collectAccessorMatches`) requests zero-arg methods only; a `FieldRead`, env-taking, or per-argument candidate is unrepresentable in its view, not filtered out by a local rule that could drift.
+
+The name rules, the `is`-gate, the member filter, and the arity semantics per kind are single-sourced in the enumeration; each consumer's kind-set declaration is the only per-caller input.
 
 ### Candidate order at walk time
 
-`resolve` callers derive `CandidateOrder` from the parent's `ResultType` variant (`JavaRecordType` gives `RECORD_FIRST`, otherwise `POJO_FIRST`). The binding walk runs before any `ResultType` exists, so the probe cannot be handed the variant. It derives the order from `parentClass.isRecord()`, which is provably the same fork: `TypeBuilder.buildResultTypeFromClass` (`TypeBuilder.java:1460`) produces `JavaRecordType` exactly when `cls.isRecord()`. The probe's javadoc records this equivalence; `resolve` itself keeps not introspecting `isRecord()`, so on the emission side the type variant stays the single source of truth per the existing `CandidateOrder` javadoc.
+`resolve` callers derive `CandidateOrder` from the parent's `ResultType` variant (`JavaRecordType` gives `RECORD_FIRST`, otherwise `POJO_FIRST`). The binding walk runs before any `ResultType` exists, so the probe cannot be handed the variant. Today the two would have to agree by coincidence of predicates (`buildResultTypeFromClass` at `TypeBuilder.java:1460` produces `JavaRecordType` exactly when `cls.isRecord()`), and a javadoc note is not an enforcer; minting a second unenforced source for the order fork would reintroduce, inside this item, the drift the item exists to kill (principles-architect finding 1).
+
+So the mapping is single-sourced and the equivalence gets an enforcer:
+
+- **One function** `CandidateOrder.forBackingClass(Class<?>)` (returns `isRecord() ? RECORD_FIRST : POJO_FIRST`) is the only place the class-shape-to-order rule exists. The walk's probe calls it.
+- **A unit meta-test pins the bridge**: for a matrix of backing-class shapes (Java record, plain POJO, record implementing an interface, jOOQ `Record` subclass), the order derived from the `ResultType` variant that `buildResultTypeFromClass` produces equals `forBackingClass(cls)`. A future variant-selection change that breaks the equivalence fails the build instead of silently splitting walk and emission order.
+
+`resolve` itself keeps not introspecting `isRecord()`; on the emission side the type variant stays the source of truth per the existing `CandidateOrder` javadoc, and the meta-test is what binds the two derivations together.
 
 ## Unified rule set
 
@@ -73,20 +89,28 @@ Each is deliberate and gets a pipeline-tier fixture:
 
 Not a behavior change: `collectAccessorMatches`' ambiguity rejection stays. Bare name and getter both matching on the record-source question remains `Ambiguous` with the `@sourceRow` disambiguation hint, per the two-reductions rationale above.
 
+### Enforcer for the walk tightenings (B2, B4, B5)
+
+B2, B4, and B5 make the walk stop grounding certain child types. Where some other producer still classifies the type, emission's rule-shared `resolve` produces the matching `Rejected` and the diagnostics converge by construction. Where the removed grounding was the type's **only** producer, that enforcer never fires: the type would fall to a generic no-producer / `UnclassifiedType` rejection, exactly the unactionable cascade the typed-rejection principle forbids, while the probe (the one place that knows why the accessor did not match) throws its reason away (principles-architect finding 3).
+
+So the walk does not discard `NoMatch`: when the probe rejects a candidate that name-matched but failed a gate (arity, boolean-`is`, field-fallback-with-args), the walk records the reason keyed by `(parent SDL type, field)`. If the child SDL type ends the walk with no producer at all, the surfaced rejection names the accessor gate ("`getFilm(int)` name-matched but the SDL field declares no arguments", not "no producer for type Film"). Fields whose probe finds no name match at all keep the plain no-producer path; the reason ledger exists for the gated near-misses the tightenings introduce.
+
+B1/B3 are convergence toward emission's existing behavior, B6 is a latent-bug fix, B7 is diagnostics; all land together with B2/B4/B5 in one item, because splitting the tightenings out would reopen the walk/emission disagreement window this item closes. The reason ledger above is what makes landing them together safe.
+
 ## Tests
 
 Pipeline tier (fixture schema plus backing classes, asserting classification verdicts and the emitted accessor choice), per the tier rules in `docs/architecture/explanation/development-principles.adoc`:
 
 - fluent + bean overload on a POJO parent (B1) and on a Java-record parent (order per variant)
-- SDL field with arguments against a zero-arg member and against a per-argument member (B2)
+- SDL field with arguments against a zero-arg member and against a per-argument member (B2); the sole-producer variant asserts the rejection names the arity gate, not a downstream "no producer" or "table could not be resolved" cascade
 - `@field(name:)` rename grounding through the renamed accessor (B3)
-- non-boolean `is<Name>` member: no grounding, and the property-read rejection names the boolean gate (B4)
-- public-field fallback with and without SDL arguments (B5)
+- non-boolean `is<Name>` member: no grounding, and the rejection names the boolean gate (B4), including the sole-producer variant
+- public-field fallback with and without SDL arguments (B5); sole-producer variant asserts the field-fallback-with-args reason surfaces
 - a covariant-return hierarchy producing a bridge method (B6)
 - an inherited accessor (declared on a superclass: still matched; `Object` members: never matched)
 - record-source ambiguity (bare + getter both returning the expected table's records) still rejects with the `@sourceRow` hint
 
-Unit tier: the candidate enumeration's order and filter table driven directly against small synthetic classes; it is a pure reflection function and an ideal unit surface.
+Unit tier: the candidate enumeration's order and filter table driven directly against small synthetic classes (a pure reflection function, ideal unit surface), plus the order-bridge meta-test from "Candidate order at walk time" pinning `forBackingClass(cls)` against the order derived from `buildResultTypeFromClass(cls)`'s variant across the shape matrix.
 
 ## Non-goals
 
