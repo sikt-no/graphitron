@@ -1,7 +1,7 @@
 ---
 id: R13
 title: "Faceted search on `@asConnection`"
-status: In Review
+status: Ready
 priority: 7
 theme: pagination
 depends-on: []
@@ -9,6 +9,108 @@ last-updated: 2026-07-13
 ---
 
 # Faceted search on `@asConnection`: `@asFacet` directive
+
+## Review feedback: In Review -> Ready, 2026-07-13 (independent session)
+
+The v1 implementation (commits `673535a`, `9732135`, `896b105`, `1e15985`,
+`795786a`) delivers the spec's shape: synthesis, model carriers, rejections,
+emitter, wiring, docs, and execution tests are all present, and the full
+reactor is green under `-Plocal-db`. The review found one consumer-facing
+compile break and one wrong-counts defect, both reproduced against the real
+pipeline, plus test-pinning gaps. Rework pass required; findings below in
+priority order. Items 1-5 gate the next In Review; the sweep list is
+fix-or-explicitly-defer.
+
+1. **Blocker: the base fragment emits an undeclared `filterMap` local.**
+   `QueryConditionsGenerator.buildSuppressedConditionMethod` computes the
+   lifted outer-arg locals but omits the declaration loop
+   `buildConditionMethod` has (the
+   `Map<?, ?> filterMap = env.getArgument("filter") instanceof Map<?, ?> map ? map : null;`
+   line). Any faceted carrier whose filter input has two or more non-facet
+   fields (two or more retained `NestedInputField` params sharing an outer
+   arg, the lift threshold) emits a `<field>FacetBaseCondition` that fails
+   consumer javac. Reproduced: schema with `title @asFacet` +
+   `releaseYear` + `length` emits
+   `filmsCondition(table, null, filterMap != null ? ... : ...)` with no
+   `filterMap` declaration. No shipped fixture hits the shape (the sakila
+   fixture facets every filter field; `FacetEmitterTest`'s fixture retains
+   only one param). Fix the clone and add a facet-minority fixture at the
+   compilation tier so the shape stays covered.
+2. **Wrong facet counts when a sibling input arg shares a field name.**
+   `QueryConditionsGenerator.isFacetParam` matches the `NestedInputField`
+   path only, ignoring the outer argument name. With
+   `films(filter: FilmFilter, other: OtherFilter)` where both inputs carry
+   `title` and only `FilmFilter.title` is a facet, the base fragment nulls
+   both slots (dropping the legitimate `other.title` predicate from every
+   arm) and `filmsFacet_titleCondition` binds both, so the facet's
+   filter-minus-self predicate includes an unrelated filter. Reproduced.
+   Thread the outer arg name into the suppression identity (on the model
+   `FacetSpec` or the `ConnectionType` view), or reject the cross-arg name
+   collision the way facet-vs-facet duplicates already are; pin either way.
+3. **The `IS NOT NULL` scrub and the nullable path are pinned nowhere.**
+   Phase 5's ticked criterion calls the pipeline assertion on
+   "presence/absence of the `IS NOT NULL` conjunct keyed on
+   `FacetSpec.valueNullable`" the authoritative check, but no test at any
+   tier asserts the scrub, the NULL-bucket decode, or NULL-last ordering
+   (both execution facets are non-null over a NULL-free seed, so an inverted
+   or deleted branch stays green). This is the "Documentation names only
+   live tests/code" broad-form failure. Pin the scrub keyed on
+   `valueNullable` and the nullable-bucket behaviour; an execution case over
+   a NULL-bearing column would be strongest.
+4. **`FacetEmitterTest` rests on banned code-string body matching.**
+   `testing.adoc` bans code-string assertions on generated method bodies at
+   the unit and pipeline tiers, and the R428 review cycle treated the same
+   pattern as rework. The two weakest probes carry the load-bearing
+   suppression semantics: `assertThat(base).contains("null")` passes on any
+   null literal anywhere, and `doesNotContain("releaseYear\")")` is
+   formatting-dependent. Replace with behaviour pins (compile-tier fixtures
+   per finding 1, or structural assertions); neighboring precedent in
+   `TypeFetcherGeneratorTest` does not lift the ban.
+5. **Facet failure semantics are unpinned, and the error path leaks SQL.**
+   The emitted `facets` resolver has no try/catch; the degrade contract
+   (facets null, page unaffected) does hold via nullable fields plus
+   graphql-java's default handler, but nothing tests it, and the default
+   handler copies `ex.getMessage()` into the errors array, so a jOOQ
+   `DataAccessException` (which embeds the rendered SQL) reaches clients,
+   bypassing the `ErrorRouter.surfaceClientErrorOrRedact` redaction contract
+   every other fetcher routes through. The gap is shared with `totalCount`
+   (pre-existing), but this change doubles the surface and the spec's
+   "Facet failure semantics" section is explicit. Pin the degrade contract
+   with a test and route the failure through the redaction path, or record
+   the deliberate exception with the totalCount precedent.
+
+Sweep items (fix cheaply during rework or note as explicit deferrals):
+
+- Shared filter input between a served root carrier and a *structural*
+  connection carrier is rejected although the directive is inert on the
+  structural consumer (it never gains facets), contradicting the spec's
+  "inert at the others" rule; conservative, but rejects a legal schema.
+- The well-formedness predicate is hand-duplicated between
+  `ConnectionPromoter.facetSpecsFor` and
+  `GraphitronSchemaBuilder.facetMisuseReason` with only javadoc binding
+  them (the named inter-pass drift smell); extract the definition-keyed
+  half into one shared predicate beside `FacetNaming`.
+- Non-list `@asFacet` fields are accepted by the promoter but appear in no
+  spec example, doc, or test; pin the shape or reject it.
+- Untested rejection arms: input-object value type, `@nodeId` co-occurrence,
+  and the interface/union carrier arm (only the `@splitQuery` child case is
+  covered while the reference page advertises interface/union rejection).
+- Spec drift: Verification #1 and Testing Strategy still name
+  `GraphitronSchemaBuilderTest` for cases that landed in
+  `FacetedConnectionPipelineTest`; "Unit: none required" is stale
+  (`FacetEmitterTest` is `@UnitTier`); Verification #2's "hand-written jOOQ
+  aggregate" landed as seed-justified hardcoded expectations.
+- "Preserved NULL bucket last" is implemented as a tiebreak within equal
+  counts, not absolutely last; clarify the spec sentence or the comparator.
+- The decode loop re-resolves `facetColumn` per row; hoist to the per-facet
+  map. Longer-term tension worth a note: `FacetSpec.columnName` is the raw
+  authored string re-resolved at request time, where "decide once" would
+  carry the build-time-resolved column name.
+- `DirectiveSupportReport.java`'s only change is a stray blank javadoc
+  line; drop it.
+- `asFacet.adoc`'s structural-connection bullet reads as inert-but-allowed
+  while the reachability check rejects an input consumed only by a
+  structural connection; align the sentence with the code.
 
 > Add a `@asFacet` directive for filter-input fields. `ConnectionPromoter`
 > (the field-first `@asConnection` synthesis pass) grows a facet arm: each
