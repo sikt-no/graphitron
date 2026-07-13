@@ -1,12 +1,12 @@
 ---
 id: R463
 title: "Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild"
-status: Spec
+status: Ready
 bucket: structural
 theme: classification-model
 depends-on: []
 created: 2026-07-10
-last-updated: 2026-07-10
+last-updated: 2026-07-13
 ---
 
 # Consume R279's ancestor-cardinality rider: fold true arrival and populate Source.OnlyChild
