@@ -1,7 +1,7 @@
 ---
 id: R314
 title: "Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
