@@ -61,9 +61,50 @@ public class ConnectionResultClassGenerator {
         // returns null on that carrier. Every reachable path binds a real pair.
         var tableField = FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build();
         var conditionField = FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build();
+        // R13 facet plan — nullable as a unit: only the root connection fetcher of a faceted
+        // @asConnection carrier binds it (via the facet-carrying constructor below); every other
+        // producer leaves it null and the facets resolver returns null, mirroring totalCount's
+        // (table, condition) contract.
+        var mapOfCondition = ParameterizedTypeName.get(
+            ClassName.get("java.util", "Map"), ClassName.get(String.class), CONDITION);
+        var facetSpecRef = ClassName.get(outputPackage + ".util", CLASS_NAME, "FacetSpec");
+        var listOfFacetSpec = ParameterizedTypeName.get(LIST, facetSpecRef);
+        var facetBaseConditionField = FieldSpec.builder(CONDITION, "facetBaseCondition", Modifier.PRIVATE, Modifier.FINAL).build();
+        var facetConditionsField = FieldSpec.builder(mapOfCondition, "facetConditions", Modifier.PRIVATE, Modifier.FINAL).build();
+        var facetSpecsField = FieldSpec.builder(listOfFacetSpec, "facetSpecs", Modifier.PRIVATE, Modifier.FINAL).build();
 
-        // Primary constructor — takes List<Record>. Root connection fetcher passes a jOOQ Result<Record>
-        // (which is-a List<Record>); split-connection scatter passes a per-parent ArrayList sublist.
+        // Assigning constructor — the full component list including the R13 facet plan. Only the
+        // facet-carrying convenience below reaches the facet slots; every legacy form delegates
+        // with a null plan.
+        var assigningConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(listOfRecordField, "result")
+            .addParameter(int.class, "pageSize")
+            .addParameter(String.class, "afterCursor")
+            .addParameter(String.class, "beforeCursor")
+            .addParameter(boolean.class, "backward")
+            .addParameter(listOfField, "orderByColumns")
+            .addParameter(tableWildcard, "table")
+            .addParameter(CONDITION, "condition")
+            .addParameter(CONDITION, "facetBaseCondition")
+            .addParameter(mapOfCondition, "facetConditions")
+            .addParameter(listOfFacetSpec, "facetSpecs")
+            .addStatement("this.result = result")
+            .addStatement("this.pageSize = pageSize")
+            .addStatement("this.afterCursor = afterCursor")
+            .addStatement("this.beforeCursor = beforeCursor")
+            .addStatement("this.backward = backward")
+            .addStatement("this.orderByColumns = orderByColumns")
+            .addStatement("this.table = table")
+            .addStatement("this.condition = condition")
+            .addStatement("this.facetBaseCondition = facetBaseCondition")
+            .addStatement("this.facetConditions = facetConditions")
+            .addStatement("this.facetSpecs = facetSpecs")
+            .build();
+
+        // Primary constructor (pre-R13 shape, no facet plan) — takes List<Record>. Root connection
+        // fetcher passes a jOOQ Result<Record> (which is-a List<Record>); split-connection scatter
+        // passes a per-parent ArrayList sublist.
         var constructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")
@@ -74,14 +115,8 @@ public class ConnectionResultClassGenerator {
             .addParameter(listOfField, "orderByColumns")
             .addParameter(tableWildcard, "table")
             .addParameter(CONDITION, "condition")
-            .addStatement("this.result = result")
-            .addStatement("this.pageSize = pageSize")
-            .addStatement("this.afterCursor = afterCursor")
-            .addStatement("this.beforeCursor = beforeCursor")
-            .addStatement("this.backward = backward")
-            .addStatement("this.orderByColumns = orderByColumns")
-            .addStatement("this.table = table")
-            .addStatement("this.condition = condition")
+            .addStatement("this(result, pageSize, afterCursor, beforeCursor, backward,"
+                + " orderByColumns, table, condition, null, null, null)")
             .build();
 
         // Convenience constructor accepting a PageRequest from ConnectionHelper.pageRequest(...).
@@ -98,7 +133,53 @@ public class ConnectionResultClassGenerator {
             .addParameter(tableWildcard, "table")
             .addParameter(CONDITION, "condition")
             .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
-                + " page.backward(), page.extraFields(), table, condition)")
+                + " page.backward(), page.extraFields(), table, condition, null, null, null)")
+            .build();
+
+        // R13 facet-carrying convenience: the faceted root connection fetcher binds the facet plan
+        // (base condition, per-facet own predicates keyed by facet label, and the decode specs)
+        // alongside the page context, so ConnectionHelper.facets can issue its UNION ALL aggregate
+        // with the same source and filter-minus-self predicates as the page query's filter.
+        var pageWithFacetsConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(listOfRecordField, "result")
+            .addParameter(pageRequestRef, "page")
+            .addParameter(tableWildcard, "table")
+            .addParameter(CONDITION, "condition")
+            .addParameter(CONDITION, "facetBaseCondition")
+            .addParameter(mapOfCondition, "facetConditions")
+            .addParameter(listOfFacetSpec, "facetSpecs")
+            .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
+                + " page.backward(), page.extraFields(), table, condition,"
+                + " facetBaseCondition, facetConditions, facetSpecs)")
+            .build();
+
+        // R13 FacetSpec — the runtime decode entry for one facet: the GraphQL-facing label (the
+        // facets field name), the GROUP BY column, and whether the facet value is nullable (a
+        // non-null value appends an IS NOT NULL scrub to its arm).
+        var facetSpecClass = TypeSpec.classBuilder("FacetSpec")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addField(FieldSpec.builder(String.class, "label", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(String.class, "columnName", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(boolean.class, "valueNullable", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(String.class, "label")
+                .addParameter(String.class, "columnName")
+                .addParameter(boolean.class, "valueNullable")
+                .addStatement("this.label = label")
+                .addStatement("this.columnName = columnName")
+                .addStatement("this.valueNullable = valueNullable")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("label")
+                .addModifiers(Modifier.PUBLIC).returns(String.class)
+                .addStatement("return label").build())
+            .addMethod(MethodSpec.methodBuilder("columnName")
+                .addModifiers(Modifier.PUBLIC).returns(String.class)
+                .addStatement("return columnName").build())
+            .addMethod(MethodSpec.methodBuilder("valueNullable")
+                .addModifiers(Modifier.PUBLIC).returns(boolean.class)
+                .addStatement("return valueNullable").build())
             .build();
 
         // Accessors
@@ -150,6 +231,24 @@ public class ConnectionResultClassGenerator {
             .addStatement("return condition")
             .build();
 
+        var getFacetBaseCondition = MethodSpec.methodBuilder("facetBaseCondition")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(CONDITION)
+            .addStatement("return facetBaseCondition")
+            .build();
+
+        var getFacetConditions = MethodSpec.methodBuilder("facetConditions")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(mapOfCondition)
+            .addStatement("return facetConditions")
+            .build();
+
+        var getFacetSpecs = MethodSpec.methodBuilder("facetSpecs")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(listOfFacetSpec)
+            .addStatement("return facetSpecs")
+            .build();
+
         // trimmedResult() — trims to pageSize; re-reverses for backward pagination
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var trimmedResult = MethodSpec.methodBuilder("trimmedResult")
@@ -187,8 +286,14 @@ public class ConnectionResultClassGenerator {
             .addField(orderByColumnsField)
             .addField(tableField)
             .addField(conditionField)
+            .addField(facetBaseConditionField)
+            .addField(facetConditionsField)
+            .addField(facetSpecsField)
+            .addType(facetSpecClass)
+            .addMethod(assigningConstructor)
             .addMethod(constructor)
             .addMethod(pageWithSourceConstructor)
+            .addMethod(pageWithFacetsConstructor)
             .addMethod(getResult)
             .addMethod(getPageSize)
             .addMethod(getAfterCursor)
@@ -197,6 +302,9 @@ public class ConnectionResultClassGenerator {
             .addMethod(getOrderByColumns)
             .addMethod(getTable)
             .addMethod(getCondition)
+            .addMethod(getFacetBaseCondition)
+            .addMethod(getFacetConditions)
+            .addMethod(getFacetSpecs)
             .addMethod(trimmedResult)
             .addMethod(hasNextPage)
             .addMethod(hasPreviousPage)

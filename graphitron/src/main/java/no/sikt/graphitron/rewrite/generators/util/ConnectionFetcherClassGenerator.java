@@ -45,6 +45,11 @@ public final class ConnectionFetcherClassGenerator {
                 if (ct.schemaType().getFieldDefinition("totalCount") != null) {
                     conn.addMethod(delegate("totalCount", helper, "totalCount"));
                 }
+                // R13: facets delegate under the same has-facets gate as the registration emitter,
+                // so the code-registry reference and the method can never drift.
+                if (!ct.facets().isEmpty()) {
+                    conn.addMethod(delegate("facets", helper, "facets"));
+                }
                 out.add(conn.build());
 
                 out.add(TypeSpec.classBuilder(ct.edgeTypeName() + "Fetchers")

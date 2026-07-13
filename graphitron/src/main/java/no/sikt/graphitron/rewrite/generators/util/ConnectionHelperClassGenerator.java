@@ -294,6 +294,102 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return dsl.selectCount().from(cr.table()).where(cr.condition()).fetchOne(0, $T.class)", Integer.class)
             .build();
 
+        // --- facets(DataFetchingEnvironment) → Map<String, List<Map<String, Object>>> ---
+        // R13: the facet sibling of totalCount. One UNION ALL of per-facet GROUP BY arms, each
+        // under the connection filter minus that facet's own predicate (base AND every other
+        // facet's predicate), value cast to TEXT to unify the arms and decoded back through the
+        // column's DataType. Lazy on selection like totalCount (this resolver only runs when the
+        // client selects facets; unselected facet fields contribute no arm). Returns null on a
+        // carrier with no facet plan (the scatter / non-faceted contract, mirroring totalCount's
+        // null-(table, condition) gate) and an empty map when no facet field is selected.
+        var facetSpecClass = connectionResultClass.nestedClass("FacetSpec");
+        var listOfEntryMap = ParameterizedTypeName.get(LIST_CLASS, mapStringObject);
+        var facetsReturn = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfEntryMap);
+        var selectedFieldClass = ClassName.get("graphql.schema", "SelectedField");
+        var record3 = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record3"),
+            ClassName.get(String.class), ClassName.get(String.class), ClassName.get(Integer.class));
+        var orderByStepOfRecord3 = ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "SelectOrderByStep"), record3);
+        var conditionClass = ClassName.get("org.jooq", "Condition");
+        var jooqFieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD,
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        var facetsMethod = MethodSpec.methodBuilder("facets")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(facetsReturn)
+            .addParameter(ENV, "env")
+            .addStatement("$T cr = env.getSource()", connectionResultClass)
+            .addCode("if (cr.facetSpecs() == null || cr.table() == null || cr.facetBaseCondition() == null) return null;\n")
+            .addStatement("$T<String> selected = new $T<>()",
+                ClassName.get("java.util", "Set"), ClassName.get("java.util", "LinkedHashSet"))
+            .addCode("for ($T sf : env.getSelectionSet().getImmediateFields()) {\n", selectedFieldClass)
+            .addCode("    selected.add(sf.getName());\n")
+            .addCode("}\n")
+            .addStatement("$T<$T> specs = new $T<>()", LIST_CLASS, facetSpecClass, ARRAY_LIST)
+            .addCode("for ($T f : cr.facetSpecs()) {\n", facetSpecClass)
+            .addCode("    if (selected.contains(f.label())) specs.add(f);\n")
+            .addCode("}\n")
+            .addCode("if (specs.isEmpty()) return $T.of();\n", MAP)
+            .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass)
+            .addStatement("$T union = null", orderByStepOfRecord3)
+            .addCode("for ($T f : specs) {\n", facetSpecClass)
+            .addCode("    $T cond = cr.facetBaseCondition();\n", conditionClass)
+            .addCode("    for ($T<String, $T> e : cr.facetConditions().entrySet()) {\n",
+                ClassName.get("java.util", "Map", "Entry"), conditionClass)
+            .addCode("        if (!e.getKey().equals(f.label())) cond = cond.and(e.getValue());\n")
+            .addCode("    }\n")
+            .addCode("    $T col = facetColumn(cr.table(), f.columnName());\n", jooqFieldWildcard)
+            .addCode("    if (!f.valueNullable()) cond = cond.and(col.isNotNull());\n")
+            .addCode("    $T arm = dsl.select($T.inline(f.label()).as(\"facet\"),"
+                + " col.cast(String.class).as(\"value\"), $T.count().as(\"cnt\"))\n", orderByStepOfRecord3, DSL, DSL)
+            .addCode("        .from(cr.table()).where(cond).groupBy(col);\n")
+            .addCode("    union = union == null ? arm : union.unionAll(arm);\n")
+            .addCode("}\n")
+            .addStatement("$T<$T> rows = union.orderBy($T.field($T.name(\"facet\")),"
+                + " $T.field($T.name(\"cnt\")).desc(), $T.field($T.name(\"value\"))).fetch()",
+                RESULT, record3, DSL, DSL, DSL, DSL, DSL, DSL)
+            .addStatement("$T<String, $T> byLabel = new $T<>()",
+                ClassName.get("java.util", "Map"), facetSpecClass, hashMap)
+            .addStatement("$T<String, $T> out = new $T<>()",
+                ClassName.get("java.util", "Map"), listOfEntryMap, hashMap)
+            .addCode("for ($T f : specs) {\n", facetSpecClass)
+            .addCode("    byLabel.put(f.label(), f);\n")
+            .addCode("    out.put(f.label(), new $T<>());\n", ARRAY_LIST)
+            .addCode("}\n")
+            .addCode("for ($T row : rows) {\n", record3)
+            .addCode("    $T f = byLabel.get(row.value1());\n", facetSpecClass)
+            .addCode("    if (f == null) continue;\n")
+            .addCode("    $T col = facetColumn(cr.table(), f.columnName());\n", jooqFieldWildcard)
+            // DSL.val(Object, DataType<T>).getValue() is the non-deprecated wire→typed coercion,
+            // the same form decodeCursor's replacement uses (R384): the column's Converter applies,
+            // null in, null out (a preserved NULL bucket stays null).
+            .addCode("    Object typed = row.value2() == null ? null"
+                + " : $T.val((Object) row.value2(), col.getDataType()).getValue();\n", DSL)
+            .addCode("    $T<String, Object> entry = new $T<>();\n", hashMap, hashMap)
+            .addCode("    entry.put(\"value\", typed);\n")
+            .addCode("    entry.put(\"count\", row.value3());\n")
+            .addCode("    out.get(f.label()).add(entry);\n")
+            .addCode("}\n")
+            .addStatement("return out")
+            .build();
+
+        // Runtime column resolution for a facet's @field(name:) value: jOOQ's Table.field(String)
+        // is case-sensitive, while directive values may differ in case from the generated names,
+        // so fall back to a case-insensitive scan before failing loudly.
+        var facetColumnHelper = MethodSpec.methodBuilder("facetColumn")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(jooqFieldWildcard)
+            .addParameter(ParameterizedTypeName.get(ClassName.get("org.jooq", "Table"),
+                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)), "table")
+            .addParameter(String.class, "columnName")
+            .addStatement("$T col = table.field(columnName)", jooqFieldWildcard)
+            .addCode("if (col != null) return col;\n")
+            .addCode("for ($T f : table.fields()) {\n", jooqFieldWildcard)
+            .addCode("    if (f.getName().equalsIgnoreCase(columnName)) return f;\n")
+            .addCode("}\n")
+            .addStatement("throw new IllegalStateException(\"facet column '\" + columnName"
+                + " + \"' not found on table '\" + table.getName() + \"'\")")
+            .build();
+
         // Mirrors TypeFetcherGenerator.buildGraphitronContextHelper. Emitted on this helper so
         // totalCount can resolve the per-request DSLContext without leaning on a fetcher class.
         var graphitronContextShim = MethodSpec.methodBuilder("graphitronContext")
@@ -339,6 +435,8 @@ public class ConnectionHelperClassGenerator {
             .addMethod(nodesMethod)
             .addMethod(pageInfoMethod)
             .addMethod(totalCountMethod)
+            .addMethod(facetsMethod)
+            .addMethod(facetColumnHelper)
             .addMethod(graphitronContextShim)
             .addMethod(edgeNodeMethod)
             .addMethod(edgeCursorMethod)

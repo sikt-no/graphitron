@@ -1101,14 +1101,45 @@ to the `totalCount` SDL-presence gate. `ConnectionFetcherClassGenerator`
 (`:44`) adds a `facets` delegate under the same gate. The `*FacetValue`
 types need no explicit fetcher wiring.
 
+### Landed placement (Phase 4, 2026-07-13)
+
+Phase 4 shipped as planned, with four deltas worth recording:
+
+- **Fragment strategy is null-suppression, not re-derivation.** The env-shim
+  layer (`QueryConditionsGenerator`) calls the same entity-scoped typed
+  condition method with a `null` literal in each suppressed parameter slot;
+  the typed method's absent-input gate then drops the conjunct. No
+  `TypeConditionsGenerator` change was needed. This required facet fields to
+  be optional, so `rejectFacetMisuse` gained a rejection: `@asFacet` on a
+  non-null input field is invalid (an always-active filter value could never
+  show unfiltered pivot counts anyway).
+- **Connection-type lookup via derived name.** The fetcher and the conditions
+  generator resolve the carrier's `ConnectionType` through the new
+  `model/ConnectionNaming.defaultConnectionName` helper (shared with
+  `ConnectionPromoter.resolveConnectionName`, so naming cannot drift). To
+  keep that lookup total where facets exist, `rejectFacetMisuse` also rejects
+  `@asFacet` combined with the deprecated `@asConnection(connectionName:)`
+  override.
+- **Runtime decode carrier.** `ConnectionResult` gained a nested
+  `FacetSpec(label, columnName, valueNullable)` runtime class (the emitted
+  mirror of the model `FacetSpec`, minus the schema-side components the
+  resolver does not need) plus the nullable plan slots
+  (`facetBaseCondition`, `facetConditions`, `facetSpecs`) and a
+  facet-carrying convenience constructor; the legacy constructors delegate
+  with a null plan, so existing emitted call sites are untouched.
+- **Value decode uses `DSL.val(x, dataType).getValue()`** (the non-deprecated
+  coercion, per R384), and the resolver resolves facet columns
+  case-insensitively at runtime (`Table.field(String)` is case-sensitive
+  while `@field(name:)` values may differ in case).
+
 ### Success Criteria
 
-- [ ] `mvn verify -Pquick` on the whole tree.
-- [ ] Schemas *without* `@asFacet` emit unchanged fetchers (structural diff:
+- [x] `mvn verify -Pquick` on the whole tree.
+- [x] Schemas *without* `@asFacet` emit unchanged fetchers (structural diff:
       classify pre- and post-patch SDL with no `@asFacet`, assert identical
       `TypeSpec` for the fetcher method and unchanged `ConnectionResult`
       construction).
-- [ ] Wiring test: a Connection with `@asFacet` fields registers a `facets`
+- [x] Wiring test: a Connection with `@asFacet` fields registers a `facets`
       dataFetcher in its `connectionBody`, and `<Conn>Fetchers` has a
       `facets` delegate; the `*FacetValue` types are loadable.
 

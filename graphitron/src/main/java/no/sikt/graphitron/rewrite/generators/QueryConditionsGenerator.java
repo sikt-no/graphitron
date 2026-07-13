@@ -68,6 +68,7 @@ public class QueryConditionsGenerator {
                 for (var field : schema.fieldsOf(rootType.name())) {
                     if (field instanceof QueryField.QueryTableField qtf) {
                         methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, registry));
+                        methods.addAll(buildFacetFragmentMethods(schema, rootType.name(), qtf, outputPackage, registry));
                     } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
                         methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage, registry));
                     }
@@ -83,6 +84,181 @@ public class QueryConditionsGenerator {
     /** Method name as referenced from the fetcher body: {@code <fieldName>Condition}. */
     public static String conditionMethodName(String fieldName) {
         return fieldName + "Condition";
+    }
+
+    /** R13 Phase 4: the facet base condition (full filter minus every facet's own predicate). */
+    public static String facetBaseConditionMethodName(String fieldName) {
+        return fieldName + "FacetBaseCondition";
+    }
+
+    /** R13 Phase 4: one facet's own predicate, {@code <fieldName>Facet_<inputFieldName>Condition}. */
+    public static String facetConditionMethodName(String fieldName, String facetInputFieldName) {
+        return fieldName + "Facet_" + facetInputFieldName + "Condition";
+    }
+
+    /**
+     * R13 Phase 4: the filter-minus-self fragments for a faceted {@code @asConnection} carrier.
+     * The generated {@code <field>Condition} folds every filter predicate into one, so the fetcher
+     * cannot ask it to skip a facet; these additive siblings reconstruct the split:
+     *
+     * <ul>
+     *   <li>{@code <field>FacetBaseCondition(table, env)} — every filter <em>except</em> the facet
+     *       fields' own predicates;</li>
+     *   <li>{@code <field>Facet_<g>Condition(table, env)} — facet {@code g}'s own predicate
+     *       alone.</li>
+     * </ul>
+     *
+     * <p>Suppression is by argument omission: the fragment calls the same entity-scoped
+     * {@code <ReturnType>Conditions} method with a {@code null} literal in a suppressed
+     * parameter's slot, which is exactly the absent-input to no-conjunct gate that method already
+     * applies (facet bindings are guaranteed nullable — {@code rejectFacetMisuse} rejects non-null
+     * facet fields). The value binding stays inside the typed conditions boundary; nothing here
+     * rebuilds a predicate from raw {@code env} values.
+     *
+     * <p>The carrier's {@link GraphitronType.ConnectionType} is resolved through
+     * {@link no.sikt.graphitron.rewrite.model.ConnectionNaming#defaultConnectionName};
+     * {@code rejectFacetMisuse} rejects faceted carriers using the deprecated
+     * {@code connectionName:} override, so the derived name always hits. Returns an empty list for
+     * unfaceted carriers, keeping their emitted class byte-identical.
+     */
+    private static List<MethodSpec> buildFacetFragmentMethods(
+            GraphitronSchema schema, String rootTypeName, QueryField.QueryTableField qtf,
+            String outputPackage, CompositeDecodeHelperRegistry registry) {
+        var entry = schema.types().get(no.sikt.graphitron.rewrite.model.ConnectionNaming
+            .defaultConnectionName(rootTypeName, qtf.name()));
+        if (!(entry instanceof GraphitronType.ConnectionType conn) || conn.facets().isEmpty()) {
+            return List.of();
+        }
+        var facetNames = new java.util.LinkedHashSet<String>();
+        for (var facet : conn.facets()) facetNames.add(facet.inputFieldName());
+
+        var out = new ArrayList<MethodSpec>();
+        out.add(buildSuppressedConditionMethod(
+            facetBaseConditionMethodName(qtf.name()), qtf.returnType(), qtf.filters(),
+            outputPackage, registry, facetNames, false));
+        for (var facet : conn.facets()) {
+            // The per-facet fragment retains only this facet's predicate: suppress every other
+            // param of the generated filter call, facet or not.
+            var suppressed = new java.util.LinkedHashSet<String>();
+            for (var filter : qtf.filters()) {
+                for (var param : filter.callParams()) {
+                    if (!param.name().equals(facet.inputFieldName())) suppressed.add(param.name());
+                }
+            }
+            out.add(buildSuppressedConditionMethod(
+                facetConditionMethodName(qtf.name(), facet.inputFieldName()), qtf.returnType(),
+                qtf.filters(), outputPackage, registry, suppressed, true));
+        }
+        return out;
+    }
+
+    /**
+     * A clone of {@link #buildConditionMethod} that (a) names the method explicitly, (b) replaces
+     * every {@link CallParam} named in {@code suppressed} with a {@code null} literal (the typed
+     * conditions method's own null gate then drops the conjunct), and (c) when
+     * {@code onlyGeneratedFilters}, keeps only {@link no.sikt.graphitron.rewrite.model.GeneratedConditionFilter}
+     * terms (a facet's own predicate lives there; field-level {@code @condition} and FK-target
+     * terms belong to the base only). Pre-lift locals are computed over retained params only.
+     */
+    private static MethodSpec buildSuppressedConditionMethod(
+            String methodName,
+            ReturnTypeRef.TableBoundReturnType returnType,
+            List<WhereFilter> allFilters,
+            String outputPackage,
+            CompositeDecodeHelperRegistry registry,
+            java.util.Set<String> suppressed,
+            boolean onlyGeneratedFilters) {
+        var filters = onlyGeneratedFilters
+            ? allFilters.stream()
+                .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                .toList()
+            : allFilters;
+        var tableRef = returnType.table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage);
+
+        var builder = MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(CONDITION)
+            .addParameter(names.jooqTableClass(), "table")
+            .addParameter(ENV, "env");
+
+        boolean needsUncheckedSuppression = filters.stream()
+            .flatMap(f -> f.callParams().stream())
+            .filter(p -> !suppressed.contains(p.name()))
+            .anyMatch(CallParam::emitsUncheckedCast);
+        if (needsUncheckedSuppression) {
+            builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked")
+                .build());
+        }
+
+        for (var filter : filters) {
+            for (var param : filter.callParams()) {
+                if (suppressed.contains(param.name())) continue;
+                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
+                    builder.addStatement("$T<$T> $L = env.getArgument($S)",
+                        LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
+                }
+            }
+        }
+
+        var liftedOuters = computeLiftedOuters(filters.stream()
+            .map(f -> (WhereFilter) new no.sikt.graphitron.rewrite.model.GeneratedConditionFilter(
+                f.className(), f.methodName(), tableRef,
+                f.callParams().stream().filter(p -> !suppressed.contains(p.name())).toList(),
+                List.of()))
+            .toList());
+
+        var ctx = new TypeFetcherEmissionContext();
+        var declarations = CodeBlock.builder();
+        var fkTargetAliases = FkTargetConditionEmitter.declareAliases(declarations, filters, "table", false);
+        builder.addCode(declarations.build());
+
+        if (filters.isEmpty()) {
+            builder.addStatement("return $T.noCondition()", DSL);
+        } else if (filters.size() == 1) {
+            builder.addStatement("return $L",
+                emitPossiblySuppressedTerm(ctx, filters.get(0), registry, liftedOuters, fkTargetAliases, suppressed));
+        } else {
+            builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
+            for (var filter : filters) {
+                builder.addStatement("condition = condition.and($L)",
+                    emitPossiblySuppressedTerm(ctx, filter, registry, liftedOuters, fkTargetAliases, suppressed));
+            }
+            builder.addStatement("return condition");
+        }
+        return builder.build();
+    }
+
+    /**
+     * Emits one WHERE term with per-param suppression. A term with no suppressed params routes
+     * through {@link FkTargetConditionEmitter#emitTerm} unchanged; a
+     * {@code GeneratedConditionFilter} carrying suppressed params gets its call rebuilt with
+     * {@code null} literals in the suppressed slots. The generated condition methods are never
+     * overloaded, so a bare {@code null} argument is unambiguous.
+     */
+    private static CodeBlock emitPossiblySuppressedTerm(TypeFetcherEmissionContext ctx,
+            WhereFilter filter, CompositeDecodeHelperRegistry registry,
+            Map<String, String> liftedOuters, Map<WhereFilter, List<String>> fkTargetAliases,
+            java.util.Set<String> suppressed) {
+        boolean anySuppressed = filter instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter
+            && filter.callParams().stream().anyMatch(p -> suppressed.contains(p.name()));
+        if (!anySuppressed) {
+            return FkTargetConditionEmitter.emitTerm(ctx, filter, "table", registry, liftedOuters,
+                fkTargetAliases, new ArgumentValueSource.Env());
+        }
+        var args = CodeBlock.builder();
+        args.add("$L", "table");
+        for (var param : filter.callParams()) {
+            if (suppressed.contains(param.name())) {
+                args.add(", null");
+            } else {
+                args.add(", $L", ArgCallEmitter.buildArgExtraction(ctx, param, filter.className(),
+                    "table", registry, liftedOuters, new ArgumentValueSource.Env()));
+            }
+        }
+        return CodeBlock.of("$T.$L($L)",
+            ClassName.bestGuess(filter.className()), filter.methodName(), args.build());
     }
 
     /**

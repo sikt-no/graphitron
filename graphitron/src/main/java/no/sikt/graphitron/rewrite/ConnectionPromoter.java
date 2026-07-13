@@ -433,12 +433,8 @@ final class ConnectionPromoter {
                 return s;
             }
         }
-        return parentTypeName + capitalize(field.getName()) + "Connection";
-    }
-
-    private static String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        return no.sikt.graphitron.rewrite.model.ConnectionNaming
+            .defaultConnectionName(parentTypeName, field.getName());
     }
 
     /**
@@ -462,7 +458,8 @@ final class ConnectionPromoter {
                 if (!inputField.hasAppliedDirective(DIR_FIELD)
                         || inputField.hasAppliedDirective(DIR_REFERENCE)
                         || inputField.hasAppliedDirective(DIR_CONDITION)
-                        || inputField.hasAppliedDirective(DIR_NODE_ID)) {
+                        || inputField.hasAppliedDirective(DIR_NODE_ID)
+                        || inputField.getType() instanceof GraphQLNonNull) {
                     continue;
                 }
                 String columnName = BuildContext.argString(inputField, DIR_FIELD, ARG_NAME).orElse(null);

@@ -5141,14 +5141,74 @@ public class TypeFetcherGenerator {
         // Bind (table, condition) onto ConnectionResult so ConnectionHelper.totalCount can issue
         // SELECT count(*) using the same source and predicate as the page query. Lazy-on-selection:
         // the totalCount resolver only runs when the client selects the field.
-        builder.addStatement("$T payload = new $T(result, page, $L, condition)",
-            valueType, connectionResultClass, tableLocal);
+        //
+        // R13: a faceted carrier additionally binds the facet plan (the generated base and per-facet
+        // condition fragments, plus the decode specs) via the facet-carrying constructor, so
+        // ConnectionHelper.facets can issue its UNION ALL with filter-minus-self predicates. The
+        // fetcher only calls the generated QueryConditions fragments and collects the results; all
+        // value binding stays inside the typed conditions boundary. Output is byte-identical to the
+        // pre-R13 form whenever the connection carries no facets.
+        java.util.List<no.sikt.graphitron.rewrite.model.FacetSpec> facets = connectionFacetsFor(ctx, qtf);
+        if (facets.isEmpty()) {
+            builder.addStatement("$T payload = new $T(result, page, $L, condition)",
+                valueType, connectionResultClass, tableLocal);
+        } else {
+            var conditionsClass = ClassName.get(outputPackage,
+                qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
+            var conditionClass = ClassName.get("org.jooq", "Condition");
+            var facetSpecRuntime = connectionResultClass.nestedClass("FacetSpec");
+            builder.addStatement("$T facetBase = $T.$L($L, env)",
+                conditionClass, conditionsClass,
+                QueryConditionsGenerator.facetBaseConditionMethodName(qtf.name()), tableLocal);
+            builder.addStatement("$T<String, $T> facetConditions = new $T<>()",
+                ClassName.get("java.util", "Map"), conditionClass,
+                ClassName.get("java.util", "LinkedHashMap"));
+            for (var facet : facets) {
+                builder.addStatement("facetConditions.put($S, $T.$L($L, env))",
+                    facet.inputFieldName(), conditionsClass,
+                    QueryConditionsGenerator.facetConditionMethodName(qtf.name(), facet.inputFieldName()),
+                    tableLocal);
+            }
+            var specsArgs = CodeBlock.builder();
+            boolean firstSpec = true;
+            for (var facet : facets) {
+                if (!firstSpec) specsArgs.add(",\n    ");
+                firstSpec = false;
+                specsArgs.add("new $T($S, $S, $L)",
+                    facetSpecRuntime, facet.inputFieldName(), facet.columnName(), facet.valueNullable());
+            }
+            builder.addStatement("$T<$T> facetSpecs = $T.of($L)",
+                ClassName.get("java.util", "List"), facetSpecRuntime,
+                ClassName.get("java.util", "List"), specsArgs.build());
+            builder.addStatement(
+                "$T payload = new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs)",
+                valueType, connectionResultClass, tableLocal);
+        }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /**
+     * R13: the resolved facet view for a Query connection carrier, or empty. Resolves the
+     * carrier's {@link no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType} through the
+     * derived {@link no.sikt.graphitron.rewrite.model.ConnectionNaming#defaultConnectionName};
+     * {@code rejectFacetMisuse} rejects faceted carriers using the deprecated
+     * {@code connectionName:} override, so the derived name always hits where facets exist.
+     * Null-guarded for the model-only unit-tier callers, which pass no schema and therefore
+     * never see the facet arm.
+     */
+    private static java.util.List<no.sikt.graphitron.rewrite.model.FacetSpec> connectionFacetsFor(
+            TypeFetcherEmissionContext ctx, QueryField.QueryTableField qtf) {
+        var schema = ctx.graphitronSchema();
+        if (schema == null) return java.util.List.of();
+        var entry = schema.types().get(no.sikt.graphitron.rewrite.model.ConnectionNaming
+            .defaultConnectionName(qtf.parentTypeName(), qtf.name()));
+        return entry instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType ct
+            ? ct.facets() : java.util.List.of();
     }
 
     /**

@@ -159,6 +159,50 @@ class FacetedConnectionPipelineTest {
                 && e.message().contains("@asFacet on an ID field is not supported"));
     }
 
+    @Test
+    void asFacetOnNonNullField_rejected() {
+        // Phase 4 rationale: the generated filter-minus-self fragments suppress a facet's own
+        // predicate by leaving its argument unset, which requires the binding to be optional; and
+        // an always-active filter value could never show unfiltered pivot counts anyway.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                title: [String!]! @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.title")
+                && e.message().contains("@asFacet requires a nullable"));
+    }
+
+    @Test
+    void asFacetWithConnectionNameOverride_rejected() {
+        // The facet emitters resolve the carrier's ConnectionType through the derived
+        // ConnectionNaming.defaultConnectionName; the deprecated connectionName: override would
+        // silently miss that lookup, so the combination is rejected.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]!
+                    @asConnection(connectionName: "LegacyFilmsConnection")
+                    @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.title")
+                && e.message().contains("connectionName"));
+    }
+
     // ===== Rejection (use-keyed reachability check) =====
 
     @Test

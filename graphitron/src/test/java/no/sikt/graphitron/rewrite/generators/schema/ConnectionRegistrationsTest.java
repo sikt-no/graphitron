@@ -32,6 +32,23 @@ class ConnectionRegistrationsTest {
         assertThat(body).contains("\"totalCount\"");
         // R303: wiring references the per-connection delegate class, which forwards to ConnectionHelper.
         assertThat(body).contains("QueryFilmsConnectionFetchers::totalCount");
+        // R13: no facets registration without @asFacet.
+        assertThat(body).doesNotContain("facets");
+    }
+
+    @Test
+    void facetedConnection_registersFacets() {
+        var body = bodyFor("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """, "QueryFilmsConnection");
+        assertThat(body).contains("\"facets\"");
+        assertThat(body).contains("QueryFilmsConnectionFetchers::facets");
     }
 
     @Test

@@ -151,6 +151,14 @@ public final class FetcherRegistrationsEmitter {
         if (totalCount != null) {
             body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)", FIELD_COORDS, connName, "totalCount", fetchers);
         }
+        // R13: the facets resolver rides the same shape behind a has-facets gate. The gate is the
+        // model's facets() view (not SDL presence: the facets field only exists when the promoter
+        // synthesised it from that same list), and it drives ConnectionFetcherClassGenerator too so
+        // the reference and the method agree. The *FacetValue / <Conn>Facets types need no wiring;
+        // graphql-java's default property fetcher reads the resolver's nested maps by key.
+        if (!connectionType.facets().isEmpty()) {
+            body.add("\n.dataFetcher($T.coordinates($S, $S), $T::facets)", FIELD_COORDS, connName, "facets", fetchers);
+        }
         body.add(";\n").unindent();
         return body.build();
     }
