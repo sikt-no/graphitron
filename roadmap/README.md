@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R333` | The Graphitron data model | Spec | 2026-07-13 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R333` | The Graphitron data model | Ready | 2026-07-13 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | In Progress | 2026-07-13 <sub>created 2026-07-09</sub> | [plan](per-participant-multitable-child-join-paths.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
@@ -177,7 +177,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
+- `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R432` [**Collapse SplitTableField and RecordTableField into one source-gated leaf**](collapse-split-and-record-table-leaves.md) — Backlog, structural, blocked by [decompose-sourcekey](decompose-sourcekey.md)
 - `R431` [**Decompose SourceKey onto the model's facts**](decompose-sourcekey.md) — Backlog, structural
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model**](dissolve-reentry-leaves-dimensional-emit.md) — Ready, architecture, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)

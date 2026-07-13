@@ -1,7 +1,7 @@
 ---
 id: R333
 title: "The Graphitron data model"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: classification-model
