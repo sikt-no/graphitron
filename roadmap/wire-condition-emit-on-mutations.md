@@ -6,14 +6,14 @@ theme: mutation-write
 bucket: cleanup
 depends-on: []
 created: 2026-05-27
-last-updated: 2026-05-27
+last-updated: 2026-07-13
 ---
 
 # Wire @condition through to mutation WHERE (emit half + new placements)
 
-`@condition` on mutations is half-built today: `MutationInputResolver.java` admits input-field-level `@condition(override: true)` (R215, lines ~482-498) but the directive is a no-op at emit (no `.where(...)` clause is produced). Argument-level `@condition` on a non-`@table` mutation argument is rejected outright (line 446). Input-field-level `@condition` without `override:` is rejected. This item closes the emit half and lifts the two admission rejections so the directive does something useful.
+`@condition` on mutations is half-built today: `MutationInputResolver.java` admits input-field-level `@condition(override: true)` (R215, in `rejectInputFieldDirectives`, `MutationInputResolver.java:498-529`; the override check at `:507-516` reads `ARG_OVERRIDE`, imported at `:26`) but the directive is a no-op at emit (no `.where(...)` clause is produced). Argument-level `@condition` on a non-`@table` mutation argument is rejected outright (`foundTia.argCondition().isPresent()`, `:452-454`). Input-field-level `@condition` without `override:` is rejected. This item closes the emit half and lifts the two admission rejections so the directive does something useful.
 
-Was Strand B of R188 (now discarded; its `@value` removal and PK-default partition moved to R266). The PK-or-UK partition R246 ships for UPDATE and R266 ships for DELETE is the baseline this item layers `@condition` predicates on top of.
+Was Strand B of R188 (now discarded; its `@value` removal and PK-default partition moved to R266). The PK-or-UK partition R246 shipped for UPDATE and R266 shipped for DELETE (both Done) is the baseline this item layers `@condition` predicates on top of.
 
 ## Design
 
@@ -60,8 +60,8 @@ The override-true case is admitted but no-op at emit today (R215); this item mak
 ### Admission and resolution
 
 * `MutationInputResolver.java`:
-  * Lift the rejection at lines ~438-440 (`if (foundTia.argCondition().isPresent()) { return ...rejection... }`): argument-level `@condition` on a non-`@table` argument of a `@mutation` field is admitted. `@condition` on the `@table` arg stays rejected with a diagnostic recommending an input field or non-`@table` argument.
-  * Admit input-field-level `@condition` without `override:` (today only `override: true` admits, per `MutationInputResolver.java:482-498`). Both override and non-override forms now compose into the field record.
+  * Lift the rejection at `:452-454` (`if (foundTia.argCondition().isPresent()) { return ...rejection... }`): argument-level `@condition` on a non-`@table` argument of a `@mutation` field is admitted. `@condition` on the `@table` arg stays rejected with a diagnostic recommending an input field or non-`@table` argument.
+  * Admit input-field-level `@condition` without `override:` (today only `override: true` admits, per the non-override reject in `rejectInputFieldDirectives`, `MutationInputResolver.java:507-516`). Both override and non-override forms now compose into the field record.
 * `ConditionResolver.resolveArg(...)` is already in place; no new resolver surface required.
 
 ### Model
@@ -108,7 +108,7 @@ Pipeline (each admit case asserts the slot values on the field record, not just 
 * Input-field `@condition`, no `override:`, PK in input: admit; WHERE = `pk = ? AND condition(?)`. Single-row and bulk variants.
 * Input-field `@condition(override: true)`, PK NOT in input: admit; WHERE = `condition(?)` only. Override slot populated; `additionalConditions` empty.
 * Input-field `@condition(override: true)`, PK in input: admit; WHERE = `condition(?)`. Override suppresses implicit PK. SET still contains every non-PK column.
-* Non-`@table` argument `@condition`: admit; WHERE = `pk = ? AND argCondition(?)`. Lifts the line-446 rejection.
+* Non-`@table` argument `@condition`: admit; WHERE = `pk = ? AND argCondition(?)`. Lifts the `foundTia.argCondition()` rejection (`MutationInputResolver.java:452`).
 * `@condition` on the `@table` arg: reject with the migration-pointing diagnostic.
 * Two input fields with `@condition(override: true)`: reject (at-most-one-override).
 * Mixed layers: one input field with `override: true` plus one input field with non-override `@condition`: admit; override populates the override slot, non-override populates `additionalConditions`, both compose into WHERE.
@@ -118,7 +118,7 @@ Pipeline (each admit case asserts the slot values on the field record, not just 
 
 Compilation: add one sakila fixture exercising input-field-level non-override `@condition`: e.g. `UpdateFilmStatus` with a `status` field carrying `@condition` resolving to a method on a small `Conditions` class. Forces the compile tier to verify the reflection contract types check against real jOOQ generated classes.
 
-Execution: add to `DmlMutationsExecutionTest` / `DmlBulkMutationsExecutionTest`:
+Execution: add to `DmlBulkMutationsExecutionTest` and a single-row DML execution test (`NestedInputDmlExecutionTest` / `SingleRecordPayloadDmlTest`; the formerly cited `DmlMutationsExecutionTest` no longer exists):
 
 * Bulk UPDATE with non-override input-field `@condition` against `film.release_year`. End-to-end proof of "PK + gate."
 * Override `@condition` on an UnboundField (R215 wiring closeout): round trip confirming the override predicate drives WHERE alone and the affected rows are exactly the predicate's matches.

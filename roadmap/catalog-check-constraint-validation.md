@@ -68,8 +68,10 @@ about does not require changing *when* it runs.
 
 R12 §5 has shipped the runtime machinery this item builds on. The wrapper
 emits a conditional pre-execution `Validator.validate(input)` step
-(`TypeFetcherGenerator.java:1207-1208`, calling `validatorPreStep` defined
-at `:1326`) gated on the channel carrying a `ValidationHandler`. Each `jakarta.validation.ConstraintViolation` translates
+(the seam call at `TypeFetcherGenerator.java:2069`, calling `validatorPreStep`
+defined at `:2201`; since R94 the pre-step validates the typed
+`<outputPackage>.inputs` instance materialised via `fromMap`, not the raw
+`Map`) gated on the channel carrying a `ValidationHandler`. Each `jakarta.validation.ConstraintViolation` translates
 to a `GraphQLError` via `<outputPackage>.schema.ConstraintViolations`
 (emitted by `ConstraintViolationsClassGenerator`); the violation's
 `getAnnotation().annotationType().getSimpleName()` populates
@@ -369,8 +371,9 @@ backing it before phase 2 starts emitting record-side code.
 
 `GraphitronContextInterfaceGenerator` already emits `getValidator(env)` with a
 `DefaultValidatorHolder` lazy-init holder (the holder built at
-`GraphitronContextInterfaceGenerator.java:76-85`; the `getValidator` seam that
-returns `DefaultValidatorHolder.INSTANCE` is at `:87-97`). The default body lazily
+`GraphitronContextInterfaceGenerator.java:84-93` under `generators/util/`; the
+`getValidator` seam that returns `DefaultValidatorHolder.INSTANCE` is at
+`:95-105`). The default body lazily
 builds `Validation.buildDefaultValidatorFactory().getValidator()`. R92
 extends the holder to thread `GeneratedConstraintMapping.toMapping(...)`
 through the configuration:
@@ -401,16 +404,17 @@ through their `GraphitronContext` impl (already supported by the seam);
 plain-SE apps use the default. The rewrite's own emitted code imports
 `jakarta.validation.*` and `org.hibernate.validator.*` only; no
 `jakarta.inject.*`, no `jakarta.enterprise.*`. The Hibernate Validator runtime
-dependency is already pinned (`graphitron-rewrite/pom.xml:84-87`, alongside
-`jakarta.validation-api` at `:80-83`); the new import in
+dependency is already pinned in the root `pom.xml` dependency management
+(`hibernate-validator` at `pom.xml:178-182`, alongside
+`jakarta.validation-api` at `:173-177`); the new import in
 `DefaultValidatorHolder` is the first emitted reference to Hibernate
 Validator.
 
 ### Where the wrapper validates
 
-R12 §5's wrapper today validates the SDL input bean (the existing
-`Validator.validate(input)` call at `TypeFetcherGenerator.java:1207-1208`,
-emitted by `validatorPreStep` at `:1326`). R92 adds *one* additional
+R12 §5's wrapper today validates the SDL input (the existing
+`Validator.validate(...)` pre-step, emitted from the seam call at
+`TypeFetcherGenerator.java:2069` by `validatorPreStep` at `:2201`). R92 adds *one* additional
 `Validator.validate(...)` call inside the same wrapper, against the
 constructed record, conditional on (a) the channel carries a
 `ValidationHandler`, (b) the record class has a
@@ -504,7 +508,7 @@ reason, and rendered expression) goes to the Maven plugin's stdout.
 
 The four-file delta (plus model + emitter glue):
 
-- New file `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/CheckRecognition.java`:
+- New file `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/CheckRecognition.java`:
   sealed interface and five `Recognized` permits (`StringOneOf`,
   `NumericRange`, `LengthBound`, `RegexMatch`, `NotNullCheck`) plus
   `Unrecognized` and `UnrecognizedReason`.
@@ -664,17 +668,20 @@ database connection never invoked for the violating row.
 Acceptance: bad input rejected at step 1 (before any DB call), satisfying
 the original motivation's "shorter loop" goal.
 
-*Phase 3 depends on [`emit-input-records.md`](emit-input-records.md)
-(R94).* The "consumer's SDL input bean class" the `mapping.type(...)`
-chain references does not exist in the rewrite today — graphitron uses
-`Map<String, Object>` end-to-end for SDL inputs (the DML emitter sites at
-`TypeFetcherGenerator.java:1734` cast `env.getArgument(...)` to `Map<?, ?>`
-inline; the connection-arg emitter at `:2124` reads
-`Map<String, Object>` for `@orderBy`). R94 emits each SDL `input` type as a graphitron-internal Java
-record under `<outputPackage>.inputs`, which is exactly what phase 3
-needs as a target. Phases 1 and 2 do not depend on R94 (the record-side
-target is the consumer's jOOQ-generated `XxxRecord`, which already
-exists); only phase 3 blocks until R94 lands.
+*Phase 3's dependency, `emit-input-records` (R94), has landed (Done).* The
+SDL input class the `mapping.type(...)` chain references now exists:
+`InputRecordGenerator` emits each reachable SDL `input` type as a
+graphitron-internal Java class under `<outputPackage>.inputs`, and R12 §5's
+validator pre-step already materialises it via
+`<InputName>.fromMap(env.getArgument(...))` before validating
+(`TypeFetcherGenerator.validatorPreStep`, `:2201`). That class is exactly the
+target phase 3 needs. The DML value-read paths still consume the raw map
+(the DML emitter sites at `TypeFetcherGenerator.java:4758` and `:5644` cast
+`env.getArgument(...)` to `Map<?, ?>` inline; the connection-arg emitter at
+`:5339` reads `Map<String, Object>` for `@orderBy`), but the validation
+target is typed. Phases 1 and 2 never depended on R94 (the record-side
+target is the consumer's jOOQ-generated `XxxRecord`, which already exists);
+phase 3 is no longer blocked.
 
 ---
 

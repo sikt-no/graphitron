@@ -14,11 +14,13 @@ Today's docs cover the input side (schema → classification → variant) and
 the model side (sealed hierarchy, capability interfaces, design principles)
 but a contributor reading them never sees a complete generated file
 explained section by section. The mental model "this is what the output
-looks like" gets reconstructed from grepping `graphitron-test/target/`.
+looks like" gets reconstructed from grepping
+`graphitron-sakila-example/target/generated-sources/graphitron/`.
 
 ## Scope
 
-Add `graphitron-rewrite/docs/generated-output-walkthrough.md` containing a
+Add `docs/architecture/explanation/generated-output-walkthrough.adoc` (the
+explanation quadrant of the Diataxis layout introduced by R182) containing a
 frozen snippet of one small generated file, annotated section by section.
 
 Candidate fixtures (pick one — small enough to fit in a doc, real enough to
@@ -41,7 +43,8 @@ method Y" rather than restate what the code does.
 Generated code drifts. Two ways to keep this honest:
 
 - Mark the snippet "frozen at commit `<sha>`" and link to the live generator
-  test that produces equivalent output today (`graphitron-test`).
+  test that produces equivalent output today (the pipeline tests in
+  `graphitron`, or the compiled output in `graphitron-sakila-example`).
 - Or pin the exact bytes via a fixture path and a small ratchet test that
   compares the doc snippet against the live generator output.
 
@@ -51,9 +54,12 @@ on-ramp doc that is consulted once.
 
 ## Coordinates with
 
-- [`docs-as-index-into-tests.md`](docs-as-index-into-tests.md) is about
-  pointing the classification doc at tests; this is about pointing the
-  on-ramp doc at one frozen example. Different doc, different audience.
-- [`rewrite-docs-entrypoint.md`](rewrite-docs-entrypoint.md) introduces the
-  pipeline tour; this walkthrough is the natural "click into the output
-  side" follow-up from there.
+- The doc-as-index work (formerly `docs-as-index-into-tests`, R8, retired
+  into R279 and now owned by R281's classification corpus) is about pointing
+  the classification reference
+  (`docs/architecture/reference/code-generation-triggers.adoc`) at tests;
+  this is about pointing the on-ramp doc at one frozen example. Different
+  doc, different audience.
+- The pipeline tour shipped by `rewrite-docs-entrypoint` (R28, Done) lives at
+  `docs/architecture/explanation/pipeline-overview.adoc`; this walkthrough is
+  the natural "click into the output side" follow-up from there.

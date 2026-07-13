@@ -5,7 +5,7 @@ status: Spec
 theme: mutation-write
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-06-15
+last-updated: 2026-07-13
 ---
 
 # DML payload positional input/output alignment
@@ -17,12 +17,14 @@ was produced must be representable as `null` (DELETE: the row didn't exist /
 wasn't deleted; INSERT/UPDATE/UPSERT: the corresponding "no result for this
 input" case, exact taxonomy to be settled in Spec). Today the DELETE `Id`-arm
 emitter (`FetcherEmitter.buildSingleRecordIdFromReturningFetcherValue`,
-`FetcherEmitter.java:944`) iterates the `DELETE … RETURNING` `Result<Record>`
-directly and appends one entry per RETURNING row, so a miss simply shortens
+`FetcherEmitter.java:631`, bound at `:373`) iterates the `DELETE … RETURNING`
+`Result<Record>` directly and appends one entry per RETURNING row (the
+list-arm loop at `:651-660`), so a miss simply shortens
 the output list, with no positional correspondence to the input. The
 classifier compounds the mismatch by rejecting the `[ID]` (list-of-nullable)
 wrapper that this contract requires and admitting only `[ID!]` / `[ID!]!`
-(`BuildContext.java:617-625`, now scoped to `CarrierFamily.DML`); the
+(the reject in `BuildContext.scanStructuralPayload`, `BuildContext.java:841-849`,
+scoped to `CarrierFamily.DML`); the
 diagnostic that pins the wrong contract ("every element of a successful
 DELETE response is the encoded PK of an actually-deleted row, so the slot
 cannot be null") is the surface symptom that originally surfaced this bug.
@@ -32,8 +34,9 @@ single mechanism, a `VALUES`-join against each verb's `RETURNING` result,
 for all four verbs. That premise is wrong for the three verbs whose payload
 is a `@table`: INSERT / UPDATE / UPSERT do not read their payload off
 `RETURNING`, they **re-fetch** it with a follow-up SELECT outside the DML
-transaction (`SingleRecordTableField`, `ChildField.java:105-113`). R305
-(Ready) reclassifies that re-fetch as a source-keyed Lookup that already
+transaction (originally `SingleRecordTableField`; R305 collapsed it into
+`RecordTableField`, `ChildField.java:912`). R305
+(Done) reclassified that re-fetch as a source-keyed Lookup that
 emits the idx-ordered `VALUES(idx, key)`-join with `ORDER BY input.idx`, so
 the input/output **ordering** half is delivered by R305. R242 therefore no
 longer owns a `RETURNING` mechanism for those verbs; it owns the
@@ -114,7 +117,8 @@ one of the two substrates:
   `LEFT JOIN` the input-PK `VALUES` table against the `DELETE … RETURNING`
   result, `ORDER BY idx`. This is the one arm where the original
   "`VALUES`-join against `RETURNING`" framing survives intact, replacing the
-  current append-per-row iteration at `FetcherEmitter.java:944`.
+  current append-per-row iteration in
+  `buildSingleRecordIdFromReturningFetcherValue` (`FetcherEmitter.java:651-660`).
 - **INSERT, server-generated PK with no client-side identity.** Neither path
   works: there is no client key to re-fetch on, and SQL cannot carry `idx`
   from `INSERT … SELECT` source rows into `RETURNING`. Fall back to per-row
@@ -173,8 +177,9 @@ was produced must be `null`."
 
 1. **Model (wrapper-shape admission).** Lift the wrapper-shape admission rule
    into a shared `DmlPayloadListWrapper` predicate in `BuildContext`, used by
-   every element-arm classifier. Invert the `[ID]` reject at
-   `BuildContext.java:617-625` (today scoped to `CarrierFamily.DML`) so
+   every element-arm classifier. Invert the `[ID]` reject in
+   `BuildContext.scanStructuralPayload` (`BuildContext.java:841-849`, today
+   scoped to `CarrierFamily.DML`) so
    nullable wrappers admit; mirror the same admission on the `@table`-element
    arm and on the non-DELETE DML kind classifiers. Diagnostic wording
    converges to one helper. This is the classify-time half and is
@@ -183,7 +188,8 @@ was produced must be `null`."
 2. **DELETE Id arm emit rewrite (`RETURNING`-native).** Replace the
    append-per-row iteration in
    `FetcherEmitter.buildSingleRecordIdFromReturningFetcherValue`
-   (`FetcherEmitter.java:944`) with a `LEFT JOIN` of the input-PK `VALUES`
+   (`FetcherEmitter.java:631`; the list-arm loop at `:651-660`) with a
+   `LEFT JOIN` of the input-PK `VALUES`
    table against the `DELETE … RETURNING` result. Source becomes the
    pre-built ordered `Result<Record>` (each row carries idx + encoded PK
    columns, or all-nulls for a PK that matched no deleted row); the fetcher
@@ -272,14 +278,14 @@ was produced must be `null`."
 
 ## Cross-references
 
-- **R305** (`collapse-singlerecordtablefield-into-recordtablefield`, Ready)
-  is the substrate this item now builds on. R305 reclassifies the
+- **R305** (`collapse-singlerecordtablefield-into-recordtablefield`, Done)
+  is the substrate this item now builds on. R305 reclassified the
   INSERT / UPDATE / UPSERT `@table` re-fetch as a source-keyed Lookup that
   emits the idx-ordered `VALUES(idx, key)`-join (`LookupValuesJoinEmitter`),
   delivering input/output ordering and preserving "same rows". R242 layers
   the missing-slot `null` / size-equality contract on top (the design fork
-  above) and depends on R305 landing first; it does not re-emit a
-  `RETURNING` join for those three verbs.
+  above); R305 has landed, so that substrate is in place. R242 does not
+  re-emit a `RETURNING` join for those three verbs.
 - **R156** introduced the DELETE payload-returning carrier and the
   PK-echo-of-actually-deleted-rows semantics that R242 revises.
   `buildSingleRecordIdFromReturningFetcherValue` was introduced there.
