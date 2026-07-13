@@ -307,6 +307,12 @@ public class GraphitronSchemaBuilder {
         // on the classified field — see rejectNonIdNodeId. Sibling soundness reduction; registers a
         // build-time diagnostic the validator drains, demoting nothing.
         rejectNonIdNodeId(ctx);
+        // R13: reject @asFacet misuse. Sibling soundness reduction to rejectNonIdNodeId, and for
+        // the same reason a raw-schema pass: the promoter's facet walk skips malformed applications
+        // (they produce no FacetSpec, no trace on the classified model), so the misuse is only
+        // visible on the SDL directive surface. Registers build-time diagnostics the validator
+        // drains, demoting nothing.
+        rejectFacetMisuse(ctx);
         // Hash-suffix dedup: walk every WithErrorChannel field and apply the collision-suffix
         // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
         // before the emitter runs. Pass-through for the common case (every payload class has at
@@ -423,7 +429,9 @@ public class GraphitronSchemaBuilder {
         if (typeBuilder.isDirectivelessNestingTarget(objType.getName())
                 || parentType instanceof ConnectionType
                 || parentType instanceof EdgeType
-                || parentType instanceof PageInfoType) {
+                || parentType instanceof PageInfoType
+                || parentType instanceof GraphitronType.FacetsType
+                || parentType instanceof GraphitronType.FacetValueType) {
             return;
         }
         // R178 Phase 4: structural carrier-shape detection (scanStructuralDmlPayload)
@@ -552,6 +560,8 @@ public class GraphitronSchemaBuilder {
                 case ConnectionType ct -> ct.schemaType();
                 case EdgeType et -> et.schemaType();
                 case PageInfoType pi -> pi.schemaType();
+                case GraphitronType.FacetsType ft -> ft.schemaType();
+                case GraphitronType.FacetValueType fvt -> fvt.schemaType();
                 case null, default -> null;
             };
             if (form != null) forms.add(form);
@@ -936,6 +946,90 @@ public class GraphitronSchemaBuilder {
                 Rejection.invalidSchema("argument '" + arg.getName() + "': " + nonIdNodeIdMessage(unwrapped)),
                 argLocation(arg)));
         }
+    }
+
+    /**
+     * R13: rejects every misused {@code @asFacet} application. The rejection split follows R333's
+     * definition-keyed / use-keyed axis: the binding checks (a facet must be a plain
+     * {@code @field}-bound scalar/enum column; {@code @reference} / {@code @condition} /
+     * {@code @nodeId} bindings and {@code ID} fields are v1-unsupported) are authored-directive
+     * facts at the input type's member coordinate, while the reachability check (the enclosing
+     * input type must be a filter input on at least one {@code @asConnection} field, else the
+     * {@code facets} expansion would be dead schema) is a derived join over the consuming
+     * coordinates. An input type shared by connection and non-connection consumers is fine:
+     * {@code @asFacet} surfaces facets at the connection use sites and is inert at the others.
+     *
+     * <p>Rejecting {@code ID} fields outright (rather than only {@code @nodeId} co-occurrence)
+     * also closes the node-reference synthesis shim: a bare {@code ID} field whose column hits the
+     * qualifier map classifies as a reference carrier with no directive trace, which the v1
+     * direct-column facet emitter cannot serve.
+     *
+     * <p>Like {@link #rejectNonIdNodeId}, this reads {@code ctx.schema} applied directives rather
+     * than the classified registries: the promoter's facet walk skips malformed applications, so
+     * they leave no trace on the classified model. Registers build-time diagnostics on the shared
+     * channel that {@link GraphitronSchemaValidator} drains; it demotes no verdict.
+     */
+    private static void rejectFacetMisuse(BuildContext ctx) {
+        var connectionFilterInputs = new LinkedHashSet<String>();
+        for (var type : ctx.schema.getAllTypesAsList()) {
+            if (!(type instanceof GraphQLObjectType obj)) continue;
+            for (var field : obj.getFieldDefinitions()) {
+                if (!field.hasAppliedDirective(DIR_AS_CONNECTION)) continue;
+                for (var arg : field.getArguments()) {
+                    if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType in) {
+                        connectionFilterInputs.add(in.getName());
+                    }
+                }
+            }
+        }
+        for (var type : ctx.schema.getAllTypesAsList()) {
+            if (!(type instanceof GraphQLInputObjectType input)) continue;
+            for (var field : input.getFieldDefinitions()) {
+                if (!field.hasAppliedDirective(DIR_AS_FACET)) continue;
+                String reason = facetMisuseReason(field, input.getName(), connectionFilterInputs);
+                if (reason == null) continue;
+                String coordinate = input.getName() + "." + field.getName();
+                ctx.addDiagnostic(ValidationError.forField(coordinate,
+                    Rejection.invalidSchema("Field '" + coordinate + "': " + reason),
+                    locationOf(field)));
+            }
+        }
+    }
+
+    /**
+     * The rejection reason for one {@code @asFacet} application, or {@code null} when it is well
+     * formed. Definition-keyed binding checks first (actionable at the field), then the use-keyed
+     * reachability check.
+     */
+    private static String facetMisuseReason(
+            graphql.schema.GraphQLInputObjectField field, String inputTypeName,
+            Set<String> connectionFilterInputs) {
+        if (field.hasAppliedDirective(DIR_REFERENCE)
+                || field.hasAppliedDirective(DIR_CONDITION)
+                || field.hasAppliedDirective(DIR_NODE_ID)) {
+            return "@asFacet supports only direct-column bindings in v1; remove @reference / "
+                + "@condition / @nodeId from the facet field or drop @asFacet (join-mediated and "
+                + "node-ID facets are a follow-up)";
+        }
+        if (!field.hasAppliedDirective(DIR_FIELD)) {
+            return "@asFacet requires @field(name:) naming the facet's column; the v1 facet "
+                + "emitter only understands direct-column facet values";
+        }
+        String unwrapped = unwrappedTypeName(field.getType());
+        if ("ID".equals(unwrapped)) {
+            return "@asFacet on an ID field is not supported in v1; ID fields route through the "
+                + "node-ID machinery, which the direct-column facet emitter cannot serve";
+        }
+        if (GraphQLTypeUtil.unwrapAll(field.getType()) instanceof GraphQLInputObjectType) {
+            return "@asFacet must mark a scalar or enum field; '" + unwrapped + "' is an input "
+                + "object (facet values are GROUP BY keys on one column)";
+        }
+        if (!connectionFilterInputs.contains(inputTypeName)) {
+            return "@asFacet has no effect: input type '" + inputTypeName + "' is not used as a "
+                + "filter input on any @asConnection field, so the facets expansion would be dead "
+                + "schema; move the directive to a connection filter input or remove it";
+        }
+        return null;
     }
 
     private static String unwrappedTypeName(GraphQLType type) {

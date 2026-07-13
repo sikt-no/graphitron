@@ -101,6 +101,7 @@ class BuildContext {
     static final String DIR_MUTATION            = "mutation";
     static final String DIR_DISCRIMINATOR       = "discriminator";
     static final String DIR_AS_CONNECTION       = "asConnection";
+    static final String DIR_AS_FACET            = "asFacet";
     static final String DIR_SOURCE_ROW          = "sourceRow";
 
     // ===== Argument names =====

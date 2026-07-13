@@ -71,6 +71,16 @@ class VariantCoverageTest {
         Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField.class,
             "R287: bulk sibling of MutationDeletePayloadField — same ID-element-only constraint and "
             + "same nodeidfixture coverage (MutationDmlNodeIdClassificationTest)."),
+        Map.entry(GraphitronType.FacetsType.class,
+            "R13: synthesised-only (the @asFacet expansion on a directive-driven @asConnection "
+            + "carrier); no SDL declaration exists to carry @classifiedType, so the corpus cannot "
+            + "demonstrate it (the corpus's connection example uses the structural form, which "
+            + "facets have no analogue of). Covered by FacetedConnectionPipelineTest and "
+            + "ConnectionPromoterTest."),
+        Map.entry(GraphitronType.FacetValueType.class,
+            "R13: synthesised-only sibling of FacetsType (one reusable entry per (scalar, "
+            + "nullability) pair); same no-SDL-declaration constraint. Covered by "
+            + "FacetedConnectionPipelineTest and ConnectionPromoterTest."),
         Map.entry(GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a corpus example when a suitable fixture is introduced."),

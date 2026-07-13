@@ -11219,6 +11219,28 @@ class GraphitronSchemaBuilderTest {
             .isInstanceOf(TypeClassification.PlainObject.class);
     }
 
+    @Test
+    @ProjectionFor({no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType.class,
+        no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType.class})
+    void facetTypeProjectionsArePlainObjects() {
+        // R13: the synthesised facet container and value types project as PlainObject (like
+        // NestingType) so they stay describable through the CatalogBuilder seam; a facet-specific
+        // classification leaf is R314's to mint when the connection unit lowers onto the fact model.
+        var snapshot = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+        assertThat(snapshot.typeClassificationsByName().get("QueryFilmsConnectionFacets"))
+            .isInstanceOf(TypeClassification.PlainObject.class);
+        assertThat(snapshot.typeClassificationsByName().get("StringFacetValue"))
+            .isInstanceOf(TypeClassification.PlainObject.class);
+    }
+
     // ===== Enum type classification =====
 
     enum EnumTypeCase implements ClassificationCase {

@@ -19,19 +19,31 @@ import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 import graphql.util.TreeTransformerUtil;
 
+import graphql.schema.GraphQLInputObjectType;
+import no.sikt.graphitron.rewrite.model.FacetNaming;
+import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_FACET;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 
 /**
  * Promotes Connection-shaped carrier fields and synthesises the supporting
@@ -76,6 +88,12 @@ final class ConnectionPromoter {
     private static final String DESC_HAS_PREVIOUS_PAGE = "When paginating backwards, are there more items?";
     private static final String DESC_START_CURSOR = "When paginating backwards, the cursor to continue.";
     private static final String DESC_END_CURSOR = "When paginating forwards, the cursor to continue.";
+    private static final String DESC_FACETS = "Per-facet value counts for the items in the connection.";
+    private static final String DESC_FACETS_TYPE = "Facet value counts for a connection.";
+    private static final String DESC_FACET_FIELD = "Value counts for this facet, under the connection's filter minus this facet's own predicate.";
+    private static final String DESC_FACET_VALUE_TYPE = "One facet bucket: a filterable value and its count.";
+    private static final String DESC_FACET_VALUE = "The facet value; feed it back into the filter to select this bucket.";
+    private static final String DESC_FACET_COUNT = "The number of items in this bucket.";
 
     /**
      * Per-carrier info collected during connection-type promotion so the schema-rebuild pass can
@@ -139,12 +157,37 @@ final class ConnectionPromoter {
         registerSynthesised(ctx, promotion.connectionName(), new ConnectionType(
             promotion.connectionName(), carrierLocation, promotion.elementTypeName(),
             promotion.edgeName(), promotion.itemNullable(), promotion.shareable(),
-            promotion.connectionSchemaType()), synthesisedNames);
+            promotion.facets(), promotion.connectionSchemaType()), synthesisedNames);
         registerSynthesised(ctx, promotion.edgeName(), new EdgeType(
             promotion.edgeName(), carrierLocation, promotion.elementTypeName(),
             promotion.itemNullable(), promotion.shareable(),
             promotion.edgeSchemaType()), synthesisedNames);
+        registerFacetTypes(ctx, promotion, carrierLocation, synthesisedNames);
         registerPageInfo(ctx, promotion, synthesisedNames);
+    }
+
+    /**
+     * Registers the facet container ({@code <ConnName>Facets}) and each distinct
+     * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier (R13). A no-op when
+     * the promotion carries no facets. {@code FacetValue} types are reusable across the whole
+     * schema (one per (scalar, nullability) pair, named by {@link FacetNaming}); repeat
+     * registration from another carrier reconciles in {@code TypeRegistry.register} like every
+     * other synthesised arm.
+     */
+    private static void registerFacetTypes(
+            BuildContext ctx, ConnectionPromotion promotion,
+            graphql.language.SourceLocation carrierLocation, Set<String> synthesisedNames) {
+        if (promotion.facets().isEmpty()) return;
+        String facetsName = FacetNaming.facetsTypeName(promotion.connectionName());
+        registerSynthesised(ctx, facetsName, new FacetsType(
+            facetsName, carrierLocation, promotion.connectionName(),
+            buildSynthesisedFacets(facetsName, promotion.facets())), synthesisedNames);
+        for (var spec : promotion.facets()) {
+            registerSynthesised(ctx, spec.facetValueTypeName(), new FacetValueType(
+                spec.facetValueTypeName(), carrierLocation, spec.valueTypeName(),
+                spec.valueNullable(),
+                buildSynthesisedFacetValue(spec)), synthesisedNames);
+        }
     }
 
     /**
@@ -311,6 +354,7 @@ final class ConnectionPromoter {
         boolean itemNullable,
         boolean shareable,
         List<GraphQLAppliedDirective> tags,
+        List<FacetSpec> facets,
         GraphQLObjectType connectionSchemaType,
         GraphQLObjectType edgeSchemaType
     ) {}
@@ -340,10 +384,11 @@ final class ConnectionPromoter {
             // Directive arm: the carrier field is the tag source (R295). TagApplier tags fields
             // (never type declarations), so a <schemaInput tag> source surfaces here too.
             var tags = fieldDef.getAppliedDirectives(TAG_DIRECTIVE);
-            var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable, tags);
+            var facets = facetSpecsFor(fieldDef);
+            var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable, tags, facets);
             var edgeSchema = buildSynthesisedEdge(edgeName, elementTypeName, itemNullable, shareable, tags);
             return new ConnectionPromotion(connName, edgeName, elementTypeName,
-                itemNullable, shareable, tags, connSchema, edgeSchema);
+                itemNullable, shareable, tags, facets, connSchema, edgeSchema);
         }
 
         // Structural: the return type shape is a declared Connection — reference the assembled type.
@@ -359,8 +404,10 @@ final class ConnectionPromoter {
             // @tag applications already ride on connSchema (the referenced SDL type), so they are
             // not re-applied here; they feed the synthesised PageInfo union below.
             var tags = connSchema.getAppliedDirectives(TAG_DIRECTIVE);
+            // Facet synthesis applies only to directive-driven carriers: a structural Connection's
+            // shape is author-owned, so the promoter never appends a facets field to it.
             return new ConnectionPromotion(typeName, edgeName, elementTypeName,
-                itemNullable, shareable, tags, connSchema, edgeSchema);
+                itemNullable, shareable, tags, List.of(), connSchema, edgeSchema);
         }
         return null;
     }
@@ -394,9 +441,101 @@ final class ConnectionPromoter {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
+    /**
+     * Derives one {@link FacetSpec} per well-formed {@code @asFacet}-marked field on the carrier's
+     * input-object arguments (R13). The value scalar and its nullability mirror the input field's
+     * list-element type exactly, so a client can feed {@code facetValue.value} straight back into
+     * the filter; the column comes from {@code @field(name:)}.
+     *
+     * <p>Malformed applications (no {@code @field}, co-occurrence with
+     * {@code @reference} / {@code @condition} / {@code @nodeId}, an {@code ID} or non-leaf value
+     * type) are <em>skipped</em> here, not rejected: {@code GraphitronSchemaBuilder}'s facet-misuse
+     * reduction walks the same directive surface and registers a build diagnostic for each, so the
+     * build fails with a named error while this walk stays a pure projection of the valid facets.
+     */
+    private static List<FacetSpec> facetSpecsFor(GraphQLFieldDefinition fieldDef) {
+        List<FacetSpec> specs = new ArrayList<>();
+        for (var arg : fieldDef.getArguments()) {
+            if (!(GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType inputType)) continue;
+            for (var inputField : inputType.getFieldDefinitions()) {
+                if (!inputField.hasAppliedDirective(DIR_AS_FACET)) continue;
+                if (!inputField.hasAppliedDirective(DIR_FIELD)
+                        || inputField.hasAppliedDirective(DIR_REFERENCE)
+                        || inputField.hasAppliedDirective(DIR_CONDITION)
+                        || inputField.hasAppliedDirective(DIR_NODE_ID)) {
+                    continue;
+                }
+                String columnName = BuildContext.argString(inputField, DIR_FIELD, ARG_NAME).orElse(null);
+                if (columnName == null) continue;
+                // Element type: for a list field the list element, otherwise the field itself.
+                // Nullability is read before unwrapping so it mirrors the filter's element exactly.
+                GraphQLType elementLayer = inputField.getType() instanceof GraphQLNonNull nn
+                    ? nn.getWrappedType() : inputField.getType();
+                if (elementLayer instanceof GraphQLList list) {
+                    elementLayer = list.getWrappedType();
+                } else {
+                    elementLayer = inputField.getType();
+                }
+                boolean valueNullable = !(elementLayer instanceof GraphQLNonNull);
+                GraphQLType leaf = GraphQLTypeUtil.unwrapAll(elementLayer);
+                if (!(leaf instanceof GraphQLNamedType named)) continue;
+                if (leaf instanceof GraphQLInputObjectType || "ID".equals(named.getName())) continue;
+                specs.add(new FacetSpec(inputField.getName(), columnName, named.getName(),
+                    valueNullable, FacetNaming.facetValueTypeName(named.getName(), valueNullable)));
+            }
+        }
+        return List.copyOf(specs);
+    }
+
+    /**
+     * The synthesised {@code <ConnName>Facets} container: one nullable list field per facet
+     * ({@code [<Scalar>FacetValue!]}), field name matching the filter-input field name. Field
+     * nullability is the failure firewall (R13 "Facet failure semantics"): a facet that fails or
+     * times out degrades to null on its own field, never propagating through GraphQL non-null
+     * bubbling to the connection.
+     */
+    private static GraphQLObjectType buildSynthesisedFacets(String facetsName, List<FacetSpec> facets) {
+        var builder = GraphQLObjectType.newObject()
+            .name(facetsName)
+            .description(DESC_FACETS_TYPE);
+        for (var spec : facets) {
+            builder.field(GraphQLFieldDefinition.newFieldDefinition()
+                .name(spec.inputFieldName())
+                .description(DESC_FACET_FIELD)
+                .type(GraphQLList.list(GraphQLNonNull.nonNull(
+                    GraphQLTypeReference.typeRef(spec.facetValueTypeName()))))
+                .build());
+        }
+        return builder.build();
+    }
+
+    /**
+     * The synthesised {@code <Scalar>FacetValue} form: {@code value} mirrors the filter element's
+     * scalar and nullability exactly, {@code count} is a non-null {@code Int}.
+     */
+    private static GraphQLObjectType buildSynthesisedFacetValue(FacetSpec spec) {
+        GraphQLOutputType valueType = spec.valueNullable()
+            ? GraphQLTypeReference.typeRef(spec.valueTypeName())
+            : GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef(spec.valueTypeName()));
+        return GraphQLObjectType.newObject()
+            .name(spec.facetValueTypeName())
+            .description(DESC_FACET_VALUE_TYPE)
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("value")
+                .description(DESC_FACET_VALUE)
+                .type(valueType)
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("count")
+                .description(DESC_FACET_COUNT)
+                .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("Int")))
+                .build())
+            .build();
+    }
+
     private static GraphQLObjectType buildSynthesisedConnection(String connName, String edgeName,
             String elementTypeName, boolean itemNullable, boolean shareable,
-            List<GraphQLAppliedDirective> tags) {
+            List<GraphQLAppliedDirective> tags, List<FacetSpec> facets) {
         var edgesField = GraphQLFieldDefinition.newFieldDefinition()
             .name("edges")
             .description(DESC_EDGES)
@@ -429,6 +568,15 @@ final class ConnectionPromoter {
             .field(nodesField)
             .field(pageInfoField)
             .field(totalCountField);
+        // Nullable, like totalCount: facets are a best-effort aggregate that must degrade to null
+        // rather than propagate a failure into the connection (R13 "Facet failure semantics").
+        if (!facets.isEmpty()) {
+            builder.field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("facets")
+                .description(DESC_FACETS)
+                .type(GraphQLTypeReference.typeRef(FacetNaming.facetsTypeName(connName)))
+                .build());
+        }
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
         for (var tag : tags) builder.withAppliedDirective(tag);
         return builder.build();

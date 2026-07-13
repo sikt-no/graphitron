@@ -66,7 +66,7 @@ public final class ClassifiedDsl {
           RootType InterfaceType UnionType ErrorType
           JavaRecordInputType PojoInputType JooqRecordInputType JooqTableRecordInputType TableInputType
           NestingType EnumType ScalarType
-          ConnectionType EdgeType PageInfoType
+          ConnectionType EdgeType PageInfoType FacetsType FacetValueType
         }
 
         directive @classified(

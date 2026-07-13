@@ -272,6 +272,20 @@ directive @asConnection(
   connectionName: String @deprecated(reason: "Each connection field should own its own Connection type. Sharing one type across fields conflates distinct semantic contexts (different parents, filters, orders) at the type level. The override exists only as a transition mechanism for legacy schemas and remains supported but discouraged.")
 ) on FIELD_DEFINITION
 
+"""
+Marks a filter-input field as a facet on the enclosing `@asConnection`
+field's generated Connection type. The Connection type gains a
+`facets: XConnectionFacets` field; each `@asFacet`-marked input field
+becomes an entry there, returning `[XFacetValue!]` (nullable list, non-null
+elements) with per-value counts.
+
+Only valid on fields of an input type used as the filter input of an
+`@asConnection`-bearing field. The input field must be bound to a
+column via `@field(name:)` (reference / condition / composite-key
+bindings are rejected in v1).
+"""
+directive @asFacet on INPUT_FIELD_DEFINITION
+
 """Handle this input argument as orderBy functionality"""
 directive @orderBy on ARGUMENT_DEFINITION
 

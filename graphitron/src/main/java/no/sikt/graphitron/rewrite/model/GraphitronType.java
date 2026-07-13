@@ -18,6 +18,7 @@ public sealed interface GraphitronType
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
             GraphitronType.InputType, GraphitronType.TableInputType,
             GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
+            GraphitronType.FacetsType, GraphitronType.FacetValueType,
             GraphitronType.NestingType, GraphitronType.EnumType, GraphitronType.ScalarType,
             GraphitronType.UnclassifiedType {
 
@@ -506,6 +507,14 @@ public sealed interface GraphitronType
      * connection's schema shape at runtime. For directive-driven connections the classifier
      * builds it programmatically; for structural connections the classifier references the
      * already-built value from the assembled schema.
+     *
+     * <p>{@code facets} is the resolved {@code @asFacet} view for this connection (R13): one
+     * {@link FacetSpec} per marked field on the carrier's filter input, empty when none are marked
+     * (and always empty on the structural path — facet synthesis applies only to directive-driven
+     * carriers whose Connection shape Graphitron owns). This entry is a contained denormalized view
+     * carrier, not the fact's normalized home; when R314 lowers the connection unit, it re-sources
+     * onto the facet operation fact with the rest of the view (see the R13 roadmap item's
+     * <em>Contained approach</em>).
      */
     record ConnectionType(
         String name,
@@ -514,6 +523,7 @@ public sealed interface GraphitronType
         String edgeTypeName,
         boolean itemNullable,
         boolean shareable,
+        List<FacetSpec> facets,
         GraphQLObjectType schemaType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
@@ -548,6 +558,47 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         boolean shareable,
+        GraphQLObjectType schemaType
+    ) implements GraphitronType, EmitsPerTypeFile {}
+
+    /**
+     * The synthesised per-connection facets container (R13), e.g.
+     * {@code QueryFilmerConnectionFacets}: one nullable {@code [<Scalar>FacetValue!]} field per
+     * {@code @asFacet}-marked filter-input field on the owning connection's carrier. Synthesised by
+     * {@code ConnectionPromoter} alongside the Connection / Edge forms whenever the carrier's
+     * filter input marks at least one facet; never SDL-declared.
+     *
+     * <p>Each per-facet field is deliberately nullable (a facet is a best-effort aggregate; a
+     * failing facet degrades to null rather than propagating through GraphQL non-null bubbling),
+     * while the list elements stay non-null.
+     *
+     * <p>{@code connectionName} names the owning {@link ConnectionType} entry, whose
+     * {@link ConnectionType#facets()} list carries the resolved column bindings this type's fields
+     * surface.
+     */
+    record FacetsType(
+        String name,
+        SourceLocation location,
+        String connectionName,
+        GraphQLObjectType schemaType
+    ) implements GraphitronType, EmitsPerTypeFile {}
+
+    /**
+     * A synthesised, cross-schema-reusable facet value type (R13), e.g.
+     * {@code MpaaRatingFacetValue { value: MpaaRating! count: Int! }}. One entry per distinct
+     * (value scalar, element nullability) pair encountered across the whole schema, named by
+     * {@link FacetNaming#facetValueTypeName(String, boolean)}; never SDL-declared.
+     *
+     * <p>{@code value} mirrors the annotated filter-input field's element type exactly — same
+     * scalar <em>and</em> same nullability — so a client can feed {@code facetValue.value} straight
+     * back into the filter with no coercion. {@code valueNullable} records the nullability half of
+     * the dedup key.
+     */
+    record FacetValueType(
+        String name,
+        SourceLocation location,
+        String valueTypeName,
+        boolean valueNullable,
         GraphQLObjectType schemaType
     ) implements GraphitronType, EmitsPerTypeFile {}
 }

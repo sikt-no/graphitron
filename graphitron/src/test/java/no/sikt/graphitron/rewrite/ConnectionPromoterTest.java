@@ -1,11 +1,17 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLTypeReference;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -415,6 +421,155 @@ class ConnectionPromoterTest {
         // The Connection keeps its author tag; the SDL PageInfo keeps only its own, unchanged.
         assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("conn");
         assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("author");
+    }
+
+    // ===== R13: @asFacet synthesis =====
+
+    @Test
+    void asFacetOnFilterInput_synthesisesFacetSpecsAndTypes() {
+        String sdl = """
+            enum Rating { G PG }
+            type Film { id: ID! }
+            input FilmFilter {
+                rating: [Rating!] @field(name: "rating") @asFacet
+                length: [Int] @field(name: "length") @asFacet
+                title: String @field(name: "title")
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var conn = (ConnectionType) bctx.types.get("QueryFilmsConnection");
+        assertThat(conn.facets()).containsExactly(
+            new FacetSpec("rating", "rating", "Rating", false, "RatingFacetValue"),
+            new FacetSpec("length", "length", "Int", true, "IntFacetValueOrNull"));
+        assertThat(bctx.types.get("QueryFilmsConnectionFacets")).isInstanceOf(FacetsType.class);
+        assertThat(bctx.types.get("RatingFacetValue")).isInstanceOf(FacetValueType.class);
+        assertThat(bctx.types.get("IntFacetValueOrNull")).isInstanceOf(FacetValueType.class);
+    }
+
+    @Test
+    void facetFieldNullability_isTheFailureFirewall() {
+        // Pins the "Facet failure semantics" contract structurally: the facets field on the
+        // Connection and every per-facet field on <Conn>Facets are nullable, so a facet failure
+        // can never propagate through GraphQL non-null bubbling; only the list elements and the
+        // inner count stay non-null.
+        String sdl = """
+            enum Rating { G PG }
+            type Film { id: ID! }
+            input FilmFilter {
+                rating: [Rating!] @field(name: "rating") @asFacet
+                length: [Int] @field(name: "length") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var facetsField = connSchema(bctx, "QueryFilmsConnection").getFieldDefinition("facets");
+        assertThat(facetsField).isNotNull();
+        assertThat(facetsField.getType())
+            .as("the facets field itself must be nullable")
+            .isInstanceOfSatisfying(GraphQLTypeReference.class,
+                ref -> assertThat(ref.getName()).isEqualTo("QueryFilmsConnectionFacets"));
+
+        var facetsSchema = ((FacetsType) bctx.types.get("QueryFilmsConnectionFacets")).schemaType();
+        for (var fieldName : List.of("rating", "length")) {
+            var perFacet = facetsSchema.getFieldDefinition(fieldName);
+            assertThat(perFacet.getType())
+                .as("per-facet field '%s' must be a nullable list (no field-level NonNull)", fieldName)
+                .isInstanceOf(GraphQLList.class);
+            assertThat(((GraphQLList) perFacet.getType()).getWrappedType())
+                .as("per-facet list elements stay non-null")
+                .isInstanceOf(GraphQLNonNull.class);
+        }
+    }
+
+    @Test
+    void facetValueTypes_mirrorTheFilterElementScalarAndNullability() {
+        String sdl = """
+            enum Rating { G PG }
+            type Film { id: ID! }
+            input FilmFilter {
+                rating: [Rating!] @field(name: "rating") @asFacet
+                length: [Int] @field(name: "length") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var nonNullValue = (FacetValueType) bctx.types.get("RatingFacetValue");
+        assertThat(nonNullValue.valueTypeName()).isEqualTo("Rating");
+        assertThat(nonNullValue.valueNullable()).isFalse();
+        assertThat(nonNullValue.schemaType().getFieldDefinition("value").getType())
+            .as("a non-null filter element yields a non-null facet value")
+            .isInstanceOf(GraphQLNonNull.class);
+        assertThat(nonNullValue.schemaType().getFieldDefinition("count").getType())
+            .isInstanceOf(GraphQLNonNull.class);
+
+        var nullableValue = (FacetValueType) bctx.types.get("IntFacetValueOrNull");
+        assertThat(nullableValue.valueTypeName()).isEqualTo("Int");
+        assertThat(nullableValue.valueNullable()).isTrue();
+        assertThat(nullableValue.schemaType().getFieldDefinition("value").getType())
+            .as("a nullable filter element yields a nullable facet value (the NULL bucket round-trips)")
+            .isInstanceOf(GraphQLTypeReference.class);
+    }
+
+    @Test
+    void filterWithoutAsFacet_synthesisesNoFacetSurface() {
+        String sdl = """
+            type Film { id: ID! }
+            input FilmFilter {
+                title: String @field(name: "title")
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var conn = (ConnectionType) bctx.types.get("QueryFilmsConnection");
+        assertThat(conn.facets()).isEmpty();
+        assertThat(conn.schemaType().getFieldDefinition("facets")).isNull();
+        assertThat(bctx.types.get("QueryFilmsConnectionFacets")).isNull();
+    }
+
+    @Test
+    void malformedAsFacet_isSkippedByTheSynthesisWalk() {
+        // The walk projects only well-formed facets; each malformed application is rejected with a
+        // named build diagnostic by GraphitronSchemaBuilder's facet-misuse reduction (pipeline-tier
+        // coverage in FacetedConnectionPipelineTest), so nothing half-synthesised reaches the model.
+        String sdl = """
+            type Film { id: ID! }
+            input FilmFilter {
+                noColumn: [String!] @asFacet
+                conditionBound: [String!] @field(name: "title") @condition @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var conn = (ConnectionType) bctx.types.get("QueryFilmsConnection");
+        assertThat(conn.facets()).isEmpty();
+        assertThat(conn.schemaType().getFieldDefinition("facets")).isNull();
+        assertThat(bctx.types.get("QueryFilmsConnectionFacets")).isNull();
     }
 
     private static GraphQLObjectType connSchema(BuildContext bctx, String name) {

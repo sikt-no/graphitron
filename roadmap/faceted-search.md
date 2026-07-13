@@ -807,13 +807,13 @@ exactly as today. No error, no warning.
 
 ### Success Criteria
 
-- [ ] `mvn test -pl :graphitron -Pquick`: new `ConnectionPromoter`
+- [x] `mvn test -pl :graphitron -Pquick`: new `ConnectionPromoter`
       (or successor) test cases cover an SDL with `@asFacet` and assert:
       `ConnectionType.facets()` carries one `FacetSpec` per marked field;
       the registered types include `<ConnName>Facets` (one list field per
       `@asFacet`) and each `<Scalar>FacetValue` (with `value` + `count`);
       and the synthesised Connection's `schemaType` has a `facets` field.
-- [ ] **Facet-field nullability (the firewall) is pinned, not just prose.**
+- [x] **Facet-field nullability (the firewall) is pinned, not just prose.**
       On the synthesised `<ConnName>Facets` `schemaType`, assert each
       per-facet field is a **nullable** list of non-null elements
       (`[<Scalar>FacetValue!]`, i.e. `GraphQLList` whose wrapped type is the
@@ -821,8 +821,8 @@ exactly as today. No error, no warning.
       level), and that the `facets` field on the Connection is itself
       nullable. This is the assertion that pins "Facet failure semantics":
       without it the firewall claim rests only on prose.
-- [ ] Existing connection-synthesis fixtures unchanged.
-- [ ] The new facet types classify cleanly. Because they are registered as
+- [x] Existing connection-synthesis fixtures unchanged.
+- [x] The new facet types classify cleanly. Because they are registered as
       first-class `GraphitronType` arms (not left as `UnclassifiedType`),
       no allowlist shim is needed; confirm `VariantCoverageTest` and the
       exhaustive `GraphitronType` switches are updated for the new arms.
@@ -852,8 +852,10 @@ classifier/validator rejection logic below.
 Add to the `DIR_*` constant block (`:102`):
 
 ```java
-static final String DIR_FACET = "asFacet";
+static final String DIR_AS_FACET = "asFacet";
 ```
+
+(Landed as `DIR_AS_FACET`, matching the `DIR_AS_CONNECTION` naming convention.)
 
 #### New `model/FacetSpec.java`
 
@@ -929,22 +931,39 @@ field (the rewrite's existing `UnclassifiedField` / validator-error
 channel; pick whichever the surrounding connection-misuse rejections
 already use, so facet errors read consistently with them).
 
+**Landed placement (Phases 2+3, 2026-07-13).** The rejections landed as
+`GraphitronSchemaBuilder.rejectFacetMisuse`, a sibling soundness reduction
+to R262's `rejectNonIdNodeId` and for the same reason a raw-SDL pass: the
+promoter's facet walk skips malformed applications, so misuse leaves no
+trace on the classified model. It registers build diagnostics on the shared
+channel the validator drains (`ValidationError`, kind `INVALID_SCHEMA`),
+covering both the definition-keyed binding checks and the use-keyed
+reachability check below. The binding-kind cases (composite /
+`[ID!] @nodeId` reference arms) are closed at the directive level: every
+composite or reference `InputField` arm arises from `@reference` /
+`@nodeId`, both rejected as co-occurrence, and `@asFacet` on an `ID`-typed
+field is rejected outright, which also closes the node-reference synthesis
+shim (a bare `ID` column-hit classifies as a reference carrier with no
+directive trace). No `validateConnectionType` rule was needed.
+
 #### `GraphitronSchemaValidator`
 
 `validateConnectionType` (`GraphitronSchemaValidator.java:507`) is the
 natural home for any rejection that needs the classified input surface (the
 composite / reference binding cases above). Add the rule there if the
-promoter-level check cannot reach the binding kind.
+promoter-level check cannot reach the binding kind. (Not needed; see
+*Landed placement* above: the directive-level checks close every
+binding-kind case.)
 
 ### Success Criteria
 
-- [ ] `mvn test -pl :graphitron -Pquick` — existing tests pass.
-- [ ] New pipeline test: schema with two `@asFacet` inputs on a filter →
+- [x] `mvn test -pl :graphitron -Pquick` — existing tests pass.
+- [x] New pipeline test: schema with two `@asFacet` inputs on a filter →
       the classified `ConnectionType.facets()` has two entries with correct
       column names and value types.
-- [ ] New pipeline test: `@asFacet` on a `@reference`-bound input field →
+- [x] New pipeline test: `@asFacet` on a `@reference`-bound input field →
       classification error with a specific message.
-- [ ] `VariantCoverageTest` updated for the new `FacetsType` /
+- [x] `VariantCoverageTest` updated for the new `FacetsType` /
       `FacetValueType` arms (the leaf-count decision from Phase 2).
 
 ---
@@ -1389,7 +1408,7 @@ reviewers can confirm the v1 design does not foreclose it.
   `facets` delegate + registration, behind a has-facets gate.
 - `rewrite/generators/QueryConditionsGenerator.java`: the additive
   `<field>FacetBaseCondition` (non-facet base condition).
-- `rewrite/BuildContext.java:102`: `DIR_*` constants (add `DIR_FACET`).
+- `rewrite/BuildContext.java:102`: `DIR_*` constants (add `DIR_AS_FACET`).
 - `rewrite/model/Operation.java:93`: `Operation.Facet`, R316's operation-axis
   arm this plan deliberately leaves unpopulated (see *Contained approach*).
   R333 dissolves that enum into the `coordinate -> operation` set (reserving a

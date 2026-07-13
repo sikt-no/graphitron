@@ -1,0 +1,27 @@
+package no.sikt.graphitron.rewrite.model;
+
+/**
+ * One {@code @asFacet}-marked filter-input field, resolved against the consuming
+ * {@code @asConnection} carrier. Carries exactly what the facet emitter needs: which column to
+ * {@code GROUP BY}, what GraphQL scalar the facet value has, whether that value is nullable, and
+ * which synthesised {@code *FacetValue} object type the counts surface through.
+ *
+ * <p>The list of these rides {@link GraphitronType.ConnectionType#facets()} as a contained
+ * denormalized view: the {@code @asFacet} fact is authored at the filter input type's member
+ * coordinate, and this record is its use-site resolution against the carrier's table (R13; see the
+ * roadmap item's <em>Contained approach</em> section for the R333 framing and the R314
+ * re-sourcing path).
+ *
+ * <p>{@code valueNullable} mirrors the annotated filter field's list-element nullability. It
+ * drives both the {@code *FacetValue} type name (via
+ * {@link FacetNaming#facetValueTypeName(String, boolean)}) and the per-arm SQL scrub: a non-null
+ * value appends {@code AND <col> IS NOT NULL} so a {@code GROUP BY} NULL key can never reach a
+ * non-null output field.
+ */
+public record FacetSpec(
+    String inputFieldName,
+    String columnName,
+    String valueTypeName,
+    boolean valueNullable,
+    String facetValueTypeName
+) {}

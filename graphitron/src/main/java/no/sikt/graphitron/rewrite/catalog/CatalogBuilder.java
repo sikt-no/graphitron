@@ -721,6 +721,13 @@ public final class CatalogBuilder {
                         ? t.resolution().javaType().toString() : null);
             case GraphitronType.NestingType ignored ->
                 new TypeClassification.PlainObject();
+            // R13: synthesised facet container / value types. Projected as plain objects for now;
+            // a facet-specific classification leaf is R314's to mint when the connection unit
+            // lowers onto the fact model.
+            case GraphitronType.FacetsType ignored ->
+                new TypeClassification.PlainObject();
+            case GraphitronType.FacetValueType ignored ->
+                new TypeClassification.PlainObject();
             case GraphitronType.UnclassifiedType t ->
                 new TypeClassification.Unclassified(t.reason());
         };
@@ -778,6 +785,8 @@ public final class CatalogBuilder {
             case GraphitronType.ConnectionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.EdgeType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.PageInfoType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.FacetsType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.FacetValueType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.NestingType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.UnclassifiedType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
         };

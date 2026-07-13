@@ -141,6 +141,9 @@ public final class CompileDependencyGraphBuilder {
             }
             case GraphitronType.EdgeType t -> acc.addNode(units.schemaShape(t.name()));
             case GraphitronType.PageInfoType t -> acc.addNode(units.schemaShape(t.name()));
+            // Synthesised facet types resolve inside their connection unit; schema shape only.
+            case GraphitronType.FacetsType t -> acc.addNode(units.schemaShape(t.name()));
+            case GraphitronType.FacetValueType t -> acc.addNode(units.schemaShape(t.name()));
             // Nesting projections inline into their parent; they contribute a schema shape only.
             case GraphitronType.NestingType t -> acc.addNode(units.schemaShape(t.name()));
             case GraphitronType.EnumType t -> acc.addNode(units.schemaShape(t.name()));

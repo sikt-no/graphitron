@@ -219,6 +219,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.NestingType t    -> {} // no domain directives, nothing to validate structurally
+            case no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType t     -> {} // synthesised (R13); shape is promoter-owned, nothing to validate structurally
+            case no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType t -> {} // synthesised (R13); shape is promoter-owned, nothing to validate structurally
             case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType t           -> {} // enums validate at the schema level; no domain concerns
             case no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType t         -> {} // resolver-validated at classification time; nothing extra here
             case no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType t   -> validateUnclassifiedType(t, errors);

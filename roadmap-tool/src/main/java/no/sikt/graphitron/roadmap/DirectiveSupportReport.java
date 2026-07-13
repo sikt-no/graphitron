@@ -79,9 +79,14 @@ final class DirectiveSupportReport {
      * supported list with no migration note, because using them is neither an error nor
      * something a migrating consumer must remove; they are simply outside the v1 surface. See
      * roadmap item R400. Re-advertising one later is a one-line edit here.
+     *
+     * <p>{@code @asFacet} (R13) is withheld until its runtime emitter lands: Phases 2+3 ship the
+     * directive declaration, the facet synthesis, and the misuse rejections, but the {@code facets}
+     * resolver arrives with Phase 4, so advertising it (and writing its reference page) waits for
+     * that. Remove it from this set in the Phase 4 commit.
      */
     static final java.util.Set<String> WITHHELD_FROM_V1 =
-        java.util.Set.of("tableMethod", "sourceRow", "experimental_constructType");
+        java.util.Set.of("tableMethod", "sourceRow", "experimental_constructType", "asFacet");
 
     /**
      * CLI entry. Three positional args (legacy directives file, rewrite directives file,

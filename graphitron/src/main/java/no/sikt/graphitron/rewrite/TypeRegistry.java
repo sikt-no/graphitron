@@ -117,7 +117,7 @@ public final class TypeRegistry {
             case ConnectionType e -> {
                 var i = (ConnectionType) incoming;
                 yield new ConnectionType(e.name(), e.location(), e.elementTypeName(), e.edgeTypeName(),
-                    e.itemNullable(), e.shareable() || i.shareable(),
+                    e.itemNullable(), e.shareable() || i.shareable(), e.facets(),
                     unionDirectives(e.schemaType(), i.schemaType()));
             }
             case EdgeType e -> {
