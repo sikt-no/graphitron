@@ -1572,6 +1572,130 @@ class GraphQLQueryTest {
             .hasSize(1);
     }
 
+    // ===== filmsFaceted — @asFacet facet counts (R13) =====
+    //
+    // Seed ratings: PG (ACADEMY DINOSAUR), G (ACE GOLDFINGER), NC-17 (ADAPTATION HOLES),
+    // G (AFFAIR PREJUDICE), PG (AGENT TRUMAN); lengths 86, 48, 50, 117, 169. Each facet's
+    // counts apply the connection filter minus that facet's own predicate, so a selected
+    // rating still shows its sibling ratings' counts. The aggregate runs as one UNION ALL,
+    // ordered facet ASC, count DESC, value(text) ASC.
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> facetValues(Map<String, Object> data, String facetField) {
+        var conn = (Map<String, Object>) data.get("filmsFaceted");
+        var facets = (Map<String, Object>) conn.get("facets");
+        return (List<Map<String, Object>>) facets.get(facetField);
+    }
+
+    @Test
+    void filmsFaceted_noFilter_countsMatchPlainAggregates() {
+        Map<String, Object> data = execute(
+            "{ filmsFaceted { facets { rating { value count } length { value count } } } }");
+        // SELECT rating, COUNT(*) FROM film GROUP BY rating — enum values surface as the
+        // GraphQL enum (NC-17's SDL name is NC_17), counts DESC then value(text) ASC.
+        assertThat(facetValues(data, "rating"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("G", 2),
+                org.assertj.core.groups.Tuple.tuple("PG", 2),
+                org.assertj.core.groups.Tuple.tuple("NC_17", 1));
+        // All five lengths are distinct; one bucket each.
+        assertThat(facetValues(data, "length"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(48, 1),
+                org.assertj.core.groups.Tuple.tuple(50, 1),
+                org.assertj.core.groups.Tuple.tuple(86, 1),
+                org.assertj.core.groups.Tuple.tuple(117, 1),
+                org.assertj.core.groups.Tuple.tuple(169, 1));
+    }
+
+    @Test
+    void filmsFaceted_filterOnOneFacet_ownCountsUnchanged_siblingRestricted() {
+        // rating: [G] — the rating facet ignores its own predicate (still shows all ratings
+        // with their global counts, so the user can pivot), while the length facet applies it
+        // (only the two G films' lengths remain). The page itself is filtered as usual.
+        Map<String, Object> data = execute("""
+            { filmsFaceted(filter: { rating: [G] }) {
+                facets { rating { value count } length { value count } }
+                nodes { title }
+            } }""");
+        assertThat(facetValues(data, "rating"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("G", 2),
+                org.assertj.core.groups.Tuple.tuple("PG", 2),
+                org.assertj.core.groups.Tuple.tuple("NC_17", 1));
+        assertThat(facetValues(data, "length"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(48, 1),
+                org.assertj.core.groups.Tuple.tuple(117, 1));
+        assertThat(data).extractingByKey("filmsFaceted", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"))
+            .containsExactly("ACE GOLDFINGER", "AFFAIR PREJUDICE");
+    }
+
+    @Test
+    void filmsFaceted_multipleFacetsFiltered_eachIgnoresOnlyItsOwnPredicate() {
+        // rating: [G] AND length: [86] — the rating facet applies only the length predicate
+        // (film 1, length 86, is PG), the length facet applies only the rating predicate
+        // (the two G films' lengths). No film matches both, so the page is empty while the
+        // facets still show where to pivot.
+        Map<String, Object> data = execute("""
+            { filmsFaceted(filter: { rating: [G], length: [86] }) {
+                facets { rating { value count } length { value count } }
+                nodes { title }
+            } }""");
+        assertThat(facetValues(data, "rating"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(org.assertj.core.groups.Tuple.tuple("PG", 1));
+        assertThat(facetValues(data, "length"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(48, 1),
+                org.assertj.core.groups.Tuple.tuple(117, 1));
+        assertThat(data).extractingByKey("filmsFaceted", as(MAP))
+            .extractingByKey("nodes", as(LIST))
+            .isEmpty();
+    }
+
+    @Test
+    void filmsFaceted_roundTripCount_isTwoWithFacetsAndOneWithout() {
+        // One page query plus exactly one UNION ALL aggregate, regardless of how many facets
+        // are selected; the aggregate is skipped entirely when no facet field is selected.
+        QUERY_COUNT.set(0);
+        SQL_LOG.clear();
+        execute("{ filmsFaceted { facets { rating { value count } length { value count } } nodes { title } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("page query + one facet aggregate")
+            .isEqualTo(2);
+        assertThat(SQL_LOG).filteredOn(s -> s.contains("union all")).hasSize(1);
+
+        QUERY_COUNT.set(0);
+        SQL_LOG.clear();
+        execute("{ filmsFaceted { nodes { title } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("no facet selected: the aggregate is skipped")
+            .isEqualTo(1);
+        assertThat(SQL_LOG).noneMatch(s -> s.contains("union all"));
+    }
+
+    @Test
+    void filmsFaceted_selectionGate_unselectedFacetContributesNoArm() {
+        // Only rating is selected: the single aggregate has no arm grouping on length.
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "{ filmsFaceted { facets { rating { value count } } } }");
+        assertThat(facetValues(data, "rating")).hasSize(3);
+        assertThat(SQL_LOG)
+            .filteredOn(s -> s.contains("group by"))
+            .as("one aggregate statement, grouping only on the selected facet")
+            .hasSize(1)
+            .noneMatch(s -> s.contains("length"));
+    }
+
     // ===== filmsOrderedConnection — dynamic ordering pagination =====
 
     @Test

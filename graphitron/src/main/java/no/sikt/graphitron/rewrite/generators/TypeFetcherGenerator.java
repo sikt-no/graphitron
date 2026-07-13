@@ -5153,7 +5153,7 @@ public class TypeFetcherGenerator {
             builder.addStatement("$T payload = new $T(result, page, $L, condition)",
                 valueType, connectionResultClass, tableLocal);
         } else {
-            var conditionsClass = ClassName.get(outputPackage,
+            var conditionsClass = ClassName.get(outputPackage + ".conditions",
                 qtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX);
             var conditionClass = ClassName.get("org.jooq", "Condition");
             var facetSpecRuntime = connectionResultClass.nestedClass("FacetSpec");

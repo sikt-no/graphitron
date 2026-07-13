@@ -1184,6 +1184,16 @@ Assertions compare typed values; this is also the test that pins the
 round-trip property (`filter: { rating: [facetValue.value] }` works with no
 coercion). Final column choice finalized during implementation.
 
+**Landed (2026-07-13):** the second facet is `length: [Int!] @field(name:
+"LENGTH")`, not `RENTAL_DURATION`; the seed leaves `rental_duration` at its
+uniform default (3 for all five films), while the five lengths are distinct,
+so per-facet buckets and the filter-minus-self interaction are observable in
+every case. Five execution tests landed in `GraphQLQueryTest` (the three
+planned cases plus the round-trip-count ratchet and a selection-gate case
+asserting an unselected facet contributes no `GROUP BY` arm). The enum path
+verified end to end: the `NC-17` database label surfaces as the SDL name
+`NC_17` and `filter: { rating: [G] }` round-trips with no coercion.
+
 #### Execution tests
 
 Three cases, each running through a real Sakila database:
@@ -1215,9 +1225,9 @@ execution case, so the pipeline assertion is the authoritative check.
 
 ### Success Criteria
 
-- [ ] All three execution cases pass against PostgreSQL Sakila.
-- [ ] `mvn verify -Plocal-db` clean at the repo root.
-- [ ] JDBC round-trip count matches the expected value per case: 2
+- [x] All three execution cases pass against PostgreSQL Sakila.
+- [x] `mvn verify -Plocal-db` clean at the repo root.
+- [x] JDBC round-trip count matches the expected value per case: 2
       when any facet is selected (edges + single aggregate), 1 when
       none is.
 

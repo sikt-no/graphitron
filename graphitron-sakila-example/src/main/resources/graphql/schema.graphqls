@@ -162,6 +162,12 @@ type Query {
         order: [FilmOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # R13: @asFacet execution fixture. The filter's rating/length fields are facets, so the
+    # synthesised QueryFilmsFacetedConnection carries facets: QueryFilmsFacetedConnectionFacets
+    # with per-value counts, each computed under the connection filter minus that facet's own
+    # predicate (one UNION ALL aggregate per request, lazy on selection). Both filter elements
+    # are non-null, so the facet values are non-null and each arm carries the IS NOT NULL scrub.
+    filmsFaceted(filter: FilmFacetFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
     # R243: per-field direction on @defaultOrder. Heterogeneous spec — rental_rate DESC
     # then title ASC. The seed gives the five films distinct rental_rate values with a
     # three-way tie at 2.99, so the DESC primary is visible in the row order *and* the
@@ -2063,6 +2069,15 @@ input FilmImplicitInput @table(name: "film") {
 # fields; both column filters are nullable. The @oneOf application must reach the emitted
 # schema (and the on-disk plain SDL must carry its definition), but no runtime helper is
 # emitted on the non-federation arm.
+# R13: faceted filter input for Query.filmsFaceted. Both fields are @asFacet, bound to plain
+# film columns; rating exercises the enum-valued facet (value: MpaaRating!), length the
+# Int-valued one (value: Int!). Round-trip contract: a client feeds facetValue.value straight
+# back into the same filter field with no coercion.
+input FilmFacetFilter @table(name: "film") {
+    rating: [MpaaRating!] @field(name: "RATING") @asFacet
+    length: [Int!] @field(name: "LENGTH") @asFacet
+}
+
 input FilmOneOfFilter @table(name: "film") @oneOf {
     filmId: Int    @field(name: "film_id")
     title:  String @field(name: "title")

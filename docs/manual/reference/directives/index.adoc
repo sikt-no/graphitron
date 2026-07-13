@@ -10,6 +10,7 @@ a|
 == Alphabetical
 
 * xref:asConnection.adoc[`@asConnection`]
+* xref:asFacet.adoc[`@asFacet`]
 * xref:condition.adoc[`@condition`]
 * xref:defaultOrder.adoc[`@defaultOrder`]
 * xref:discriminate.adoc[`@discriminate`]
@@ -46,7 +47,7 @@ xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], x
 xref:reference.adoc[`@reference`]
 
 *Querying* +
-xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`]
+xref:asConnection.adoc[`@asConnection`], xref:asFacet.adoc[`@asFacet`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`]
 
 *Mutating* +
 xref:mutation.adoc[`@mutation`], xref:service.adoc[`@service`]

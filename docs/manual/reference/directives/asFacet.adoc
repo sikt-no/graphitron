@@ -1,0 +1,66 @@
+= @asFacet
+:description: Mark a filter-input field as a facet on the enclosing @asConnection field's Connection type, adding per-value counts computed under the filter minus that facet's own predicate.
+:!toc:
+
+Marks a field of a connection's filter input as a facet. The generated Connection type gains a `facets: <ConnName>Facets` field with one entry per marked filter field, each returning `[<Scalar>FacetValue!]` (a nullable list of non-null entries) where every entry carries a `value` and a `count`.
+
+Each facet's counts apply the connection's full filter *minus that facet's own predicate*. When a user has filtered `rating: [PG]`, the `rating` facet still shows counts for all ratings (so the user can pivot their selection), while every other facet shows counts for the rows matching `rating = PG`. The paginated `edges` / `nodes` query is unaffected and applies the full filter unchanged.
+
+`value` mirrors the filter field's element type exactly, same scalar and same nullability, so a client feeds `facetValue.value` straight back into the filter (`filter: { rating: [facetValue.value] }`) with no coercion. A nullable filter element preserves the NULL bucket as its own group; a non-null element scrubs it with `IS NOT NULL`.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @asFacet on INPUT_FIELD_DEFINITION
+----
+
+== Canonical example
+
+[source,graphql]
+----
+type Query {
+    films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+input FilmFilter @table(name: "film") {
+    rating: [MpaaRating!] @field(name: "RATING") @asFacet
+    length: [Int!]        @field(name: "LENGTH") @asFacet
+    title:  String        @field(name: "TITLE")
+}
+----
+
+Graphitron expands the Connection with:
+
+[source,graphql]
+----
+type QueryFilmsConnectionFacets {
+    rating: [MpaaRatingFacetValue!]
+    length: [IntFacetValue!]
+}
+
+type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
+type IntFacetValue        { value: Int!        count: Int! }
+----
+
+A query selecting any facet field issues exactly one extra SQL statement per request: a `UNION ALL` of per-facet `GROUP BY` arms, one arm per *selected* facet, each under its filter-minus-self predicate. When no facet field is selected, the aggregate is skipped entirely. Results are ordered facet, count descending, value ascending.
+
+== Failure semantics
+
+Facets are a best-effort aggregate, never a structural guarantee. The `facets` object and each per-facet field are nullable, so a facet query failure or timeout degrades to `null` (plus an entry in the GraphQL `errors` array) without propagating through non-null bubbling to the connection or the request; the page of results still returns.
+
+== Constraints
+
+* Valid only on fields of an input type used as the filter input of at least one `@asConnection`-bearing field; an input type no connection consumes is rejected at build time (the expansion would be dead schema). An input shared by connection and non-connection consumers is fine: the directive surfaces facets at the connection use sites and is inert at the others.
+* The field must be a plain `@field(name:)`-bound scalar or enum column. `@reference` / `@condition` / `@nodeId` bindings, `ID`-typed fields, and input-object fields are rejected (join-mediated and node-ID facets are a follow-up).
+* The field must be nullable (optional): an always-active filter value could never show unfiltered pivot counts, and the generated filter-minus-self fragments suppress a facet's own predicate by leaving it unset.
+* Not combinable with the deprecated `@asConnection(connectionName:)` override; a faceted connection field must own its derived-name Connection type.
+* Facet synthesis applies to directive-driven `@asConnection` carriers only; a hand-written structural Connection type is author-owned and never gains a `facets` field.
+
+== See also
+
+* xref:asConnection.adoc[`@asConnection`] owns the Connection synthesis the facets ride on.
+* xref:field.adoc[`@field`] binds the facet to its column.
+* xref:defaultOrder.adoc[`@defaultOrder`] anchors the connection's pagination; facets do not affect it.
+
+xref:../index.adoc[← Reference index]
