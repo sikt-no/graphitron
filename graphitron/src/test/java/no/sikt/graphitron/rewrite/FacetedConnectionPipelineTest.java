@@ -203,6 +203,54 @@ class FacetedConnectionPipelineTest {
                 && e.message().contains("connectionName"));
     }
 
+    @Test
+    void asFacetOnChildConnection_rejected() {
+        // The v1 facet plan is built only by the root Query connection fetcher; a faceted
+        // @splitQuery child carrier would expose a facets field whose resolver always returns
+        // null, so the combination is rejected rather than shipped dead.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Customer @table(name: "customer") { firstName: String }
+            input CustomerFilter @table(name: "customer") {
+                firstName: [String!] @field(name: "first_name") @asFacet
+            }
+            type Store @table(name: "store") {
+                customers(filter: CustomerFilter): [Customer!]!
+                    @asConnection @splitQuery @defaultOrder(primaryKey: true)
+            }
+            type Query { store: Store }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("CustomerFilter.firstName")
+                && e.message().contains("root Query connections")
+                && e.message().contains("Store.customers"));
+    }
+
+    @Test
+    void duplicateFacetNameAcrossFilterInputs_rejected() {
+        // Each facet becomes one field on the synthesised <Conn>Facets object, so two filter
+        // inputs on the same carrier cannot both facet a field named 'title'.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilterA @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            input FilmFilterB @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(a: FilmFilterA, b: FilmFilterB): [Film!]!
+                    @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("Query.films")
+                && e.message().contains("duplicate facet field name 'title'"));
+    }
+
     // ===== Rejection (use-keyed reachability check) =====
 
     @Test

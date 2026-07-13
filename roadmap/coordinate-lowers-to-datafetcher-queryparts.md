@@ -1807,6 +1807,7 @@ Owned by an existing fact:
 | `@lookupKey` | `operation: Lookup` |
 | `@mutation` | `operation: DML` |
 | `@asConnection` | `operation: paginate` |
+| `@asFacet` | the contained connection unit (R13): authored at the filter input's member coordinate, resolved use-site onto `ConnectionType.facets()` as a denormalized view carrier; the normalized operation-fact home lands with R314's aggregate member, a distinct anchor rather than a sub-fact of `paginate` |
 | `@orderBy` / `@defaultOrder` / `@order` / `@index` | `operation: orderBy` (sort-key source a sub-fact) |
 | `@splitQuery` | the operation **address** (split / new-query anchor) |
 | `@node` / `@nodeId` | **node facts** (`NodeType` / `NodeKeyColumn` / projections) |

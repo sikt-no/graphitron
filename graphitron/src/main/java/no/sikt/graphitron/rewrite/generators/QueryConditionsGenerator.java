@@ -133,28 +133,37 @@ public class QueryConditionsGenerator {
         for (var facet : conn.facets()) facetNames.add(facet.inputFieldName());
 
         var out = new ArrayList<MethodSpec>();
+        java.util.function.Predicate<CallParam> isAnyFacetParam =
+            p -> facetNames.stream().anyMatch(n -> isFacetParam(p, n));
         out.add(buildSuppressedConditionMethod(
             facetBaseConditionMethodName(qtf.name()), qtf.returnType(), qtf.filters(),
-            outputPackage, registry, facetNames, false));
+            outputPackage, registry, isAnyFacetParam, false));
         for (var facet : conn.facets()) {
             // The per-facet fragment retains only this facet's predicate: suppress every other
             // param of the generated filter call, facet or not.
-            var suppressed = new java.util.LinkedHashSet<String>();
-            for (var filter : qtf.filters()) {
-                for (var param : filter.callParams()) {
-                    if (!param.name().equals(facet.inputFieldName())) suppressed.add(param.name());
-                }
-            }
             out.add(buildSuppressedConditionMethod(
                 facetConditionMethodName(qtf.name(), facet.inputFieldName()), qtf.returnType(),
-                qtf.filters(), outputPackage, registry, suppressed, true));
+                qtf.filters(), outputPackage, registry,
+                p -> !isFacetParam(p, facet.inputFieldName()), true));
         }
         return out;
     }
 
     /**
+     * True when {@code param} is the binding of the facet input field named
+     * {@code facetInputFieldName}: a {@link CallSiteExtraction.NestedInputField} whose traversal
+     * path is exactly that one field. Matching on extraction identity rather than the bare
+     * parameter name keeps a same-named top-level argument (a legitimate non-facet filter) out of
+     * the suppression set: it stays in the base fragment and out of the facet's own fragment.
+     */
+    private static boolean isFacetParam(CallParam param, String facetInputFieldName) {
+        return param.extraction() instanceof CallSiteExtraction.NestedInputField nif
+            && nif.path().equals(List.of(facetInputFieldName));
+    }
+
+    /**
      * A clone of {@link #buildConditionMethod} that (a) names the method explicitly, (b) replaces
-     * every {@link CallParam} named in {@code suppressed} with a {@code null} literal (the typed
+     * every {@link CallParam} matching {@code suppressed} with a {@code null} literal (the typed
      * conditions method's own null gate then drops the conjunct), and (c) when
      * {@code onlyGeneratedFilters}, keeps only {@link no.sikt.graphitron.rewrite.model.GeneratedConditionFilter}
      * terms (a facet's own predicate lives there; field-level {@code @condition} and FK-target
@@ -166,7 +175,7 @@ public class QueryConditionsGenerator {
             List<WhereFilter> allFilters,
             String outputPackage,
             CompositeDecodeHelperRegistry registry,
-            java.util.Set<String> suppressed,
+            java.util.function.Predicate<CallParam> suppressed,
             boolean onlyGeneratedFilters) {
         var filters = onlyGeneratedFilters
             ? allFilters.stream()
@@ -184,7 +193,7 @@ public class QueryConditionsGenerator {
 
         boolean needsUncheckedSuppression = filters.stream()
             .flatMap(f -> f.callParams().stream())
-            .filter(p -> !suppressed.contains(p.name()))
+            .filter(p -> !suppressed.test(p))
             .anyMatch(CallParam::emitsUncheckedCast);
         if (needsUncheckedSuppression) {
             builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
@@ -194,7 +203,7 @@ public class QueryConditionsGenerator {
 
         for (var filter : filters) {
             for (var param : filter.callParams()) {
-                if (suppressed.contains(param.name())) continue;
+                if (suppressed.test(param)) continue;
                 if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
                     builder.addStatement("$T<$T> $L = env.getArgument($S)",
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
@@ -205,7 +214,7 @@ public class QueryConditionsGenerator {
         var liftedOuters = computeLiftedOuters(filters.stream()
             .map(f -> (WhereFilter) new no.sikt.graphitron.rewrite.model.GeneratedConditionFilter(
                 f.className(), f.methodName(), tableRef,
-                f.callParams().stream().filter(p -> !suppressed.contains(p.name())).toList(),
+                f.callParams().stream().filter(p -> !suppressed.test(p)).toList(),
                 List.of()))
             .toList());
 
@@ -240,9 +249,9 @@ public class QueryConditionsGenerator {
     private static CodeBlock emitPossiblySuppressedTerm(TypeFetcherEmissionContext ctx,
             WhereFilter filter, CompositeDecodeHelperRegistry registry,
             Map<String, String> liftedOuters, Map<WhereFilter, List<String>> fkTargetAliases,
-            java.util.Set<String> suppressed) {
+            java.util.function.Predicate<CallParam> suppressed) {
         boolean anySuppressed = filter instanceof no.sikt.graphitron.rewrite.model.GeneratedConditionFilter
-            && filter.callParams().stream().anyMatch(p -> suppressed.contains(p.name()));
+            && filter.callParams().stream().anyMatch(suppressed);
         if (!anySuppressed) {
             return FkTargetConditionEmitter.emitTerm(ctx, filter, "table", registry, liftedOuters,
                 fkTargetAliases, new ArgumentValueSource.Env());
@@ -250,7 +259,7 @@ public class QueryConditionsGenerator {
         var args = CodeBlock.builder();
         args.add("$L", "table");
         for (var param : filter.callParams()) {
-            if (suppressed.contains(param.name())) {
+            if (suppressed.test(param)) {
                 args.add(", null");
             } else {
                 args.add(", $L", ArgCallEmitter.buildArgExtraction(ctx, param, filter.className(),

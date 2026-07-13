@@ -970,25 +970,51 @@ public class GraphitronSchemaBuilder {
      * channel that {@link GraphitronSchemaValidator} drains; it demotes no verdict.
      */
     private static void rejectFacetMisuse(BuildContext ctx) {
-        // Per input type: consumed by any @asConnection field at all, and (Phase 4) consumed by
-        // one carrying the deprecated connectionName: override. The override set exists because
-        // the facet emitters resolve a carrier's ConnectionType through the derived
-        // ConnectionNaming.defaultConnectionName; an overridden name would silently miss, so the
-        // combination is rejected rather than half-working.
+        // Per input type: consumed by any @asConnection field at all; (Phase 4) consumed by one
+        // carrying the deprecated connectionName: override (the facet emitters resolve a carrier's
+        // ConnectionType through the derived ConnectionNaming.defaultConnectionName, which an
+        // overridden name would silently miss); and consumed by a carrier the v1 facet emitter
+        // does not serve (only root Query connections over a @table-backed object element bind a
+        // facet plan — a faceted child/@splitQuery or interface/union carrier would expose a
+        // facets field whose resolver always returns null, a green build with a dead surface).
+        String queryRootName = ctx.schema.getQueryType() != null
+            ? ctx.schema.getQueryType().getName() : null;
         var connectionFilterInputs = new LinkedHashSet<String>();
         var overriddenNameConsumers = new LinkedHashMap<String, String>();
+        var unsupportedCarrierConsumers = new LinkedHashMap<String, String>();
         for (var type : ctx.schema.getAllTypesAsList()) {
             if (!(type instanceof GraphQLObjectType obj)) continue;
             for (var field : obj.getFieldDefinitions()) {
                 if (!field.hasAppliedDirective(DIR_AS_CONNECTION)) continue;
                 boolean overriddenName = argString(field, DIR_AS_CONNECTION, ARG_CONNECTION_NAME)
                     .filter(s -> !s.isEmpty()).isPresent();
+                String carrierCoordinate = obj.getName() + "." + field.getName();
+                String unsupportedReason = unsupportedFacetCarrierReason(
+                    ctx, obj, field, queryRootName, carrierCoordinate);
+                var facetNamesOnCarrier = new LinkedHashSet<String>();
                 for (var arg : field.getArguments()) {
                     if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType in) {
                         connectionFilterInputs.add(in.getName());
                         if (overriddenName) {
-                            overriddenNameConsumers.putIfAbsent(in.getName(),
-                                obj.getName() + "." + field.getName());
+                            overriddenNameConsumers.putIfAbsent(in.getName(), carrierCoordinate);
+                        }
+                        if (unsupportedReason != null) {
+                            unsupportedCarrierConsumers.putIfAbsent(in.getName(), unsupportedReason);
+                        }
+                        // Facet labels must be unique per carrier: each becomes one field on the
+                        // synthesised <ConnName>Facets object (the promoter keeps the first and
+                        // drops repeats so synthesis cannot crash; this is the named rejection).
+                        for (var inputField : in.getFieldDefinitions()) {
+                            if (!inputField.hasAppliedDirective(DIR_AS_FACET)) continue;
+                            if (!facetNamesOnCarrier.add(inputField.getName())) {
+                                ctx.addDiagnostic(ValidationError.forField(carrierCoordinate,
+                                    Rejection.invalidSchema("Field '" + carrierCoordinate
+                                        + "': duplicate facet field name '" + inputField.getName()
+                                        + "' across this connection's filter inputs; each facet "
+                                        + "surfaces as one field on the synthesised facets object, "
+                                        + "so names must be unique per carrier"),
+                                    locationOf(field)));
+                            }
                         }
                     }
                 }
@@ -999,7 +1025,7 @@ public class GraphitronSchemaBuilder {
             for (var field : input.getFieldDefinitions()) {
                 if (!field.hasAppliedDirective(DIR_AS_FACET)) continue;
                 String reason = facetMisuseReason(field, input.getName(), connectionFilterInputs,
-                    overriddenNameConsumers);
+                    overriddenNameConsumers, unsupportedCarrierConsumers);
                 if (reason == null) continue;
                 String coordinate = input.getName() + "." + field.getName();
                 ctx.addDiagnostic(ValidationError.forField(coordinate,
@@ -1010,13 +1036,35 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
+     * R13: why a consuming {@code @asConnection} carrier is outside the v1 facet emitter's scope,
+     * or {@code null} when it is served. The v1 facet plan is built only by the root Query
+     * single-table connection fetcher; child ({@code @splitQuery}) carriers and interface/union
+     * elements paginate through emitters that bind no plan, so their facets would silently
+     * resolve to null.
+     */
+    private static String unsupportedFacetCarrierReason(BuildContext ctx, GraphQLObjectType parent,
+            GraphQLFieldDefinition field, String queryRootName, String carrierCoordinate) {
+        if (!parent.getName().equals(queryRootName)) {
+            return "consumer '" + carrierCoordinate + "' is not a root Query field";
+        }
+        var element = GraphQLTypeUtil.unwrapAll(field.getType());
+        if (!(element instanceof GraphQLObjectType elementObj)
+                || !elementObj.hasAppliedDirective(DIR_TABLE)) {
+            return "consumer '" + carrierCoordinate
+                + "' does not return a @table-backed object element";
+        }
+        return null;
+    }
+
+    /**
      * The rejection reason for one {@code @asFacet} application, or {@code null} when it is well
      * formed. Definition-keyed binding checks first (actionable at the field), then the use-keyed
      * reachability checks.
      */
     private static String facetMisuseReason(
             graphql.schema.GraphQLInputObjectField field, String inputTypeName,
-            Set<String> connectionFilterInputs, Map<String, String> overriddenNameConsumers) {
+            Set<String> connectionFilterInputs, Map<String, String> overriddenNameConsumers,
+            Map<String, String> unsupportedCarrierConsumers) {
         if (field.hasAppliedDirective(DIR_REFERENCE)
                 || field.hasAppliedDirective(DIR_CONDITION)
                 || field.hasAppliedDirective(DIR_NODE_ID)) {
@@ -1053,6 +1101,13 @@ public class GraphitronSchemaBuilder {
             return "@asFacet cannot be combined with the deprecated @asConnection(connectionName:) "
                 + "override (used by '" + overrideConsumer + "'); facets require the connection "
                 + "field to own its derived-name Connection type. Drop the connectionName: override";
+        }
+        String unsupportedCarrier = unsupportedCarrierConsumers.get(inputTypeName);
+        if (unsupportedCarrier != null) {
+            return "v1 emits the facet aggregate only for root Query connections over a "
+                + "@table-backed object element; " + unsupportedCarrier + ", so its facets field "
+                + "would always resolve to null. Facets on child (@splitQuery) and interface/union "
+                + "connections are a follow-up; remove @asFacet or move the connection to the root";
         }
         return null;
     }

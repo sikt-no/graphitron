@@ -378,6 +378,14 @@ this plan:
 - **Cross-facet independence semantics.** v1 applies "all filters except this
   facet's own predicate" per facet (conventional UX expectation). Alternative
   semantics (AND-all, OR-all) are follow-ups if a real use case surfaces.
+- **Facets on non-root and polymorphic connections** (added during
+  implementation, 2026-07-13). The v1 facet plan is built only by the root
+  Query single-table connection fetcher; child (`@splitQuery`) carriers and
+  interface/union elements paginate through emitters that bind no plan, so a
+  faceted one would expose a `facets` field whose resolver always returns
+  null. `rejectFacetMisuse` rejects the combination at build time (a green
+  build with a dead surface is the failure mode R262 exists to prevent);
+  lifting it is a follow-up alongside the reference-path cases.
 
 ## Key Discoveries
 
@@ -1131,6 +1139,23 @@ Phase 4 shipped as planned, with four deltas worth recording:
   coercion, per R384), and the resolver resolves facet columns
   case-insensitively at runtime (`Table.field(String)` is case-sensitive
   while `@field(name:)` values may differ in case).
+
+Post-ship self-review hardening (same date):
+
+- **Suppression matches extraction identity, not the bare parameter name.**
+  A top-level argument sharing a facet field's name is a legitimate non-facet
+  filter; name-based suppression would have dropped it from the base fragment
+  and wrongly folded it into the facet's own fragment. `isFacetParam` matches
+  the `NestedInputField` traversal path instead; pinned by a
+  `FacetEmitterTest` case.
+- **Facet names are unique per carrier.** Each facet becomes one field on the
+  synthesised facets object, so two filter inputs on one carrier faceting the
+  same name are rejected with a named diagnostic (and the promoter keeps
+  first-wins so synthesis cannot crash before the diagnostic surfaces).
+- **Non-root and polymorphic carriers are rejected** (see the addition under
+  *What We're NOT Doing*): only the root Query single-table fetcher binds a
+  facet plan in v1, so a faceted carrier outside that scope would ship a
+  permanently-null facets field.
 
 ### Success Criteria
 

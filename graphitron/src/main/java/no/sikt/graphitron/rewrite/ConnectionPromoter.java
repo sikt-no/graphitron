@@ -451,6 +451,12 @@ final class ConnectionPromoter {
      */
     private static List<FacetSpec> facetSpecsFor(GraphQLFieldDefinition fieldDef) {
         List<FacetSpec> specs = new ArrayList<>();
+        // First occurrence wins on a duplicate facet name across this carrier's filter inputs:
+        // the synthesised <ConnName>Facets object cannot carry two same-named fields (graphql-java
+        // would refuse to build it). The duplicate itself is rejected with a named diagnostic by
+        // GraphitronSchemaBuilder's facet-misuse reduction; the dedup here only keeps synthesis
+        // from crashing before that diagnostic surfaces.
+        var seenNames = new java.util.HashSet<String>();
         for (var arg : fieldDef.getArguments()) {
             if (!(GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType inputType)) continue;
             for (var inputField : inputType.getFieldDefinitions()) {
@@ -477,6 +483,7 @@ final class ConnectionPromoter {
                 GraphQLType leaf = GraphQLTypeUtil.unwrapAll(elementLayer);
                 if (!(leaf instanceof GraphQLNamedType named)) continue;
                 if (leaf instanceof GraphQLInputObjectType || "ID".equals(named.getName())) continue;
+                if (!seenNames.add(inputField.getName())) continue;
                 specs.add(new FacetSpec(inputField.getName(), columnName, named.getName(),
                     valueNullable, FacetNaming.facetValueTypeName(named.getName(), valueNullable)));
             }

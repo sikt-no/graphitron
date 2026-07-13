@@ -72,6 +72,35 @@ class FacetEmitterTest {
     }
 
     @Test
+    void queryConditions_topLevelArgSharingAFacetName_staysInBaseAndOutOfTheFacetFragment() {
+        // Suppression matches on the nested-extraction identity, not the bare param name: a
+        // top-level argument that happens to share a facet field's name is a legitimate
+        // non-facet filter. It must survive in the base fragment (else facet counts would
+        // ignore it) and must NOT ride along in the facet's own fragment.
+        var conditions = queryConditions(TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(title: String @field(name: "title"), filter: FilmFilter): [Film!]!
+                    @asConnection @defaultOrder(primaryKey: true)
+            }
+            """));
+
+        String base = method(conditions, "filmsFacetBaseCondition");
+        assertThat(base)
+            .as("the top-level title arg is a non-facet filter and belongs to the base")
+            .contains("env.getArgument(\"title\")");
+
+        String own = method(conditions, "filmsFacet_titleCondition");
+        assertThat(own)
+            .as("the facet's own fragment carries only the nested filter field's predicate")
+            .contains("\"filter\"")
+            .doesNotContain("env.getArgument(\"title\")");
+    }
+
+    @Test
     void queryConditions_unfacetedSchema_hasNoFragments() {
         var conditions = queryConditions(TestSchemaHelper.buildSchema(UNFACETED));
         assertThat(methodNames(conditions))
