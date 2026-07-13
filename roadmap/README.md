@@ -19,7 +19,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | Ready | 2026-07-09 | [plan](per-participant-multitable-child-join-paths.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Spec | 2026-07-04 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R461` | Unify the four divergent SDL-field-to-Java-accessor resolution implementations behind one resolver | In Review | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](unify-sdl-field-accessor-resolution.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -184,7 +183,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture, blocked by [consumer-derived-input-tables](consumer-derived-input-tables.md)
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
-- `R461` [**Unify the four divergent SDL-field-to-Java-accessor resolution implementations behind one resolver**](unify-sdl-field-accessor-resolution.md) — In Review, structural
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
