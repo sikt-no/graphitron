@@ -1,13 +1,13 @@
 ---
 id: R458
 title: "Per-participant explicit join paths on multi-table interface/union child fields"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-07-09
-last-updated: 2026-07-09
+last-updated: 2026-07-13
 ---
 
 # Per-participant explicit join paths on multi-table interface/union child fields
