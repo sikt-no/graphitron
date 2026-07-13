@@ -201,8 +201,11 @@ the current ones; the retired names appear only to mark what moved.
   its fields internally, so the fetcher cannot ask it to "skip facet field
   X"; this shapes Phase 4's condition-minus-self strategy (see below).
 - No execution-test fixture combines `@asConnection` with a `@table`-backed
-  filter input today; the test-spec `schema.graphqls` has connection
-  variants but only argument-level scalar filters.
+  filter input today; the test-spec `schema.graphqls`
+  (`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`)
+  has connection variants, and one (`projectNotesByPlainFilterConnection`)
+  takes an input-object filter, but that input is plain (no `@table`), so
+  Phase 5's fixture is the first `@table`-backed filter on a connection.
 
 ## Desired End State
 
@@ -350,7 +353,7 @@ this plan:
 
 1. New pipeline test in `GraphitronSchemaBuilderTest` classifies a schema with
    `@asFacet` into a `GraphitronType.ConnectionType` whose `facets()` is non-empty.
-2. New execution test in `graphitron-test` asserts facet counts
+2. New execution test in `graphitron-sakila-example` asserts facet counts
    match a hand-written jOOQ aggregate over the same filter.
 3. Existing `filmsConnection*` tests unchanged (no `@asFacet` in their filters).
 
@@ -454,10 +457,10 @@ facets after v1 lands.
 | Phase | Module / artefact | What lands |
 |---|---|---|
 | 1 | hand-written SQL (complete) | Spike — benchmarked SQL strategies against Sakila; confirmed shape C as v1 default; resolved NULL + ordering Open Questions. Outcome captured in Phase 1 Outcome below |
-| 2 | `graphitron-rewrite` (directive + `ConnectionPromoter` + model) | `@asFacet` directive definition; `FacetSpec` record + `ConnectionType.facets()` carrier; `ConnectionPromoter` grows a facet arm that registers `FacetsType` / `FacetValueType` entries and appends the `facets` field on the synthesised Connection |
-| 3 | `graphitron-rewrite` (classifier) | classifier / validator rejects misuse (lands with Phase 2 as one commit) |
-| 4 | `graphitron-rewrite` (emitter) | Fetcher carries a facet plan on `ConnectionResult`; `ConnectionHelper.facets` emits the spike-chosen `UNION ALL` aggregate; registration wires the new field |
-| 5 | `graphitron-test` | Execution tests against Sakila |
+| 2 | `graphitron` (directive + `ConnectionPromoter` + model) | `@asFacet` directive definition; `FacetSpec` record + `ConnectionType.facets()` carrier; `ConnectionPromoter` grows a facet arm that registers `FacetsType` / `FacetValueType` entries and appends the `facets` field on the synthesised Connection |
+| 3 | `graphitron` (classifier) | classifier / validator rejects misuse (lands with Phase 2 as one commit) |
+| 4 | `graphitron` (emitter) | Fetcher carries a facet plan on `ConnectionResult`; `ConnectionHelper.facets` emits the spike-chosen `UNION ALL` aggregate; registration wires the new field |
+| 5 | `graphitron-sakila-example` | Execution tests against Sakila |
 | 6 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
 
 ---
@@ -637,9 +640,11 @@ Five SQL shapes measured against a 200 000-row synthetic Sakila-shaped
 `film_scaled` table across five scenarios (no filter, one filter,
 multi-filter, open-ended prefix, NULL-bearing), then re-measured at
 5 000 000 rows (heap 444 MB, ~3.5× `shared_buffers`) with per-facet
-fan-out (2 / 5 / 8 facets) and cold-cache top-level Buffers. Headline
-findings folded into this section; raw EXPLAIN plans and per-scenario
-timing tables live in git history (`git log -- graphitron-rewrite/roadmap/faceted-search-sql.md`).
+fan-out (2 / 5 / 8 facets) and cold-cache top-level Buffers. The raw
+spike report (EXPLAIN plans, per-scenario timing tables) did not
+survive the repo migration; the headline findings folded into this
+section are the surviving record, and any future re-measurement
+(Open Question #1/#2) starts from the SQL shapes documented here.
 
 **Decision: v1 default is shape C (`UNION ALL` of per-facet
 `GROUP BY`s).**
@@ -699,8 +704,8 @@ sections have all been updated to reflect the swap.
 The spike completed as the first phase of this plan. Phase 1's
 completion does not by itself transition plan state; the plan sits at
 Spec until the workflow Spec → Ready review signs off. When Phase 5
-ships, the plan goes In Review; the spike report file is deleted
-together with the plan on Done.
+ships, the plan goes In Review. (The standalone spike report file no
+longer exists; its findings live in the Phase 1 Outcome section above.)
 
 ---
 
@@ -802,7 +807,7 @@ exactly as today. No error, no warning.
 
 ### Success Criteria
 
-- [ ] `mvn test -pl :graphitron-rewrite -Pquick`: new `ConnectionPromoter`
+- [ ] `mvn test -pl :graphitron -Pquick`: new `ConnectionPromoter`
       (or successor) test cases cover an SDL with `@asFacet` and assert:
       `ConnectionType.facets()` carries one `FacetSpec` per marked field;
       the registered types include `<ConnName>Facets` (one list field per
@@ -933,7 +938,7 @@ promoter-level check cannot reach the binding kind.
 
 ### Success Criteria
 
-- [ ] `mvn test -pl :graphitron-rewrite -Pquick` — existing tests pass.
+- [ ] `mvn test -pl :graphitron -Pquick` — existing tests pass.
 - [ ] New pipeline test: schema with two `@asFacet` inputs on a filter →
       the classified `ConnectionType.facets()` has two entries with correct
       column names and value types.
@@ -1101,7 +1106,7 @@ unchanged.
 
 ### Changes
 
-#### `graphitron-rewrite/graphitron-test/.../graphql/schema.graphqls`
+#### `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`
 
 Add (alongside existing `filmsConnection`):
 
@@ -1161,8 +1166,7 @@ execution case, so the pipeline assertion is the authoritative check.
 ### Success Criteria
 
 - [ ] All three execution cases pass against PostgreSQL Sakila.
-- [ ] `(cd graphitron-rewrite && mvn verify -Plocal-db)`
-      clean.
+- [ ] `mvn verify -Plocal-db` clean at the repo root.
 - [ ] JDBC round-trip count matches the expected value per case: 2
       when any facet is selected (edges + single aggregate), 1 when
       none is.
