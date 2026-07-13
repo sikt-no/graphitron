@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-05
+last-updated: 2026-07-13
 ---
 
 # The Graphitron data model
@@ -1249,10 +1249,11 @@ for a reachable enum and its `backingType` is one of:
 - **String** (a varchar column; the former "text-mapped" case, now just one backing),
 - **a numeric type** (an integer column).
 
-`@enum` is retired with it: the backing is inferred authoritatively from the producer, so an authored class
-can only contradict the truth, the same reasoning that retired `@record`. The directive stays declared for
-the parser; the classifier rejects any application with a migration message. (The code retirement is its own
-Backlog item; this is the model decision.)
+The model retires `@enum` with it: the backing is inferred authoritatively from the producer, so an authored
+class can only contradict the truth, the same reasoning that retired `@record`. The directive will stay
+declared for the parser; the classifier will reject any application with a migration message. (This is the
+model decision; the directive is still honored by today's classifier, and the code retirement is filed as
+R360, Backlog.)
 
 **The lift renders the value into the backing type once, at synthesis.** Because `backingType` is uniform,
 schema synthesis registers, per `EnumValue`, the `runtimeValue` rendered into `backingType` as the
@@ -1786,8 +1787,10 @@ contribution.
 Every active directive declares a behavior the model must lower, so the model is complete exactly when every
 directive's effect has an owning fact. This is the audit that drives the remaining work: walk the directives,
 map each to its owning fact, and the ones with no home are the gaps. (The retired directives, `@record` /
-`@notGenerated` / `@multitableReference` / `@enum` (R360), are parser-only stubs the classifier rejects; they
-own nothing by design.)
+`@notGenerated` / `@multitableReference`, are parser-only stubs the classifier rejects; they own nothing by
+design. `@enum` is still honored today: its retirement is decided by this model (*Enum facts*) but filed as
+R360, Backlog, so until that ships its effect is owned by the enum facts as the authored backing they
+supersede.)
 
 Owned by an existing fact:
 
@@ -1965,7 +1968,8 @@ fact family whose facts roll up into the output operation set, the read-side **s
 cast target) and **accessor** (field-level locator, no transform axis) facts, the **node facts** (`NodeType` /
 `NodeKeyColumn` plus the per-coordinate key projections, with the codec entailed and identity-carrying paths
 deciding whether the read stays projection-only or rides a `join`), the **enum facts** (authored value set
-plus a derived `EnumBacking` backing-type roll-up driving a synthesis-time lift, `@enum` retired), the DataFetcher
+plus a derived `EnumBacking` backing-type roll-up driving a synthesis-time lift, `@enum` retirement decided,
+filed as R360), the DataFetcher
 and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
