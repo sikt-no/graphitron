@@ -68,4 +68,15 @@ public final class DummyService {
     public static R88AccessorFixtures.BooleanPojo r88BooleanPojo() { return unused(); }
     public static R88AccessorFixtures.BareNameRecord r88BareNameRecord() { return unused(); }
     public static R88AccessorFixtures.MissingComponentRecord r88MissingComponentRecord() { return unused(); }
+
+    // ===== R461AccessorFixtures.* (walk-grounding parents; method name = "r461" + fixture simple name) =====
+    public static R461AccessorFixtures.OrderParentPojo r461OrderParentPojo() { return unused(); }
+    public static R461AccessorFixtures.OrderParentRecord r461OrderParentRecord() { return unused(); }
+    public static R461AccessorFixtures.ZeroArgParent r461ZeroArgParent() { return unused(); }
+    public static R461AccessorFixtures.PerArgParent r461PerArgParent() { return unused(); }
+    public static R461AccessorFixtures.RenameParent r461RenameParent() { return unused(); }
+    public static R461AccessorFixtures.NonBooleanIsParent r461NonBooleanIsParent() { return unused(); }
+    public static R461AccessorFixtures.PublicFieldParent r461PublicFieldParent() { return unused(); }
+    public static R461AccessorFixtures.CovariantParent r461CovariantParent() { return unused(); }
+    public static R461AccessorFixtures.SubChildParent r461SubChildParent() { return unused(); }
 }

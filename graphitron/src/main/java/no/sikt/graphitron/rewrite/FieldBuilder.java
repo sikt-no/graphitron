@@ -6366,19 +6366,21 @@ class FieldBuilder {
     private List<AccessorMatch> collectAccessorMatches(Class<?> parentClass, String fieldName,
             String accessorBaseName, boolean fieldIsList, TableRef expectedTable) {
         List<AccessorMatch> matches = new ArrayList<>();
-        String ucBase = ucFirst(accessorBaseName);
-        for (java.lang.reflect.Method m : parentClass.getMethods()) {
-            if (m.isBridge() || m.isSynthetic()) continue;
-            if (m.getParameterCount() != 0) continue;
-            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
-            if (Object.class.equals(m.getDeclaringClass())) continue;
+        // R461: the per-member name matching, is-gate, and member filter come from the shared
+        // candidate enumeration so the name rules cannot drift from the other reductions. The
+        // record-source reduction accepts zero-arg methods only (an env-taking / per-argument /
+        // public-field candidate is unrepresentable in an AccessorCall), expressed by requesting the
+        // PER_ARGUMENT_METHOD kind with a zero-argument expected shape. Candidate order is irrelevant
+        // here (all matches are collected, then reduced by identity), so it derives from the class.
+        var candidates = ClassAccessorResolver.enumerate(parentClass, accessorBaseName,
+            ClassAccessorResolver.forBackingClass(parentClass),
+            java.util.EnumSet.of(ClassAccessorResolver.CandidateKind.PER_ARGUMENT_METHOD),
+            new ClassAccessorResolver.PerArgument(List.of()));
+        for (var candidate : candidates) {
+            if (!(candidate instanceof ClassAccessorResolver.Candidate.Accepted accepted)) continue;
+            if (!(accepted.member() instanceof java.lang.reflect.Method m)) continue;
 
             String mName = m.getName();
-            boolean nameMatches = mName.equals(accessorBaseName)
-                || mName.equals("get" + ucBase)
-                || mName.equals("is" + ucBase);
-            if (!nameMatches) continue;
-
             ReturnAxis axis = classifyAccessorReturn(m.getGenericReturnType());
             if (axis == null) continue;
 
@@ -6676,10 +6678,6 @@ class FieldBuilder {
         return null;
     }
 
-    private static String ucFirst(String s) {
-        if (s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
 
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();

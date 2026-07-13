@@ -172,6 +172,17 @@ class TypeBuilder {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceCarrierProducerArrival(parentType, fieldName);
     }
 
+    /**
+     * R461: the gated accessor near-miss (if any) the binding walk recorded while failing to ground a
+     * child SDL type through a parent accessor. Consumed by the dangling-type-reference backstop
+     * ({@code GraphitronSchemaBuilder.rejectDanglingTypeReferences}) so a sole-producer type whose only
+     * near-grounding was a gated accessor surfaces the accessor gate rather than the generic
+     * "did not classify into the model" cascade.
+     */
+    java.util.Optional<RecordBindingResolver.AccessorGateReason> accessorGateReason(String sdlTypeName) {
+        return bindings == null ? java.util.Optional.empty() : bindings.accessorGateReason(sdlTypeName);
+    }
+
     // ===== Type map construction =====
 
     /**
@@ -1457,17 +1468,34 @@ class TypeBuilder {
      */
     private GraphitronType buildResultTypeFromClass(String name, SourceLocation location, Class<?> cls) {
         String className = cls.getName();
-        if (cls.isRecord()) {
-            return new GraphitronType.JavaRecordType(name, location, className);
-        }
-        if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
-            TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
-            return new GraphitronType.JooqTableRecordType(name, location, className, table);
-        }
-        if (org.jooq.Record.class.isAssignableFrom(cls)) {
-            return new GraphitronType.JooqRecordType(name, location, className);
-        }
-        return new GraphitronType.PojoResultType.Backed(name, location, className);
+        return switch (resultVariantKindFor(cls)) {
+            case JAVA_RECORD -> new GraphitronType.JavaRecordType(name, location, className);
+            case JOOQ_TABLE_RECORD ->
+                new GraphitronType.JooqTableRecordType(name, location, className,
+                    svc.resolveTableByRecordClass(cls).orElse(null));
+            case JOOQ_RECORD -> new GraphitronType.JooqRecordType(name, location, className);
+            case POJO -> new GraphitronType.PojoResultType.Backed(name, location, className);
+        };
+    }
+
+    /**
+     * The {@link GraphitronType.ResultType} variant a backing class maps to, as a pure reflection
+     * function (the {@code svc}-dependent table resolution in {@link #buildResultTypeFromClass} does
+     * not affect which variant is chosen). Single-sourced here so the order-bridge meta-test can pin
+     * {@link ClassAccessorResolver#forBackingClass} (the R96 walk's candidate-order derivation)
+     * against the same class-shape decision the emission side derives its order from: the walk uses
+     * {@code RECORD_FIRST} exactly when this returns {@link ResultVariantKind#JAVA_RECORD}, which is
+     * exactly when {@code buildResultTypeFromClass} produces a {@code JavaRecordType}. A future change
+     * to this classification breaks the meta-test rather than silently splitting walk and emission
+     * order.
+     */
+    enum ResultVariantKind { JAVA_RECORD, JOOQ_TABLE_RECORD, JOOQ_RECORD, POJO }
+
+    static ResultVariantKind resultVariantKindFor(Class<?> cls) {
+        if (cls.isRecord()) return ResultVariantKind.JAVA_RECORD;
+        if (org.jooq.TableRecord.class.isAssignableFrom(cls)) return ResultVariantKind.JOOQ_TABLE_RECORD;
+        if (org.jooq.Record.class.isAssignableFrom(cls)) return ResultVariantKind.JOOQ_RECORD;
+        return ResultVariantKind.POJO;
     }
 
     private GraphitronType buildTableInterfaceType(GraphQLInterfaceType iface) {

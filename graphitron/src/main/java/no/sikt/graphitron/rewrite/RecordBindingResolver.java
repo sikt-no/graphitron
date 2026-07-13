@@ -8,12 +8,14 @@ import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.rewrite.model.AccessorProbe;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ProducerBinding;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -21,7 +23,6 @@ import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -40,6 +41,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_EXTERNAL_FIELD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
@@ -121,6 +123,20 @@ final class RecordBindingResolver {
      */
     private final Map<String, SourceKey.Cardinality> serviceCarrierProducerArrivalMemo = new LinkedHashMap<>();
 
+    /**
+     * R461 reason ledger: the gated accessor near-miss (if any) the walk hit while trying to ground a
+     * child SDL type through a parent accessor. Keyed by the child SDL type; first gated near-miss
+     * wins. Read by the classifier ({@link TypeBuilder}) only when the child type ends the walk with
+     * no producer, so the sole-producer B2/B4/B5 tightening cases surface the accessor gate.
+     */
+    private final Map<String, AccessorGateReason> accessorGateReasons = new LinkedHashMap<>();
+
+    /**
+     * One gated accessor near-miss: the parent SDL type + field whose accessor almost grounded the
+     * child, the human-readable gate reason, and the field's source location for diagnostic placement.
+     */
+    record AccessorGateReason(String parentSdlType, String fieldName, String reason, SourceLocation location) {}
+
     RecordBindingResolver(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = Objects.requireNonNull(ctx);
         this.svc = Objects.requireNonNull(svc);
@@ -193,6 +209,16 @@ final class RecordBindingResolver {
     /** Multi-producer rejection for the SDL type, or empty when none. */
     Optional<Rejection.AuthorError.RecordBindingMultiProducer> rejection(String sdlTypeName) {
         return Optional.ofNullable(rejections.get(sdlTypeName));
+    }
+
+    /**
+     * R461: the gated accessor near-miss recorded for an SDL type the walk could not ground through a
+     * parent accessor (a member name-matched but failed a walk tightening's gate). Empty when the walk
+     * hit no gated near-miss for the type. Consulted only for a type that ends the walk with no
+     * producer, so the accessor gate is named instead of a generic no-producer cascade.
+     */
+    Optional<AccessorGateReason> accessorGateReason(String sdlTypeName) {
+        return Optional.ofNullable(accessorGateReasons.get(sdlTypeName));
     }
 
     // ===== Phase 1: root producers =====
@@ -394,7 +420,10 @@ final class RecordBindingResolver {
         // being non-@table (the @table case is skipped in singleNonTableObjectDataField and keeps its
         // BindsWrapper / ServiceEmitted grounding).
         GraphQLFieldDefinition dataField = singleNonTableObjectDataField(resultSdl);
-        if (dataField != null && findAccessorReturnType(reflectedElement, dataField.getName()) == null) {
+        if (dataField != null && ClassAccessorResolver.probe(reflectedElement,
+                accessorBaseName(dataField.getName(), dataField), paramShapeFor(dataField),
+                ClassAccessorResolver.forBackingClass(reflectedElement))
+                    instanceof AccessorProbe.NoMatch) {
             // The reflected element feeds the data field, not the wrapper. Bind the data field's
             // element type regardless of cardinality agreement: the re-levelled cardinality check at
             // the producing @service field ({@code FieldBuilder.checkServiceReturnMatchesPayload})
@@ -747,14 +776,23 @@ final class RecordBindingResolver {
             // its @table classification). The field classifier handles such a mismatch as an
             // author-error rejection on the TableRecord path; the cascade must not pre-empt it.
             if (resultMemo.get(childSdl) != null) continue;
-            // Find the accessor method/field on the parent class.
-            Type accessorReturn = findAccessorReturnType(parentClass, field.getName());
-            if (accessorReturn == null) continue;
-            Class<?> childCls = peelReturnElement(accessorReturn);
+            // R461: one probe call grounds the child class and names the accessor. The base name is
+            // the @field(name:)-resolved accessor name and the argument shape is the SDL field's real
+            // shape (both emission-side values), so walk and emission agree on which member reads the
+            // field.
+            AccessorProbe probe = ClassAccessorResolver.probe(parentClass,
+                accessorBaseName(field.getName(), field), paramShapeFor(field),
+                ClassAccessorResolver.forBackingClass(parentClass));
+            if (probe instanceof AccessorProbe.NoMatch nm) {
+                recordAccessorGate(childSdl, parentSdlType, field.getName(), nm, locationOf(field));
+                continue;
+            }
+            var grounded = (AccessorProbe.Grounded) probe;
+            Class<?> childCls = peelReturnElement(grounded.genericReturnType());
             if (childCls == null || !shouldBind(childCls)) continue;
             ProducerBinding pb = new ProducerBinding.ParentAccessor(
                 childCls, parentSdlType, parentClass.getName(),
-                field.getName(), inferAccessorName(parentClass, field.getName()),
+                field.getName(), grounded.memberName(),
                 locationOf(field));
             if (addResultObservation(childSdl, pb)) {
                 changed = true;
@@ -770,13 +808,22 @@ final class RecordBindingResolver {
         for (GraphQLInputObjectField field : obj.getFieldDefinitions()) {
             String childSdl = unwrappedTypeName(field.getType());
             if (childSdl == null) continue;
-            Type accessorReturn = findAccessorReturnType(parentClass, field.getName());
-            if (accessorReturn == null) continue;
-            Class<?> childCls = peelReturnElement(accessorReturn);
+            // R461: input fields take no arguments, so the probe's shape is always zero-argument; the
+            // base name still honours @field(name:) for symmetry with the result axis.
+            AccessorProbe probe = ClassAccessorResolver.probe(parentClass,
+                accessorBaseName(field.getName(), field),
+                new ClassAccessorResolver.PerArgument(List.of()),
+                ClassAccessorResolver.forBackingClass(parentClass));
+            if (probe instanceof AccessorProbe.NoMatch nm) {
+                recordAccessorGate(childSdl, parentSdlType, field.getName(), nm, locationOf(field));
+                continue;
+            }
+            var grounded = (AccessorProbe.Grounded) probe;
+            Class<?> childCls = peelReturnElement(grounded.genericReturnType());
             if (childCls == null || !shouldBind(childCls)) continue;
             ProducerBinding pb = new ProducerBinding.ParentAccessor(
                 childCls, parentSdlType, parentClass.getName(),
-                field.getName(), inferAccessorName(parentClass, field.getName()),
+                field.getName(), grounded.memberName(),
                 locationOf(field));
             if (addInputObservation(childSdl, pb)) {
                 changed = true;
@@ -956,51 +1003,62 @@ final class RecordBindingResolver {
     }
 
     /**
-     * Walks the parent class's public methods and public fields looking for an accessor matching
-     * {@code fieldName}. Tries bare name, {@code getX}, then {@code isX}; falls back to a public
-     * field read. Zero-arg / {@code DataFetchingEnvironment}-arg accessors are accepted.
+     * The accessor base name the probe resolves against: the {@code @field(name:)} override when the
+     * field carries it, else the raw SDL field name. Single-sourced with the emission side, which
+     * resolves the same override before calling {@link ClassAccessorResolver#resolve} (B3).
      */
-    private static Type findAccessorReturnType(Class<?> parentClass, String fieldName) {
-        if (fieldName.isEmpty()) return null;
-        String camel = fieldName;
-        String capitalised = Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
-        String[] candidates = {camel, "get" + capitalised, "is" + capitalised};
-        for (String name : candidates) {
-            for (Method m : parentClass.getMethods()) {
-                if (Modifier.isStatic(m.getModifiers())) continue;
-                if (!m.getName().equals(name)) continue;
-                if (m.getParameterCount() == 0) {
-                    return m.getGenericReturnType();
-                }
-                // Single DataFetchingEnvironment param: accept for getter-style env-aware methods.
-                if (m.getParameterCount() == 1
-                        && "graphql.schema.DataFetchingEnvironment".equals(
-                            m.getParameterTypes()[0].getName())) {
-                    return m.getGenericReturnType();
-                }
-            }
+    private static String accessorBaseName(String rawFieldName, GraphQLDirectiveContainer field) {
+        if (field.hasAppliedDirective(DIR_FIELD)) {
+            return argString(field, DIR_FIELD, ARG_NAME).orElse(rawFieldName);
         }
-        try {
-            var f = parentClass.getField(camel);
-            if (!Modifier.isStatic(f.getModifiers())) {
-                return f.getGenericType();
-            }
-        } catch (NoSuchFieldException ignored) {}
-        return null;
+        return rawFieldName;
     }
 
-    private static String inferAccessorName(Class<?> parentClass, String fieldName) {
-        if (fieldName.isEmpty()) return fieldName;
-        String capitalised = Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-        String[] candidates = {fieldName, "get" + capitalised, "is" + capitalised};
-        for (String name : candidates) {
-            for (Method m : parentClass.getMethods()) {
-                if (!Modifier.isStatic(m.getModifiers()) && m.getName().equals(name)) {
-                    return name;
-                }
-            }
+    /**
+     * The probe's {@link ClassAccessorResolver.ParamShape} for a result field: one {@link
+     * ClassAccessorResolver.ArgShape} per SDL argument in declared order. The argument's Java type is
+     * resolved by the phase-safe mapper ({@link #phaseSafeArgType}); arity is authoritative, per-arg
+     * type assignability is best-effort at this phase (B2).
+     */
+    private static ClassAccessorResolver.ParamShape paramShapeFor(GraphQLFieldDefinition field) {
+        var args = field.getArguments();
+        if (args.isEmpty()) return new ClassAccessorResolver.PerArgument(List.of());
+        var shapes = new ArrayList<ClassAccessorResolver.ArgShape>(args.size());
+        for (GraphQLArgument arg : args) {
+            shapes.add(new ClassAccessorResolver.ArgShape(arg.getName(), phaseSafeArgType(arg.getType())));
         }
-        return fieldName;
+        return new ClassAccessorResolver.PerArgument(shapes);
+    }
+
+    /**
+     * A phase-safe SDL-argument-type mapper for the binding walk, which runs before any classified
+     * verdict exists (an input-object argument's backing class is the walk's own output). Resolves a
+     * list wrapper to {@link List} and everything else to {@link Object}; an {@code Object} argument
+     * degrades that parameter position to an arity-only check in {@link ClassAccessorResolver}, so the
+     * walk enforces arity while leaving per-argument type assignability to emission's stricter mapper.
+     */
+    private static Type phaseSafeArgType(GraphQLInputType t) {
+        GraphQLType current = t;
+        while (true) {
+            if (current instanceof GraphQLNonNull nn) { current = nn.getWrappedType(); continue; }
+            if (current instanceof GraphQLList) return List.class;
+            break;
+        }
+        return Object.class;
+    }
+
+    /**
+     * R461 reason ledger: records a gated accessor near-miss (a member that name-matched on the parent
+     * class but failed a walk tightening's gate) for the child SDL type the field references. Surfaced
+     * only when that child type ends the walk with no producer at all, so the sole-producer B2/B4/B5
+     * cases name the accessor gate rather than a generic no-producer cascade. A plain name-absence is
+     * not recorded (it keeps the ordinary no-producer path).
+     */
+    private void recordAccessorGate(String childSdl, String parentSdlType, String fieldName,
+            AccessorProbe.NoMatch noMatch, SourceLocation location) {
+        if (!noMatch.gatedNearMiss()) return;
+        accessorGateReasons.putIfAbsent(childSdl,
+            new AccessorGateReason(parentSdlType, fieldName, noMatch.reason(), location));
     }
 
     /**

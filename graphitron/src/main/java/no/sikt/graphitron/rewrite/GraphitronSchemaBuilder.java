@@ -602,6 +602,14 @@ public class GraphitronSchemaBuilder {
             // carrier rewrites, not the field registry. The shared ValidationError.forField factory
             // applies the same "Field '<qname>': " prefix the validator's validateUnclassifiedField
             // pass did, so the error stream is byte-identical to the former demotion by construction.
+            // R461: when the binding walk recorded a gated accessor near-miss for this type (a parent
+            // accessor name-matched but failed the arity / boolean-is / field-fallback-with-arguments
+            // gate), name the gate rather than the generic "did not classify" cascade — the walk is the
+            // one place that knows why the accessor did not match.
+            String gateNote = ctx.typeBuilder == null ? "" : ctx.typeBuilder.accessorGateReason(sdlReturn)
+                .map(g -> " The accessor that could have grounded '" + sdlReturn + "' was rejected: "
+                    + g.reason() + " (via " + g.parentSdlType() + "." + g.fieldName() + ").")
+                .orElse("");
             ctx.addDiagnostic(ValidationError.forField(
                 existing.qualifiedName(),
                 Rejection.structural(
@@ -613,7 +621,7 @@ public class GraphitronSchemaBuilder {
                     + "generated schema and assembly would fail with \"type " + sdlReturn
                     + " not found in schema\". Give '" + sdlReturn + "' a binding (e.g. a "
                     + "@table data field or an [ID] @nodeId(typeName:) data field matching a "
-                    + "producer's returned record), or remove the field."),
+                    + "producer's returned record), or remove the field." + gateNote),
                 existing.location()));
         }
     }
