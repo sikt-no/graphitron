@@ -302,6 +302,14 @@ public class ConnectionHelperClassGenerator {
         // client selects facets; unselected facet fields contribute no arm). Returns null on a
         // carrier with no facet plan (the scatter / non-faceted contract, mirroring totalCount's
         // null-(table, condition) gate) and an empty map when no facet field is selected.
+        //
+        // Ordering happens in Java, after decode, not in SQL: the union's shared value column is
+        // necessarily TEXT (heterogeneous facet columns unify on one type), so a SQL ORDER BY
+        // could only sort lexicographically ("117" < "48"). The decode loop re-types every value,
+        // the per-facet lists are one-entry-per-distinct-value small, and sorting there gives the
+        // native order (count DESC, then Comparable value ASC, NULL bucket last; enums sort in
+        // declaration order). The statement itself needs no ORDER BY at all — rows demultiplex by
+        // the facet label column.
         var facetSpecClass = connectionResultClass.nestedClass("FacetSpec");
         var listOfEntryMap = ParameterizedTypeName.get(LIST_CLASS, mapStringObject);
         var facetsReturn = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfEntryMap);
@@ -344,9 +352,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("        .from(cr.table()).where(cond).groupBy(col);\n")
             .addCode("    union = union == null ? arm : union.unionAll(arm);\n")
             .addCode("}\n")
-            .addStatement("$T<$T> rows = union.orderBy($T.field($T.name(\"facet\")),"
-                + " $T.field($T.name(\"cnt\")).desc(), $T.field($T.name(\"value\"))).fetch()",
-                RESULT, record3, DSL, DSL, DSL, DSL, DSL, DSL)
+            .addStatement("$T<$T> rows = union.fetch()", RESULT, record3)
             .addStatement("$T<String, $T> byLabel = new $T<>()",
                 ClassName.get("java.util", "Map"), facetSpecClass, hashMap)
             .addStatement("$T<String, $T> out = new $T<>()",
@@ -369,7 +375,41 @@ public class ConnectionHelperClassGenerator {
             .addCode("    entry.put(\"count\", row.value3());\n")
             .addCode("    out.get(f.label()).add(entry);\n")
             .addCode("}\n")
+            .addCode("for ($T list : out.values()) {\n", listOfEntryMap)
+            .addCode("    list.sort($L::compareFacetEntries);\n", CLASS_NAME)
+            .addCode("}\n")
             .addStatement("return out")
+            .build();
+
+        // Per-facet result order: count DESC, then the decoded value's natural order. Comparing
+        // decoded (typed) values is the point of sorting here rather than in SQL — see the facets
+        // method comment.
+        var compareFacetEntries = MethodSpec.methodBuilder("compareFacetEntries")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(int.class)
+            .addParameter(mapStringObject, "a")
+            .addParameter(mapStringObject, "b")
+            .addStatement("int byCount = Integer.compare((Integer) b.get(\"count\"), (Integer) a.get(\"count\"))")
+            .addCode("if (byCount != 0) return byCount;\n")
+            .addStatement("return compareFacetValues(a.get(\"value\"), b.get(\"value\"))")
+            .build();
+
+        // Same-class Comparable values compare natively (Integer numerically, enums in
+        // declaration order); the NULL bucket sorts last; anything else falls back to text.
+        var compareFacetValues = MethodSpec.methodBuilder("compareFacetValues")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(int.class)
+            .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "{$S, $S}", "unchecked", "rawtypes")
+                .build())
+            .addParameter(Object.class, "a")
+            .addParameter(Object.class, "b")
+            .addCode("if (a == null) return b == null ? 0 : 1;\n")
+            .addCode("if (b == null) return -1;\n")
+            .addCode("if (a instanceof Comparable && a.getClass() == b.getClass()) {\n")
+            .addCode("    return ((Comparable) a).compareTo(b);\n")
+            .addCode("}\n")
+            .addStatement("return String.valueOf(a).compareTo(String.valueOf(b))")
             .build();
 
         // Runtime column resolution for a facet's @field(name:) value: jOOQ's Table.field(String)
@@ -436,6 +476,8 @@ public class ConnectionHelperClassGenerator {
             .addMethod(pageInfoMethod)
             .addMethod(totalCountMethod)
             .addMethod(facetsMethod)
+            .addMethod(compareFacetEntries)
+            .addMethod(compareFacetValues)
             .addMethod(facetColumnHelper)
             .addMethod(graphitronContextShim)
             .addMethod(edgeNodeMethod)

@@ -43,7 +43,7 @@ type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
 type IntFacetValue        { value: Int!        count: Int! }
 ----
 
-A query selecting any facet field issues exactly one extra SQL statement per request: a `UNION ALL` of per-facet `GROUP BY` arms, one arm per *selected* facet, each under its filter-minus-self predicate. When no facet field is selected, the aggregate is skipped entirely. Results are ordered facet, count descending, value ascending.
+A query selecting any facet field issues exactly one extra SQL statement per request: a `UNION ALL` of per-facet `GROUP BY` arms, one arm per *selected* facet, each under its filter-minus-self predicate. When no facet field is selected, the aggregate is skipped entirely. Each facet's entries are ordered count descending, then by the decoded value's natural order (integers numerically, enums in declaration order), with a preserved NULL bucket last.
 
 == Failure semantics
 

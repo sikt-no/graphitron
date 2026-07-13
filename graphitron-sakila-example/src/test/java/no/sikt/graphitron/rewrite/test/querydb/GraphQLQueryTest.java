@@ -1577,8 +1577,9 @@ class GraphQLQueryTest {
     // Seed ratings: PG (ACADEMY DINOSAUR), G (ACE GOLDFINGER), NC-17 (ADAPTATION HOLES),
     // G (AFFAIR PREJUDICE), PG (AGENT TRUMAN); lengths 86, 48, 50, 117, 169. Each facet's
     // counts apply the connection filter minus that facet's own predicate, so a selected
-    // rating still shows its sibling ratings' counts. The aggregate runs as one UNION ALL,
-    // ordered facet ASC, count DESC, value(text) ASC.
+    // rating still shows its sibling ratings' counts. The aggregate runs as one UNION ALL;
+    // each facet's entries are sorted after decode: count DESC, then the typed value's
+    // natural order (Int numerically, enums in declaration order), NULL bucket last.
 
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> facetValues(Map<String, Object> data, String facetField) {
@@ -1592,17 +1593,18 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "{ filmsFaceted { facets { rating { value count } length { value count } } } }");
         // SELECT rating, COUNT(*) FROM film GROUP BY rating — enum values surface as the
-        // GraphQL enum (NC-17's SDL name is NC_17), counts DESC then value(text) ASC.
+        // GraphQL enum (NC-17's SDL name is NC_17), counts DESC then enum declaration order.
         assertThat(facetValues(data, "rating"))
             .extracting(v -> v.get("value"), v -> v.get("count"))
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple("G", 2),
                 org.assertj.core.groups.Tuple.tuple("PG", 2),
                 org.assertj.core.groups.Tuple.tuple("NC_17", 1));
-        // All five lengths are distinct; one bucket each.
+        // All five lengths are distinct (one bucket each), so the order IS the value order:
+        // numerically ascending, because entries sort on the decoded Int, not its text cast.
         assertThat(facetValues(data, "length"))
             .extracting(v -> v.get("value"), v -> v.get("count"))
-            .containsExactlyInAnyOrder(
+            .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(48, 1),
                 org.assertj.core.groups.Tuple.tuple(50, 1),
                 org.assertj.core.groups.Tuple.tuple(86, 1),
@@ -1628,7 +1630,7 @@ class GraphQLQueryTest {
                 org.assertj.core.groups.Tuple.tuple("NC_17", 1));
         assertThat(facetValues(data, "length"))
             .extracting(v -> v.get("value"), v -> v.get("count"))
-            .containsExactlyInAnyOrder(
+            .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(48, 1),
                 org.assertj.core.groups.Tuple.tuple(117, 1));
         assertThat(data).extractingByKey("filmsFaceted", as(MAP))
@@ -1653,7 +1655,7 @@ class GraphQLQueryTest {
             .containsExactly(org.assertj.core.groups.Tuple.tuple("PG", 1));
         assertThat(facetValues(data, "length"))
             .extracting(v -> v.get("value"), v -> v.get("count"))
-            .containsExactlyInAnyOrder(
+            .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(48, 1),
                 org.assertj.core.groups.Tuple.tuple(117, 1));
         assertThat(data).extractingByKey("filmsFaceted", as(MAP))

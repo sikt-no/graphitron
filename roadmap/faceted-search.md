@@ -620,11 +620,17 @@ per-arm `IS NOT NULL` emit (Phase 4).
 
 ### Facet-value ordering
 
-v1 emits `ORDER BY facet, cnt DESC, value` at the outer level. Spike
-measurement: cost is ≈ 0.4 ms on top of the 27 ms base at 200 000
-rows — essentially free because the output set is tiny (≤ a few
-hundred rows per facet). Consumers needing a different ordering can
-re-sort client-side.
+Landed (2026-07-13, revised in review): ordering happens in the resolver
+after decode, not in SQL, and the statement carries no `ORDER BY` at all.
+The union's shared `value` column is necessarily `TEXT` (the arms are
+heterogeneous), so a SQL-side sort could only be lexicographic
+(`"117" < "48"`); the decode loop re-types every value and the per-facet
+lists are one-entry-per-distinct-value small, so sorting there is free and
+gives the native order. Contract: count DESC, then the decoded value's
+natural order (integers numerically, enums in declaration order, text for
+non-Comparable custom scalars), preserved NULL bucket last. The original
+plan's `ORDER BY facet, cnt DESC, value` (spike-measured at ~0.4 ms) is
+retired; the spike's cost finding is moot since the Java sort replaces it.
 
 ### Fallback to B
 
@@ -1401,11 +1407,13 @@ reviewers can confirm the v1 design does not foreclose it.
   reaches a non-null output field. `FacetSpec.valueNullable` carries the
   choice. Consumers wanting to hide a NULL bucket they would otherwise
   surface can mark the filter element non-null, or drop the row client-side.
-- **Facet-value ordering — count-desc with stable tiebreaker.** v1
-  emits `ORDER BY facet, cnt DESC, value` at the top of the UNION.
-  Spike measured ~0.4 ms overhead at 200× Sakila scale (27.3 →
-  27.7 ms median on shape C) — negligible, and the deterministic
-  tiebreaker on `value` means test assertions stay stable.
+- **Facet-value ordering: count-desc, then the decoded value's natural
+  order.** Sorted in the resolver after decode (the union's shared value
+  column is TEXT, so SQL could only sort lexicographically); integers order
+  numerically, enums in declaration order, the NULL bucket last. Still
+  deterministic, so test assertions stay stable, and strictly more useful
+  than the text order the plan originally accepted. See the *Facet-value
+  ordering* section for the full rationale.
 
 ## Open Questions
 
