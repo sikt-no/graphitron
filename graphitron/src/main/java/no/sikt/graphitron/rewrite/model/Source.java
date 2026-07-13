@@ -64,8 +64,9 @@ public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Chi
      * every arrival count: direct SQL once per invocation, degrading in query count, never in rows.
      * {@link Child} stays the absorbing always-correct arm. The current emitters keep leaf-identity
      * dispatch (an {@code OnlyChild}-classified batch field still emits its DataLoader, a one-element
-     * batch), so populating this arm changes no generated code; the direct-SQL {@code OnlyChild} emit
-     * rides the R431 → R432 → R314 emit re-platforming chain.
+     * batch), so populating this arm changes no generated code. R314's reentry re-platforming stays
+     * arrival-uniform by decision; the direct-SQL {@code OnlyChild} emit and this clause's enforcer
+     * are owned by R471 ({@code direct-sql-onlychild-reentry-emit}).
      */
     record OnlyChild(SourceShape shape) implements Source {
         public OnlyChild {

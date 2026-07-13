@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: [coordinate-lowers-to-datafetcher-queryparts, decompose-sourcekey, collapse-split-and-record-table-leaves]
 created: 2026-06-15
-last-updated: 2026-07-04
+last-updated: 2026-07-13
 ---
 
 # Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model
@@ -34,6 +34,10 @@ natural key*). The per-member variation is exactly what the facts own:
   The "two arms" are the source-object shape, not a new sealed switch the key lift owns: a second
   field-granular gate at the lift site would be the same predicate evaluated by a second consumer.
   Post-R431 this lives on the decomposed source-object / locator facts, not on `SourceKey.Reader`.
+  With R461 (`unify-sdl-field-accessor-resolution`, Done 2026-07-13), "the accessor locator" names
+  one seam, `ClassAccessorResolver`'s shared candidate model, not four divergent resolutions —
+  which is what makes "reuses the accessor locator per key column" a single-consumer claim rather
+  than a fifth re-derivation of the name rules.
   There is no liveness axis; "same keys, same rows" is the whole contract.
 - **The operation** owns the per-member payload: `Fetch` a plain re-projection, `Lookup` the
   positional correspondence (`LookupMapping`), `ServiceCall` the service lift, the DML arms their
@@ -45,6 +49,23 @@ So `emit(reentry) = f(source facts, operation, target)` with no `instanceof` on 
 line to hold: `correlation` as a uniform column-pair set with PK self-identity as the degenerate arm
 is clean **only if no emit site forks on "is this self-identity"**; if an emit site needs that
 predicate, it belongs in the model as a fact, not recomputed at the emit site.
+
+**Arrival is a fact this slice reads for lift width, not for strategy** (settled 2026-07-13, after
+R463 landed). Since R463 the source fact carries the true arrival arm (`Root` / `OnlyChild` /
+`Child`), and `Source`'s javadoc names the wrapper as the emit-strategy dispatch: `Child` batches
+through a DataLoader, `Root` / `OnlyChild` run SQL directly. The two counts are distinct: arrival
+bounds DataLoader invocations, not lift width — a `Root` service reentry still lifts N keys from its
+N produced rows, and the keyed re-query degenerates cleanly at one key. This slice stays
+**arrival-uniform**: it switches the reentry emit on the source-shape / operation / target facts and
+`requiresReFetch`, and deliberately does *not* consume the `OnlyChild` / `Child` arm as a strategy
+fork — an `OnlyChild`-classified reentry field keeps its one-element batch. The direct-SQL
+`OnlyChild` emit is decided out, not deferred as an open verdict: it changes query shape and SELECT
+counts, so it definitionally cannot land under this item's execution-tier-equivalence acceptance.
+**R471** (`direct-sql-onlychild-reentry-emit`) owns it, together with the honesty-clause enforcer the
+`Source.OnlyChild` javadoc requires; that javadoc's forward pointer (previously "rides the R431 →
+R432 → R314 chain") now names R471. After this slice, the arrival arm is a landed-but-unconsumed
+fact at the reentry emit site, and R471 is its recorded consumer — "emit by switching on the model"
+here means the facts listed above, not the arrival wrapper's documented dispatch.
 
 ## Goals
 
@@ -74,14 +95,16 @@ leaf-dispatched until their own slices. No input-side work; no `TypeFetcherGener
 beyond what the reentry path forces (R7 stays separate). The seam-worklist verdict this slice must
 state: row 15 (channel catch / early-return arms), since the service reentry path crosses the error
 channel; other open promote-or-inline verdicts (rows 12–14, 16) stay per-slice calls for later
-families.
+families. The `OnlyChild` strategy question is *not* such a verdict: it is settled above
+(arrival-uniform; direct SQL is R471's), so the implementer inherits a decision, not a fork.
 
 ## Acceptance
 
 **Execution-tier equivalence, not byte-for-byte output equality** (settled 2026-07-04): the goal is
 gradual improvement toward R333/R222, so the slice may normalize generated-code shape as it goes. The
-gates are the R305 reentry execution tier (`SingleRecordPayloadDmlTest`, the service-producer
-execution test, the LocalContext error path) — same rows, same order, error paths intact — plus the
+gates are the R305 reentry execution tier (`SingleRecordPayloadDmlTest`,
+`SingleRecordTableFieldServiceProducerExecutionTest`, the LocalContext error path) — same rows, same
+order, error paths intact — plus the
 `@classified` corpus classifying unchanged, plus the level-1 closure oracle staying green across the
 re-platforming, plus the goal-4 deliverable: the bidirectional closure oracle exists and passes for
 the reentry family.
@@ -91,7 +114,10 @@ the reentry family.
 Follows **R305** (dissolved `SingleRecordTableField`, made `requiresReFetch` axis-derived, kept the
 emit leaf-dispatched), **R316** (the `(source, operation, target)` pivot; its changelog entry pins
 "Collapses to one carrier under R314" on `Operation.Call`), and **R333** (the model this slice
-consumes; its Relationships section records the decided sequence). Run-up: R431
+consumes; its Relationships section records the decided sequence). **R463** (Done 2026-07-13)
+populated the `Source.OnlyChild` arrival arm this slice reads but does not strategy-fork on (see
+above; the direct-SQL emit is R471's), and **R461** (Done 2026-07-13) unified accessor resolution
+behind the one candidate model the key lift reuses. Run-up: R431
 (`decompose-sourcekey`) then R432 (`collapse-split-and-record-table-leaves`, the beachhead), then this
 item. The original body's insight — reentry SQL is uniform, variation belongs to the axes — survives
 verbatim; only the vocabulary and the slot destinations moved.
