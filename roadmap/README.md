@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R479` | Connection cursor decode crashes redact into a 500 instead of a clean error | Spec | 2026-07-14 | [plan](connection-cursor-decode-crashes.md) |
 | `R431` | Decompose SourceKey onto the model's facts | Spec | 2026-07-14 <sub>created 2026-07-04</sub> | [plan](decompose-sourcekey.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R477` | Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities) | Ready | 2026-07-14 | [plan](batch-node-id-wrong-arity-crash.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
+| `R477` | Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities) | In Review | 2026-07-14 | [plan](batch-node-id-wrong-arity-crash.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R478` | Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract <sub>blocked by: [batch-node-id-wrong-arity-crash](batch-node-id-wrong-arity-crash.md)</sub> | Spec | 2026-07-14 | [plan](keyshape-sealed-variants.md) |
@@ -223,7 +223,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R477` [**Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities)**](batch-node-id-wrong-arity-crash.md) — Ready, bug
+- `R477` [**Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities)**](batch-node-id-wrong-arity-crash.md) — In Review, bug
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R473` [**Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution**](explicit-nodeid-grammar.md) — Backlog, architecture
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture

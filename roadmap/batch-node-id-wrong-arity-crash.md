@@ -1,7 +1,7 @@
 ---
 id: R477
 title: "Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities)"
-status: Ready
+status: In Review
 bucket: bug
 priority: 4
 theme: nodeid
