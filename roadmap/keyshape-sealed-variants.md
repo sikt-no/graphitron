@@ -71,7 +71,7 @@ Uniform facts stay interface accessors (`columns()` for `SelectMethodBody`, `req
 
 ## Sequencing
 
-Depends on R477 (`batch-node-id-wrong-arity-crash`). R477 ships the behavioural arity guard first on its signed-off minimal patch; R478 is then a pure model refactor over the guarded emission. Both edit `emitDecodeAndGroup`'s NODE_ID arm, so the order avoids rebasing a signed-off bug fix over a restructure.
+Depended on R477 (`batch-node-id-wrong-arity-crash`), now Done: R477 shipped the behavioural arity guard on its signed-off minimal patch, so R478 is a pure model refactor over the guarded emission. Both edit `emitDecodeAndGroup`'s NODE_ID arm; landing the bug fix first avoided rebasing it over a restructure, and that ordering has already played out.
 
 ## Out of scope
 
