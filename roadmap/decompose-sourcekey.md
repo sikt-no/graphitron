@@ -1,7 +1,7 @@
 ---
 id: R431
 title: "Decompose SourceKey onto the model's facts"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 4
 theme: classification-model

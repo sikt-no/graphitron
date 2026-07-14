@@ -20,8 +20,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | In Progress | 2026-07-14 <sub>created 2026-07-09</sub> | [plan](per-participant-multitable-child-join-paths.md) |
 | `R479` | Connection cursor decode crashes redact into a 500 instead of a clean error | Spec | 2026-07-14 | [plan](connection-cursor-decode-crashes.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
-| `R431` | Decompose SourceKey onto the model's facts | Ready | 2026-07-14 <sub>created 2026-07-04</sub> | [plan](decompose-sourcekey.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
+| `R431` | Decompose SourceKey onto the model's facts | In Progress | 2026-07-14 <sub>created 2026-07-04</sub> | [plan](decompose-sourcekey.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
 | `R478` | Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract | Ready | 2026-07-14 | [plan](keyshape-sealed-variants.md) |
@@ -184,7 +184,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R432` [**Collapse SplitTableField and RecordTableField into one source-gated leaf**](collapse-split-and-record-table-leaves.md) — Backlog, structural, blocked by [decompose-sourcekey](decompose-sourcekey.md)
-- `R431` [**Decompose SourceKey onto the model's facts**](decompose-sourcekey.md) — Ready, structural
+- `R431` [**Decompose SourceKey onto the model's facts**](decompose-sourcekey.md) — In Progress, structural
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model**](dissolve-reentry-leaves-dimensional-emit.md) — Ready, architecture, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Spec, architecture
