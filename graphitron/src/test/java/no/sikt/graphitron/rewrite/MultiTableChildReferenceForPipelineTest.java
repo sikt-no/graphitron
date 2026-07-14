@@ -90,9 +90,8 @@ class MultiTableChildReferenceForPipelineTest {
         var self = field.participantJoinPaths().get("CategorySelf");
         assertThat(self).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
         var selfSlots = ((ParticipantCorrelation.KeyTupleWhere) self).slots();
-        // Slot orientation pinned: parent side is category.parent_category_id, participant side is
-        // category.category_id (navigate to the parent category). A flipped orientation is silently
-        // wrong data; the execution tier asserts the resulting rows.
+        // Single-cardinality orientation: parent side is category.parent_category_id, participant side
+        // is category.category_id (navigate to the parent category).
         assertThat(selfSlots).hasSize(1);
         assertThat(selfSlots.get(0).sourceSide().sqlName()).isEqualTo("parent_category_id");
         assertThat(selfSlots.get(0).targetSide().sqlName()).isEqualTo("category_id");

@@ -132,6 +132,17 @@ CREATE TABLE film_category (
     PRIMARY KEY (film_id, category_id)
 );
 
+-- R458 slice-1 execution fixture: a single-PK table with one FK to category, so a multi-table
+-- polymorphic child field on Category (Category.parentRef / Category.childRefs) can pair the
+-- same-table self-FK participant with a heterogeneous sibling of uniform (1-column) PK arity.
+-- film_category cannot serve that role: its composite PK trips the uniform-PK-arity rule on v1
+-- multi-table interface/union fetchers.
+CREATE TABLE category_label (
+    category_label_id  serial       PRIMARY KEY,
+    category_id        int          NOT NULL REFERENCES category(category_id),
+    label              varchar(30)  NOT NULL
+);
+
 -- -------------------------
 -- Inventory / rental / payment
 -- -------------------------
@@ -346,6 +357,12 @@ INSERT INTO category (name, parent_category_id) VALUES
 
 INSERT INTO film_category (film_id, category_id) VALUES
     (1, 4), (2, 1), (3, 3), (4, 4), (5, 1);
+
+-- R458 slice-1: category_label rows for the multi-table polymorphic self-FK fixture. Deliberately
+-- none for category_id 2 (Action), so querying Action isolates the self-FK (CategoryNode) branch:
+-- childRefs yields only its child category (Thriller), parentRef only its parent (Genre).
+INSERT INTO category_label (category_id, label) VALUES
+    (1, 'genre-label'), (4, 'comedy-label');
 
 -- Cast each film with actors from the seeded actor pool (1=PENELOPE, 2=NICK, 3=ED).
 -- Used by argres Phase 2a execution tests (Film.actors inline @lookupKey via film_actor).

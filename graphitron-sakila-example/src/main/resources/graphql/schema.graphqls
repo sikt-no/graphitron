@@ -1260,6 +1260,23 @@ type RecordExample {
     fieldC: String @field(name: "rebound")
 }
 
+# R458 slice-1 execution fixture: a multi-table interface used as a self-FK polymorphic child field
+# on Category (see Category.parentRef / Category.childRefs below). CategoryNode is backed by the same
+# table as the parent (category), reached via the self-referencing FK stated with @referenceFor;
+# CategoryLabel keeps the field multi-table by auto-discovering its own single FK
+# (category_label.category_id -> category.category_id) and matches CategoryNode's 1-column PK arity.
+# Contrast the non-polymorphic G5 Category.parent / Category.children inline TableFields, which take a
+# different emitter.
+interface CategoryRef { rowId: Int }
+type CategoryNode implements CategoryRef @table(name: "category") {
+    rowId: Int @field(name: "category_id")
+    name:  String @field(name: "name")
+}
+type CategoryLabel implements CategoryRef @table(name: "category_label") {
+    rowId: Int @field(name: "category_id")
+    label: String @field(name: "label")
+}
+
 type Category @table(name: "category") {
     categoryId:  Int!     @field(name: "CATEGORY_ID")
     name:        String!  @field(name: "NAME")
@@ -1267,6 +1284,20 @@ type Category @table(name: "category") {
     parent:      Category @reference(path: [{key: "category_parent_category_id_fkey"}])
     # G5: self-referential inline TableField (list) — reverse of the same FK
     children:    [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # R458 slice-1 execution fixture: self-referencing FK orientation on a MULTI-TABLE polymorphic
+    # child field (MultiTablePolymorphicEmitter), the path @referenceFor drives. A list child field
+    # orients the self-FK so the child holds it (child.parent_category_id = parent.category_id),
+    # collecting the CHILD categories pointing back at the parent. This is the R458 review regression
+    # guard: the resolver used to hardcode single-valued orientation regardless of cardinality, which
+    # flipped these slots. Querying category_id 2 (Action) isolates the self-FK branch: no
+    # category_label row has category_id 2, so CategoryLabel is empty there.
+    #
+    # The single-cardinality counterpart (navigate TO the parent) is deliberately absent: it puts the
+    # FK on the parent side (parent.parent_category_id, a non-key column the parent record does not
+    # project), which crashes at runtime today. That is a broader pre-existing gap in single-cardinality
+    # parent-holds-FK polymorphic child fields (the Customer.address classified-corpus shape shares it),
+    # tracked separately from this R458 orientation fixture.
+    childRefs:   [CategoryRef!]! @referenceFor(type: "CategoryNode", path: [{key: "category_parent_category_id_fkey"}])
 }
 
 """
