@@ -189,15 +189,28 @@ touches.
 - **`@classified` corpus classifying unchanged**; the level-1 closure oracle
   (`MethodClosureOracleTest`) staying green; full reactor `mvn install -Plocal-db` green at every
   slice.
-- **Model invariants keep their teeth, per-invariant.** The four compact-constructor rejections
-  have two different fates once the axes separate, and each must be dispositioned explicitly, with
-  the existing `SourceKeyTest` coverage migrating alongside as the mechanical pin; no invariant
+- **Model invariants keep their teeth, per-invariant.** The compact constructor carries six
+  rejections in five invariant families (re-count at pickup; `SourceKeyTest` is the pin) with
+  different fates once the axes separate, and each must be dispositioned explicitly, with the
+  existing `SourceKeyTest` coverage migrating alongside as the mechanical pin; no invariant
   silently dropped:
   - `SourceRowsCall` ⇒ `Wrap.Row` and `AccessorCall` ⇒ `Wrap.Record`: expected to become
     **unrepresentable by construction** (the non-service lift arms pin their key shape; a stored
     wrap that could disagree no longer exists).
-  - `ServiceTableRecord`(target-aligned) ⇒ empty path: dissolves with `path`'s deletion (the
-    illegal state loses its carrier).
+  - `ServiceTableRecord`(target-aligned) ⇒ empty path and `ResultRowWalk` ⇒ empty path: dissolve
+    with `path`'s deletion (the illegal state loses its carrier; the delete-the-copies slice owns
+    the re-home-or-dissolve call, as stated there).
+  - `ResultRowWalk` ⇒ `Wrap.Record` | target-aligned `Wrap.TableRecord` (the DML carrier's bare
+    rows vs the `@service` error-channel carrier's typed record; pinned by
+    `SourceKeyTest.resultRowWalkRejectsWrapRow` /
+    `resultRowWalkRejectsWrapTableRecordMismatchedTarget`): the reader-to-wrap half becomes
+    unrepresentable if the key-row shape lands as a derivation from the lift arm plus producer
+    signature (the choice the destinations section leaves to the implementer); if the shape stays
+    a stored component, this family re-asserts at the same named join site as the envelope
+    invariant below. Either way the target-alignment sub-check dissolves with `target`'s
+    deletion — it asserts a denormalized copy agrees with its source, the drift class this item
+    removes — so this family is dispositioned no later than the `target`-deleting slice, not left
+    for the `Reader` decomposition.
   - `ResultRowWalk(OUTCOME_SUCCESS)` ⇒ `Wrap.TableRecord`: the hard one — it couples the envelope
     axis (routed to the type-level error-channel fact) to the key-shape axis (routed to the
     source-object / producer facts), two facts that share no landing site after the split. Per the
