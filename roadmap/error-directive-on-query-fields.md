@@ -26,4 +26,4 @@ This blocks the natural follow-on to R378 (`nodeid-filter-malformed-vs-mismatche
 
 ## Relationship
 
-Depends on R378 (the client-error type + surface/redact split are the predecessor). Sibling to R262 (`@nodeId`-on-non-ID validate-time rejection) and R273 (NodeId mismatch semantics / `__NODE_*` sourcing), both in the nodeid/errors space.
+Depends on R378 (the client-error type + surface/redact split are the predecessor). Sibling to R262 (`@nodeId`-on-non-ID validate-time rejection) and R273 (`bare-scalar-id-arm-modernisation`, re-scoped 2026-07-14: the mismatch policy is settled by R378 and the `__NODE_*` sourcing work moved to R473/R27; R273 keeps only the bare scalar-ID argument arm), both in the nodeid/errors space.
