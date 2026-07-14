@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: nodeid
-depends-on: [batch-node-id-wrong-arity-crash]
+depends-on: []
 created: 2026-07-14
 last-updated: 2026-07-14
 ---

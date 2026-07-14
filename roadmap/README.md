@@ -22,10 +22,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R431` | Decompose SourceKey onto the model's facts | Spec | 2026-07-14 <sub>created 2026-07-04</sub> | [plan](decompose-sourcekey.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
-| `R477` | Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities) | In Review | 2026-07-14 | [plan](batch-node-id-wrong-arity-crash.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
-| `R478` | Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract <sub>blocked by: [batch-node-id-wrong-arity-crash](batch-node-id-wrong-arity-crash.md)</sub> | Spec | 2026-07-14 | [plan](keyshape-sealed-variants.md) |
+| `R478` | Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract | Spec | 2026-07-14 | [plan](keyshape-sealed-variants.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -223,11 +222,10 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R477` [**Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities)**](batch-node-id-wrong-arity-crash.md) — In Review, bug
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R473` [**Explicit @nodeId grammar: Node.id is the only implicit nodeId; typeName-first decode resolution**](explicit-nodeid-grammar.md) — Backlog, architecture
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
-- `R478` [**Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract**](keyshape-sealed-variants.md) — Spec, architecture, blocked by [batch-node-id-wrong-arity-crash](batch-node-id-wrong-arity-crash.md)
+- `R478` [**Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract**](keyshape-sealed-variants.md) — Spec, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnReferenceField / CompositeColumnReferenceField)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
