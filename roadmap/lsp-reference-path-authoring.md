@@ -7,7 +7,7 @@ priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-25
-last-updated: 2026-06-25
+last-updated: 2026-07-14
 ---
 
 # LSP-guided @reference path authoring
@@ -52,9 +52,14 @@ this item's diagnostic and ranking rungs consume R379's terminal-target verdict.
   refinement needs those; the provider already receives the directive AST node
   (`Directives.Directive directive`), so it can read sibling array elements.
 - `CodeActions` (`graphitron-lsp/.../code_action/CodeActions.java`) is the
-  existing code-action entry point (rung 4's host).
+  existing code-action entry point (rung 4's host). Since this item was drafted,
+  R398 landed a second branch there: `CodeActions.compute` also delegates to
+  `LintQuickFixes.compute`, which projects build-side `LintFinding`/`LintFix`
+  payloads straight off the report without recomputing the fix. Rung 4's
+  detector-driven action joins that structure rather than assuming a single
+  detector path.
 - The generator-side authority is `BuildContext.parsePath` / `parsePathElement`
-  (`BuildContext.java:1131`/`:1389`), operating on `GraphQLDirectiveContainer` +
+  (definitions greppable by name), operating on `GraphQLDirectiveContainer` +
   live `JooqCatalog`, tracking `currentSource` through `JoinStep.HasTargetTable`.
 
 ## The substrate: one owned path-walker, two worlds
@@ -74,9 +79,9 @@ Containment, the R119 pattern applied at the walker altitude:
 1. **One stepping function, parameterised over an FK-graph abstraction.** The
    per-hop logic in `parsePathElement` is small and direction-aware: for `{key}`
    it resolves the FK by name, checks it touches `currentSource` (either the
-   FK-side or the key-side table), and advances to the other side
-   (`BuildContext.java:1406-1441`); for `{table}` it finds the unique FK between
-   `currentSource` and the named table and advances (`:1443-1471`); for
+   FK-side or the key-side table, the `foreignKeyTouchesTable(currentSource)`
+   check), and advances to the other side; for `{table}` it finds the unique FK
+   between `currentSource` and the named table and advances; for
    `{condition}` the target is the field's `@table` (terminal) or the method's
    second parameter (intermediate). The two worlds' FK data are isomorphic:
    `org.jooq.ForeignKey` exposes `getTable()` / `getKey().getTable()` /
@@ -224,6 +229,17 @@ carry `@UnitTier`.
    gated on Slice A; it could ship as a follow-up item once A/B land. Kept here
    per the design conversation (the user asked to keep it in scope), but it is the
    natural fracture point if this item grows too large to land in one review.
+4. **Rung 4's compute-side placement vs the shipped R398 precedent.** Rung 3
+   follows the generator-computes/LSP-renders principle (R233 projection; the
+   same shape R398's `LintQuickFixes` shipped). Rung 4 as specified computes the
+   whole-path edit LSP-side over the shared walker instead. That is a deliberate
+   asymmetry (the FK-graph search is an interactive authoring aid over data the
+   snapshot already carries, not a lint verdict the build owns), but the Spec
+   reviewer should re-confirm it against the R398 precedent; if the balance has
+   shifted, computing the suggested path build-side and rendering it as a
+   `LintFix` is the conforming alternative. Note for readers arriving from other
+   items: the generator-computes/LSP-renders principle is rung *3*'s (via R233),
+   not rung 4's.
 
 ## Relationship to other items
 

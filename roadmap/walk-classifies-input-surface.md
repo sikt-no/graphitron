@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-06-19
-last-updated: 2026-06-19
+last-updated: 2026-07-14
 ---
 
 # Fold input/scalar/enum classification into the single classify-and-emit walk
@@ -20,7 +20,7 @@ walk's child function (`SchemaReachability.childrenOf`) descends output edges on
 reaches the *input* surface: input objects, and the scalars / enums that sit only on argument and
 input-field coordinates. Those leaf kinds are still classified in a separate pre-walk sweep,
 `TypeBuilder.prepareForWalk` looping `classifyAndRegister` over `getAllTypesAsList()`
-(`TypeBuilder.java:203-216`). The walk is "single" for outputs and two-pass for everything else.
+(`TypeBuilder.java:231-239` at the time of writing). The walk is "single" for outputs and two-pass for everything else.
 
 This item makes the walk classify the whole reachable surface by extending the traverser's child
 function to the input edges, so inputs / scalars / enums are classified by the visitor as the walk
@@ -33,8 +33,8 @@ The pre-walk sweep classifies leaves *before* the walk for a stated reason that 
 stale: that "field classification reads input / scalar / enum verdicts from `ctx.types` during the
 walk" (the `prepareForWalk` javadoc). Every such read in `FieldBuilder` now goes through
 `TypeBuilder.lookAheadVerdict(...)`, which recomputes the verdict registry-free from SDL +
-reflection bindings + catalog. The marker at `FieldBuilder.java:5475` records "the last `ctx.types`
-read in FieldBuilder; the read-free invariant now holds." So nothing forces a leaf's verdict to
+reflection bindings + catalog. The marker comment in `FieldBuilder` records "the last `ctx.types`
+read in FieldBuilder; the read-free invariant now holds" (grep for that phrase; `FieldBuilder.java:6841` at the time of writing). So nothing forces a leaf's verdict to
 exist in the registry before the field that references it is classified. That is exactly the slack
 this item spends: a leaf can be registered *after* the field that reaches it, because the field's
 read of the leaf never touches the registry.
@@ -88,9 +88,9 @@ Three moves, plus the deletions they enable:
    `typeBuilder.classifyAndRegister(node)`. `classifyType` already handles all three kinds; the only
    change is the call site moving from the sweep to the visit. The new leaf arms are safe under the
    `null`-fieldBuilder types-only seam: unlike the object arm (which guards field classification behind
-   `fieldBuilder != null`, `GraphitronSchemaBuilder.java:346`), the leaf arms only call
+   `fieldBuilder != null` in the `ClassifyingVisitor` object arm), the leaf arms only call
    `classifyAndRegister` and do no field work, so they need no `fieldBuilder` guard. The types-only test
-   seam (`buildContextForTests`, `GraphitronSchemaBuilder.java:233-234`) drives the same
+   seam (`GraphitronSchemaBuilder.buildContextForTests`) drives the same
    `ClassifyingVisitor`, so under the extended edges it now descends the input surface and fires these
    leaf callbacks too, classifying leaves through the walk; its post-sweep expectations move with it.
 3. **Delete the pre-walk leaf sweep** in `prepareForWalk` (the `getAllTypesAsList` loop calling
@@ -106,7 +106,7 @@ These passes iterate `getAllTypesAsList` for reasons independent of the walk and
   point; untouched.
 - `retainedSupportTypes()` carries the *same* all-declared dependency as the indices, less obviously:
   `classifyType`'s published-support-type arm (`SortDirection`) gates on `retainedSupportTypes()`
-  (`TypeBuilder.java:770-773`, `871-887`), which scans `getAllTypesAsList()` for references to the
+  (gate at `TypeBuilder.java:994-1002`, definition at `:1102-1117`, at the time of writing), which scans `getAllTypesAsList()` for references to the
   published support types. It is registry-free, so the read-free invariant survives, but it is an
   all-declared *superset* scan, not reachability-pruned. The interaction with R335: when
   `SortDirection` moves from the sweep onto the walk, its verdict still depends on this all-declared
@@ -115,8 +115,8 @@ These passes iterate `getAllTypesAsList` for reasons independent of the walk and
   never visited by the walk, so it is pruned from `types()` anyway. That is the correct outcome under
   the settled prune fork, but it is exactly where a prune-vs-retain mismatch would hide; the
   prune-proof acceptance case must include a published-support-type sub-case (see Acceptance).
-- `surfaceMultiProducerRejections` pre-registers `UnclassifiedType` demotions for binding-rejected
-  types, inputs included (`TypeBuilder.java:610`/`:615`/`:229`). This is the load-bearing interaction,
+- `TypeBuilder.surfaceMultiProducerRejections` pre-registers `UnclassifiedType` demotions for binding-rejected
+  types, inputs included (invoked from `prepareForWalk`; the `register` demote call sits at its tail). This is the load-bearing interaction,
   and it is **not** automatically idempotent under `register`. Under R335 a *reachable* rejected input
   is also visited by the walk, which calls `classifyAndRegister`. If `classifyAndRegister` runs
   `classifyType` first, it returns a live `TableInputType` / `InputType` verdict; the registry already
@@ -124,7 +124,7 @@ These passes iterate `getAllTypesAsList` for reasons independent of the walk and
   (`TypeRegistry.java:94-102`) **re-demotes to a fresh generic-structural `UnclassifiedType`**, clobbering
   the typed `Rejection` payload (`RecordBindingMultiProducer`) the validator and candidate-hint path
   key on. The fix is mandatory, not conditional: make `classifyAndRegister` consult
-  `bindings.rejection(name)` *first*, mirroring `lookAheadVerdict` (`TypeBuilder.java:356-359`), so the
+  `bindings.rejection(name)` *first*, mirroring `TypeBuilder.lookAheadVerdict`'s rejection-first check, so the
   walk reconstructs the *same* `UnclassifiedType` payload and `register`'s `equals`-idempotent arm
   (`TypeRegistry.java:80-82`) fires instead of the demote arm. Idempotency then holds by construction
   (same payload), not by luck of reconciliation.

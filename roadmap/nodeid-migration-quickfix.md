@@ -25,7 +25,7 @@ Because only `BuildWarning`s reach `ValidationReport.warnings()`, and `Diagnosti
 
 ## Shape of the fix
 
-Follow the `lsp-reference-path-authoring` rung-4 principle: the fix is computed generator-side from classifier authority and merely rendered by the LSP; the LSP never re-derives node facts.
+Follow the shipped `LintQuickFixes` pattern (R398; the same generator-computes/LSP-renders principle `lsp-reference-path-authoring` rung 3 takes from R233): the fix is computed generator-side from classifier authority and merely rendered by the LSP; the LSP never re-derives node facts.
 
 1. Convert the three shim WARNs into `BuildContext.addWarning(new BuildWarning.LintFinding(...))` with the field's `SourceLocation` and a `LintFix` whose edit inserts the canonical directive text:
    - Site A: insert ` @nodeId` (bare form; the parent is the field's own type, which is exactly where R473's grammar keeps the bare form legal).

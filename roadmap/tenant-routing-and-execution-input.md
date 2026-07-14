@@ -6,7 +6,7 @@ bucket: architecture
 priority: 5
 theme: runtime-connection
 depends-on: []
-last-updated: 2026-07-03
+last-updated: 2026-07-14
 ---
 
 # Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource
@@ -23,9 +23,9 @@ The main insight: graphitron already knows which database column every argument,
 
 Multi-tenant queries are first-class: an API user can hold data in several tenants at once. The canonical case is a student with results at multiple universities. The query starts in a **tenant-index table** on the default source, mapping the student to the organisations holding their data; each returned row names the tenant its children must be fetched from, on a different connection per row. Lacking such an index, the fallback is fanning out across every tenant and looking, the pattern production runs by hand today; that fallback is R46's arm of this model (see [Siblings](#siblings)).
 
-R429 (`connection-transaction-lifecycle`) is the substrate: graphitron owns connection acquisition and transactions, and database-per-tenant deployments hand it a `Map<TenantId, DataSource>`. R429 owns acquisition, transaction demarcation, and session state; R45 owns everything schema-shaped: the tenant-column declaration, the table classification, the per-field `TenantBinding` inference, the factory shape, the per-tenant partitioning at the fan-out points, and the validation that makes unroutable tenant-scoped fields a build error. The shared-database RLS flavor needs nothing from R45 (row scoping is the database's job there).
+R429 (`connection-transaction-lifecycle`, Done; file self-deleted) is the shipped substrate: graphitron owns connection acquisition and transactions, and database-per-tenant deployments hand it a per-tenant DataSource map carried by the generated `TenantConnections` class (keyed by an opaque tenant key). R429 owns acquisition, transaction demarcation, and session state; R45 owns everything schema-shaped: the tenant-column declaration, the table classification, the per-field `TenantBinding` inference, the factory shape, the per-tenant partitioning at the fan-out points, and the validation that makes unroutable tenant-scoped fields a build error. The shared-database RLS flavor needs nothing from R45 (row scoping is the database's job there).
 
-R429's connection model was amended in step with this revision (2026-07-03) to cover operation-divined tenancy, and it owns the transaction demarcation rule this item routes through: within one operation, all SQL for the same divined tenant shares one transaction, so a query touching N tenants runs N read-only transactions. This item references that rule rather than restating it.
+R429's connection model was amended in step with the 2026-07-03 revision to cover operation-divined tenancy, and R429 has since shipped (Done). It owns the transaction demarcation rule this item routes through: within one operation, all SQL for the same divined tenant shares one transaction, so a query touching N tenants runs N read-only transactions. This item references that rule rather than restating it.
 
 ## Design
 
@@ -84,17 +84,9 @@ A binding whose runtime value is absent (the nullable filter arrived empty) is a
 
 ### Factory shape
 
-Rides R429's `DataSource` factory. With `<tenantColumn>` configured, the facade emits a multi-tenant overload; for the catalog-inferred `T = Long` and `@service(contextArguments: ["userInfo", "fnr"])`:
+Rides R429's shipped acquisition seam, which differs from the pre-shipping sketch this section used to illustrate. What shipped (see `GraphitronFacadeGenerator` and `ConnectionRuntimeClassGenerator`): the facade emits `newExecutionInput(DSLContext defaultDsl, ...)` as the R190 escape hatch plus a distinctly-named `newOwnedExecutionInput(...)` for graphitron-owned acquisition (deliberately not an overload), and the per-tenant map is not a factory parameter at all; it lives on the generated `TenantConnections` carrier, whose `dataSourcesByTenant` field is keyed by an opaque tenant key resolved at acquisition time.
 
-```java
-public static ExecutionInput.Builder newExecutionInput(
-    DataSource defaultDataSource,
-    Map<Long, DataSource> dataSourcesByTenant,
-    String fnr,
-    UserInfo userInfo);
-```
-
-`defaultDataSource` serves `Untenanted` fields (global reference data); the map serves every divined key. There is no tenant parameter: the tenant is not a request-scope fact. Unknown divined key at acquisition is a request-level error before any SQL (R429's seam raises it). Body follows the R190 null-check + `graphQLContext.put` shape.
+R45's factory work therefore extends `TenantConnections` and the `newOwnedExecutionInput` path rather than adding a map-taking `newExecutionInput` overload: the default source serves `Untenanted` fields (global reference data); the divined binding supplies the tenant key at each acquisition. There is still no tenant parameter on the factory, because the tenant is not a request-scope fact. Unknown divined key at acquisition is a request-level error before any SQL (R429's seam raises it). The concrete signature is re-derived against the shipped generators at pickup.
 
 ### Execution: partition every fan-out point per tenant
 
@@ -139,7 +131,7 @@ query {
 
 ## Open questions
 
-1. **R429 sync through sign-off.** The R429 amendment landed with this revision (its connection model now covers operation-divined tenancy and owns the demarcation rule). The remaining task is discipline, not design: the two Specs share the `Map<TenantId, DataSource>` seam, so a change to either side's half re-checks the other before either item leaves Spec.
+1. **R429 sync: resolved.** R429 has shipped (Done), so the lockstep-Spec discipline this question described is over. The remaining task is one-directional: R45 tracks the shipped seam (`TenantConnections`, `newOwnedExecutionInput`), and the Factory shape section above records where the shipped surface diverged from the pre-shipping sketch.
 2. **Multiple bindings on one field: resolved into the model.** `ArgumentBound` carries the full co-binding set with a documented-precedence primary; the emitter emits a runtime equality guard across the set and errors on disagreement. A validate-time rejection would forbid legitimate schemas, and build time cannot know the values agree.
 3. **Explicit override.** Is a directive escape hatch (`@tenantId` on an argument) needed for schemas where inference picks the wrong binding? Deferred until a real schema demonstrates the misfire; inference-only keeps the surface clean. Two shape notes for whoever picks this up: if the concern is SDL legibility (an author cannot see that a filter field routes databases), the mitigation is surfacing, not a directive (validation output, generated docs, or LSP hover naming each field's binding); and if a genuine single-connection cross-tenant read ever needs an escape hatch, it enters as an explicit positively-classified arm (`CrossTenant`) the validator and dispatcher both read, never a flag that suppresses the `noTenantBinding` rejection.
 4. **Request-scope fallback.** Consumers who do know the tenant up front are covered by R429's contextArgument path; whether that should also surface as a `TenantBinding` arm (a request-bound sibling to `ArgumentBound`) is deferred until a schema needs both styles at once.
@@ -152,6 +144,6 @@ Earlier designs, superseded and recorded in this file's git history: a 2026-05-2
 
 ## Siblings
 
-- **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): the substrate (DataSource acquisition, transactions, session state, the `Map<TenantId, DataSource>` shape) and the owner of the transaction demarcation rule; amended 2026-07-03 to cover operation-divined tenancy. Its slice 4 execute coverage and this item's overlap, so the isolation proofs land once, split as: R429 proves routing given a caller-known tenant, R45 proves the divined bindings.
+- **Depends on R429** (`connection-transaction-lifecycle`, Done; file self-deleted): the substrate (DataSource acquisition, transactions, session state, the `TenantConnections` per-tenant map) and the owner of the transaction demarcation rule; amended 2026-07-03 to cover operation-divined tenancy, shipped since. Its execute coverage landed (`TenantRoutingExecutionTest`, `TenantConnectionsGeneratorTest`, `NewExecutionInputFactoryTest`), so the isolation proofs split as planned: R429 proved routing given a caller-known tenant, R45 proves the divined bindings.
 - **R46** ([`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md)): the deliberate no-binding fallback. When no index narrows the tenant, the field fans out across every tenant and unions the results, the pattern production runs by hand today. Its arm of the `TenantBinding` axis lands there together with its emitters; its body was refreshed 2026-07-03 from the dissolved `ContextValueRegistration` design onto this substrate.
 - **R190** (Done, recorded in [`changelog.md`](changelog.md)): the factory, classifier-cache, rejection, and validator-mirror patterns this item reuses throughout.
