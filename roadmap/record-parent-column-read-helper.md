@@ -5,14 +5,14 @@ status: Spec
 theme: classification-model
 depends-on: []
 created: 2026-05-19
-last-updated: 2026-07-13
+last-updated: 2026-07-14
 ---
 
 # Resolved accessors for record-parent column reads
 
 Re-specced 2026-07-13 against the current model; the original spec (see git history of this file) was written against a surface that no longer exists and had shrunk to one live concern. What changed under it:
 
-* `ResultType` is a four-arm seal (`GraphitronType.java:93`): R276 deleted `PojoResultType.NoBacking`, and `PojoResultType` permits only `Backed`. Every five-arm switch the old spec designed for is gone.
+* `ResultType` is a four-arm seal (`GraphitronType.java:94`): R276 deleted `PojoResultType.NoBacking`, and `PojoResultType` permits only `Backed`. Every five-arm switch the old spec designed for is gone.
 * `FetcherEmitter.propertyOrRecordValue`, the old spec's primary migration target, no longer exists. The fetcher path resolves accessors at classification time.
 * The multi-site duplication that motivated a shared `ColumnReadShape` dispatcher is gone. Exactly one column-read switch over `ResultType` survives: `GeneratorUtils.recordColumnReadArgs` (`generators/GeneratorUtils.java:290`, javadoc'd as the shared per-column reader), consumed by `buildFkRowKey` (`:274`) and `buildProducedRecordsKeyMany` (both reached via `buildRecordParentKeyExtraction`, `:238`).
 
@@ -27,7 +27,7 @@ With one site, a cross-site dispatcher is pointless. What survives of R180 is th
 
 Both ride on the unverified assumption that the backing class's accessor names follow the camel-case convention derived from the column's SQL name. A backing class whose accessor deviates (renamed component, non-conventional getter, `@field(name:)`-style remaps once those reach this path) produces generated code that fails to compile, with no classify-time diagnostic. The fetcher path already does this right: it reflects on the backing class at classification time and threads a resolved accessor to the emitter.
 
-R461 (`unify-sdl-field-accessor-resolution`, In Review as of this re-spec) consolidated accessor-candidate enumeration behind `ClassAccessorResolver.enumerate` with a `probe` entry point for the discovery direction and a sealed `AccessorProbe (Grounded | NoMatch)` result. That is precisely the machinery this item should consume: resolve the per-column accessor at classification time via the R461 surface, carry it to the key-extraction emitter, and fail at classify time (typed rejection with candidates) instead of emitting uncompilable code.
+R461 (`unify-sdl-field-accessor-resolution`, Done as of 2026-07-14; its file self-deleted, see the changelog) consolidated accessor-candidate enumeration behind `ClassAccessorResolver.enumerate` with a `probe` entry point for the discovery direction and a sealed `AccessorProbe (Grounded | NoMatch)` result. That is precisely the machinery this item should consume: resolve the per-column accessor at classification time via the R461 surface, carry it to the key-extraction emitter, and fail at classify time (typed rejection with candidates) instead of emitting uncompilable code.
 
 ## Direction for the revised plan
 

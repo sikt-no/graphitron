@@ -6,7 +6,7 @@ bucket: architecture
 priority: 7
 theme: service
 depends-on: [decompose-sourcekey]
-last-updated: 2026-07-13
+last-updated: 2026-07-14
 ---
 
 # @batchKeyLifter Record return-type symmetry
@@ -22,7 +22,7 @@ Two coupled sites pin the lifter to `RowN`:
 - `SourceRowDirectiveResolver` (`SourceRowDirectiveResolver.java:239-255`) validates the lifter method's return type against `org.jooq.Row1..Row22` and rejects anything else, including `RecordN`.
 - `SourceKey`'s compact constructor (`model/SourceKey.java:124-128`) pins `Reader.SourceRowsCall -> Wrap.Row` and throws otherwise, with the message "lifter contract pins output to RowN<...>". The sibling pin `Reader.AccessorCall -> Wrap.Record` shows the shape channel already exists; the lifter arm just never got the Record side.
 
-The classified carrier is `SourceKey.Reader.SourceRowsCall(LifterRef)` (`model/SourceKey.java:288`), produced from `@sourceRow`'s lifter resolution (see the `@sourceRow`/`@tableMethod` complementarity note around `FieldBuilder.java:5602`).
+The classified carrier is `SourceKey.Reader.SourceRowsCall(LifterRef)` (`model/SourceKey.java:288`), produced from `@sourceRow`'s lifter resolution (see the `@sourceRow`/`@tableMethod` complementarity note around `FieldBuilder.java:5630`).
 
 ## Shape of the fix
 

@@ -6,11 +6,12 @@ bucket: cleanup
 priority: 10
 theme: pagination
 depends-on: []
+last-updated: 2026-07-14
 ---
 
 # Drop the assembled-schema rebuild in favour of per-variant graphql-java forms
 
-`ConnectionPromoter.rebuildAssembledForConnections` (`ConnectionPromoter.java:196`; the single producer, consuming the per-field synthesis from `ConnectionPromoter.synthesiseForField`, `:122`) rebuilds the assembled `GraphQLSchema` via `SchemaTransformer` so directive-driven `@asConnection` carriers carry their rewritten return type and pagination args. The rebuild only runs at generate time and is never seen by the runtime (which reconstructs its schema from emitted `<TypeName>Type.type()` calls in `GraphitronSchema.build()`).
+`ConnectionPromoter.rebuildAssembledForConnections` (`ConnectionPromoter.java:239`; the single producer, consuming the per-field synthesis from `ConnectionPromoter.synthesiseForField`, `:140`) rebuilds the assembled `GraphQLSchema` via `SchemaTransformer` so directive-driven `@asConnection` carriers carry their rewritten return type and pagination args. The rebuild only runs at generate time and is never seen by the runtime (which reconstructs its schema from emitted `<TypeName>Type.type()` calls in `GraphitronSchema.build()`).
 
 Alternative: skip the rebuild; rebuild each carrier's parent `GraphQLObjectType` once via `parent.transform(b -> b.field(rewrittenField))` and stash it on the corresponding `GraphitronType` variant; emitters read per-variant `schemaType()` only. Already done for the synthesised types (Connection / Edge / PageInfo); this extends the pattern to rewritten parents.
 

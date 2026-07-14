@@ -1,5 +1,12 @@
 # R281 retirement inventory: the enum-row deletion whitelist
 
+> **Superseded, historical (banner added 2026-07-14).** This inventory predates the R299/R290
+> classification reshapes and the R316 corpus recut, so its row list no longer matches the live
+> enum or the corpus coordinates. It is retained as R281's permanent lineage record; do not use
+> it as a deletion whitelist without re-deriving the rows against the current
+> `GraphitronSchemaBuilderTest` enum and corpus. The staleness audits have carried this flag
+> since 2026-07-10.
+
 Companion to [`../classification-test-dsl.md`](../classification-test-dsl.md) (R281),
 satisfying pre-migration-hardening **item 1** ("commit the retirement inventory") of that
 spec's *Pre-migration hardening* section.
