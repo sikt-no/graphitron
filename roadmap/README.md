@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-14 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R474` | Adopt mvnd in the web dev environment to cut Maven JVM warmup | Ready | 2026-07-14 <sub>created 2026-07-13</sub> | [plan](mvnd-web-environment.md) |
+| `R474` | Adopt mvnd in the web dev environment to cut Maven JVM warmup | In Progress | 2026-07-14 <sub>created 2026-07-13</sub> | [plan](mvnd-web-environment.md) |
 
 ---
 
@@ -343,7 +343,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
-- `R474` [**Adopt mvnd in the web dev environment to cut Maven JVM warmup**](mvnd-web-environment.md) — Ready, improvement
+- `R474` [**Adopt mvnd in the web dev environment to cut Maven JVM warmup**](mvnd-web-environment.md) — In Progress, improvement
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
 - `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Spec, architecture
 - `R117` [**Graphitron knowledge base programme: DuckDB as queryable model**](knowledge-base-programme.md) — Backlog, architecture

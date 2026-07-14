@@ -1,7 +1,7 @@
 ---
 id: R474
 title: "Adopt mvnd in the web dev environment to cut Maven JVM warmup"
-status: Ready
+status: In Progress
 bucket: improvement
 theme: tooling
 depends-on: []
