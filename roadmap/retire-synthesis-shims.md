@@ -5,7 +5,7 @@ status: Backlog
 bucket: cleanup
 priority: 5
 theme: legacy-migration
-depends-on: [sis-rewrite-migration]
+depends-on: [nodeid-migration-quickfix]
 ---
 
 # Retire synthesis shims (`@nodeId` field, `IdReferenceField`)
@@ -31,7 +31,7 @@ Migration recipe: replace `fieldName: [ID!] @field(name: "X_ID")` with `fieldNam
 
 ## Retirement gate
 
-Both shims promote in lockstep on the same trigger: sis-graphql-spec has migrated to declared `@nodeId` / `@node` SDL (tracked at [sis-rewrite-migration](sis-rewrite-migration.md)) and one external-consumer release window has elapsed. At that point: delete the synthesis branches, flip WARNs to errors, and migrate any remaining test fixtures to canonical SDL.
+Both shims promote in lockstep on the same trigger: sis-graphql-spec has migrated to declared `@nodeId` / `@node` SDL (tooling tracked at [nodeid-migration-quickfix](nodeid-migration-quickfix.md); R34 pivoted 2026-07-14 from a manual migration tracker to LSP quick fixes that automate it) and one external-consumer release window has elapsed. At that point: delete the synthesis branches, flip WARNs to errors, and migrate any remaining test fixtures to canonical SDL.
 
 Gate update (2026-07-13): per user confirmation there is no actual consumer of the shim behavior today, so the gate above is more conservative than reality and retirement can likely proceed ahead of the sis window. R473 (`explicit-nodeid-grammar`) defines the post-shim grammar (directive-less `ID` becomes an ordinary column-mapped scalar, `Node.id` the only implicit nodeId) and the typeName-first decode resolution that deletes `resolveDecodeHelperForTable` together with these branches; coordinate the two retirements.
 
