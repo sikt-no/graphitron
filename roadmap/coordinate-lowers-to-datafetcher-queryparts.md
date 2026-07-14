@@ -1,13 +1,13 @@
 ---
 id: R333
 title: "The Graphitron data model"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-13
+last-updated: 2026-07-14
 ---
 
 # The Graphitron data model
