@@ -1,7 +1,7 @@
 ---
 id: R431
 title: "Decompose SourceKey onto the model's facts"
-status: Spec
+status: Ready
 bucket: structural
 priority: 4
 theme: classification-model
@@ -219,8 +219,14 @@ touches.
     mints both facts for a carrier field is the natural candidate) and pins it with a migrated
     test. Leaving it enforced nowhere is rework, not a judgment call.
 
-  `SealedHierarchyDocCoverageTest` and the architecture docs' `SourceKey` mentions (R433 already
-  de-inventoried them and pointed them here) sweep in the deleting slice.
+  `SealedHierarchyDocCoverageTest` and the architecture docs sweep in the deleting slice. The docs
+  half is a chapter, not stray mentions: `docs/architecture/explanation/dispatch-axes.adoc` narrates
+  the `SourceKey` / `LoaderRegistration` contract and is xref'd from `docs/architecture/index.adoc`,
+  `explanation/index.adoc`, and `development-principles.adoc` (the axis-split exemplar at its
+  "Dispatch axes" xref); the deleting slice rewrites or retires that chapter onto the decomposed
+  facts and retargets the inbound xrefs. (R433's forward note pointing `SourceKey` readers at this
+  item lived in the old principles doc and did not survive the R434 restructure, so no live doc
+  currently flags the record as scheduled for decomposition; verified 2026-07-14.)
 - No new execution-tier fixtures required: R425/R426/R436's pipeline and execution tests already
   pin the behaviors whose emit sites this item migrates, and they must stay green throughout.
 
