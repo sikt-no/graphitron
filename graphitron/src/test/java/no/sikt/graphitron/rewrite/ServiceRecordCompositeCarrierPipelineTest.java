@@ -91,11 +91,11 @@ class ServiceRecordCompositeCarrierPipelineTest {
         // path (RecordTableField reading the composite's filmRecord() / actorRecords() accessors).
         var film = schema.field("CreateFilmsResult", "film");
         assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) film).sourceKey().target().tableName()).isEqualTo("film");
+        assertThat(((ChildField.RecordTableField) film).returnType().table().tableName()).isEqualTo("film");
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
         var actorsRtf = (ChildField.RecordTableField) actors;
-        assertThat(actorsRtf.sourceKey().target().tableName()).isEqualTo("actor");
+        assertThat(actorsRtf.returnType().table().tableName()).isEqualTo("actor");
         assertThat(actorsRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
 
         assertThat(schema.diagnostics()).isEmpty();
@@ -220,7 +220,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         // accessor path, unchanged by the list carrier.
         var film = schema.field("CreateFilmsResult", "film");
         assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) film).sourceKey().target().tableName()).isEqualTo("film");
+        assertThat(((ChildField.RecordTableField) film).returnType().table().tableName()).isEqualTo("film");
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
         assertThat(((ChildField.RecordTableField) actors).sourceKey().cardinality())
@@ -336,14 +336,14 @@ class ServiceRecordCompositeCarrierPipelineTest {
         var film = schema.field("CreateFilmsResult", "film");
         assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
         var filmRtf = (ChildField.RecordTableField) film;
-        assertThat(filmRtf.sourceKey().target().tableName()).isEqualToIgnoringCase("film");
+        assertThat(filmRtf.returnType().table().tableName()).isEqualToIgnoringCase("film");
         assertThat(filmRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
 
         // The to-many child likewise resolves (list cardinality), not dropped to UnclassifiedField.
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
         var actorsRtf = (ChildField.RecordTableField) actors;
-        assertThat(actorsRtf.sourceKey().target().tableName()).isEqualToIgnoringCase("actor");
+        assertThat(actorsRtf.returnType().table().tableName()).isEqualToIgnoringCase("actor");
         assertThat(actorsRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
 
         assertThat(schema.diagnostics()).isEmpty();

@@ -350,7 +350,6 @@ final class SourceRowDirectiveResolver {
                     .toList();
                 var hop = new JoinStep.LiftedHop(leafTable, slots, alias);
                 SourceKey sourceKey = new SourceKey(
-                    leafTable,
                     leaf.expectedTuple(),
                     List.of(hop),
                     new SourceKey.Wrap.Row(),
@@ -360,7 +359,6 @@ final class SourceRowDirectiveResolver {
             }
             case Derivation.Path path -> {
                 SourceKey sourceKey = new SourceKey(
-                    leafTable,
                     path.expectedTuple(),
                     path.steps(),
                     new SourceKey.Wrap.Row(),

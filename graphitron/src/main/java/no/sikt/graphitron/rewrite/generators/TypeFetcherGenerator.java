@@ -6626,7 +6626,7 @@ public class TypeFetcherGenerator {
                 .endControlFlow()
                 .build();
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
-                sourceKey, resultType, CodeBlock.of("success.value()"));
+                sourceKey, returnType.table(), resultType, CodeBlock.of("success.value()"));
         } else {
             // R305: short-circuit on a null source. The LocalContext errors transport fires the
             // data-channel fetcher with a null source (data(null).localContext(errors)); the former
@@ -6639,7 +6639,8 @@ public class TypeFetcherGenerator {
                 .addStatement("return $T.completedFuture(null)", completableFuture)
                 .endControlFlow()
                 .build();
-            keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(sourceKey, resultType);
+            keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
+                sourceKey, returnType.table(), resultType);
         }
 
         return DataLoaderFetcherEmitter.build(

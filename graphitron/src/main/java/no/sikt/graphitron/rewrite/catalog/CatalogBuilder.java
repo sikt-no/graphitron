@@ -248,9 +248,7 @@ public final class CatalogBuilder {
             case ChildField.SingleRecordIdFieldFromReturning ignored ->
                 new FieldClassification.SingleRecordIdFromReturning();
             case ChildField.SingleRecordIdField f ->
-                new FieldClassification.SingleRecordId(
-                    f.sourceKey() != null && f.sourceKey().target() != null
-                        ? f.sourceKey().target().tableName() : null);
+                new FieldClassification.SingleRecordId(f.table().tableName());
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, false);

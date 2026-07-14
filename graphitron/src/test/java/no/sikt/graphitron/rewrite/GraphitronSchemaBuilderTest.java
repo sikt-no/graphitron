@@ -6987,7 +6987,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(idField.sourceKey().cardinality()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
                 assertThat(((no.sikt.graphitron.rewrite.model.SourceKey.Reader.ResultRowWalk) idField.sourceKey().reader()).envelope())
                     .isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
-                assertThat(idField.sourceKey().target().tableName()).isEqualTo("film");
+                assertThat(idField.table().tableName()).isEqualTo("film");
             }) {
             @Override public Set<Class<?>> variants() {
                 return Set.of(MutationField.MutationServiceRecordField.class,

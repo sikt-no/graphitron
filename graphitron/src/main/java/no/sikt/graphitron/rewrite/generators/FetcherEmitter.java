@@ -541,7 +541,7 @@ public final class FetcherEmitter {
     private static CodeBlock buildSingleRecordIdFetcherValue(
             ChildField.SingleRecordIdField carrier, String outputPackage) {
         var sk = carrier.sourceKey();
-        var table = sk.target();
+        var table = carrier.table();
         var recordType = ((SourceKey.Wrap.TableRecord) sk.wrap()).className();
         var keyColumns = sk.columns();
         var encoder = carrier.encode().encodeMethod();

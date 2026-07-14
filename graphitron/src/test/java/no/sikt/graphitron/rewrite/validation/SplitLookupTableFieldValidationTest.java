@@ -33,7 +33,7 @@ class SplitLookupTableFieldValidationTest {
 
     private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
-    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.splitSourceKey(RT_CONN.table(), PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.splitSourceKey(PARENT_KEY_COLS, true);
     private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
     // Single-cardinality @splitQuery @lookupKey is rejected at classifier time in

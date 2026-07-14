@@ -20,13 +20,6 @@ import java.util.Objects;
  * <h2>Components</h2>
  *
  * <ul>
- *   <li>{@link #target()} — the table the rows-method body reads from, or {@code null} for
- *       source-bearing fields with no table-bound target (notably scalar-returning
- *       {@code @service} fields backed by {@link Reader.ServiceUntypedRecord}). Pre-resolved
- *       so consumers avoid re-deriving from {@link #path()} / {@link #columns()} (the
- *       spec's original derivation requires {@link ColumnRef} to carry table info, which it
- *       does not today; storing the resolved {@link TableRef} keeps the existing model
- *       surface unchanged).</li>
  *   <li>{@link #columns()} — entry-point columns for the rows-method's parent-input VALUES
  *       table. When {@link #path()} is empty: target-side columns (the catalog-FK / accessor
  *       arms). When {@link #path()} is non-empty: first-hop source-side columns (the
@@ -63,19 +56,17 @@ import java.util.Objects;
  *       {@code TableRecord}; both the single ({@code AccessorKeyedSingle}) and the
  *       loadMany ({@code AccessorKeyedMany}) projections produce {@code RecordN<...>} keys
  *       at emit time.</li>
- *   <li>{@link Reader.ServiceTableRecord} with {@code recordType} equal to
- *       {@code target().recordClass()} → {@link #path()} empty. Walking past target is
- *       structurally redundant when the service produced a target-aligned record.</li>
- *   <li>{@link Reader.ResultRowWalk} → {@link Wrap.Record} or
- *       {@link Wrap.TableRecord} whose {@code className} equals {@code target.recordClass()},
+ *   <li>{@link Reader.ResultRowWalk} → {@link Wrap.Record} or {@link Wrap.TableRecord},
  *       and {@link #path()} empty. The upstream producer (DML mutation fetcher or
  *       carrier-shaped {@code @service} method) emits target-aligned rows; cardinality
  *       determines whether the consumer sees a single row ({@link Cardinality#ONE}) or a
- *       list / {@code Result} ({@link Cardinality#MANY}).</li>
+ *       list / {@code Result} ({@link Cardinality#MANY}). (R431: the {@code TableRecord}
+ *       className-equals-target and the {@code ServiceTableRecord} target-aligned empty-path
+ *       checks asserted a denormalized copy agreed with its source; they left with the
+ *       {@code target} component.)</li>
  * </ul>
  */
 public record SourceKey(
-    TableRef target,
     List<ColumnRef> columns,
     List<JoinStep> path,
     Wrap wrap,
@@ -131,26 +122,14 @@ public record SourceKey(
                 "SourceKey: Reader.AccessorCall requires Wrap.Record (accessor returns "
                 + "TableRecord; rows-method body reads valueN() off the key); got " + wrap);
         }
-        if (reader instanceof Reader.ServiceTableRecord stra
-                && target != null
-                && Objects.equals(stra.recordType(), target.recordClass())
-                && !path.isEmpty()) {
-            throw new IllegalArgumentException(
-                "SourceKey: Reader.ServiceTableRecord with recordType matching target's "
-                + "recordClass cannot carry a non-empty path (the service already produced a "
-                + "target-aligned record; walking past target is structurally redundant).");
-        }
         if (reader instanceof Reader.ResultRowWalk rrw) {
-            boolean wrapOk = wrap instanceof Wrap.Record
-                || (wrap instanceof Wrap.TableRecord tr
-                    && target != null
-                    && Objects.equals(tr.className(), target.recordClass()));
+            boolean wrapOk = wrap instanceof Wrap.Record || wrap instanceof Wrap.TableRecord;
             if (!wrapOk) {
                 throw new IllegalArgumentException(
                     "SourceKey: Reader.ResultRowWalk requires Wrap.Record or "
-                    + "Wrap.TableRecord(target.recordClass()) (upstream producer emits "
-                    + "target-aligned rows; the data-field fetcher's typed source read relies "
-                    + "on wrap to type the row shape); got " + wrap);
+                    + "Wrap.TableRecord (upstream producer emits target-aligned rows; the "
+                    + "data-field fetcher's typed source read relies on wrap to type the row "
+                    + "shape); got " + wrap);
             }
             if (!path.isEmpty()) {
                 throw new IllegalArgumentException(
@@ -191,7 +170,7 @@ public record SourceKey(
      * pair alone. Used by {@link MethodRef.Param.Sourced} and {@link ParamSource.Sources}
      * consumers that hold the triple {@code (wrap, columns, container)} directly without a
      * full {@link SourceKey} (only the source-shape side of the data is available, not the
-     * field-side {@code target} / {@code path} / {@code cardinality} / {@code reader}).
+     * field-side {@code path} / {@code cardinality} / {@code reader}).
      */
     public static TypeName keyElementType(Wrap wrap, List<ColumnRef> columns) {
         return switch (wrap) {
@@ -329,8 +308,7 @@ public record SourceKey(
          * <p>{@link SourceKey#path()} is empty by construction (target-aligned: the
          * producer's row shape IS the data table); {@link SourceKey#wrap()} is either
          * {@link Wrap.Record} (DML mutation fetcher producer emits {@code RecordN<...>})
-         * or {@link Wrap.TableRecord} whose {@code className} equals
-         * {@code target.recordClass()} ({@code @service} payload producer returns
+         * or {@link Wrap.TableRecord} ({@code @service} payload producer returns
          * a typed {@code XRecord} or {@code List<XRecord>} verbatim). Cardinality matches
          * the producer's output cardinality (single → {@link Cardinality#ONE}; list →
          * {@link Cardinality#MANY}). The structural invariants are enforced by

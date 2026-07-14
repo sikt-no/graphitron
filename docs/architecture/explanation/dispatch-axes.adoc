@@ -13,7 +13,6 @@ Three model values carry the dispatch axes between them: a `SourceKey` per field
 [source,java]
 ----
 record SourceKey(
-    TableRef target,                 // join target (or null for the parent-IS-source case)
     List<ColumnRef> columns,         // entry-point columns (parent-side or target-side per path)
     List<JoinStep> path,             // empty = target-aligned; non-empty = FK chain to target
     Wrap wrap,                       // Row | Record | TableRecord(ClassName)
@@ -82,7 +81,7 @@ The two axes are independent. The `AccessorKeyedMany` projection lands at `POSIT
 
 == Cross-axis invariants
 
-Three pairings are structurally illegal; `SourceKey`'s compact constructor rejects them. The pipeline-tier tests pin SDL → emitted-shape end-to-end, and the cross-module compile against `graphitron-sakila-example` is the structural backstop.
+Cross-axis pairings that are structurally illegal are rejected by `SourceKey`'s compact constructor. The pipeline-tier tests pin SDL → emitted-shape end-to-end, and the cross-module compile against `graphitron-sakila-example` is the structural backstop. Two examples:
 
 [cols="1,3"]
 |===
@@ -91,8 +90,6 @@ Three pairings are structurally illegal; `SourceKey`'s compact constructor rejec
 | `SourceRowsCall ⇒ Wrap.Row` | The `@sourceRow` lifter contract pins output to entry-point columns shaped as `RowN<...>`. `GeneratorUtils.buildLifterRowKey` emits `$T key = Lifters.method((BackingClass) env.getSource())` where `$T` is `sourceKey.keyElementType()`; the local must be `RowN<...>` for the assignment to type-check. A `Wrap.Record` slipping through would emit a `RecordN<...>`-typed local fed by a `RowN<...>`-returning method ; the generated source wouldn't compile.
 
 | `AccessorCall ⇒ Wrap.Record` | The rows-method body's parent-input VALUES loop emits `DSL.val(k.value$L())` to extract the scalar payload off the per-key `RecordN<...>`. `value$L()` exists on `RecordN<...>` but not on `RowN<...>`. The invariant ensures `keyElementType()` is a `RecordN<...>` type and the `value$L()` invocation type-checks against the local key variable.
-
-| `ServiceTableRecord` target-aligned ⇒ empty `path` | When the service returns a typed `TableRecord` whose class matches the field's target table, walking past target via a `path` chain is structurally redundant ; the service already produced a target-aligned record. The `Wrap.TableRecord` arm in `GeneratorUtils.buildKeyExtraction` emits `parent.into(Tables.X)` directly without walking; the invariant guarantees a misaligned record never reaches this site.
 |===
 
 Each invariant is one paragraph at a single place (the compact constructor) but governs the emit shape at multiple consumers downstream. Relaxing one without auditing the consumer side surfaces as a pipeline-test failure or a compile error in the generated `graphitron-sakila-example` source, not as a runtime surprise.

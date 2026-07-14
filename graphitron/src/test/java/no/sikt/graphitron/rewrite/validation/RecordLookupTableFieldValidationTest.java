@@ -40,9 +40,9 @@ class RecordLookupTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
-    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, false);
-    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, true);
-    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, false);
+    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, true);
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
     private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
     private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);

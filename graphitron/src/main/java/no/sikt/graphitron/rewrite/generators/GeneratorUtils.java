@@ -222,21 +222,31 @@ class GeneratorUtils {
      */
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
+            TableRef keyOwnerTable,
             GraphitronType.ResultType resultType) {
-        return buildRecordParentKeyExtraction(sourceKey, resultType, SOURCE_FROM_ENV);
+        return buildRecordParentKeyExtraction(sourceKey, keyOwnerTable, resultType, SOURCE_FROM_ENV);
     }
 
     /**
-     * Source-bound variant of {@link #buildRecordParentKeyExtraction(SourceKey, GraphitronType.ResultType)}.
+     * Source-bound variant of
+     * {@link #buildRecordParentKeyExtraction(SourceKey, TableRef, GraphitronType.ResultType)}.
      * {@code sourceExpr} is the Java expression the backing object is read from before the cast:
      * {@code env.getSource()} on the normal path, {@code success.value()} when this fetcher is an
      * immediate child of a flipped {@code Outcome} payload (R268) and the caller has already narrowed
      * {@code env.getSource()} to {@code Outcome.Success}. The cast and accessor logic are identical
      * either way; only the source binding moves, so the arm-switch reuses the field's own key
      * extraction rather than re-deriving it.
+     *
+     * <p>{@code keyOwnerTable} is the table whose typed {@code Tables.X.COL} constants the
+     * {@link SourceKey.Reader.AccessorCall} and single-cardinality
+     * {@link SourceKey.Reader.ProducedRecordRead} arms project the key through — the field's
+     * return-type table on the child-field path, the hub table ({@code parentKeyOwnerTable}) on
+     * the polymorphic record-parent path. Read off the carrier at the call site (R431); the
+     * other reader arms ignore it.
      */
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
+            TableRef keyOwnerTable,
             GraphitronType.ResultType resultType,
             CodeBlock sourceExpr) {
         TypeName keyType = sourceKey.keyElementType();
@@ -247,8 +257,8 @@ class GeneratorUtils {
                 buildLifterRowKey(src.lifter(), keyType, resultType, sourceExpr);
             case SourceKey.Reader.AccessorCall ac ->
                 sourceKey.cardinality() == SourceKey.Cardinality.MANY
-                    ? buildAccessorKeyMany(sourceKey, ac.accessor(), keyType, sourceExpr)
-                    : buildAccessorKeySingle(sourceKey, ac.accessor(), keyType, sourceExpr);
+                    ? buildAccessorKeyMany(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr)
+                    : buildAccessorKeySingle(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr);
             case SourceKey.Reader.ServiceTableRecord ignored ->
                 throw new IllegalArgumentException(
                     "buildRecordParentKeyExtraction does not handle Reader.ServiceTableRecord "
@@ -267,7 +277,7 @@ class GeneratorUtils {
             case SourceKey.Reader.ProducedRecordRead ignored ->
                 sourceKey.cardinality() == SourceKey.Cardinality.MANY
                     ? buildProducedRecordsKeyMany(sourceKey, resultType, sourceExpr)
-                    : buildKeyExtractionWithNullCheck(sourceKey, sourceKey.target(), sourceExpr);
+                    : buildKeyExtractionWithNullCheck(sourceKey, keyOwnerTable, sourceExpr);
         };
     }
 
@@ -349,10 +359,10 @@ class GeneratorUtils {
     }
 
     private static CodeBlock buildAccessorKeySingle(
-            SourceKey sourceKey, AccessorRef accessor, TypeName keyType, CodeBlock sourceExpr) {
+            SourceKey sourceKey, TableRef elementTable, AccessorRef accessor,
+            TypeName keyType, CodeBlock sourceExpr) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        TableRef elementTable = sourceKey.target();
         var tablesClass = elementTable.constantsClass();
         String tableField = elementTable.javaFieldName();
         var intoArgs = CodeBlock.builder();
@@ -380,10 +390,10 @@ class GeneratorUtils {
     }
 
     private static CodeBlock buildAccessorKeyMany(
-            SourceKey sourceKey, AccessorRef accessor, TypeName keyType, CodeBlock sourceExpr) {
+            SourceKey sourceKey, TableRef elementTable, AccessorRef accessor,
+            TypeName keyType, CodeBlock sourceExpr) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        TableRef elementTable = sourceKey.target();
         var tablesClass = elementTable.constantsClass();
         String tableField = elementTable.javaFieldName();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);

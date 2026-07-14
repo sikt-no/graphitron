@@ -188,7 +188,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
         assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
             .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
-        assertThat(sk.target().tableName()).isEqualTo("film");
+        assertThat(idField.table().tableName()).isEqualTo("film");
         assertThat(idField.encode().encodeMethod()).isNotNull();
         var errorsField = schema.field("FilmIdsPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);

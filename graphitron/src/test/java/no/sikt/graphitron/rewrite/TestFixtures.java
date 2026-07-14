@@ -202,9 +202,9 @@ public final class TestFixtures {
      * {@link SourceKey.Reader.ColumnRead} over the FK columns, target-aligned (empty path).
      * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}.
      */
-    public static SourceKey splitSourceKey(TableRef target, List<ColumnRef> fkColumns,
+    public static SourceKey splitSourceKey(List<ColumnRef> fkColumns,
                                             boolean isList) {
-        return new SourceKey(target, fkColumns, List.of(), new SourceKey.Wrap.Row(),
+        return new SourceKey(fkColumns, List.of(), new SourceKey.Wrap.Row(),
             isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
     }
@@ -214,9 +214,9 @@ public final class TestFixtures {
      * {@link SourceKey.Reader.ColumnRead} over the FK source-side columns, target-aligned (empty
      * path). Mirrors the FK arm of {@code FieldBuilder.deriveFkRecordParentSource}.
      */
-    public static SourceKey recordParentRowSourceKey(TableRef target, List<ColumnRef> fkColumns,
+    public static SourceKey recordParentRowSourceKey(List<ColumnRef> fkColumns,
                                                       boolean isList) {
-        return new SourceKey(target, fkColumns, List.of(), new SourceKey.Wrap.Row(),
+        return new SourceKey(fkColumns, List.of(), new SourceKey.Wrap.Row(),
             isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
     }
@@ -228,7 +228,7 @@ public final class TestFixtures {
      * {@link SourceKey.Cardinality#ONE}.
      */
     public static SourceKey polymorphicRowParentSourceKey(List<ColumnRef> pkColumns) {
-        return new SourceKey(null, pkColumns, List.of(), new SourceKey.Wrap.Row(),
+        return new SourceKey(pkColumns, List.of(), new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.ONE, new SourceKey.Reader.ColumnRead());
     }
 
@@ -245,7 +245,7 @@ public final class TestFixtures {
             JoinStep.LiftedHop hop,
             no.sikt.graphitron.rewrite.model.AccessorRef accessor,
             boolean isMany) {
-        return new SourceKey(hubTable, hubTable.primaryKeyColumns(), List.of(hop),
+        return new SourceKey(hubTable.primaryKeyColumns(), List.of(hop),
             new SourceKey.Wrap.Record(),
             isMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.AccessorCall(accessor));
@@ -259,29 +259,19 @@ public final class TestFixtures {
     public static SourceKey serviceTableSourceKey(ReturnTypeRef.TableBoundReturnType rt,
                                                    SourceKey.Wrap wrap,
                                                    List<ColumnRef> parentKeyColumns) {
-        return new SourceKey(rt.table(), parentKeyColumns, List.of(), wrap,
+        return new SourceKey(parentKeyColumns, List.of(), wrap,
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
     }
 
     /**
-     * Service-record {@link SourceKey}: target derived from {@code joinPath}'s last hop
-     * ({@code null} when empty), {@code parentKeyColumns} as entry columns, empty path,
+     * Service-record {@link SourceKey}: {@code parentKeyColumns} as entry columns, empty path,
      * {@code wrap} per declaration, cardinality from rt, {@link SourceKey.Reader.ServiceUntypedRecord}.
      */
     public static SourceKey serviceRecordSourceKey(ReturnTypeRef rt,
                                                     SourceKey.Wrap wrap,
-                                                    List<ColumnRef> parentKeyColumns,
-                                                    List<JoinStep> joinPath) {
-        TableRef target = null;
-        if (!joinPath.isEmpty()) {
-            target = switch (joinPath.get(joinPath.size() - 1)) {
-                case JoinStep.Hop hop when hop.on() instanceof On.ColumnPairs -> hop.targetTable();
-                case JoinStep.LiftedHop lh -> lh.targetTable();
-                default -> null;
-            };
-        }
-        return new SourceKey(target, parentKeyColumns, List.of(), wrap,
+                                                    List<ColumnRef> parentKeyColumns) {
+        return new SourceKey(parentKeyColumns, List.of(), wrap,
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceUntypedRecord());
     }

@@ -270,7 +270,7 @@ class TypeFetcherGeneratorTest {
             rt,
             path,
             List.of(), new OrderBySpec.None(), null,
-            TestFixtures.splitSourceKey(rt.table(), keyCols, rt.wrapper().isList()),
+            TestFixtures.splitSourceKey(keyCols, rt.wrapper().isList()),
             TestFixtures.loaderRegistration(rt, false, false),
             TestFixtures.pcFor(path, LANGUAGE_TABLE));
     }
@@ -1567,7 +1567,7 @@ class TypeFetcherGeneratorTest {
             List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns(), List.of()),
+            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns()),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
@@ -1585,7 +1585,7 @@ class TypeFetcherGeneratorTest {
             List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns(), List.of()),
+            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns()),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }

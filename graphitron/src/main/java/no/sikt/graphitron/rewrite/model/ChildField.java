@@ -231,7 +231,9 @@ public sealed interface ChildField extends OutputField
      * {@code Tables.X.COL} constants), it may arrive wrapped in {@code Outcome}, and the bulk
      * cardinality is a {@code List<XRecord>}, not a jOOQ {@code Result}.
      *
-     * <p>The {@link #sourceKey()} carries the producer's table, the node-key columns the encode
+     * <p>{@link #table()} is the producer's table, whose typed {@code Tables.X.COL} constants
+     * the encode reads (R431: first-class on the leaf, no longer a {@code SourceKey} slot).
+     * The {@link #sourceKey()} carries the node-key columns the encode
      * reads, {@link SourceKey.Wrap.TableRecord}, the producer cardinality, and
      * {@link SourceKey.Reader.ResultRowWalk} whose {@link SourceKey.Reader.SourceEnvelope}
      * ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is the same axis the table-field sibling's
@@ -245,10 +247,12 @@ public sealed interface ChildField extends OutputField
         String name,
         SourceLocation location,
         ReturnTypeRef.ScalarReturnType returnType,
+        TableRef table,
         SourceKey sourceKey,
         CallSiteCompaction.NodeIdEncodeKeys encode
     ) implements ChildField {
         public SingleRecordIdField {
+            java.util.Objects.requireNonNull(table, "table");
             if (!(sourceKey.reader() instanceof SourceKey.Reader.ResultRowWalk)) {
                 throw new IllegalArgumentException(
                     "SingleRecordIdField requires SourceKey with Reader.ResultRowWalk; got "

@@ -11,15 +11,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit-tier coverage of the {@link SourceKey} compact-constructor invariants. Pins the three
+ * Unit-tier coverage of the {@link SourceKey} compact-constructor invariants. Pins the
  * cross-axis rejections classifiers must respect:
  *
  * <ul>
  *   <li>{@link SourceKey.Reader.SourceRowsCall} ⇒ {@link SourceKey.Wrap.Row}.</li>
  *   <li>{@link SourceKey.Reader.AccessorCall} ⇒ {@link SourceKey.Wrap.Record}.</li>
- *   <li>{@link SourceKey.Reader.ServiceTableRecord} with {@code recordType} matching target's
- *       {@code recordClass} ⇒ empty {@link SourceKey#path()}.</li>
+ *   <li>{@link SourceKey.Reader.ResultRowWalk} ⇒ {@link SourceKey.Wrap.Record} /
+ *       {@link SourceKey.Wrap.TableRecord}, empty {@link SourceKey#path()}, and
+ *       {@code OUTCOME_SUCCESS} only on {@link SourceKey.Wrap.TableRecord}.</li>
  * </ul>
+ *
+ * <p>R431 dispositions (the {@code target} component is deleted): the
+ * {@code ServiceTableRecord}(target-aligned) ⇒ empty-path and
+ * {@code ResultRowWalk} {@code TableRecord}-className-equals-target rejections asserted a
+ * denormalized copy agreed with its source, exactly the drift class the decomposition removes;
+ * both left with the component ({@code serviceTableRecordAcceptsNonEmptyPath} pins the widened
+ * acceptance).
  *
  * <p>Exercises the canonical-constructor invariants and the {@link SourceKey#keyElementType()}
  * derivation on the flat-record model.
@@ -44,14 +52,12 @@ class SourceKeyTest {
     @Test
     void rowKeyedColumnReadProjectsToCleanShape() {
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
             new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ColumnRead());
 
-        assertThat(key.target()).isEqualTo(FILM_TABLE);
         assertThat(key.columns()).containsExactly(FILM_ID);
         assertThat(key.path()).isEmpty();
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
@@ -60,7 +66,6 @@ class SourceKeyTest {
     @Test
     void sourceRowsCallRequiresWrapRow() {
         assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(),
                 new SourceKey.Wrap.Record(),
@@ -74,7 +79,6 @@ class SourceKeyTest {
     @Test
     void sourceRowsCallAcceptsWrapRow() {
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
             new SourceKey.Wrap.Row(),
@@ -86,7 +90,6 @@ class SourceKeyTest {
     @Test
     void accessorCallRequiresWrapRecord() {
         assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(),
                 new SourceKey.Wrap.Row(),
@@ -100,7 +103,6 @@ class SourceKeyTest {
     @Test
     void accessorCallAcceptsWrapRecord() {
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
             new SourceKey.Wrap.Record(),
@@ -110,42 +112,25 @@ class SourceKeyTest {
     }
 
     @Test
-    void serviceTableRecordTargetAlignedRequiresEmptyPath() {
-        // Target has recordClass "FilmRecord"; ServiceTableRecord with the same recordType means
-        // the service produced a target-aligned record. A non-empty path would walk past target.
+    void serviceTableRecordAcceptsNonEmptyPath() {
+        // R431: with the target component deleted, the former "target-aligned ⇒ empty path"
+        // rejection has no subject; a ServiceTableRecord key may carry a bridging path
+        // regardless of what record type the service returns. The alignment concern re-homes
+        // with the reader decomposition (the producer's declared return shape is a MethodRef
+        // signature fact, not a SourceKey slot).
         ClassName filmRecordClass = FILM_TABLE.recordClass();
-
-        assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
-                List.of(FILM_ID),
-                List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-                new SourceKey.Wrap.TableRecord(filmRecordClass),
-                SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.ServiceTableRecord(filmRecordClass)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("ServiceTableRecord");
-    }
-
-    @Test
-    void serviceTableRecordTargetMisalignedAcceptsNonEmptyPath() {
-        // ServiceTableRecord whose recordType differs from target's recordClass is allowed to
-        // carry a non-empty path — the chain bridges from the service-returned record to the
-        // configured target table.
-        ClassName otherRecord = ClassName.bestGuess("com.example.OtherRecord");
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-            new SourceKey.Wrap.TableRecord(otherRecord),
+            new SourceKey.Wrap.TableRecord(filmRecordClass),
             SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ServiceTableRecord(otherRecord));
+            new SourceKey.Reader.ServiceTableRecord(filmRecordClass));
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
     }
 
     @Test
     void resultRowWalkAcceptsWrapRecord() {
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
             new SourceKey.Wrap.Record(),
@@ -156,11 +141,11 @@ class SourceKeyTest {
     }
 
     @Test
-    void resultRowWalkAcceptsWrapTableRecordMatchingTarget() {
-        // R158: ResultRowWalk admits Wrap.TableRecord whose className equals target.recordClass()
-        // (the @service payload producer's typed XRecord return).
+    void resultRowWalkAcceptsWrapTableRecord() {
+        // R158: ResultRowWalk admits Wrap.TableRecord (the @service payload producer's typed
+        // XRecord return). R431: the className-equals-target sub-check left with the target
+        // component.
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
             new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
@@ -173,9 +158,8 @@ class SourceKeyTest {
     @Test
     void resultRowWalkOutcomeSuccessEnvelopeAcceptsTableRecord() {
         // R275: the OUTCOME_SUCCESS envelope (the @service error-channel carrier) pairs with
-        // Wrap.TableRecord(target.recordClass()) — the producer wrapped its typed record in Outcome.
+        // Wrap.TableRecord — the producer wrapped its typed record in Outcome.
         var key = new SourceKey(
-            FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
             new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
@@ -190,7 +174,6 @@ class SourceKeyTest {
         // R275: the OUTCOME_SUCCESS envelope only ever pairs with Wrap.TableRecord (the @service
         // carrier). Wrap.Record is the DML carrier, which delivers its row bare and is always DIRECT.
         assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(),
                 new SourceKey.Wrap.Record(),
@@ -202,27 +185,8 @@ class SourceKeyTest {
     }
 
     @Test
-    void resultRowWalkRejectsWrapTableRecordMismatchedTarget() {
-        // R158: target-aligned check — Wrap.TableRecord(other) where other != target.recordClass()
-        // would mean the @service produced a record of a different table than the data field
-        // resolves against. The compact-constructor rejects.
-        ClassName otherRecord = ClassName.bestGuess("com.example.OtherRecord");
-        assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
-                List.of(FILM_ID),
-                List.of(),
-                new SourceKey.Wrap.TableRecord(otherRecord),
-                SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("ResultRowWalk")
-            .hasMessageContaining("target.recordClass");
-    }
-
-    @Test
     void resultRowWalkRejectsNonEmptyPathUnderRecordWrap() {
         assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
                 new SourceKey.Wrap.Record(),
@@ -235,9 +199,8 @@ class SourceKeyTest {
 
     @Test
     void resultRowWalkRejectsNonEmptyPathUnderTableRecordWrap() {
-        // R158: even the admitted target-aligned TableRecord wrap must carry empty path.
+        // R158: even the admitted TableRecord wrap must carry empty path.
         assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
                 new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
@@ -251,7 +214,6 @@ class SourceKeyTest {
     @Test
     void resultRowWalkRejectsWrapRow() {
         assertThatThrownBy(() -> new SourceKey(
-                FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(),
                 new SourceKey.Wrap.Row(),
@@ -266,7 +228,6 @@ class SourceKeyTest {
         var mutableColumns = new java.util.ArrayList<ColumnRef>();
         mutableColumns.add(FILM_ID);
         var key = new SourceKey(
-            FILM_TABLE,
             mutableColumns,
             List.of(),
             new SourceKey.Wrap.Row(),

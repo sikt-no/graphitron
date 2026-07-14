@@ -151,7 +151,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         var psk = field.parentSourceKey();
         assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-        assertThat(psk.target().tableName()).isEqualTo("film");
+        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         assertThat(psk.columns()).hasSize(1);
         assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
         assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("film");
@@ -175,7 +175,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         var psk = field.parentSourceKey();
         assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-        assertThat(psk.target().tableName()).isEqualTo("film");
+        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         assertThat(psk.columns()).hasSize(1);
         assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
         assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("films");
@@ -200,7 +200,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         var psk = field.parentSourceKey();
         assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-        assertThat(psk.target().tableName()).isEqualTo("film");
+        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         // The carried method name is the actual accessor name (the directive value), not the SDL
         // field name.
         assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName())
@@ -242,7 +242,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         var psk = field.parentSourceKey();
         assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-        assertThat(psk.target().tableName()).isEqualTo("film");
+        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("film");
     }
 
@@ -260,7 +260,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         var psk = field.parentSourceKey();
         assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-        assertThat(psk.target().tableName()).isEqualTo("film");
+        assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
     }
 
     // ===== Rejection arms =====

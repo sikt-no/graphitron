@@ -267,7 +267,6 @@ class FieldBuilder {
     private static SourceKey buildServiceTableSourceKey(
             MethodRef.Param.Sourced sourced, ReturnTypeRef.TableBoundReturnType rt) {
         return new SourceKey(
-            rt.table(),
             sourced.columns(),
             List.of(),
             sourced.wrap(),
@@ -277,23 +276,11 @@ class FieldBuilder {
 
     /**
      * Builds the service-record-field's {@link SourceKey} from the resolved {@code @service}
-     * method's {@code Sources} parameter, the field's (untyped) return type, and the resolved
-     * service-reconnect join path. Target derives from the join path's last hop when present
-     * (service-reconnect path), {@code null} otherwise (scalar-returning service with no
-     * reconnect).
+     * method's {@code Sources} parameter and the field's (untyped) return type.
      */
     private static SourceKey buildServiceRecordSourceKey(
-            MethodRef.Param.Sourced sourced, ReturnTypeRef rt, List<JoinStep> joinPath) {
-        TableRef target = null;
-        if (!joinPath.isEmpty()) {
-            target = switch (joinPath.get(joinPath.size() - 1)) {
-                case JoinStep.Hop hop when hop.on() instanceof On.ColumnPairs -> hop.targetTable();
-                case JoinStep.LiftedHop lh -> lh.targetTable();
-                default -> null;
-            };
-        }
+            MethodRef.Param.Sourced sourced, ReturnTypeRef rt) {
         return new SourceKey(
-            target,
             sourced.columns(),
             List.of(),
             sourced.wrap(),
@@ -5445,7 +5432,6 @@ class FieldBuilder {
         JoinStep.LiftedHop hop = new JoinStep.LiftedHop(targetTable, hopSlots, name + "_0");
         List<JoinStep> joinPath = List.of(hop);
         SourceKey sourceKey = new SourceKey(
-            targetTable,
             pkColumns,
             joinPath,
             new SourceKey.Wrap.Row(),
@@ -5583,14 +5569,13 @@ class FieldBuilder {
                     ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
                     : SourceKey.Reader.SourceEnvelope.DIRECT;
                 var idSourceKey = new SourceKey(
-                    binding.tableRef(),
                     nodeType.nodeKeyColumns(),
                     List.of(),
                     new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
                     idCardinality,
                     new SourceKey.Reader.ResultRowWalk(idEnvelope));
                 return new ChildField.SingleRecordIdField(parentTypeName, name, location,
-                    scalarReturn, idSourceKey,
+                    scalarReturn, binding.tableRef(), idSourceKey,
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()));
             }
         }
@@ -6108,7 +6093,6 @@ class FieldBuilder {
             ? correlation.parentKeyColumns()
             : parentTable.primaryKeyColumns();
         SourceKey sourceKey = new SourceKey(
-            returnType.table(),
             entryColumns,
             List.of(),
             new SourceKey.Wrap.Row(),
@@ -6128,13 +6112,12 @@ class FieldBuilder {
      * {@code TableRecord}), so the projection is {@link SourceKey.Wrap.Row} +
      * {@link SourceKey.Reader.ColumnRead} + {@link SourceKey.Cardinality#ONE} with no traversal.
      * Mirrors the polymorphic-Row arm of the deleted {@code SourceKeyResolver
-     * .resolveRecordParentForPolymorphic} ({@code target} stays {@code null} because the
-     * parent IS the source — no separate target table).
+     * .resolveRecordParentForPolymorphic} (the parent IS the source — no separate target
+     * table).
      */
     private static no.sikt.graphitron.rewrite.model.SourceKey buildTableBackedPolymorphicParentSourceKey(
             List<ColumnRef> pkCols) {
         return new no.sikt.graphitron.rewrite.model.SourceKey(
-            null,
             pkCols,
             List.of(),
             new SourceKey.Wrap.Row(),
@@ -6169,7 +6152,6 @@ class FieldBuilder {
         }
         boolean isList = tb.wrapper().isList();
         SourceKey sourceKey = new SourceKey(
-            tb.table(),
             fkJoin.sourceSideColumns(),
             List.of(),
             new SourceKey.Wrap.Row(),
@@ -6354,7 +6336,6 @@ class FieldBuilder {
             accessorMethod.getName(),
             ClassName.get(accessorElementClass));
         SourceKey sourceKey = new SourceKey(
-            tb.table(),
             expectedTable.primaryKeyColumns(),
             List.of(hop),
             new SourceKey.Wrap.Record(),
@@ -6560,10 +6541,9 @@ class FieldBuilder {
                         + "' requires a non-empty primary key on the record-backed parent table '"
                         + jtr.table().tableName() + "'"));
                 }
-                // Polymorphic Row arm: target is null because the parent IS the source; cardinality
-                // is variant-derived (each parent is one entity, not field-cardinality-derived).
+                // Polymorphic Row arm: the parent IS the source; cardinality is variant-derived
+                // (each parent is one entity, not field-cardinality-derived).
                 SourceKey parentSourceKey = new SourceKey(
-                    null,
                     pkCols,
                     List.of(),
                     new SourceKey.Wrap.Row(),
@@ -6668,15 +6648,14 @@ class FieldBuilder {
             .toList();
         var hop = new JoinStep.LiftedHop(hubTable, hopSlots, fieldName + "_0");
 
-        // Polymorphic accessor arm: target is the hub table (where the accessor's typed return
-        // lives); cardinality follows the accessor (Single → ONE, Many → MANY for per-element
-        // walk through the parent's typed list-accessor).
+        // Polymorphic accessor arm: the hub table (where the accessor's typed return lives) is
+        // carried as the leaf's parentKeyOwnerTable; cardinality follows the accessor (Single →
+        // ONE, Many → MANY for per-element walk through the parent's typed list-accessor).
         var ref = new AccessorRef(
             ClassName.get(parentClass),
             accessorMethod.getName(),
             ClassName.get(elementClass));
         SourceKey parentSourceKey = new SourceKey(
-            hubTable,
             hubTable.primaryKeyColumns(),
             List.of(hop),
             new SourceKey.Wrap.Record(),
@@ -6741,7 +6720,7 @@ class FieldBuilder {
                 }
                 case ServiceDirectiveResolver.Resolved.Result r -> {
                     var sourced = extractSourced(r.method());
-                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, r.returnType(), servicePath.elements());
+                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, r.returnType());
                     var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, r.returnType());
                     yield buildMethodBackedWithChannel(r.returnType(), r.method(),
                         parentTypeName, name, location, fieldDef,
@@ -6750,7 +6729,7 @@ class FieldBuilder {
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s -> {
                     var sourced = extractSourced(s.method());
-                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, s.returnType(), servicePath.elements());
+                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, s.returnType());
                     var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, s.returnType());
                     yield buildMethodBackedWithChannel(s.returnType(), s.method(),
                         parentTypeName, name, location, fieldDef,

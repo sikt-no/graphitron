@@ -41,7 +41,7 @@ class ServiceFieldValidationTest {
     private static final ReturnTypeRef.ResultReturnType RECORD_RT_SINGLE =
         new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null);
     private static final SourceKey RECORD_SOURCE_KEY =
-        TestFixtures.serviceRecordSourceKey(RECORD_RT_SINGLE, new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS, List.of());
+        TestFixtures.serviceRecordSourceKey(RECORD_RT_SINGLE, new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS);
     private static final LoaderRegistration RECORD_LR =
         TestFixtures.loaderRegistration(RECORD_RT_SINGLE, false, false);
 

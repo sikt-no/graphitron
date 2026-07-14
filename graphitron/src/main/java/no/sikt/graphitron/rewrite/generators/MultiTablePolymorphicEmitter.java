@@ -531,7 +531,7 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         if (isList && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentResultType, outputPackage));
+            methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentKeyOwnerTable, parentResultType, outputPackage));
             methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, parentSourceKey, parentKeyOwnerTable, outputPackage));
         } else {
@@ -616,7 +616,7 @@ public final class MultiTablePolymorphicEmitter {
         // The empty-tableBound defensive path falls into the root branch; both fetcher builders
         // emit a non-throwing empty payload when participants is empty.
         if (parentSourceKey != null && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentResultType,
+            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentKeyOwnerTable, parentResultType,
                 outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, defaultPageSize, parentSourceKey, parentKeyOwnerTable, outputPackage));
@@ -1377,6 +1377,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName,
             SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
@@ -1413,7 +1414,7 @@ public final class MultiTablePolymorphicEmitter {
 
         // Parent-object key extraction: delegated to the canonical Reader × Cardinality helper.
         // Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyOwnerTable, parentResultType));
 
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
@@ -1447,6 +1448,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName,
             SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
@@ -1480,7 +1482,7 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyOwnerTable, parentResultType));
 
         // Dispatch on the parent key's cardinality, mirroring how
         // TypeFetcherGenerator.buildRecordBasedDataFetcher branches load vs loadMany. The key

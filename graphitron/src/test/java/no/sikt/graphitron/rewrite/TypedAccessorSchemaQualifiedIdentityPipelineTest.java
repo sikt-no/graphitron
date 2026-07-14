@@ -103,7 +103,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         // The source target is the qualified element table, pinned by class identity (its name()
         // is the verbatim "multischema_a.event" echo; tableClass is jOOQ's Event under schema A).
-        assertThat(sk.target().tableClass()).isEqualTo(SCHEMA_A_EVENT);
+        assertThat(rtf.returnType().table().tableClass()).isEqualTo(SCHEMA_A_EVENT);
     }
 
     @Test
