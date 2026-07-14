@@ -177,6 +177,51 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * R477: a well-formed NodeId whose decoded key has too few parts for a composite-key
+     * {@code @node} type ({@code FilmActor}, PK actor_id + film_id) must yield a null slot,
+     * not a 500. Pre-fix the batch NODE_ID decode sized {@code cols} by {@code decoded.length}
+     * and {@code selectFilmActorAlt<N>} indexed {@code cols[1]} → {@code ArrayIndexOutOfBounds},
+     * whose raw message ({@code Index 1 out of bounds for length 1}) leaked unredacted through the
+     * federation error surface machine-to-machine. Since the {@link #execute} helper asserts the
+     * errors list is empty, a null slot with no error is exactly the R477 contract. This is the
+     * federation reproduction of the opptak {@code _entities} crash.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_compositeNodeIdUnderArity_yieldsNullSlotNoError() {
+        String underArity = NodeIdEncoder.encode("FilmActor", 1); // one key part; FilmActor needs two
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on FilmActor { filmId actorId } } }",
+            Map.of("reps", List.of(Map.of("__typename", "FilmActor", "id", underArity))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).isNull();
+    }
+
+    /**
+     * R477 over-arity companion: a NodeId with too many key parts whose valid 2-part prefix
+     * ({@code actor_id=1, film_id=1}) IS an existing row. Pre-fix the extra decoded part was
+     * silently dropped and the rep resolved the {@code (1,1)} row, a wrong-row return arguably
+     * worse than the crash. The {@code != N} guard rejects it: the rep is skipped and its slot
+     * stays null, so a client cannot address a row by a longer id than the type's key admits.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_compositeNodeIdOverArity_yieldsNullNotWrongRow() {
+        String overArity = NodeIdEncoder.encode("FilmActor", 1, 1, 999); // 2-part prefix (1,1) is real
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on FilmActor { filmId actorId } } }",
+            Map.of("reps", List.of(Map.of("__typename", "FilmActor", "id", overArity))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0))
+            .as("over-arity id must not silently resolve its valid 2-part prefix row")
+            .isNull();
+    }
+
+    /**
      * DIRECT-shape alternative: Film carries {@code @key(fields: "filmId")} and a rep with
      * {@code filmId: 1} resolves through the column-value path (not NodeId decode). Same
      * SQL shape as the NODE_ID path; only the rep-to-column-values translation differs.

@@ -90,7 +90,7 @@ class FederationBuildSmokeTest {
 
     /**
      * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
-     * three {@code @node} types (Customer, Address, Film), the compound-key FilmActor, the
+     * four {@code @node} types (Customer, Address, Film, and the compound-key FilmActor), the
      * single-column-key City (the R425 service-child projection fixture), plus the two
      * {@code @key(resolvable: false)} reference-only stubs — table-bound Language and non-table-bound
      * FilmRefStub (R286). {@code Federation.transform} includes every {@code @key} type in the union

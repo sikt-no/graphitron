@@ -116,8 +116,13 @@ final class HandleMethodBody {
             b.addStatement("Object idObj = rep.get($S)", "id");
             b.addStatement("if (!(idObj instanceof String idStr)) continue");
             b.addStatement("String[] decoded = $T.decodeValues($S, idStr)", nodeIdEncoder, expectedTypeId);
-            b.addStatement("if (decoded == null) continue");
-            b.addStatement("Object[] cols = new Object[decoded.length]");
+            // Reject a well-formed id whose decoded key has the wrong arity, exactly as the
+            // single-record decode helpers (NodeIdEncoderClassGenerator) and
+            // InputBeanInstantiationEmitter do. Without the != N guard, an under-arity id trips
+            // AIOOBE inside select<Type>Alt<N> and an over-arity id silently resolves the wrong
+            // row; both become a skipped rep (null slot), matching the null-not-error contract.
+            b.addStatement("if (decoded == null || decoded.length != $L) continue", alt.columns().size());
+            b.addStatement("Object[] cols = new Object[$L]", alt.columns().size());
             b.addStatement("for (int j = 0; j < decoded.length; j++) cols[j] = decoded[j]");
         } else {
             b.addStatement("Object[] cols = new Object[$L]", alt.requiredFields().size());

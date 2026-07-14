@@ -86,9 +86,14 @@ type City @table(name: "city") @key(fields: "cityId") {
     })
 }
 
-# Compound @key on a junction table. Exercises multi-column Row arity emission
-# in the dispatcher's VALUES-derived-table SELECT.
-type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
+# Compound @key on a junction table, layered with @node. The @key gives FilmActor a
+# DIRECT compound-key alternative (reps carrying filmId + actorId); @node synthesises a
+# composite NODE_ID alternative (reps carrying an `id` decoded through NodeIdEncoder into
+# both PK columns). It is the federated fixture's only composite-key @node, so the batch
+# NODE_ID wrong-arity path (R477) is only observable through _entities here. Both alternatives
+# exercise the dispatcher's multi-column Row arity emission in the VALUES-derived-table SELECT.
+type FilmActor implements Node @table(name: "film_actor") @node @key(fields: "filmId actorId") {
+    id:      ID!  @nodeId
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
 }

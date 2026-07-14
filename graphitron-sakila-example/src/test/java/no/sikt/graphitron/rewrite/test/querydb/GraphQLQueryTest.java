@@ -3450,6 +3450,18 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void node_compositeKeyWrongArityId_returnsNull() {
+        // R477: a well-formed id for the composite-key @node FilmActor (PK actor_id, film_id)
+        // whose decoded key has only one part. Pre-fix the batch decode sized cols by
+        // decoded.length and select<Type>Alt<N> read cols[1] → AIOOBE → redacted 500. A
+        // wrong-arity id is now treated exactly like a garbage/unknown id: null, no errors.
+        String underArity = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1);
+        Map<String, Object> data = execute(
+            "{ node(id: \"" + underArity + "\") { __typename } }");
+        assertThat(data.get("node")).isNull();
+    }
+
+    @Test
     void node_referenceField_encodesFromFkMirrorThenRoundTrips() {
         // Customer.addressNodeId references Address.id via the customer_address_id_fkey FK
         // (FK-mirror collapse: customer.address_id mirrors address.address_id). The dispatcher
@@ -3563,6 +3575,25 @@ class GraphQLQueryTest {
         var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(2);
         nodes.element(0, as(MAP)).containsEntry("firstName", "Mary");
         nodes.element(1).isNull();
+    }
+
+    @Test
+    void nodes_compositeKeyWrongArityIds_nullSlotsPreservePositions() {
+        // R477: a batch mixing a correct-arity FilmActor id (actor=1, film=1, a real row) with
+        // an under-arity id (one key part) and an over-arity id (three key parts). Both wrong-arity
+        // ids must yield null in their positions; the valid one still resolves. The over-arity id's
+        // 2-part prefix (1,1) IS a real row, so without the != N guard it would silently resolve the
+        // wrong row rather than crash — this pins the null outcome for both failure modes.
+        String valid      = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 1);
+        String underArity = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1);
+        String overArity  = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 1, 999);
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + valid + "\", \"" + underArity + "\", \"" + overArity + "\"]) {"
+            + " __typename ... on FilmActor { actorId filmId } } }");
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        nodes.element(0, as(MAP)).containsEntry("actorId", 1).containsEntry("filmId", 1);
+        nodes.element(1).isNull();
+        nodes.element(2).isNull();
     }
 
     @Test
