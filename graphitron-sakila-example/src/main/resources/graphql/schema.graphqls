@@ -167,7 +167,7 @@ type Query {
     # with per-value counts, each computed under the connection filter minus that facet's own
     # predicate (one UNION ALL aggregate per request, lazy on selection). Both filter elements
     # are non-null, so the facet values are non-null and each arm carries the IS NOT NULL scrub.
-    filmsFaceted(filter: FilmFacetFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+    filmsFaceted(filter: FilmFacetFilter, extra: FilmExtraFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
     # R243: per-field direction on @defaultOrder. Heterogeneous spec — rental_rate DESC
     # then title ASC. The seed gives the five films distinct rental_rate values with a
     # three-way tie at 2.99, so the DESC primary is visible in the row order *and* the
@@ -2076,6 +2076,28 @@ input FilmImplicitInput @table(name: "film") {
 input FilmFacetFilter @table(name: "film") {
     rating: [MpaaRating!] @field(name: "RATING") @asFacet
     length: [Int!] @field(name: "LENGTH") @asFacet
+    # Nullable elements: the NULL bucket is preserved (original_language_id is NULL for every
+    # seeded film, so this facet returns exactly one bucket with value null).
+    originalLanguage: [Int] @field(name: "ORIGINAL_LANGUAGE_ID") @asFacet
+    # Non-null elements over the same NULL-bearing column: the IS NOT NULL scrub drops the NULL
+    # group entirely, so this facet returns an empty list rather than a null value in a non-null
+    # output field.
+    originalLanguageRequired: [Int!] @field(name: "ORIGINAL_LANGUAGE_ID") @asFacet
+    # Non-facet filter fields on the same input: they belong to every facet arm's base predicate,
+    # and two of them sharing the `filter` outer arg is the lifted-local threshold in the emitted
+    # <field>FacetBaseCondition (the R13 review's finding-1 compile shape, covered here at the
+    # compilation tier).
+    title: [String!] @field(name: "TITLE")
+    releaseYear: [Int!] @field(name: "RELEASE_YEAR")
+}
+
+# Sibling-arg filter over the SAME column as the length facet (R13 review, finding 2 family):
+# lengthIs is a plain filter riding a second argument. It belongs to every facet arm's base
+# predicate, including the length facet's own arm: filter-minus-self subtracts the facet's own
+# FIELD, not every predicate over its column. (A same-NAME collision with a facet is rejected at
+# build time; the generated condition method cannot key two same-named parameters.)
+input FilmExtraFilter @table(name: "film") {
+    lengthIs: [Int!] @field(name: "LENGTH")
 }
 
 input FilmOneOfFilter @table(name: "film") @oneOf {

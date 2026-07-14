@@ -129,12 +129,9 @@ public class QueryConditionsGenerator {
         if (!(entry instanceof GraphitronType.ConnectionType conn) || conn.facets().isEmpty()) {
             return List.of();
         }
-        var facetNames = new java.util.LinkedHashSet<String>();
-        for (var facet : conn.facets()) facetNames.add(facet.inputFieldName());
-
         var out = new ArrayList<MethodSpec>();
         java.util.function.Predicate<CallParam> isAnyFacetParam =
-            p -> facetNames.stream().anyMatch(n -> isFacetParam(p, n));
+            p -> conn.facets().stream().anyMatch(f -> isFacetParam(p, f));
         out.add(buildSuppressedConditionMethod(
             facetBaseConditionMethodName(qtf.name()), qtf.returnType(), qtf.filters(),
             outputPackage, registry, isAnyFacetParam, false));
@@ -144,21 +141,25 @@ public class QueryConditionsGenerator {
             out.add(buildSuppressedConditionMethod(
                 facetConditionMethodName(qtf.name(), facet.inputFieldName()), qtf.returnType(),
                 qtf.filters(), outputPackage, registry,
-                p -> !isFacetParam(p, facet.inputFieldName()), true));
+                p -> !isFacetParam(p, facet), true));
         }
         return out;
     }
 
     /**
-     * True when {@code param} is the binding of the facet input field named
-     * {@code facetInputFieldName}: a {@link CallSiteExtraction.NestedInputField} whose traversal
-     * path is exactly that one field. Matching on extraction identity rather than the bare
-     * parameter name keeps a same-named top-level argument (a legitimate non-facet filter) out of
-     * the suppression set: it stays in the base fragment and out of the facet's own fragment.
+     * True when {@code param} is {@code facet}'s own binding: a
+     * {@link CallSiteExtraction.NestedInputField} riding the facet's carrier argument
+     * ({@code FacetSpec.filterArgName}) whose traversal path is exactly the facet's input field.
+     * Matching on the full extraction identity, outer argument included, keeps two legitimate
+     * non-facet filters out of the suppression set: a same-named top-level argument, and a
+     * same-named field on a sibling input argument (the R13 review's finding 2). Both stay in the
+     * base fragment and out of the facet's own fragment.
      */
-    private static boolean isFacetParam(CallParam param, String facetInputFieldName) {
+    private static boolean isFacetParam(CallParam param,
+            no.sikt.graphitron.rewrite.model.FacetSpec facet) {
         return param.extraction() instanceof CallSiteExtraction.NestedInputField nif
-            && nif.path().equals(List.of(facetInputFieldName));
+            && nif.outerArgName().equals(facet.filterArgName())
+            && nif.path().equals(List.of(facet.inputFieldName()));
     }
 
     /**
@@ -217,6 +218,14 @@ public class QueryConditionsGenerator {
                 f.callParams().stream().filter(p -> !suppressed.test(p)).toList(),
                 List.of()))
             .toList());
+        // Declare the lifted locals the retained extraction expressions reference (mirrors
+        // buildConditionMethod; omitting this loop was the R13 review's finding 1 — the emitted
+        // fragment referenced an undeclared `<outer>Map` local whenever two or more retained
+        // params shared an outer arg, failing the consumer's javac).
+        for (var entry : liftedOuters.entrySet()) {
+            builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
+                Map.class, entry.getValue(), entry.getKey(), Map.class);
+        }
 
         var ctx = new TypeFetcherEmissionContext();
         var declarations = CodeBlock.builder();

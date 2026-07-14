@@ -79,7 +79,6 @@ final class DirectiveSupportReport {
      * supported list with no migration note, because using them is neither an error nor
      * something a migrating consumer must remove; they are simply outside the v1 surface. See
      * roadmap item R400. Re-advertising one later is a one-line edit here.
-     *
      */
     static final java.util.Set<String> WITHHELD_FROM_V1 =
         java.util.Set.of("tableMethod", "sourceRow", "experimental_constructType");

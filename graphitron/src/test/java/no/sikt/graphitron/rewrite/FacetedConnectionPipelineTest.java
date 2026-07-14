@@ -45,8 +45,8 @@ class FacetedConnectionPipelineTest {
         assertThat(schema.types().get("QueryFilmsConnection"))
             .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
                 assertThat(conn.facets()).containsExactly(
-                    new FacetSpec("title", "title", "String", false, "StringFacetValue"),
-                    new FacetSpec("length", "length", "Int", true, "IntFacetValueOrNull")));
+                    new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue"),
+                    new FacetSpec("filter", "length", "length", "Int", true, "IntFacetValueOrNull")));
         assertThat(schema.types().get("QueryFilmsConnectionFacets"))
             .isInstanceOfSatisfying(GraphitronType.FacetsType.class, ft ->
                 assertThat(ft.connectionName()).isEqualTo("QueryFilmsConnection"));
@@ -60,6 +60,27 @@ class FacetedConnectionPipelineTest {
                 assertThat(fv.valueTypeName()).isEqualTo("Int");
                 assertThat(fv.valueNullable()).isTrue();
             });
+    }
+
+    @Test
+    void nonListFacetField_classifiesWithTheFieldsOwnNullability() {
+        // A non-list facet field is legal: the element type is the field itself, and the field
+        // is nullable by the non-null rejection, so the value is always nullable here.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                title: String @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics()).noneMatch(e -> e.message().contains("@asFacet"));
+        assertThat(schema.types().get("QueryFilmsConnection"))
+            .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
+                assertThat(conn.facets()).containsExactly(
+                    new FacetSpec("filter", "title", "title", "String", true, "StringFacetValueOrNull")));
     }
 
     @Test
@@ -160,6 +181,89 @@ class FacetedConnectionPipelineTest {
     }
 
     @Test
+    void asFacetWithNodeIdCoOccurrence_rejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                ids: [ID!] @field(name: "film_id") @nodeId(typeName: "Film") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.ids")
+                && e.message().contains("@asFacet supports only direct-column bindings"));
+    }
+
+    @Test
+    void asFacetOnInputObjectField_rejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input TitleBox { title: String @field(name: "title") }
+            input FilmFilter @table(name: "film") {
+                nested: TitleBox @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.nested")
+                && e.message().contains("must mark a scalar or enum field"));
+    }
+
+    @Test
+    void asFacetOnInterfaceConnection_rejected() {
+        // The reference page advertises interface/union rejection alongside the @splitQuery
+        // child case; this pins the interface arm of the carrier-scope check.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Watchable { title: String }
+            type Film implements Watchable @table(name: "film") { title: String }
+            input WatchableFilter @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                watchables(filter: WatchableFilter): [Watchable!]!
+                    @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("WatchableFilter.title")
+                && e.message().contains("root Query connections")
+                && e.message().contains("@table-backed object element"));
+    }
+
+    @Test
+    void asFacetInputSharedWithStructuralConnection_notRejected() {
+        // A structural connection carrier (declared Connection return type, @asConnection
+        // alongside) never gains facets, so @asFacet is inert there per the spec's "inert at
+        // the others" rule; sharing the input with a served root carrier stays legal.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
+            type FilmsEdge { cursor: String! node: Film! }
+            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            input FilmFilter @table(name: "film") {
+                title: [String!] @field(name: "title") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+                filmsStructural(filter: FilmFilter): FilmsConnection @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .noneMatch(e -> e.message().contains("@asFacet"));
+    }
+
+    @Test
     void asFacetOnNonNullField_rejected() {
         // Phase 4 rationale: the generated filter-minus-self fragments suppress a facet's own
         // predicate by leaving its argument unset, which requires the binding to be optional; and
@@ -225,6 +329,32 @@ class FacetedConnectionPipelineTest {
                 && e.message().contains("CustomerFilter.firstName")
                 && e.message().contains("root Query connections")
                 && e.message().contains("Store.customers"));
+    }
+
+    @Test
+    void facetNameCollidingWithSiblingArgFilterField_rejected() {
+        // The R13 review's finding-2 shape: a non-facet filter field on a sibling input arg
+        // shares the facet's name. The facet fragments and the generated condition method both
+        // key parameters by name (the condition method cannot even declare two same-named
+        // parameters), so the collision is rejected rather than resolved by position.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter @table(name: "film") {
+                length: [Int] @field(name: "length") @asFacet
+            }
+            input FilmExtra @table(name: "film") {
+                length: [Int!] @field(name: "length")
+            }
+            type Query {
+                films(filter: FilmFilter, extra: FilmExtra): [Film!]!
+                    @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("Query.films")
+                && e.message().contains("facet 'length' shares its name"));
     }
 
     @Test

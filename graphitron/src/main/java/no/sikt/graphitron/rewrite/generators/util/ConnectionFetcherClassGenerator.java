@@ -48,7 +48,7 @@ public final class ConnectionFetcherClassGenerator {
                 // R13: facets delegate under the same has-facets gate as the registration emitter,
                 // so the code-registry reference and the method can never drift.
                 if (!ct.facets().isEmpty()) {
-                    conn.addMethod(delegate("facets", helper, "facets"));
+                    conn.addMethod(facetsDelegate(helper, outputPackage));
                 }
                 out.add(conn.build());
 
@@ -67,6 +67,30 @@ public final class ConnectionFetcherClassGenerator {
             .returns(Object.class)
             .addParameter(ENV, "env")
             .addStatement("return $T.$L(env)", helper, helperMethod)
+            .build();
+    }
+
+    /**
+     * The facets delegate routes failures through the redaction contract every emitted fetcher
+     * honours (R13 review, finding 5): the facet aggregate is real per-request SQL, and letting
+     * its exception reach graphql-java's default handler would copy the raw message — for a jOOQ
+     * {@code DataAccessException}, the rendered SQL — into the client-visible errors array.
+     * Catching here keeps the degrade contract (the nullable facets field resolves to null with a
+     * redacted error; the page is unaffected) while the sibling delegates stay plain reads with no
+     * SQL of their own. {@code totalCount} shares the gap by precedent and is tracked separately.
+     */
+    private static MethodSpec facetsDelegate(ClassName helper, String outputPackage) {
+        return MethodSpec.methodBuilder("facets")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(ENV, "env")
+            .beginControlFlow("try")
+            .addStatement("return $T.facets(env)", helper)
+            .nextControlFlow("catch ($T e)", Exception.class)
+            .addStatement("return $L",
+                no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
+                    .noChannelRouterCall(outputPackage, "e"))
+            .endControlFlow()
             .build();
     }
 }

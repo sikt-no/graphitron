@@ -112,6 +112,67 @@ Sweep items (fix cheaply during rework or note as explicit deferrals):
   while the reachability check rejects an input consumed only by a
   structural connection; align the sentence with the code.
 
+## Rework response: 2026-07-14 (implementer session)
+
+All five gating findings addressed; every sweep item fixed or explicitly
+resolved. Per finding:
+
+1. **Fixed.** `buildSuppressedConditionMethod` now emits the lifted-local
+   declaration loop it had omitted. The compile shape is covered for good:
+   the sakila `FilmFacetFilter` gained two non-facet fields (`title`,
+   `releaseYear`) sharing the `filter` outer arg, so the lift fires in the
+   emitted `filmsFacetedFacetBaseCondition` and the compilation tier holds
+   it; the execution case `filmsFaceted_nonFacetFilterInSameArg_restrictsEveryFacet`
+   pins the base's retention of non-facet predicates behaviourally.
+2. **Fixed twice over, and the review's repro surfaced a deeper pre-existing
+   defect.** Suppression identity now includes the outer argument name
+   (`FacetSpec.filterArgName`, matched in
+   `QueryConditionsGenerator.isFacetParam`). But attempting the execution
+   repro showed the finding-2 schema cannot compile at all, facets or not:
+   two filter args sharing a field name emit an entity-scoped
+   `<Type>Conditions` method with duplicate Java parameter names (filed as
+   R475). The reviewer's offered alternative therefore also landed:
+   `rejectFacetMisuse` rejects a facet whose name collides with any other
+   filter argument or filter-input field on the carrier
+   (`facetNameCollidingWithSiblingArgFilterField_rejected`). The sibling-arg
+   same-COLUMN case (legal, and semantically the interesting one: minus-self
+   subtracts the facet's field, not its column) is execution-pinned by
+   `filmsFaceted_siblingArgFilterOverTheFacetsColumn_isBaseNotOwnPredicate`.
+3. **Fixed at the execution tier.** `original_language_id` (NULL for every
+   seeded film) carries two new fixture facets: `originalLanguage: [Int]`
+   pins the preserved NULL bucket (`{value: null, count: 5}` decodes and
+   serialises), and `originalLanguageRequired: [Int!]` pins the
+   `IS NOT NULL` scrub (empty list, no errors). NULL-last ordering among
+   mixed buckets needs a mixed NULL/non-NULL column the seed does not have;
+   the ordering-contract wording was corrected instead (see sweep) and a
+   mixed-column execution pin can ride any future seed extension.
+4. **Fixed.** `FacetEmitterTest` is reduced to method-surface (name-level)
+   assertions; the load-bearing suppression and plan-binding semantics moved
+   to the compilation tier (sakila fixture shapes) and the execution tier
+   (the cases above). No body-string probes remain.
+5. **Fixed.** The facets delegate routes failures through
+   `ErrorRouter.surfaceClientErrorOrRedact`
+   (`ConnectionFetcherClassGenerator.facetsDelegate`), and
+   `filmsFaceted_facetFailure_degradesToNullFacetsWithRedactedError` pins
+   the whole degrade contract end to end with a DSLContext that fails only
+   the facet aggregate: facets null, page unaffected, error present, raw
+   SQL-bearing exception text absent. The shared `totalCount` gap is filed
+   as R476 with this delegate as the template.
+
+Sweep items: structural `@asConnection` carriers are now skipped by the
+consumer walk (inert per the spec rule; shared root+structural inputs legal,
+pinned by `asFacetInputSharedWithStructuralConnection_notRejected`); the
+definition-keyed predicate is extracted to `FacetFieldValidation`, the single
+home both the promoter and the reduction read; the non-list facet shape is
+pinned (`nonListFacetField_classifiesWithTheFieldsOwnNullability`); the
+input-object, `@nodeId` co-occurrence, and interface-carrier rejection arms
+each gained a pipeline case; the Verification / Testing Strategy drift is
+corrected below; the ordering contract is restated as count DESC first with
+NULL last among equal counts; `facetColumn` is hoisted out of the decode
+loop (the decide-once tension on `columnName` is noted in *Facet-value
+ordering* for R314); the stray javadoc line is dropped; the `asFacet.adoc`
+structural bullet now states the rejection for structural-only inputs.
+
 > Add a `@asFacet` directive for filter-input fields. `ConnectionPromoter`
 > (the field-first `@asConnection` synthesis pass) grows a facet arm: each
 > marked input field becomes an entry on a synthesised `XConnectionFacets`
@@ -453,10 +514,15 @@ this plan:
 
 ### Verification
 
-1. New pipeline test in `GraphitronSchemaBuilderTest` classifies a schema with
-   `@asFacet` into a `GraphitronType.ConnectionType` whose `facets()` is non-empty.
-2. New execution test in `graphitron-sakila-example` asserts facet counts
-   match a hand-written jOOQ aggregate over the same filter.
+(Names updated to what landed.)
+
+1. Pipeline tests in `FacetedConnectionPipelineTest` classify a schema with
+   `@asFacet` into a `GraphitronType.ConnectionType` whose `facets()` is
+   non-empty, plus one case per rejection arm.
+2. Execution tests in `graphitron-sakila-example`'s `GraphQLQueryTest` assert
+   facet counts against seed-derived expected values (the seed is small
+   enough that the expected aggregates are hand-computable and stated
+   inline; no runtime jOOQ comparison query is issued).
 3. Existing `filmsConnection*` tests unchanged (no `@asFacet` in their filters).
 
 ## What We're NOT Doing (v1)
@@ -728,9 +794,14 @@ The union's shared `value` column is necessarily `TEXT` (the arms are
 heterogeneous), so a SQL-side sort could only be lexicographic
 (`"117" < "48"`); the decode loop re-types every value and the per-facet
 lists are one-entry-per-distinct-value small, so sorting there is free and
-gives the native order. Contract: count DESC, then the decoded value's
-natural order (integers numerically, enums in declaration order, text for
-non-Comparable custom scalars), preserved NULL bucket last. The original
+gives the native order. Contract: count DESC first, then within equal
+counts the decoded value's natural order (integers numerically, enums in
+declaration order, text for non-Comparable custom scalars) with a preserved
+NULL bucket sorting after non-null values; count remains the primary key,
+so a high-count NULL bucket sorts before low-count values. The decide-once
+tension noted in review (FacetSpec.columnName is the raw authored string,
+re-resolved case-insensitively at request time; carrying the build-time
+resolved name is R314's re-sourcing to do) stands recorded. The original
 plan's `ORDER BY facet, cnt DESC, value` (spike-measured at ~0.4 ms) is
 retired; the spike's cost finding is moot since the Java sort replaces it.
 
@@ -1444,21 +1515,32 @@ reviewers can confirm the v1 design does not foreclose it.
 
 ## Testing Strategy
 
-- **Unit:** none required; no new reflection / catalog probes.
-- **Pipeline (synthesis):** new `ConnectionPromoter` (or successor) test
-  cases cover registration of `<ConnName>Facets` / `<Scalar>FacetValue`
-  types and the `facets` field on the synthesised Connection, and the no-op
-  when no `@asFacet` is present.
-- **Pipeline (classifier):** two new `GraphitronSchemaBuilderTest` cases:
-  `@asFacet` populates `ConnectionType.facets()` correctly, and `@asFacet`
-  on a non-`@field` binding is rejected with a specific message.
-- **Wiring:** assert `connectionBody` wires a `facets` dataFetcher (and
-  `<Conn>Fetchers` has the delegate) when the Connection has facets, and the
-  `*FacetValue` types are loadable.
-- **Execution:** three Sakila cases as above.
-- **Regression:** existing connection tests unchanged; structural diff
-  confirms fetcher output and `ConnectionResult` construction are
-  byte-identical when `@asFacet` is absent.
+(Names updated to what landed.)
+
+- **Unit:** `ConnectionPromoterTest` facet cases (specs, type registration,
+  the nullability firewall, no-op and malformed-skip) and `FacetEmitterTest`
+  (method-surface assertions only: fragment and delegate presence/absence;
+  bodies are pinned behaviourally at the compilation and execution tiers per
+  the review's finding 4).
+- **Pipeline:** `FacetedConnectionPipelineTest`: `@asFacet` populates
+  `ConnectionType.facets()` correctly (including the non-list shape), and
+  one case per rejection arm (missing `@field`, `@reference` / `@condition` /
+  `@nodeId` co-occurrence, `ID` and input-object value types, non-null field,
+  dead-schema input, `connectionName:` override, child / interface carriers,
+  duplicate and colliding facet names), plus the shared-structural and
+  shared-non-connection non-rejections. A `@ProjectionFor` case in
+  `GraphitronSchemaBuilderTest` pins the `PlainObject` projection of the two
+  facet type arms.
+- **Wiring:** `ConnectionRegistrationsTest` asserts `connectionBody` wires a
+  `facets` dataFetcher when the Connection has facets and not otherwise.
+- **Execution:** the `GraphQLQueryTest.filmsFaceted*` cases: plain
+  aggregates, filter-minus-self on one and both facets, base retention of
+  same-arg and sibling-arg non-facet predicates, NULL bucket and
+  `IS NOT NULL` scrub, round-trip and selection-gate ratchets, and the
+  failure degrade contract with redaction.
+- **Regression:** existing connection tests unchanged; unfaceted carriers
+  emit no fragments and no delegate (`FacetEmitterTest`), and the whole
+  unfaceted example surface holds at the compilation and execution tiers.
 
 ## Resolved design decisions
 
@@ -1512,7 +1594,8 @@ reviewers can confirm the v1 design does not foreclose it.
 - **Facet-value ordering: count-desc, then the decoded value's natural
   order.** Sorted in the resolver after decode (the union's shared value
   column is TEXT, so SQL could only sort lexicographically); integers order
-  numerically, enums in declaration order, the NULL bucket last. Still
+  numerically, enums in declaration order, and within equal counts a NULL
+  bucket sorts after non-null values (count DESC stays the primary key). Still
   deterministic, so test assertions stay stable, and strictly more useful
   than the text order the plan originally accepted. See the *Facet-value
   ordering* section for the full rationale.

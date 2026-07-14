@@ -445,8 +445,8 @@ class ConnectionPromoterTest {
 
         var conn = (ConnectionType) bctx.types.get("QueryFilmsConnection");
         assertThat(conn.facets()).containsExactly(
-            new FacetSpec("rating", "rating", "Rating", false, "RatingFacetValue"),
-            new FacetSpec("length", "length", "Int", true, "IntFacetValueOrNull"));
+            new FacetSpec("filter", "rating", "rating", "Rating", false, "RatingFacetValue"),
+            new FacetSpec("filter", "length", "length", "Int", true, "IntFacetValueOrNull"));
         assertThat(bctx.types.get("QueryFilmsConnectionFacets")).isInstanceOf(FacetsType.class);
         assertThat(bctx.types.get("RatingFacetValue")).isInstanceOf(FacetValueType.class);
         assertThat(bctx.types.get("IntFacetValueOrNull")).isInstanceOf(FacetValueType.class);

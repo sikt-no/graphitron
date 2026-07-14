@@ -339,6 +339,8 @@ public class ConnectionHelperClassGenerator {
             .addCode("if (specs.isEmpty()) return $T.of();\n", MAP)
             .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass)
             .addStatement("$T union = null", orderByStepOfRecord3)
+            .addStatement("$T<String, $T> colByLabel = new $T<>()",
+                ClassName.get("java.util", "Map"), jooqFieldWildcard, hashMap)
             .addCode("for ($T f : specs) {\n", facetSpecClass)
             .addCode("    $T cond = cr.facetBaseCondition();\n", conditionClass)
             .addCode("    for ($T<String, $T> e : cr.facetConditions().entrySet()) {\n",
@@ -346,6 +348,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("        if (!e.getKey().equals(f.label())) cond = cond.and(e.getValue());\n")
             .addCode("    }\n")
             .addCode("    $T col = facetColumn(cr.table(), f.columnName());\n", jooqFieldWildcard)
+            .addCode("    colByLabel.put(f.label(), col);\n")
             .addCode("    if (!f.valueNullable()) cond = cond.and(col.isNotNull());\n")
             .addCode("    $T arm = dsl.select($T.inline(f.label()).as(\"facet\"),"
                 + " col.cast(String.class).as(\"value\"), $T.count().as(\"cnt\"))\n", orderByStepOfRecord3, DSL, DSL)
@@ -364,7 +367,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("for ($T row : rows) {\n", record3)
             .addCode("    $T f = byLabel.get(row.value1());\n", facetSpecClass)
             .addCode("    if (f == null) continue;\n")
-            .addCode("    $T col = facetColumn(cr.table(), f.columnName());\n", jooqFieldWildcard)
+            .addCode("    $T col = colByLabel.get(f.label());\n", jooqFieldWildcard)
             // DSL.val(Object, DataType<T>).getValue() is the non-deprecated wire→typed coercion,
             // the same form decodeCursor's replacement uses (R384): the column's Converter applies,
             // null in, null out (a preserved NULL bucket stays null).

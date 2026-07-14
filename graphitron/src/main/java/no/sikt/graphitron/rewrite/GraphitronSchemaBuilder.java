@@ -986,12 +986,23 @@ public class GraphitronSchemaBuilder {
             if (!(type instanceof GraphQLObjectType obj)) continue;
             for (var field : obj.getFieldDefinitions()) {
                 if (!field.hasAppliedDirective(DIR_AS_CONNECTION)) continue;
+                // Structural carriers (the SDL return type already names a declared Connection,
+                // i.e. the return is not a bare list) never gain facets — the promoter's
+                // structural arm synthesises nothing — so @asFacet is inert there per the spec's
+                // "inert at the others" rule. They contribute neither reached nor unsupported:
+                // an input consumed ONLY by structural carriers still lands in the dead-schema
+                // rejection below, while sharing with a served root carrier stays legal.
+                var unwrappedOnce = field.getType() instanceof graphql.schema.GraphQLNonNull nn
+                    ? nn.getWrappedType() : field.getType();
+                if (!(unwrappedOnce instanceof graphql.schema.GraphQLList)) continue;
                 boolean overriddenName = argString(field, DIR_AS_CONNECTION, ARG_CONNECTION_NAME)
                     .filter(s -> !s.isEmpty()).isPresent();
                 String carrierCoordinate = obj.getName() + "." + field.getName();
                 String unsupportedReason = unsupportedFacetCarrierReason(
                     ctx, obj, field, queryRootName, carrierCoordinate);
                 var facetNamesOnCarrier = new LinkedHashSet<String>();
+                var duplicateFacetNames = new LinkedHashSet<String>();
+                var filterParamNameCounts = new LinkedHashMap<String, Integer>();
                 for (var arg : field.getArguments()) {
                     if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType in) {
                         connectionFilterInputs.add(in.getName());
@@ -1005,8 +1016,10 @@ public class GraphitronSchemaBuilder {
                         // synthesised <ConnName>Facets object (the promoter keeps the first and
                         // drops repeats so synthesis cannot crash; this is the named rejection).
                         for (var inputField : in.getFieldDefinitions()) {
+                            filterParamNameCounts.merge(inputField.getName(), 1, Integer::sum);
                             if (!inputField.hasAppliedDirective(DIR_AS_FACET)) continue;
                             if (!facetNamesOnCarrier.add(inputField.getName())) {
+                                duplicateFacetNames.add(inputField.getName());
                                 ctx.addDiagnostic(ValidationError.forField(carrierCoordinate,
                                     Rejection.invalidSchema("Field '" + carrierCoordinate
                                         + "': duplicate facet field name '" + inputField.getName()
@@ -1016,6 +1029,26 @@ public class GraphitronSchemaBuilder {
                                     locationOf(field)));
                             }
                         }
+                    } else {
+                        filterParamNameCounts.merge(arg.getName(), 1, Integer::sum);
+                    }
+                }
+                // A facet's name must be unique across the carrier's whole filter surface
+                // (sibling input args' fields and top-level arguments): the facet fragments and
+                // the generated condition method both key parameters by name, so a same-named
+                // non-facet filter is irreducibly ambiguous at the emission boundary. (The
+                // generated <Type>Conditions method cannot even declare two same-named
+                // parameters today; that generic defect is tracked separately.)
+                for (var facetName : facetNamesOnCarrier) {
+                    if (duplicateFacetNames.contains(facetName)) continue;
+                    if (filterParamNameCounts.getOrDefault(facetName, 0) > 1) {
+                        ctx.addDiagnostic(ValidationError.forField(carrierCoordinate,
+                            Rejection.invalidSchema("Field '" + carrierCoordinate + "': facet '"
+                                + facetName + "' shares its name with another filter argument or "
+                                + "filter-input field on this connection; v1 requires a facet's "
+                                + "name to be unique across the carrier's whole filter surface. "
+                                + "Rename one of them"),
+                            locationOf(field)));
                     }
                 }
             }
@@ -1065,31 +1098,11 @@ public class GraphitronSchemaBuilder {
             graphql.schema.GraphQLInputObjectField field, String inputTypeName,
             Set<String> connectionFilterInputs, Map<String, String> overriddenNameConsumers,
             Map<String, String> unsupportedCarrierConsumers) {
-        if (field.hasAppliedDirective(DIR_REFERENCE)
-                || field.hasAppliedDirective(DIR_CONDITION)
-                || field.hasAppliedDirective(DIR_NODE_ID)) {
-            return "@asFacet supports only direct-column bindings in v1; remove @reference / "
-                + "@condition / @nodeId from the facet field or drop @asFacet (join-mediated and "
-                + "node-ID facets are a follow-up)";
-        }
-        if (!field.hasAppliedDirective(DIR_FIELD)) {
-            return "@asFacet requires @field(name:) naming the facet's column; the v1 facet "
-                + "emitter only understands direct-column facet values";
-        }
-        if (field.getType() instanceof graphql.schema.GraphQLNonNull) {
-            return "@asFacet requires a nullable (optional) filter field; a non-null filter value "
-                + "is always active, so its facet could never show the unfiltered pivot counts, "
-                + "and the generated filter-minus-self fragments suppress a facet's own predicate "
-                + "by leaving it unset. Drop the outer '!' from the field type";
-        }
-        String unwrapped = unwrappedTypeName(field.getType());
-        if ("ID".equals(unwrapped)) {
-            return "@asFacet on an ID field is not supported in v1; ID fields route through the "
-                + "node-ID machinery, which the direct-column facet emitter cannot serve";
-        }
-        if (GraphQLTypeUtil.unwrapAll(field.getType()) instanceof GraphQLInputObjectType) {
-            return "@asFacet must mark a scalar or enum field; '" + unwrapped + "' is an input "
-                + "object (facet values are GROUP BY keys on one column)";
+        // Definition-keyed half: the shared predicate the promoter's synthesis walk also gates
+        // on, so what the reduction rejects and what the promoter skips cannot drift.
+        String definitionKeyed = FacetFieldValidation.definitionKeyedRejection(field);
+        if (definitionKeyed != null) {
+            return definitionKeyed;
         }
         if (!connectionFilterInputs.contains(inputTypeName)) {
             return "@asFacet has no effect: input type '" + inputTypeName + "' is not used as a "

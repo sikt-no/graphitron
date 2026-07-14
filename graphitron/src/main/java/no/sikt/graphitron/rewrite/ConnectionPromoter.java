@@ -443,11 +443,11 @@ final class ConnectionPromoter {
      * list-element type exactly, so a client can feed {@code facetValue.value} straight back into
      * the filter; the column comes from {@code @field(name:)}.
      *
-     * <p>Malformed applications (no {@code @field}, co-occurrence with
-     * {@code @reference} / {@code @condition} / {@code @nodeId}, an {@code ID} or non-leaf value
-     * type) are <em>skipped</em> here, not rejected: {@code GraphitronSchemaBuilder}'s facet-misuse
-     * reduction walks the same directive surface and registers a build diagnostic for each, so the
-     * build fails with a named error while this walk stays a pure projection of the valid facets.
+     * <p>Malformed applications are <em>skipped</em> here, not rejected: inclusion is gated on
+     * the shared definition-keyed predicate ({@code FacetFieldValidation.definitionKeyedRejection},
+     * the single home both this walk and {@code GraphitronSchemaBuilder}'s facet-misuse reduction
+     * read), so a skipped field is by construction one the reduction rejects with a named
+     * diagnostic, and this walk stays a pure projection of the valid facets.
      */
     private static List<FacetSpec> facetSpecsFor(GraphQLFieldDefinition fieldDef) {
         List<FacetSpec> specs = new ArrayList<>();
@@ -461,13 +461,7 @@ final class ConnectionPromoter {
             if (!(GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType inputType)) continue;
             for (var inputField : inputType.getFieldDefinitions()) {
                 if (!inputField.hasAppliedDirective(DIR_AS_FACET)) continue;
-                if (!inputField.hasAppliedDirective(DIR_FIELD)
-                        || inputField.hasAppliedDirective(DIR_REFERENCE)
-                        || inputField.hasAppliedDirective(DIR_CONDITION)
-                        || inputField.hasAppliedDirective(DIR_NODE_ID)
-                        || inputField.getType() instanceof GraphQLNonNull) {
-                    continue;
-                }
+                if (FacetFieldValidation.definitionKeyedRejection(inputField) != null) continue;
                 String columnName = BuildContext.argString(inputField, DIR_FIELD, ARG_NAME).orElse(null);
                 if (columnName == null) continue;
                 // Element type: for a list field the list element, otherwise the field itself.
@@ -482,10 +476,10 @@ final class ConnectionPromoter {
                 boolean valueNullable = !(elementLayer instanceof GraphQLNonNull);
                 GraphQLType leaf = GraphQLTypeUtil.unwrapAll(elementLayer);
                 if (!(leaf instanceof GraphQLNamedType named)) continue;
-                if (leaf instanceof GraphQLInputObjectType || "ID".equals(named.getName())) continue;
                 if (!seenNames.add(inputField.getName())) continue;
-                specs.add(new FacetSpec(inputField.getName(), columnName, named.getName(),
-                    valueNullable, FacetNaming.facetValueTypeName(named.getName(), valueNullable)));
+                specs.add(new FacetSpec(arg.getName(), inputField.getName(), columnName,
+                    named.getName(), valueNullable,
+                    FacetNaming.facetValueTypeName(named.getName(), valueNullable)));
             }
         }
         return List.copyOf(specs);

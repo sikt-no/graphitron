@@ -13,19 +13,14 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R13 Phase 4: structural coverage for the facet emitters. Drives the full pipeline over a
- * faceted {@code @asConnection} schema and asserts on the emitted TypeSpecs:
- *
- * <ul>
- *   <li>{@link QueryConditionsGenerator} emits the filter-minus-self fragments
- *       ({@code <field>FacetBaseCondition} suppressing the facet params with {@code null}
- *       literals, {@code <field>Facet_<g>Condition} retaining only that facet's own);</li>
- *   <li>{@link TypeFetcherGenerator} builds the facet plan onto the facet-carrying
- *       {@code ConnectionResult} constructor, and stays byte-free of facet code on an
- *       unfaceted schema (the structural no-op criterion);</li>
- *   <li>{@link ConnectionFetcherClassGenerator} adds the {@code facets} delegate under the
- *       same has-facets gate as the registration emitter.</li>
- * </ul>
+ * R13 Phase 4: structural coverage for the facet emitters, at the method-surface level only
+ * (per testing.adoc's ban on code-string assertions against generated method bodies, applied to
+ * this class in the R13 review's finding 4). What each fragment and the fetcher's facet plan
+ * actually *do* is pinned behaviourally elsewhere: the sakila example's faceted fixture covers
+ * the emitted shapes at the compilation tier (including the lifted-local base-fragment shape and
+ * the cross-arg name collision), and {@code GraphQLQueryTest}'s {@code filmsFaceted} cases pin
+ * the filter-minus-self semantics, the base's retention of non-facet predicates, the NULL-bucket
+ * and scrub behaviour, and the failure degrade contract end to end.
  */
 @UnitTier
 class FacetEmitterTest {
@@ -53,55 +48,15 @@ class FacetEmitterTest {
         """;
 
     @Test
-    void queryConditions_emitFacetFragments() {
+    void facetedCarrier_emitsBaseAndPerFacetFragments() {
         var conditions = queryConditions(TestSchemaHelper.buildSchema(FACETED));
-
-        String base = method(conditions, "filmsFacetBaseCondition");
-        // The base suppresses both facet params with null literals but keeps the non-facet one.
-        assertThat(base).contains("null");
-        assertThat(base).contains("releaseYear");
-
-        String titleOwn = method(conditions, "filmsFacet_titleCondition");
-        // The per-facet fragment retains only its own param; every other slot is a null literal.
-        assertThat(titleOwn).contains("title");
-        assertThat(titleOwn).doesNotContain("releaseYear\")");
-
         assertThat(methodNames(conditions)).contains(
             "filmsCondition", "filmsFacetBaseCondition",
             "filmsFacet_titleCondition", "filmsFacet_lengthCondition");
     }
 
     @Test
-    void queryConditions_topLevelArgSharingAFacetName_staysInBaseAndOutOfTheFacetFragment() {
-        // Suppression matches on the nested-extraction identity, not the bare param name: a
-        // top-level argument that happens to share a facet field's name is a legitimate
-        // non-facet filter. It must survive in the base fragment (else facet counts would
-        // ignore it) and must NOT ride along in the facet's own fragment.
-        var conditions = queryConditions(TestSchemaHelper.buildSchema("""
-            type Film @table(name: "film") { title: String }
-            input FilmFilter @table(name: "film") {
-                title: [String!] @field(name: "title") @asFacet
-            }
-            type Query {
-                films(title: String @field(name: "title"), filter: FilmFilter): [Film!]!
-                    @asConnection @defaultOrder(primaryKey: true)
-            }
-            """));
-
-        String base = method(conditions, "filmsFacetBaseCondition");
-        assertThat(base)
-            .as("the top-level title arg is a non-facet filter and belongs to the base")
-            .contains("env.getArgument(\"title\")");
-
-        String own = method(conditions, "filmsFacet_titleCondition");
-        assertThat(own)
-            .as("the facet's own fragment carries only the nested filter field's predicate")
-            .contains("\"filter\"")
-            .doesNotContain("env.getArgument(\"title\")");
-    }
-
-    @Test
-    void queryConditions_unfacetedSchema_hasNoFragments() {
+    void unfacetedCarrier_emitsNoFragments() {
         var conditions = queryConditions(TestSchemaHelper.buildSchema(UNFACETED));
         assertThat(methodNames(conditions))
             .contains("filmsCondition")
@@ -109,45 +64,11 @@ class FacetEmitterTest {
     }
 
     @Test
-    void connectionFetcher_buildsFacetPlan() {
-        var schema = TestSchemaHelper.buildSchema(FACETED);
-        var query = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("QueryFetchers"))
-            .findFirst().orElseThrow();
-        String films = method(query, "films");
-        assertThat(films).contains("filmsFacetBaseCondition");
-        assertThat(films).contains("facetConditions.put(\"title\"");
-        assertThat(films).contains("facetConditions.put(\"length\"");
-        assertThat(films).contains("ConnectionResult.FacetSpec(\"title\", \"title\", false)");
-        assertThat(films).contains("ConnectionResult.FacetSpec(\"length\", \"length\", true)");
-        assertThat(films).contains("facetBase, facetConditions, facetSpecs");
-    }
-
-    @Test
-    void connectionFetcher_unfacetedSchema_isFacetFree() {
-        var schema = TestSchemaHelper.buildSchema(UNFACETED);
-        var query = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("QueryFetchers"))
-            .findFirst().orElseThrow();
-        String films = method(query, "films");
-        assertThat(films).doesNotContain("Facet");
-        assertThat(films).contains(".ConnectionResult(result, page,");
-    }
-
-    @Test
     void connectionFetchersClass_hasFacetsDelegateOnlyWhenFaceted() {
-        var faceted = ConnectionFetcherClassGenerator
-            .generate(TestSchemaHelper.buildSchema(FACETED), DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("QueryFilmsConnectionFetchers"))
-            .findFirst().orElseThrow();
-        assertThat(methodNames(faceted)).contains("facets");
-        assertThat(method(faceted, "facets")).contains("ConnectionHelper.facets(env)");
-
-        var unfaceted = ConnectionFetcherClassGenerator
-            .generate(TestSchemaHelper.buildSchema(UNFACETED), DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("QueryFilmsConnectionFetchers"))
-            .findFirst().orElseThrow();
-        assertThat(methodNames(unfaceted)).doesNotContain("facets");
+        assertThat(methodNames(connectionFetchers(TestSchemaHelper.buildSchema(FACETED))))
+            .contains("facets");
+        assertThat(methodNames(connectionFetchers(TestSchemaHelper.buildSchema(UNFACETED))))
+            .doesNotContain("facets");
     }
 
     private static TypeSpec queryConditions(GraphitronSchema schema) {
@@ -156,13 +77,10 @@ class FacetEmitterTest {
             .findFirst().orElseThrow();
     }
 
-    private static String method(TypeSpec spec, String name) {
-        return spec.methodSpecs().stream()
-            .filter(m -> m.name().equals(name))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "no method '" + name + "' on " + spec.name() + "; has " + methodNames(spec)))
-            .toString();
+    private static TypeSpec connectionFetchers(GraphitronSchema schema) {
+        return ConnectionFetcherClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("QueryFilmsConnectionFetchers"))
+            .findFirst().orElseThrow();
     }
 
     private static List<String> methodNames(TypeSpec spec) {

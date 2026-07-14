@@ -1685,6 +1685,104 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsFaceted_nonFacetFilterInSameArg_restrictsEveryFacet() {
+        // title is a plain (non-facet) filter field on the same input as the facets: it belongs
+        // to every facet arm's base predicate, never to any facet's own fragment. This case also
+        // exercises the lifted-local base-fragment shape at runtime (two retained non-facet
+        // params share the `filter` outer arg — the R13 review's finding-1 compile break).
+        Map<String, Object> data = execute("""
+            { filmsFaceted(filter: { title: ["ACE GOLDFINGER"] }) {
+                facets { rating { value count } length { value count } }
+            } }""");
+        assertThat(facetValues(data, "rating"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(org.assertj.core.groups.Tuple.tuple("G", 1));
+        assertThat(facetValues(data, "length"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(org.assertj.core.groups.Tuple.tuple(48, 1));
+    }
+
+    @Test
+    void filmsFaceted_siblingArgFilterOverTheFacetsColumn_isBaseNotOwnPredicate() {
+        // extra.lengthIs rides a second argument and binds the SAME column as the length facet:
+        // filter-minus-self subtracts the facet's own FIELD, not every predicate over its column,
+        // so extra.lengthIs stays in every arm's base and the length facet is restricted by it
+        // too (86 is not the facet's own predicate). The R13 review's finding-2 shape (a
+        // same-NAMED filter on a sibling arg) is resolved as a build-time rejection instead,
+        // since the generated condition method cannot key two same-named parameters; suppression
+        // additionally matches on (argument, field) identity as defence in depth.
+        Map<String, Object> data = execute("""
+            { filmsFaceted(extra: { lengthIs: [86] }) {
+                facets { rating { value count } length { value count } }
+            } }""");
+        assertThat(facetValues(data, "rating"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(org.assertj.core.groups.Tuple.tuple("PG", 1));
+        assertThat(facetValues(data, "length"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(org.assertj.core.groups.Tuple.tuple(86, 1));
+    }
+
+    @Test
+    void filmsFaceted_nullableFacet_preservesTheNullBucket() {
+        // original_language_id is NULL for every seeded film; the nullable-element facet
+        // preserves the NULL group as its own bucket and the decoded value round-trips as null.
+        Map<String, Object> data = execute(
+            "{ filmsFaceted { facets { originalLanguage { value count } } } }");
+        assertThat(facetValues(data, "originalLanguage"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactly(org.assertj.core.groups.Tuple.tuple(null, 5));
+    }
+
+    @Test
+    void filmsFaceted_nonNullFacet_scrubsTheNullGroup() {
+        // The non-null-element facet over the same all-NULL column appends AND col IS NOT NULL
+        // to its arm, so no NULL key can reach the non-null value field: the facet returns an
+        // empty list, with no GraphQL errors (execute() asserts none).
+        Map<String, Object> data = execute(
+            "{ filmsFaceted { facets { originalLanguageRequired { value count } } } }");
+        assertThat(facetValues(data, "originalLanguageRequired")).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmsFaceted_facetFailure_degradesToNullFacetsWithRedactedError() {
+        // R13 "Facet failure semantics": a facet-aggregate failure degrades to facets: null plus
+        // a GraphQL error while the page still returns; and the facets delegate routes the throw
+        // through ErrorRouter.surfaceClientErrorOrRedact, so the raw exception text (a jOOQ
+        // DataAccessException embeds the rendered SQL) never reaches the errors array. The
+        // derived DSLContext fails only the facet aggregate (recognised by its `facet` label
+        // column alias, present regardless of how many arms the aggregate has), leaving the
+        // page query untouched.
+        var failing = org.jooq.impl.DSL.using(dsl.configuration().derive(
+            new org.jooq.impl.DefaultExecuteListenerProvider(new org.jooq.ExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ectx) {
+                    var sql = ectx.sql();
+                    if (sql != null && sql.toLowerCase(java.util.Locale.ROOT).contains("as \"facet\"")) {
+                        throw new org.jooq.exception.DataAccessException(
+                            "boom: select secret_column from film -- rendered sql must not leak");
+                    }
+                }
+            })));
+        var input = Graphitron.newExecutionInput(failing, "test-user")
+            .query("{ filmsFaceted { facets { rating { value count } } nodes { title } } }")
+            .build();
+        var result = graphql.execute(input);
+
+        assertThat(result.getErrors())
+            .as("the facet failure surfaces as a GraphQL error")
+            .isNotEmpty()
+            .allSatisfy(err -> assertThat(err.getMessage())
+                .as("the raw exception (with rendered SQL) must be redacted")
+                .doesNotContain("secret_column"));
+        Map<String, Object> data = result.getData();
+        var conn = (Map<String, Object>) data.get("filmsFaceted");
+        assertThat(conn.get("facets")).as("facets degrade to null").isNull();
+        assertThat((java.util.List<?>) conn.get("nodes")).as("the page is unaffected").isNotEmpty();
+    }
+
+    @Test
     void filmsFaceted_selectionGate_unselectedFacetContributesNoArm() {
         // Only rating is selected: the single aggregate has no arm grouping on length.
         SQL_LOG.clear();

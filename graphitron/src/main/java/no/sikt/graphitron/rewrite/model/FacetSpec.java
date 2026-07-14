@@ -2,7 +2,9 @@ package no.sikt.graphitron.rewrite.model;
 
 /**
  * One {@code @asFacet}-marked filter-input field, resolved against the consuming
- * {@code @asConnection} carrier. Carries exactly what the facet emitter needs: which column to
+ * {@code @asConnection} carrier. Carries exactly what the facet emitter needs: which carrier
+ * argument the binding rides in ({@code filterArgName}, half of the suppression identity: a
+ * same-named field on a sibling input arg is a distinct binding), which column to
  * {@code GROUP BY}, what GraphQL scalar the facet value has, whether that value is nullable, and
  * which synthesised {@code *FacetValue} object type the counts surface through.
  *
@@ -19,6 +21,7 @@ package no.sikt.graphitron.rewrite.model;
  * non-null output field.
  */
 public record FacetSpec(
+    String filterArgName,
     String inputFieldName,
     String columnName,
     String valueTypeName,

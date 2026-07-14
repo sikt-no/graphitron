@@ -43,7 +43,7 @@ type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
 type IntFacetValue        { value: Int!        count: Int! }
 ----
 
-A query selecting any facet field issues exactly one extra SQL statement per request: a `UNION ALL` of per-facet `GROUP BY` arms, one arm per *selected* facet, each under its filter-minus-self predicate. When no facet field is selected, the aggregate is skipped entirely. Each facet's entries are ordered count descending, then by the decoded value's natural order (integers numerically, enums in declaration order), with a preserved NULL bucket last.
+A query selecting any facet field issues exactly one extra SQL statement per request: a `UNION ALL` of per-facet `GROUP BY` arms, one arm per *selected* facet, each under its filter-minus-self predicate. When no facet field is selected, the aggregate is skipped entirely. Each facet's entries are ordered count descending, then within equal counts by the decoded value's natural order (integers numerically, enums in declaration order), a preserved NULL bucket sorting after non-null values.
 
 == Failure semantics
 
@@ -55,9 +55,9 @@ Facets are a best-effort aggregate, never a structural guarantee. The `facets` o
 * The field must be a plain `@field(name:)`-bound scalar or enum column. `@reference` / `@condition` / `@nodeId` bindings, `ID`-typed fields, and input-object fields are rejected (join-mediated and node-ID facets are a follow-up).
 * The field must be nullable (optional): an always-active filter value could never show unfiltered pivot counts, and the generated filter-minus-self fragments suppress a facet's own predicate by leaving it unset.
 * v1 serves facets only on root `Query` connections over a `@table`-backed object element. A faceted child (`@splitQuery`) or interface/union connection is rejected at build time (its facets would resolve to null); lifting this is a follow-up.
-* Facet field names must be unique per connection: each becomes one field on the synthesised facets object, so two filter inputs on the same carrier cannot both facet a field of the same name.
+* A facet's name must be unique across the carrier's whole filter surface (every filter input's fields and every top-level argument): the facet fragments and the generated condition method key parameters by name, so any same-named sibling filter is rejected at build time.
 * Not combinable with the deprecated `@asConnection(connectionName:)` override; a faceted connection field must own its derived-name Connection type.
-* Facet synthesis applies to directive-driven `@asConnection` carriers only; a hand-written structural Connection type is author-owned and never gains a `facets` field.
+* Facet synthesis applies to directive-driven `@asConnection` carriers only; a hand-written structural Connection type is author-owned and never gains a `facets` field. Sharing a filter input between a served root carrier and a structural carrier is legal (the directive is inert at the structural consumer), but an input consumed *only* by structural connections is rejected: its facets could never surface anywhere.
 
 == See also
 
