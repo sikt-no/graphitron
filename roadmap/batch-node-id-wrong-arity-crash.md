@@ -1,7 +1,7 @@
 ---
 id: R477
 title: "Batch node-id decode crashes on wrong-arity ids (Query.node/nodes/_entities)"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 4
 theme: nodeid
@@ -24,9 +24,9 @@ Opptak has a 2-column key (`OPPTAKSTYPE_KODE`, `OPPTAK_KODE`):
 
 The `_entities` variant is the more serious of the two: the Apollo router / federation gateway drives it machine-to-machine, and the raw AIOOBE message leaks internal implementation detail through the error surface.
 
-## Root cause
+## Root cause (verified against current source)
 
-`HandleMethodBody.emitDecodeAndGroup` (`graphitron/.../generators/util/HandleMethodBody.java`, ~L111-121) emits, for a `KeyShape.NODE_ID` alternative:
+`HandleMethodBody.emitDecodeAndGroup` emits, for a `KeyShape.NODE_ID` alternative:
 
 ```java
 String[] decoded = NodeIdEncoder.decodeValues("Opptak", idStr);
@@ -35,16 +35,48 @@ Object[] cols = new Object[decoded.length];             // sized by decoded leng
 for (int j = 0; j < decoded.length; j++) cols[j] = decoded[j];
 ```
 
-`cols` is sized to `decoded.length`, but the paired `SelectMethodBody` (~L85, L100-102) emits `DSL.val(cols[0] ..)`, `DSL.val(cols[1] ..)` for every column in `alt.columns()` (the fixed composite-key column count). When `decoded.length < alt.columns().size()`, `cols[1]` (etc.) throws AIOOBE inside the generated `selectXxxAlt0`.
+`cols` is sized to `decoded.length`, but the paired `SelectMethodBody.body` builds each `VALUES` row through `ValuesJoinRowBuilder.cellsCode` with a `cols[<i>]` accessor for every column in `alt.columns()` (the fixed composite-key column count). Two failure modes follow:
 
-The single-record decode path is already correct and inconsistent with this one: the per-type `toRecord`-style helpers emit `if (values == null || values.length != N) return null;`, a full arity guard. Only the batch `resolveByReps` path omits the `!= N` check.
+- **Under-arity** (`decoded.length < alt.columns().size()`): `cols[1]` (etc.) throws AIOOBE inside the generated `select<TypeName>Alt<N>`. This is the observed crash.
+- **Over-arity** (`decoded.length > alt.columns().size()`): the extra decoded parts are silently ignored, so an id like `FilmActor:1,1,999` resolves to the row keyed `(1,1)` if one exists. A wrong-row return, arguably worse than the crash; the same guard fixes it.
 
-## Proposed fix
+The single-record decode path is already correct and inconsistent with this one: the per-type decode helpers emitted by `NodeIdEncoderClassGenerator` guard `if (values == null || values.length != N) return null;`, and `InputBeanInstantiationEmitter` guards `values.length != arity` the same way. Only the batch `resolveByReps` path omits the `!= N` check.
 
-In `HandleMethodBody.emitDecodeAndGroup`, tighten the `NODE_ID` guard to also reject arity mismatches, mirroring the single-record path:
+`KeyAlternative.KeyShape.NODE_ID`'s contract ("the rep's id is decoded by NodeIdEncoder into the columns list") makes `alt.columns().size()` the arity source. `DIRECT` alternatives are unaffected: they size `cols` by `requiredFields`, which the record's contract fixes equal to `columns` for that shape.
+
+## Implementation
+
+In `HandleMethodBody.emitDecodeAndGroup`, `NODE_ID` branch only, tighten the emitted guard to reject arity mismatches, mirroring the single-record path, and size `cols` from the model rather than from the runtime array:
 
 ```java
 b.addStatement("if (decoded == null || decoded.length != $L) continue", alt.columns().size());
+b.addStatement("Object[] cols = new Object[$L]", alt.columns().size());
 ```
 
-(Confirm `alt.columns().size()` is the right count; it is what `SelectMethodBody` indexes for a `NODE_ID` alt.) With the guard, a wrong-arity id is treated as garbage/unknown → the rep is skipped → null result, matching Relay and the existing single-record behaviour. Add fixture coverage for the wrong-arity case on a composite-key `@node` type across all three entry points (`node`, `nodes`, `_entities`), since a single-column-key type cannot exercise the bug.
+With the guard, a wrong-arity id is treated exactly like a garbage/unknown id: the rep is skipped, its result slot stays `null`, matching Relay ("if no such object exists, the field returns null"), the opacity stance (decoding detail never leaks into the error surface), and the existing single-record behaviour.
+
+Sizing `cols` by `alt.columns().size()` (equal to `decoded.length` once past the guard) makes both halves of the decode/select pair read the arity from the same model fact: `SelectMethodBody` already indexes `cols[0..alt.columns().size()-1]`, so after this change `decoded.length` is inspected exactly once, at the boundary check where a wire quantity belongs (principles consult, point 1).
+
+Deliberately **not** in scope:
+
+- Making `NodeIdEncoder.decodeValues` arity-aware. It is a generic `String[]` decoder shared by call sites that each know their own arity from the model; every other caller already guards at the call site, so the call-site guard keeps one consistent convention rather than splitting arity knowledge across two layers (principles consult concurs).
+- Surfacing a GraphQL error for wrong-arity ids. Null-not-error is the documented contract, and the `_entities` variant currently leaks a raw `Index 1 out of bounds for length 1` message machine-to-machine; null is strictly better on both axes.
+- Extracting a shared emit-helper for the guarded-decode pattern (this becomes the third hand-written copy alongside `NodeIdEncoderClassGenerator` and `InputBeanInstantiationEmitter`). All three read the arity number from the same model fact, so they cannot disagree on the count; a shared helper is backlog material only if a fourth batch-decode consumer ever appears.
+- Restructuring `KeyAlternative.KeyShape` (enum whose variants carry different `requiredFields`/`columns` invariants in prose only, the structural reason this bug had a place to live). Filed separately as R478 (`keyshape-sealed-variants`).
+
+## Tests
+
+Execution tier in `graphitron-sakila-example`, on `FilmActor` (composite PK `actor_id, film_id`; it is the fixture schema's composite-key `@node` type, and a single-column-key type cannot exercise the bug). Wrong-arity ids are crafted with the generated `NodeIdEncoder.encode(typeId, Object...)` varargs, which happily encodes any part count.
+
+1. `GraphQLQueryTest` (next to `node_garbageInput_returnsNull`): `node(id:)` with a 1-part `FilmActor` id returns `null`, no GraphQL errors.
+2. `GraphQLQueryTest` (next to the existing `nodes(ids:)` garbage-slot test): `nodes(ids: [valid, under-arity, over-arity])` returns the resolved row and `null` in the two wrong-arity slots, positions preserved.
+3. `FederationEntitiesDispatchTest` (next to `entities_garbageNodeId_yieldsNullSlot`): an `_entities` rep `{__typename: "FilmActor", id: <under-arity>}` yields a `null` slot with an empty errors list (the test class's `execute` helper already asserts errors are empty).
+4. `FederationEntitiesDispatchTest`: an over-arity rep whose 3-part id's 2-part prefix **is** an existing row (e.g. extra part appended to a known-valid `(1,1)` id) yields `null`, guarding the wrong-row-return hazard, not just the crash. Match the part order to the generated `encodeFilmActor` helper (round-trip a valid id first if in doubt).
+
+No pipeline-tier snapshot updates are needed: nothing currently pins the emitted guard text, and the change is behavioural, which is exactly what the execution tier exists to observe.
+
+## Acceptance
+
+- All three entry points return `null` (empty errors) for well-formed ids with wrong key arity on a composite-key `@node` type; the opptak reproduction above no longer 500s.
+- Correct-arity behaviour is unchanged: the existing dispatch, node, and nodes tests stay green.
+- Full `mvn install -Plocal-db` passes.
