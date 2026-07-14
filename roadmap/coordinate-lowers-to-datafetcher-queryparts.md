@@ -1,7 +1,7 @@
 ---
 id: R333
 title: "The Graphitron data model"
-status: In Review
+status: Ready
 bucket: structural
 priority: 3
 theme: classification-model
@@ -1999,6 +1999,18 @@ non-generated qualifiers do not. Documented level-1 blind spots, both closed by 
 compilation tier and by the level-2 registry later: unqualified same-class calls (the rows-methods,
 scatter, order-by, record-instantiation helpers — pinned as *nodes* instead) and instance calls
 through variables.
+
+**Reviewed (2026-07-14, In Review pass): the level-1 oracle is approved as shipped at `446ad39`**
+(full reactor green under `-Plocal-db`; both test classes executed, closure and non-vacuity floors
+hold; the fresh scanner is the right call since R410's `TypeSpecReferenceWalk` is type-granular,
+not method-granular). The item returns to **Ready rather than Done-and-delete** because the code
+deliverable was one phase of a still-live artifact: this document remains the governing model
+(R222 Relationships: "this document governs the model") consumed by R431 / R432 / R314 / R222,
+whose specs cite its sections by name and whose `depends-on` names its slug; the seam worklist is
+a living table iterated as those slices land; and the body names its own remaining pass (folding
+the pre-sharpening "QueryPart" wording through the sections from *Normalization* to *What
+dissolves*). Done-and-delete follows when the emit re-platforming no longer consumes the document
+or the stabilized model migrates to `docs/architecture/`.
 
 ## Lineage
 
