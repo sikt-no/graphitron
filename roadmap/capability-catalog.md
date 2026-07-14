@@ -5,11 +5,12 @@ status: Spec
 bucket: architecture
 theme: tooling
 depends-on: []
+last-updated: 2026-07-14
 ---
 
 # Enumerate the capabilities graphitron delivers
 
-This item contributes to the knowledge-base programme framed in R117: the slug namespace it ships becomes the `capability` table that R112 loads into DuckDB and that R118 (graphitron MCP server) exposes via the `graphitron.capability` lookup. The catalog is the prerequisite that anchors the directive value space for `@capability` (R112) and the human-readable axis for capability-coverage views.
+This item contributes to the knowledge-base programme framed in R117: the slug namespace it ships becomes the `capability` table that R112 loads into DuckDB. The KB's consumers are build-internal (leaf-coverage report, verify-mode checks; see R117's Consumers section). The catalog is the prerequisite that anchors the directive value space for `@capability` (R112) and the human-readable axis for capability-coverage views.
 
 Graphitron delivers a set of durable, named *capabilities* — pagination, typed errors, polymorphic dispatch, JSON scalars, federation entities, and others — but no list of those capabilities exists. The roadmap tracks transient implementation work; the SDL describes shape; the docs site narrates use. None of these is a stable namespace of "what graphitron does." That gap blocks several pieces of work that want to reference capabilities by stable slug — most concretely R112's `@capability(name:)` directive, whose value space is speculative until the catalog exists, but also less formally any roadmap item, doc page, or commit message that wants to say "this touches pagination."
 
@@ -17,7 +18,7 @@ This item is *thinking*, not engineering: enumerate what graphitron currently de
 
 ## What this item produces
 
-`graphitron-rewrite/capabilities/<slug>.adoc`, one file per capability, with frontmatter:
+`capabilities/<slug>.adoc` at the repo root, one file per capability, with frontmatter:
 
 ```adoc
 ---
@@ -67,7 +68,7 @@ Each becomes one stub `.adoc`. The list will be wrong in some way; that's the po
 
 ## Why this is its own item
 
-Splitting it from R112 separates two cognitively distinct kinds of work. *Cataloguing* is product thinking: what does graphitron actually deliver, where are the seams, what's the right vocabulary? It benefits from review by someone who knows the product surface. *R112's plumbing* is architecture: directive, DuckDB joins, AsciiDoctor extension. Different review instincts, different reviewers. Splitting also lets the catalog ship and become useful immediately — even before R112 starts, any session can grep `graphitron-rewrite/capabilities/` and know the slug namespace; roadmap items can begin using `relates-to: [<slug>]` cross-references; docs prose can link to `/capabilities/<slug>` even before the page is rendered.
+Splitting it from R112 separates two cognitively distinct kinds of work. *Cataloguing* is product thinking: what does graphitron actually deliver, where are the seams, what's the right vocabulary? It benefits from review by someone who knows the product surface. *R112's plumbing* is architecture: directive, DuckDB joins, AsciiDoctor extension. Different review instincts, different reviewers. Splitting also lets the catalog ship and become useful immediately — even before R112 starts, any session can grep `capabilities/` and know the slug namespace; roadmap items can begin using `relates-to: [<slug>]` cross-references; docs prose can link to `/capabilities/<slug>` even before the page is rendered.
 
 ## Out of scope
 
@@ -80,4 +81,4 @@ Splitting it from R112 separates two cognitively distinct kinds of work. *Catalo
 
 ## Acceptance
 
-A complete enough enumeration that an independent reviewer reading `graphitron-rewrite/capabilities/` and the rewrite-design docs would not be surprised by a "missing capability" finding when R112's pilot lands. Concretely: every classifier-tier sealed-variant family that produces non-trivial fetchers (RootField, ChildField, ResultType variants, etc.) maps to at least one capability slug, and conversely every authored slug corresponds to a recognisable user-facing surface in either the sakila example schema or graphitron's documented directive set.
+A complete enough enumeration that an independent reviewer reading `capabilities/` and the rewrite-design docs would not be surprised by a "missing capability" finding when R112's pilot lands. Concretely: every classifier-tier sealed-variant family that produces non-trivial fetchers (RootField, ChildField, ResultType variants, etc.) maps to at least one capability slug, and conversely every authored slug corresponds to a recognisable user-facing surface in either the sakila example schema or graphitron's documented directive set.
