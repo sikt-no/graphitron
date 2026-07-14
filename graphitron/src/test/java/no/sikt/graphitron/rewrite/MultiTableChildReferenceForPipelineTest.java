@@ -102,6 +102,34 @@ class MultiTableChildReferenceForPipelineTest {
             .isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
     }
 
+    @Test
+    void sameTableSelfFkRoute_listCardinality_orientsAsChildrenNotParent() {
+        // Same self-FK route as the single-valued test, but a list child field. A self-referential
+        // FK is orientation-ambiguous by identity, so cardinality is the sole discriminator: a
+        // single-valued field navigates TO the parent (FK on the parent side), a list field collects
+        // the CHILDREN pointing back (FK on the child side). The slots must therefore be the flip of
+        // the single-valued case — sourceSide category.category_id, targetSide
+        // category.parent_category_id — or the field silently returns the wrong rows (R458 review
+        // finding: the resolver used to hardcode single-valued orientation regardless of cardinality).
+        var schema = TestSchemaHelper.buildSchema("""
+            interface CatThing { rowId: Int }
+            type CategorySelf implements CatThing @table(name: "category") { rowId: Int @field(name: "category_id") }
+            type FilmCategory implements CatThing @table(name: "film_category") { rowId: Int @field(name: "category_id") }
+            type Category @table(name: "category") {
+              things: [CatThing] @referenceFor(type: "CategorySelf", path: [{key: "category_parent_category_id_fkey"}])
+            }
+            type Query { category: Category }
+            """);
+        var field = (ChildField.InterfaceField) schema.field("Category", "things");
+        var self = field.participantJoinPaths().get("CategorySelf");
+        assertThat(self).isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
+        var selfSlots = ((ParticipantCorrelation.KeyTupleWhere) self).slots();
+        assertThat(selfSlots).hasSize(1);
+        // Flipped relative to the single-valued sibling test above.
+        assertThat(selfSlots.get(0).sourceSide().sqlName()).isEqualTo("category_id");
+        assertThat(selfSlots.get(0).targetSide().sqlName()).isEqualTo("parent_category_id");
+    }
+
     // ===== Structural rejections: membership, duplicate, placement, terminal mismatch =====
 
     @Test

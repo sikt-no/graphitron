@@ -981,7 +981,7 @@ class FieldBuilder {
             // and zero/multi-FK auto-discovery failures, so only the auto-discovered single-hop
             // FK shape reaches the emitter.
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
-                location, parentTableType.table(), interfaceType.participants());
+                location, parentTableType.table(), interfaceType.participants(), buildWrapper(fieldDef).isList());
             if (resolved.rejection() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, resolved.rejection());
             }
@@ -1005,7 +1005,7 @@ class FieldBuilder {
 
         if (elementType instanceof UnionType unionType) {
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
-                location, parentTableType.table(), unionType.participants());
+                location, parentTableType.table(), unionType.participants(), buildWrapper(fieldDef).isList());
             if (resolved.rejection() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, resolved.rejection());
             }
@@ -6485,7 +6485,7 @@ class FieldBuilder {
         var resolved = (PolymorphicRecordParentResolution.Resolved) resolution;
 
         var paths = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
-            location, resolved.hubTable(), participants);
+            location, resolved.hubTable(), participants, returnType.wrapper().isList());
         if (paths.rejection() != null) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, paths.rejection());
         }
@@ -7158,10 +7158,23 @@ class FieldBuilder {
      * <p>Per-participant errors are aggregated rather than short-circuited on the first, so the
      * author sees every failing participant in one build. {@link ParticipantRef.Unbound} participants
      * are skipped and produce no map entry.
+     *
+     * <p>{@code isList} is the child field's cardinality (from its wrapper). It threads into both
+     * path resolvers as the {@code selfRefFkOnSource = !isList} orientation hint: for a
+     * <em>self-referential</em> FK (participant table equals the parent/hub table) both endpoints are
+     * the same generated class, so neither identity nor name can tell the parent side from the child
+     * side, and this flag is the sole discriminator (see {@code JooqCatalog.foreignKeyOnSource}). A
+     * single-valued field navigates <em>to</em> the parent (FK on the parent/source side); a list or
+     * connection field collects the <em>children</em> pointing back (FK on the child/target side). A
+     * flipped orientation is silently wrong data, so a same-table self-FK {@code @referenceFor} route
+     * must resolve against the real cardinality rather than a hardcoded default. For non-self FKs the
+     * hint is ignored (orientation comes from FK class identity), so it is inert on the auto-discovery
+     * arm and on cross-table routes.
      */
     private ChildPolymorphicJoinPaths resolveChildPolymorphicJoinPaths(
             GraphQLFieldDefinition fieldDef, String fieldName, String parentTypeName,
-            SourceLocation location, TableRef parentTable, List<ParticipantRef> participants) {
+            SourceLocation location, TableRef parentTable, List<ParticipantRef> participants,
+            boolean isList) {
         String fieldLabel = "Field '" + parentTypeName + "." + fieldName + "'";
         // Rule 1a: a field-level @reference cannot express a distinct join per participant.
         if (fieldDef.hasAppliedDirective(DIR_REFERENCE)) {
@@ -7220,8 +7233,8 @@ class FieldBuilder {
             boolean explicit = explicitRoutes.containsKey(type);
             var parsed = explicit
                 ? ctx.parseExplicitPath(explicitRoutes.get(type), fieldName, parentTable.tableName(),
-                    tb.table().tableName(), tb.table(), /*isList=*/false)
-                : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table());
+                    tb.table().tableName(), tb.table(), isList)
+                : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table(), isList);
 
             var outcome = classifyParticipantRoute(explicit, parsed, tb, fieldLabel, parentTable);
             if (outcome.rejection() != null) {
