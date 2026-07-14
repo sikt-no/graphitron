@@ -25,7 +25,9 @@ mvn -version  # expect "Java version: 25.x"
 
 If `mvn -version` reports Java 21, the session inherited a stale `JAVA_HOME`; see `.claude/web-environment.md` for the JDK 25 install + `JAVA_HOME` export. The parent pom's enforcer fails loudly with "Detected JDK … 21", so this is not silent.
 
-**Claude Code Web** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). The SessionStart hook runs asynchronously and warms the full reactor build in the background (R439); a PreToolUse guard holds your first `mvn` command until the warm-up finishes, so an unusually long first `mvn` invocation is the guard waiting, not a hang. For PostgreSQL/Testcontainers errors there, see `.claude/web-environment.md`.
+**Claude Code Web** uses a web-sandbox setup (no Docker, native PostgreSQL via `-Plocal-db`). The SessionStart hook runs asynchronously and warms the full reactor build in the background (R439); a PreToolUse guard holds your first `mvn`/`mvnd` command until the warm-up finishes, so an unusually long first invocation is the guard waiting, not a hang. For PostgreSQL/Testcontainers errors there, see `.claude/web-environment.md`.
+
+**Prefer `mvnd` over `mvn` in web sessions.** The hook installs mvnd (Maven Daemon) and warms its daemon, so repeat Maven commands skip the 3-8 s JVM start that plain `mvn` pays each time. Every `mvn` command in this file works verbatim as `mvnd`; behaviour is identical (mvnd runs modules in parallel by default, which the test suite supports and CI enforces with `-T 1C`). If `mvnd` is absent its install failed; plain `mvn` is always correct. One quirk: don't combine `mvnd` with `-q` when you need a tool's stdout (it can be swallowed); details in `.claude/web-environment.md`.
 
 ## Common commands
 

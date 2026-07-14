@@ -75,7 +75,13 @@ jobs:
         # is property-based negation on -Dleaf-coverage.skip, so the classifier traces
         # are emitted on every CI run. Local opt-out for faster turnaround is
         # -Dleaf-coverage.skip; CI does not opt out.
-        run: mvn verify -Plocal-db --batch-mode
+        #
+        # -T 1C runs the reactor module-parallel (one thread per core) with tests on,
+        # making parallel test tolerance an enforced invariant, not an aspiration (R474):
+        # web sandbox sessions build through mvnd with the same module-parallel default,
+        # and a test that fails only under parallel execution must fail here at the gate.
+        # The fix for such a failure is the test, never serializing this build.
+        run: mvn verify -Plocal-db --batch-mode -T 1C
       - name: Regenerate leaf-coverage report
         # Trunk-push only. PRs and main pushes skip; the artifact only feeds the
         # downstream docs-build/docs-deploy jobs, which are themselves trunk-gated.

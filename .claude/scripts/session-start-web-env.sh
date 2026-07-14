@@ -8,7 +8,7 @@
 # harness to start the session immediately and keeps working in the background, first
 # the prerequisites below, then a Maven warm build of the whole reactor (R439). Progress
 # is tracked in $STATUS_FILE and logged to $LOG_FILE; the PreToolUse guard
-# (.claude/scripts/wait-for-web-env.sh) makes mvn/psql commands wait on that status
+# (.claude/scripts/wait-for-web-env.sh) makes mvn/mvnd/psql commands wait on that status
 # instead of racing the background work. On local development the hook stays fully
 # synchronous and never creates the status file.
 
@@ -139,20 +139,50 @@ elif command -v curl >/dev/null 2>&1 && command -v make >/dev/null 2>&1 && comma
   rm -rf "$ts_tmp"
 fi
 
-# 5. Warm build (web sessions only, R439). The repo is cloned fresh into every session, so
+# 5. mvnd (Apache Maven Daemon) for fast repeat builds (R474). A resident, JIT-warm Maven
+#    JVM with cached plugin classloaders removes the 3-8 s fixed JVM-start + classloader
+#    cost every plain mvn invocation pays; agent sessions issue dozens of short Maven
+#    commands, so that overhead adds up to minutes per session. Pure accelerator: no pom
+#    changes, identical build behaviour, and everything falls back to plain mvn when this
+#    install fails. Idempotent: skips when /opt/mvnd/bin/mvnd is already present.
+MVND_VERSION=1.0.6
+if [ -x /opt/mvnd/bin/mvnd ]; then
+  : # already installed, skip
+elif command -v curl >/dev/null 2>&1; then
+  mvnd_tmp=$(mktemp -d)
+  if curl -fsSL -o "$mvnd_tmp/mvnd.tgz" \
+       "https://downloads.apache.org/maven/mvnd/${MVND_VERSION}/maven-mvnd-${MVND_VERSION}-linux-amd64.tar.gz" \
+     && sudo mkdir -p /opt/mvnd \
+     && sudo tar -xzf "$mvnd_tmp/mvnd.tgz" -C /opt/mvnd --strip-components=1 \
+     && sudo ln -sf /opt/mvnd/bin/mvnd /usr/local/bin/mvnd; then
+    emit "Installed mvnd ${MVND_VERSION} to /opt/mvnd; prefer mvnd over mvn for repeat builds."
+  else
+    sudo rm -rf /opt/mvnd
+    emit "mvnd ${MVND_VERSION} install failed; the session stays fully usable with plain mvn."
+  fi
+  rm -rf "$mvnd_tmp"
+fi
+
+# 6. Warm build (web sessions only, R439). The repo is cloned fresh into every session, so
 #    target/ is always empty and, on a cold container, so is ~/.m2. Build the reactor now,
 #    in the background, so the agent's first real mvn command runs against a warm cache.
 #    -Plocal-db keeps the jOOQ catalog jar correct (see the clobber footgun in
 #    web-environment.md), !docs skips the AsciiDoctor render, -DskipTests skips test
 #    execution but still compiles tests and runs fixture codegen. The PreToolUse guard
-#    holds concurrent mvn invocations until this finishes, so two Mavens never fight over
-#    ~/.m2 or the same target/ directories.
+#    holds concurrent mvn/mvnd invocations until this finishes, so two Mavens never fight
+#    over ~/.m2 or the same target/ directories. The build prefers mvnd (step 5, R474): a
+#    cold daemon costs the same as plain mvn, so starting and JIT-warming it here (3 h idle
+#    timeout) is what makes the session's first foreground mvnd command fast.
 if [ "$ASYNC" -eq 1 ]; then
   printf 'warm-build %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"
   export JAVA_HOME="$JDK25"
   export PATH="$JDK25/bin:$PATH"
-  MVN=$(command -v mvn || echo /opt/maven/bin/mvn)
-  emit "Warm build starting: mvn -B -ntp install -P local-db,!docs -DskipTests"
+  if [ -x /opt/mvnd/bin/mvnd ]; then
+    MVN=/opt/mvnd/bin/mvnd
+  else
+    MVN=$(command -v mvn || echo /opt/maven/bin/mvn)
+  fi
+  emit "Warm build starting: $MVN -B -ntp install -P local-db,!docs -DskipTests"
   if (cd "$REPO_ROOT" && "$MVN" -B -ntp install -P 'local-db,!docs' -DskipTests); then
     emit "Warm build finished; reactor installed to ~/.m2 with a valid catalog jar."
     printf 'done %s %s\n' "$$" "$(date +%s)" > "$STATUS_FILE"

@@ -15,15 +15,17 @@ It is not relevant when building locally or in CI.
 `.claude/scripts/session-start-web-env.sh` runs at the start of every web session and brings the
 sandbox to a buildable state. In web sessions it runs **asynchronously** (R439): the session
 starts immediately while the hook keeps working in the background, first the prerequisite steps
-below, then a warm build of the whole reactor (`mvn install -P 'local-db,!docs' -DskipTests`),
-so the first foreground `mvn` command runs against a warm `~/.m2` and compiled `target/`
-directories instead of paying the cold build. Progress is tracked in
+below, then a warm build of the whole reactor (`install -P 'local-db,!docs' -DskipTests`,
+preferring `mvnd` when its install succeeded, plain `mvn` otherwise), so the first foreground
+Maven command runs against a warm `~/.m2` and compiled `target/` directories instead of paying
+the cold build. Running the warm build through `mvnd` also leaves a hot, JIT-warm daemon behind
+for the session's first foreground `mvnd` command (see [mvnd](#mvnd-maven-daemon) below). Progress is tracked in
 `/tmp/graphitron-web-env.status` (`prereqs` / `warm-build` / `done` / `failed`, plus the hook
 PID and a start timestamp) and logged to `/tmp/graphitron-web-env.log`.
 
 You normally never need to think about this: a PreToolUse hook
 (`.claude/scripts/wait-for-web-env.sh`) automatically holds any Bash command involving `mvn`
-until the warm-up has finished (and `psql` until the prerequisites have finished), so a
+or `mvnd` until the warm-up has finished (and `psql` until the prerequisites have finished), so a
 foreground build cannot race the background one; two concurrent Mavens sharing `~/.m2` and the
 same `target/` directories would corrupt each other, including the catalog-jar clobber below.
 The guard fails open if the hook died or the status file is stale, so a crashed warm-up can
@@ -54,6 +56,10 @@ fully synchronous and skips the warm build). It:
   `403`s on third-party repos; plain HTTPS to `github.com` is unaffected. CI
   (`.github/workflows/rewrite-build.yml`) clones the same `v0.26.9` directly (it has unrestricted
   GitHub access), so the sandbox and CI exercise the same runtime version.
+- **Installs mvnd `1.0.6` (R474).** Fetches the release tarball from `downloads.apache.org`,
+  extracts to `/opt/mvnd`, and symlinks `/usr/local/bin/mvnd`. On any failure the hook logs one
+  line and continues; the session stays fully usable with plain `mvn`. See
+  [mvnd](#mvnd-maven-daemon) below for why and how to use it.
 
 Each step prints a one-line status message on success or failure (into
 `/tmp/graphitron-web-env.log` in web sessions, as `systemMessage` output locally). If a step
@@ -61,6 +67,38 @@ fails, re-run the script by hand (`CLAUDE_CODE_REMOTE=true .claude/scripts/sessi
 in a web sandbox) or apply that step manually from its description above. The JDK step also
 appends `JAVA_HOME` to `$CLAUDE_ENV_FILE` when the harness provides one, so agent shells do not
 inherit a stale `JAVA_HOME=java-21` that trips the enforcer even though `java` on the PATH is 25.
+
+## mvnd (Maven Daemon)
+
+Web sessions install [mvnd](https://maven.apache.org/tools/mvnd.html) 1.0.6 (see the hook step
+above) and warm its daemon during the background build. **Prefer `mvnd` over `mvn` for every
+Maven command in a web session**: a resident, JIT-warm Maven JVM with cached plugin
+classloaders removes the 3 to 8 seconds of fixed JVM-start overhead each plain `mvn`
+invocation pays, which is most of the wall clock on short commands (`mvnd -pl roadmap-tool
+exec:java` runs in ~0.3 s against ~3 s under `mvn`). mvnd is a pure accelerator: no pom
+changes, identical build behaviour, and every documented `mvn` command in this file and in
+`CLAUDE.md` works verbatim with `mvnd` substituted (and vice versa). If `mvnd` is missing, its
+install failed; fall back to plain `mvn`, which is always correct.
+
+mvnd runs the reactor module-parallel by default (`-T <cores-1>`), tests included. That is
+intentional and enforced: CI builds with `mvn verify -Plocal-db --batch-mode -T 1C`
+(`.github/workflows/rewrite-build.yml`), so a test that cannot survive module-parallel
+execution fails at the gate. Such a failure is a bug in the test, never a reason to serialize
+the build. Within-module (surefire) parallelism is a separate axis and remains off.
+
+Known quirks, accepted and documented rather than fixed (R474):
+
+- **Maven version skew.** mvnd 1.0.6 embeds Maven 3.9.16 while `/opt/maven` is 3.9.11. The
+  repo pins no Maven version anywhere (CI uses the runner's), so this is not a new category
+  of drift.
+- **Output buffering with `-q`.** `mvnd -q ... exec:java` can swallow the tool's stdout (the
+  work completes; the output line never appears). When you need to read a tool's stdout,
+  avoid `-q` under mvnd, or use plain `mvn` for that command.
+- **SNAPSHOT plugins.** mvnd excludes SNAPSHOT plugins from classloader caching, so the
+  `10-SNAPSHOT` `graphitron-maven-plugin` used by `graphitron-sakila-example` reloads per
+  build: no stale-plugin hazard, slightly less speedup for that module.
+- **Daemon footprint.** The daemon holds ~1.35 GB RSS while alive (fine on the 15 GB
+  sandbox) and exits after 3 hours idle. `mvnd --status` lists live daemons.
 
 ## Building the reactor
 

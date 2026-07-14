@@ -62,6 +62,18 @@ maven-plugin tests use fake JDBC URLs), and classifier-trace emission writes one
 
 ## Design
 
+All five steps below are implemented on `claude/r474-spec-ready-review-2d34l2` (single
+commit; the seams added no review value split apart). In-sandbox verification on landing:
+mvnd 1.0.6 installed via the new step (idempotent re-run skips; simulated 404 emits the
+one-line failure status, leaves no `/opt/mvnd` residue, and the hook continues); the
+modified hook run end-to-end in async mode chose `/opt/mvnd/bin/mvnd` for the warm build
+and reached `done`; the edited guard, driven with real PreToolUse JSON against a simulated
+`warm-build` status, held `mvnd` and `mvn` commands and passed `psql` and unrelated
+commands through; full `mvnd install -Plocal-db` with tests passed all 13 modules in 2:30
+under default `-T <cores-1>` parallelism; warm-daemon `mvnd -pl roadmap-tool exec:java`
+ran in 0.32 s with `mvnd --status` showing the hook-shaped daemon. The CI `-T 1C`
+acceptance criterion is checked by the CI run this branch's push triggers.
+
 1. **SessionStart prereq step: install mvnd.** New idempotent step in
    `.claude/scripts/session-start-web-env.sh` (alongside the libtree-sitter step and
    mirroring its shape): skip if `/opt/mvnd/bin/mvnd` already exists, otherwise fetch the
