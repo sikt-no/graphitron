@@ -1,11 +1,11 @@
 ---
 id: R13
 title: "Faceted search on `@asConnection`"
-status: Ready
+status: In Progress
 priority: 7
 theme: pagination
 depends-on: []
-last-updated: 2026-07-13
+last-updated: 2026-07-14
 ---
 
 # Faceted search on `@asConnection`: `@asFacet` directive
