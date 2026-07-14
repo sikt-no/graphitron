@@ -1979,11 +1979,26 @@ No code in this item beyond what is needed to make the model executable as
 tests, and that split is now decided (2026-07-04): the Ready code deliverable is **thread I's closure
 oracle at level 1**, a characterization harness over the *current* emit that walks the generated
 TypeSpecs, collects declared method names and intra-generated call references, and asserts every such
-callee resolves to an emitted method (R410's `TypeSpecReferenceWalk` is most of the walking
-machinery). Level 1 is valid before any re-platforming and survives it as the harness. The
+callee resolves to an emitted method (R410's `TypeSpecReferenceWalk` is the same walking pattern at
+file granularity). Level 1 is valid before any re-platforming and survives it as the harness. The
 **bidirectional** form (every emitted method is exactly one command's output; every callee name
 resolves to a committed command) needs the command/name registry and lands with the emit slices,
 first populated for the reentry family by R314.
+
+**Landed (2026-07-14):** `EmittedMethodClosure` (the walk: node relation = declared methods keyed by
+unit + nested-type path; edge relation = statically-qualified generated-to-generated callee
+references, resolved through the rendered import list / same-package / FQCN the way javac binds
+them, with comments and string literals blanked) plus `MethodClosureOracleTest` (pipeline tier,
+`no.sikt.graphitron.rewrite.methodgraph`), generating over a schema that spans the seam-worklist
+families (root select, child reference, `@splitQuery`, connection + `@orderBy`, `@lookupKey`,
+`@nodeId` filter conditions, nesting, table-bound `@service` and DML reentry, jOOQ-record service
+input) and asserting closure plus per-family non-vacuity floors on both relations.
+`EmittedMethodClosureTest` (unit tier) pins the scanner's falsifiability: a dangling callee turns
+the oracle red; javadoc prose, string literals, constructors, enum-constant reads, and
+non-generated qualifiers do not. Documented level-1 blind spots, both closed by javac in the
+compilation tier and by the level-2 registry later: unqualified same-class calls (the rows-methods,
+scatter, order-by, record-instantiation helpers — pinned as *nodes* instead) and instance calls
+through variables.
 
 ## Lineage
 
