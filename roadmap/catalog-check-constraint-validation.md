@@ -6,6 +6,7 @@ bucket: architecture
 priority: 8
 theme: mutation-write
 depends-on: []
+last-updated: 2026-07-14
 ---
 
 # Surface database CHECK constraints as Jakarta validation rules
@@ -676,9 +677,10 @@ validator pre-step already materialises it via
 `<InputName>.fromMap(env.getArgument(...))` before validating
 (`TypeFetcherGenerator.validatorPreStep`, `:2201`). That class is exactly the
 target phase 3 needs. The DML value-read paths still consume the raw map
-(the DML emitter sites at `TypeFetcherGenerator.java:4758` and `:5644` cast
-`env.getArgument(...)` to `Map<?, ?>` inline; the connection-arg emitter at
-`:5339` reads `Map<String, Object>` for `@orderBy`), but the validation
+(the DML emitter sites in `TypeFetcherGenerator` cast `env.getArgument(...)`
+to `Map<?, ?>` inline, and the connection-arg emitter reads
+`Map<String, Object>` for `@orderBy`; grep for the inline `Map<?, ?>` casts,
+`:4758` and `:5704` at the time of writing), but the validation
 target is typed. Phases 1 and 2 never depended on R94 (the record-side
 target is the consumer's jOOQ-generated `XxxRecord`, which already exists);
 phase 3 is no longer blocked.

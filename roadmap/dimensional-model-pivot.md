@@ -7,12 +7,12 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-07-04
+last-updated: 2026-07-14
 ---
 
 # Dimensional model pivot: slots over cross-product permits
 
-R222 is the umbrella for the rewrite's dimensional pivot. Three sealed hierarchies pack multi-dimensional information onto single permit sets — input-side classification (`GraphitronType.InputType` + `TableInputType`), field-side classification (`QueryField` / `MutationField` / `ChildField` with 46 cross-product permits), and classification-failure encoding (`UnclassifiedType` / `UnclassifiedField` riding as permits alongside legitimate carriers). The same disease in three organs. R222 absorbs R164 (field-model three-dimension pivot) and R226 (type-level classification failure pivot) and unifies them as one architectural shift, landing the target architecture stage-by-stage through independent spin-out slices.
+R222 is the umbrella for the rewrite's dimensional pivot. Three sealed hierarchies pack multi-dimensional information onto single permit sets — input-side classification (`GraphitronType.InputType` + `TableInputType`), field-side classification (`QueryField` / `MutationField` / `ChildField` with 57 cross-product leaf permits at the 2026-07-14 count; re-measure at pickup), and classification-failure encoding (`UnclassifiedType` / `UnclassifiedField` riding as permits alongside legitimate carriers). The same disease in three organs. R222 absorbs R164 (field-model three-dimension pivot) and R226 (type-level classification failure pivot) and unifies them as one architectural shift, landing the target architecture stage-by-stage through independent spin-out slices.
 
 ## Direction, not contract
 
@@ -32,7 +32,7 @@ Three cross-product encodings, three sets of permit-identity-driven discriminati
 
 **Input-side classification.** `GraphitronType.InputType` permits four backing-class variants (`JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`); `GraphitronType.TableInputType` is a separate sibling root for table-bound inputs. Nine consumer sites discriminate by permit identity: `GraphitronSchemaValidator`, `MutationInputResolver`, `EnumMappingResolver`, `CatalogBuilder` (four sites), `FieldBuilder`, `TypeBuilder`. `TypeBuilder.findReturnTablesForInput` already proves "table-bound" is a property of the consumer, not the input — derived by O(N) back-scan over schema fields. R215's lift admitted `InputField.UnboundField` into `TableInputType.inputFields()`, collapsing the eager-classification axis ahead of this pivot.
 
-**Field-side classification.** 45 permits across `QueryField` (10), `MutationField` (8), `ChildField` (27). `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, `TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `RecordLookupTableField` collapses four of these onto one identifier; `QueryServiceRecordField` collapses three. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
+**Field-side classification.** 57 leaf permits across `QueryField` (13), `MutationField` (15), `ChildField` (29) at the 2026-07-14 count; the set has grown as source/operation/target slices landed, so re-measure at pickup. `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, and `TableTargetField`, the last now nested as `ChildField.TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `RecordLookupTableField` collapses four of these onto one identifier; `QueryServiceRecordField` collapses three. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
 
 **Classification-failure encoding.** `GraphitronType.UnclassifiedType` and `GraphitronField.UnclassifiedField` ride as permits alongside legitimate types and fields, carrying typed `Rejection` payloads. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` translate-then-project — the validator does a half-job (walk Unclassified carriers; project payloads to ValidationError) on top of its real job (cross-type invariants).
 
@@ -87,7 +87,7 @@ After the pivot, `GraphitronField`'s sealed parent and the `UnclassifiedField` p
 ## Field-side dimensional model (pivoted 2026-06-18 to source/operation/target)
 
 The field-side pivot (Stage 3, R164's content) first materialised as `carrier × intent × mapping`
-(R290 / R299 / R305). R316 (`source-operation-target-pivot`) corrects that model to
+(R290 / R299 / R305). R316 (`source-operation-target-pivot`, Done; file self-deleted) corrected that model to
 **`(source, operation, target)`**: `mapping` was not a dimension but a per-endpoint *polarity*, and the
 first two axes were under-named. A field is an **edge**: it **arrives into** a `source`, **performs** an
 `operation`, and **projects** a `target`. `source` and `target` are each a *wrapper around a shape* (the
@@ -240,7 +240,7 @@ not two free enums.
 
 `SourceKey` is `(target, columns, path, wrap, cardinality, reader)`, but under the source-object /
 source-field vocabulary it bundles three separable concerns, only one of which is a source *key*. The
-mechanical simplification is R316 (`decompose-sourcekey`); the model claim is here.
+mechanical simplification is R431 (`decompose-sourcekey`, Spec); the model claim is here.
 
 - **Target reach (already slotted elsewhere).** `target` is the target table, the table the
   rows-method reads `FROM`, the element type an accessor returns, the leaf of the join path, not the
@@ -282,7 +282,7 @@ parent"); it belongs with the source-object descriptor, not a field key.
   arrival `OnlyChild`: same operation (re-project a `@table` from a held domain record), differing only in
   how many source records arrive. Its operation stays what the target dictates (`Fetch`); re-fetch is the
   orthogonal derived axis, not an operation change. **Split to R305**
-  (`collapse-singlerecordtablefield-into-recordtablefield`): the `SingleRecordTableField` leaf is deleted, its
+  (`collapse-singlerecordtablefield-into-recordtablefield`, Done): the `SingleRecordTableField` leaf is deleted, its
   construction sites produce `RecordTableField` at arrival `OnlyChild`, the re-fetch derivation above catches
   it through its received `Record` source, and `OrderingOwnedByProducer` dissolves (the source/target key
   correspondence owns the visible order). The whole re-fetch family (SRTF→RTF, `RecordLookupTableField` as
@@ -290,7 +290,7 @@ parent"); it belongs with the source-object descriptor, not a field key.
   `@service`-batched `ServiceTableField`) re-fetches; `OnlyChild` re-projects inline (no DataLoader), `Child`
   batches. Because the source record and the target table are the same entity, **the source key is the target
   key**: the re-fetch key carries the target table plus its identifying columns once, not a source/target
-  column duality. No distinct leaf survives once R305 lands.
+  column duality. No distinct leaf survives; R305 has landed and `SingleRecordTableField` is gone from the model.
 
 ### Leaf reconstruction: where each slot lands
 
