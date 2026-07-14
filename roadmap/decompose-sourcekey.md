@@ -110,9 +110,13 @@ re-grep at pickup.
   implementer's call, made under the byte-identical acceptance below (the service-declared shape is
   already a `Param.Sourced` signature fact; the non-service arms pin their wrap by construction).
 - **`parentSourceKey` routes to the source-object side.** The `InterfaceField` / `UnionField`
-  parent-identity extraction is source-object description, not a field key. In scope, but a
-  separable tail: if the polymorphic migration balloons, split it to a follow-on item at the
-  implementer's discretion rather than stalling the cutover.
+  parent-identity extraction is source-object description, not a field key. Re-typing those two
+  components onto the decomposed facts is **in scope and required**: the item's endpoint is the
+  `SourceKey` record deleted, and a surviving `parentSourceKey` would keep it alive bent (R432 and
+  R314 both pin on the post-condition "this lives on the decomposed facts, not on
+  `SourceKey.Reader`"). What is separable, if the polymorphic work balloons, is emit-side
+  refinement of `MultiTablePolymorphicEmitter` beyond the mechanical re-typing, not the record
+  migration itself.
 
 **Transition technique: additive-then-cutover** (R222's technique, restated by
 `workflow.adoc` "Structural pivots land additive-then-cutover" because four items pin on this
@@ -131,7 +135,11 @@ touches.
 - **Delete the denormalized copies.** Migrate the four `target()` readers to the table fact their
   carrier already holds (`returnType.table()` / `ParentCorrelation.parentKeyOwnerTable()`; verify
   per site which one is the same table, especially the accessor arms where the element table is the
-  accessor's return table). Delete `path` after the LiftedHop re-typing below; its compact-ctor
+  accessor's return table). The null-`target` case (scalar-returning `@service`, the polymorphic
+  record parent) must keep its absence semantics: the one null-tolerant reader
+  (`CatalogBuilder`'s LSP projection) migrates to the carrier's return-type fact, where "no
+  table-bound target" is an arm of `ReturnTypeRef`, not a nullable slot — absence lands as a typed
+  arm, not a re-invented null. Delete `path` after the LiftedHop re-typing below; its compact-ctor
   invariants (`ResultRowWalk` / target-aligned `ServiceTableRecord` require empty path) re-home onto
   whatever carries the join path, or dissolve where the decomposed facts make the illegal state
   unrepresentable.
@@ -158,28 +166,48 @@ touches.
   arity off the endpoint that owns it (the accessor's return arity, the produced wrapper) instead
   of a free enum.
 - **The two R438 self-review cleanups**, placed once LiftedHop is out of the seal (both
-  pre-existing patterns R438 mechanically widened, not regressions): (1) a model-level
-  `isFkHop(JoinStep)` / `pairsOf(JoinStep)` pair replacing the ~forty inline
-  `instanceof JoinStep.Hop h && h.on() instanceof On.ColumnPairs` narrowings and blind
-  `(On.ColumnPairs) hop.on()` casts across ~nineteen files (the exhaustive sealed-switch sites are
-  proper dispatch and stay); (2) the seven-line `switch (hop.on())` bridging-join emit
-  (`onKey` vs `.on(condition(...))`) repeated in the four inline/split emitters consolidates into
-  `JoinPathEmitter`, which already hosts the shared join-path emit helpers.
+  pre-existing patterns R438 mechanically widened, not regressions). They differ in coupling:
+  (2) the seven-line `switch (hop.on())` bridging-join emit (`onKey` vs `.on(condition(...))`)
+  repeated in the four inline/split emitters consolidates into `JoinPathEmitter`, which already
+  hosts the shared join-path emit helpers — genuinely coupled, since those emitters lose their
+  LiftedHop arms in the same motion. (1) a model-level `isFkHop(JoinStep)` / `pairsOf(JoinStep)`
+  pair replacing the ~forty inline `instanceof JoinStep.Hop h && h.on() instanceof On.ColumnPairs`
+  narrowings and blind `(On.ColumnPairs) hop.on()` casts across ~nineteen files (the exhaustive
+  sealed-switch sites are proper dispatch and stay) — only thinly coupled, so it lands as its
+  **own trailing slice** whose byte-identity diff is audited in isolation, and splitting it to a
+  follow-on item is an acceptable outcome if this item runs long.
 
 ## Tests and acceptance
 
 - **Generated output byte-identical per slice.** This item moves facts between carriers without
   changing emit decisions, the same standard R438 held. If a slice genuinely cannot hold
   byte-identity (a normalization falls out of a dual-source collapse), the floor is execution-tier
-  equivalence, and the deviation is named in the commit message.
+  equivalence, and the deviation must **cite the specific execution-tier test that witnesses the
+  equivalence** in the commit message (the R425/R426/R436 suites already pin the migrated
+  behaviors), not merely describe the normalization; a deviation no existing test witnesses gets a
+  new one first.
 - **`@classified` corpus classifying unchanged**; the level-1 closure oracle
   (`MethodClosureOracleTest`) staying green; full reactor `mvn install -Plocal-db` green at every
   slice.
-- **Model invariants keep their teeth.** Each compact-constructor cross-axis rejection either
-  becomes structurally unrepresentable in the decomposed facts or is re-asserted where the fact
-  lands, with the existing `SourceKeyTest` coverage migrating alongside; no invariant silently
-  dropped. `SealedHierarchyDocCoverageTest` and the architecture docs' `SourceKey` mentions
-  (R433 already de-inventoried them and pointed them here) sweep in the deleting slice.
+- **Model invariants keep their teeth, per-invariant.** The four compact-constructor rejections
+  have two different fates once the axes separate, and each must be dispositioned explicitly, with
+  the existing `SourceKeyTest` coverage migrating alongside as the mechanical pin; no invariant
+  silently dropped:
+  - `SourceRowsCall` ⇒ `Wrap.Row` and `AccessorCall` ⇒ `Wrap.Record`: expected to become
+    **unrepresentable by construction** (the non-service lift arms pin their key shape; a stored
+    wrap that could disagree no longer exists).
+  - `ServiceTableRecord`(target-aligned) ⇒ empty path: dissolves with `path`'s deletion (the
+    illegal state loses its carrier).
+  - `ResultRowWalk(OUTCOME_SUCCESS)` ⇒ `Wrap.TableRecord`: the hard one — it couples the envelope
+    axis (routed to the type-level error-channel fact) to the key-shape axis (routed to the
+    source-object / producer facts), two facts that share no landing site after the split. Per the
+    orthogonal-axes principle this drops from compiler-enforced to review-only unless it is
+    re-asserted at a named join site; the implementer names that site (the classifier point that
+    mints both facts for a carrier field is the natural candidate) and pins it with a migrated
+    test. Leaving it enforced nowhere is rework, not a judgment call.
+
+  `SealedHierarchyDocCoverageTest` and the architecture docs' `SourceKey` mentions (R433 already
+  de-inventoried them and pointed them here) sweep in the deleting slice.
 - No new execution-tier fixtures required: R425/R426/R436's pipeline and execution tests already
   pin the behaviors whose emit sites this item migrates, and they must stay green throughout.
 
