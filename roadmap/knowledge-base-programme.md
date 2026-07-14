@@ -5,11 +5,12 @@ status: Backlog
 bucket: architecture
 theme: tooling
 depends-on: []
+last-updated: 2026-07-14
 ---
 
 # Graphitron knowledge base programme: DuckDB as queryable model
 
-This item is a *programme*, not a single deliverable. It frames the DuckDB store graphitron emits at build time as a queryable model of everything graphitron knows about itself: the SDL it parses, the classifications it produces, the code it generates, the runtime it observes, the documentation it ships, the roadmap that drives it. R104 introduced the store as a coverage scratchpad. R112 extends it with operations, capabilities, and runtime trace. The programme this item defines is the deliberate continuation: keep adding dimensions, keep them naturally keyed, keep the store a *projection* (rebuilt on every build, never a competing source of truth), and grow toward a knowledge graph queryable end-to-end. The consumer surface is R118 (the graphitron MCP server), but the value lands first inside the build itself: each dimension absorbed makes the next coverage view, doc render, or static check materially cheaper to write.
+This item is a *programme*, not a single deliverable. It frames the DuckDB store graphitron emits at build time as a queryable model of everything graphitron knows about itself: the SDL it parses, the classifications it produces, the code it generates, the runtime it observes, the documentation it ships, the roadmap that drives it. R104 introduced the store as a coverage scratchpad. R112 extends it with operations, capabilities, and runtime trace. The programme this item defines is the deliberate continuation: keep adding dimensions, keep them naturally keyed, keep the store a *projection* (rebuilt on every build, never a competing source of truth), and grow toward a knowledge graph queryable end-to-end. The consumers are build-internal (see "Consumers" below): each dimension absorbed makes the next coverage view, doc render, or static check materially cheaper to write.
 
 ## What's already there or in flight
 
@@ -60,10 +61,16 @@ This item is the navigational artefact. As dimensions absorb, each becomes its o
 
 Authored items contributing to the programme today: R104 (shipped), R112, R115. Future items reference this programme so the body of work stays coherent across many small landings.
 
-## The MCP consumer surface
+## Consumers
 
-R118 (graphitron MCP server) is the first non-build consumer of the KB. It exposes the store's joins as tools for AI agents working with graphitron-generated codebases. R118 stays out of the schema design itself: it queries whatever's there, gracefully expands as more dimensions land, and exposes a free-form SQL tool so consumers aren't bottlenecked on the server author's enumeration. The KB is designed *as if* an MCP exists from the first dimension onward; in practice R118 ships when there's enough content to be useful.
+(Rewritten 2026-07-14; the original section named R118, the graphitron MCP server, as the KB's first non-build consumer, complete with a free-form SQL tool. R118 shipped differently and this section now reflects what actually exists.)
+
+The KB's consumers are build-internal: the leaf-coverage report (R104), the roadmap-tool verify-mode drift checks, and whatever coverage views, doc renders, or static checks later dimensions make cheap to write. That is where the programme's value lands, and none of it depends on an external query surface.
+
+The shipped MCP server is not a KB consumer and should not become one by default. It is a live-workspace server for *consumers of graphitron* (people authoring SDL against their own database): its tools parse the SDL, read the jOOQ catalog, scan the classpath, and run the validator directly, with Lucene-backed search. That design is deliberate for its audience; consumer workspaces have no rewrite-build JSONL to load, and live reads cannot go stale. The KB, by contrast, is introspective: it models what the graphitron repo knows about itself (classifications, traces, operations, capabilities, roadmap), for people and agents working *on* graphitron.
+
+A dev-facing query surface over the KB (free-form SQL over the joined dimensions, exposed to agents working on this repo) remains a plausible future consumer, and the natural-key join design keeps it cheap to add. But it is a candidate item to file when someone actually wants the joins, not a standing assumption of this programme.
 
 ## Out of scope for this item
 
-Authoring code or schema directly — this item ships as a navigational artefact whose Done state is reached only when the programme it frames feels complete (which may be never; programmes outlive sprints). The reviewer-rule gates still apply to per-dimension items underneath; this item itself moves through Backlog → Spec → Ready when the programme framing is signed off, and probably stays in Ready indefinitely. Choosing the next dimension to absorb (that's a prioritisation call made when the next dimension's payoff becomes concrete; this item just lists the candidate set). The MCP server itself (R118).
+Authoring code or schema directly — this item ships as a navigational artefact whose Done state is reached only when the programme it frames feels complete (which may be never; programmes outlive sprints). The reviewer-rule gates still apply to per-dimension items underneath; this item itself moves through Backlog → Spec → Ready when the programme framing is signed off, and probably stays in Ready indefinitely. Choosing the next dimension to absorb (that's a prioritisation call made when the next dimension's payoff becomes concrete; this item just lists the candidate set). The MCP server (shipped as a live-workspace server, not a KB consumer; a KB-backed query tool would be its own item, see "Consumers").
