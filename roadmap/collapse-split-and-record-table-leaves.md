@@ -1,7 +1,7 @@
 ---
 id: R432
 title: "Collapse SplitTableField and RecordTableField into one source-gated leaf"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 4
 theme: classification-model
