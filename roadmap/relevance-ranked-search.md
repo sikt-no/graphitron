@@ -231,9 +231,12 @@ not decoration.
   the SDL emitter gain the corresponding arm.
 
 The hit wrapper exists for forward evolution (hit-level metadata such as an
-opt-in score or highlight can land as new fields without a breaking change);
-in v1 it carries only `node`, resolved by a passthrough fetcher mirroring
-`ConnectionHelper.edgeNode`.
+opt-in score or highlight can land as new fields without a breaking change,
+where `[Film!]!` → `[Hit!]!` later would be one); in v1 it carries only
+`node`, resolved by a passthrough fetcher mirroring
+`ConnectionHelper.edgeNode`. That forward bet is the only thing holding the
+wrapper up: if score and highlighting are ever firmly discarded rather than
+deferred, revisit the wrapper before more consumers depend on the shape.
 
 ### Classification (facts, not a new leaf)
 
@@ -262,18 +265,33 @@ Per R333's additive-facts discipline, no new field leaf is minted:
   re-checking: `0 < defaultFirst <= maxFirst`, non-blank `Tsvector.config`,
   non-empty `tiebreak`.
 - The spec rides the classified root leaf (`QueryTableField`,
-  `QueryField.java:108`) as a 0..1 slot, following the leaf's existing
-  optional-slot idiom. `operation()` stays `Fetch`: the match predicate is a
-  filter contribution and the ranked order + limit are read from the
-  `SearchSpec` by the emitter. No `Operation.Search` arm is minted in v1;
-  like `Operation.Facet` (`Operation.java:89-93`) the normalized
+  `QueryField.java:108`) as a 0..1 slot (an `Optional` component; the idiom
+  exists on other leaves, e.g. `QueryTableMethodTableField`'s
+  `Optional<ErrorChannel>`, though `QueryTableField` itself carries none
+  today). `operation()` stays `Fetch`: the match predicate is a filter
+  contribution and the ranked order + limit are read from the `SearchSpec`
+  by the emitter. No `Operation.Search` arm is minted in v1; the normalized
   operation-fact home lands with R314's re-platforming, and the quarantine
-  comment says so.
+  comment says so. One honesty note on the precedent: `Operation.Facet`
+  (`Operation.java:89-93`) is a *modeled-but-unpopulated placeholder* with
+  no emitter behind it, while `@search` is live emitting behaviour from its
+  first commit. Borrowing the placeholder's stays-`Fetch` shape for a live
+  concern makes "is this a search carrier?" a predicate over `SearchSpec`
+  presence, which is why the single-sourcing rule in the Validation section
+  is an obligation of this deferral, not a stylistic preference.
 - The two synthesized arguments classify as a new **`ArgumentRef.SearchArgRef`**
   arm with a nested `enum Role { QUERY, FIRST }`, structurally identical to
-  `PaginationArgRef` (`ArgumentRef.java:347`), so `FieldBuilder.classifyArguments`
-  recognizes them by name on a `@search` carrier and authored arguments
-  continue to classify exactly as on any list field.
+  `PaginationArgRef` (`ArgumentRef.java:347`), skipped by `projectFilters`
+  exactly as pagination args are, so authored arguments continue to classify
+  as on any list field. **Name-space overlap to pin**: `first` is also a
+  reserved pagination name (`isPaginationArg`, `FieldBuilder.java:1126`).
+  On a `@search` carrier the classifier must consult the search-carrier
+  context *before* the name-based pagination router, or `first` routes to
+  `PaginationArgRef.FIRST`; the `@asConnection`-co-occurrence rejection is
+  therefore load-bearing for classifier soundness (it keeps both routers
+  from being live on one field), not just author hygiene. The classifier
+  ordering and that rejection ship with a pipeline test pinning them
+  together.
 
 Authored filter arguments therefore compose for free: they project into
 `WhereFilter`s as today and AND with the match predicate. `@condition` on
@@ -326,10 +344,18 @@ Runtime semantics:
 
 ### Validation (`rejectSearchMisuse`, the R13 template)
 
-A definition-keyed pass in `GraphitronSchemaBuilder` mirroring
-`rejectFacetMisuse` (`GraphitronSchemaBuilder.java:972`): diagnostics via
-`ctx.addDiagnostic(ValidationError.forField(...))`, no verdict demotion.
-The v1 rejection matrix:
+Diagnostics via `ctx.addDiagnostic(ValidationError.forField(...))` in
+`GraphitronSchemaBuilder`, message shape mirroring `rejectFacetMisuse`
+(`GraphitronSchemaBuilder.java:972`), with one structural improvement over
+that template: **the carrier fact is asserted once and single-sourced**.
+Every `@search` directive application is exhaustively resolved by the
+classifier arm into either a populated `SearchSpec` or a typed `Rejection`;
+the misuse pass drains those rejections rather than re-deriving
+well-formedness from the raw SDL surface, and the emitter keys off the same
+`SearchSpec` presence. No application can fall through both passes silently
+(the implicit-coordination smell the `rejectFacetMisuse` shape tolerates
+only because facets are an unpopulated placeholder today). The v1 rejection
+matrix:
 
 - **Carrier shape**: `@search` only on a root `Query` field returning a bare
   non-null list of a `@table`-backed object type. Everything else rejects
@@ -385,7 +411,8 @@ exercised by our own suite.
 - `graphitron-sakila-db/init.sql`: `film.fulltext` stored generated column
   (`setweight(title, 'A') || setweight(description, 'B')`, config
   `english`) + GIN index; bump `<jooq.codegen.schema.version>`.
-- `graphitron-sakila-example`: a `filmSearch` field in the example schema.
+- `graphitron-sakila-example`: a `filmSearch` field in the example schema
+  (phase 2, when the emitter exists; see Phasing).
 - `docs/`: the Postgres and Oracle how-tos (phase-gated below).
 
 ## Tests
@@ -411,7 +438,12 @@ exercised by our own suite.
 - **Oracle**: emit shape pinned at pipeline tier (the SQL templates render
   without an Oracle connection); execution-tier runs in Sikt's internal
   GitLab pipelines with the licensed jOOQ, or in this repo's CI if the
-  license question (open question 1) resolves that way.
+  license question resolves that way. Stated plainly for the reviewer: the
+  `OracleText` arm's behavioural floor *in this repo* is pipeline-tier
+  shape plus the unit-pinned escaper (the one runtime invariant with no
+  public-CI execution backstop is the one with its own unit enforcer);
+  execution parity is owed to the internal pipeline and the arm ships
+  without the Postgres-grade execution proof until then.
 
 ## Phasing
 
@@ -419,13 +451,21 @@ Three landings, each through the canonical flow:
 
 1. **Model + classification + synthesis + validation.** Directive, model
    records, `SearchArgRef`, promoter arm, `rejectSearchMisuse`, unit- and
-   pipeline-tier tests. No emitted-code change beyond the schema surface.
-   Acceptance: the example SDL classifies, the hit type appears in the
-   emitted schema, the rejection matrix fires.
+   pipeline-tier tests. No emitted-code change beyond the schema surface,
+   and, because every commit ships to trunk, **`@search` is a
+   `Rejection.Deferred` landing in this phase**: a classified search carrier
+   fails the build with "not yet emitted" (the stubbed-leaf mechanism
+   `ValidateMojo` already enforces) rather than silently classifying and
+   then emitting an ordinary unranked `Fetch` that ignores the `search`
+   argument. The sakila-example `filmSearch` field is phase-gated to
+   landing 2 for the same reason. Acceptance: pipeline fixtures classify,
+   the hit type appears in the emitted schema, the rejection matrix fires,
+   and a live `@search` field is `Deferred`, never quietly wrong.
 2. **Postgres emit + runtime + fixture + docs.** The tsvector templates,
-   fetcher emit, sakila fixture migration, execution-tier tests, the
-   Postgres how-to. Acceptance: the sakila example serves ranked search end
-   to end under `-Plocal-db`.
+   fetcher emit, the `Deferred` landing lifted for `TSVECTOR`, the sakila
+   fixture migration plus the example `filmSearch` field, execution-tier
+   tests, the Postgres how-to. Acceptance: the sakila example serves ranked
+   search end to end under `-Plocal-db`.
 3. **Oracle emit + docs.** The `ORACLE_TEXT` templates, escaper,
    pipeline-tier shape pinning, the Oracle how-to with the sync-policy
    note; execution deferred to licensed infrastructure. Acceptance: emitted
@@ -578,6 +618,17 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-15 (Spec revision, same session): folded in the
+  principles-architect consult. Load-bearing changes: phase 1 lands
+  `@search` as `Rejection.Deferred` so a classified-but-unemitted carrier
+  fails the build instead of serving unranked rows (validator-mirror gap);
+  the carrier fact is single-sourced (classifier resolves every application
+  to `SearchSpec` or `Rejection`, misuse pass drains rejections, emitter
+  keys off the same spec). Precision: the `Operation.Facet` precedent is a
+  dead placeholder while search is live (noted as the obligation behind
+  single-sourcing); the `first`/pagination name-space overlap is pinned
+  with the `@asConnection` co-occurrence rejection named load-bearing; the
+  Oracle arm's weaker in-repo enforcement floor is stated plainly.
 - 2026-07-15 (Spec): expanded to a full plan (authored `@search` surface,
   promoter-ridden hit-type synthesis, `SearchSpec`/`SearchBacking` model,
   per-kind SQL templates, rejection matrix, three-phase landing) and
