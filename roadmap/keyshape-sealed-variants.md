@@ -1,13 +1,13 @@
 ---
 id: R478
 title: "Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: nodeid
 depends-on: []
 created: 2026-07-14
-last-updated: 2026-07-14
+last-updated: 2026-07-15
 ---
 
 # Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract
