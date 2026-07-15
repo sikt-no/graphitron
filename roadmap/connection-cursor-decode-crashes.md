@@ -70,6 +70,12 @@ Execution tier only, in `graphitron-sakila-example` `GraphQLQueryTest`, as a blo
 
 Existing round-trip tests (`filmsConnection_withAfterCursor_returnsNextPage`, `filmsConnection_backward_withBeforeCursor_returnsPrevPage`, the `addressOccupantsConnection`/`projectItemsConnection` cursor tests) pin that legitimate cursors are unaffected. Not covered and deliberately so: a buggy custom `Converter` throwing a non-`DataTypeException` still redacts (the blame-classification decision above); sakila has no broken converter to drive that path and building one would test the absence of a catch clause.
 
+## Implementation notes (In Progress)
+
+**Failure mode 3 does not throw in jOOQ 3.20.11; it returns `null`.** The Spec assumed `col.getDataType().convert(token)` throws `DataTypeException` for a non-coercible token. Empirically it does not: `DataType.convert(String)` (the deprecated `convert(Object)` path this code uses) is lenient and returns `null` for any unparseable input, verified across `INTEGER`, `BIGINT`, `NUMERIC`, `DOUBLE`, `BOOLEAN`, `DATE`/`LOCALDATE`, `TIMESTAMP`/`LOCALDATETIME`, `UUID`, and the `asEnumDataType(MpaaRating)` converter (`"not-a-rating"` returns `null`, not a throw). So the literal sketch would leave mode 3 as a *silent* defect: `"abc"` on `FILM_ID` decodes to `null`, `.seek()` runs on a null bound value, and no error surfaces, instead of the clean client error the item promises.
+
+To fulfil the item's stated intent ("a non-coercible token is a malformed cursor and deserves the same treatment"), the decode loop rejects a non-sentinel token that converts to `null`: `Object value = col.getDataType().convert(token); if (value == null) throw new IllegalArgumentException(...)`. This is safe against legitimate cursors: a genuine SQL `NULL` is encoded as the `\u0001` sentinel and handled in the branch above `convert`, and every non-null value round-trips (encode is `value.toString()`, decode is `convert` of it), so a `null` from a non-sentinel token means the token is malformed. The `DataTypeException` multi-catch clause is retained as documented-defensive (jOOQ names it the not-coercible signal; a custom `Converter` or a future jOOQ version could throw it), even though sakila's types never exercise it. Mode-3 test therefore asserts through the `null`-guard path, not a `DataTypeException`.
+
 ## Out of scope
 
 - R476: `totalCount` failures bypassing the redaction contract (sibling bug, different delegate).

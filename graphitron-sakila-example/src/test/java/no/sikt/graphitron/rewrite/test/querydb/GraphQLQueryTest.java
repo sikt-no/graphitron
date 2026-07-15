@@ -1469,6 +1469,84 @@ class GraphQLQueryTest {
             .isEqualTo("page size must be less than 2147483647");
     }
 
+    // ===== filmsConnection — malformed cursor decode (R479) =====
+    // A malformed after/before cursor is the same "client handed us an opaque token" class of
+    // mistake as a bad node id: decodeCursor now collapses every wire-input decode failure into a
+    // GraphitronClientException("cursor is not valid (was: \"<echo>\")") the no-channel disposition
+    // surfaces, instead of letting the raw runtime exception redact into a correlation-id 500. Each
+    // test pins the exact message and doesNotContain the redaction sentinel, mirroring
+    // filmsConnection_negativeFirst_surfacesClientError.
+
+    @Test
+    void filmsConnection_malformedBase64AfterCursor_surfacesClientError() {
+        // Failure mode 1: Base64.getDecoder().decode throws IllegalArgumentException on a token
+        // that is not valid Base64. Previously a redacted 500.
+        var result = executeRaw(
+            "{ filmsConnection(first: 2, after: \"not-base64!!!\") { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("cursor is not valid (was: \"not-base64!!!\")")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
+    @Test
+    void filmsConnection_nonCoercibleTokenAfterCursor_surfacesClientError() {
+        // Failure mode 3: a well-formed Base64 cursor whose single token ("abc") cannot coerce to
+        // the numeric FILM_ID order-by column. jOOQ 3.20.11's DataType.convert is lenient and
+        // returns null rather than throwing DataTypeException, so decodeCursor's non-null guard on
+        // a non-sentinel token is what rejects it. filmsConnection genuinely exercises the coerce
+        // path (a string column would round-trip).
+        String cursor = java.util.Base64.getEncoder()
+            .encodeToString("abc".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var result = executeRaw(
+            "{ filmsConnection(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("cursor is not valid (was: \"" + cursor + "\")")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
+    @Test
+    void filmsByRateDescTitleAsc_underSplitAfterCursor_surfacesClientError() {
+        // Failure mode 2: too few tokens. filmsByRateDescTitleAsc orders on two columns
+        // (RENTAL_RATE, TITLE), but this NUL-free cursor decodes to a single token — arity
+        // mismatch. Previously tokens[1] threw ArrayIndexOutOfBoundsException and redacted.
+        String cursor = java.util.Base64.getEncoder()
+            .encodeToString("2.99".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var result = executeRaw(
+            "{ filmsByRateDescTitleAsc(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("cursor is not valid (was: \"" + cursor + "\")")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
+    @Test
+    void filmsConnection_overSplitAfterCursor_surfacesClientError() {
+        // New behaviour: too many tokens. "1\u00002" decodes to two tokens against the single
+        // FILM_ID order-by column. Strict arity rejects it; the old loop silently ignored the
+        // extra token, so an over-split (forged/stale) cursor used to be tolerated.
+        String cursor = java.util.Base64.getEncoder()
+            .encodeToString("1\u00002".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var result = executeRaw(
+            "{ filmsConnection(first: 2, after: \"" + cursor + "\") { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("cursor is not valid (was: \"" + cursor + "\")")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
+    @Test
+    void filmsConnection_malformedBeforeCursor_surfacesClientError() {
+        // The before variant: backward pagination selects cursor = before, feeding the same guard.
+        var result = executeRaw(
+            "{ filmsConnection(last: 2, before: \"not-base64!!!\") { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("cursor is not valid (was: \"not-base64!!!\")")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
     @Test
     void filmsConnection_firstZero_returnsEmptyPageWithoutError() {
         // first: 0 stays valid (R415 clamps only below zero): an empty page whose hasNextPage is

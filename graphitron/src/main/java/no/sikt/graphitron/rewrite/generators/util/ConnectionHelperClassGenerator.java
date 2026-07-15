@@ -36,6 +36,15 @@ import java.util.List;
  * correctly-typed bind values. When no cursor is present, {@code DSL.noField(field)} is
  * returned per column — making {@code .seek()} a no-op.
  *
+ * <p>A present cursor must split back into exactly one token per order-by column: encoding always
+ * emits N NUL-joined tokens, so strict arity in both directions (too few and too many) rejects
+ * any cursor this generator did not emit. Every malformed-input failure of decode (bad Base64,
+ * wrong arity, a token not coercible to its column type) is caught and rethrown as a
+ * {@code GraphitronClientException} carrying {@code cursor is not valid (was: "<echo>")}, so the
+ * opaque token reads back to the client as a client error rather than a redacted 500; the echo is
+ * capped at 100 characters. Any other unchecked throw from decode is treated as a server fault and
+ * left to propagate.
+ *
  * <p>Generated as a source file so consuming projects have no runtime dependency on Graphitron.
  */
 public class ConnectionHelperClassGenerator {
@@ -51,6 +60,7 @@ public class ConnectionHelperClassGenerator {
     private static final ClassName MAP              = ClassName.get("java.util", "Map");
     private static final ClassName ARRAY_LIST       = ClassName.get("java.util", "ArrayList");
     private static final ClassName BASE64           = ClassName.get("java.util", "Base64");
+    private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
 
     public static List<TypeSpec> generate(String outputPackage) {
         var connectionResultClass = ClassName.get(
@@ -204,6 +214,15 @@ public class ConnectionHelperClassGenerator {
         // --- decodeCursor(String cursor, List<Field<?>>) → Field<?>[] ---
         // Returns DSL.noField(col) per column when cursor is null (seek no-op).
         // Returns DSL.val(DataType.convert(token), DataType) per column when cursor is present.
+        // The decode body is wrapped in one try whose multi-catch classifies blame at the wire
+        // boundary (R479): Base64 decode, strict-arity, and convert failures are all pure functions
+        // of the opaque client cursor, so they collapse to one GraphitronClientException the
+        // no-channel disposition surfaces instead of redacting to a correlation-id 500 (R415). Any
+        // other unchecked throw (e.g. an NPE from a buggy custom Converter) is a genuine server
+        // fault and keeps propagating. Arity is strict in both directions: encodeCursor emits
+        // exactly N NUL-joined tokens and PostgreSQL strings cannot contain NUL, so any other token
+        // count is a forged, corrupted, or stale-across-schema-change cursor this generator never
+        // emitted.
         var decodeCursor = MethodSpec.methodBuilder("decodeCursor")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
@@ -215,16 +234,33 @@ public class ConnectionHelperClassGenerator {
             .addCode("        seekFields[i] = $T.noField(orderByColumns.get(i));\n", DSL)
             .addCode("    return seekFields;\n")
             .addCode("}\n")
-            .addStatement("String[] tokens = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8).split(\"\\u0000\", -1)", BASE64)
-            .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
-            .addCode("    $T col = orderByColumns.get(i);\n", fieldWildcard)
-            .addCode("    if (\"\\u0001\".equals(tokens[i])) {\n")
-            .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
-            .addCode("    } else {\n")
-            .addCode("        seekFields[i] = $T.val(col.getDataType().convert(tokens[i]), col.getDataType());\n", DSL)
+            .addCode("try {\n")
+            .addCode("    String[] tokens = new String($T.getDecoder().decode(cursor), java.nio.charset.StandardCharsets.UTF_8).split(\"\\u0000\", -1);\n", BASE64)
+            .addCode("    if (tokens.length != orderByColumns.size())\n")
+            .addCode("        throw new IllegalArgumentException(\"cursor arity mismatch\");\n")
+            .addCode("    for (int i = 0; i < orderByColumns.size(); i++) {\n")
+            .addCode("        $T col = orderByColumns.get(i);\n", fieldWildcard)
+            .addCode("        if (\"\\u0001\".equals(tokens[i])) {\n")
+            .addCode("            seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
+            .addCode("        } else {\n")
+            // jOOQ's DataType.convert is lenient: an uncoercible wire token yields null rather
+            // than throwing DataTypeException, so a null here (the sentinel branch above already
+            // handled a genuine SQL NULL) means the token is malformed. Rejecting it collapses
+            // into the same client error as bad Base64 / wrong arity instead of silently seeking
+            // on a null bound value. A legitimate token always round-trips (encode is
+            // value.toString(), decode is convert of it), so this never fires on a real cursor.
+            .addCode("            Object value = col.getDataType().convert(tokens[i]);\n")
+            .addCode("            if (value == null)\n")
+            .addCode("                throw new IllegalArgumentException(\"cursor token not coercible\");\n")
+            .addCode("            seekFields[i] = $T.val(value, col.getDataType());\n", DSL)
+            .addCode("        }\n")
             .addCode("    }\n")
+            .addCode("    return seekFields;\n")
+            .addCode("} catch (IllegalArgumentException | $T e) {\n", DATA_TYPE_EXCEPTION)
+            .addCode("    String echo = cursor.length() > 100 ? cursor.substring(0, 100) + \"\\u2026\" : cursor;\n")
+            .addCode("    throw new $T($S + echo + $S);\n",
+                clientException, "cursor is not valid (was: \"", "\")")
             .addCode("}\n")
-            .addStatement("return seekFields")
             .build();
 
         var listOfRecord = ParameterizedTypeName.get(LIST_CLASS, RECORD);
