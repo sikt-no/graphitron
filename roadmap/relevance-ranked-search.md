@@ -16,9 +16,11 @@ last-updated: 2026-07-15
 > ("annotering av flere felter for å auto-generere søkeindeks"). Filed
 > 2026-07-02 as a thinking-capture; substantially rewritten 2026-07-15 after a
 > design discussion closed most of the original forks. Still **Backlog**: the
-> direction is settled, but the open questions at the end (notably the jOOQ
-> metadata feasibility check) gate the Spec transition. The dead-ends section
-> records the roads not taken so they are not relitigated.
+> direction is settled, and the jOOQ metadata feasibility check (the one
+> question gating Spec) was resolved empirically on 2026-07-15; see *What the
+> generated jOOQ meta can and cannot see*. The remaining open questions are
+> settleable during Spec drafting. The dead-ends section records the roads
+> not taken so they are not relitigated.
 
 ## Problem
 
@@ -167,17 +169,72 @@ The facts that flow in, and what each gates:
   to `graphitron-sakila-db/init.sql`. That fixture migration doubles as the
   documented Postgres recipe, exercised by our own suite.
 
-## Open questions gating Spec
+## What the generated jOOQ meta can and cannot see (resolved 2026-07-15)
 
-1. **jOOQ metadata visibility (first concrete task).** Index columns are
-   readable today (`findIndexColumns`), but can the generated jOOQ 3.20 meta
-   tell a GIN from a GiST from a btree, see operator classes
-   (`gin_trgm_ops`), or expose a generated column's expression? If the meta
-   is thin, the backing's *kind* becomes an authored assertion on the
-   binding (validated for membership, trusted for semantics, the same trust
-   boundary as `@condition` Java methods); if rich, we can validate
-   capability too. This decides how much validation the Spec can promise.
-2. **Oracle test infrastructure (resolved in principle, logistics open).**
+Probed empirically: a scratch Postgres 18 schema carrying a stored generated
+tsvector column (weighted `setweight(to_tsvector(...))` expression), a GIN
+index over it, a GiST trigram index (`gist_trgm_ops`), a plain btree, an
+expression GIN index (`to_tsvector` directly, no stored column), and a
+partial index; jOOQ 3.20.11 open-source codegen (`PostgresDatabase` +
+`JavaGenerator`, `includeIndexes: true`) run against it and the output
+inspected, alongside `javap` of `org.jooq.Index` and
+`org.jooq.meta.IndexDefinition`.
+
+**Visible in the generated meta:**
+
+- **tsvector columns**, as `TableField<R, Object>` with the qualified type
+  name `"pg_catalog"."tsvector"` preserved verbatim. A vector binding can
+  therefore be *type-checked*: the named column exists and is a tsvector.
+- **Column-based indexes of every access method**, by name, with ordered
+  fields and the unique flag. The GIN-over-tsvector and the trigram index
+  both appear; membership validation works for both.
+
+**Not visible, at any layer** (not in the generated code, not in the
+`org.jooq.Index` runtime API, and not even in jooq-meta's
+`IndexDefinition`, which models only columns + uniqueness, so this is not a
+generator-output limitation but a hole in jOOQ's own model):
+
+- The **access method** (GIN vs GiST vs btree) and the **operator class**
+  (`gist_trgm_ops`).
+- **Expression indexes are dropped entirely**: the `to_tsvector(...)`
+  expression GIN index simply does not exist in the generated meta, so it
+  cannot even be membership-validated.
+- The **partial-index predicate** (the index appears, its WHERE does not).
+- **Generated-column-ness and its expression**: the stored tsvector column
+  looks like a plain writable column (the generated record even carries a
+  setter for it).
+
+**Consequences baked into the design:**
+
+- Validation splits cleanly: **membership and column-type checks are
+  promised** (binding names resolve, a vector binding is really a
+  tsvector); **capability is authored-asserted** (the binding's declared
+  kind, e.g. fulltext vs trigram, is trusted for semantics, the same trust
+  boundary as `@condition` Java methods).
+- The blessed Postgres recipe is *forced* to be the **stored generated
+  column**, not an expression index: the stored column is visible and
+  type-checkable in the catalog, the expression index is invisible. This
+  independently confirms the recipe choice made for other reasons
+  (trigger-free, deterministic).
+- **DML caveat to pin in fixture work**: open-source jOOQ does not mark
+  generated columns readonly, so a graphitron write path must never touch
+  the vector column. Expected safe (tsvector columns are never SDL-mapped,
+  and DML writes only mapped fields), but it needs a pinning test on a
+  searchable-and-mutable table.
+- **Follow-up option, not v1**: a graphitron-provided jOOQ generator
+  extension could recover full capability validation by querying
+  `pg_catalog` (access method, opclass, index expressions) during codegen,
+  where the live JDBC connection exists, and embedding the facts as a
+  side-car the graphitron catalog reads. Opt-in for consumers who want
+  strict validation; the authored assertion remains the baseline.
+- The same probe should be repeated against Oracle (does jOOQ meta list
+  `CTXSYS.CONTEXT` domain indexes at all?) once licensed test
+  infrastructure exists; until then the Oracle binding is asserted-only by
+  assumption.
+
+## Open questions (settleable during Spec drafting)
+
+1. **Oracle test infrastructure (resolved in principle, logistics open).**
    jOOQ's open-source edition does not support Oracle, but **Sikt holds a
    jOOQ license, so generating the Oracle-dialect code is a committed
    requirement**, not a conditional (resolved 2026-07-15). What remains is
@@ -186,12 +243,12 @@ The facts that flow in, and what each gates:
    pipelines, which can access the licensed dependencies. Optionally ask
    Lukas (jOOQ) whether a license for this project's CI is possible. This
    no longer gates Spec; it shapes the test plan inside it.
-3. **Directive surface details**: directive and argument naming, where the
+2. **Directive surface details**: directive and argument naming, where the
    synthesized field attaches and what it is called (derived name with an
    override is the lean), collision rules.
-4. **Filter composition on the search field**: which of the parent entity's
+3. **Filter composition on the search field**: which of the parent entity's
    filter arguments the search field inherits in the single-type case.
-5. **Second Postgres mechanism**: whether `pg_trgm` (typo-tolerant,
+4. **Second Postgres mechanism**: whether `pg_trgm` (typo-tolerant,
    index-ordered ranking, the natural combobox fit) joins `tsvector` in v1
    or follows later. Starting with one mechanism per platform says later,
    but trigram's index-ordered `<->` is cheap once the binding exists.
@@ -231,6 +288,15 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-15 (later): resolved the jOOQ-meta feasibility question
+  empirically (see the dedicated section); no open question gates the Spec
+  transition any longer. Also recorded why we stay on our authored fixture
+  schema instead of switching to pagila: the sakila core is a minority of
+  the fixture corpus and is itself customized load-bearingly
+  (`category.parent_category_id` self-FK pinned by constraint name,
+  `film.text_rating` in the example schema); we import pagila's *idea* (a
+  `film.fulltext` column) built the modern way (stored generated column)
+  rather than its trigger-based implementation.
 - 2026-07-15: design discussion closed the major forks: dedicated generated
   field over a connection order mode; hit wrapper without score; the
   demand/supply inversion (the index is a consumer-owned bearer of facts,
