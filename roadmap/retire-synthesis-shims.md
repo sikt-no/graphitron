@@ -5,7 +5,7 @@ status: Backlog
 bucket: cleanup
 priority: 5
 theme: legacy-migration
-depends-on: [nodeid-migration-quickfix]
+depends-on: [nodeid-migration-quickfix, explicit-nodeid-grammar]
 ---
 
 # Retire synthesis shims (`@nodeId` field, `IdReferenceField`)

@@ -78,6 +78,14 @@ Current definition anchors: `record ParsedPath(..., String errorMessage, ...)` a
     Other `Unresolved` construction sites wrap in `Rejection.structural(reason)`. Required
     before B2's second site (`TypeBuilder.java:686-708`) so `Unresolved` already carries the
     typed shape its consumer can fan out.
+    **Co-design note (2026-07-15):** two other Backlog items grow this same `Unresolved` record and
+    its fold path, and neither cross-referenced this one before now. R209
+    (`field-registry-typed-rejection-trace`) fork (a) is verbatim this A2 change (widen `Unresolved`
+    to carry a `Rejection`); if A2 ships first, R209 collapses to a consumer update. R213
+    (`input-field-rejection-attribution`) adds a `SourceLocation` to the same record and reshapes
+    `foldRejections` to carry `List<LocatedRejection>`. A *located typed rejection* is the natural
+    union of A2 and R213, so whichever lands first should carry the combined `(SourceLocation,
+    Rejection)` shape rather than force the second to revert it. Sequence the three knowingly.
   - **A3 (item 3)**: widen `ArgumentRef.ScalarArg.UnboundArg.reason: String` → `rejection:
     Rejection`. Migrate `:849-852` onto `unknownColumn`.
 

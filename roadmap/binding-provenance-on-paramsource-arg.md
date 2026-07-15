@@ -6,7 +6,7 @@ theme: service
 bucket: architecture
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-05-21
+last-updated: 2026-07-15
 ---
 
 # Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly
@@ -22,5 +22,7 @@ Scope notes for Spec:
 - **Strict mode.** Should a build-time flag let authors disable inference entirely (only `argMapping` and identity name match allowed)? Useful for codebases that want zero implicit behavior; cheap to add once provenance is typed.
 
 Files in play: `model/ParamSource.java`, `ServiceCatalog.java` (`inferBindingsByType`, both reflect methods), every downstream switch on `ParamSource` (compiler exhaustiveness check is the safety net), and the resolved-coordinate report renderer.
+
+Reconcile with R219 (added 2026-07-15): R219 (`unify-inference-rule-by-javatypekey`) collapses R214's arity-unique and type-unique inference branches into a single rule, dissolving the very distinction this item proposes to encode as `Inferred.Arity` / `Inferred.Type`. If R219 lands first, the provenance taxonomy carries one `Inferred` variant, not two; if this item lands first, R219's collapse merges the two variants back. Neither is a blocker for the other, but the taxonomy's inferred-arm shape must be settled jointly at Spec so it isn't split along a branch boundary R219 removes. R219 already names this item as a sibling ("`model/ParamSource.java` only if provenance lands first").
 
 Related: R214 (sibling, shipped with silent provenance; this item adds the audit axis), R215 (same principle applied to input field classification — the variant identity records the structural fact once).

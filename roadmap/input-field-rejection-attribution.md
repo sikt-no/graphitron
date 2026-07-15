@@ -6,7 +6,7 @@ theme: diagnostics
 bucket: bugs
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-05-21
+last-updated: 2026-07-15
 ---
 
 # Plain-input field rejections attributed to consumer field, losing input-field source location
@@ -51,7 +51,7 @@ By the time the rejection reaches the validator, the offending `@condition` dire
 
 Three layers need touching:
 
-- `InputFieldResolution.Unresolved` (`InputFieldResolution.java:20-24`) grows a `SourceLocation` field (the input field's definition, or the `@condition` directive's location when the failure is condition-side).
+- `InputFieldResolution.Unresolved` (`InputFieldResolution.java:20-24`) grows a `SourceLocation` field (the input field's definition, or the `@condition` directive's location when the failure is condition-side). **Co-design (2026-07-15):** R66 Phase A2 and R209 fork (a) independently widen this same `Unresolved` record to carry a `Rejection`. A *located typed rejection* is the natural union of the two changes; whichever of R66/R209/R213 lands first should grow the record to `(SourceLocation, Rejection)` once, so the others rebase rather than revert. Do not widen `Unresolved` here in isolation.
 - The `condErrors` channel populated by `buildInputFieldCondition` becomes `List<LocatedRejection>` (or similar) rather than `List<String>` — each entry carries its input field's location.
 - `InputFieldResolver.Resolution.Rejected` carries `List<LocatedRejection>` rather than a single folded `Rejection`. `FieldBuilder.classifyArgument` and `projectFilters` propagate the list; `UnclassifiedArg.rejection` either becomes a list-carrying variant or grows a sibling located-items slot.
 - `validateUnclassifiedField` fans located items out into one `ValidationError` per offending input field, each with its own `SourceLocation`. The consuming field still gets one `ValidationError` (its existence as `UnclassifiedField` is itself a fact — emission can't proceed against it), but with a different message: "argument '<n>': input type '<T>' has unresolved fields — see errors on that type's fields" rather than the joined dump.

@@ -6,9 +6,22 @@ bucket: architecture
 priority: 6
 theme: lsp
 depends-on: []
+last-updated: 2026-07-15
 ---
 
 # Parent-context-aware schema coordinates for per-directive Behavior policy
+
+> **Premise partly overtaken by R347 Slice 2 (noted 2026-07-15).** R347
+> (`lsp-structural-consolidation`) Slice 2 shipped a standalone `DirectivePolicy`
+> (`graphitron-lsp/.../parsing/DirectivePolicy.java`): `bindsLiveMethod(name)` now owns the former
+> `METHOD_VALIDATING_DIRECTIVES` set, and the five copy-pasted `@record` carve-outs plus the
+> privately-owned method-validating set route through it. That is a *third* shape R123's A/B forks
+> never considered, and it already resolves the set-duplication half of the smell below (step 4). It
+> did not, however, make the per-directive discrimination stop being a name lookup: Diagnostics still
+> calls `DirectivePolicy.bindsLiveMethod(directiveName)` at validation time. R123's surviving value is
+> exactly fork A, the parent-context coordinate that carries the policy on the model so no consumer
+> re-derives it by directive name. Rework this item onto the shipped `DirectivePolicy` baseline before
+> implementing; do not implement the stale step 4 (the set it names is already centralized).
 
 ## Problem
 
@@ -19,7 +32,7 @@ R119 keyed the LSP's directive vocabulary on GraphQL-spec schema coordinates: `D
 - `@service`, `@condition`, `@externalField`, `@tableMethod`, `@reference(path:[{condition:}])` — the `method:` value is a method invocation. Validate as a method on the sibling `className`.
 - `@record`, `@enum` — the `method:` value wraps a type, not a method invocation. Skip method validation.
 
-The canonical overlay binds the shared coordinate to one `MethodNameBinding(classNameCoord)` arm. Diagnostics' validator then re-discriminates by the enclosing directive name via a hand-coded `METHOD_VALIDATING_DIRECTIVES = Set.of("service", "condition", "externalField", "tableMethod", "reference", "sourceRow")` (`graphitron-lsp/.../diagnostics/Diagnostics.java:53`).
+The canonical overlay binds the shared coordinate to one `MethodNameBinding(classNameCoord)` arm. Diagnostics' validator then re-discriminates by the enclosing directive name; since R347 Slice 2 that discrimination is `DirectivePolicy.bindsLiveMethod(directiveName)` (`graphitron-lsp/.../parsing/DirectivePolicy.java`, called from `Diagnostics.java:734` at the time of writing), which centralizes the former hand-coded `METHOD_VALIDATING_DIRECTIVES` set but still keys on the directive name at validation time rather than on the coordinate.
 
 That set is exactly the smell `development-principles.adoc` calls "two consumers evaluate the same predicate over a model field" — the Behavior overlay says "this is a method slot", the validator says "but only for these directives". The classifier knows the per-directive policy at parse time; collapsing both onto one arm and re-deriving via `Set.contains(directiveName)` in Diagnostics is the smell.
 
@@ -66,7 +79,7 @@ The migration:
 1. Add `DirectiveArgInputField` to `SchemaCoordinate`.
 2. Update `LspVocabulary.coordinateAt` and `leafCoordinates` to emit the new arm when descending from a directive arg into an input type's field. Today's `InputField(type, field)` becomes `DirectiveArgInputField(directive, arg, type, field)`. Unconditional — the cursor is always inside *some* directive's argument tree, so the parent context always exists.
 3. Update `CanonicalOverlay` to bind the seven method-validating directives to `MethodNameBinding` and not bind `@record`/`@enum`'s method.
-4. Drop `Diagnostics.METHOD_VALIDATING_DIRECTIVES`; `MethodCompletions.generate`'s behavior check is the same; no other consumer touches the set.
+4. (Largely done by R347 Slice 2.) The `METHOD_VALIDATING_DIRECTIVES` set is already centralized into `DirectivePolicy.bindsLiveMethod`; what remains for fork A is to make the coordinate carry the policy so `Diagnostics` and `MethodCompletions.generate` stop calling `bindsLiveMethod(directiveName)` and read the decision off the `DirectivePolicy` binding directly. Rework this step against the shipped predicate rather than the retired set.
 5. The structural startup invariant continues to fire on every overlay coordinate.
 
 Step 2 is the load-bearing change. The 4-arm `SchemaCoordinate` is replaced wholesale by a 5-arm hierarchy with `InputField(type, field)` retained for any future "type-keyed coordinate" use case (none today inside the LSP, but it's the more-general arm).

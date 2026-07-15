@@ -3,9 +3,9 @@ id: R180
 title: "Resolved accessors for record-parent column reads (recordColumnReadArgs)"
 status: Spec
 theme: classification-model
-depends-on: []
+depends-on: [decompose-sourcekey]
 created: 2026-05-19
-last-updated: 2026-07-14
+last-updated: 2026-07-15
 ---
 
 # Resolved accessors for record-parent column reads
@@ -32,7 +32,7 @@ R461 (`unify-sdl-field-accessor-resolution`, Done as of 2026-07-14; its file sel
 ## Direction for the revised plan
 
 * Resolve the accessor for each FK/key column of a record-backed parent at classification time (where the backing class is already reflected on), using `ClassAccessorResolver` rather than a parallel name-synthesis rule.
-* Carry the resolution to the emitter. The natural carrier is `SourceKey` (the old spec's non-goal 1); note `SourceKey.Reader.AccessorCall` already carries a resolved accessor for the auto-lift path, so the shape has precedent. R431 (`decompose-sourcekey`) is reworking that record; sequence this after R431 or land it as part of R431's reshaping rather than widening the current record independently.
+* Carry the resolution to the emitter. The natural carrier is `SourceKey` (the old spec's non-goal 1); note `SourceKey.Reader.AccessorCall` already carries a resolved accessor for the auto-lift path, so the shape has precedent. R431 (`decompose-sourcekey`, now In Progress; this item's `depends-on` records the edge) is reworking that record; sequence this after R431 or land it as part of R431's reshaping rather than widening the current record independently. R431's own body flags that the implementer may fold this resolved-accessor carry into the lift fact's member-read arm; if it does, R180 closes as absorbed rather than following as a separate item.
 * `recordColumnReadArgs`'s jOOQ arms (`.get(Tables.X.COL)` / `.get(sqlName)`) are correct as-is and stay.
 * The `ClassName.bestGuess(fqClassName())` re-parses in the same arms are R412's concern (`nested-backing-class-emitter-lift`); do not fold that here, but do not make it worse.
 

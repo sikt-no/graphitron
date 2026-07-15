@@ -5,8 +5,9 @@ status: Backlog
 bucket: feature
 priority: 3
 theme: tooling
+depends-on: [oneof-augment-defeated-by-descriptions]
 created: 2026-06-10
-last-updated: 2026-07-14
+last-updated: 2026-07-15
 ---
 
 # Leverage Rover and GraphOS: composition checks in CI, contract verification, rover lsp in the dev loop

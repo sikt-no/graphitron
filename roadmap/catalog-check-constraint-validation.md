@@ -6,7 +6,7 @@ bucket: architecture
 priority: 8
 theme: mutation-write
 depends-on: []
-last-updated: 2026-07-14
+last-updated: 2026-07-15
 ---
 
 # Surface database CHECK constraints as Jakarta validation rules
@@ -684,6 +684,26 @@ to `Map<?, ?>` inline, and the connection-arg emitter reads
 target is typed. Phases 1 and 2 never depended on R94 (the record-side
 target is the consumer's jOOQ-generated `XxxRecord`, which already exists);
 phase 3 is no longer blocked.
+
+*Phase 3 will be reworked by R98 (noted 2026-07-15).* R98
+(`multi-source-input-validation`, which already records `depends-on:
+[catalog-check-constraint-validation]`) merges three constraint sources (CHECK,
+SDL validation directives, Layer-2 Jakarta) into one per-(InputType, field)
+`ConstraintSet`, from which the runtime `ConstraintMapping` fans out. Under R98,
+phase 3 *contributes to that `ConstraintSet`* rather than emitting a
+`ConstraintMapping` chain directly. If R98 is imminent when phase 3 is picked
+up, do not build phase 3 as a throwaway direct-emit; coordinate the input-side
+CHECK contribution through R98's merged shape. The record-side phases (1, 2) are
+unaffected and remain the near-term deliverable.
+
+*Custom validator factories (R192).* This item routes CHECK-derived constraints
+through `GeneratedConstraintMapping.toMapping(...)` inside the default
+`getValidator` seam (see the `DefaultValidatorHolder` note above), and already
+tells consumers who override `getValidator(env)` to call `toMapping(...)`
+themselves. R192 (`custom-validator-factory`) turns that override into a
+Mojo-configured factory seam; its Spec must state how a consumer-supplied factory
+still picks up this item's `GeneratedConstraintMapping`, or a custom factory
+silently drops every CHECK-derived constraint. Cross-referenced 2026-07-15.
 
 ---
 

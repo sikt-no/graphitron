@@ -7,7 +7,7 @@ priority: 7
 theme: interface-union
 depends-on: []
 created: 2026-06-26
-last-updated: 2026-06-26
+last-updated: 2026-07-15
 ---
 
 # Disambiguate the base-to-detail (interface-to-implementer) join path via @reference
@@ -51,3 +51,14 @@ serve double duty (resolve the field and name the join), with a participant-leve
 fallback when no base-only field exists? Or a dedicated participant-level reference (a path argument on
 `@table` / `@discriminator`, or a participant `@reference`)? Draft the user docs for whichever surface it
 picks (first-client check), since it is user-visible authoring.
+
+Reconcile with R458 before deciding the surface (added 2026-07-15): R458
+(`per-participant-multitable-child-join-paths`, In Progress) solves the structurally analogous
+"a participant table has more than one FK back to the parent, the author must pick which FK
+correlates" problem in the *multitable* polymorphic model, and has already decided its directive
+surface, a new `directive @referenceFor(type: String!, path: [ReferenceElement!]!)`, with an
+"Alternatives considered and rejected" section. The join topology differs (R393 is discriminated
+joined-table inheritance, base + per-implementer detail tables; R458 is multitable participants
+correlated to a parent field-owner table), so this is not a duplicate. But R393 should reuse
+`@referenceFor` or explicitly justify a distinct per-participant FK-picker rather than invent a
+parallel one; sequence this after R458 lands and cite its decided surface.

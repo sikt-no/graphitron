@@ -7,10 +7,16 @@ bucket: bug
 priority: 4
 depends-on: []
 created: 2026-06-09
-last-updated: 2026-06-09
+last-updated: 2026-07-15
 ---
 
 # Inline TableInterfaceField and TableMethodField children (currently N+1)
+
+> **Conflicts with R277 (flagged 2026-07-15).** R277 (`tablemethod-under-nested-type`) wires the
+> synchronous `buildChildTableMethodFetcher` for the `@tableMethod`-under-`NestingField` case,
+> leaving that method unchanged, which is the exact per-parent sync fetcher this item declares an
+> N+1 defect and inlines away. Reconcile at Spec: R277's nested-depth support is a candidate to fold
+> into this item's inlining rather than build the sync path first. See R277's mirrored note.
 
 A child `@table` field backed by a polymorphic interface target (`ChildField.TableInterfaceField`) or
 by a `@tableMethod` (`ChildField.TableMethodField`) is reachable by FK correlation from a query-scope
@@ -34,5 +40,5 @@ Surfaced during R281 dimensional-model design (the `producer x mapping` cut). It
 *current implementation != what's correct* divergence the R281 corpus exists to enforce: these leaves
 are *classified* `producer = ∅` (inline), and this defect is the gap between that correct verdict and
 the current generator. R281 asserts the correct classification; this item fixes the generator to match.
-See `graphitron-rewrite/roadmap/classification-test-dsl.md`, the current-vs-correct note under
-`producer`.
+See `roadmap/audits/classification-test-dsl-inventory.md` (the historical R281 corpus inventory,
+now marked superseded), the current-vs-correct note under `producer`.

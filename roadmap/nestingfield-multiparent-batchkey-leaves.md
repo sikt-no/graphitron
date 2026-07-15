@@ -5,9 +5,9 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: []
+depends-on: [decompose-sourcekey, collapse-split-and-record-table-leaves]
 created: 2026-06-17
-last-updated: 2026-06-17
+last-updated: 2026-07-15
 ---
 
 # Multi-parent NestingField sharing: BatchKey leaves
@@ -23,6 +23,14 @@ across a shared nested type is real work, not just a validator gate: each varian
 `LoaderRegistration` / `SourceKey` resolution and rows-method signature would need to agree (or be
 made per-parent) across the sharing parents. Each variant has its own considerations; the spec
 should decide whether to land them together or per-variant.
+
+Re-anchor at pickup (added 2026-07-15): the leaf enumeration above and the `SourceKey` carrier
+this item leans on are being restructured underneath it. R431 (`decompose-sourcekey`, In Progress)
+decomposes `SourceKey` onto facts, and R432 (`collapse-split-and-record-table-leaves`) folds
+`SplitTableField` + `RecordTableField` (and possibly the lookup twins) into one leaf, which is why
+both are now in this item's `depends-on`. Re-derive the variant list and the per-parent reconciliation
+target against the decomposed facts and the collapsed leaf set when this reaches Spec, rather than
+against the pre-R431/R432 shapes named here.
 
 Open re-scoping question carried over from R23: `LookupTableField` moved into
 `TypeFetcherGenerator.PROJECTED_LEAVES` alongside `TableField`, so it may be emitter-safe across

@@ -7,10 +7,20 @@ priority: 6
 theme: service
 depends-on: []
 created: 2026-06-03
-last-updated: 2026-06-03
+last-updated: 2026-07-15
 ---
 
 # Support @tableMethod under a table-bound NestingField
+
+> **Conflicts with R288 (flagged 2026-07-15).** This item brings the *synchronous* nested
+> `@tableMethod` fetcher to parity ("`buildChildTableMethodFetcher` is unchanged"). R288
+> (`inline-interface-and-tablemethod-children`) declares that same `buildChildTableMethodFetcher`
+> an N+1 defect ("N+1 is never correct") and wants `ChildField.TableMethodField` inlined as a
+> correlated multiset instead of running a per-parent sync query. Building this item as written
+> extends machinery R288 then deletes. Spec must reconcile: either fold this item's nested-depth
+> support into R288's inlining (the `@tableMethod`-under-`NestingField` case becomes one more inline
+> site), or land this as an explicit interim knowing R288 supersedes it. Neither file recorded the
+> other before now.
 
 A plain object child of a `@table` parent, with no boundary directive (`@reference`/`@splitQuery`/FK), classifies as a `ChildField.NestingField` whose nested fields are bound to the parent's table (`FieldBuilder.classifyObjectReturnChildField`, the `TableBoundReturnType(elementTypeName, parentTableType.table())` arm). A `@tableMethod` field declared inside such a nesting is conceptually identical to a `@tableMethod` directly on the `@table` parent: it correlates the developer-returned table against the same parent row via the resolved FK's source-side columns, and the nesting carries the same bound table. The generator's projection-column collection already anticipates this (`TypeClassGenerator.collectRequiredProjectionColumns` has a `TableMethodField` arm and recurses into `NestingField`).
 
