@@ -1,7 +1,7 @@
 ---
 id: R427
 title: "Free-text search backed by native database search indexes"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 8
 theme: search
@@ -14,13 +14,14 @@ last-updated: 2026-07-15
 
 > Origin: [issue #512](https://github.com/sikt-no/graphitron/issues/512)
 > ("annotering av flere felter for å auto-generere søkeindeks"). Filed
-> 2026-07-02 as a thinking-capture; substantially rewritten 2026-07-15 after a
-> design discussion closed most of the original forks. Still **Backlog**: the
-> direction is settled, and the jOOQ metadata feasibility check (the one
-> question gating Spec) was resolved empirically on 2026-07-15; see *What the
-> generated jOOQ meta can and cannot see*. The remaining open questions are
-> settleable during Spec drafting. The dead-ends section records the roads
-> not taken so they are not relitigated.
+> 2026-07-02 as a thinking-capture; rewritten 2026-07-15 after a design
+> discussion closed the forks and an empirical jOOQ-meta probe (see *What
+> the generated jOOQ meta can and cannot see*) resolved the last gating
+> question; expanded to a full Spec the same day. The framing sections
+> (demand/supply, decisions, supply facts, meta findings) are retained as
+> the design's rationale; the *Design* section onward is the plan. The
+> dead-ends section records the roads not taken so they are not
+> relitigated.
 
 ## Problem
 
@@ -142,32 +143,313 @@ The facts that flow in, and what each gates:
   is an inner join that drops them, and "asked for 20, got 18" is documented
   behaviour, not a bug.
 
-## Likely shape of the work (not committed)
+## Design
 
-- A binding directive (name TBD; the working shape is `@search` with a
-  sealed supply reference: vector column | index | search table, resolved
-  by name into the jOOQ catalog namespace) authored at the search surface.
-  The grain is **one directive application per search surface, binding it to
-  one backing**; there are no per-field `@searchable` tags, since membership
-  is a fact of the backing.
-- The synthesized search field and hit wrapper types, riding the same
-  promoter/synthesis path R13 shipped.
-- Validation: membership (the named object exists) plus capability checks
-  (the demand is servable), as `AuthorError`s with LSP surfacing; the
-  catalog's search-relevant region becomes completable/hoverable (the six
-  reads of R333's referenced-namespace model apply unchanged).
-- Runtime: one ranked query per search invocation, `ORDER BY <rank> DESC,
-  <pk> ASC LIMIT n`, filters composing (AND) with the match predicate in the
-  single-type case.
-- **Developer-facing documentation is a first-class deliverable**: a how-to
-  per platform with the canonical migration (Postgres: generated tsvector
-  column + GIN index; Oracle: `CTXSYS.CONTEXT` index + sync policy), the
-  binding SDL, and the freshness/operational notes. Being opinionated only
-  works if the blessed path is excellently documented.
-- Test fixtures: our sakila port does not carry pagila's `fulltext` column,
-  so the execution tier needs a generated tsvector column + GIN index added
-  to `graphitron-sakila-db/init.sql`. That fixture migration doubles as the
-  documented Postgres recipe, exercised by our own suite.
+### Authored SDL surface
+
+The author writes a root list field returning the entity type and binds the
+backing with one directive application, mirroring `@asConnection`'s
+author-writes-field / generator-owns-type pattern:
+
+```graphql
+type Query {
+  filmSearch: [Film!]! @search(column: "fulltext", kind: TSVECTOR, config: "english")
+}
+```
+
+Graphitron then synthesizes the rest of the surface (next section), so the
+wire shape the frontend sees is:
+
+```graphql
+type Query {
+  filmSearch(search: String!, first: Int): [QueryFilmSearchHit!]!
+}
+
+type QueryFilmSearchHit {
+  node: Film!
+}
+```
+
+The directive, in house style:
+
+```graphql
+"""
+Declares a ranked free-text search surface on a root list field. Matching and
+relevance ranking run in the database against a consumer-owned search
+backing; graphitron synthesizes the search arguments and the per-field Hit
+wrapper type and generates a bounded top-N ranked query. Requires a database
+migration owned by the consumer; see the search how-to for the per-platform
+recipe.
+"""
+directive @search(
+  """SQL name of the backing column on the entity's table: a tsvector column (TSVECTOR) or the text column carrying the Oracle Text CONTEXT index (ORACLE_TEXT)."""
+  column: String!
+  """Native search mechanism backing the column; selects the generated SQL shape at build time."""
+  kind: SearchKind!
+  """Text-search configuration used to parse the query string (TSVECTOR only, where it is required). Must match the configuration baked into the vector column's expression; the catalog cannot reveal it, so it is asserted here."""
+  config: String
+  """Hits returned when the client omits 'first'."""
+  defaultFirst: Int = 20
+  """Upper bound on 'first'. A request exceeding it is a client-visible error."""
+  maxFirst: Int = 100
+) on FIELD_DEFINITION
+
+enum SearchKind { TSVECTOR ORACLE_TEXT }
+```
+
+`kind` is the authored capability assertion the meta probe forced: the
+generated SQL shape is selected at *build* time from the directive, never
+switched at runtime, which keeps "strategy is derived from the schema at
+codegen time" intact. `config` is required for `TSVECTOR` (build-time
+rejection when absent) and rejected for `ORACLE_TEXT`; a query-side
+configuration that disagrees with the vector column's index-time
+configuration breaks matching silently, so the assertion is load-bearing,
+not decoration.
+
+### Synthesis (rides the R13/connection promoter path)
+
+`ConnectionPromoter`'s field-first walk (`synthesiseForField`,
+`ConnectionPromoter.java:140`) gains a `@search` arm beside the
+`@asConnection` arm:
+
+- Synthesize the **hit wrapper type** `<ParentType><FieldNameUcFirst>Hit`
+  (naming helper beside `ConnectionNaming` / `FacetNaming`) as a
+  `GraphQLObjectType` with the single field `node: <Entity>!`, registered
+  through the existing `registerSynthesised` path
+  (`ConnectionPromoter.java:217`) and pinned as an `additionalType` by
+  `rebuildAssembledForConnections` (`:239`) exactly as Connection / Facets
+  types are. One hit type per field, never shared, per the
+  `connectionName:`-deprecation lesson.
+- Rewrite the carrier field (the `rewriteCarrierField` precedent, `:322`):
+  return type becomes `[<Hit>!]!` (non-null list, non-null elements; no
+  matches is an empty list, never null) and the two synthesized arguments
+  are appended: `search: String!` and `first: Int`.
+- A new `GraphitronType.SearchHitType` model record (beside
+  `ConnectionType` / `FacetsType` / `FacetValueType`,
+  `GraphitronType.java:552-630`) carries the schema form;
+  `ObjectTypeGenerator.graphqlTypeFor` (`ObjectTypeGenerator.java:120`) and
+  the SDL emitter gain the corresponding arm.
+
+The hit wrapper exists for forward evolution (hit-level metadata such as an
+opt-in score or highlight can land as new fields without a breaking change);
+in v1 it carries only `node`, resolved by a passthrough fetcher mirroring
+`ConnectionHelper.edgeNode`.
+
+### Classification (facts, not a new leaf)
+
+Per R333's additive-facts discipline, no new field leaf is minted:
+
+- A **`SearchSpec` model record** is the carrier, mirroring how R13's
+  `FacetSpec` rides `ConnectionType` as a denormalized view carrier:
+
+  ```java
+  public record SearchSpec(
+      ColumnRef column,          // the backing column on the resolved table
+      SearchBacking backing,     // sealed supply arm
+      List<ColumnRef> tiebreak,  // the entity table's PK columns, in key order
+      int defaultFirst,
+      int maxFirst
+  ) {}
+
+  public sealed interface SearchBacking {
+      record Tsvector(String config) implements SearchBacking {}
+      record OracleText() implements SearchBacking {}
+      // future arms, not v1: NamedIndex (pg_trgm), SearchTable (multi-type)
+  }
+  ```
+
+  Compact constructors pin the invariants the emitter consumes without
+  re-checking: `0 < defaultFirst <= maxFirst`, non-blank `Tsvector.config`,
+  non-empty `tiebreak`.
+- The spec rides the classified root leaf (`QueryTableField`,
+  `QueryField.java:108`) as a 0..1 slot, following the leaf's existing
+  optional-slot idiom. `operation()` stays `Fetch`: the match predicate is a
+  filter contribution and the ranked order + limit are read from the
+  `SearchSpec` by the emitter. No `Operation.Search` arm is minted in v1;
+  like `Operation.Facet` (`Operation.java:89-93`) the normalized
+  operation-fact home lands with R314's re-platforming, and the quarantine
+  comment says so.
+- The two synthesized arguments classify as a new **`ArgumentRef.SearchArgRef`**
+  arm with a nested `enum Role { QUERY, FIRST }`, structurally identical to
+  `PaginationArgRef` (`ArgumentRef.java:347`), so `FieldBuilder.classifyArguments`
+  recognizes them by name on a `@search` carrier and authored arguments
+  continue to classify exactly as on any list field.
+
+Authored filter arguments therefore compose for free: they project into
+`WhereFilter`s as today and AND with the match predicate. `@condition` on
+the field composes the same way.
+
+### Generated query (one ranked SELECT, per-kind SQL template)
+
+The emitter contributes three query parts to the standard root rows method,
+selected at build time by the `SearchBacking` arm:
+
+| Part | `TSVECTOR` | `ORACLE_TEXT` |
+|---|---|---|
+| match predicate | `{vector} @@ websearch_to_tsquery({config}, {q})` | `CONTAINS({column}, {escapedQ}, 1) > 0` |
+| rank expression | `ts_rank({vector}, websearch_to_tsquery({config}, {q}))` | `SCORE(1)` |
+| order + bound | `ORDER BY {rank} DESC, {pk...} ASC LIMIT {first}` | same (jOOQ renders the Oracle fetch form) |
+
+Both templates are plain-SQL `DSL.condition(...)` / `DSL.field(...)`
+templates over the open-source jOOQ artifact; no licensed dependency enters
+graphitron's own build (the license boundary sits at executing against a
+real Oracle, per the resolved edition question). Rationale for the
+opinionated picks:
+
+- `websearch_to_tsquery` over `to_tsquery` / `plainto_tsquery`: it never
+  throws on user input and supports quoted phrases and `-`negation, which is
+  the right default for a combobox fed raw keystrokes.
+- `ts_rank` over `ts_rank_cd` in v1: honors the `setweight` labels baked
+  into the vector, no cover-density surprises; revisiting is a one-line
+  template change that does not touch the contract.
+- Oracle `CONTAINS` query syntax *does* throw on raw operators (`AND`, `&`,
+  trailing `-`), so the emitted runtime includes a conservative escaper
+  (each whitespace-separated token wrapped in `{ }`), keeping the two
+  platforms behaviorally aligned: user input never causes a syntax error.
+- The PK tiebreak makes the top-N deterministic within a snapshot; a
+  `@search` carrier whose entity table lacks a primary key is a build-time
+  rejection.
+
+Runtime semantics:
+
+- `first` omitted → `defaultFirst`; `first > maxFirst` or `first < 1` →
+  `GraphitronClientException`, surfaced as a client-visible error through
+  the existing `ErrorRouter.surfaceClientErrorOrRedact` disposition (which
+  also redacts any backing failure, the same firewall every fetcher gets).
+- An empty or all-stopword `search` string parses to an empty tsquery and
+  matches nothing: the field returns `[]`. Documented behaviour; combobox
+  clients gate on input length anyway.
+- Freshness follows the backing: a stored generated column is
+  transactionally fresh on Postgres; Oracle Text CONTEXT indexes are stale
+  between `SYNC` runs, which the how-to documents as an operational
+  property, not a bug.
+
+### Validation (`rejectSearchMisuse`, the R13 template)
+
+A definition-keyed pass in `GraphitronSchemaBuilder` mirroring
+`rejectFacetMisuse` (`GraphitronSchemaBuilder.java:972`): diagnostics via
+`ctx.addDiagnostic(ValidationError.forField(...))`, no verdict demotion.
+The v1 rejection matrix:
+
+- **Carrier shape**: `@search` only on a root `Query` field returning a bare
+  non-null list of a `@table`-backed object type. Everything else rejects
+  (child fields, interfaces/unions, `@service` / `@tableMethod` /
+  `@routine` / `@reference` / `@asConnection` co-occurrence, `@orderBy`
+  arguments and `@defaultOrder` on the carrier: ordering is the search's
+  contract).
+- **Binding**: `column:` must resolve on the entity's resolved table
+  (`Rejection.unknownColumn`). For `TSVECTOR` the column's SQL type name
+  (via `JooqCatalog.columnFactsOf` → `ColumnFacts.sqlType`,
+  `JooqCatalog.java:1032/1094`, the surface the meta probe validated) must
+  be `tsvector`, and `config:` must be present. For `ORACLE_TEXT` the check
+  is membership-only (the domain index is invisible to the meta; the kind
+  is the trust boundary) and `config:` must be absent.
+- **Synthesis collisions**: an authored argument named `search` or `first`
+  on the carrier, or an authored type colliding with the derived hit type
+  name, rejects with a rename hint.
+- **Bounds**: `defaultFirst`/`maxFirst` violating
+  `0 < defaultFirst <= maxFirst` rejects at build time; missing PK on the
+  entity table rejects (no deterministic tiebreak).
+
+### Documentation (first-class deliverable)
+
+A how-to per platform under `docs/`, each carrying: the canonical migration
+(Postgres: stored generated tsvector column with `setweight` labels + GIN
+index, the same migration the sakila fixture ships; Oracle: `CTXSYS.CONTEXT`
+index + sync policy), the SDL binding, the query semantics
+(`websearch_to_tsquery` syntax; escaping on Oracle), and the operational
+notes (freshness, the asked-for-20-got-18 join-back property when a backing
+lags). Being opinionated only works if the blessed path is excellently
+documented; the fixture migration doubles as the Postgres recipe and is
+exercised by our own suite.
+
+## Implementation sites
+
+- `directives.graphqls`: `@search` + `SearchKind` (definitions above).
+- New `model/SearchSpec.java`, `model/SearchBacking.java`; a 0..1 slot on
+  `QueryTableField`; `GraphitronType.SearchHitType` + arms in
+  `ObjectTypeGenerator.graphqlTypeFor` and the SDL emitter.
+- `ArgumentRef.java`: new `SearchArgRef` arm; `FieldBuilder.classifyArguments`
+  recognizes the synthesized names on `@search` carriers.
+- `ConnectionPromoter.java`: `@search` arm in `synthesiseForField` (hit-type
+  synthesis + carrier rewrite); `rebuildAssembledForConnections` pins the
+  hit types (the walk is shared; whether the class gets a broader name is
+  the implementer's call).
+- `GraphitronSchemaBuilder.java`: `rejectSearchMisuse` (matrix above);
+  R333's directive-coverage table gains a `@search` row in the same commit.
+- Emitters: the ranked query parts in the root rows-method path
+  (`TypeFetcherGenerator` + the query-part emitters), per-kind templates;
+  hit `node` passthrough registration in `FetcherRegistrationsEmitter`;
+  the Oracle escaper in the emitted runtime (beside `ConnectionHelper`'s
+  generator).
+- `graphitron-sakila-db/init.sql`: `film.fulltext` stored generated column
+  (`setweight(title, 'A') || setweight(description, 'B')`, config
+  `english`) + GIN index; bump `<jooq.codegen.schema.version>`.
+- `graphitron-sakila-example`: a `filmSearch` field in the example schema.
+- `docs/`: the Postgres and Oracle how-tos (phase-gated below).
+
+## Tests
+
+- **Unit-tier** (invariants the type system can't pin): `SearchSpec` /
+  `SearchBacking` compact-constructor rules; the Oracle escaper (token
+  wrapping, embedded braces, blank input).
+- **Pipeline-tier** (primary behavioural tier): classification test
+  (`SearchSpec` populated with the expected backing arm, hit type
+  synthesized and registered, arguments appended); the rejection matrix,
+  one case per arm above; emit-surface test for the generated fetcher
+  (method-surface assertions, no code-string assertions, per the R13
+  rework lesson); the exact `ColumnFacts.sqlType` literal for a tsvector
+  column pinned against the real fixture catalog.
+- **Compilation-tier**: the sakila example compiles with the search field
+  (consumer javac covers the generated hit type, fetcher, and escaper).
+- **Execution-tier** (the proof, Postgres): ranking honors weights (a
+  title match outranks a description match); authored filter argument ANDs
+  with the match; `defaultFirst` applies; `first` over `maxFirst` errors
+  client-visibly; empty search string returns `[]`; the DML pinning test
+  (insert/update on `film` never writes `fulltext`, the generated column
+  stays consumer-invisible).
+- **Oracle**: emit shape pinned at pipeline tier (the SQL templates render
+  without an Oracle connection); execution-tier runs in Sikt's internal
+  GitLab pipelines with the licensed jOOQ, or in this repo's CI if the
+  license question (open question 1) resolves that way.
+
+## Phasing
+
+Three landings, each through the canonical flow:
+
+1. **Model + classification + synthesis + validation.** Directive, model
+   records, `SearchArgRef`, promoter arm, `rejectSearchMisuse`, unit- and
+   pipeline-tier tests. No emitted-code change beyond the schema surface.
+   Acceptance: the example SDL classifies, the hit type appears in the
+   emitted schema, the rejection matrix fires.
+2. **Postgres emit + runtime + fixture + docs.** The tsvector templates,
+   fetcher emit, sakila fixture migration, execution-tier tests, the
+   Postgres how-to. Acceptance: the sakila example serves ranked search end
+   to end under `-Plocal-db`.
+3. **Oracle emit + docs.** The `ORACLE_TEXT` templates, escaper,
+   pipeline-tier shape pinning, the Oracle how-to with the sync-policy
+   note; execution deferred to licensed infrastructure. Acceptance: emitted
+   Oracle SQL shape pinned; the internal-pipeline execution plan written
+   down.
+
+## Non-goals (v1)
+
+- **`pg_trgm` trigram backing.** The natural typo-tolerant combobox fit,
+  and its index-ordered `<->` makes it cheap once the binding exists, but
+  one mechanism per platform is the v1 scope. It lands later as a new
+  `SearchBacking.NamedIndex` arm (membership-validated against the catalog's
+  index list; kind asserted, since the opclass is invisible to the meta).
+- **Multi-type search** (a consumer-owned search table with an entity-type
+  discriminator): a recognized backing shape, deferred until demanded; the
+  sealed `SearchBacking` grows a `SearchTable` arm and reuses the row-domain
+  discrimination and node-key machinery.
+- **Child-field search**, relevance **score exposure**, **highlighting**
+  (`ts_headline`), deep **ranked paging**, and **external engines**
+  (Elasticsearch and kin): all recorded in the decisions and dead-ends
+  sections above with their rationale.
+- **LSP completion for `column:`** (offering the entity table's tsvector
+  columns as candidates): a natural follow-up on the `CompletionData`
+  surface, not part of this item.
 
 ## What the generated jOOQ meta can and cannot see (resolved 2026-07-15)
 
@@ -238,26 +520,28 @@ generator-output limitation but a hole in jOOQ's own model):
   infrastructure exists; until then the Oracle binding is asserted-only by
   assumption.
 
-## Open questions (settleable during Spec drafting)
+## Open questions for the reviewer
 
-1. **Oracle test infrastructure (resolved in principle, logistics open).**
-   jOOQ's open-source edition does not support Oracle, but **Sikt holds a
-   jOOQ license, so generating the Oracle-dialect code is a committed
-   requirement**, not a conditional (resolved 2026-07-15). What remains is
-   where the licensed tests run: this repo's public CI is Postgres-only, so
-   worst case the Oracle execution tests run in Sikt's internal GitLab
-   pipelines, which can access the licensed dependencies. Optionally ask
-   Lukas (jOOQ) whether a license for this project's CI is possible. This
-   no longer gates Spec; it shapes the test plan inside it.
-2. **Directive surface details**: directive and argument naming, where the
-   synthesized field attaches and what it is called (derived name with an
-   override is the lean), collision rules.
-3. **Filter composition on the search field**: which of the parent entity's
-   filter arguments the search field inherits in the single-type case.
-4. **Second Postgres mechanism**: whether `pg_trgm` (typo-tolerant,
-   index-ordered ranking, the natural combobox fit) joins `tsvector` in v1
-   or follows later. Starting with one mechanism per platform says later,
-   but trigram's index-ordered `<->` is cheap once the binding exists.
+1. **`first` over `maxFirst`: error or clamp?** The spec says error
+   (`GraphitronClientException`), on the grounds that a silently clamped
+   result misleads a client that asked for 200 and believes it got them
+   all. The counterargument is combobox friendliness: clamping is more
+   forgiving of sloppy clients. Leaning error; flip if you disagree.
+2. **`config:` required for `TSVECTOR`.** Requiring it forces the author to
+   state the text-search configuration and makes the silent-mismatch
+   failure mode impossible to hit by omission. The alternative (default
+   `simple` or `english`) is friendlier but reintroduces exactly the silent
+   mismatch. Leaning required.
+3. **Root-only carrier gate in v1.** `@search` on child fields (nested
+   search under a parent row) is structurally possible later (the
+   `TableField` leaf carries the same slots) but rejected in v1 to keep the
+   surface small. Confirm the deferral is acceptable.
+4. **Oracle test placement (logistics, does not gate).** Sikt holds a jOOQ
+   license, so Oracle-dialect codegen is a committed requirement; the open
+   logistics question is where licensed execution tests run (worst case
+   Sikt's internal GitLab pipelines; optionally ask Lukas whether a CI
+   license for this repo is possible). Phase 3's acceptance is written to
+   be satisfiable without public-CI Oracle.
 
 ## Dead ends (recorded so they are not relitigated)
 
@@ -294,6 +578,10 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-15 (Spec): expanded to a full plan (authored `@search` surface,
+  promoter-ridden hit-type synthesis, `SearchSpec`/`SearchBacking` model,
+  per-kind SQL templates, rejection matrix, three-phase landing) and
+  transitioned Backlog → Spec.
 - 2026-07-15 (later): resolved the jOOQ-meta feasibility question
   empirically (see the dedicated section); no open question gates the Spec
   transition any longer. Also recorded why we stay on our authored fixture
