@@ -53,7 +53,7 @@ class FieldSourceSigilPipelineTest {
      * {@code @service}-backed mutation. The directive admits as a no-op confirmation of the
      * implicit binding the SDL element type already produces; the mutation classifies as
      * {@link MutationField.MutationServiceRecordField} and the data field classifies as
-     * {@link ChildField.RecordTableField}.
+     * {@link ChildField.BatchedTableField}.
      */
     @Test
     void sourceSigil_serviceCarrier_typeMatches_admits() {
@@ -68,14 +68,14 @@ class FieldSourceSigilPipelineTest {
         assertThat(schema.type("FilmListPayload"))
             .isInstanceOf(GraphitronType.JooqTableRecordType.class);
         var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var srtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var srtf = (ChildField.BatchedTableField) dataField;
         assertThat(srtf.returnType().table().tableName()).isEqualTo("film");
     }
 
     /**
      * Model-shape regression: the same carrier without {@code @field(name: "$source")} produces
-     * a byte-identical {@link ChildField.RecordTableField} on the data field. R159 reshapes
+     * a byte-identical {@link ChildField.BatchedTableField} on the data field. R159 reshapes
      * no existing fixture.
      */
     @Test
@@ -83,8 +83,8 @@ class FieldSourceSigilPipelineTest {
         var withDirective = TestSchemaHelper.buildSchema(FILM_PAYLOAD_WITH_SOURCE);
         var withoutDirective = TestSchemaHelper.buildSchema(FILM_PAYLOAD_NO_DIRECTIVE);
 
-        var w = (ChildField.RecordTableField) withDirective.field("FilmListPayload", "films");
-        var n = (ChildField.RecordTableField) withoutDirective.field("FilmListPayload", "films");
+        var w = (ChildField.BatchedTableField) withDirective.field("FilmListPayload", "films");
+        var n = (ChildField.BatchedTableField) withoutDirective.field("FilmListPayload", "films");
         assertThat(w.returnType()).isEqualTo(n.returnType());
         assertThat(w.sourceKey()).isEqualTo(n.sourceKey());
     }

@@ -93,10 +93,10 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
-        // R305: the former SingleRecordTableField carrier collapsed into RecordTableField — a
+        // R305: the former SingleRecordTableField carrier collapsed into BatchedTableField — a
         // source=target re-fetch keyed on the PK read off the produced record(s).
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) dataField;
         assertThat(rtf.returnType()).isInstanceOf(ReturnTypeRef.TableBoundReturnType.class);
         assertThat(rtf.returnType().table().tableName()).isEqualTo("film");
         assertThat(rtf.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
@@ -118,12 +118,12 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
         // R258: UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
-        // R305: the data field classifies as RecordTableField (per-key cardinality ONE) for both.
+        // R305: the data field classifies as BatchedTableField (per-key cardinality ONE) for both.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) dataField;
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
@@ -214,7 +214,7 @@ class SingleRecordPayloadPipelineTest {
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(MutationField.MutationInsertTableField.class);
         // Film.title classifies through the existing TableBackedType arm, not the carrier arm.
-        assertThat(schema.field("Film", "title")).isNotInstanceOf(ChildField.RecordTableField.class);
+        assertThat(schema.field("Film", "title")).isNotInstanceOf(ChildField.BatchedTableField.class);
     }
 
     @Test
@@ -235,7 +235,7 @@ class SingleRecordPayloadPipelineTest {
             """);
 
         var dataField = schema.field("FilmCarrier", "films");
-        assertThat(dataField).isNotInstanceOf(ChildField.RecordTableField.class);
+        assertThat(dataField).isNotInstanceOf(ChildField.BatchedTableField.class);
     }
 
     @Test
@@ -269,7 +269,7 @@ class SingleRecordPayloadPipelineTest {
             """);
 
         var dataField = schema.field("FilmPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
     }
@@ -415,7 +415,7 @@ class SingleRecordPayloadPipelineTest {
     void fetcherEmitter_revertedTwoArms() throws Exception {
         // Source-level structural assertion: FetcherEmitter.dataFetcherValue has reverted the
         // IdentityPassthrough capability arm; NestingField dispatches on its own permit. (R290
-        // dissolved ConstructorField; R305 collapsed SingleRecordTableField into RecordTableField,
+        // dissolved ConstructorField; R305 collapsed SingleRecordTableField into BatchedTableField,
         // which dispatches through the DataLoader path in TypeFetcherGenerator, not a bind arm here.)
         var src = Files.readString(Path.of(
             "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
@@ -543,8 +543,8 @@ class SingleRecordPayloadPipelineTest {
         // single-input form). The validator-mirror allow-list admits this arm; the runtime
         // fetcher honors the null-source short-circuit guard the LocalContext catch path needs.
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var srtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var srtf = (ChildField.BatchedTableField) dataField;
         assertThat(srtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
@@ -573,8 +573,8 @@ class SingleRecordPayloadPipelineTest {
             .isInstanceOf(ChildField.Transport.LocalContext.class);
 
         var dataField = schema.field("FilmPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) dataField).lift())
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(((ChildField.BatchedTableField) dataField).lift())
             .isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
                 pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
     }

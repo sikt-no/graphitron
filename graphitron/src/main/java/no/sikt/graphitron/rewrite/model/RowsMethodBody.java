@@ -45,9 +45,13 @@ public sealed interface RowsMethodBody {
      */
     CodeBlock content();
 
-    /** SQL body for {@code SplitTableField} — flat correlated-batch SELECT plus scatter. */
-    record SqlSplitTable(CodeBlock content) implements RowsMethodBody {
-        public SqlSplitTable {
+    /**
+     * SQL body for {@code BatchedTableField} — flat correlated-batch SELECT plus scatter, keyed
+     * off the parent-lifted key tuple (both source shapes; the SQL framing was identical for the
+     * pre-merge {@code SqlSplitTable} / {@code SqlRecordTable} permits, R432).
+     */
+    record SqlBatchedTable(CodeBlock content) implements RowsMethodBody {
+        public SqlBatchedTable {
             Objects.requireNonNull(content, "content");
         }
     }
@@ -55,13 +59,6 @@ public sealed interface RowsMethodBody {
     /** SQL body for {@code SplitLookupTableField} — adds a {@code @lookupKey} VALUES join. */
     record SqlSplitLookupTable(CodeBlock content) implements RowsMethodBody {
         public SqlSplitLookupTable {
-            Objects.requireNonNull(content, "content");
-        }
-    }
-
-    /** SQL body for {@code RecordTableField} — flat join keyed off the class-backed parent. */
-    record SqlRecordTable(CodeBlock content) implements RowsMethodBody {
-        public SqlRecordTable {
             Objects.requireNonNull(content, "content");
         }
     }

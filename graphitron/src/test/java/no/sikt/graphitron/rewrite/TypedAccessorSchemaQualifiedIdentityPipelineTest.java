@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * record-class identity ({@code ServiceCatalog.resolveTableByRecordClass}) and carries jOOQ's
  * unqualified canonical name {@code "event"}; the element side carries the verbatim qualified echo
  * {@code "multischema_a.event"}. Before R441 the match compared those two names and dropped the
- * accessor, rejecting the field with the {@code RecordTableField … requires a typed accessor or
+ * accessor, rejecting the field with the {@code BatchedTableField … requires a typed accessor or
  * @sourceRow} error; after R441 the compare routes through the reified {@code tableClass} identity.
  *
  * <p>Two directions are pinned. Both are real classifier outcomes reached through the full SDL →
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li>Qualified match (the reported bug): accessor returns {@code multischema_a}'s
  *       {@code EventRecord}, element type is {@code @table(name: "multischema_a.event")} → classifies
- *       green as a {@link ChildField.RecordTableField} with an accessor-derived source. A false
+ *       green as a {@link ChildField.BatchedTableField} with an accessor-derived source. A false
  *       negative under the old bare-name compare.</li>
  *   <li>Genuine mismatch (the tightening guard): accessor returns {@code multischema_b}'s
  *       {@code EventRecord} against the same {@code multischema_a.event} element type → the accessor
@@ -96,8 +96,8 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
         var field = schema.field("EventPayload", "events");
         assertThat(field)
             .as("EventPayload.events must classify green via the accessor-derived source")
-            .isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) field;
+            .isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) field;
 
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
             assertThat(ac.accessor().methodName()).isEqualTo("events");
@@ -120,7 +120,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) field).rejection().message();
         assertThat(reason)
-            .contains("RecordTableField")
+            .contains("BatchedTableField")
             .contains("requires a typed accessor or @sourceRow")
             .contains("no FK metadata for the parent class");
     }

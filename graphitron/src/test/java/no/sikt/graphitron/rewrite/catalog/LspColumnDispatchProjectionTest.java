@@ -113,7 +113,7 @@ class LspColumnDispatchProjectionTest {
 
     @Test
     void tableTargetSplitQueryFieldDispatchesResolveOnElementTable() {
-        // @splitQuery makes it a SplitTableField, still collapsed onto TableTarget; element table
+        // @splitQuery makes it a BatchedTableField, still collapsed onto TableTarget; element table
         // resolution is identical, so @defaultOrder column completion works on the split path too.
         var snapshot = snapshotOf("""
             type Actor @table(name: "actor") { name: String }

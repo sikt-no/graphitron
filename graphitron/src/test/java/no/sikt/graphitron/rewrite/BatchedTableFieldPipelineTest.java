@@ -13,7 +13,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for
- * {@link no.sikt.graphitron.rewrite.model.ChildField.SplitTableField} emission (argres Phase 2b C1).
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} emission (argres Phase 2b C1).
  *
  * <p>Verifies the structural contract: a {@code @splitQuery} child field produces a
  * DataLoader-registering fetcher (returning {@code CompletableFuture}) and a paired rows method
@@ -22,7 +22,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * fetcher class containing any Split* field.
  */
 @PipelineTier
-class SplitTableFieldPipelineTest {
+class BatchedTableFieldPipelineTest {
 
     @Test
     void splitQueryField_producesDataLoaderFetcherAndRowsMethod() {
@@ -375,7 +375,7 @@ class SplitTableFieldPipelineTest {
                 "no.sikt.graphitron.rewrite.test.jooq.tables.Actor");
     }
 
-    // ===== SplitTableField under NestingField =====
+    // ===== BatchedTableField under NestingField =====
 
     @Test
     void nestingFieldWithSplitTableField_producesNestedFetchersClass() {
@@ -438,7 +438,7 @@ class SplitTableFieldPipelineTest {
             type Address @table(name: "address") { district: String }
             type Query { customer: Customer }
             """);
-        var field = (ChildField.SplitTableField) schema.field("Customer", "address");
+        var field = (ChildField.BatchedTableField) schema.field("Customer", "address");
 
         assertThat(field.joinPath().get(0))
             .as("hop 0 folds the condition into Hop.filter")
@@ -466,7 +466,7 @@ class SplitTableFieldPipelineTest {
             }
             type Query { film: Film }
             """);
-        var field = (ChildField.SplitTableField) schema.field("Film", "actors");
+        var field = (ChildField.BatchedTableField) schema.field("Film", "actors");
 
         assertThat(field.joinPath().get(0))
             .as("hop 0 carries no filter")

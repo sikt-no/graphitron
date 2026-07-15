@@ -95,19 +95,19 @@ class ReFetchDerivationTest {
 
     @Test
     void recordSourceCarrier_reFetches() {
-        // R305: the @service payload carrier's @table data field collapsed into RecordTableField —
+        // R305: the @service payload carrier's @table data field collapsed into BatchedTableField —
         // a Source.Child(Record) field projecting a Table target, so holds-records x Table target ->
         // re-fetch. Both the single and the list (bulk) carrier re-fetch (the source=target re-projection).
         GraphitronSchema single = TestSchemaHelper.buildSchema(RECORD_SOURCE_SINGLE);
         OutputField film = (OutputField) single.field("FilmPayload", "film");
-        assertThat(film).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
+        assertThat(film).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField.class);
         assertThat(film.requiresReFetch())
             .as("a Source.Child(Record) x Table-target carrier re-fetches (holds a produced record, R305)")
             .isTrue();
 
         GraphitronSchema list = TestSchemaHelper.buildSchema(RECORD_SOURCE_LIST);
         OutputField films = (OutputField) list.field("FilmListPayload", "films");
-        assertThat(films).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
+        assertThat(films).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField.class);
         assertThat(films.requiresReFetch()).isTrue();
 
         // Mirror agreement across the Record-source family: the validator's dispatchPerformsReFetch

@@ -17,6 +17,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.SourceKey;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -467,15 +468,17 @@ public class TypeClassGenerator {
             // parent-side or target-side depending on shape, and this walk runs only under
             // generate()'s TableType/NodeType filter, so every BatchKeyField it sees was
             // classified on a table-backed parent and carries parent-side columns read by
-            // buildKeyExtraction. The record-parent implementers key off a Java accessor via
+            // buildKeyExtraction. The record-sourced implementers key off the held object via
             // buildRecordParentKeyExtraction instead and may carry target-aligned columns; if one
             // ever leaked into this walk, the blanket arm would silently project wrong columns.
             // Fail at generation time rather than at runtime with a null DataLoader key.
-            if (f instanceof ChildField.RecordTableField
-                    || f instanceof ChildField.RecordLookupTableField
-                    || f instanceof ChildField.RecordTableMethodField)
+            // R432: the tripwire is the fact predicate (BatchKeyField capability + Record source
+            // shape), not a leaf list — a deliberate leaf-list-to-fact strengthening that also
+            // covers RecordTableMethodField (already Record-shaped) through the same gate.
+            if (f instanceof BatchKeyField
+                    && f instanceof ChildField cf && cf.sourceShape() == SourceShape.Record)
                 throw new IllegalStateException(
-                    "Record-parent field '" + f.name() + "' (" + f.getClass().getSimpleName()
+                    "Record-sourced field '" + f.name() + "' (" + f.getClass().getSimpleName()
                         + ") reached a table-parent $fields projection walk; its SourceKey columns"
                         + " are not parent-row columns and must not be force-projected");
             // A null sourceKey means the service method takes no Sources param: the field is a

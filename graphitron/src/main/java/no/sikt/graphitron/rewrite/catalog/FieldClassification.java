@@ -224,7 +224,7 @@ public sealed interface FieldClassification
     /**
      * A child field that navigates to (or stays at) a table scope and generates SQL.
      * Covers the four {@code ChildField.TableField} family permits ({@code TableField},
-     * {@code SplitTableField}, {@code LookupTableField}, {@code SplitLookupTableField})
+     * the Table-sourced {@code BatchedTableField} arm, {@code LookupTableField}, {@code SplitLookupTableField})
      * plus {@code TableInterfaceField} which adds the polymorphic axes (see
      * {@link TableInterface} for the polymorphic-only payload). The {@code splitBatched}
      * and {@code hasLookupKey} booleans encode the per-permit axes; the label switch
@@ -241,7 +241,7 @@ public sealed interface FieldClassification
 
     /**
      * A child field on a class-backed parent that resolves to a table-bound target
-     * via a DataLoader. Covers {@code ChildField.RecordTableField} and
+     * via a DataLoader. Covers the record-sourced {@code ChildField.BatchedTableField} arm and
      * {@code ChildField.RecordLookupTableField}.
      */
     record RecordTableTarget(

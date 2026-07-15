@@ -157,7 +157,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("stats");
     }
 
-    // ===== record-backed parent — RecordTableField =====
+    // ===== record-backed parent — BatchedTableField =====
 
     private static final String RECORD_TABLE_SDL = """
             type Language @table(name: "language") { name: String }
@@ -233,7 +233,7 @@ class FetcherPipelineTest {
 
     @Test
     void recordLookupTableField_onRecordType_hasInputRowsHelper() {
-        // Lookup-input VALUES helper — distinguishes RecordLookupTableField from RecordTableField.
+        // Lookup-input VALUES helper — distinguishes RecordLookupTableField from BatchedTableField.
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }
@@ -304,7 +304,7 @@ class FetcherPipelineTest {
     // ===== R268: @table DataLoader data field under a flipped @service Outcome payload =====
     //
     // The pairing R244's inventory lacked and the retired arm-switch allow-list wrongly rejected:
-    // a RecordTableField (DataLoader-resolved @table field) sibling to a WrapperArm errors field
+    // a BatchedTableField (DataLoader-resolved @table field) sibling to a WrapperArm errors field
     // under a root @service payload. The data field still gets its async DataLoader fetcher (which
     // arm-switches inside that method, narrowing Outcome.Success and reading the key off
     // success.value()), and its registration is a real fetcher reference, never graphql-java's
@@ -327,10 +327,10 @@ class FetcherPipelineTest {
 
     @Test
     void outcomePayload_tableDataField_emitsArmSwitchingDataLoaderFetcher() {
-        // RecordTableField classification under the WrapperArm payload: the @table field gets its
+        // BatchedTableField classification under the WrapperArm payload: the @table field gets its
         // async DataLoader fetcher method (the same CompletableFuture<DataFetcherResult<Record>>
-        // shape as the non-outcome RecordTableField), not a stub or a registration fall-through.
-        // Before R268 this schema failed validation outright (RecordTableField was off the
+        // shape as the non-outcome BatchedTableField), not a stub or a registration fall-through.
+        // Before R268 this schema failed validation outright (BatchedTableField was off the
         // arm-switch allow-list); the emission here is the structural proof the false rejection is
         // gone. The arm-switch prelude (narrow Success / completedFuture(null) on ErrorList) is
         // pinned behaviourally by the GraphQLQueryTest execution round-trip, not a body-string here.

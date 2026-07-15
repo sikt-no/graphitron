@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * R158 pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
  * DML carrier data fields. Verifies that an {@code @service} mutation returning {@code XRecord}
  * (single-record carrier) or {@code List<XRecord>} (list-record carrier) lands a
- * {@link ChildField.RecordTableField} on the carrier's data field (R305: the former
+ * {@link ChildField.BatchedTableField} on the carrier's data field (R305: the former
  * {@code SingleRecordTableField} collapsed into it) keyed on a source=target re-fetch key
  * ({@link SourceKey.Reader.ProducedRecordRead} + {@link SourceKey.Wrap.Row}, the PK read off the
  * produced record(s)). The {@code DIRECT} / {@code OUTCOME_SUCCESS} source envelope is no longer
@@ -48,8 +48,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(mutField).isInstanceOf(MutationField.MutationServiceRecordField.class);
 
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) dataField;
         var sk = rtf.sourceKey();
         // R305: source=target re-fetch key — ProducedRecordRead reads the PK off the produced
         // record, Wrap.Row carries the PK tuple. The DIRECT/OUTCOME_SUCCESS envelope is no longer
@@ -66,7 +66,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     /**
      * R275/R305: the source-record carrier with an error channel. Adding an {@code errors} field to
      * the payload routes the {@code @service} producer through the typed {@code Outcome} wrapper; the
-     * data field collapses into {@link ChildField.RecordTableField} (ProducedRecordRead source=target
+     * data field collapses into {@link ChildField.BatchedTableField} (ProducedRecordRead source=target
      * re-fetch) and the sibling errors field is the {@code WrapperArm} transport. The
      * {@code OUTCOME_SUCCESS} envelope is no longer recorded on the data field's SourceKey — the
      * generator derives it from the payload's error channel at the type level. This is the opptak
@@ -93,9 +93,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             """);
 
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var sk = ((ChildField.RecordTableField) dataField).sourceKey();
-        assertThat(((ChildField.RecordTableField) dataField).lift())
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var sk = ((ChildField.BatchedTableField) dataField).sourceKey();
+        assertThat(((ChildField.BatchedTableField) dataField).lift())
             .isInstanceOf(KeyLift.ProducedRecords.class);
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
 
@@ -139,8 +139,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(schema.field("Mutation", "runFilms"))
             .isInstanceOf(MutationField.MutationServiceRecordField.class);
         var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) dataField).lift())
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(((ChildField.BatchedTableField) dataField).lift())
             .isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
                 pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         var errorsField = schema.field("FilmListPayload", "errors");
@@ -339,8 +339,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             """);
 
         var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) dataField;
         var sk = rtf.sourceKey();
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
@@ -366,8 +366,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             """);
 
         var dataField = schema.field("FilmActorListPayload", "filmActors");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) dataField;
         var sk = rtf.sourceKey();
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
@@ -383,7 +383,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
      * the producer list into the {@code [FilmPayload]} list, so each element is one payload whose
      * single {@code film} resolves through a {@code LOAD_ONE} that coalesces into one batched
      * rows-method query. This shape worked by accident before R308 (no test exercised it at any tier);
-     * the shape verdict now admits it explicitly and this test pins the RecordTableField model +
+     * the shape verdict now admits it explicitly and this test pins the BatchedTableField model +
      * LOAD_ONE dispatch. Contrast the single-carrier {@code FilmListPayload { films: [Film!] }} above,
      * whose list data field is filled by the same producer list.
      */
@@ -402,8 +402,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(schema.field("Mutation", "runFilms"))
             .isInstanceOf(MutationField.MutationServiceRecordField.class);
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
+        var rtf = (ChildField.BatchedTableField) dataField;
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
         // Each payload element's single film re-fetches through LOAD_ONE; graphql-java coalesces the

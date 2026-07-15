@@ -317,7 +317,7 @@ final class RecordBindingResolver {
         // independent of the main result-axis fold and the existing RootService observation
         // above. The classifier-side dispatch in FieldBuilder.classifyChildFieldOnResultType
         // reads through TypeBuilder.serviceEmittedBinding to construct
-        // ChildField.RecordTableField with Wrap.TableRecord at the data-field coord.
+        // record-sourced ChildField.BatchedTableField with Wrap.TableRecord at the data-field coord.
         groundServicePayloadBinding(parent, field, method, className, methodName, resultSdl, loc);
 
         // Ground input-axis bindings from method parameters → SDL arg types.

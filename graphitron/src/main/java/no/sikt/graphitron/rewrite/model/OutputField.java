@@ -119,7 +119,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * with {@code ORDER BY idx}).
      *
      * <p>Re-fetch is orthogonal to the {@link #operation()} verb (R305): a field that re-fetches keeps
-     * its own operation. A record-source {@code RecordTableField} carrier (the former
+     * its own operation. A record-sourced {@code BatchedTableField} carrier (the former
      * {@code SingleRecordTableField}) keys off a producer record while its operation stays
      * {@link Operation.Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher
      * arms used to each re-decide from their own leaf type (R290). {@code GraphitronSchemaValidator}

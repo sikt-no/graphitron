@@ -236,8 +236,9 @@ public class GraphitronSchemaValidator {
      * predicate and the emitter cannot drift.
      *
      * <p>The {@code @service}-table and {@code DML}-projected-{@code @table} arms re-query from a
-     * produced record; the Record-source family ({@code RecordTableField} — into which the former
-     * {@code SingleRecordTableField} carriers collapsed — {@code RecordLookupTableField} /
+     * produced record; the Record-source family (the record-sourced {@code BatchedTableField} arm,
+     * into which the former {@code SingleRecordTableField} carriers collapsed via
+     * {@code RecordLookupTableField} /
      * {@code RecordTableMethodField})
      * re-projects the {@code @table} from keys read off a received record (R305). The
      * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
@@ -255,8 +256,11 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField ignored -> true;
             // R305 — the Record-source family re-projects the @table from keys held at the source
-            // (the former SingleRecordTableField carriers collapsed into RecordTableField).
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField ignored -> true;
+            // (the former SingleRecordTableField carriers collapsed into the record-sourced arm of
+            // the merged BatchedTableField, R432). The Table-sourced arm reads the parent's own
+            // catalog row and does not re-fetch, mirroring requiresReFetch's sourceShape read.
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f ->
+                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
@@ -342,7 +346,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField f    -> validateCompositeColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField f -> validateCompositeColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.SplitTableField f        -> validateSplitTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f      -> validateBatchedTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField f  -> validateSplitLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
@@ -353,7 +357,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField f        -> validateRecordTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField f  -> validateRecordLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // R275 — narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
@@ -906,12 +909,14 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateSplitTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateBatchedTableField(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         // Split+Connection partitions rows by parent key; without a total order, ROW_NUMBER() produces
         // silently non-deterministic slicing. Require an explicit ordering (@defaultOrder, @orderBy,
         // or a fixed list) at build time rather than letting the cursor encoder hash an empty tuple.
+        // Reachable only from the Table-sourced arm: the leaf's ctor rejects Record + Connection
+        // (invariant 4, R432), so this guard needs no sourceShape gate.
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             var orderBy = field.orderBy();
             boolean empty = orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.None
@@ -1004,28 +1009,38 @@ public class GraphitronSchemaValidator {
      * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads ({@code ColumnField},
      * {@code CompositeColumnField}, {@code TableField}, {@code LookupTableField},
      * {@code NestingField}) are reified onto it by {@code FetcherEmitter.bind}, and the class-backed
-     * leaves ({@code SplitTableField}, {@code SplitLookupTableField}) carry their heavy methods
-     * there. {@code TypeFetcherGenerator} emits that class for any nested type owning a fetcher (the
-     * {@code FetcherEmitter.nestedTypeOwnsFetchers} gate shared with
+     * leaves (Table-sourced {@code BatchedTableField}, {@code SplitLookupTableField}) carry their
+     * heavy methods there. {@code TypeFetcherGenerator} emits that class for any nested type owning
+     * a fetcher (the {@code FetcherEmitter.nestedTypeOwnsFetchers} gate shared with
      * {@code FetcherRegistrationsEmitter.nestedBody}, via a separate walk over
-     * {@code NestingField.nestedFields()}). Expanding this set requires the corresponding
+     * {@code NestingField.nestedFields()}). Expanding this predicate requires the corresponding
      * generator-side change.
+     *
+     * <p>A predicate rather than a class set since R432: the merged {@code BatchedTableField} is
+     * wireable at nested depth only on its Table-sourced arm — a nested plain-object type shares
+     * the parent's table context, which the record-sourced arm's key lift does not read. Admitting
+     * record-sourced instances here would silently wire them into nested fetchers the emit arms
+     * never supported (the pre-merge set contained only the Split variants).
      */
-    private static final java.util.Set<Class<? extends GraphitronField>> NESTED_WIREABLE_LEAVES = java.util.Set.of(
-        ChildField.ColumnField.class,
-        ChildField.CompositeColumnField.class,
-        ChildField.TableField.class,
-        ChildField.LookupTableField.class,
-        ChildField.NestingField.class,
-        ChildField.SplitTableField.class,
-        ChildField.SplitLookupTableField.class);
+    private static boolean isNestedWireableLeaf(GraphitronField field) {
+        return switch (field) {
+            case ChildField.ColumnField ignored -> true;
+            case ChildField.CompositeColumnField ignored -> true;
+            case ChildField.TableField ignored -> true;
+            case ChildField.LookupTableField ignored -> true;
+            case ChildField.NestingField ignored -> true;
+            case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;
+            case ChildField.SplitLookupTableField ignored -> true;
+            default -> false;
+        };
+    }
 
     private void validateVariantIsSupportedAtNestedDepth(GraphitronField field, List<ValidationError> errors) {
         // Stubbed variants already surfaced by validateVariantIsImplemented, don't double-report.
         if (TypeFetcherGenerator.STUBBED_VARIANTS.containsKey(field.getClass())) {
             return;
         }
-        if (!NESTED_WIREABLE_LEAVES.contains(field.getClass())) {
+        if (!isNestedWireableLeaf(field)) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
             Rejection.deferred("Field '" + field.qualifiedName() + "': " + field.getClass().getSimpleName()
@@ -1223,10 +1238,6 @@ public class GraphitronSchemaValidator {
         }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
-    private void validateRecordTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-    }
     private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
@@ -1392,7 +1403,7 @@ public class GraphitronSchemaValidator {
      * {@code null}; otherwise the catch path renders {@code data} as a corrupt half-payload instead
      * of the SDL-level {@code data: null, errors: [...]} shape. The {@code @service}-payload
      * lifting in {@code FieldBuilder.findPayloadErrorsBinding} keeps the data-channel role's
-     * variants within {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} by construction. R161
+     * variants within {@link #isLocalContextGuardedDataChannel} by construction. R161
      * widens that admission to mutation DML record fields, and any future widening that admits a
      * non-guarded variant must extend the allow-list along with the matching fetcher's null-source
      * guard. This validator pass is the cross-check that turns a silently-broken admission into a
@@ -1405,7 +1416,7 @@ public class GraphitronSchemaValidator {
             for (var sib : schema.fieldsOf(ef.parentTypeName())) {
                 if (sib == ef) continue;
                 if (sib instanceof ChildField.ErrorsField) continue;
-                if (!LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS.contains(sib.getClass())) {
+                if (!isLocalContextGuardedDataChannel(sib)) {
                     errors.add(new ValidationError(
                         ef.qualifiedName(),
                         Rejection.structural("Field '" + ef.qualifiedName()
@@ -1426,22 +1437,32 @@ public class GraphitronSchemaValidator {
      * {@link ChildField.Transport.LocalContext}:
      *
      * <ul>
-     *   <li>{@code RecordTableField} → {@code buildRecordBasedDataFetcher} (explicit
-     *       {@code if (env.getSource() == null) return completedFuture(null);} prelude before the
-     *       key read; the {@code OUTCOME_SUCCESS} arm's {@code instanceof Success} narrowing also
-     *       rejects null). This is the R305 successor to the former {@code SingleRecordTableField}
-     *       carrier, which collapsed into {@code RecordTableField}.</li>
+     *   <li>Record-sourced {@code BatchedTableField} → {@code buildRecordBasedDataFetcher}
+     *       (explicit {@code if (env.getSource() == null) return completedFuture(null);} prelude
+     *       before the key read; the {@code OUTCOME_SUCCESS} arm's {@code instanceof Success}
+     *       narrowing also rejects null). This is the R305 successor to the former
+     *       {@code SingleRecordTableField} carrier, which collapsed into {@code RecordTableField}
+     *       (merged into the record-sourced arm by R432). The Table-sourced arm is deliberately
+     *       excluded: {@code buildSplitQueryDataFetcher} carries no null-source guard, exactly as
+     *       the pre-merge {@code SplitTableField} was absent from this allow-list.</li>
      *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
      *       (explicit guard before encoder dispatch).</li>
      * </ul>
      *
-     * <p>Adding a variant to this set requires the matching emitter site to honor the guard;
-     * removing the guard from an existing emitter arm must remove the variant from this set.
+     * <p>The lookup twin ({@code RecordLookupTableField}) is not admitted — it was absent from the
+     * pre-merge allow-list and its fetcher's guard has not been audited; preserve the asymmetry
+     * rather than silently widening (R432).
+     *
+     * <p>Admitting a variant here requires the matching emitter site to honor the guard;
+     * removing the guard from an existing emitter arm must remove the variant here.
      */
-    private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
-        ChildField.RecordTableField.class,
-        ChildField.SingleRecordIdFieldFromReturning.class
-    );
+    private static boolean isLocalContextGuardedDataChannel(GraphitronField field) {
+        return switch (field) {
+            case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
+            case ChildField.SingleRecordIdFieldFromReturning ignored -> true;
+            default -> false;
+        };
+    }
 
     /**
      * R244 ; mirror-the-classifier check for the single-errors-field invariant on outcome types.

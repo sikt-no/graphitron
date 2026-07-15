@@ -48,7 +48,7 @@ public sealed interface ChildField extends OutputField
      * the parent type's backing: a {@code @table}-backed (catalog) parent puts a table row
      * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a domain
      * record ({@link SourceShape#Record}). The classifier already projected the parent's backing into
-     * this leaf's identity ({@code RecordTableField} vs {@code TableField}, {@code RecordField} vs
+     * this leaf's identity (the {@code BatchedTableField} stored gate, {@code RecordField} vs
      * {@code ColumnField}, the {@code SingleRecord*} / {@code Errors} payload fields), so the
      * leaf-exhaustive switch is that projection; a new leaf forces a source-shape decision the same
      * way {@link #operation()} / {@link #target()} do.
@@ -68,7 +68,6 @@ public sealed interface ChildField extends OutputField
             case CompositeColumnField ignored -> SourceShape.Table;
             case CompositeColumnReferenceField ignored -> SourceShape.Table;
             case TableField ignored -> SourceShape.Table;
-            case SplitTableField ignored -> SourceShape.Table;
             case LookupTableField ignored -> SourceShape.Table;
             case SplitLookupTableField ignored -> SourceShape.Table;
             case TableInterfaceField ignored -> SourceShape.Table;
@@ -79,9 +78,13 @@ public sealed interface ChildField extends OutputField
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
+            // The merged batched re-query leaf (R432): the parent backing is a stored component,
+            // not a leaf identity — read it. SourceShapeProjectionTest's cross-check against the
+            // independently-classified parent backing keeps holding and gets stronger here (a
+            // stored fact checked against a walk, not a tautology of leaf identity).
+            case BatchedTableField f -> f.sourceShape();
             // Record-backed parents (DTO batching, @service / DML payload carriers): the source is a
             // producer-handed domain record.
-            case RecordTableField ignored -> SourceShape.Record;
             case RecordLookupTableField ignored -> SourceShape.Record;
             case RecordTableMethodField ignored -> SourceShape.Record;
             case RecordField ignored -> SourceShape.Record;
@@ -104,9 +107,8 @@ public sealed interface ChildField extends OutputField
             case CompositeColumnReferenceField ignored -> OutputField.bareFetch();
             // Table targets carrying a filter surface: Paginate when the wrapper is a connection, else Fetch.
             case TableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            case SplitTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            case BatchedTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             case TableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
-            case RecordTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             // Method-backed / polymorphic table reads carry no field-level filter surface.
             case TableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case RecordTableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
@@ -145,12 +147,11 @@ public sealed interface ChildField extends OutputField
             case CompositeColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
             // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
             case TableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case SplitTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case BatchedTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case LookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case SplitLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case RecordTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case RecordLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case RecordTableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
@@ -185,7 +186,7 @@ public sealed interface ChildField extends OutputField
      * RETURNING rows; this data field's fetcher reads PK column(s) off the source {@code Record}
      * and runs them through {@link #encode} to produce the encoded NodeId.
      *
-     * <p>Sibling of the {@code RecordTableField} carrier re-fetch ("follow-up SELECT,"
+     * <p>Sibling of the record-sourced {@code BatchedTableField} carrier re-fetch ("follow-up SELECT,"
      * load-bearing for INSERT / UPDATE / UPSERT carriers) and {@link SingleRecordIdField} ("encoded
      * key off an {@code @service} producer's in-memory record"). The three encode genuinely
      * different invariants — follow-up SELECT vs no-follow-up-encoded-PK-off-RETURNING vs
@@ -223,7 +224,7 @@ public sealed interface ChildField extends OutputField
      * {@code fjernSakTagger} delete-then-echo mutations are the driving case: the record the
      * service returns is already deleted from the database).
      *
-     * <p>Sibling of the {@code RecordTableField} carrier re-fetch ("follow-up SELECT off the
+     * <p>Sibling of the record-sourced {@code BatchedTableField} carrier re-fetch ("follow-up SELECT off the
      * producer's record") and {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
      * RETURNING {@code Record}, read by SQL name"). It differs
      * from {@code SingleRecordIdFieldFromReturning} on the source shape, not just the envelope:
@@ -437,11 +438,11 @@ public sealed interface ChildField extends OutputField
      * table context unchanged.
      */
     sealed interface TableTargetField extends ChildField, SqlGeneratingField
-        permits ChildField.TableField, ChildField.SplitTableField,
+        permits ChildField.TableField, ChildField.BatchedTableField,
                 ChildField.LookupTableField, ChildField.SplitLookupTableField,
                 ChildField.TableInterfaceField,
                 ChildField.ServiceTableField,
-                ChildField.RecordTableField, ChildField.RecordLookupTableField {
+                ChildField.RecordLookupTableField {
 
         ReturnTypeRef.TableBoundReturnType returnType();
         List<JoinStep> joinPath();
@@ -496,7 +497,33 @@ public sealed interface ChildField extends OutputField
         }
     }
 
-    record SplitTableField(
+    /**
+     * A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
+     * tuple lifted off the parent's held object, one leaf for both parent backings (R432, the
+     * R333 "full merge, laundered key" resolution). The keyed re-query is one primitive
+     * {@code f(keys, correlation)}; the source endpoint contributes only how the key tuple is
+     * lifted, never visible to the query unit.
+     *
+     * <p>"Batched" names what distinguishes this leaf from the inline {@link TableField}: the
+     * field launches its own keyed, DataLoader-batched re-query anchor (the {@link BatchKeyField}
+     * capability sense; distinct from the arrival-cardinality sense in which {@link Source.Child}
+     * fetchers are DataLoader-batched, which applies to arrival, not to this leaf axis).
+     *
+     * @param sourceShape the source gate: {@link SourceShape#Table} for a catalog table-row
+     *     parent (the {@code @splitQuery} shape), {@link SourceShape#Record} for a
+     *     producer-handed domain-record parent (a {@code @service} / DML payload carrier).
+     *     Stored, not derived from {@link #lift()}: {@link KeyLift.FkColumns} is legitimately
+     *     carried by both a table-row parent and a jOOQ-record-backed result parent, so the
+     *     parent-backing fact cannot be recovered from the lift mechanism.
+     * @param lift how the key tuple is lifted off the parent's held object — total on this leaf.
+     *     The Table arm always carries {@link KeyLift.FkColumns} (project columns off the held
+     *     jOOQ record; its derived wrap is the {@code Row} residue the split mint stores); the
+     *     Record arm carries whichever mechanism the parent's backing admits. The Table arm's
+     *     lift is consumed only by {@link KeyLift#checkResidueAgreement} today (the Table emit
+     *     path stays wrap-driven); storing it consistent-by-construction is deliberate
+     *     provisioning for R314's unified fetcher.
+     */
+    record BatchedTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -505,45 +532,97 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
+        SourceShape sourceShape,
         SourceKey sourceKey,
+        KeyLift lift,
         LoaderRegistration loaderRegistration,
         ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField {
-        public SplitTableField {
-            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitTableField");
-            // R435 leaf-specific surface pins, mirroring TableField's: a routine-bearing path
-            // carries exactly one routine node and none of the surfaces the batched emit does
-            // not render for routine chains. Additionally, a lateral-headed split keys the
-            // batch on the routine's column-bound inputs, so its sourceKey can never be empty
-            // (the classifier rejects the uncorrelated combination as DirectiveConflict).
-            long routineNodes = joinPath.stream()
-                .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
-                .count();
-            if (routineNodes > 0) {
-                boolean dayOneSurface = routineNodes == 1
-                    && filters.isEmpty()
-                    && !(orderBy instanceof OrderBySpec.Argument)
-                    && pagination == null
-                    && !(returnType.wrapper() instanceof FieldWrapper.Connection);
-                if (!dayOneSurface) {
+        public BatchedTableField {
+            // (1) the lift is total and must agree with the key residue it derives.
+            java.util.Objects.requireNonNull(lift, "lift");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedTableField");
+            // (2) carrier invariant, unchanged from both pre-merge leaves.
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "BatchedTableField");
+            java.util.Objects.requireNonNull(sourceShape, "sourceShape");
+            if (sourceShape == SourceShape.Table) {
+                // (3) a table row is lifted only by column projection; the member-read lifts
+                // (Lifter / Accessor / ProducedRecords) are class-backed-parent mechanisms.
+                // Checked, not structural: the sealed-gate alternative would mint a second
+                // representation of the source-shape axis alongside SourceShape (see R432).
+                if (!(lift instanceof KeyLift.FkColumns)) {
                     throw new IllegalArgumentException(
-                        "SplitTableField with a routine-node path must be the batched correlated "
-                        + "chain shape (exactly one lateral routine node, no filters/"
-                        + "argument-ordering/pagination, non-Connection); other routine chain "
-                        + "shapes classify as typed Deferred (R435)");
+                        "BatchedTableField with sourceShape=Table must lift by column projection "
+                        + "(KeyLift.FkColumns); a member-read lift (" + lift.getClass().getSimpleName()
+                        + ") is a class-backed-parent mechanism");
                 }
-            }
-            if (parentCorrelation instanceof ParentCorrelation.OnLateralArgs
-                    && sourceKey.columns().isEmpty()) {
-                throw new IllegalArgumentException(
-                    "SplitTableField with a lateral-headed path must key the batch on the "
-                    + "routine's column-bound inputs; an empty sourceKey is the uncorrelated "
-                    + "shape, which the classifier rejects as DirectiveConflict (R435)");
+                // (6) every table-sourced mint dispatches LOAD_ONE (deriveSplitQuerySource's
+                // former prose guarantee, now structural). This is what keeps the unified
+                // emitsSingleRecordPerKey formula behavior-identical for the Table arm: the
+                // LOAD_MANY disjunct is unreachable here by construction, so a future mint
+                // cannot silently flip a table-sourced field's per-key cardinality.
+                if (loaderRegistration.dispatch() != LoaderRegistration.Dispatch.LOAD_ONE) {
+                    throw new IllegalArgumentException(
+                        "BatchedTableField with sourceShape=Table must dispatch LOAD_ONE; the "
+                        + "loadMany contract is an accessor-arity (record-parent) shape");
+                }
+                // (5) R435 leaf-specific surface pins, mirroring TableField's: a routine-bearing
+                // path carries exactly one routine node and none of the surfaces the batched emit
+                // does not render for routine chains. Additionally, a lateral-headed split keys
+                // the batch on the routine's column-bound inputs, so its sourceKey can never be
+                // empty (the classifier rejects the uncorrelated combination as
+                // DirectiveConflict). Table-gated: whether these should hold universally is an
+                // in-flight refinement question, not assumed — widening to Record would add
+                // unaudited checks (R432).
+                long routineNodes = joinPath.stream()
+                    .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
+                    .count();
+                if (routineNodes > 0) {
+                    boolean dayOneSurface = routineNodes == 1
+                        && filters.isEmpty()
+                        && !(orderBy instanceof OrderBySpec.Argument)
+                        && pagination == null
+                        && !(returnType.wrapper() instanceof FieldWrapper.Connection);
+                    if (!dayOneSurface) {
+                        throw new IllegalArgumentException(
+                            "BatchedTableField with a routine-node path must be the batched correlated "
+                            + "chain shape (exactly one lateral routine node, no filters/"
+                            + "argument-ordering/pagination, non-Connection); other routine chain "
+                            + "shapes classify as typed Deferred (R435)");
+                    }
+                }
+                if (parentCorrelation instanceof ParentCorrelation.OnLateralArgs
+                        && sourceKey.columns().isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "BatchedTableField with a lateral-headed path must key the batch on the "
+                        + "routine's column-bound inputs; an empty sourceKey is the uncorrelated "
+                        + "shape, which the classifier rejects as DirectiveConflict (R435)");
+                }
+            } else {
+                // (4) no record-parent Connection mint exists; the Connection emit arm and its
+                // ORDER-BY validator guard stay reachable only from the Table arm, by
+                // construction instead of by leaf identity.
+                if (returnType.wrapper() instanceof FieldWrapper.Connection) {
+                    throw new IllegalArgumentException(
+                        "BatchedTableField with sourceShape=Record cannot be a Connection; no "
+                        + "record-parent Connection mint exists (R432)");
+                }
             }
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
-            return !returnType().wrapper().isList();
+            // One definition for both arms. Two structurally distinct triggers fold onto the
+            // same router decision in SplitRowsMethodEmitter: (a) single-cardinality fields
+            // whose data-fetcher wants `Record` per key (one row per parent), and (b) the
+            // loader.loadMany contract whose per-key value is `Record` regardless of field
+            // cardinality. The LOAD_MANY disjunct is unreachable on the Table arm (ctor
+            // invariant: Table implies LOAD_ONE), so the unified formula is structurally
+            // behavior-identical to the pre-merge split leaf's `!isList`. The
+            // {@link LoaderRegistration.Dispatch} projection is the single source of truth for
+            // (b) — TypeFetcherGenerator's record-based fetcher reads the same predicate to
+            // decide its valueType, so the two emit sites cannot drift.
+            return !returnType().wrapper().isList()
+                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
@@ -627,7 +706,7 @@ public sealed interface ChildField extends OutputField
      * parent that uses {@code @tableMethod} to bind a developer-authored static jOOQ table method.
      * The parent has no parent-table alias to join from, so the developer's table is joined against
      * a DataLoader-keyed batch lifted out of the parent DTO via {@link #sourceKey}, mirroring the
-     * existing {@link RecordTableField} / {@link RecordLookupTableField} pattern. {@link #joinPath}
+     * existing record-sourced {@link BatchedTableField} / {@link RecordLookupTableField} pattern. {@link #joinPath}
      * is the resolved parent-to-target chain: {@code [fkJoin]} for the FK-auto-derive arm on a
      * jOOQ-table-record-backed parent, the lifter's resolved chain on the {@code @sourceRow} arm.
      *
@@ -839,7 +918,7 @@ public sealed interface ChildField extends OutputField
          * record IS-A jOOQ {@code Record} and the @table-bound child datafetchers read columns
          * by name through the generic {@code Record} interface. The consumer-level identity is
          * therefore {@code Record(table)}, agreeing with the SQL-emit table-bound producers
-         * ({@link TableField}, {@link RecordTableField}, etc.) so a {@code @table}-bound SDL
+         * ({@link TableField}, {@link BatchedTableField}, etc.) so a {@code @table}-bound SDL
          * type reached by both a service and an SQL-emit producer does not surface as a
          * spurious conflict.
          */
@@ -925,42 +1004,6 @@ public sealed interface ChildField extends OutputField
         }
     }
 
-    record RecordTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<JoinStep> joinPath,
-        List<WhereFilter> filters,
-        OrderBySpec orderBy,
-        PaginationSpec pagination,
-        SourceKey sourceKey,
-        KeyLift lift,
-        LoaderRegistration loaderRegistration,
-        ParentCorrelation parentCorrelation
-    ) implements TableTargetField, BatchKeyField {
-        public RecordTableField {
-            java.util.Objects.requireNonNull(lift, "lift");
-            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableField");
-            KeyLift.checkResidueAgreement(lift, sourceKey, "RecordTableField");
-        }
-        @Override
-        public boolean emitsSingleRecordPerKey() {
-            // Two structurally distinct triggers fold onto the same router decision in
-            // SplitRowsMethodEmitter.buildForRecordTable: (a) single-cardinality fields whose
-            // data-fetcher wants `Record` per key (one row per parent), and (b) the
-            // loader.loadMany contract whose per-key value is `Record` regardless of field
-            // cardinality. The {@link LoaderRegistration.Dispatch} projection is the single
-            // source of truth for (b) — TypeFetcherGenerator.buildRecordBasedDataFetcher reads
-            // the same predicate to decide its valueType, so the two emit sites cannot drift.
-            return !returnType().wrapper().isList()
-                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
     record RecordLookupTableField(
         String parentTypeName,
         String name,
@@ -983,9 +1026,9 @@ public sealed interface ChildField extends OutputField
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
-            // Mirrors RecordTableField: single-cardinality fields fold onto the same
+            // Mirrors BatchedTableField: single-cardinality fields fold onto the same
             // single-record-per-key arm as the LOAD_MANY loadMany-contract dispatch. See
-            // RecordTableField.emitsSingleRecordPerKey for the single-source-of-truth notes.
+            // BatchedTableField.emitsSingleRecordPerKey for the single-source-of-truth notes.
             return !returnType().wrapper().isList()
                 || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
@@ -1039,7 +1082,7 @@ public sealed interface ChildField extends OutputField
      * data field's element SDL type ({@code returnType}), whose {@code @field}-mapped {@code @table}
      * children resolve through the record-backed accessor path off the composite.
      *
-     * <p>Sibling of {@link RecordTableField} (the {@code @table}-element carrier data field, a
+     * <p>Sibling of the record-sourced {@link BatchedTableField} arm (the {@code @table}-element carrier data field, a
      * PK-keyed re-fetch) and {@link RecordField} (a scalar / accessor read). It differs on the axes
      * the model already separates: its {@link #target()} is {@code listOrSingle(Record)} (the element
      * is a record-backed result type, not a {@code @table} {@code wrap(Table)} and not a scalar

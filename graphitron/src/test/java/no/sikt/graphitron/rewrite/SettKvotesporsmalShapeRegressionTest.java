@@ -28,11 +28,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two pins:
  * <ol>
- *   <li>Identical-classification pin: both forms produce a {@link ChildField.RecordTableField}
+ *   <li>Identical-classification pin: both forms produce a {@link ChildField.BatchedTableField}
  *       at {@code <Payload>.film} reading via the {@code SinglePayload.film()} accessor on
  *       the record-backed parent. The mutation classifies admit
  *       ({@link MutationField.MutationServiceRecordField}). No
- *       {@link ChildField.RecordTableField} (the carrier-walk-shape permit) is produced.</li>
+ *       {@link ChildField.BatchedTableField} (the carrier-walk-shape permit) is produced.</li>
  *   <li>Diagnostic-wording pin: when the {@code @service} method's reflected return type
  *       doesn't match the payload class, the diagnostic cites the payload class (not the
  *       inner table's record class). The diagnostic family migrates from the carrier walk's
@@ -73,10 +73,10 @@ class SettKvotesporsmalShapeRegressionTest {
         assertThat(mut).isInstanceOf(MutationField.MutationServiceRecordField.class);
 
         var df = schema.field("Payload", "film");
-        assertThat(df).isInstanceOf(ChildField.RecordTableField.class);
+        assertThat(df).isInstanceOf(ChildField.BatchedTableField.class);
         // R305: the standard record-parent path (not the carrier re-fetch); its lift is
         // the catalog-FK/accessor read, not the source=target ProducedRecords carrier lift.
-        assertThat(((ChildField.RecordTableField) df).lift())
+        assertThat(((ChildField.BatchedTableField) df).lift())
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
 
@@ -103,8 +103,8 @@ class SettKvotesporsmalShapeRegressionTest {
         assertThat(mut).isInstanceOf(MutationField.MutationServiceRecordField.class);
 
         var df = schema.field("Payload", "film");
-        assertThat(df).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) df).lift())
+        assertThat(df).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(((ChildField.BatchedTableField) df).lift())
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
 

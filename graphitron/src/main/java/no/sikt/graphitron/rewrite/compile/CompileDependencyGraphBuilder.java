@@ -387,11 +387,10 @@ public final class CompileDependencyGraphBuilder {
             // DataLoader-backed / record-parent / polymorphic / service leaves are not emitted inline
             // into this $fields method (TypeClassGenerator collects only TableField/LookupTableField);
             // their projection edges are sourced from their own <parent>Fetchers unit in addFieldEdges.
-            case ChildField.SplitTableField ignored -> { }
+            case ChildField.BatchedTableField ignored -> { }
             case ChildField.SplitLookupTableField ignored -> { }
             case ChildField.TableInterfaceField ignored -> { }
             case ChildField.ServiceTableField ignored -> { }
-            case ChildField.RecordTableField ignored -> { }
             case ChildField.RecordLookupTableField ignored -> { }
             case ChildField.TableMethodField ignored -> { }
             case ChildField.RecordTableMethodField ignored -> { }

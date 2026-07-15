@@ -167,8 +167,9 @@ public final class CatalogBuilder {
 
     /**
      * R159 — projects the carrier-data-field coordinates onto the LSP snapshot. Walks
-     * {@link GraphitronSchema#fields()} for fields classified as
-     * {@code ChildField.RecordTableField}, {@code SingleRecordIdField}, or
+     * {@link GraphitronSchema#fields()} for fields classified as a
+     * {@code ChildField.BatchedTableField} payload carrier (a {@code KeyLift.ProducedRecords}
+     * lift), {@code SingleRecordIdField}, or
      * {@code SingleRecordIdFieldFromReturning}; each marks its parent type as a single-record
      * carrier whose data field name is the field's own name.
      */
@@ -177,8 +178,8 @@ public final class CatalogBuilder {
         for (var entry : schema.fields().entrySet()) {
             var field = entry.getValue();
             boolean isPayloadData =
-                (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordTableField rtf
-                    && rtf.lift() instanceof no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords)
+                (field instanceof no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
+                    && btf.lift() instanceof no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords)
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
             if (isPayloadData) {
@@ -252,9 +253,15 @@ public final class CatalogBuilder {
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, false);
-            case ChildField.SplitTableField f ->
-                new FieldClassification.TableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), true, false);
+            // R432: the merged batched leaf projects onto the same two classifications the
+            // pre-merge leaves produced, gated on the stored sourceShape — the LSP/MCP surface
+            // and the @classified corpus observe no verdict change from the merge.
+            case ChildField.BatchedTableField f ->
+                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
+                    ? new FieldClassification.TableTarget(
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, false)
+                    : new FieldClassification.RecordTableTarget(
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), false);
             case ChildField.LookupTableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, true);
@@ -298,9 +305,6 @@ public final class CatalogBuilder {
                     false,
                     null,
                     errorChannelName(f.errorChannel()));
-            case ChildField.RecordTableField f ->
-                new FieldClassification.RecordTableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), false);
             case ChildField.RecordLookupTableField f ->
                 new FieldClassification.RecordTableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), true);

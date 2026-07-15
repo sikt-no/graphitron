@@ -266,11 +266,13 @@ class TypeFetcherGeneratorTest {
         var path = List.<no.sikt.graphitron.rewrite.model.JoinStep>of(TestFixtures.fkJoin(
             TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
             FILM_TABLE, List.of(), null, name + "_0"));
-        return new ChildField.SplitTableField(parentType, name, null,
+        return new ChildField.BatchedTableField(parentType, name, null,
             rt,
             path,
             List.of(), new OrderBySpec.None(), null,
+            no.sikt.graphitron.rewrite.model.SourceShape.Table,
             TestFixtures.splitSourceKey(keyCols),
+            TestFixtures.fkColumnsLift(),
             TestFixtures.loaderRegistration(rt, false, false),
             TestFixtures.pcFor(path, LANGUAGE_TABLE));
     }

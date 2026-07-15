@@ -154,7 +154,7 @@ public final class ClassifiedCorpus {
         /*
          * The record-handoff boundary. The same FK-reached @table child (`language` via
          * film_language_id_fkey) inlines into the parent SELECT under the @table parent Film (TableField)
-         * but becomes a keyed re-query under the record-backed parent FilmDetails (RecordTableField),
+         * but becomes a keyed re-query under the record-backed parent FilmDetails (BatchedTableField),
          * because the record handoff has already opened a new DataLoader-backed scope; it cannot fold
          * back into the parent SELECT. Both hold the same operation/target (Fetch / Table); they differ
          * only on the source shape (Table vs Record), the new-query a derived consequence of the
@@ -725,7 +725,7 @@ public final class ClassifiedCorpus {
          * is a two-level carrier: a data field that is a list of an intermediate result type
          * (CreateFilmsResult, reflection-bound to the composite class → JavaRecordType), whose
          * @field-mapped @table children read off the composite through the record-backed accessor path
-         * (RecordTableField). The data field itself is a source-passthrough projection of the producer's
+         * (BatchedTableField). The data field itself is a source-passthrough projection of the producer's
          * in-memory composite list — no re-fetch, no DataLoader (RecordCompositeField, source Child(Record),
          * operation Fetch, target List(Record)). The errors field rides the Outcome WrapperArm. The payload
          * no longer dangles: it classifies as JavaRecordType naming the per-element composite class, with
@@ -829,7 +829,7 @@ public final class ClassifiedCorpus {
          * Mutation / ServiceCall / Record). A DML payload carrier (a plain object wrapping one @table
          * data field) exposes the RETURNING rows as a record, so the carrier itself is Mutation / Insert /
          * Record (MutationDmlRecordField, DmlKind INSERT), the follow-up projection being the data field's
-         * own concern (a Child / Fetch / Table RecordTableField on the payload). Corpus-only: these
+         * own concern (a Child / Fetch / Table BatchedTableField on the payload). Corpus-only: these
          * remaining root forms are additional leaves on the principles the `dml` and `dml-payloads`
          * examples teach (their input objects render fine since hardening item 3).
          */

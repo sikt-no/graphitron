@@ -142,7 +142,7 @@ class TableMethodFieldPipelineTest {
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField}. The classifier
      * routes a child {@code @tableMethod} on a JooqTableRecord-backed parent
      * through the new branch in {@code FieldBuilder.classifyChildFieldOnResultType}; the emit
-     * follows the {@code RecordTableField} DataLoader-keyed batch pattern with the developer's
+     * follows the {@code BatchedTableField} DataLoader-keyed batch pattern with the developer's
      * static method substituted for the direct table reference.
      */
     @Test

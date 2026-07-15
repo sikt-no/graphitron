@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Pins the positive classification: the intermediate result type binds to the composite class
  * (a {@code JavaRecordType}) and its {@code @field}-mapped {@code @table} children resolve through the
- * record-backed accessor path ({@code RecordTableField}); the payload no longer dangles (it classifies
+ * record-backed accessor path ({@code BatchedTableField}); the payload no longer dangles (it classifies
  * as a class-backed {@code JavaRecordType} naming the per-element composite, the carrier recognition
  * "closing the seam"); the data field is the source-passthrough {@code RecordCompositeField} carrying
  * the {@code OUTCOME_SUCCESS} envelope when the payload has an errors field; and the errors field rides
@@ -88,13 +88,13 @@ class ServiceRecordCompositeCarrierPipelineTest {
             .isInstanceOf(ChildField.Transport.WrapperArm.class);
 
         // The composite's @field-mapped @table children resolve through the record-backed accessor
-        // path (RecordTableField reading the composite's filmRecord() / actorRecords() accessors).
+        // path (BatchedTableField reading the composite's filmRecord() / actorRecords() accessors).
         var film = schema.field("CreateFilmsResult", "film");
-        assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) film).returnType().table().tableName()).isEqualTo("film");
+        assertThat(film).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(((ChildField.BatchedTableField) film).returnType().table().tableName()).isEqualTo("film");
         var actors = schema.field("CreateFilmsResult", "actors");
-        assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
-        var actorsRtf = (ChildField.RecordTableField) actors;
+        assertThat(actors).isInstanceOf(ChildField.BatchedTableField.class);
+        var actorsRtf = (ChildField.BatchedTableField) actors;
         assertThat(actorsRtf.returnType().table().tableName()).isEqualTo("actor");
         assertThat(actorsRtf.returnType().wrapper().isList()).isTrue();
 
@@ -219,11 +219,11 @@ class ServiceRecordCompositeCarrierPipelineTest {
         // The composite's @field-mapped @table children still resolve through the record-backed
         // accessor path, unchanged by the list carrier.
         var film = schema.field("CreateFilmsResult", "film");
-        assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) film).returnType().table().tableName()).isEqualTo("film");
+        assertThat(film).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(((ChildField.BatchedTableField) film).returnType().table().tableName()).isEqualTo("film");
         var actors = schema.field("CreateFilmsResult", "actors");
-        assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) actors).returnType().wrapper().isList()).isTrue();
+        assertThat(actors).isInstanceOf(ChildField.BatchedTableField.class);
+        assertThat(((ChildField.BatchedTableField) actors).returnType().wrapper().isList()).isTrue();
 
         assertThat(schema.diagnostics()).isEmpty();
     }
@@ -304,7 +304,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
      * everywhere else.
      *
      * <p>Pre-fix both children classify as {@code UnclassifiedField}; post-fix both are
-     * {@code RecordTableField} (to-one {@code ONE}, to-many {@code MANY}) with empty diagnostics. Asserts
+     * {@code BatchedTableField} (to-one {@code ONE}, to-many {@code MANY}) with empty diagnostics. Asserts
      * the classification verdict, not the case-insensitivity mechanism (an implementation detail); the
      * verdict under a casing mismatch is the behaviour.
      */
@@ -333,15 +333,15 @@ class ServiceRecordCompositeCarrierPipelineTest {
         // The to-one child resolves through the record-backed accessor path despite the @table(name:)
         // casing ("FILM") differing from the lowercase jOOQ catalog name ("film").
         var film = schema.field("CreateFilmsResult", "film");
-        assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
-        var filmRtf = (ChildField.RecordTableField) film;
+        assertThat(film).isInstanceOf(ChildField.BatchedTableField.class);
+        var filmRtf = (ChildField.BatchedTableField) film;
         assertThat(filmRtf.returnType().table().tableName()).isEqualToIgnoringCase("film");
         assertThat(filmRtf.returnType().wrapper().isList()).isFalse();
 
         // The to-many child likewise resolves (list cardinality), not dropped to UnclassifiedField.
         var actors = schema.field("CreateFilmsResult", "actors");
-        assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
-        var actorsRtf = (ChildField.RecordTableField) actors;
+        assertThat(actors).isInstanceOf(ChildField.BatchedTableField.class);
+        var actorsRtf = (ChildField.BatchedTableField) actors;
         assertThat(actorsRtf.returnType().table().tableName()).isEqualToIgnoringCase("actor");
         assertThat(actorsRtf.returnType().wrapper().isList()).isTrue();
 

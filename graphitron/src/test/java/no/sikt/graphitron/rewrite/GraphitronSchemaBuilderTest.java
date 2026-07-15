@@ -27,9 +27,8 @@ import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
-import no.sikt.graphitron.rewrite.model.ChildField.SplitTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
@@ -749,7 +748,7 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== TableField / SplitTableField / SplitLookupTableField / LookupTableField =====
+    // ===== TableField / BatchedTableField / SplitLookupTableField / LookupTableField =====
 
     /**
      * Child field on a {@code @table} parent returning a {@code @table}-mapped type. One case per
@@ -814,7 +813,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         AS_CONNECTION_SPLIT_CLASSIFIED(
-            "@asConnection @splitQuery → SplitTableField with Connection wrapper "
+            "@asConnection @splitQuery → BatchedTableField with Connection wrapper "
             + "(per-parent pagination via ROW_NUMBER() envelope; plan-split-query-connection.md §1)",
             """
             type Customer @table(name: "customer") { firstName: String }
@@ -823,8 +822,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = schema.field("Store", "customers");
-                assertThat(field).isInstanceOf(ChildField.SplitTableField.class);
-                assertThat(((ChildField.SplitTableField) field).returnType().wrapper())
+                assertThat(field).isInstanceOf(ChildField.BatchedTableField.class);
+                assertThat(((ChildField.BatchedTableField) field).returnType().wrapper())
                     .isInstanceOf(FieldWrapper.Connection.class);
             }),
 
@@ -850,12 +849,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(rejected.kind()).isEqualTo(RejectionKind.INVALID_SCHEMA);
             }),
 
-        // R281 slice 2: the plain `@splitQuery -> SplitTableField` verdict (a pure isInstanceOf
+        // R281 slice 2: the plain `@splitQuery -> BatchedTableField` verdict (a pure isInstanceOf
         // assertion, no slot detail) migrated to the spec-by-example corpus, where it is the
         // minimal pair against the inline TableField (the `child-table` ClassifiedCorpus
         // example, City.countrySplit, asserted via @classified(source: Child, operation: Fetch, target: Single, targetShape: Table) and
         // rendered into the Field Classification section of code-generation-triggers.adoc). The
-        // SplitTableField leaf stays covered by the corpus and by the slot-asserting split cases below.
+        // BatchedTableField leaf stays covered by the corpus and by the slot-asserting split cases below.
 
         // R281 slice 2: the pure `@splitQuery + @lookupKey -> SplitLookupTableField` verdict (a bare
         // isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where it is
@@ -866,7 +865,7 @@ class GraphitronSchemaBuilderTest {
         // (IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE, SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED).
 
         SPLIT_TABLE_SINGLE_CARDINALITY(
-            "@splitQuery with single-cardinality parent-holds-FK reference → SplitTableField with FK-column SourceKey",
+            "@splitQuery with single-cardinality parent-holds-FK reference → BatchedTableField with FK-column SourceKey",
             """
             type Address @table(name: "address") { address: String }
             type Customer @table(name: "customer") {
@@ -875,31 +874,31 @@ class GraphitronSchemaBuilderTest {
             type Query { customer: Customer }
             """,
             schema -> {
-                var f = (SplitTableField) schema.field("Customer", "address");
+                var f = (BatchedTableField) schema.field("Customer", "address");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
                 assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         IMPLICIT_REFERENCE_SPLIT_TABLE_SINGLE_CARDINALITY(
-            "no @reference on single-cardinality @splitQuery with single FK → SplitTableField, parent-FK SourceKey",
+            "no @reference on single-cardinality @splitQuery with single FK → BatchedTableField, parent-FK SourceKey",
             """
             type Address @table(name: "address") { address: String }
             type Customer @table(name: "customer") { address: Address @splitQuery }
             type Query { customer: Customer }
             """,
             schema -> {
-                var f = (SplitTableField) schema.field("Customer", "address");
+                var f = (BatchedTableField) schema.field("Customer", "address");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
                 assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED(
@@ -920,7 +919,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY(
-            "single-cardinality @splitQuery with multi-hop parent-holds-FK path → SplitTableField, first-hop FK SourceKey (R324)",
+            "single-cardinality @splitQuery with multi-hop parent-holds-FK path → BatchedTableField, first-hop FK SourceKey (R324)",
             """
             type Address @table(name: "address") { address: String }
             type Customer @table(name: "customer") {
@@ -929,7 +928,7 @@ class GraphitronSchemaBuilderTest {
             type Query { customer: Customer }
             """,
             schema -> {
-                var f = (SplitTableField) schema.field("Customer", "storeAddress");
+                var f = (BatchedTableField) schema.field("Customer", "storeAddress");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(2);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
@@ -940,7 +939,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("store_id");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         WITH_REFERENCE_PATH(
@@ -959,14 +958,14 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_REFERENCE_SPLIT_TABLE(
-            "no @reference on @splitQuery with single FK between parent and target tables → SplitTableField with one inferred FK hop",
+            "no @reference on @splitQuery with single FK between parent and target tables → BatchedTableField with one inferred FK hop",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
             type Query { store: Store }
             """,
             schema -> {
-                var f = (SplitTableField) schema.field("Store", "customers");
+                var f = (BatchedTableField) schema.field("Store", "customers");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
@@ -1205,7 +1204,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         CONNECTION_WITH_DEFAULT_ORDER_INDEX_SPLIT_CLASSIFIED(
-            "ActorConnection + @splitQuery → SplitTableField with Connection wrapper "
+            "ActorConnection + @splitQuery → BatchedTableField with Connection wrapper "
             + "(structural connection detection + @defaultOrder by index; plan-split-query-connection.md §1)",
             """
             type Actor @table(name: "actor") { name: String }
@@ -1218,8 +1217,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var field = schema.field("FilmActor", "actors");
-                assertThat(field).isInstanceOf(ChildField.SplitTableField.class);
-                assertThat(((ChildField.SplitTableField) field).returnType().wrapper())
+                assertThat(field).isInstanceOf(ChildField.BatchedTableField.class);
+                assertThat(((ChildField.BatchedTableField) field).returnType().wrapper())
                     .isInstanceOf(FieldWrapper.Connection.class);
             }),
 
@@ -1411,7 +1410,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({TableField.class, SplitTableField.class, LookupTableField.class, SplitLookupTableField.class})
+    @ProjectionFor({TableField.class, BatchedTableField.class, LookupTableField.class, SplitLookupTableField.class})
     void tableFieldProjectionCarriesTargetTableAndAxisFlags() {
         // Plain TableField: list of @table-bound child rows from a parent @table.
         var s1 = buildSnapshot("""
@@ -1424,7 +1423,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(plain.splitBatched()).isFalse();
         assertThat(plain.hasLookupKey()).isFalse();
 
-        // SplitTableField: @splitQuery sets splitBatched.
+        // BatchedTableField: @splitQuery sets splitBatched.
         var s2 = buildSnapshot("""
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
@@ -1744,8 +1743,8 @@ class GraphitronSchemaBuilderTest {
         var castField = infoField.nestedFields().stream()
             .filter(f -> f.name().equals("cast"))
             .findFirst().orElseThrow();
-        assertThat(castField).isInstanceOf(SplitTableField.class);
-        var stf = (SplitTableField) castField;
+        assertThat(castField).isInstanceOf(BatchedTableField.class);
+        var stf = (BatchedTableField) castField;
         assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
         assertThat(stf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(stf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
@@ -2354,12 +2353,12 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
         },
 
-        // R281 slice 2: the plain `record-backed parent + @table return (no @lookupKey) -> RecordTableField`
+        // R281 slice 2: the plain `record-backed parent + @table return (no @lookupKey) -> BatchedTableField`
         // verdict (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example
         // corpus, where FilmDetails.language is the derived-re-query half of the record-handoff minimal
         // pair against the inline TableField Film.language (the `record-table` ClassifiedCorpus example,
         // asserted via @classified(source: Child, operation: Fetch, target: Single, targetShape: Table) and rendered into the Field
-        // Classification section of code-generation-triggers.adoc). The RecordTableField leaf stays
+        // Classification section of code-generation-triggers.adoc). The BatchedTableField leaf stays
         // covered by the corpus and by the many slot-asserting record-table cases below (FK inference,
         // single cardinality, @splitQuery warning, @sourceRow lifters).
 
@@ -2385,7 +2384,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_TABLE(
-            "JooqTableRecordType record-backed parent + @table return with single FK → RecordTableField with one inferred FK hop",
+            "JooqTableRecordType record-backed parent + @table return with single FK → BatchedTableField with one inferred FK hop",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2398,11 +2397,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE(
@@ -2435,7 +2434,7 @@ class GraphitronSchemaBuilderTest {
         // RecordField leaf stays covered by the corpus and by the slot-asserting record cases above.
 
         RECORD_TABLE_FIELD_SINGLE_CARDINALITY(
-            "record-backed parent + @table return + single cardinality → RecordTableField (R61 lifted Invariant #10)",
+            "record-backed parent + @table return + single cardinality → BatchedTableField (R61 lifted Invariant #10)",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2448,12 +2447,12 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "language");
+                var f = (BatchedTableField) schema.field("FilmDetails", "language");
                 assertThat(f.returnType().wrapper()).isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Single.class);
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
                 assertThat(f.emitsSingleRecordPerKey()).isTrue();
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         // R281 slice 2: the plain `@service + @table return -> ServiceTableField` verdict (a pure
@@ -2476,7 +2475,7 @@ class GraphitronSchemaBuilderTest {
         // seam).
 
         SPLIT_QUERY_ON_RECORD_PARENT_WARNS_TABLE_FIELD(
-            "@splitQuery on record-backed parent + @table return → RecordTableField + build warning naming the field coordinate",
+            "@splitQuery on record-backed parent + @table return → BatchedTableField + build warning naming the field coordinate",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2489,13 +2488,13 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class);
+                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedTableField.class);
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
                         && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         SPLIT_QUERY_ON_RECORD_PARENT_WARNS_LOOKUP_FIELD(
@@ -2592,7 +2591,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("FilmPayload", "films"))
                 .as("orphan-carrier data field has no fieldRegistry entry after R158")
                 .isNull()) {
-            @Override public Set<Class<?>> variants() { return Set.of(ChildField.RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(ChildField.BatchedTableField.class); }
         },
 
         SINGLE_RECORD_IDENTITY_FIELD_ORPHAN(
@@ -2630,7 +2629,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({RecordField.class, PropertyField.class, RecordTableField.class, RecordLookupTableField.class})
+    @ProjectionFor({RecordField.class, PropertyField.class, BatchedTableField.class, RecordLookupTableField.class})
     void recordParentChildProjectionsCarryColumnAccessorAndTableTargetPayloads() {
         // PropertyField + RecordField — projection collapses to RecordOrProperty with
         // columnName / accessorName.
@@ -2645,7 +2644,7 @@ class GraphitronSchemaBuilderTest {
         var prop = (FieldClassification.RecordOrProperty) s1.fieldClassificationsByCoord().get("FilmDetails.title");
         assertThat(prop.columnName()).isEqualTo("film_title");
 
-        // RecordTableField — projection is RecordTableTarget(tableName, joinPath, hasLookupKey=false).
+        // BatchedTableField — projection is RecordTableTarget(tableName, joinPath, hasLookupKey=false).
         var s2 = buildSnapshot("""
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2726,7 +2725,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum SourceRowClassificationCase implements ClassificationCase {
         POJO_PARENT_VALID_ROW1_LIST(
-            "Pojo parent + valid Row1<Integer> lifter + @reference, list return → RecordTableField with LifterPathKeyed",
+            "Pojo parent + valid Row1<Integer> lifter + @reference, list return → BatchedTableField with LifterPathKeyed",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2741,7 +2740,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 var sk = f.sourceKey();
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 var lifter = ((KeyLift.Lifter) f.lift()).lifter();
@@ -2754,7 +2753,7 @@ class GraphitronSchemaBuilderTest {
                 // inventory and lives on the field's returnType, not on the path.
                 assertThat(f.returnType().table().tableName()).isEqualTo("inventory");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         POJO_PARENT_VALID_PLUS_LOOKUPKEY(
@@ -2827,7 +2826,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         JAVA_RECORD_PARENT_ADMIT(
-            "JavaRecordType parent (non-null fqClassName) + lifter → RecordTableField (admitted same as PojoResultType)",
+            "JavaRecordType parent (non-null fqClassName) + lifter → BatchedTableField (admitted same as PojoResultType)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2842,10 +2841,10 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         MISSING_LIFTER_CLASS(
@@ -3073,16 +3072,16 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.sourceKey().columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         WITH_FIELD_LEVEL_CONDITION(
-            "Pojo parent + lifter + @condition on the field → RecordTableField; tfc.filters() carries the resolved ConditionFilter",
+            "Pojo parent + lifter + @condition on the field → BatchedTableField; tfc.filters() carries the resolved ConditionFilter",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -3098,18 +3097,18 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.filters())
                     .filteredOn(filter -> filter instanceof ConditionFilter)
                     .extracting(filter -> ((ConditionFilter) filter).methodName())
                     .containsExactly("lifterFieldCondition");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         WITH_ORDER_BY_ARG(
-            "Pojo parent + lifter + @orderBy arg → RecordTableField; tfc.orderBy() carries the resolved OrderBySpec.Argument",
+            "Pojo parent + lifter + @orderBy arg → BatchedTableField; tfc.orderBy() carries the resolved OrderBySpec.Argument",
             """
             enum InventoryOrderField { ID @order(primaryKey: true) }
             enum Direction { ASC DESC }
@@ -3127,7 +3126,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
@@ -3135,7 +3134,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders()).hasSize(1);
                 assertThat(orderBy.namedOrders().get(0).name()).isEqualTo("ID");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         SCALAR_RETURN_REJECT(
@@ -3161,7 +3160,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         LEAF_PK_NO_REFERENCE(
-            "Pojo parent + @sourceRow alone (no @reference) → RecordTableField with LifterLeafKeyed; lifter RowN matches the leaf target's PK columns directly.",
+            "Pojo parent + @sourceRow alone (no @reference) → BatchedTableField with LifterLeafKeyed; lifter RowN matches the leaf target's PK columns directly.",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -3175,7 +3174,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 var sk = f.sourceKey();
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(sk.columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
@@ -3189,7 +3188,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((KeyLift.Lifter) f.lift()).lifter().methodName())
                     .isEqualTo("dummyRow1Integer");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         LEAF_PK_ARITY_MISMATCH(
@@ -3216,10 +3215,10 @@ class GraphitronSchemaBuilderTest {
 
         // R3: @splitQuery on a @sourceRow record-backed parent field is just as silently no-op as on
         // the regular record-backed parent path — the lifter-keyed DataLoader already opens a new
-        // scope. One fixture is enough since both arms (RecordTableField, RecordLookupTableField)
+        // scope. One fixture is enough since both arms (BatchedTableField, RecordLookupTableField)
         // share the same emit-warning seam.
         SPLIT_QUERY_WARNS_ON_SOURCE_ROW(
-            "@splitQuery on @sourceRow record-backed parent field → RecordTableField + build warning naming the field coordinate",
+            "@splitQuery on @sourceRow record-backed parent field → BatchedTableField + build warning naming the field coordinate",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -3235,13 +3234,13 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("FilmDetails", "inventories")).isInstanceOf(RecordTableField.class);
+                assertThat(schema.field("FilmDetails", "inventories")).isInstanceOf(BatchedTableField.class);
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.inventories")
                         && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         // R3: holistic-surfacing rule. The @sourceRow seam mirrors the regular record-backed parent
@@ -3306,7 +3305,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum AccessorDerivedSourceCase implements ClassificationCase {
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR(
-            "List field + list-of-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.MANY",
+            "List field + list-of-TableRecord accessor → BatchedTableField with AccessorCall + Cardinality.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3317,7 +3316,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(BatchedTableField.class, f -> {
                     var sk = f.sourceKey();
                     assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
                         assertThat(ac.arity()).isEqualTo(Arity.MANY);
@@ -3329,11 +3328,11 @@ class GraphitronSchemaBuilderTest {
                     assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_SET_ACCESSOR(
-            "List field + set-of-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.MANY",
+            "List field + set-of-TableRecord accessor → BatchedTableField with AccessorCall + Cardinality.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3344,7 +3343,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(BatchedTableField.class, f -> {
                     var sk = f.sourceKey();
                     assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac ->
                         assertThat(ac.arity()).isEqualTo(Arity.MANY));
@@ -3352,11 +3351,11 @@ class GraphitronSchemaBuilderTest {
                     // is uniform via Iterable. The fixture still exercises the Set classifier path.
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         ACCESSOR_ROWKEYED_SINGLE_SINGLE_FIELD_SINGLE_ACCESSOR(
-            "Single field + single-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.ONE",
+            "Single field + single-TableRecord accessor → BatchedTableField with AccessorCall + Cardinality.ONE",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3367,7 +3366,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(BatchedTableField.class, f -> {
                     var sk = f.sourceKey();
                     assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
                         assertThat(ac.arity()).isEqualTo(Arity.ONE);
@@ -3379,7 +3378,7 @@ class GraphitronSchemaBuilderTest {
                     assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         ACCESSOR_ROWKEYED_REJECTS_AMBIGUOUS(
@@ -3438,7 +3437,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(BatchedTableField.class, f -> {
                     var sk = f.sourceKey();
                     assertThat(f.lift()).isInstanceOf(KeyLift.Accessor.class);
                     assertThat(((KeyLift.Accessor) f.lift()).arity()).isEqualTo(Arity.ONE);
@@ -3450,7 +3449,7 @@ class GraphitronSchemaBuilderTest {
                     assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
                 });
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         ACCESSOR_ROWKEYED_FIELD_NAME_REJECTS_WITHOUT_DIRECTIVE(
@@ -6980,13 +6979,13 @@ class GraphitronSchemaBuilderTest {
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
                 assertThat(schema.field("Mutation", "createFilms"))
                     .isInstanceOf(MutationField.MutationServiceRecordField.class);
-                // R305: the data field collapsed into RecordTableField — a source=target re-fetch.
+                // R305: the data field collapsed into BatchedTableField — a source=target re-fetch.
                 // MANY (list) per-key cardinality, ProducedRecordRead reading the records off the
                 // source (the OUTCOME_SUCCESS envelope is now applied by the generator at the type
                 // level, not carried on the SourceKey).
                 var dataField = schema.field("FilmsPayload", "films");
-                assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
-                var lift = ((no.sikt.graphitron.rewrite.model.ChildField.RecordTableField) dataField).lift();
+                assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField.class);
+                var lift = ((no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField) dataField).lift();
                 assertThat(lift).isInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords) lift).arity())
                     .isEqualTo(no.sikt.graphitron.rewrite.model.Arity.MANY);
@@ -7888,7 +7887,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """);
-        var f = (SplitTableField) schema.field("Film", "tilganger");
+        var f = (BatchedTableField) schema.field("Film", "tilganger");
         assertThat(f.joinPath()).hasSize(1);
         var hop = (JoinStep.Hop) f.joinPath().get(0);
         assertThat(hop.on()).isInstanceOf(On.Lateral.class);
@@ -7934,7 +7933,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """);
-        var f = (SplitTableField) schema.field("Film", "castFilms");
+        var f = (BatchedTableField) schema.field("Film", "castFilms");
         assertThat(f.joinPath()).hasSize(2);
         assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnFkSlots.class);
         assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName).containsExactly("film_id");
@@ -9885,7 +9884,7 @@ class GraphitronSchemaBuilderTest {
         ChildField.SingleRecordIdField.class
     })
     void singleRecordCarrierProjectionsCarryTablePayload() {
-        // R305: the single-record DML carrier data field collapsed into RecordTableField, which
+        // R305: the single-record DML carrier data field collapsed into BatchedTableField, which
         // projects as RecordTableTarget (R75 / R141 INSERT shape; former SingleRecordTable).
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }

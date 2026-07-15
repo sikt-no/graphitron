@@ -41,7 +41,7 @@ class RowsMethodSkeletonTest {
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
             CTX_CALL,
-            new RowsMethodBody.SqlSplitTable(SQL_BODY));
+            new RowsMethodBody.SqlBatchedTable(SQL_BODY));
 
         String src = spec.toString();
         assertThat(src).contains("public static java.util.List<java.util.List<org.jooq.Record>> rowsFilms(");
@@ -73,7 +73,7 @@ class RowsMethodSkeletonTest {
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
             CTX_CALL,
-            new RowsMethodBody.SqlRecordTable(SQL_BODY));
+            new RowsMethodBody.SqlBatchedTable(SQL_BODY));
 
         String src = spec.toString();
         assertThat(src).contains("if (keys.isEmpty())");
@@ -136,11 +136,11 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the six body shapes (five spec shapes + SqlRecordTableMethod, R43 commit 5)")
+            .as("RowsMethodBody permits exactly the five body shapes (R432 merged the split/record "
+                + "non-lookup pair onto SqlBatchedTable)")
             .containsExactlyInAnyOrder(
-                RowsMethodBody.SqlSplitTable.class,
+                RowsMethodBody.SqlBatchedTable.class,
                 RowsMethodBody.SqlSplitLookupTable.class,
-                RowsMethodBody.SqlRecordTable.class,
                 RowsMethodBody.SqlRecordLookupTable.class,
                 RowsMethodBody.SqlRecordTableMethod.class,
                 RowsMethodBody.Service.class);

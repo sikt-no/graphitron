@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -42,14 +43,16 @@ class ParentProjectionContainmentCheckTest {
 
     private static final TableRef LANGUAGE_TABLE = languageTableWithPk();
 
-    private static ChildField.SplitTableField splitField(String parentType, String name, SourceKey sourceKey) {
+    private static ChildField.BatchedTableField splitField(String parentType, String name, SourceKey sourceKey) {
         var rt = tableBoundFilm(nonNullList());
         var path = List.<JoinStep>of(TestFixtures.fkJoin(
             TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
             TestFixtures.filmTable(), List.of(), null, name + "_0"));
-        return new ChildField.SplitTableField(parentType, name, null, rt, path,
+        return new ChildField.BatchedTableField(parentType, name, null, rt, path,
             List.of(), new OrderBySpec.None(), null,
+            SourceShape.Table,
             sourceKey,
+            TestFixtures.fkColumnsLift(),
             TestFixtures.loaderRegistration(rt, false, false),
             TestFixtures.pcFor(path, LANGUAGE_TABLE));
     }
@@ -58,6 +61,26 @@ class ParentProjectionContainmentCheckTest {
         return new ChildField.NestingField(parentType, name, null,
             new ReturnTypeRef.TableBoundReturnType("LanguageDetails", LANGUAGE_TABLE, new FieldWrapper.Single(true)),
             List.of(nested));
+    }
+
+    /**
+     * A Table-sourced {@code BatchKeyField} whose key wrap is caller-chosen — the R436
+     * {@code Wrap.TableRecord} shape is authored on the {@code @service Sources} signature
+     * ({@link ChildField.ServiceTableField}); the batched leaf's Table arm is pinned to the
+     * {@code FkColumns}/{@code Row} pairing by its constructor and can never carry it.
+     */
+    private static ChildField.ServiceTableField serviceField(String parentType, String name, SourceKey.Wrap wrap) {
+        var rt = tableBoundFilm(new FieldWrapper.Single(true));
+        var keyCols = List.of(languageIdCol());
+        var method = TestFixtures.staticServiceMethodRef(
+            "no.example.FilmService", "getFilm", ClassName.get("org.jooq", "Record"),
+            List.of(TestFixtures.sourced("keys", wrap, keyCols,
+                no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST)));
+        return new ChildField.ServiceTableField(parentType, name, null, rt,
+            List.of(), List.of(), new OrderBySpec.None(), null, method,
+            TestFixtures.serviceSourceKey(wrap, keyCols),
+            TestFixtures.loaderRegistration(rt, false, false),
+            java.util.Optional.empty());
     }
 
     private static GraphitronSchema schemaWith(GraphitronField... fields) {
@@ -97,10 +120,9 @@ class ParentProjectionContainmentCheckTest {
 
     @Test
     void nestedTableRecordWrapWithoutReservedFullRow_throwsGeneratorInvariant() {
-        var tableRecordKey = new SourceKey(List.of(),
-            new SourceKey.Wrap.TableRecord(ClassName.get("com.example.records", "LanguageRecord")));
+        var tableRecordWrap = new SourceKey.Wrap.TableRecord(ClassName.get("com.example.records", "LanguageRecord"));
         var schema = schemaWith(nesting("Language", "details",
-            splitField("LanguageDetails", "films", tableRecordKey)));
+            serviceField("LanguageDetails", "films", tableRecordWrap)));
         var walkOmittedNestingRecursion = new TypeClassGenerator.RequiredProjection(false, List.of());
         assertThatThrownBy(() ->
             ParentProjectionContainmentCheck.check(schema, "Language", walkOmittedNestingRecursion))
@@ -111,10 +133,9 @@ class ParentProjectionContainmentCheckTest {
 
     @Test
     void nestedTableRecordWrapWithReservedFullRow_passes() {
-        var tableRecordKey = new SourceKey(List.of(),
-            new SourceKey.Wrap.TableRecord(ClassName.get("com.example.records", "LanguageRecord")));
+        var tableRecordWrap = new SourceKey.Wrap.TableRecord(ClassName.get("com.example.records", "LanguageRecord"));
         var schema = schemaWith(nesting("Language", "details",
-            splitField("LanguageDetails", "films", tableRecordKey)));
+            serviceField("LanguageDetails", "films", tableRecordWrap)));
         var projected = new TypeClassGenerator.RequiredProjection(true, List.of());
         assertThatCode(() ->
             ParentProjectionContainmentCheck.check(schema, "Language", projected))
@@ -126,8 +147,9 @@ class ParentProjectionContainmentCheckTest {
     @Test
     void recordSourcedBatchKeyField_isNotDemandedFromTheParentProjection() {
         var rt = tableBoundFilm(new FieldWrapper.Single(true));
-        var recordLeaf = new ChildField.RecordTableField("Language", "film", null, rt,
+        var recordLeaf = new ChildField.BatchedTableField("Language", "film", null, rt,
             List.of(), List.of(), new OrderBySpec.None(), null,
+            SourceShape.Record,
             TestFixtures.recordParentRowSourceKey(List.of(languageIdCol())),
             TestFixtures.fkColumnsLift(),
             TestFixtures.loaderRegistration(rt, false, false),

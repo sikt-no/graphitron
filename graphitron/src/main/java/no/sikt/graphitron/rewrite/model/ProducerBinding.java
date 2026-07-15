@@ -166,7 +166,7 @@ public sealed interface ProducerBinding
      * {@code List<XRecord>} shape an {@code @service} method returns. The classifier-side
      * dispatch ({@code FieldBuilder.classifyChildFieldOnResultType}) reads the binding via
      * {@code TypeBuilder.serviceEmittedBinding} to construct
-     * {@code ChildField.RecordTableField} with {@code SourceKey.Wrap.TableRecord} for
+     * a record-sourced {@code ChildField.BatchedTableField} with {@code SourceKey.Wrap.TableRecord} for
      * the payload's data field.
      *
      * <p>Compact-constructor invariants mirror {@link DmlEmitted}: every component non-null,

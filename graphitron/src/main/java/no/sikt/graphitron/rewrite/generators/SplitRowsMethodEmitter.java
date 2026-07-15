@@ -578,38 +578,47 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // SplitTableField
+    // BatchedTableField
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the rows-method for a {@link ChildField.SplitTableField}. Sibling entry points
-     * {@link #buildForSplitLookupTable}, {@link #buildForRecordTable},
-     * {@link #buildForRecordLookupTable} cover the other three batched-field shapes; each
-     * caller in {@code TypeFetcherGenerator} already has the concrete field type, so no
-     * capability-typed dispatcher is needed at this seam.
+     * Builds the rows-method for a {@link ChildField.BatchedTableField} (both source shapes;
+     * the SQL bodies were already shared pre-merge, R432). Sibling entry points
+     * {@link #buildForSplitLookupTable} and {@link #buildForRecordLookupTable} cover the lookup
+     * twins; each caller in {@code TypeFetcherGenerator} already has the concrete field type, so
+     * no capability-typed dispatcher is needed at this seam.
+     *
+     * <p>Routing is on facts, not the source gate: {@code emitsSingleRecordPerKey} folds the
+     * single-cardinality and loader.loadMany triggers onto {@code buildSingleMethod} (the flat
+     * join + scatterSingleByIdx shape the loadMany dispatch requires — loader value type
+     * {@code Record}, returning {@code List<Record>} 1:1 with keys, not
+     * {@code List<List<Record>>}); the Connection arm is reachable only from the Table-sourced
+     * arm (the leaf's ctor rejects Record + Connection). The capability fold matches
+     * {@code TypeFetcherGenerator}'s scatterSingleByIdx helper-emission gate; both ask the same
+     * uniform question.
      */
-    static MethodSpec buildForSplitTable(TypeFetcherEmissionContext ctx, ChildField.SplitTableField stf, String outputPackage,
+    static MethodSpec buildForBatchedTable(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
-        java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlSplitTable::new;
-        if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
-            return buildSingleMethod(
-                ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.sourceKey(),
-                stf.parentCorrelation(),
+        java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlBatchedTable::new;
+        if (btf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
+            return buildConnectionMethod(
+                ctx, btf.name(), btf.rowsMethodName(), btf.returnType(),
+                btf.joinPath(), btf.filters(), btf.sourceKey(), btf.orderBy(), conn,
+                btf.parentCorrelation(),
                 outputPackage, permit, registry);
         }
-        if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
-            return buildConnectionMethod(
-                ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.sourceKey(), stf.orderBy(), conn,
-                stf.parentCorrelation(),
+        if (btf.emitsSingleRecordPerKey()) {
+            return buildSingleMethod(
+                ctx, btf.name(), btf.rowsMethodName(), btf.returnType(),
+                btf.joinPath(), btf.filters(), btf.sourceKey(),
+                btf.parentCorrelation(),
                 outputPackage, permit, registry);
         }
         return buildListMethod(
-            ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-            stf.joinPath(), stf.filters(), stf.sourceKey(),
+            ctx, btf.name(), btf.rowsMethodName(), btf.returnType(),
+            btf.joinPath(), btf.filters(), btf.sourceKey(),
             /* lookupMapping */ null,
-            stf.parentCorrelation(),
+            btf.parentCorrelation(),
             outputPackage, permit, registry);
     }
 
@@ -617,7 +626,7 @@ public final class SplitRowsMethodEmitter {
     // SplitLookupTableField (C2)
     // -----------------------------------------------------------------------
 
-    /** See {@link #buildForSplitTable} for the entry-point convention. */
+    /** See {@link #buildForBatchedTable} for the entry-point convention. */
     static MethodSpec buildForSplitLookupTable(TypeFetcherEmissionContext ctx, ChildField.SplitLookupTableField slf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         return buildListMethod(
@@ -630,42 +639,12 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // RecordTableField
-    // -----------------------------------------------------------------------
-
-    /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForRecordTable(TypeFetcherEmissionContext ctx, ChildField.RecordTableField rtf, String outputPackage,
-            CompositeDecodeHelperRegistry registry) {
-        // RecordTableField fields whose rows-method emits 1 record per key (today, only
-        // AccessorKeyedMany: each accessor-derived element-PK key maps to exactly one
-        // terminal record) route through buildSingleMethod, which produces the flat join +
-        // scatterSingleByIdx shape required by the loader.loadMany dispatch (loader value
-        // type Record, returning List<Record> 1:1 with keys, not List<List<Record>>). The
-        // capability fold here matches TypeFetcherGenerator's scatterSingleByIdx helper-emission
-        // gate; both ask the same uniform question of multiple variants.
-        java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlRecordTable::new;
-        if (rtf.emitsSingleRecordPerKey()) {
-            return buildSingleMethod(
-                ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
-                rtf.joinPath(), rtf.filters(), rtf.sourceKey(),
-                rtf.parentCorrelation(),
-                outputPackage, permit, registry);
-        }
-        return buildListMethod(
-            ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
-            rtf.joinPath(), rtf.filters(), rtf.sourceKey(),
-            /* lookupMapping */ null,
-            rtf.parentCorrelation(),
-            outputPackage, permit, registry);
-    }
-
-    // -----------------------------------------------------------------------
     // RecordTableMethodField
     // -----------------------------------------------------------------------
 
     /**
      * Rows-method for {@link ChildField.RecordTableMethodField}: the DTO-parent sibling of
-     * {@link #buildForRecordTable}. Identical parent-VALUES + flat-JOIN-on-FK shape; the only
+     * the record-sourced {@link #buildForBatchedTable} arm. Identical parent-VALUES + flat-JOIN-on-FK shape; the only
      * difference is that the terminal table is materialised by calling the developer's static
      * {@code @tableMethod} (returning a generated jOOQ table) rather than referencing
      * {@code Tables.<X>} directly. Single-hop FK-derived {@link JoinStep.Hop} only, mirroring the
@@ -826,7 +805,7 @@ public final class SplitRowsMethodEmitter {
     // RecordLookupTableField
     // -----------------------------------------------------------------------
 
-    /** See {@link #buildForSplitTable} for the entry-point convention. */
+    /** See {@link #buildForBatchedTable} for the entry-point convention. */
     static MethodSpec buildForRecordLookupTable(TypeFetcherEmissionContext ctx, ChildField.RecordLookupTableField rltf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         // Rows-method body is identical to SplitLookupTableField's — same SourceKey
@@ -845,7 +824,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Shared body emitter for list-cardinality Split* rows methods. For
-     * {@link ChildField.SplitTableField} pass {@code lookupMapping = null}; for
+     * {@link ChildField.BatchedTableField} pass {@code lookupMapping = null}; for
      * {@link ChildField.SplitLookupTableField} pass its mapping and the emitter adds a second
      * VALUES derived-table JOIN narrowing on the {@code @lookupKey} args.
      */
@@ -984,8 +963,8 @@ public final class SplitRowsMethodEmitter {
     }
 
     /**
-     * Single-cardinality sibling of {@link #buildListMethod} for {@link ChildField.SplitTableField}.
-     * Parent-holds-FK at step 0 ({@link ChildField.SplitTableField}'s {@code sourceKey} carries the
+     * Single-cardinality sibling of {@link #buildListMethod} for {@link ChildField.BatchedTableField}.
+     * Parent-holds-FK at step 0 ({@link ChildField.BatchedTableField}'s {@code sourceKey} carries the
      * parent's FK columns per {@code FieldBuilder.deriveSplitQuerySource}). Emits a flat
      * {@code parentInput JOIN <step-0 attach> <bridging hops out to the terminal>} SELECT that
      * returns {@code List<Record>} indexed 1:1 with {@code keys} (nulls where no match).
@@ -1172,7 +1151,7 @@ public final class SplitRowsMethodEmitter {
                 body.addStatement("$T extraFields = ordering.columns()", listOfField);
             }
             default -> throw new IllegalStateException(
-                "SplitTableField+Connection with empty/None orderBy reached emitter for field '" + fieldName
+                "BatchedTableField+Connection with empty/None orderBy reached emitter for field '" + fieldName
                 + "'; validator should have rejected.");
         }
 
@@ -1412,7 +1391,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Rows-method for a {@link ChildField.ServiceTableField}: the condensed
-     * {@code ServiceRecordField -> RecordTableField} shape. The developer's {@code @service}
+     * {@code ServiceRecordField -> RecordTableField} (now the record-sourced {@code BatchedTableField} arm) shape. The developer's {@code @service}
      * method produces real {@code XRecord}s (the {@code serviceCall} expression, returning the
      * loader's {@code Map}/{@code List} container of {@code XRecord}); this method lifts those
      * back by extracting each returned record's primary key, re-projecting the bound table on
@@ -1421,7 +1400,7 @@ public final class SplitRowsMethodEmitter {
      * multiset sub-fields both resolve off the projected record, where the verbatim service
      * return carried only stored columns.
      *
-     * <p>The only difference from {@link #buildForRecordTable}'s element-PK re-projection is
+     * <p>The only difference from the record-sourced {@link #buildForBatchedTable} arm's element-PK re-projection is
      * timing: there the records are in hand at fetch time and the DataLoader key is the element
      * PK; here the records arrive from the service call inside the loader body, so the same
      * {@code rec.get(PK)} extraction runs rows-method-side and the DataLoader key stays the

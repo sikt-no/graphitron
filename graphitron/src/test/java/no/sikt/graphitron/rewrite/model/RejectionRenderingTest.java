@@ -71,7 +71,7 @@ class RejectionRenderingTest {
 
     @Test
     void deferredKeyedByVariantClassRendersWithoutSlugSuffix() {
-        var r = Rejection.deferred("Single-cardinality requires single-hop", "", ChildField.SplitTableField.class);
+        var r = Rejection.deferred("Single-cardinality requires single-hop", "", ChildField.BatchedTableField.class);
         assertThat(r.message()).isEqualTo("Single-cardinality requires single-hop");
     }
 
@@ -170,9 +170,9 @@ class RejectionRenderingTest {
 
     @Test
     void prefixedWithPreservesDeferredStubKey() {
-        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", "", ChildField.SplitTableField.class);
+        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", "", ChildField.BatchedTableField.class);
         var prefixed = (Rejection.Deferred) inner.prefixedWith("on Foo.bar: ");
         assertThat(prefixed.summary()).isEqualTo("on Foo.bar: X is not yet supported");
-        assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(ChildField.SplitTableField.class));
+        assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(ChildField.BatchedTableField.class));
     }
 }

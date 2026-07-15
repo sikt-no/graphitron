@@ -30,7 +30,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
@@ -908,9 +908,11 @@ class FieldBuilder {
                     tbtParentCorrelation);
             }
             if (hasSplitQuery) {
-                return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
+                return new no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    SourceShape.Table,
                     parentSplitSource.sourceKey(),
+                    parentSplitSource.lift(),
                     parentSplitSource.loaderRegistration(),
                     tbtParentCorrelation);
             }
@@ -2335,7 +2337,7 @@ class FieldBuilder {
      * node rather than the implicit head), or strictly between hops (the sandwich); in every
      * position it joins as CROSS JOIN LATERAL, correlated through its call arguments. Lands
      * {@link ChildField.TableField} riding the inline correlated-multiset machinery, or
-     * {@link ChildField.SplitTableField} when {@code @splitQuery} forces the batched keyed
+     * a Table-sourced {@link ChildField.BatchedTableField} when {@code @splitQuery} forces the batched keyed
      * re-query anchor (the batch key for a routine-headed chain is the routine's column-bound
      * inputs; see {@link #deriveSplitQuerySource}); the single-application case is the
      * degenerate chain {@code [Hop(RoutineCall, Lateral)]}.
@@ -2407,10 +2409,12 @@ class FieldBuilder {
                 }
                 var orderBy = ((OrderByResolver.Resolved.Ok) orderResolved).spec();
                 if (hasSplitQuery) {
-                    yield new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
+                    yield new no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField(
                         parentTypeName, name, location, walk.tb().returnType(), walk.steps(),
                         List.of(), orderBy, null,
-                        splitSource.sourceKey(), splitSource.loaderRegistration(), pc);
+                        SourceShape.Table,
+                        splitSource.sourceKey(), splitSource.lift(),
+                        splitSource.loaderRegistration(), pc);
                 }
                 yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
                     walk.steps(), List.of(), orderBy, null, pc);
@@ -4848,7 +4852,7 @@ class FieldBuilder {
      * payload machinery the record-carrier classifier uses (the payload scan, the data-field
      * {@code @table}-equality check, the error-channel detection) with the {@code UpdateRowsWalker}
      * the direct-return UPDATE uses (PK-or-UK identification + SET/WHERE partition), so no UPDATE
-     * path reads {@code @value}. The data field's {@code RecordTableField} (former SingleRecordTableField) classification is
+     * path reads {@code @value}. The data field's record-sourced {@code BatchedTableField} (former SingleRecordTableField) classification is
      * grounded independently by {@code RecordBindingResolver.groundDmlMutationField} (which reads
      * {@code @mutation(typeName:)} straight off the SDL), so no per-field reclassify is needed here.
      * A pre-check failure or a walker {@code Err} surfaces as an {@link UnclassifiedField}; the
@@ -5397,7 +5401,7 @@ class FieldBuilder {
 
     /**
      * R305: the former {@code SingleRecordTableField} payload carriers (DML write and
-     * {@code @service} producer) collapse into {@link ChildField.RecordTableField} — a
+     * {@code @service} producer) collapse into a record-sourced {@link ChildField.BatchedTableField} — a
      * source=target re-fetch. The producer hands back the target table's record on
      * {@code env.getSource()}; the field re-projects the {@code @table} by correlating the record's
      * primary key to the catalog rows. Modeled as the hop-less lifted shape:
@@ -5410,7 +5414,7 @@ class FieldBuilder {
      * generator ({@code sourceIsOutcome}), not carried on the key. R305 batches every re-fetch field
      * (source cardinality {@code Many}); the single-source case is a correct one-element batch.
      */
-    private ChildField buildPayloadCarrierRecordTableField(
+    private ChildField buildPayloadCarrierBatchedTableField(
             String parentTypeName, String name, SourceLocation location,
             ReturnTypeRef.TableBoundReturnType tb) {
         TableRef targetTable = tb.table();
@@ -5428,9 +5432,10 @@ class FieldBuilder {
         // Source=target re-fetch: PK self-identity is the degenerate case of the FK pairing, the
         // hop-less OnLiftedSlots correlation (R431; formerly a single LiftedHop in the joinPath).
         var parentCorrelation = new ParentCorrelation.OnLiftedSlots(targetTable, pkColumns);
-        return new ChildField.RecordTableField(
+        return new ChildField.BatchedTableField(
             parentTypeName, name, location, tb, List.of(),
             List.of(), new OrderBySpec.None(), null,
+            SourceShape.Record,
             sourceKey, lift, loaderRegistration, parentCorrelation);
     }
 
@@ -5469,12 +5474,12 @@ class FieldBuilder {
                         + "' which does not match the input @table '" + binding.tableRef().tableName()
                         + "'; payload-returning DML mutations require child @table-bound fields to bind to the input table"));
                 }
-                // R305: the DML payload carrier collapses into RecordTableField — a source=target
+                // R305: the DML payload carrier collapses into a record-sourced BatchedTableField — a source=target
                 // re-fetch. The producer hands back the RETURNING record on env.getSource(); the
                 // field re-projects the @table by correlating the record's PK to the catalog rows.
                 // The source envelope (DIRECT here) is derived at the type level by the generator
                 // (sourceIsOutcome), not carried on the key.
-                return buildPayloadCarrierRecordTableField(parentTypeName, name, location, tb);
+                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb);
             }
             // Non-@table, non-polymorphic children on DML payloads fall through to existing
             // arms below. For step 1 the relevant fixtures don't exercise this fall-through.
@@ -5483,8 +5488,8 @@ class FieldBuilder {
         // R178 step 2b: @service-carrier sibling. The producer is an @service method returning
         // XRecord (single) or List<XRecord> (bulk), observed as ProducerBinding.ServiceEmitted
         // by R96's structural detection. The classifier-side dispatch mirrors the DmlEmitted
-        // arm above: R305 builds a RecordTableField source=target re-fetch carrier (see
-        // buildPayloadCarrierRecordTableField). The source-read shape (typed XRecord vs sparse
+        // arm above: R305 builds a record-sourced BatchedTableField source=target re-fetch carrier (see
+        // buildPayloadCarrierBatchedTableField). The source-read shape (typed XRecord vs sparse
         // RecordN<PK>) and the envelope (DIRECT vs OUTCOME_SUCCESS) are resolved by the generator
         // at the type level, not carried on the SourceKey.
         var serviceEmitted = serviceEmittedBinding(parentTypeName);
@@ -5512,14 +5517,14 @@ class FieldBuilder {
                 // emit below already resolves the field through a PK-keyed follow-up SELECT off
                 // the producer's record. Same advisory family as the class-backed-parent redundancy.
                 warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
-                // R305: the @service payload carrier collapses into RecordTableField — a
+                // R305: the @service payload carrier collapses into a record-sourced BatchedTableField — a
                 // source=target re-fetch, the same shape as the DML carrier above. The producer
                 // hands back the target XRecord on env.getSource() (bare, or wrapped in
                 // Outcome.Success when the payload carries an errors field); the field re-projects
                 // the @table by correlating the record's PK to the catalog rows. The source
                 // envelope (DIRECT vs OUTCOME_SUCCESS) is derived at the type level by the generator
                 // (sourceIsOutcome = hasWrapperArmErrors), not carried on the key.
-                return buildPayloadCarrierRecordTableField(parentTypeName, name, location, tb);
+                return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb);
             }
             // R275 requirement 2: ID-element data field on an @service carrier — the opptak
             // fjernSakTagg/fjernSakTagger @nodeId-from-record shape. The encoder resolution
@@ -5653,7 +5658,7 @@ class FieldBuilder {
             // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
             // condition-join (or hop-0-filter) first hop has no parent table to anchor the source
             // argument. parentTable=null routes the parent-anchor (OnParentJoin) arm to AuthorError,
-            // mirroring RecordTableField / RecordLookupTableField. Filter-less FK-derived
+            // mirroring the record-sourced BatchedTableField arm / RecordLookupTableField. Filter-less FK-derived
             // first hops produce ParentCorrelation.OnFkSlots and don't consult parentTable; the
             // @sourceRow leaf-PK shape arrives pre-resolved as OnLiftedSlots (R431).
             var rtmPcResolution = lifted != null
@@ -5715,8 +5720,8 @@ class FieldBuilder {
                     tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.lift(),
                     ok.loaderRegistration(), tfc.lookupMapping(), srParentCorrelation);
             }
-            return new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.lift(),
+            return new ChildField.BatchedTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), SourceShape.Record, ok.sourceKey(), ok.lift(),
                 ok.loaderRegistration(), srParentCorrelation);
         }
 
@@ -5825,7 +5830,7 @@ class FieldBuilder {
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                 var tfc = (TableFieldComponents.Ok) components;
                 boolean isLookup = hasLookupKeyAnywhere(fieldDef);
-                String fieldKind = isLookup ? "RecordLookupTableField" : "RecordTableField";
+                String fieldKind = isLookup ? "RecordLookupTableField" : "BatchedTableField";
                 var resolution = resolveRecordParentSource(name, columnName, tb, objectPath.elements(), parentResultType, fieldKind);
                 if (resolution instanceof RecordParentSourceResolution.Rejected rj) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
@@ -5853,8 +5858,8 @@ class FieldBuilder {
                         resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(), tfc.lookupMapping(),
                         resolvedParentCorrelation);
                 }
-                yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(),
+                yield new ChildField.BatchedTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    SourceShape.Record, resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(),
                     resolvedParentCorrelation);
             }
             case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
@@ -6017,12 +6022,12 @@ class FieldBuilder {
     }
 
     /**
-     * Builder-internal pair returned by {@link #deriveSplitQuerySource}: the
-     * {@link SourceKey} + {@link LoaderRegistration} the {@code SplitTableField} /
-     * {@code SplitLookupTableField} constructors take. Pairs the two projections so the producer
-     * computes them in one place instead of via two separate calls.
+     * Builder-internal triple returned by {@link #deriveSplitQuerySource}: the
+     * {@link SourceKey} + {@link KeyLift} + {@link LoaderRegistration} the table-sourced
+     * {@code BatchedTableField} / {@code SplitLookupTableField} constructors take. Groups the
+     * projections so the producer computes them in one place instead of via separate calls.
      */
-    private record SplitQuerySource(SourceKey sourceKey, LoaderRegistration loaderRegistration) {}
+    private record SplitQuerySource(SourceKey sourceKey, KeyLift lift, LoaderRegistration loaderRegistration) {}
 
     /**
      * Derives the {@link SourceKey} + {@link LoaderRegistration} for a {@code @table}-parent
@@ -6083,12 +6088,15 @@ class FieldBuilder {
         List<ColumnRef> entryColumns = correlation != null
             ? correlation.parentKeyColumns()
             : parentTable.primaryKeyColumns();
+        // R432: the lift is total on the merged leaf. The table arm's mechanism is column
+        // projection off the held jOOQ row (KeyLift.FkColumns), whose derived wrap is exactly
+        // the Row residue stored below — checkResidueAgreement accepts the pair by construction.
         SourceKey sourceKey = new SourceKey(entryColumns, new SourceKey.Wrap.Row());
         LoaderRegistration loaderRegistration = new LoaderRegistration(
             isList,
             LoaderRegistration.Container.POSITIONAL_LIST,
             LoaderRegistration.Dispatch.LOAD_ONE);
-        return new SplitQuerySource(sourceKey, loaderRegistration);
+        return new SplitQuerySource(sourceKey, new KeyLift.FkColumns(), loaderRegistration);
     }
 
     /**
@@ -6108,7 +6116,7 @@ class FieldBuilder {
 
     /**
      * Derives the FK-based {@link SourceKey} + {@link LoaderRegistration} for a record-parent
-     * batched field ({@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField},
+     * batched field (the record-sourced {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} arm,
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the
      * FK source columns from the join path's first FK-derived {@link JoinStep.Hop}.
      *
@@ -6151,7 +6159,7 @@ class FieldBuilder {
     /**
      * Outcome of {@link #resolveRecordParentSource} for a class-backed-parent table-bound
      * child field. Two arms; the caller exhausts them with a sealed switch and either projects
-     * the resolved {@link SourceKey} + {@link LoaderRegistration} into {@link RecordTableField} /
+     * the resolved {@link SourceKey} + {@link LoaderRegistration} into the record-sourced {@link ChildField.BatchedTableField} arm /
      * {@link RecordLookupTableField}, or surfaces the rejection as
      * {@link GraphitronField.UnclassifiedField}. Builder-internal sealed result per the
      * {@code development-principles.adoc} rule on {@code Builder-step results are sealed}.
@@ -6174,7 +6182,7 @@ class FieldBuilder {
      * table-bound child field. Tries the FK derivation first (via
      * {@link #deriveFkRecordParentSource}); on null, attempts the typed-accessor derivation; on
      * null again, returns the three-option AUTHOR_ERROR rejection. The helper is shared between
-     * the {@link RecordTableField} and {@link RecordLookupTableField} branches;
+     * the record-sourced {@link ChildField.BatchedTableField} and {@link RecordLookupTableField} branches;
      * {@code fieldKindLabel} parameterises only the leading clause of the rejection.
      */
     private RecordParentSourceResolution resolveRecordParentSource(
