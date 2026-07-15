@@ -171,14 +171,20 @@ The facts that flow in, and what each gates:
 
 ## What the generated jOOQ meta can and cannot see (resolved 2026-07-15)
 
-Probed empirically: a scratch Postgres 18 schema carrying a stored generated
-tsvector column (weighted `setweight(to_tsvector(...))` expression), a GIN
-index over it, a GiST trigram index (`gist_trgm_ops`), a plain btree, an
-expression GIN index (`to_tsvector` directly, no stored column), and a
-partial index; jOOQ 3.20.11 open-source codegen (`PostgresDatabase` +
-`JavaGenerator`, `includeIndexes: true`) run against it and the output
-inspected, alongside `javap` of `org.jooq.Index` and
-`org.jooq.meta.IndexDefinition`.
+Probed empirically: a scratch PostgreSQL 16 schema carrying a stored
+generated tsvector column (weighted `setweight(to_tsvector(...))`
+expression), a GIN index over it, a GiST trigram index (`gist_trgm_ops`), a
+plain btree, an expression GIN index (`to_tsvector` directly, no stored
+column), and a partial index; jOOQ 3.20.11 open-source codegen
+(`PostgresDatabase` + `JavaGenerator`, `includeIndexes: true`) run against
+it and the output inspected, alongside `javap` of `org.jooq.Index` and
+`org.jooq.meta.IndexDefinition`. The probe was then repeated on jOOQ
+**3.21.6** (latest release at the time): the generated `Indexes` class is
+byte-identical, the tsvector column renders identically (setter for the
+generated column included), `org.jooq.Index` is unchanged, and
+`IndexDefinition` gains only a `getColumns()` convenience. The findings
+below hold for both lines; upgrading jOOQ buys no additional validation
+depth.
 
 **Visible in the generated meta:**
 
