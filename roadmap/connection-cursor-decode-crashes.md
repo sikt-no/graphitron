@@ -1,7 +1,7 @@
 ---
 id: R479
 title: "Connection cursor decode crashes redact into a 500 instead of a clean error"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: pagination

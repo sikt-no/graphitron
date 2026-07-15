@@ -20,8 +20,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | In Progress | 2026-07-14 <sub>created 2026-07-09</sub> | [plan](per-participant-multitable-child-join-paths.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [decompose-sourcekey](decompose-sourcekey.md), [collapse-split-and-record-table-leaves](collapse-split-and-record-table-leaves.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
-| `R479` | Connection cursor decode crashes redact into a 500 instead of a clean error | In Progress | 2026-07-15 <sub>created 2026-07-14</sub> | [plan](connection-cursor-decode-crashes.md) |
 | `R431` | Decompose SourceKey onto the model's facts | In Progress | 2026-07-14 <sub>created 2026-07-04</sub> | [plan](decompose-sourcekey.md) |
+| `R479` | Connection cursor decode crashes redact into a 500 instead of a clean error | In Review | 2026-07-15 <sub>created 2026-07-14</sub> | [plan](connection-cursor-decode-crashes.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
 | `R202` | Honor @field(name:) in @error type extra-field accessor matching against handler source class | Ready | 2026-07-15 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-error-type-source-accessors.md) |
@@ -276,7 +276,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R479` [**Connection cursor decode crashes redact into a 500 instead of a clean error**](connection-cursor-decode-crashes.md) — In Progress, bug
+- `R479` [**Connection cursor decode crashes redact into a 500 instead of a clean error**](connection-cursor-decode-crashes.md) — In Review, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R427` [**Relevance-ranked free-text search**](relevance-ranked-search.md) — Backlog, architecture
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
