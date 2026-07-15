@@ -755,6 +755,9 @@ type FilmLookupInvalid @error(handlers: [{
     }]) {
     path: [String!]!
     message: String!
+    # R202: extra field whose source-class accessor (getAttemptedId()) diverges from the field
+    # name; @field(name:) remaps both the classify-time accessor check and the runtime read.
+    attempted: Int @field(name: "attemptedId")
 }
 
 union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid

@@ -1096,7 +1096,8 @@ class TypeFetcherGeneratorTest {
         var validationErr = new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType(
             "SakValidationErr",
             null,
-            List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler(Optional.empty())));
+            List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler(Optional.empty())),
+            List.of());
         // R244: @service outcome fields carry ErrorChannel.Mapped; the validator pre-step is gated
         // on Mapped and emits the Outcome.ErrorList early return.
         var channel = new ErrorChannel.Mapped(List.of(validationErr), "SAK_PAYLOAD");

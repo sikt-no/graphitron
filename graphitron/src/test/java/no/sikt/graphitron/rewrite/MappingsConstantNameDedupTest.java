@@ -155,7 +155,7 @@ class MappingsConstantNameDedupTest {
     }
 
     private static ErrorChannel.PayloadClass channel(String payloadFqn, String constantName, ErrorType.Handler handler) {
-        var errorType = new ErrorType("FilmErr", null, List.of(handler));
+        var errorType = new ErrorType("FilmErr", null, List.of(handler), List.of());
         return new ErrorChannel.PayloadClass(
             List.of(errorType),
             ClassName.bestGuess(payloadFqn),

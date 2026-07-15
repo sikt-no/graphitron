@@ -37,7 +37,9 @@ directive site and the backing of the type it sits on:
 - On FIELD_DEFINITION of a free-form (non-@table, class- or record-backed) output type, the Java
   accessor to read the field from on the backing class: `@field(name: "fullName")` reads
   `getFullName()` / `isFullName()` / `fullName()` rather than an accessor matching the GraphQL field
-  name. Use it when the Java accessor name diverges from the GraphQL field name.
+  name. Use it when the Java accessor name diverges from the GraphQL field name. This includes an
+  extra field on an @error type (any field beyond `path` / `message`), where the accessor is matched
+  against each handler's source class (the matched exception, or the GraphQLError for VALIDATION).
 - On INPUT_FIELD_DEFINITION of a consumer-authored bean or record bound as a @service input
   parameter, the Java member to bind: the record component, or the JavaBean property whose setter is
   `set<Capitalised name>`. Use it when the Java member name diverges from the GraphQL field name.

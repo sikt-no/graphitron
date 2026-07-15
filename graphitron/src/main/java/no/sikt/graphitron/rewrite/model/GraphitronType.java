@@ -223,12 +223,43 @@ public sealed interface GraphitronType
      * for an entry in the payload's errors list is the matched object itself (the exception
      * for GENERIC/DATABASE handlers, the {@code GraphQLError} for VALIDATION); graphql-java's
      * {@code PropertyDataFetcher} reads each declared SDL field directly from that source.
+     *
+     * <p>{@code accessorOverrides} holds one {@link FieldAccessorOverride} per extra field
+     * (everything except {@code path} / {@code message}) that carries {@code @field(name:)}, in SDL
+     * declaration order. The override names the accessor to read from each handler's source class
+     * when it diverges from the GraphQL field name; both the classify-time accessor-coverage check
+     * and the runtime property-fetcher registration consult it through {@link #accessorBaseFor}.
      */
     record ErrorType(
         String name,
         SourceLocation location,
-        List<Handler> handlers
+        List<Handler> handlers,
+        List<FieldAccessorOverride> accessorOverrides
     ) implements GraphitronType, EmitsPerTypeFile {
+
+        /**
+         * A per-extra-field {@code @field(name:)} remap on an {@code @error} type: the GraphQL
+         * field {@code sdlFieldName} reads from the handler source class's accessor named
+         * {@code accessorBase} (getter / {@code is}-getter / record-style method / public field)
+         * rather than from an accessor matching the field name. Recorded only for extra fields that
+         * carry the directive; {@code path} / {@code message} never appear here.
+         */
+        public record FieldAccessorOverride(String sdlFieldName, String accessorBase) {}
+
+        /**
+         * The accessor base to read an extra field from a handler source class: the
+         * {@code @field(name:)} override when the field carries one, otherwise the field name
+         * itself. Consulted by both the classify-time accessor-coverage check and the runtime
+         * property-fetcher registration so the two derive the same name.
+         */
+        public String accessorBaseFor(String sdlFieldName) {
+            for (var override : accessorOverrides) {
+                if (override.sdlFieldName().equals(sdlFieldName)) {
+                    return override.accessorBase();
+                }
+            }
+            return sdlFieldName;
+        }
 
         /**
          * One entry in the {@code handlers} argument of the {@code @error} directive. Sealed by

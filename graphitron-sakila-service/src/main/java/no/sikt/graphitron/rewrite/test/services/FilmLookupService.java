@@ -31,7 +31,7 @@ public final class FilmLookupService {
             throw new FilmLookupInvalidIdException("id is null");
         }
         if (id < 0) {
-            throw new FilmLookupInvalidIdException("invalid id: " + id);
+            throw new FilmLookupInvalidIdException("invalid id: " + id, id);
         }
         if (id == 0) {
             throw new FilmLookupNotFoundException("film " + id + " not found");

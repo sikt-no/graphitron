@@ -2,7 +2,7 @@
 :description: Bind a GraphQL slot to a specific column, argument target, or enum value.
 :!toc:
 
-Names the underlying-binding target for a GraphQL slot. The axis is determined by the directive site: column on a field or input field, column on a filter argument, database string (or Java enum constant) on an enum value.
+Names the underlying-binding target for a GraphQL slot. The axis is determined by the directive site: column on a field or input field, column on a filter argument, database string (or Java enum constant) on an enum value, and, on an xref:error.adoc#_extra_fields[`@error` extra field], the source-class accessor matched against each handler's exception (or `GraphQLError`) class.
 
 == SDL signature
 
@@ -102,5 +102,6 @@ Unknown sigils are rejected at parse time: `@field(name: "$foo")` fails with `Un
 * xref:table.adoc[`@table`] establishes the jOOQ table context that `@field` resolves against.
 * xref:service.adoc[`@service`] for the mutation form that produces a carrier-payload type whose data field admits `$source`.
 * xref:../../how-to/map-types-to-tables.adoc[How-to: Map types to tables] for enum-value mappings and other patterns.
+* xref:error.adoc#_extra_fields[`@error` extra fields] for `@field` naming a source-class accessor when it diverges from the GraphQL field name.
 
 xref:../index.adoc[← Reference index]

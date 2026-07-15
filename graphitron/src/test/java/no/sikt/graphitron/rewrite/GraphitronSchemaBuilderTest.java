@@ -6217,6 +6217,56 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason())
                     .contains("java.lang.String")
                     .contains("Throwable");
+            }),
+
+        // R202: @field(name:) parse rejections on the @error surface.
+        REJECT_BLANK_FIELD_DIRECTIVE_ON_EXTRA_FIELD(
+            "extra field with @field(name: \"\") (blank) → UnclassifiedType",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+                detail: String @field(name: "")
+            }
+            type Query { err: BadError }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("detail")
+                    .contains("blank");
+            }),
+
+        REJECT_FIELD_DIRECTIVE_ON_PATH(
+            "@field on 'path' → UnclassifiedType (path is populated by Graphitron)",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]! @field(name: "somethingElse")
+                message: String!
+            }
+            type Query { err: BadError }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("@field")
+                    .contains("path");
+            }),
+
+        REJECT_FIELD_DIRECTIVE_ON_MESSAGE(
+            "@field on 'message' → UnclassifiedType (message is populated by Graphitron)",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String! @field(name: "somethingElse")
+            }
+            type Query { err: BadError }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason())
+                    .contains("@field")
+                    .contains("message");
             });
 
         // R281 slice 2: the pure `@error co-located with @record -> ErrorType` admission nuance (the
@@ -10707,7 +10757,7 @@ class GraphitronSchemaBuilderTest {
         TABLE_AND_ERROR_CONFLICT(
             "@table and @error on the same type → UnclassifiedType with reason mentioning both",
             """
-            type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) { title: String }
+            type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) { title: String }
             type Query { film: Film }
             """,
             "Film", "@table", "@error");

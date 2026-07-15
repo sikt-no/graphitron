@@ -56,9 +56,10 @@ public final class HandlerAccessorCheck {
                 }
                 for (var sdlField : extraFields) {
                     var expectedReturn = reflectTypeResolver.resolve(sdlField.getType());
+                    String accessorBase = errorType.accessorBaseFor(sdlField.getName());
                     var resolution = ClassAccessorResolver.resolve(
                         sourceClass,
-                        sdlField.getName(),
+                        accessorBase,
                         expectedReturn,
                         new ClassAccessorResolver.PerArgument(List.of()),
                         ClassAccessorResolver.CandidateOrder.POJO_FIRST);
@@ -68,6 +69,7 @@ public final class HandlerAccessorCheck {
                             errorType.name(),
                             sourceClass.getName(),
                             sdlField.getName(),
+                            accessorBase,
                             availableAccessors(sourceClass)));
                     }
                 }

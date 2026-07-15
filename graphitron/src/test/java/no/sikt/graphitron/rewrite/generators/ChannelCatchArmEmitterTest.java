@@ -98,6 +98,6 @@ class ChannelCatchArmEmitterTest {
     private static ErrorType anyErrorType() {
         return new ErrorType("NotFound", new SourceLocation(1, 1),
             List.of(new ErrorType.ExceptionHandler("java.lang.RuntimeException",
-                Optional.empty(), Optional.empty())));
+                Optional.empty(), Optional.empty())), List.of());
     }
 }

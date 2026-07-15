@@ -3203,15 +3203,18 @@ class FieldBuilder {
                 }
                 for (var sdlField : extraFields) {
                     var expectedReturn = mapGraphQLTypeToReflectType(sdlField.getType());
+                    String accessorBase = errorType.accessorBaseFor(sdlField.getName());
                     var resolution = ClassAccessorResolver.resolve(
                         sourceClass,
-                        sdlField.getName(),
+                        accessorBase,
                         expectedReturn,
                         new ClassAccessorResolver.PerArgument(java.util.List.of()),
                         ClassAccessorResolver.CandidateOrder.POJO_FIRST);
                     if (resolution instanceof AccessorResolution.Rejected r) {
+                        String remap = accessorBase.equals(sdlField.getName()) ? ""
+                            : " (remapped to '" + accessorBase + "' by @field)";
                         return "@error type '" + errorType.name() + "' field '"
-                            + sdlField.getName() + "' cannot be populated from handler "
+                            + sdlField.getName() + "'" + remap + " cannot be populated from handler "
                             + describeHandler(handler) + " source class '"
                             + sourceClass.getName() + "': " + r.reason();
                     }

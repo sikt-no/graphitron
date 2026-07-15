@@ -131,13 +131,16 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
      * Raised by {@code walk()}: an {@code @error} type's handler source class does not expose a
      * {@code PropertyDataFetcher}-visible accessor for one of the {@code @error} type's declared
      * SDL fields ({@code path} and {@code message} are exempt). Carries the handler details so the
-     * diagnostic can list what was available.
+     * diagnostic can list what was available. {@code accessorBaseName} is the accessor the resolver
+     * looked for: equal to {@code missingFieldName} when no {@code @field(name:)} override applies,
+     * otherwise the directive value (the {@code message()} then flags the remap).
      */
     record HandlerSourceAccessorMissing(
         String payloadTypeName,
         String errorTypeName,
         String handlerClassName,
         String missingFieldName,
+        String accessorBaseName,
         List<String> available
     ) implements ErrorChannelWalkerError {
         public HandlerSourceAccessorMissing { available = List.copyOf(available); }
@@ -146,6 +149,9 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
                 .append("' @error type '").append(errorTypeName)
                 .append("': handler source class '").append(handlerClassName)
                 .append("' exposes no accessor for SDL field '").append(missingFieldName).append('\'');
+            if (!accessorBaseName.equals(missingFieldName)) {
+                sb.append(" (remapped to '").append(accessorBaseName).append("' by @field)");
+            }
             if (!available.isEmpty()) {
                 sb.append("; available accessors: ")
                   .append(available.stream().collect(Collectors.joining(", ")));

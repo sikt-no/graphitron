@@ -100,6 +100,24 @@ type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
 }
 ----
 
+== Extra fields
+
+Beyond the required `path` and `message`, an `@error` type may declare extra fields. Each extra field is read from the matched exception (or, for `VALIDATION`, the `GraphQLError`) through an accessor matching the field name: `code: String` reads `getCode()`, `code()`, or a public `code` field. When the Java accessor name diverges from the GraphQL field name, xref:field.adoc[`@field(name:)`] names the accessor to use instead:
+
+[source,graphql]
+----
+type FilmLookupInvalid @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupInvalidIdException"
+    }]) {
+    path: [String!]!
+    message: String!
+    attempted: Int @field(name: "attemptedId")   # reads getAttemptedId()
+}
+----
+
+The build fails when a declared extra field cannot be populated from every handler's source class, listing the accessors the class does expose. `@field` on `path` or `message` is rejected: those two fields are populated by Graphitron itself.
+
 == Constraints
 
 * `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload reachable from a xref:service.adoc[`@service`] field. A standalone `@error` type with no carrier is rejected at classify time.

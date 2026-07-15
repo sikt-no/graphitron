@@ -145,7 +145,7 @@ class ErrorChannelWalkerTest {
     }
 
     private static ErrorType errorType(String name, ErrorType.Handler... handlers) {
-        return new ErrorType(name, new SourceLocation(1, 1), List.of(handlers));
+        return new ErrorType(name, new SourceLocation(1, 1), List.of(handlers), List.of());
     }
 
     private static ErrorType.ExceptionHandler exception(String className) {

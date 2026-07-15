@@ -23,7 +23,7 @@ class ErrorTypeValidationTest {
 
     @Test
     void errorType_producesNoValidationErrors() {
-        GraphitronType type = new ErrorType("FilmNotFoundException", null, List.of());
+        GraphitronType type = new ErrorType("FilmNotFoundException", null, List.of(), List.of());
 
         assertThat(validate(type))
             .extracting(ValidationError::message)

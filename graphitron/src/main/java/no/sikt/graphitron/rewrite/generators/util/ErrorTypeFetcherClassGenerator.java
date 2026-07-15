@@ -18,11 +18,15 @@ import java.util.List;
  * {@code ::message} in place of the inline lambdas previously emitted by
  * {@code GraphitronSchemaClassGenerator}.
  *
- * <p>The SDL grammar restricts {@code @error} types to {@code {path: [String!]!, message: String!}};
- * the source object can be a {@code Throwable} (no {@code getPath()}) or a {@code GraphQLError}
+ * <p>An {@code @error} type declares the required {@code path: [String!]!} / {@code message: String!}
+ * and may declare extra fields; only {@code path} and {@code message} are reified here. The source
+ * object can be a {@code Throwable} (no {@code getPath()}) or a {@code GraphQLError}
  * (has {@code getPath()} / {@code getMessage()}). {@code path} synthesises from the GraphQL
  * execution context for non-{@code GraphQLError} sources so the non-null contract holds regardless
- * of handler kind; {@code message} routes universally through {@code getMessage()}.
+ * of handler kind; {@code message} routes universally through {@code getMessage()}. Extra fields
+ * are read at runtime by graphql-java's {@code PropertyDataFetcher} (registered by
+ * {@code GraphitronSchemaClassGenerator}, remapped when the field carries {@code @field(name:)}),
+ * not through this class.
  */
 public final class ErrorTypeFetcherClassGenerator {
 

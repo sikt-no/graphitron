@@ -205,7 +205,7 @@ public final class GraphitronSchemaClassGenerator {
         schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof ErrorType)
             .sorted(Map.Entry.comparingByKey())
-            .forEach(e -> body.add(buildErrorTypeFieldFetchers(e.getKey(), outputPackage)));
+            .forEach(e -> body.add(buildErrorTypeFieldFetchers((ErrorType) e.getValue(), outputPackage)));
 
         body.addStatement("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA);
 
@@ -459,10 +459,13 @@ public final class GraphitronSchemaClassGenerator {
     }
 
     /**
-     * Emits {@code codeRegistry.dataFetcher(...)} calls for the {@code path} and {@code message}
-     * fields of one @error type. The SDL grammar restricts @error types to exactly
-     * these two fields; both are always {@code [String!]!} / {@code String!} so a missing or
-     * null value would violate the schema's non-null contract.
+     * Emits {@code codeRegistry.dataFetcher(...)} calls for one @error type. The required
+     * {@code path} and {@code message} fields (both {@code [String!]!} / {@code String!}, so a
+     * missing or null value would violate the schema's non-null contract) get registered fetchers;
+     * any extra field carrying {@code @field(name:)} gets a {@code PropertyDataFetcher} keyed on the
+     * override's accessor base so the runtime read matches the classify-time accessor check.
+     * Extra fields without the directive keep resolving through graphql-java's default
+     * {@code PropertyDataFetcher} (by SDL field name), so they need no registration here.
      *
      * <ul>
      *   <li>{@code message} routes through {@code getMessage()} on the source: defined on
@@ -478,15 +481,22 @@ public final class GraphitronSchemaClassGenerator {
      * {@link no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator}; this site
      * only wires the {@code <ErrorType>Fetchers::path} / {@code ::message} references.
      */
-    private static CodeBlock buildErrorTypeFieldFetchers(String typeName, String outputPackage) {
+    private static CodeBlock buildErrorTypeFieldFetchers(ErrorType errorType, String outputPackage) {
+        String typeName       = errorType.name();
         var FIELD_COORDINATES = ClassName.get("graphql.schema", "FieldCoordinates");
+        var PROPERTY_FETCHER  = ClassName.get("graphql.schema", "PropertyDataFetcher");
         var fetchers          = ClassName.get(outputPackage + ".fetchers", typeName + "Fetchers");
-        return CodeBlock.builder()
+        var cb = CodeBlock.builder()
             .addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::path)",
                 FIELD_COORDINATES, typeName, "path", fetchers)
             .addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T::message)",
-                FIELD_COORDINATES, typeName, "message", fetchers)
-            .build();
+                FIELD_COORDINATES, typeName, "message", fetchers);
+        for (var override : errorType.accessorOverrides()) {
+            cb.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), $T.fetching($S))",
+                FIELD_COORDINATES, typeName, override.sdlFieldName(),
+                PROPERTY_FETCHER, override.accessorBase());
+        }
+        return cb.build();
     }
 
     record Plan(

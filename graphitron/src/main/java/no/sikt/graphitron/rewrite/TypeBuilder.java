@@ -1557,11 +1557,35 @@ class TypeBuilder {
             if (h != null) handlers.add(h);
         }
 
+        // Read @field(name:) on each extra field (everything except path / message) into the
+        // accessor-override list the classify-time check and the runtime fetcher both consult. In
+        // SDL declaration order so the emitter's fetcher-registration order is deterministic.
+        List<ErrorType.FieldAccessorOverride> accessorOverrides = new ArrayList<>();
+        for (var f : objType.getFieldDefinitions()) {
+            String fieldName = f.getName();
+            if ("path".equals(fieldName) || "message".equals(fieldName)) {
+                if (f.getAppliedDirective(DIR_FIELD) != null) {
+                    rejectReasons.add("@field on '" + fieldName + "' is not allowed: that field is "
+                        + "populated by Graphitron, so the directive can never take effect");
+                }
+                continue;
+            }
+            var override = argString(f, DIR_FIELD, ARG_NAME);
+            if (override.isEmpty()) continue;
+            if (override.get().isBlank()) {
+                rejectReasons.add("extra field '" + fieldName + "' carries @field(name:) with a "
+                    + "blank value; give it the source-class accessor name to read, or drop the "
+                    + "directive to read by the field's own name");
+                continue;
+            }
+            accessorOverrides.add(new ErrorType.FieldAccessorOverride(fieldName, override.get()));
+        }
+
         if (!rejectReasons.isEmpty()) {
             return new UnclassifiedType(name, location, Rejection.structural(
                 "@error type rejected: " + String.join("; ", rejectReasons)));
         }
-        return new ErrorType(name, location, List.copyOf(handlers));
+        return new ErrorType(name, location, List.copyOf(handlers), List.copyOf(accessorOverrides));
     }
 
     private static boolean isStringNonNull(GraphQLType type) {

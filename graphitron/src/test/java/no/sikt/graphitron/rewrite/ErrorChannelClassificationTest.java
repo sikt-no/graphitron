@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * Carrier classifier: every fetcher-emitting field variant that implements
@@ -494,6 +495,65 @@ class ErrorChannelClassificationTest {
             .containsExactly("SimpleErr");
     }
 
+    @Test
+    void extraField_fieldDirectiveRemapsAccessor_classifiesWithOverride() {
+        // R202: @field(name:) on an extra field names the source-class accessor when it diverges
+        // from the SDL field name. `detail` has no getDetail() on RuntimeException, but
+        // @field(name: "localizedMessage") remaps to Throwable.getLocalizedMessage(), so the
+        // carrier classifies cleanly and the classified ErrorType carries the override.
+        var schema = build("""
+            type RemapErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+                detail: String @field(name: "localizedMessage")
+            }
+            union SakError = RemapErr
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        var errorType = f.errorChannel().get().mappedErrorTypes().stream()
+            .filter(et -> et.name().equals("RemapErr")).findFirst().orElseThrow();
+        assertThat(errorType.accessorOverrides())
+            .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
+            .containsExactly(tuple("detail", "localizedMessage"));
+        assertThat(errorType.accessorBaseFor("detail")).isEqualTo("localizedMessage");
+    }
+
+    @Test
+    void extraField_fieldDirectiveRemapStillMissing_rejectsCarrierNamingFieldAndDirective() {
+        // R202: a remap to an accessor the source class still does not expose rejects, and the
+        // diagnostic names both the SDL field and the directive value so the failed remap is
+        // diagnosable. RuntimeException has no getNope() / nope() / public nope field.
+        var schema = build("""
+            type RemapMissErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+                detail: String @field(name: "nope")
+            }
+            union SakError = RemapMissErr
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) field).reason();
+        assertThat(reason)
+            .contains("RemapMissErr")
+            .contains("detail")
+            .contains("nope")
+            .contains("java.lang.RuntimeException");
+    }
+
     // ===== Carrier-walk LocalContext binding (R12 Phase C) =====
 
     private static final String CARRIER_WALK_ERROR_SDL = """
@@ -594,6 +654,43 @@ class ErrorChannelClassificationTest {
         // Pin the exact defect: a bestGuess over the binary name would keep the whole
         // "AccessorPayloads$NestedErrorsPayload" as one simple name (it never splits on '$').
         assertThat(ch.payloadClass().simpleName()).isEqualTo("NestedErrorsPayload");
+    }
+
+    @Test
+    void extraField_legacyPayloadClassPath_fieldDirectiveRemapsAccessor() {
+        // R202: the class-backed payload path runs FieldBuilder.checkErrorTypeSourceAccessors, a
+        // distinct check site from the @service HandlerAccessorCheck. A child @service field
+        // returning a nested backed payload reaches resolveErrorChannel's PayloadClass arm;
+        // @field(name: "localizedMessage") on an extra field remaps to Throwable.getLocalizedMessage()
+        // so the accessor check passes and the classified ErrorType carries the override.
+        var schema = build("""
+            type RemapErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+                detail: String @field(name: "localizedMessage")
+            }
+            union SakError = RemapErr
+            type NestedErrPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Film @table(name: "film") {
+                title: String
+                sak: NestedErrPayload @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runNestedErrors"})
+            }
+            type Query { films: [Film!] }
+            """);
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
+        var ch = (ErrorChannel.PayloadClass) ((WithErrorChannel) f).errorChannel().orElseThrow();
+        var errorType = ch.mappedErrorTypes().stream()
+            .filter(et -> et.name().equals("RemapErr")).findFirst().orElseThrow();
+        assertThat(errorType.accessorBaseFor("detail")).isEqualTo("localizedMessage");
+        assertThat(errorType.accessorOverrides())
+            .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
+            .containsExactly(tuple("detail", "localizedMessage"));
     }
 
     private GraphitronSchema build(String schemaText) {

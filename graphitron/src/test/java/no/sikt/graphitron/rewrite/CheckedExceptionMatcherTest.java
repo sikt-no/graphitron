@@ -174,7 +174,7 @@ class CheckedExceptionMatcherTest {
     }
 
     private static ErrorChannel channelWith(ErrorType.Handler handler) {
-        var errorType = new ErrorType("Err", null, List.of(handler));
+        var errorType = new ErrorType("Err", null, List.of(handler), List.of());
         return new ErrorChannel.PayloadClass(
             List.of(errorType),
             ClassName.bestGuess("com.example.Payload"),

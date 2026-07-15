@@ -5826,7 +5826,7 @@ class GraphQLQueryTest {
                     title
                     errors {
                         __typename
-                        ... on FilmLookupInvalid { path message }
+                        ... on FilmLookupInvalid { path message attempted }
                         ... on FilmLookupNotFound { path message }
                     }
                 }
@@ -5840,6 +5840,10 @@ class GraphQLQueryTest {
         errors.hasSize(1);
         var only = errors.element(0, as(MAP));
         only.containsEntry("__typename", "FilmLookupInvalid");
+        // R202: the `attempted: Int @field(name: "attemptedId")` extra field reads the divergently
+        // named getAttemptedId() accessor off the matched throwable through a remapped
+        // PropertyDataFetcher, round-tripping the attempted id (-7) end-to-end.
+        only.containsEntry("attempted", -7);
         // Synthesized path DataFetcher routes Throwable sources through
         // env.getExecutionStepInfo().getPath().toList() so the [String!]! contract holds even
         // though Throwable has no getPath() accessor. The path is the SDL field path of the
