@@ -4,11 +4,12 @@ title: "Rethink and reintroduce @tableMethod"
 status: Backlog
 bucket: docs
 theme: docs
+priority: 30
 depends-on: []
 deferred: true
 notes: "gated on @tableMethod re-entering the supported surface after a rethink; not a release priority"
 created: 2026-06-30
-last-updated: 2026-06-30
+last-updated: 2026-07-15
 ---
 
 # Rethink and reintroduce @tableMethod
@@ -16,7 +17,16 @@ last-updated: 2026-06-30
 R400 withholds `@tableMethod` from the first-release advertised surface: it is implemented and
 test-covered but used by no consumer schema, so v1 does not document it. The directive stays
 declared and working; it is simply not advertised. This item is the parking ticket for bringing it
-back, and the place to do the rethink the withholding buys us time for. **Not a release priority.**
+back, and the place to do the rethink the withholding buys us time for. **Not a release priority**
+(priority deliberately set low, 2026-07-15).
+
+Decision recorded 2026-07-15: the team confirmed `@tableMethod` stays withheld with no near-term
+reintroduction, on the basis that `@routine` covers the pressing need. The active support work was
+discarded (R277, `tablemethod-under-nested-type`, was closed rather than built; the R288 N+1 fix was
+narrowed to the polymorphic-interface case and the `@tableMethod` inlining folded into the future
+redesign this item parks). This item is kept, at low priority, specifically to carry the design
+history and the rethink agenda below so a future feature request starts from context rather than
+scratch. It is not scheduled work.
 
 This item **absorbs the parallel "Remove the @tableMethod directive" proposal** (the upstream R400
 that this branch's R400 took over). That proposal argued for retiring the directive outright; the
