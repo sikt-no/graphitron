@@ -1,7 +1,7 @@
 ---
 id: R478
 title: "Seal KeyAlternative.KeyShape so each variant carries its requiredFields/columns contract"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: nodeid
