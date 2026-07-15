@@ -143,8 +143,9 @@ class RejectNonIdNodeIdPipelineTest {
 
     @Test
     void federationNodeIdHappyPath_notRejected() {
-        // The canonical single-id @key on a @node type resolves to KeyShape.NODE_ID (the rep's id is
-        // decoded by NodeIdEncoder at runtime), not the DIRECT path, so finding H must not fire.
+        // The canonical single-id @key on a @node type resolves to a KeyAlternative.NodeId (the
+        // rep's id is decoded by NodeIdEncoder at runtime), not the Direct path, so finding H must
+        // not fire.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Customer implements Node @table(name: "customer") @node @key(fields: "id") {
                 id: ID! @nodeId

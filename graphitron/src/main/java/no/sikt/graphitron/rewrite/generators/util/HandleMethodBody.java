@@ -5,7 +5,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
-import no.sikt.graphitron.rewrite.model.KeyAlternative.KeyShape;
 
 import java.util.Comparator;
 import java.util.List;
@@ -83,7 +82,7 @@ final class HandleMethodBody {
                 b.beginControlFlow("if (" + cond + ")", matchArgs(alt));
                 any = true;
             }
-            emitDecodeAndGroup(b, entity, alt, p.declarationIndex(), nodeIdEncoder);
+            emitDecodeAndGroup(b, alt, p.declarationIndex(), nodeIdEncoder);
         }
         if (any) {
             b.endControlFlow();
@@ -105,29 +104,36 @@ final class HandleMethodBody {
     }
 
     private static void emitDecodeAndGroup(
-        CodeBlock.Builder b, EntityResolution entity, KeyAlternative alt, int altIndex,
+        CodeBlock.Builder b, KeyAlternative alt, int altIndex,
         ClassName nodeIdEncoder
     ) {
-        if (alt.shape() == KeyShape.NODE_ID) {
-            // expectedTypeId: NodeType.typeId() (defaults to type name when @node(typeId:) is
-            // omitted; differs only when the consumer set an explicit typeId). Passing the raw
-            // typename here would silently fail decode for typeId-overridden types.
-            String expectedTypeId = entity.nodeTypeId() != null ? entity.nodeTypeId() : entity.typeName();
-            b.addStatement("Object idObj = rep.get($S)", "id");
-            b.addStatement("if (!(idObj instanceof String idStr)) continue");
-            b.addStatement("String[] decoded = $T.decodeValues($S, idStr)", nodeIdEncoder, expectedTypeId);
-            // Reject a well-formed id whose decoded key has the wrong arity, exactly as the
-            // single-record decode helpers (NodeIdEncoderClassGenerator) and
-            // InputBeanInstantiationEmitter do. Without the != N guard, an under-arity id trips
-            // AIOOBE inside select<Type>Alt<N> and an over-arity id silently resolves the wrong
-            // row; both become a skipped rep (null slot), matching the null-not-error contract.
-            b.addStatement("if (decoded == null || decoded.length != $L) continue", alt.columns().size());
-            b.addStatement("Object[] cols = new Object[$L]", alt.columns().size());
-            b.addStatement("for (int j = 0; j < decoded.length; j++) cols[j] = decoded[j]");
-        } else {
-            b.addStatement("Object[] cols = new Object[$L]", alt.requiredFields().size());
-            for (int i = 0; i < alt.requiredFields().size(); i++) {
-                b.addStatement("cols[$L] = rep.get($S)", i, alt.requiredFields().get(i));
+        // Exhaustive sealed switch with no default arm: a future third key shape is a compile
+        // error at this fork rather than a silent runtime gap.
+        switch (alt) {
+            case KeyAlternative.NodeId nodeId -> {
+                // expectedTypeId: the resolved wire prefix (NodeType.typeId(), defaulted to the
+                // type name at classify time; differs only when the consumer set an explicit
+                // typeId). The builder resolved it; passing the raw typename here would silently
+                // fail decode for typeId-overridden types.
+                b.addStatement("Object idObj = rep.get($S)", "id");
+                b.addStatement("if (!(idObj instanceof String idStr)) continue");
+                b.addStatement("String[] decoded = $T.decodeValues($S, idStr)",
+                    nodeIdEncoder, nodeId.expectedTypeId());
+                // Reject a well-formed id whose decoded key has the wrong arity, exactly as the
+                // single-record decode helpers (NodeIdEncoderClassGenerator) and
+                // InputBeanInstantiationEmitter do. Without the != N guard, an under-arity id trips
+                // AIOOBE inside select<Type>Alt<N> and an over-arity id silently resolves the wrong
+                // row; both become a skipped rep (null slot), matching the null-not-error contract.
+                b.addStatement("if (decoded == null || decoded.length != $L) continue", nodeId.columns().size());
+                b.addStatement("Object[] cols = new Object[$L]", nodeId.columns().size());
+                b.addStatement("for (int j = 0; j < decoded.length; j++) cols[j] = decoded[j]");
+            }
+            case KeyAlternative.Direct direct -> {
+                var bindings = direct.bindings();
+                b.addStatement("Object[] cols = new Object[$L]", bindings.size());
+                for (int i = 0; i < bindings.size(); i++) {
+                    b.addStatement("cols[$L] = rep.get($S)", i, bindings.get(i).repField());
+                }
             }
         }
         // Per-rep DFE: carries arguments(rep) for any in-rep argument reads inside the

@@ -11,7 +11,6 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
-import no.sikt.graphitron.rewrite.model.KeyAlternative.KeyShape;
 
 import javax.lang.model.element.Modifier;
 import java.util.Comparator;
@@ -152,19 +151,29 @@ public final class EntityFetcherDispatchClassGenerator {
     }
 
     private static MethodSpec buildTypenameForTypeIdMethod(List<EntityResolution> entities) {
-        // Static initialised map, keyed by NodeType.typeId() (which differs from the typename
-        // when the consumer set @node(typeId: ...)). Used by QueryNodeFetcher.rowsNodes after
-        // peekTypeId to recover the GraphQL typename for synthesising reps.
+        // Static initialised map, keyed by each @node entity's NodeId alternative expectedTypeId
+        // (which differs from the typename when the consumer set @node(typeId: ...)). Used by
+        // QueryNodeFetcher.rowsNodes after peekTypeId to recover the GraphQL typename for
+        // synthesising reps.
         var b = CodeBlock.builder();
         b.add("$T<String, String> $L = $T.ofEntries(",
             MAP, "MAP", MAP);
         boolean first = true;
         for (var entity : entities) {
-            if (entity.nodeTypeId() == null) continue; // only NodeType entities have a typeId
+            // Only @node entities carry a NodeId alternative (exactly one: required == ["id"]);
+            // @key-only entities have none. Its expectedTypeId is the wire prefix, keyed to the
+            // typename here. Inclusion ignores resolvable, matching the former nodeTypeId != null
+            // test (a @node type always had a non-null nodeTypeId regardless of resolvable).
+            var nodeId = entity.alternatives().stream()
+                .filter(a -> a instanceof KeyAlternative.NodeId)
+                .map(a -> (KeyAlternative.NodeId) a)
+                .findFirst()
+                .orElse(null);
+            if (nodeId == null) continue;
             if (!first) b.add(",\n        ");
             else b.add("\n        ");
             first = false;
-            b.add("$T.entry($S, $S)", MAP, entity.nodeTypeId(), entity.typeName());
+            b.add("$T.entry($S, $S)", MAP, nodeId.expectedTypeId(), entity.typeName());
         }
         b.add(");\n");
         var fieldInit = b.build();

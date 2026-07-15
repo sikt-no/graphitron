@@ -54,8 +54,10 @@ public sealed interface GraphitronType
      * A GraphQL object type annotated with both {@code @table} and {@code @node}.
      * Full SQL generation applies, plus Relay Global Object Identification.
      *
-     * <p>{@code typeId} is the value of the {@code typeId} argument on the {@code @node}
-     * directive, or {@code null} when the argument was omitted.
+     * <p>{@code typeId} is the resolved NodeId wire prefix: the value of the {@code typeId}
+     * argument on the {@code @node} directive, defaulted to the type name at classify time
+     * ({@code TypeBuilder} resolves {@code sdlTypeId != null ? sdlTypeId : name}) when the
+     * argument is omitted. Never {@code null} on a classified {@code NodeType}.
      *
      * <p>{@code nodeKeyColumns} is the resolved list of {@code keyColumns} argument entries.
      * An empty list means the argument was omitted, in which case the primary key is used

@@ -27,7 +27,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
-import no.sikt.graphitron.rewrite.model.KeyAlternative.KeyShape;
 import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
@@ -49,10 +48,10 @@ import java.util.function.Consumer;
  *
  * <h3>Shape selection</h3>
  * <ul>
- *   <li>{@code @key(fields: "id")} on a {@link NodeType} → {@link KeyShape#NODE_ID}, columns
+ *   <li>{@code @key(fields: "id")} on a {@link NodeType} → {@link KeyAlternative.NodeId}, columns
  *       are the type's {@code nodeKeyColumns}; the rep's id is decoded by
  *       {@code NodeIdEncoder.decodeValues} at runtime.</li>
- *   <li>Any other {@code @key} → {@link KeyShape#DIRECT}, columns resolved by walking the
+ *   <li>Any other {@code @key} → {@link KeyAlternative.Direct}, columns resolved by walking the
  *       referenced fields and reading their {@link ColumnRef}.</li>
  * </ul>
  *
@@ -204,19 +203,18 @@ public final class EntityResolutionBuilder {
             // are richer than the ["id"] alternative.
             if (isNodeType && !hasNodeIdAlternative(alternatives)) {
                 NodeType nt = (NodeType) gType;
-                alternatives.add(0, new KeyAlternative(
-                    List.of(ID_FIELD), List.copyOf(nt.nodeKeyColumns()), true, KeyShape.NODE_ID));
+                alternatives.add(0, new KeyAlternative.NodeId(
+                    nt.typeId(), List.copyOf(nt.nodeKeyColumns()), true));
             }
 
             var tableBacked = (GraphitronType.TableBackedType) registry.get(typeName);
-            String nodeTypeId = tableBacked instanceof NodeType nt ? nt.typeId() : null;
-            out.put(typeName, new EntityResolution(typeName, tableBacked.table(), List.copyOf(alternatives), nodeTypeId));
+            out.put(typeName, new EntityResolution(typeName, tableBacked.table(), List.copyOf(alternatives)));
         }
         return Map.copyOf(out);
     }
 
     private static boolean hasNodeIdAlternative(List<KeyAlternative> alternatives) {
-        return alternatives.stream().anyMatch(a -> a.shape() == KeyShape.NODE_ID);
+        return alternatives.stream().anyMatch(a -> a instanceof KeyAlternative.NodeId);
     }
 
     /**
@@ -269,20 +267,19 @@ public final class EntityResolutionBuilder {
         }
         boolean resolvable = readResolvableArg(keyDirective);
 
-        // NODE_ID shape: a NodeType with a single "id" required field uses the node's
+        // NodeId shape: a NodeType with a single "id" required field uses the node's
         // nodeKeyColumns and decodes the rep's id through NodeIdEncoder at runtime.
         if (gType instanceof NodeType nodeType
             && required.size() == 1
             && ID_FIELD.equals(required.get(0))) {
-            return new AltResult.Ok(new KeyAlternative(
-                List.copyOf(required),
+            return new AltResult.Ok(new KeyAlternative.NodeId(
+                nodeType.typeId(),
                 List.copyOf(nodeType.nodeKeyColumns()),
-                resolvable,
-                KeyShape.NODE_ID));
+                resolvable));
         }
 
-        // DIRECT shape: each required field name maps to a ColumnRef on the type's table.
-        var columns = new ArrayList<ColumnRef>();
+        // Direct shape: each required field name maps to a ColumnRef on the type's table.
+        var bindings = new ArrayList<KeyAlternative.RepBinding>();
         for (String name : required) {
             var field = fields.get(FieldCoordinates.coordinates(typeName, name));
             ColumnRef col = columnOf(field);
@@ -308,7 +305,7 @@ public final class EntityResolutionBuilder {
                     + "use the canonical @key(fields: \"id\") NodeId path on a @node type."),
                     gType.location()));
             }
-            columns.add(col);
+            bindings.add(new KeyAlternative.RepBinding(name, col));
         }
         if (gType instanceof NodeType && required.contains(ID_FIELD)) {
             // Compound key that includes "id" on a @node type: we treat it as DIRECT (the rep
@@ -322,11 +319,9 @@ public final class EntityResolutionBuilder {
                 + "carry the column-level id, not a base64-encoded NodeId.",
                 gType.location()));
         }
-        return new AltResult.Ok(new KeyAlternative(
-            List.copyOf(required),
-            List.copyOf(columns),
-            resolvable,
-            KeyShape.DIRECT));
+        return new AltResult.Ok(new KeyAlternative.Direct(
+            List.copyOf(bindings),
+            resolvable));
     }
 
     private static String readFieldsArg(GraphQLAppliedDirective key) {

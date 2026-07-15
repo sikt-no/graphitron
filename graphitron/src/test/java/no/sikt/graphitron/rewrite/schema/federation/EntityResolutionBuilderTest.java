@@ -4,7 +4,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
-import no.sikt.graphitron.rewrite.model.KeyAlternative.KeyShape;
+import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,9 +20,9 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * {@code customer}, {@code film}). They declare {@code @key} inline since
  * {@code TestSchemaHelper} does not run {@link KeyNodeSynthesiser} (that lives in
  * {@code GraphQLRewriteGenerator.loadAttributedRegistry}, which the helper bypasses).
- * The {@link EntityResolutionBuilder} also synthesises a NODE_ID alternative for every
- * NodeType regardless of {@code @link} presence, so {@code @node} types in test SDLs
- * still get an entity entry.
+ * The {@link EntityResolutionBuilder} also synthesises a {@link KeyAlternative.NodeId}
+ * alternative for every NodeType regardless of {@code @link} presence, so {@code @node}
+ * types in test SDLs still get an entity entry.
  */
 @UnitTier
 class EntityResolutionBuilderTest {
@@ -43,11 +43,11 @@ class EntityResolutionBuilderTest {
         assertThat(resolution).as("@node type always gets an entity entry").isNotNull();
         assertThat(resolution.alternatives()).hasSize(1);
         var alt = resolution.alternatives().get(0);
-        assertThat(alt.shape()).isEqualTo(KeyShape.NODE_ID);
+        assertThat(alt).isInstanceOf(KeyAlternative.NodeId.class);
         assertThat(alt.requiredFields()).containsExactly("id");
         assertThat(alt.resolvable()).isTrue();
-        assertThat(resolution.nodeTypeId())
-            .as("nodeTypeId carries the @node(typeId:) value (default: type name)")
+        assertThat(((KeyAlternative.NodeId) alt).expectedTypeId())
+            .as("expectedTypeId carries the @node(typeId:) value (default: type name)")
             .isEqualTo("Customer");
     }
 
@@ -61,8 +61,11 @@ class EntityResolutionBuilderTest {
             """);
         var resolution = schema.entityResolution("Customer");
         assertThat(resolution).isNotNull();
-        assertThat(resolution.nodeTypeId())
-            .as("explicit @node(typeId:) flows into nodeTypeId; dispatcher passes this to NodeIdEncoder.decodeValues")
+        assertThat(resolution.alternatives()).hasSize(1);
+        var alt = resolution.alternatives().get(0);
+        assertThat(alt).isInstanceOf(KeyAlternative.NodeId.class);
+        assertThat(((KeyAlternative.NodeId) alt).expectedTypeId())
+            .as("explicit @node(typeId:) flows into expectedTypeId; dispatcher passes this to NodeIdEncoder.decodeValues")
             .isEqualTo("C");
     }
 
@@ -79,13 +82,16 @@ class EntityResolutionBuilderTest {
         assertThat(resolution).isNotNull();
         assertThat(resolution.alternatives()).hasSize(1);
         var alt = resolution.alternatives().get(0);
-        assertThat(alt.shape()).isEqualTo(KeyShape.DIRECT);
+        assertThat(alt).isInstanceOf(KeyAlternative.Direct.class);
         assertThat(alt.requiredFields()).containsExactly("languageId");
         assertThat(alt.columns()).hasSize(1);
         assertThat(alt.columns().get(0).sqlName()).isEqualToIgnoringCase("language_id");
-        assertThat(resolution.nodeTypeId())
-            .as("non-NodeType has no nodeTypeId")
-            .isNull();
+        var binding = ((KeyAlternative.Direct) alt).bindings().get(0);
+        assertThat(binding.repField()).isEqualTo("languageId");
+        assertThat(binding.column().sqlName()).isEqualToIgnoringCase("language_id");
+        assertThat(resolution.alternatives())
+            .as("a non-NodeType @key type carries no NodeId alternative")
+            .noneMatch(a -> a instanceof KeyAlternative.NodeId);
     }
 
     @Test
@@ -100,11 +106,11 @@ class EntityResolutionBuilderTest {
             """);
         var resolution = schema.entityResolution("Film");
         assertThat(resolution).isNotNull();
-        // NODE_ID synthetic alt (prepended) + 2 DIRECT alts from the @key directives
+        // NodeId synthetic alt (prepended) + 2 Direct alts from the @key directives
         assertThat(resolution.alternatives()).hasSize(3);
-        assertThat(resolution.alternatives().get(0).shape())
-            .as("NODE_ID alt is prepended for @node types")
-            .isEqualTo(KeyShape.NODE_ID);
+        assertThat(resolution.alternatives().get(0))
+            .as("NodeId alt is prepended for @node types")
+            .isInstanceOf(KeyAlternative.NodeId.class);
         assertThat(resolution.alternatives())
             .extracting(a -> a.requiredFields().toString())
             .containsExactly("[id]", "[filmId]", "[title]");
@@ -128,9 +134,9 @@ class EntityResolutionBuilderTest {
             .as("@node + explicit @key(fields: \"id\") dedups to one alternative")
             .hasSize(1);
         var alt = resolution.alternatives().get(0);
-        assertThat(alt.shape())
-            .as("explicit @key(fields: \"id\") on @node still gets NODE_ID shape")
-            .isEqualTo(KeyShape.NODE_ID);
+        assertThat(alt)
+            .as("explicit @key(fields: \"id\") on @node still gets a NodeId alternative")
+            .isInstanceOf(KeyAlternative.NodeId.class);
         assertThat(alt.resolvable())
             .as("consumer's resolvable: false carries through, dispatcher will skip this alt")
             .isFalse();
@@ -149,9 +155,30 @@ class EntityResolutionBuilderTest {
         assertThat(resolution).isNotNull();
         assertThat(resolution.alternatives()).hasSize(1);
         var alt = resolution.alternatives().get(0);
-        assertThat(alt.shape()).isEqualTo(KeyShape.DIRECT);
+        assertThat(alt).isInstanceOf(KeyAlternative.Direct.class);
         assertThat(alt.requiredFields()).containsExactly("rentalId", "inventoryId");
         assertThat(alt.columns()).hasSize(2);
+        // Direct's requiredFields()/columns() unzip bindings in declaration order.
+        var bindings = ((KeyAlternative.Direct) alt).bindings();
+        assertThat(bindings).extracting(KeyAlternative.RepBinding::repField)
+            .containsExactly("rentalId", "inventoryId");
+        assertThat(bindings).extracting(b -> b.column().sqlName().toLowerCase())
+            .containsExactly("rental_id", "inventory_id");
+    }
+
+    @Test
+    void nodeIdAlternative_requiredFieldsIsAlwaysIdSingleton() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Query { customer: Customer }
+            type Customer implements Node @table(name: "customer") @node {
+                id: ID! @nodeId
+            }
+            """);
+        var alt = schema.entityResolution("Customer").alternatives().get(0);
+        assertThat(alt).isInstanceOf(KeyAlternative.NodeId.class);
+        assertThat(alt.requiredFields())
+            .as("NodeId.requiredFields() is the derived constant [id], not stored state")
+            .containsExactly("id");
     }
 
     @Test
