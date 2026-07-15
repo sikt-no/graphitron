@@ -104,7 +104,7 @@ public final class ClassifiedCorpus {
         /*
          * Keyed split lookup: a list child whose @lookupKey argument establishes a positional
          * input-list <-> output-list correspondence, fetched by a @splitQuery keyed batch
-         * (SplitLookupTableField). The @lookupKey makes its operation Lookup; it lands on participant @table
+         * (BatchedLookupTableField). The @lookupKey makes its operation Lookup; it lands on participant @table
          * rows (target Table); the new-query batch shape is derived, not a tuple axis. Corpus-only: it
          * is another Child / Lookup / Table leaf.
          */
@@ -585,7 +585,7 @@ public final class ClassifiedCorpus {
         /*
          * @table children under a jOOQ-TableRecord-backed parent, reached by @lookupKey and by
          * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
-         * new-query is derived): `FilmDetails.language` is a RecordLookupTableField (its @lookupKey makes
+         * new-query is derived): `FilmDetails.language` is a BatchedLookupTableField (its @lookupKey makes
          * the operation Lookup, target Table) and `FilmDetails.inventories` a RecordTableMethodField (Fetch,
          * Table). FilmDetails is record-bound as getFilm's jOOQ-TableRecord return type, which supplies
          * the FK source key for both.

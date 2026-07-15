@@ -69,7 +69,7 @@ public sealed interface ChildField extends OutputField
             case CompositeColumnReferenceField ignored -> SourceShape.Table;
             case TableField ignored -> SourceShape.Table;
             case LookupTableField ignored -> SourceShape.Table;
-            case SplitLookupTableField ignored -> SourceShape.Table;
+
             case TableInterfaceField ignored -> SourceShape.Table;
             case TableMethodField ignored -> SourceShape.Table;
             case ServiceTableField ignored -> SourceShape.Table;
@@ -83,9 +83,9 @@ public sealed interface ChildField extends OutputField
             // independently-classified parent backing keeps holding and gets stronger here (a
             // stored fact checked against a walk, not a tautology of leaf identity).
             case BatchedTableField f -> f.sourceShape();
+            case BatchedLookupTableField f -> f.sourceShape();
             // Record-backed parents (DTO batching, @service / DML payload carriers): the source is a
             // producer-handed domain record.
-            case RecordLookupTableField ignored -> SourceShape.Record;
             case RecordTableMethodField ignored -> SourceShape.Record;
             case RecordField ignored -> SourceShape.Record;
             case RecordCompositeField ignored -> SourceShape.Record;
@@ -116,8 +116,7 @@ public sealed interface ChildField extends OutputField
             case UnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             // Lookup-keyed reads.
             case LookupTableField f -> new Operation.Lookup(f.lookupMapping());
-            case SplitLookupTableField f -> new Operation.Lookup(f.lookupMapping());
-            case RecordLookupTableField f -> new Operation.Lookup(f.lookupMapping());
+            case BatchedLookupTableField f -> new Operation.Lookup(f.lookupMapping());
             // Developer @service calls (reflected MethodRef carrier).
             case ServiceTableField f -> OutputField.serviceCall(f.method());
             case ServiceRecordField f -> OutputField.serviceCall(f.method());
@@ -149,10 +148,9 @@ public sealed interface ChildField extends OutputField
             case TableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case BatchedTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case LookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case SplitLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case BatchedLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case RecordLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case RecordTableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
@@ -439,10 +437,9 @@ public sealed interface ChildField extends OutputField
      */
     sealed interface TableTargetField extends ChildField, SqlGeneratingField
         permits ChildField.TableField, ChildField.BatchedTableField,
-                ChildField.LookupTableField, ChildField.SplitLookupTableField,
+                ChildField.LookupTableField, ChildField.BatchedLookupTableField,
                 ChildField.TableInterfaceField,
-                ChildField.ServiceTableField,
-                ChildField.RecordLookupTableField {
+                ChildField.ServiceTableField {
 
         ReturnTypeRef.TableBoundReturnType returnType();
         List<JoinStep> joinPath();
@@ -649,7 +646,15 @@ public sealed interface ChildField extends OutputField
         }
     }
 
-    record SplitLookupTableField(
+    /**
+     * The {@code @lookupKey} twin of {@link BatchedTableField} (R432): a DataLoader-batched keyed
+     * re-query anchor whose SELECT is additionally narrowed by a {@code @lookupKey} VALUES join.
+     * One leaf for both parent backings, gated on the stored {@link SourceShape}; the divergence
+     * between the pre-merge twins was a strict subset of the non-lookup pair's (same mint/fetcher
+     * fork, no Connection arm on either side). See {@link BatchedTableField} for the
+     * source-gate and total-lift rationale.
+     */
+    record BatchedLookupTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
@@ -658,13 +663,44 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
+        SourceShape sourceShape,
         SourceKey sourceKey,
+        KeyLift lift,
         LoaderRegistration loaderRegistration,
         LookupMapping lookupMapping,
         ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField, LookupField {
-        public SplitLookupTableField {
-            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitLookupTableField");
+        public BatchedLookupTableField {
+            // Invariants mirror BatchedTableField's 1/2/3/6; the Connection invariant (4) is
+            // deliberately absent — a Connection-shaped lookup is an author-reachable schema
+            // (rejected by the validator's "lookup fields must not return a connection" check
+            // on both arms), not an unrepresentable generator state.
+            java.util.Objects.requireNonNull(lift, "lift");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedLookupTableField");
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "BatchedLookupTableField");
+            java.util.Objects.requireNonNull(sourceShape, "sourceShape");
+            if (sourceShape == SourceShape.Table) {
+                if (!(lift instanceof KeyLift.FkColumns)) {
+                    throw new IllegalArgumentException(
+                        "BatchedLookupTableField with sourceShape=Table must lift by column projection "
+                        + "(KeyLift.FkColumns); a member-read lift (" + lift.getClass().getSimpleName()
+                        + ") is a class-backed-parent mechanism");
+                }
+                if (loaderRegistration.dispatch() != LoaderRegistration.Dispatch.LOAD_ONE) {
+                    throw new IllegalArgumentException(
+                        "BatchedLookupTableField with sourceShape=Table must dispatch LOAD_ONE; the "
+                        + "loadMany contract is an accessor-arity (record-parent) shape");
+                }
+            }
+        }
+        @Override
+        public boolean emitsSingleRecordPerKey() {
+            // One definition for both arms, same formula as BatchedTableField. The classifier
+            // rejects @splitQuery + @lookupKey at single cardinality, and the Table arm pins
+            // LOAD_ONE, so the Table arm always answers false — identical to the pre-merge
+            // split-lookup leaf's inherited default.
+            return !returnType().wrapper().isList()
+                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
@@ -706,7 +742,7 @@ public sealed interface ChildField extends OutputField
      * parent that uses {@code @tableMethod} to bind a developer-authored static jOOQ table method.
      * The parent has no parent-table alias to join from, so the developer's table is joined against
      * a DataLoader-keyed batch lifted out of the parent DTO via {@link #sourceKey}, mirroring the
-     * existing record-sourced {@link BatchedTableField} / {@link RecordLookupTableField} pattern. {@link #joinPath}
+     * existing record-sourced {@link BatchedTableField} / {@link BatchedLookupTableField} pattern. {@link #joinPath}
      * is the resolved parent-to-target chain: {@code [fkJoin]} for the FK-auto-derive arm on a
      * jOOQ-table-record-backed parent, the lifter's resolved chain on the {@code @sourceRow} arm.
      *
@@ -1001,39 +1037,6 @@ public sealed interface ChildField extends OutputField
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
-        }
-    }
-
-    record RecordLookupTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<JoinStep> joinPath,
-        List<WhereFilter> filters,
-        OrderBySpec orderBy,
-        PaginationSpec pagination,
-        SourceKey sourceKey,
-        KeyLift lift,
-        LoaderRegistration loaderRegistration,
-        LookupMapping lookupMapping,
-        ParentCorrelation parentCorrelation
-    ) implements TableTargetField, BatchKeyField, LookupField {
-        public RecordLookupTableField {
-            java.util.Objects.requireNonNull(lift, "lift");
-            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordLookupTableField");
-            KeyLift.checkResidueAgreement(lift, sourceKey, "RecordLookupTableField");
-        }
-        @Override
-        public boolean emitsSingleRecordPerKey() {
-            // Mirrors BatchedTableField: single-cardinality fields fold onto the same
-            // single-record-per-key arm as the LOAD_MANY loadMany-contract dispatch. See
-            // BatchedTableField.emitsSingleRecordPerKey for the single-source-of-truth notes.
-            return !returnType().wrapper().isList()
-                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
         }
     }
 

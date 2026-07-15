@@ -6,10 +6,9 @@ package no.sikt.graphitron.rewrite.model;
  * rows-method emitter and the DataFetcher emitter both dispatch on.
  *
  * <p>Implemented by all field variants that are DataLoader-backed:
- * {@link ChildField.BatchedTableField} (both source shapes, R432),
- * {@link ChildField.SplitLookupTableField},
- * {@link ChildField.ServiceTableField},
- * {@link ChildField.RecordLookupTableField}, {@link ChildField.RecordTableMethodField},
+ * {@link ChildField.BatchedTableField} and {@link ChildField.BatchedLookupTableField} (both
+ * source shapes, R432), {@link ChildField.ServiceTableField},
+ * {@link ChildField.RecordTableMethodField},
  * {@link ChildField.ServiceRecordField}.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that

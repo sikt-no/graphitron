@@ -26,9 +26,8 @@ import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
+import no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
-import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
@@ -748,7 +747,7 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== TableField / BatchedTableField / SplitLookupTableField / LookupTableField =====
+    // ===== TableField / BatchedTableField / BatchedLookupTableField / LookupTableField =====
 
     /**
      * Child field on a {@code @table} parent returning a {@code @table}-mapped type. One case per
@@ -856,11 +855,11 @@ class GraphitronSchemaBuilderTest {
         // rendered into the Field Classification section of code-generation-triggers.adoc). The
         // BatchedTableField leaf stays covered by the corpus and by the slot-asserting split cases below.
 
-        // R281 slice 2: the pure `@splitQuery + @lookupKey -> SplitLookupTableField` verdict (a bare
+        // R281 slice 2: the pure `@splitQuery + @lookupKey -> BatchedLookupTableField` verdict (a bare
         // isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where it is
         // the `split-lookup` ClassifiedCorpus example (Store.customers, asserted via
         // @classified(source: Child, operation: Lookup, target: List, targetShape: Table)). Corpus-only: it lands on the
-        // already-taught Child / Lookup / Table coordinate. The SplitLookupTableField leaf stays
+        // already-taught Child / Lookup / Table coordinate. The BatchedLookupTableField leaf stays
         // covered by the corpus and by the slot-asserting / rejection cases below
         // (IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE, SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED).
 
@@ -915,7 +914,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((UnclassifiedField) schema.field("Store", "customer")).reason())
                     .contains("Single-cardinality @splitQuery @lookupKey is not supported");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
         SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY(
@@ -971,7 +970,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE(
-            "no @reference on @splitQuery + @lookupKey with single FK → SplitLookupTableField with one inferred FK hop",
+            "no @reference on @splitQuery + @lookupKey with single FK → BatchedLookupTableField with one inferred FK hop",
             """
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -980,7 +979,7 @@ class GraphitronSchemaBuilderTest {
             type Query { store: Store }
             """,
             schema -> {
-                var f = (SplitLookupTableField) schema.field("Store", "customers");
+                var f = (BatchedLookupTableField) schema.field("Store", "customers");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
@@ -1410,7 +1409,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({TableField.class, BatchedTableField.class, LookupTableField.class, SplitLookupTableField.class})
+    @ProjectionFor({TableField.class, BatchedTableField.class, LookupTableField.class, BatchedLookupTableField.class})
     void tableFieldProjectionCarriesTargetTableAndAxisFlags() {
         // Plain TableField: list of @table-bound child rows from a parent @table.
         var s1 = buildSnapshot("""
@@ -1445,7 +1444,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(lookup.splitBatched()).isFalse();
         assertThat(lookup.hasLookupKey()).isTrue();
 
-        // SplitLookupTableField: both axes.
+        // BatchedLookupTableField: both axes.
         var s4 = buildSnapshot("""
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
@@ -2363,7 +2362,7 @@ class GraphitronSchemaBuilderTest {
         // single cardinality, @splitQuery warning, @sourceRow lifters).
 
         RECORD_LOOKUP_TABLE_FIELD(
-            "record-backed parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated SourceKey",
+            "record-backed parent (typed POJO) + @table return type + @lookupKey → BatchedLookupTableField with populated SourceKey",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2376,11 +2375,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
+                var f = (BatchedLookupTableField) schema.field("FilmDetails", "language");
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
                 assertThat(f.sourceKey().columns()).isNotEmpty();
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
         IMPLICIT_REFERENCE_RECORD_TABLE(
@@ -2405,7 +2404,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE(
-            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FK hop",
+            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → BatchedLookupTableField with one inferred FK hop",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2418,12 +2417,12 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedLookupTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
         // R281 slice 2: the plain `record-backed parent + non-table object return -> RecordField` verdict
@@ -2498,7 +2497,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SPLIT_QUERY_ON_RECORD_PARENT_WARNS_LOOKUP_FIELD(
-            "@splitQuery on record-backed parent + @lookupKey + @table return → RecordLookupTableField + build warning",
+            "@splitQuery on record-backed parent + @lookupKey + @table return → BatchedLookupTableField + build warning",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2513,13 +2512,13 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordLookupTableField.class);
+                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(BatchedLookupTableField.class);
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
                         && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
         // R3: holistic-surfacing rule. An unrelated rejection on the same field (here, an
@@ -2629,7 +2628,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({RecordField.class, PropertyField.class, BatchedTableField.class, RecordLookupTableField.class})
+    @ProjectionFor({RecordField.class, PropertyField.class, BatchedTableField.class, BatchedLookupTableField.class})
     void recordParentChildProjectionsCarryColumnAccessorAndTableTargetPayloads() {
         // PropertyField + RecordField — projection collapses to RecordOrProperty with
         // columnName / accessorName.
@@ -2660,7 +2659,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(rt.tableName()).isEqualToIgnoringCase("language");
         assertThat(rt.hasLookupKey()).isFalse();
 
-        // RecordLookupTableField — hasLookupKey = true.
+        // BatchedLookupTableField — hasLookupKey = true.
         var s3 = buildSnapshot("""
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2757,7 +2756,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         POJO_PARENT_VALID_PLUS_LOOKUPKEY(
-            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → RecordLookupTableField with LifterPathKeyed and lookupMapping populated",
+            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → BatchedLookupTableField with LifterPathKeyed and lookupMapping populated",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2772,11 +2771,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
+                var f = (BatchedLookupTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.lookupMapping()).isNotNull();
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
         // R276: NULL_FQ_CLASS_NAME deleted. It pinned "a record-backed parent with no backing class +
@@ -3215,7 +3214,7 @@ class GraphitronSchemaBuilderTest {
 
         // R3: @splitQuery on a @sourceRow record-backed parent field is just as silently no-op as on
         // the regular record-backed parent path — the lifter-keyed DataLoader already opens a new
-        // scope. One fixture is enough since both arms (BatchedTableField, RecordLookupTableField)
+        // scope. One fixture is enough since both arms (BatchedTableField, BatchedLookupTableField)
         // share the same emit-warning seam.
         SPLIT_QUERY_WARNS_ON_SOURCE_ROW(
             "@splitQuery on @sourceRow record-backed parent field → BatchedTableField + build warning naming the field coordinate",

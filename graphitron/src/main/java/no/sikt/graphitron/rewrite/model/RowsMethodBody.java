@@ -14,8 +14,7 @@ import java.util.Objects;
  * projection:
  *
  * <ul>
- *   <li>{@link SqlSplitTable}, {@link SqlSplitLookupTable}, {@link SqlRecordTable},
- *       {@link SqlRecordLookupTable} — SQL-side bodies. The skeleton emits the empty-input
+ *   <li>{@link SqlBatchedTable}, {@link SqlBatchedLookupTable} — SQL-side bodies. The skeleton emits the empty-input
  *       short-circuit and the {@code DSLContext dsl = ...} line, then pastes the permit's
  *       {@code content()}; the SELECT / scatter logic that lives in {@code content} consumes
  *       both {@code keys} and {@code dsl}.</li>
@@ -56,23 +55,19 @@ public sealed interface RowsMethodBody {
         }
     }
 
-    /** SQL body for {@code SplitLookupTableField} — adds a {@code @lookupKey} VALUES join. */
-    record SqlSplitLookupTable(CodeBlock content) implements RowsMethodBody {
-        public SqlSplitLookupTable {
-            Objects.requireNonNull(content, "content");
-        }
-    }
-
-    /** SQL body for {@code RecordLookupTableField} — class-backed parent + lookupKey. */
-    record SqlRecordLookupTable(CodeBlock content) implements RowsMethodBody {
-        public SqlRecordLookupTable {
+    /**
+     * SQL body for {@code BatchedLookupTableField} — {@link SqlBatchedTable} plus a
+     * {@code @lookupKey} VALUES join (both source shapes, R432).
+     */
+    record SqlBatchedLookupTable(CodeBlock content) implements RowsMethodBody {
+        public SqlBatchedLookupTable {
             Objects.requireNonNull(content, "content");
         }
     }
 
     /**
      * SQL body for {@code RecordTableMethodField} — class-backed parent + child
-     * {@code @tableMethod}. Identical SQL framing to {@link SqlRecordTable} (parent VALUES
+     * {@code @tableMethod}. Identical SQL framing to {@link SqlBatchedTable} (parent VALUES
      * join, scatter by idx) with the developer's static {@code @tableMethod} call substituted
      * for the {@code Tables.X.as("alias")} terminal table declaration.
      */

@@ -388,10 +388,9 @@ public final class CompileDependencyGraphBuilder {
             // into this $fields method (TypeClassGenerator collects only TableField/LookupTableField);
             // their projection edges are sourced from their own <parent>Fetchers unit in addFieldEdges.
             case ChildField.BatchedTableField ignored -> { }
-            case ChildField.SplitLookupTableField ignored -> { }
+            case ChildField.BatchedLookupTableField ignored -> { }
             case ChildField.TableInterfaceField ignored -> { }
             case ChildField.ServiceTableField ignored -> { }
-            case ChildField.RecordLookupTableField ignored -> { }
             case ChildField.TableMethodField ignored -> { }
             case ChildField.RecordTableMethodField ignored -> { }
             case ChildField.InterfaceField ignored -> { }

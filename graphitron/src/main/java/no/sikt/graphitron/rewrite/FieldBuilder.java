@@ -29,7 +29,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
@@ -890,9 +889,11 @@ class FieldBuilder {
                 if (lookupResolved instanceof LookupKeyDirectiveResolver.Resolved.Rejected r) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 }
-                return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
+                return new no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    SourceShape.Table,
                     parentSplitSource.sourceKey(),
+                    parentSplitSource.lift(),
                     parentSplitSource.loaderRegistration(),
                     tfc.lookupMapping(),
                     tbtParentCorrelation);
@@ -5658,7 +5659,7 @@ class FieldBuilder {
             // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
             // condition-join (or hop-0-filter) first hop has no parent table to anchor the source
             // argument. parentTable=null routes the parent-anchor (OnParentJoin) arm to AuthorError,
-            // mirroring the record-sourced BatchedTableField arm / RecordLookupTableField. Filter-less FK-derived
+            // mirroring the record-sourced BatchedTableField / BatchedLookupTableField arms. Filter-less FK-derived
             // first hops produce ParentCorrelation.OnFkSlots and don't consult parentTable; the
             // @sourceRow leaf-PK shape arrives pre-resolved as OnLiftedSlots (R431).
             var rtmPcResolution = lifted != null
@@ -5716,8 +5717,8 @@ class FieldBuilder {
             }
             var srParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) srPcResolution).correlation();
             if (hasLookupKeyAnywhere(fieldDef)) {
-                return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.lift(),
+                return new ChildField.BatchedLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), SourceShape.Record, ok.sourceKey(), ok.lift(),
                     ok.loaderRegistration(), tfc.lookupMapping(), srParentCorrelation);
             }
             return new ChildField.BatchedTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
@@ -5830,7 +5831,7 @@ class FieldBuilder {
                 if (components instanceof TableFieldComponents.Rejected rj) yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                 var tfc = (TableFieldComponents.Ok) components;
                 boolean isLookup = hasLookupKeyAnywhere(fieldDef);
-                String fieldKind = isLookup ? "RecordLookupTableField" : "BatchedTableField";
+                String fieldKind = isLookup ? "BatchedLookupTableField" : "BatchedTableField";
                 var resolution = resolveRecordParentSource(name, columnName, tb, objectPath.elements(), parentResultType, fieldKind);
                 if (resolution instanceof RecordParentSourceResolution.Rejected rj) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
@@ -5854,8 +5855,8 @@ class FieldBuilder {
                     resolvedParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) resolvedPcResolution).correlation();
                 }
                 if (isLookup) {
-                    yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(), tfc.lookupMapping(),
+                    yield new ChildField.BatchedLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                        SourceShape.Record, resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(), tfc.lookupMapping(),
                         resolvedParentCorrelation);
                 }
                 yield new ChildField.BatchedTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
@@ -6024,7 +6025,7 @@ class FieldBuilder {
     /**
      * Builder-internal triple returned by {@link #deriveSplitQuerySource}: the
      * {@link SourceKey} + {@link KeyLift} + {@link LoaderRegistration} the table-sourced
-     * {@code BatchedTableField} / {@code SplitLookupTableField} constructors take. Groups the
+     * {@code BatchedTableField} / {@code BatchedLookupTableField} constructors take. Groups the
      * projections so the producer computes them in one place instead of via separate calls.
      */
     private record SplitQuerySource(SourceKey sourceKey, KeyLift lift, LoaderRegistration loaderRegistration) {}
@@ -6117,7 +6118,7 @@ class FieldBuilder {
     /**
      * Derives the FK-based {@link SourceKey} + {@link LoaderRegistration} for a record-parent
      * batched field (the record-sourced {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} arm,
-     * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField} arm) by reading the
      * FK source columns from the join path's first FK-derived {@link JoinStep.Hop}.
      *
      * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when the join
@@ -6160,7 +6161,7 @@ class FieldBuilder {
      * Outcome of {@link #resolveRecordParentSource} for a class-backed-parent table-bound
      * child field. Two arms; the caller exhausts them with a sealed switch and either projects
      * the resolved {@link SourceKey} + {@link LoaderRegistration} into the record-sourced {@link ChildField.BatchedTableField} arm /
-     * {@link RecordLookupTableField}, or surfaces the rejection as
+     * {@link ChildField.BatchedLookupTableField}, or surfaces the rejection as
      * {@link GraphitronField.UnclassifiedField}. Builder-internal sealed result per the
      * {@code development-principles.adoc} rule on {@code Builder-step results are sealed}.
      */
@@ -6182,7 +6183,7 @@ class FieldBuilder {
      * table-bound child field. Tries the FK derivation first (via
      * {@link #deriveFkRecordParentSource}); on null, attempts the typed-accessor derivation; on
      * null again, returns the three-option AUTHOR_ERROR rejection. The helper is shared between
-     * the record-sourced {@link ChildField.BatchedTableField} and {@link RecordLookupTableField} branches;
+     * the record-sourced {@link ChildField.BatchedTableField} and {@link ChildField.BatchedLookupTableField} branches;
      * {@code fieldKindLabel} parameterises only the leading clause of the rejection.
      */
     private RecordParentSourceResolution resolveRecordParentSource(

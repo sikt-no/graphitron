@@ -26,7 +26,7 @@ import java.util.List;
  * </ul>
  *
  * <p>The third site that constructs a {@code @lookupKey}-typed variant
- * ({@code classifyChildFieldOnResultType} → {@code RecordLookupTableField}) does not perform
+ * ({@code classifyChildFieldOnResultType} → record-sourced {@code BatchedLookupTableField}) does not perform
  * cardinality validation today and is intentionally left untouched: tightening its invariants
  * would be a behavior change, separate from this lift.
  *

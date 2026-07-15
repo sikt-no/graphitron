@@ -13,7 +13,7 @@ import java.util.Objects;
  * {@link ChildField.SingleRecordIdField} leaf plus the first-class {@link SourceEnvelope}.
  *
  * <p>Carried by {@link ChildField.BatchedTableField} (total since R432; the Table-sourced arm
- * always carries {@link FkColumns}), {@link ChildField.RecordLookupTableField},
+ * always carries {@link FkColumns}), {@link ChildField.BatchedLookupTableField} (same gate),
  * {@link ChildField.RecordTableMethodField}, and (as {@code parentKeyLift}) the polymorphic
  * {@link ChildField.InterfaceField} / {@link ChildField.UnionField}. Dispatched exhaustively by
  * {@code GeneratorUtils.buildRecordParentKeyExtraction}. Table-parent batched fields

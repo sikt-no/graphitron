@@ -1,12 +1,11 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * Capability interface for the four field variants that are backed by {@code @lookupKey}
+ * Capability interface for the three field variants that are backed by {@code @lookupKey}
  * arguments and generate a VALUES + JOIN lookup query: {@link QueryField.QueryLookupTableField}
  * (root synchronous lookup), {@link ChildField.LookupTableField} (table-mapped parent, inline
- * correlated subquery), {@link ChildField.SplitLookupTableField} (table-mapped parent,
- * DataLoader-backed), and {@link ChildField.RecordLookupTableField} (result-mapped parent,
- * DataLoader-backed).
+ * correlated subquery), and {@link ChildField.BatchedLookupTableField} (DataLoader-backed, both
+ * parent backings, gated on its stored {@code SourceShape} — R432).
  *
  * <p>Per the "Capabilities reify an orthogonal axis; sealed switches fork on identity" principle
  * in {@code docs/architecture/explanation/development-principles.adoc}, the generator routes on this
@@ -22,8 +21,7 @@ package no.sikt.graphitron.rewrite.model;
 public sealed interface LookupField permits
     QueryField.QueryLookupTableField,
     ChildField.LookupTableField,
-    ChildField.SplitLookupTableField,
-    ChildField.RecordLookupTableField {
+    ChildField.BatchedLookupTableField {
 
     LookupMapping lookupMapping();
 }

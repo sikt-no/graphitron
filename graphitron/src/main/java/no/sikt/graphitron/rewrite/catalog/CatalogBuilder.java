@@ -265,9 +265,12 @@ public final class CatalogBuilder {
             case ChildField.LookupTableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, true);
-            case ChildField.SplitLookupTableField f ->
-                new FieldClassification.TableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), true, true);
+            case ChildField.BatchedLookupTableField f ->
+                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
+                    ? new FieldClassification.TableTarget(
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true, true)
+                    : new FieldClassification.RecordTableTarget(
+                        targetTableName(f.returnType()), fkSteps(f.joinPath()), true);
             case ChildField.TableMethodField f ->
                 new FieldClassification.TableMethod(
                     targetTableName(f.returnType()),
@@ -305,9 +308,6 @@ public final class CatalogBuilder {
                     false,
                     null,
                     errorChannelName(f.errorChannel()));
-            case ChildField.RecordLookupTableField f ->
-                new FieldClassification.RecordTableTarget(
-                    targetTableName(f.returnType()), fkSteps(f.joinPath()), true);
             case ChildField.RecordField f ->
                 new FieldClassification.RecordOrProperty(
                     f.column() != null ? f.column().sqlName() : f.columnName(),

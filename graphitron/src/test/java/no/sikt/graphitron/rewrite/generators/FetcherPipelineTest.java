@@ -190,7 +190,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsLanguage");
     }
 
-    // ===== record-backed parent — RecordLookupTableField =====
+    // ===== record-backed parent — BatchedLookupTableField =====
     //
     // Backing class is the real jOOQ FilmRecord from graphitron-sakila-db — a TableRecord
     // bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
@@ -233,7 +233,7 @@ class FetcherPipelineTest {
 
     @Test
     void recordLookupTableField_onRecordType_hasInputRowsHelper() {
-        // Lookup-input VALUES helper — distinguishes RecordLookupTableField from BatchedTableField.
+        // Lookup-input VALUES helper — distinguishes BatchedLookupTableField from BatchedTableField.
         var fetchers = findSpec("FilmDetailsFetchers", RECORD_LOOKUP_TABLE_SDL);
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }

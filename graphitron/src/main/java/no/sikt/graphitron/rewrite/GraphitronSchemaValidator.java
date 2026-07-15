@@ -238,7 +238,7 @@ public class GraphitronSchemaValidator {
      * <p>The {@code @service}-table and {@code DML}-projected-{@code @table} arms re-query from a
      * produced record; the Record-source family (the record-sourced {@code BatchedTableField} arm,
      * into which the former {@code SingleRecordTableField} carriers collapsed via
-     * {@code RecordLookupTableField} /
+     * the record-sourced {@code BatchedLookupTableField} arm /
      * {@code RecordTableMethodField})
      * re-projects the {@code @table} from keys read off a received record (R305). The
      * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
@@ -261,7 +261,8 @@ public class GraphitronSchemaValidator {
             // catalog row and does not re-fetch, mirroring requiresReFetch's sourceShape read.
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f ->
                 f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField ignored -> true;
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f ->
+                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
                 // R406: the discriminated-interface arms re-project the shared @table (a follow-up
@@ -348,7 +349,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f      -> validateBatchedTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField f  -> validateSplitLookupTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f -> validateBatchedLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField f  -> validateRecordTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
@@ -357,7 +358,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField f  -> validateRecordLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // R275 — narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField f    -> {} // R329 — narrow ResultReturnType + non-null fqClassName / envelope compact-constructor invariants pin the structural shape; the near-miss rejections (mismatched producer, a @field child neither @table-backed nor a resolvable composite accessor, the re-leveled cardinality mismatch) fire at classify time as UnclassifiedField (RecordBindingMultiProducer / accessor-mismatch / the composite-carrier cardinality reject), surfaced via validateUnclassifiedField
@@ -942,7 +942,7 @@ public class GraphitronSchemaValidator {
         }
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateSplitLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateBatchedLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             errors.add(new ValidationError(
@@ -1009,7 +1009,7 @@ public class GraphitronSchemaValidator {
      * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads ({@code ColumnField},
      * {@code CompositeColumnField}, {@code TableField}, {@code LookupTableField},
      * {@code NestingField}) are reified onto it by {@code FetcherEmitter.bind}, and the class-backed
-     * leaves (Table-sourced {@code BatchedTableField}, {@code SplitLookupTableField}) carry their
+     * leaves (the Table-sourced {@code BatchedTableField} / {@code BatchedLookupTableField} arms) carry their
      * heavy methods there. {@code TypeFetcherGenerator} emits that class for any nested type owning
      * a fetcher (the {@code FetcherEmitter.nestedTypeOwnsFetchers} gate shared with
      * {@code FetcherRegistrationsEmitter.nestedBody}, via a separate walk over
@@ -1030,7 +1030,7 @@ public class GraphitronSchemaValidator {
             case ChildField.LookupTableField ignored -> true;
             case ChildField.NestingField ignored -> true;
             case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;
-            case ChildField.SplitLookupTableField ignored -> true;
+            case ChildField.BatchedLookupTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;
             default -> false;
         };
     }
@@ -1238,17 +1238,6 @@ public class GraphitronSchemaValidator {
         }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
-    private void validateRecordLookupTableField(no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.invalidSchema("Field '" + field.qualifiedName() + "': lookup fields must not return a connection"),
-                field.location()
-            ));
-        }
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-    }
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {
         // Accessor-resolution rejection routes through UnclassifiedField at classify time
         // (FieldBuilder), so the slot here is statically AccessorResolution.Resolved or null.
@@ -1449,7 +1438,7 @@ public class GraphitronSchemaValidator {
      *       (explicit guard before encoder dispatch).</li>
      * </ul>
      *
-     * <p>The lookup twin ({@code RecordLookupTableField}) is not admitted — it was absent from the
+     * <p>The lookup leaf ({@code BatchedLookupTableField}, either arm) is not admitted — it was absent from the
      * pre-merge allow-list and its fetcher's guard has not been audited; preserve the asymmetry
      * rather than silently widening (R432).
      *

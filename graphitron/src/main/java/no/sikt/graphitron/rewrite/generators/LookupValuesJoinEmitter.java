@@ -146,8 +146,7 @@ final class LookupValuesJoinEmitter {
         return switch (field) {
             case QueryField.QueryLookupTableField f -> f.name();
             case ChildField.LookupTableField f -> f.name();
-            case ChildField.SplitLookupTableField f -> f.name();
-            case ChildField.RecordLookupTableField f -> f.name();
+            case ChildField.BatchedLookupTableField f -> f.name();
         };
     }
 

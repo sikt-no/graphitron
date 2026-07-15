@@ -53,41 +53,13 @@ class RowsMethodSkeletonTest {
     }
 
     @Test
-    void sqlSplitLookupTable_emitsSqlFraming() {
+    void sqlBatchedLookupTable_emitsSqlFraming() {
         MethodSpec spec = RowsMethodSkeleton.build(
             "rowsFilms",
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
             CTX_CALL,
-            new RowsMethodBody.SqlSplitLookupTable(SQL_BODY));
-
-        String src = spec.toString();
-        assertThat(src).contains("if (keys.isEmpty())");
-        assertThat(src).contains("DSLContext dsl");
-    }
-
-    @Test
-    void sqlRecordTable_emitsSqlFraming() {
-        MethodSpec spec = RowsMethodSkeleton.build(
-            "rowsFilms",
-            LIST_OF_LIST_OF_RECORD,
-            LIST_OF_KEY,
-            CTX_CALL,
-            new RowsMethodBody.SqlBatchedTable(SQL_BODY));
-
-        String src = spec.toString();
-        assertThat(src).contains("if (keys.isEmpty())");
-        assertThat(src).contains("DSLContext dsl");
-    }
-
-    @Test
-    void sqlRecordLookupTable_emitsSqlFraming() {
-        MethodSpec spec = RowsMethodSkeleton.build(
-            "rowsFilms",
-            LIST_OF_LIST_OF_RECORD,
-            LIST_OF_KEY,
-            CTX_CALL,
-            new RowsMethodBody.SqlRecordLookupTable(SQL_BODY));
+            new RowsMethodBody.SqlBatchedLookupTable(SQL_BODY));
 
         String src = spec.toString();
         assertThat(src).contains("if (keys.isEmpty())");
@@ -136,12 +108,11 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the five body shapes (R432 merged the split/record "
-                + "non-lookup pair onto SqlBatchedTable)")
+            .as("RowsMethodBody permits exactly the four body shapes (R432 merged the split/record "
+                + "pairs onto SqlBatchedTable / SqlBatchedLookupTable)")
             .containsExactlyInAnyOrder(
                 RowsMethodBody.SqlBatchedTable.class,
-                RowsMethodBody.SqlSplitLookupTable.class,
-                RowsMethodBody.SqlRecordLookupTable.class,
+                RowsMethodBody.SqlBatchedLookupTable.class,
                 RowsMethodBody.SqlRecordTableMethod.class,
                 RowsMethodBody.Service.class);
     }

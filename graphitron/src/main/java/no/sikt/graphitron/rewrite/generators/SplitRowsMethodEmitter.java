@@ -623,19 +623,25 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // SplitLookupTableField (C2)
+    // BatchedLookupTableField (C2)
     // -----------------------------------------------------------------------
 
-    /** See {@link #buildForBatchedTable} for the entry-point convention. */
-    static MethodSpec buildForSplitLookupTable(TypeFetcherEmissionContext ctx, ChildField.SplitLookupTableField slf, String outputPackage,
+    /**
+     * See {@link #buildForBatchedTable} for the entry-point convention. Both source shapes: the
+     * rows-method body was already identical for the pre-merge lookup twins — same
+     * {@code SourceKey} (Wrap.Row) + {@code LookupMapping} shape, so {@code buildListMethod}
+     * handles both. The parent-backing divergence (jOOQ-table-row vs backing-object key
+     * extraction) lives above this seam, in {@code TypeFetcherGenerator}'s fetcher fork.
+     */
+    static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         return buildListMethod(
-            ctx, slf.name(), slf.rowsMethodName(), slf.returnType(),
-            slf.joinPath(), slf.filters(), slf.sourceKey(),
-            slf.lookupMapping(),
-            slf.parentCorrelation(),
+            ctx, blf.name(), blf.rowsMethodName(), blf.returnType(),
+            blf.joinPath(), blf.filters(), blf.sourceKey(),
+            blf.lookupMapping(),
+            blf.parentCorrelation(),
             outputPackage,
-            RowsMethodBody.SqlSplitLookupTable::new, registry);
+            RowsMethodBody.SqlBatchedLookupTable::new, registry);
     }
 
     // -----------------------------------------------------------------------
@@ -801,31 +807,11 @@ public final class SplitRowsMethodEmitter {
             singleRecordPerKey ? "scatterSingleByIdx" : "scatterByIdx");
     }
 
-    // -----------------------------------------------------------------------
-    // RecordLookupTableField
-    // -----------------------------------------------------------------------
-
-    /** See {@link #buildForBatchedTable} for the entry-point convention. */
-    static MethodSpec buildForRecordLookupTable(TypeFetcherEmissionContext ctx, ChildField.RecordLookupTableField rltf, String outputPackage,
-            CompositeDecodeHelperRegistry registry) {
-        // Rows-method body is identical to SplitLookupTableField's — same SourceKey
-        // (Wrap.Row + ColumnRead) + LookupMapping shape, so buildListMethod handles both. The
-        // record-parent divergence (backing-object accessor vs jOOQ-table-row accessor for key
-        // extraction) lives above this seam, in TypeFetcherGenerator.buildRecordBasedDataFetcher.
-        return buildListMethod(
-            ctx, rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
-            rltf.joinPath(), rltf.filters(), rltf.sourceKey(),
-            rltf.lookupMapping(),
-            rltf.parentCorrelation(),
-            outputPackage,
-            RowsMethodBody.SqlRecordLookupTable::new, registry);
-    }
-
 
     /**
      * Shared body emitter for list-cardinality Split* rows methods. For
      * {@link ChildField.BatchedTableField} pass {@code lookupMapping = null}; for
-     * {@link ChildField.SplitLookupTableField} pass its mapping and the emitter adds a second
+     * {@link ChildField.BatchedLookupTableField} pass its mapping and the emitter adds a second
      * VALUES derived-table JOIN narrowing on the {@code @lookupKey} args.
      */
     private static MethodSpec buildListMethod(

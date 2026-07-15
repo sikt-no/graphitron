@@ -221,11 +221,10 @@ public class TypeFetcherGenerator {
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         ChildField.BatchedTableField.class,
-        ChildField.SplitLookupTableField.class,
+        ChildField.BatchedLookupTableField.class,
         ChildField.PropertyField.class,
         ChildField.RecordField.class,
         ChildField.RecordCompositeField.class,
-        ChildField.RecordLookupTableField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.TableMethodField.class,
@@ -381,7 +380,7 @@ public class TypeFetcherGenerator {
 
         // R268: when this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
-        // (the record-sourced BatchedTableField arm / RecordLookupTableField /
+        // (the record-sourced BatchedTableField / BatchedLookupTableField arms /
         // RecordTableMethodField) arm-switch inside
         // their generated fetcher method: narrow Success, read the key off success.value(), and
         // return completedFuture(null) on the ErrorList arm. The same predicate drives the
@@ -463,19 +462,25 @@ public class TypeFetcherGenerator {
                     }
                     builder.addMethod(SplitRowsMethodEmitter.buildForBatchedTable(ctx, btf, outputPackage, registry));
                 }
-                case ChildField.SplitLookupTableField slf -> {
-                    builder.addMethod(buildSplitQueryDataFetcher(ctx, slf, slf.returnType(), parentTable, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(ctx, slf, outputPackage, registry));
+                case ChildField.BatchedLookupTableField blf -> {
+                    // R432: same one-seam fetcher fork as BatchedTableField, gated on the stored
+                    // source shape.
+                    if (blf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table) {
+                        builder.addMethod(buildSplitQueryDataFetcher(ctx, blf, blf.returnType(), parentTable, outputPackage));
+                    } else {
+                        builder.addMethod(buildRecordBasedDataFetcher(ctx, blf, blf.returnType(), blf.sourceKey(), blf.lift(), resultType, sourceIsOutcome, outputPackage));
+                    }
+                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedLookupTable(ctx, blf, outputPackage, registry));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // The env-based variant (buildInputRowsMethod) reads args from
-                    // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
+                    // env.getArgument(name) — correct for a batched fetcher whose @lookupKey args
                     // live on the field itself (vs. the inline child-lookup path where
-                    // args live on a parent's SelectedField).
-                    if (slf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
-                        var lookupTableRef = slf.returnType().table();
+                    // args live on a parent's SelectedField). Identical for both source shapes.
+                    if (blf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
+                        var lookupTableRef = blf.returnType().table();
                         var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                            .of(lookupTableRef, slf.returnType().returnTypeName(), outputPackage).jooqTableClass();
-                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(slf, lookupTableClass));
+                            .of(lookupTableRef, blf.returnType().returnTypeName(), outputPackage).jooqTableClass();
+                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(blf, lookupTableClass));
                     }
                 }
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
@@ -565,18 +570,6 @@ public class TypeFetcherGenerator {
                 // back is reified by FetcherEmitter.bind into a named source-only method (wrapped in
                 // LightFetcher), collected below. No-op arm here.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
-                case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), rltf.lift(), resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage, registry));
-                    // Input-rows helper identical in shape to SplitLookupTableField's — reads
-                    // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
-                    if (rltf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
-                        var lookupTableRef = rltf.returnType().table();
-                        var lookupTableClass = GeneratorUtils.ResolvedTableNames
-                            .of(lookupTableRef, rltf.returnType().returnTypeName(), outputPackage).jooqTableClass();
-                        builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
-                    }
-                }
                 case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
                 case ChildField.RecordTableMethodField rtmf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), rtmf.lift(), resultType, sourceIsOutcome, outputPackage));
@@ -731,9 +724,9 @@ public class TypeFetcherGenerator {
         boolean hasListSplitField = fields.stream().anyMatch(f ->
             (f instanceof ChildField.BatchedTableField btf
                 && btf.returnType().wrapper() instanceof FieldWrapper.List)
-            || (f instanceof ChildField.SplitLookupTableField slf
-                && slf.returnType().wrapper() instanceof FieldWrapper.List)
-            || f instanceof ChildField.RecordLookupTableField
+            || (f instanceof ChildField.BatchedLookupTableField blf
+                && (blf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record
+                    || blf.returnType().wrapper() instanceof FieldWrapper.List))
             || (f instanceof ChildField.RecordTableMethodField rtmf && rtmf.returnType().wrapper().isList()
                 && !rtmf.emitsSingleRecordPerKey()));
         if (hasListSplitField) {
@@ -766,7 +759,7 @@ public class TypeFetcherGenerator {
         // for SplitLookupTableField and RecordLookupTableField. Plain batched fields
         // never use the empty-input short-circuit.
         boolean hasSplitLookupField = fields.stream().anyMatch(f ->
-            f instanceof ChildField.SplitLookupTableField || f instanceof ChildField.RecordLookupTableField);
+            f instanceof ChildField.BatchedLookupTableField);
         if (hasSplitLookupField) {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
@@ -798,8 +791,7 @@ public class TypeFetcherGenerator {
     private static boolean emitsRowKeyedParentInputRowsMethod(GraphitronField field) {
         return switch (field) {
             case ChildField.BatchedTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
-            case ChildField.SplitLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
-            case ChildField.RecordLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.BatchedLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.RecordTableMethodField f ->
                 f.joinPath().size() == 1 && f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.InterfaceField f ->
@@ -6498,7 +6490,7 @@ public class TypeFetcherGenerator {
     }
 
     // -----------------------------------------------------------------------
-    // Table-sourced BatchedTableField / SplitLookupTableField — DataLoader-registering fetcher + flat
+    // Table-sourced BatchedTableField / BatchedLookupTableField — DataLoader-registering fetcher + flat
     // correlated-batch rows method. See SplitRowsMethodEmitter for the body shape.
     // -----------------------------------------------------------------------
 
@@ -6582,8 +6574,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Builds the DataFetcher method for a record-parent batched field
-     * (the record-sourced {@link ChildField.BatchedTableField} arm,
-     * {@link ChildField.RecordLookupTableField}). Shape is
+     * (the record-sourced {@link ChildField.BatchedTableField} /
+     * {@link ChildField.BatchedLookupTableField} arms). Shape is
      * identical to {@link #buildSplitQueryDataFetcher} except key extraction uses
      * {@link GeneratorUtils#buildRecordParentKeyExtraction} (backing-object or lifter-call
      * accessor) instead of {@link GeneratorUtils#buildKeyExtraction} (jOOQ table-row accessor).
@@ -6669,7 +6661,10 @@ public class TypeFetcherGenerator {
                 && btf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table) {
             return btf.name();
         }
-        if (bkf instanceof ChildField.SplitLookupTableField slf) return slf.name();
+        if (bkf instanceof ChildField.BatchedLookupTableField blf
+                && blf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table) {
+            return blf.name();
+        }
         throw new IllegalArgumentException(
             "buildSplitQueryDataFetcher does not handle " + bkf.getClass().getSimpleName());
     }
