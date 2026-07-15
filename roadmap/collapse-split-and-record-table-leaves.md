@@ -1,7 +1,7 @@
 ---
 id: R432
 title: "Collapse SplitTableField and RecordTableField into one source-gated leaf"
-status: Spec
+status: Ready
 bucket: structural
 priority: 4
 theme: classification-model
@@ -209,6 +209,24 @@ the false-invariant family the design principles warn about, so this item ships 
   `StubbedVariantPipelineTest`, `ReFetchDerivationTest`, `SplitTableFieldPipelineTest`, fetcher /
   pipeline suites and the LSP `DiagnosticsTest` re-name; `SourceShapeProjectionTest` unchanged in
   intent.
+
+## Reviewer notes (Spec → Ready sign-off, 2026-07-15)
+
+Signed off as sound; two refinements to fold into the implementation, neither a design change:
+
+- **Containment-check surface (slice 1).** The check throws `IllegalStateException` at generation
+  time. Make explicit that this is a *generator invariant*, not an author-facing rejection: a
+  divergence is always a walk omission (a Graphitron bug), never reachable by a valid author schema
+  with a correct generator, so `IllegalStateException` is deliberate and the "Rejections: validator
+  mirrors classifier" rule does not call for a typed rejection here. State that discriminator at the
+  throw site so a future maintainer does not mistake it for an author error and re-home it.
+- **`KeyLift` axis coherence (slice 4).** Making `lift` total broadens the whole `KeyLift` axis, not
+  just `FkColumns`' javadoc: `dispatch-axes.adoc` today states a table-parent `@splitQuery` field
+  has *no* `KeyLift`. The slice-4 doc sweep must reframe the axis itself, from "record-parent lift
+  provenance" to "how the key tuple is lifted off the held jOOQ record," so the generalized axis
+  reads as one honest axis (`FkColumns`-on-a-table-row a genuine member, not a vacuous value that
+  dilutes it). Lead the storage rationale with "total `lift` removes an absence case and tells no
+  lie" (durable); R314 forward-provisioning is the bonus, not the load-bearing reason.
 
 ## Slices
 
