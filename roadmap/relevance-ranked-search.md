@@ -17,9 +17,8 @@ last-updated: 2026-07-15
 > 2026-07-02 as a thinking-capture; substantially rewritten 2026-07-15 after a
 > design discussion closed most of the original forks. Still **Backlog**: the
 > direction is settled, but the open questions at the end (notably the jOOQ
-> metadata feasibility check and the Oracle edition question) gate the Spec
-> transition. The dead-ends section records the roads not taken so they are
-> not relitigated.
+> metadata feasibility check) gate the Spec transition. The dead-ends section
+> records the roads not taken so they are not relitigated.
 
 ## Problem
 
@@ -178,12 +177,15 @@ The facts that flow in, and what each gates:
    binding (validated for membership, trusted for semantics, the same trust
    boundary as `@condition` Java methods); if rich, we can validate
    capability too. This decides how much validation the Spec can promise.
-2. **Oracle and the jOOQ edition.** jOOQ's open-source edition does not
-   support Oracle; Oracle requires a commercial jOOQ license, and our build
-   and Testcontainers story is Postgres-only today. Decide whether Oracle
-   support lands as design-compatible-but-unverified, or waits on licensed
-   build infrastructure. The demand/supply design is dialect-agnostic either
-   way; this question is about what we can *test and claim*.
+2. **Oracle test infrastructure (resolved in principle, logistics open).**
+   jOOQ's open-source edition does not support Oracle, but **Sikt holds a
+   jOOQ license, so generating the Oracle-dialect code is a committed
+   requirement**, not a conditional (resolved 2026-07-15). What remains is
+   where the licensed tests run: this repo's public CI is Postgres-only, so
+   worst case the Oracle execution tests run in Sikt's internal GitLab
+   pipelines, which can access the licensed dependencies. Optionally ask
+   Lukas (jOOQ) whether a license for this project's CI is possible. This
+   no longer gates Spec; it shapes the test plan inside it.
 3. **Directive surface details**: directive and argument naming, where the
    synthesized field attaches and what it is called (derived name with an
    override is the lean), collision rules.
@@ -234,4 +236,7 @@ load-bearing for the fulltext case.
   demand/supply inversion (the index is a consumer-owned bearer of facts,
   graphitron maps and type-checks); backed-only with no shim; native
   mechanisms for Postgres and Oracle in scope, external engines out;
-  documentation as a first-class deliverable.
+  documentation as a first-class deliverable. Later the same day: Sikt holds
+  a jOOQ license, so Oracle codegen support is committed; test placement
+  (internal GitLab pipelines worst case, possibly a CI license via Lukas)
+  is a logistics question inside the Spec, not a gate on it.
