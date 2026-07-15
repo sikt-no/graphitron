@@ -1,7 +1,7 @@
 ---
 id: R202
 title: "Honor @field(name:) in @error type extra-field accessor matching against handler source class"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 5
 theme: error-channel
