@@ -116,6 +116,10 @@ public class TypeClassGenerator {
         // Recurse into NestingField.nestedFields() so nested fields' required columns are also
         // projected by the outer parent's SELECT.
         var requiredProjection = collectRequiredProjection(schema.fieldsOf(typeName));
+        // R432 slice 1 — cross-check the walk above against an independent demand enumeration
+        // (the R333 parent-projection containment invariant; R425 is the omission it exists to
+        // catch). Keyed on the BatchKeyField capability + sourceShape(), not leaf identity.
+        ParentProjectionContainmentCheck.check(schema, typeName, requiredProjection);
         return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage);
     }
 
