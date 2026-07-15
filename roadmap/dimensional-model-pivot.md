@@ -429,7 +429,7 @@ Sync point on Stages 4 + 5. After Stages 4 + 5, `GraphitronField`'s `permits Out
 |---|---|
 | **R164** (field-model three-dimension pivot) | Stage 3 + Stage 5 (permit consolidation). File discarded |
 | **R226** (classification dimensional pivot: diagnostics off the model) | Stage 4 + unified `Diagnostic` family. File discarded |
-| R171 (sealed `InputLikeType` parent) | Dissolves; no per-input model record survives |
+| R171 (sealed `InputLikeType` parent) | Dissolves; no per-input model record survives. File discarded 2026-07-15 (committed to R333 landing) |
 | R97 (deprecate `@table` on input types) | Stage 7 directive narrowing closes the item. `argMapping` grouping (R97 Phase 1) remains separable |
 | R213 (rejections at consumer field) | Walker-time `SourceLocation` is the consumer field's own SDL location |
 | R209 (FieldRegistry classify-input trace) | Typed `Rejection.AuthorError` at walker time; surfaces through the orchestrator's `WalkerResult.Err.errors` collection |
