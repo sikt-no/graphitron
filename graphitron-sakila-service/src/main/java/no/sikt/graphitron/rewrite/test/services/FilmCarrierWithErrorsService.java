@@ -13,8 +13,8 @@ import org.jooq.DSLContext;
  * <p>Because the payload carries an errors field, the producer routes the returned record through
  * the typed {@code Outcome} wrapper ({@code Outcome.Success(filmRecord)} on the happy path,
  * {@code Outcome.ErrorList} on a mapped {@code @error} throw). The data field therefore classifies
- * as {@code ChildField.SingleRecordTableField} with {@code SourceKey.Reader.ResultRowWalk} of
- * envelope {@code OUTCOME_SUCCESS}: its generated fetcher narrows {@code Outcome.Success}, reads
+ * as a carrier data field whose {@code SourceEnvelope} is
+ * {@code OUTCOME_SUCCESS}: its generated fetcher narrows {@code Outcome.Success}, reads
  * the record off {@code success.value()}, and resolves null on the {@code ErrorList} arm. Before
  * R275 it cast {@code env.getSource()} (an {@code Outcome}) straight to {@code FilmRecord} and threw
  * a {@code ClassCastException}.

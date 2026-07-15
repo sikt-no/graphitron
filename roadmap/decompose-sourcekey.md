@@ -7,7 +7,7 @@ priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-07-04
-last-updated: 2026-07-14
+last-updated: 2026-07-15
 ---
 
 # Decompose SourceKey onto the model's facts
@@ -171,7 +171,28 @@ touches.
   `JoinPathEmitter.emitCorrelationWhere`, the one API typed on it, re-types accordingly); and the
   denormalized `Hop.originTable` component becomes deletable in favor of a path-position
   derivation once the path carrier owns its start.
-- **Decompose `reader` / `wrap` / `cardinality` / envelope.** Introduce the decomposed facts
+- **Decompose `reader` / `wrap` / `cardinality` / envelope.** *Shipped as slice 3, two commits.
+  Slice 3.1 (`3229cbe`): the arrival-vocabulary half of `Cardinality` moved to the top-level
+  `Arity` enum on the producer/carrier endpoint facts (`ProducerBinding`, `ServiceCarrierShape`,
+  `ServiceCarrierShapeError`, the producer-arrival memo). Deliberately not R463's `Arrival`
+  (accumulated tensor monoid, typename-keyed) per principles-architect consult 2026-07-15: same
+  values, different grain. Slice 3.2 (`2ae8529`): `SourceKey` shrank to the `(columns, wrap)`
+  residue (keeping the name the destinations section says it earns); the four live reader arms
+  relocated to the new sealed `KeyLift` fact (`FkColumns` / `Lifter` / `Accessor(ref, Arity)` /
+  `ProducedRecords(Arity)`) carried by the three record-parent leaves and, as `parentKeyLift`,
+  `InterfaceField` / `UnionField` (the parentSourceKey re-typing this spec requires); the service
+  arms died into the `MethodRef.Param.Sourced` signature; `ResultRowWalk` dissolved into
+  `SingleRecordIdField` + the top-level `SourceEnvelope` enum (also re-typing
+  `RecordCompositeField.envelope()`, so the Reader-side original copy is gone). Wrap stayed a
+  stored residue component where authored (split/service) and became `KeyLift.wrap()`'s
+  derivation where inferred (record-parent leaves construct through it;
+  `KeyLift.checkResidueAgreement` is the constructor tripwire). The envelope stayed
+  classifier-minted (`carrierPayloadHasErrorsField`) on the two leaves rather than joining the
+  emit-time `hasWrapperArmErrors` type-level fact: the two predicates are structurally different
+  and equating them is an unwitnessed equivalence (consult, same date); hoisting both onto one
+  classifier-minted flip fact is noted as a candidate follow-up, not done here. Byte-identical
+  output verified against a clean baseline both commits; full reactor green (8176 tests).*
+  Original scope: introduce the decomposed facts
   (type-level source-object shape composing with the R463 `Source` arms; field-level lift with its
   two shape-gated arms and `@sourceRow` as authored provenance on the member-read arm; producer
   return shape read off the `MethodRef` signature where the service arms duplicated it; envelope on
@@ -211,7 +232,10 @@ touches.
   silently dropped:
   - `SourceRowsCall` ⇒ `Wrap.Row` and `AccessorCall` ⇒ `Wrap.Record`: expected to become
     **unrepresentable by construction** (the non-service lift arms pin their key shape; a stored
-    wrap that could disagree no longer exists).
+    wrap that could disagree no longer exists). *Disposition (slice 3.2): unrepresentable via the
+    `KeyLift.wrap()` derivation every lift-carrying construction goes through, with
+    `KeyLift.checkResidueAgreement` in the five carrying leaf constructors as the tripwire;
+    pinned by `KeyLiftTest`.*
   - `ServiceTableRecord`(target-aligned) ⇒ empty path and `ResultRowWalk` ⇒ empty path: dissolve
     with `path`'s deletion (the illegal state loses its carrier; the delete-the-copies slice owns
     the re-home-or-dissolve call, as stated there).
@@ -232,7 +256,15 @@ touches.
     orthogonal-axes principle this drops from compiler-enforced to review-only unless it is
     re-asserted at a named join site; the implementer names that site (the classifier point that
     mints both facts for a carrier field is the natural candidate) and pins it with a migrated
-    test. Leaving it enforced nowhere is rework, not a judgment call.
+    test. Leaving it enforced nowhere is rework, not a judgment call. *Disposition (slice 3.2):
+    the named join site is `ChildField.SingleRecordIdField`'s compact constructor — the only
+    envelope-bearing typed-record read once the DML `Wrap.Record` walk died into the R305
+    re-fetch — which requires `Wrap.TableRecord` unconditionally, strictly stronger than the
+    retired conditional (its sibling envelope carrier `RecordCompositeField` is a composite
+    passthrough holding no key). Compiler-enforced at the leaf, pinned by
+    `SingleRecordIdFieldKeyShapeInvariantTest`. The `ResultRowWalk` ⇒ `Record`/`TableRecord`
+    family is subsumed by the same unconditional requirement; the `Record` (DML) arm was dead
+    vocabulary — the only `ResultRowWalk` construction was the `SingleRecordIdField` mint.*
 
   `SealedHierarchyDocCoverageTest` and the architecture docs sweep in the deleting slice. The docs
   half is a chapter, not stray mentions: `docs/architecture/explanation/dispatch-axes.adoc` narrates
@@ -241,7 +273,13 @@ touches.
   "Dispatch axes" xref); the deleting slice rewrites or retires that chapter onto the decomposed
   facts and retargets the inbound xrefs. (R433's forward note pointing `SourceKey` readers at this
   item lived in the old principles doc and did not survive the R434 restructure, so no live doc
-  currently flags the record as scheduled for decomposition; verified 2026-07-14.)
+  currently flags the record as scheduled for decomposition; verified 2026-07-14.) *Done in the
+  slice-3 docs commit: the chapter is rewritten onto the residue/lift/envelope model (its old
+  five-axis narration is in git history), the `explanation/index.adoc` blurb and the
+  `code-generation-triggers.adoc` model-catalog rows (which also still named the slice-2-retired
+  `LiftedHop`) are updated, and the `index.adoc` / `development-principles.adoc` xrefs were
+  checked and hold as-is. `SealedHierarchyDocCoverageTest` walks `Rejection` only and is
+  untouched by the new seals.*
 - No new execution-tier fixtures required: R425/R426/R436's pipeline and execution tests already
   pin the behaviors whose emit sites this item migrates, and they must stay green throughout.
 

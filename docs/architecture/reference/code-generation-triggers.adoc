@@ -619,10 +619,10 @@ All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. E
 | Column reference | `ColumnRef.java` | Resolved column with Java type
 | Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic`
 | Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection`
-| Join path | `JoinStep.java` | `Hop` (a `TableExpr` target × an `On`: `ColumnPairs` / `Predicate`) / `LiftedHop`
+| Join path | `JoinStep.java` | `Hop` (a `TableExpr` target × an `On`: `ColumnPairs` / `Predicate`); R431 retired the transitional `LiftedHop` onto `ParentCorrelation.OnLiftedSlots`
 | WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract
 | Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants
-| DataLoader keys | `SourceKey.java`, `LoaderRegistration.java` | `SourceKey` carries the source-side dispatch axis (sealed `Wrap` — `Row` / `Record` / `TableRecord` — sealed `Reader` — `ColumnRead` / `AccessorCall` / `SourceRowsCall` / `ServiceTableRecord` / `ServiceUntypedRecord` / `ResultRowWalk` / `ProducedRecordRead` — plus a `Cardinality` enum). `LoaderRegistration` carries DataLoader identity (`Container` — `POSITIONAL_LIST` / `MAPPED_SET` — `Dispatch` — `LOAD_ONE` / `LOAD_MANY`).
+| DataLoader keys | `SourceKey.java`, `KeyLift.java`, `LoaderRegistration.java` | `SourceKey` is the batch-key residue (`columns` plus sealed `Wrap`: `Row` / `Record` / `TableRecord`). `KeyLift` is the record-parent lift provenance (`FkColumns` / `Lifter` / `Accessor` / `ProducedRecords`, the arity-bearing arms carrying an `Arity`). `LoaderRegistration` carries DataLoader identity (`Container`: `POSITIONAL_LIST` / `MAPPED_SET`; `Dispatch`: `LOAD_ONE` / `LOAD_MANY`).
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None`
 | Pagination | `PaginationSpec.java` | Relay cursor arguments
 | Argument extraction | `CallSiteExtraction.java` | Direct strategies (`Direct` / `EnumValueOf` / `ContextArg` / `JooqConvert`) plus sealed sub-shapes: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`), `NodeIdDecodeKeys` (`SkipMismatchedElement` / `ThrowOnMismatch`; arity-N NodeId decode at the call site), `NodeIdDecodeRecord` (NodeId decode into a jOOQ-record member), `InputBean` (service input-bean instantiation), and `JooqRecord` (jOOQ record construction from input fields)

@@ -6,7 +6,7 @@ Why the generator is shaped the way it is.
 
 * xref:development-principles.adoc[Graphitron Development Principles]: the six axioms, their corollaries, and the named enforcement behind each.
 * xref:pipeline-overview.adoc[Pipeline overview] — how a `.graphqls` schema flows from parse to consumer compile.
-* xref:dispatch-axes.adoc[Dispatch axes] — the four-axis dispatch model behind DataLoader-backed source-side fields.
+* xref:dispatch-axes.adoc[Dispatch axes] — the decomposed dispatch model behind DataLoader-backed source-side fields: the batch-key residue, the record-parent lift, and the loader identity.
 * xref:typed-rejection.adoc[Typed rejection] — why rejection is a typed variant, the `Rejection` taxonomy, and the candidate-hint contract.
 
 xref:../index.adoc[← Architecture]
