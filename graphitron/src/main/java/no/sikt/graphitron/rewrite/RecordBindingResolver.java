@@ -16,10 +16,10 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.AccessorProbe;
+import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ProducerBinding;
 import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.lang.reflect.Method;
@@ -118,10 +118,10 @@ final class RecordBindingResolver {
      * the field coordinate rather than the payload SDL type because producer arrival is a property of
      * the (carrier field, producer) pair: two {@code @service} fields may return the same payload type
      * with different producer arrivals. A separate axis from
-     * {@link ProducerBinding.ServiceEmitted#cardinality()} (which is the payload's <em>data-field</em>
-     * arrival), so the two same-typed cardinalities are never conflated on one accessor.
+     * {@link ProducerBinding.ServiceEmitted#arrival()} (which is the payload's <em>data-field</em>
+     * arrival), so the two same-typed arrivals are never conflated on one accessor.
      */
-    private final Map<String, SourceKey.Cardinality> serviceCarrierProducerArrivalMemo = new LinkedHashMap<>();
+    private final Map<String, Arity> serviceCarrierProducerArrivalMemo = new LinkedHashMap<>();
 
     /**
      * R461 reason ledger: the gated accessor near-miss (if any) the walk hit while trying to ground a
@@ -188,7 +188,7 @@ final class RecordBindingResolver {
      * coordinate is not an {@code @service} field. Consumed by the classify-time shape verdict at the
      * {@code @service} carrier seat ({@code FieldBuilder.scanServiceCarrierShape}).
      */
-    Optional<SourceKey.Cardinality> resolveServiceCarrierProducerArrival(String parentType, String fieldName) {
+    Optional<Arity> resolveServiceCarrierProducerArrival(String parentType, String fieldName) {
         return Optional.ofNullable(serviceCarrierProducerArrivalMemo.get(carrierFieldKey(parentType, fieldName)));
     }
 
@@ -308,7 +308,7 @@ final class RecordBindingResolver {
         // with different producer arrivals (e.g. a single filmById and a list filmsByIds both
         // producing FilmServicePayload), so a payload-keyed fact would collide.
         serviceCarrierProducerArrivalMemo.put(carrierFieldKey(parent.getName(), field.getName()),
-            producerIsMulti ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE);
+            producerIsMulti ? Arity.MANY : Arity.ONE);
 
         // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
         // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed
@@ -583,13 +583,13 @@ final class RecordBindingResolver {
         Class<?> retElement = peelReturnElement(method.getGenericReturnType());
         if (retElement == null || !retElement.equals(recordClass)) return;
 
-        SourceKey.Cardinality cardinality =
+        Arity arrival =
             GraphQLTypeUtil.unwrapNonNull(dataField.getType()) instanceof GraphQLList
-                ? SourceKey.Cardinality.MANY
-                : SourceKey.Cardinality.ONE;
+                ? Arity.MANY
+                : Arity.ONE;
 
         serviceEmittedMemo.putIfAbsent(resultSdl, new ProducerBinding.ServiceEmitted(
-            retElement, table, cardinality, parent.getName(), field.getName(),
+            retElement, table, arrival, parent.getName(), field.getName(),
             className, methodName, loc));
     }
 
@@ -679,10 +679,10 @@ final class RecordBindingResolver {
         // grounded as RootTable; don't double-bind.
         if (payloadObj.hasAppliedDirective(DIR_TABLE)) return;
 
-        SourceKey.Cardinality cardinality =
+        Arity arrival =
             GraphQLTypeUtil.unwrapNonNull(tableArg.getType()) instanceof GraphQLList
-                ? SourceKey.Cardinality.MANY
-                : SourceKey.Cardinality.ONE;
+                ? Arity.MANY
+                : Arity.ONE;
 
         // Phase 1 storage: dedicated map, isolated from the result-axis fold and the
         // recordBackingClasses pump. The cutover commit moves this into addResultObservation.
@@ -690,7 +690,7 @@ final class RecordBindingResolver {
         // observation; the cutover-side multi-producer check fires from the standard fold once
         // the bindings move there.
         dmlEmittedMemo.putIfAbsent(payloadSdl, new ProducerBinding.DmlEmitted(
-            recordClass, table, kind, cardinality, locationOf(field)));
+            recordClass, table, kind, arrival, locationOf(field)));
     }
 
     private static DmlKind readDmlKind(GraphQLFieldDefinition field) {

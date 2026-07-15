@@ -125,14 +125,14 @@ public sealed interface ProducerBinding
         Class<?> reflectedClass,
         TableRef tableRef,
         DmlKind kind,
-        SourceKey.Cardinality cardinality,
+        Arity arrival,
         SourceLocation location
     ) implements ProducerBinding {
         public DmlEmitted {
             Objects.requireNonNull(reflectedClass, "reflectedClass");
             Objects.requireNonNull(tableRef, "tableRef");
             Objects.requireNonNull(kind, "kind");
-            Objects.requireNonNull(cardinality, "cardinality");
+            Objects.requireNonNull(arrival, "arrival");
             Objects.requireNonNull(location, "location");
             String expected = tableRef.recordClass().reflectionName();
             if (!reflectedClass.getName().equals(expected)) {
@@ -145,7 +145,7 @@ public sealed interface ProducerBinding
         }
 
         @Override public String describe() {
-            return "DML " + kind + " (" + cardinality + ") emitted from '"
+            return "DML " + kind + " (" + arrival + ") emitted from '"
                 + tableRef.tableName() + "'";
         }
     }
@@ -175,7 +175,7 @@ public sealed interface ProducerBinding
     record ServiceEmitted(
         Class<?> reflectedClass,
         TableRef tableRef,
-        SourceKey.Cardinality cardinality,
+        Arity arrival,
         String parentTypeName,
         String fieldName,
         String serviceClassName,
@@ -185,7 +185,7 @@ public sealed interface ProducerBinding
         public ServiceEmitted {
             Objects.requireNonNull(reflectedClass, "reflectedClass");
             Objects.requireNonNull(tableRef, "tableRef");
-            Objects.requireNonNull(cardinality, "cardinality");
+            Objects.requireNonNull(arrival, "arrival");
             Objects.requireNonNull(location, "location");
             String expected = tableRef.recordClass().reflectionName();
             if (!reflectedClass.getName().equals(expected)) {
@@ -198,7 +198,7 @@ public sealed interface ProducerBinding
         }
 
         @Override public String describe() {
-            return "@service-carrier (" + cardinality + ") on " + parentTypeName + "."
+            return "@service-carrier (" + arrival + ") on " + parentTypeName + "."
                 + fieldName + " via " + serviceClassName + "." + methodName;
         }
     }

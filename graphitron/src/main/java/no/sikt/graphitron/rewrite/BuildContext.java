@@ -613,14 +613,14 @@ class BuildContext {
      */
     public sealed interface ServiceCarrierShape {
         /**
-         * @param producerArrival the cardinality the SDL shape requires the {@code @service}
-         *   producer's return to have ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}
+         * @param producerArrival the arrival the SDL shape requires the {@code @service}
+         *   producer's return to have ({@link no.sikt.graphitron.rewrite.model.Arity#MANY}
          *   for a list carrier {@code [Payload]}, or a single carrier whose R329 data field is itself a
-         *   list; {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#ONE} otherwise). Decided
+         *   list; {@link no.sikt.graphitron.rewrite.model.Arity#ONE} otherwise). Decided
          *   once at the verdict and carried, so no downstream consumer re-derives carrier arrival from
          *   the wrapper.
          */
-        record Coherent(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality producerArrival) implements ServiceCarrierShape {}
+        record Coherent(no.sikt.graphitron.rewrite.model.Arity producerArrival) implements ServiceCarrierShape {}
         record Reject(no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError error) implements ServiceCarrierShape {}
         record NotApplicable() implements ServiceCarrierShape {}
     }

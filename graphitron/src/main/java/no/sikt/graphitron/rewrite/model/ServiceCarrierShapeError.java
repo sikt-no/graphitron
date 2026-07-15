@@ -11,7 +11,7 @@ package no.sikt.graphitron.rewrite.model;
  * <p>These arms are the typed reject variants of {@link no.sikt.graphitron.rewrite.BuildContext.ServiceCarrierShape},
  * the classify-time verdict over the triple (carrier field wrapper, {@code @service} producer return
  * shape, payload data-field wrapper). Each arm carries the <em>disagreeing axes</em> as typed
- * {@link SourceKey.Cardinality} values and the offending field/payload coordinate, not a reason string
+ * {@link Arity} values and the offending field/payload coordinate, not a reason string
  * composed at the detection site ({@code DmlPayloadScan.Reject(String)} is the debt this deliberately
  * does not replicate). The verdict only ever rejects a <em>list-returning</em> carrier
  * ({@code @service ...: [Payload]}); a single carrier is always coherent and is left to its existing
@@ -35,8 +35,8 @@ public sealed interface ServiceCarrierShapeError extends Rejection.AuthorError p
 
     /**
      * A list-returning carrier field ({@code @service ...: [Payload]}, arrival
-     * {@link SourceKey.Cardinality#MANY}) whose {@code @service} producer returns a single value
-     * (arrival {@link SourceKey.Cardinality#ONE}). graphql-java iterates the producer's return into
+     * {@link Arity#MANY}) whose {@code @service} producer returns a single value
+     * (arrival {@link Arity#ONE}). graphql-java iterates the producer's return into
      * the {@code [Payload]} list, so a single produced value yields a non-iterable source for a list
      * SDL type and list coercion fails at runtime. This one arm subsumes what the uncoordinated reads
      * used to surface three different ways: the a1 silent admit (a bare-record producer into a single
@@ -49,8 +49,8 @@ public sealed interface ServiceCarrierShapeError extends Rejection.AuthorError p
         String payloadTypeName,
         String carrierParentType,
         String carrierFieldName,
-        SourceKey.Cardinality carrierArrival,
-        SourceKey.Cardinality producerArrival,
+        Arity carrierArrival,
+        Arity producerArrival,
         String serviceClassName,
         String methodName
     ) implements ServiceCarrierShapeError {
@@ -72,8 +72,8 @@ public sealed interface ServiceCarrierShapeError extends Rejection.AuthorError p
 
     /**
      * A list-returning carrier field ({@code @service ...: [Payload]}, arrival
-     * {@link SourceKey.Cardinality#MANY}) whose data field is itself a list (arrival
-     * {@link SourceKey.Cardinality#MANY}), produced by a flat collection. The producer's flat list is
+     * {@link Arity#MANY}) whose data field is itself a list (arrival
+     * {@link Arity#MANY}), produced by a flat collection. The producer's flat list is
      * consumed element-by-element to build the {@code [Payload]} carrier, so a single produced value
      * reaches each {@code Payload} and cannot also populate a list-valued data field, and
      * {@code ClassCastException}s on every request (a defensive runtime cast failing after a green build,
@@ -94,8 +94,8 @@ public sealed interface ServiceCarrierShapeError extends Rejection.AuthorError p
         String carrierFieldName,
         String dataFieldName,
         String dataFieldElementType,
-        SourceKey.Cardinality carrierArrival,
-        SourceKey.Cardinality dataFieldArrival
+        Arity carrierArrival,
+        Arity dataFieldArrival
     ) implements ServiceCarrierShapeError {
 
         @Override public String message() {

@@ -168,7 +168,7 @@ class TypeBuilder {
      * at the reflection boundary and read by the classify-time shape verdict at the {@code @service}
      * carrier seat. Mirrors {@link #serviceEmittedBinding}.
      */
-    java.util.Optional<no.sikt.graphitron.rewrite.model.SourceKey.Cardinality> serviceCarrierProducerArrival(String parentType, String fieldName) {
+    java.util.Optional<no.sikt.graphitron.rewrite.model.Arity> serviceCarrierProducerArrival(String parentType, String fieldName) {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceCarrierProducerArrival(parentType, fieldName);
     }
 

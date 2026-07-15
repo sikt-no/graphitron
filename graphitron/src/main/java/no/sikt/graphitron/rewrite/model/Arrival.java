@@ -13,6 +13,10 @@ package no.sikt.graphitron.rewrite.model;
  * (every field on one parent folds the same way), computed once as a typename-keyed index over the
  * assembled SDL, so it is not stored per-leaf; see {@code ArrivalIndex} and
  * {@link GraphitronSchema#sourceOf}.
+ *
+ * <p>Distinct from {@link Arity}, the <em>local</em> delivery arity of one endpoint (a producer's
+ * return, a carrier field's wrapper): {@code Arrival} is the accumulated ancestor product with the
+ * {@link #tensor(Arrival)} monoid; an {@code Arity} never accumulates.
  */
 public enum Arrival {
     /** Exactly one source object arrives (the wrapper-algebra identity). */

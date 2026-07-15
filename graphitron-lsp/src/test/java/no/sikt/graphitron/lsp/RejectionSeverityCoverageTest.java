@@ -332,15 +332,15 @@ class RejectionSeverityCoverageTest {
         if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch.class) {
             return new no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch(
                 "FilmPayload", "Mutation", "runFilms",
-                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY,
-                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.ONE,
+                no.sikt.graphitron.rewrite.model.Arity.MANY,
+                no.sikt.graphitron.rewrite.model.Arity.ONE,
                 "com.example.FilmService", "runFilm");
         }
         if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.DataFieldArrivalConflict.class) {
             return new no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.DataFieldArrivalConflict(
                 "FilmListPayload", "Mutation", "runFilmsList", "films", "Film",
-                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY,
-                no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
+                no.sikt.graphitron.rewrite.model.Arity.MANY,
+                no.sikt.graphitron.rewrite.model.Arity.MANY);
         }
         return null;
     }

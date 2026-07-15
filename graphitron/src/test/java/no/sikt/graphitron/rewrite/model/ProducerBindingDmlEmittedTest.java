@@ -44,19 +44,19 @@ class ProducerBindingDmlEmittedTest {
     void roundTripsComponents() {
         var binding = new ProducerBinding.DmlEmitted(
             String.class, STRING_TABLE, DmlKind.UPDATE,
-            SourceKey.Cardinality.ONE, LOC);
+            Arity.ONE, LOC);
         assertThat(binding.reflectedClass()).isSameAs(String.class);
         assertThat(binding.tableRef()).isSameAs(STRING_TABLE);
         assertThat(binding.kind()).isEqualTo(DmlKind.UPDATE);
-        assertThat(binding.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(binding.arrival()).isEqualTo(Arity.ONE);
         assertThat(binding.location()).isSameAs(LOC);
     }
 
     @Test
-    void describeNamesKindCardinalityAndTable() {
+    void describeNamesKindArrivalAndTable() {
         var binding = new ProducerBinding.DmlEmitted(
             String.class, STRING_TABLE, DmlKind.INSERT,
-            SourceKey.Cardinality.MANY, LOC);
+            Arity.MANY, LOC);
         assertThat(binding.describe())
             .contains("INSERT")
             .contains("MANY")
@@ -66,7 +66,7 @@ class ProducerBindingDmlEmittedTest {
     @Test
     void rejectsNullReflectedClass() {
         assertThatThrownBy(() -> new ProducerBinding.DmlEmitted(
-                null, STRING_TABLE, DmlKind.UPDATE, SourceKey.Cardinality.ONE, LOC))
+                null, STRING_TABLE, DmlKind.UPDATE, Arity.ONE, LOC))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("reflectedClass");
     }
@@ -75,7 +75,7 @@ class ProducerBindingDmlEmittedTest {
     void rejectsNullTableRef() {
         assertThatThrownBy(() -> new ProducerBinding.DmlEmitted(
                 String.class, null, DmlKind.UPDATE,
-                SourceKey.Cardinality.ONE, LOC))
+                Arity.ONE, LOC))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("tableRef");
     }
@@ -84,24 +84,24 @@ class ProducerBindingDmlEmittedTest {
     void rejectsNullKind() {
         assertThatThrownBy(() -> new ProducerBinding.DmlEmitted(
                 String.class, STRING_TABLE, null,
-                SourceKey.Cardinality.ONE, LOC))
+                Arity.ONE, LOC))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("kind");
     }
 
     @Test
-    void rejectsNullCardinality() {
+    void rejectsNullArrival() {
         assertThatThrownBy(() -> new ProducerBinding.DmlEmitted(
                 String.class, STRING_TABLE, DmlKind.UPDATE, null, LOC))
             .isInstanceOf(NullPointerException.class)
-            .hasMessageContaining("cardinality");
+            .hasMessageContaining("arrival");
     }
 
     @Test
     void rejectsNullLocation() {
         assertThatThrownBy(() -> new ProducerBinding.DmlEmitted(
                 String.class, STRING_TABLE, DmlKind.UPDATE,
-                SourceKey.Cardinality.ONE, null))
+                Arity.ONE, null))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("location");
     }
@@ -110,7 +110,7 @@ class ProducerBindingDmlEmittedTest {
     void rejectsReflectedClassDisagreeingWithTableRefRecordClass() {
         assertThatThrownBy(() -> new ProducerBinding.DmlEmitted(
                 Object.class, STRING_TABLE, DmlKind.UPDATE,
-                SourceKey.Cardinality.ONE, LOC))
+                Arity.ONE, LOC))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("per-SDL-type binding fold")
             .hasMessageContaining("java.lang.String");

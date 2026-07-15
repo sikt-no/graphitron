@@ -38,6 +38,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
+import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
@@ -3411,7 +3412,7 @@ class FieldBuilder {
         // silent admit, where producerBindLevel's NoBind left it unbound and the return-match gate
         // below short-circuits), and its typed ProducerArrivalMismatch pre-empts the two misleading
         // record-handoff rejections checkServiceReturnMatchesPayload would otherwise produce.
-        java.util.Optional<SourceKey.Cardinality> verdictProducerArrival;
+        java.util.Optional<Arity> verdictProducerArrival;
         switch (scanServiceCarrierShape(returnType, method, parentTypeName, fieldName)) {
             case BuildContext.ServiceCarrierShape.Reject r ->
                 { return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, r.error()); }
@@ -3465,11 +3466,11 @@ class FieldBuilder {
      */
     private String checkServiceReturnMatchesPayload(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
-            java.util.Optional<SourceKey.Cardinality> verdictProducerArrival) {
+            java.util.Optional<Arity> verdictProducerArrival) {
         if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) return null;
         if (result.fqClassName() == null) return null;
         boolean isList = verdictProducerArrival
-            .map(arrival -> arrival == SourceKey.Cardinality.MANY)
+            .map(arrival -> arrival == Arity.MANY)
             .orElseGet(() -> returnType.wrapper().isList());
         // R370: build the expected payload ClassName structurally, not via bestGuess over the
         // binary fqClassName. A nested backing class has a `$`-qualified binary name
@@ -3535,31 +3536,31 @@ class FieldBuilder {
             return new BuildContext.ServiceCarrierShape.NotApplicable();
         }
         // Carrier arrival: the one home is the carrier field's own SDL wrapper.
-        SourceKey.Cardinality carrierArrival = returnType.wrapper().isList()
-            ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+        Arity carrierArrival = returnType.wrapper().isList()
+            ? Arity.MANY : Arity.ONE;
         // The cardinality the SDL shape requires the producer's return to have — carried on Coherent so
         // the downstream return-type match reads this one fact instead of re-deriving it. A collection
         // is required when the carrier is a list ([Payload], one composite per element) or when an R329
         // class-backed record-composite data field is itself a list (a single carrier whose data field
         // projects the whole producer list). This is the read checkServiceReturnMatchesPayload used to
         // do for itself; it now lives once, here, at the carrier-arrival home.
-        SourceKey.Cardinality requiredProducerArrival =
-            carrierArrival == SourceKey.Cardinality.MANY || recordCompositeDataFieldIsList(payloadSdl)
-                ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+        Arity requiredProducerArrival =
+            carrierArrival == Arity.MANY || recordCompositeDataFieldIsList(payloadSdl)
+                ? Arity.MANY : Arity.ONE;
         // A single carrier is always coherent: the producer's return (single value or collection) is
         // the single payload's source and the data field consumes it. Every existing @service carrier
         // shape is single-arrival, so this arm leaves them byte-for-byte unchanged.
-        if (carrierArrival == SourceKey.Cardinality.ONE) {
+        if (carrierArrival == Arity.ONE) {
             return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
         }
         // List carrier [Payload]: graphql-java iterates the producer's return into the list, so each
         // element becomes one payload. Producer arrival must be a collection (MANY); an absent fact
         // (no @service producer observed for this payload) reads as ONE and rejects, which is correct
         // — a list carrier with no collection producer cannot be filled.
-        SourceKey.Cardinality producerArrival = typeBuilder
+        Arity producerArrival = typeBuilder
             .serviceCarrierProducerArrival(parentTypeName, fieldName)
-            .orElse(SourceKey.Cardinality.ONE);
-        if (producerArrival == SourceKey.Cardinality.ONE) {
+            .orElse(Arity.ONE);
+        if (producerArrival == Arity.ONE) {
             return new BuildContext.ServiceCarrierShape.Reject(
                 new ServiceCarrierShapeError.ProducerArrivalMismatch(
                     payloadSdl, parentTypeName, fieldName, carrierArrival, producerArrival,
@@ -3585,7 +3586,7 @@ class FieldBuilder {
                 new ServiceCarrierShapeError.DataFieldArrivalConflict(
                     payloadSdl, parentTypeName, fieldName,
                     admit.dataField().getName(), dataFieldElementType,
-                    carrierArrival, SourceKey.Cardinality.MANY));
+                    carrierArrival, Arity.MANY));
         }
         return new BuildContext.ServiceCarrierShape.Coherent(requiredProducerArrival);
     }
@@ -3730,7 +3731,7 @@ class FieldBuilder {
         var mismatch = FieldSourceSigil.sourceSigilTypeMatches(
             method.returnType(), method.className(), method.methodName(),
             shape.table().recordClass(),
-            shape.cardinality() == SourceKey.Cardinality.MANY);
+            shape.arrival() == Arity.MANY);
         return mismatch.orElse(null);
     }
 
@@ -3838,8 +3839,8 @@ class FieldBuilder {
         var shape = detectStructuralServicePayloadShape(returnTypeName);
         if (shape == null) return null;
         var target = shape.table();
-        var cardinality = shape.cardinality();
-        no.sikt.graphitron.javapoet.TypeName expectedReturnType = cardinality == SourceKey.Cardinality.ONE
+        var arrival = shape.arrival();
+        no.sikt.graphitron.javapoet.TypeName expectedReturnType = arrival == Arity.ONE
             ? target.recordClass()
             : no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
                 ClassName.get(java.util.List.class), target.recordClass());
@@ -3894,7 +3895,7 @@ class FieldBuilder {
      * <p>The detection is deliberately structural; the SettKvotesporsmal bug's mechanism (a
      * forbidden-directives loop over the carrier shape) cannot fire from this site.
      */
-    private record StructuralServicePayloadShape(TableRef table, SourceKey.Cardinality cardinality) {}
+    private record StructuralServicePayloadShape(TableRef table, Arity arrival) {}
 
     private StructuralServicePayloadShape detectStructuralServicePayloadShape(String payloadSdlName) {
         if (payloadSdlName == null) return null;
@@ -3902,7 +3903,7 @@ class FieldBuilder {
         if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
         GraphQLFieldDefinition dataField = null;
         TableRef table = null;
-        SourceKey.Cardinality cardinality = null;
+        Arity arrival = null;
         for (var f : payloadObj.getFieldDefinitions()) {
             String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
             // R317 slice 3d — payload data field two hops below; table-backed fact from the pure
@@ -3911,11 +3912,11 @@ class FieldBuilder {
             if (dataField != null) return null;
             dataField = f;
             table = tbt.table();
-            cardinality = GraphQLTypeUtil.unwrapNonNull(f.getType()) instanceof GraphQLList
-                ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+            arrival = GraphQLTypeUtil.unwrapNonNull(f.getType()) instanceof GraphQLList
+                ? Arity.MANY : Arity.ONE;
         }
         if (dataField == null) return null;
-        return new StructuralServicePayloadShape(table, cardinality);
+        return new StructuralServicePayloadShape(table, arrival);
     }
 
     /**
