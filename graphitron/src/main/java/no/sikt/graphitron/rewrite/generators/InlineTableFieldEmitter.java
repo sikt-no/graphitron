@@ -176,16 +176,8 @@ public final class InlineTableFieldEmitter {
             JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
             switch (bridging) {
-                case JoinStep.Hop hop -> {
-                    switch (hop.on()) {
-                        case On.ColumnPairs cp -> sel.add("\n        $L",
-                            JoinPathEmitter.emitForwardJoin(cp, prevAlias, aliases.get(i)));
-                        case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
-                            aliases.get(i), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
-                        case On.Lateral ignored -> sel.add("\n        .crossJoin($T.lateral($L))",
-                            DSL, aliases.get(i));
-                    }
-                }
+                case JoinStep.Hop hop -> sel.add("\n        $L",
+                    JoinPathEmitter.emitForwardBridging(hop, prevAlias, aliases.get(i)));
             }
         }
 

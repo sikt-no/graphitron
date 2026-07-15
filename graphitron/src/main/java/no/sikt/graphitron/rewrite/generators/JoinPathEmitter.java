@@ -130,6 +130,46 @@ public final class JoinPathEmitter {
         return emitKeyedJoin(cp, /*joinedAlias=*/hopAlias, prevAlias, hopAlias);
     }
 
+    /**
+     * The whole bridging-hop join fragment for chains emitted start-first (R438 cleanup 2,
+     * landed by R431 slice 4): one exhaustive dispatch on the hop's {@link On} covering the
+     * keyed join ({@link #emitForwardJoin}), the condition join
+     * ({@code .join(hop).on(method(prev, hop))}), and the lateral routine hop
+     * ({@code .crossJoin(DSL.lateral(hop))}, whose correlation rides the call arguments the
+     * caller's alias declaration rendered). Callers supply their own surrounding whitespace,
+     * as with the keyed helpers above. Shared by the inline table-field subquery and the
+     * split-rows bridging loop, the two sites whose paths can carry all three arms.
+     */
+    public static CodeBlock emitForwardBridging(JoinStep.Hop hop, String prevAlias, String hopAlias) {
+        return switch (hop.on()) {
+            case On.ColumnPairs cp -> emitForwardJoin(cp, prevAlias, hopAlias);
+            case On.Predicate pred -> CodeBlock.of(".join($L).on($L)",
+                hopAlias, emitTwoArgMethodCall(pred.condition(), prevAlias, hopAlias));
+            case On.Lateral ignored -> CodeBlock.of(".crossJoin($T.lateral($L))",
+                ClassName.get("org.jooq.impl", "DSL"), hopAlias);
+        };
+    }
+
+    /**
+     * Terminal-first sibling of {@link #emitForwardBridging} for chains walked from the
+     * terminal back towards step 0 (the inline lookup and column-reference subqueries): the
+     * hop's own alias is already in scope, so the <em>previous</em> node's alias is joined in
+     * ({@link #emitBridgingJoin} / {@code .join(prev).on(method(prev, hop))}). A lateral
+     * routine hop cannot appear on these paths (multi-node routine chains classify as typed
+     * Deferred, R435); {@code pathKindLabel} names the caller's path family in the guard.
+     */
+    public static CodeBlock emitBackwardBridging(JoinStep.Hop hop, String prevAlias,
+            String hopAlias, String pathKindLabel) {
+        return switch (hop.on()) {
+            case On.ColumnPairs cp -> emitBridgingJoin(cp, prevAlias, hopAlias);
+            case On.Predicate pred -> CodeBlock.of(".join($L).on($L)",
+                prevAlias, emitTwoArgMethodCall(pred.condition(), prevAlias, hopAlias));
+            case On.Lateral ignored -> throw new IllegalStateException(
+                "a lateral routine hop cannot appear in a " + pathKindLabel + " path; "
+                + "multi-node routine chains classify as typed Deferred (R435)");
+        };
+    }
+
     private static CodeBlock emitKeyedJoin(On.ColumnPairs cp, String joinedAlias,
             String prevAlias, String hopAlias) {
         return switch (cp.keying()) {

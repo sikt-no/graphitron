@@ -109,17 +109,8 @@ public final class InlineColumnReferenceFieldEmitter {
             JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
             switch (bridging) {
-                case JoinStep.Hop hop -> {
-                    switch (hop.on()) {
-                        case On.ColumnPairs cp -> sel.add("\n        $L",
-                            JoinPathEmitter.emitBridgingJoin(cp, prevAlias, aliases.get(i)));
-                        case On.Predicate pred -> sel.add("\n        .join($L).on($L)",
-                            prevAlias, JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
-                        case On.Lateral ignored -> throw new IllegalStateException(
-                            "a lateral routine hop cannot appear in a column-reference path; "
-                            + "multi-node routine chains classify as typed Deferred (R435)");
-                    }
-                }
+                case JoinStep.Hop hop -> sel.add("\n        $L",
+                    JoinPathEmitter.emitBackwardBridging(hop, prevAlias, aliases.get(i), "column-reference"));
             }
         }
 

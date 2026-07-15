@@ -500,16 +500,8 @@ public final class SplitRowsMethodEmitter {
             JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
             switch (bridging) {
-                case JoinStep.Hop hop -> {
-                    switch (hop.on()) {
-                        case On.ColumnPairs cp -> sel.add("$L\n",
-                            JoinPathEmitter.emitForwardJoin(cp, prevAlias, aliases.get(i)));
-                        case On.Predicate pred -> sel.add(".join($L).on($L)\n",
-                            aliases.get(i), JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), prevAlias, aliases.get(i)));
-                        case On.Lateral ignored -> sel.add(".crossJoin($T.lateral($L))\n",
-                            DSL, aliases.get(i));
-                    }
-                }
+                case JoinStep.Hop hop -> sel.add("$L\n",
+                    JoinPathEmitter.emitForwardBridging(hop, prevAlias, aliases.get(i)));
             }
         }
     }
