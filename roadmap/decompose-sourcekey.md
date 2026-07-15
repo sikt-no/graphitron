@@ -201,7 +201,12 @@ touches.
   `instanceof` sites arm by arm, then delete the `Reader` seal. `cardinality`'s two forks read the
   arity off the endpoint that owns it (the accessor's return arity, the produced wrapper) instead
   of a free enum.
-- **The two R438 self-review cleanups**, placed once LiftedHop is out of the seal (both
+- **The two R438 self-review cleanups.** *Slice 4 (`ef3f4d8`) landed cleanup (2): the repeated
+  bridging-join switch collapsed onto `JoinPathEmitter.emitForwardBridging` /
+  `emitBackwardBridging` (forward and terminal-first chain families; the two root-chain switches
+  in `TypeFetcherGenerator` stay as dispatch with site-specific unreachable-throw arms).
+  Cleanup (1) is spun out to R484 (`fk-hop-narrowing-helpers`) per the option below.
+  Byte-identical output verified.* Original scope: placed once LiftedHop is out of the seal (both
   pre-existing patterns R438 mechanically widened, not regressions). They differ in coupling:
   (2) the seven-line `switch (hop.on())` bridging-join emit (`onKey` vs `.on(condition(...))`)
   repeated in the four inline/split emitters consolidates into `JoinPathEmitter`, which already
