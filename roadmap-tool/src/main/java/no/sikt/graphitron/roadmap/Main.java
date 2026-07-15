@@ -65,6 +65,7 @@ public final class Main {
         "error-channel",
         "pagination",
         "runtime-connection",
+        "search",
         "lsp",
         "dev-loop",
         "codegen-correctness",

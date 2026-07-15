@@ -1,148 +1,237 @@
 ---
 id: R427
-title: "Relevance-ranked free-text search"
+title: "Free-text search backed by native database search indexes"
 status: Backlog
 bucket: architecture
 priority: 8
-theme: pagination
+theme: search
 depends-on: []
 created: 2026-07-02
-last-updated: 2026-07-02
+last-updated: 2026-07-15
 ---
 
-# Relevance-ranked free-text search
+# Free-text search backed by native database search indexes
 
 > Origin: [issue #512](https://github.com/sikt-no/graphitron/issues/512)
-> ("annotering av flere felter for å auto-generere søkeindeks"). This item is a
-> **Backlog thinking-capture**, not a spec. It records the framing and the
-> insights uncovered in early design discussion so they are not relitigated
-> later. It is deliberately not Spec-ready; the open forks below must be closed
-> first.
+> ("annotering av flere felter for å auto-generere søkeindeks"). Filed
+> 2026-07-02 as a thinking-capture; substantially rewritten 2026-07-15 after a
+> design discussion closed most of the original forks. Still **Backlog**: the
+> direction is settled, but the open questions at the end (notably the jOOQ
+> metadata feasibility check and the Oracle edition question) gate the Spec
+> transition. The dead-ends section records the roads not taken so they are
+> not relitigated.
 
 ## Problem
 
 Consumers need free-text search across several fields of an entity (the
-canonical case: match on both a short *code* and a *name/description*), usually
-combined with predefined filters, to power frontend comboboxes where a user
-types a few characters, gets ranked candidates, and links one to another
-entity. Today graphitron's filter model is equality/`@condition`-based only:
-there is no declarative multi-column match, and nothing that ranks results by
-relevance. The reporter asks for an `@searchable`-style annotation to declare
-which fields feed a search surface.
+canonical case: match on both a short *code* and a *name/description*),
+usually combined with predefined filters, to power frontend comboboxes where
+a user types a few characters, gets ranked candidates, and links one to
+another entity. The requester confirmed
+([comment, 2026-07-14](https://github.com/sikt-no/graphitron/issues/512#issuecomment-4968282258))
+that **bounded top-N (~20 hits) is sufficient**: comboboxes are used by
+searching, not by scrolling, and complete-dataset browsing happens on
+separate table pages served by ordinary keyset connections. Deep paging
+through ranked results is not a requirement.
 
-## Hard architectural constraints (non-negotiable)
+## The settled framing: demand side, supply side
 
-- **Graphitron never emits DDL.** It consumes the jOOQ catalog; it must not
-  create the tsvector column, the GIN/GiST index, or any schema object. The
-  physical search index is owned by the consumer's migrations. Graphitron may
-  only *reference existing DB objects by name*, exactly as `@order(index:)`
-  already references an index for sorting. This is the line the whole design
-  must respect.
-- **The user-facing schema must be stable across physical strategies.** Whether
-  a field is backed by a naive `ILIKE` scan (small dimension table) or an
-  index-backed `tsvector`/trigram query (large table), the SDL the frontend
-  consumes is identical. Physical strategy is a swappable binding underneath an
-  unchanged contract.
+**The search index is a pre-existing, consumer-owned schema object, and it is
+a bearer of facts.** It is not something graphitron defines; it is something
+graphitron *reads*, exactly like the jOOQ catalog (of which it is a region:
+tsvector columns, GIN/GiST indexes, and search tables are all catalog
+objects). The consumer's migrations own the index, its coverage, its
+weighting, and its analyzer configuration. The SDL maps onto this
+predetermined internal schema, and the index's facts flow in and constrain
+what graphitron can generate.
 
-## Key insight 1: split the contract from the execution strategy
+- **The SDL is the demand side**: "a search surface exists here and returns
+  hits of these types."
+- **The index is the supply side**: what matching and ranking the backing can
+  honestly deliver.
+- **Graphitron is the type-checker between them**, which is already its job
+  between SDL and the jOOQ catalog. The shipped precedent in miniature is
+  `@order(index:)`: the SDL names an index it does not define,
+  `catalog.findIndexColumns` supplies the facts (its columns), and a failed
+  lookup is a rejection.
 
-"Search" is two features, and they must stay separate:
+**The flow-in-only law.** Supply facts flow *in* as validation and strategy
+selection; they never flow *out* as inferred SDL shape. The author writes the
+demand; the generator checks the backing can serve it (relevance ordering
+demanded against a backing that cannot rank is an `AuthorError` at build
+time, surfaced by the LSP as the author types); the frontend never sees which
+supply won. Any capability that would change SDL shape (e.g. highlighting via
+`ts_headline`, if ever wanted) must be an authored opt-in validated against
+the supply, never something generated because the backing happens to support
+it. This is how "internal facts affect us" coexists with the stable-SDL
+principle: the SDL is stable across *backed* strategies and across backing
+migrations, because supply facts gate generation but never mutate the
+contract.
 
-1. **Contract** — "this list field accepts a free-text `search:` string that
-   matches across *these* fields." Pure schema + codegen; never touches the DB
-   schema. This is what `@searchable` declares.
-2. **Execution strategy** — how the match (and the ranking) is physically run:
-   `ILIKE`-OR chain, `pg_trgm` similarity, `tsvector @@ ... ` + `ts_rank`. This
-   is where "the database is actively involved" and it varies by table size.
+## Decisions (closed forks)
 
-The escape hatch for the hard case already exists: a `@condition` pointing at a
-Java method returning a jOOQ `Condition` can express any tsvector/trigram
-predicate today and composes (AND) with existing filters. So #512 is primarily
-an **ergonomics** request (remove the boilerplate for the common multi-column
-match shape), not a missing raw capability, *for the filtering half*.
+1. **Dedicated generated search field, not a mode on existing connections.**
+   The earlier alternative (an `orderBy: RELEVANCE` enum value on
+   `@asConnection` fields) is rejected: it encodes the mode in argument
+   *values* rather than schema *shape*, which GraphQL cannot validate
+   (argument correlation), forces a dishonest hardcoded
+   `pageInfo.hasNextPage: false`, and puts two pagination strategies behind
+   one field selected per request, against the "strategy is derived from the
+   schema at codegen time" discipline. The search surface is a separate
+   field, synthesized by graphitron (the R13 `@asFacet` synthesis machinery
+   is the shipped precedent), so authoring cost stays one directive.
+2. **Result shape: bounded top-N hit list.** A hit wrapper type
+   (structurally an edge: `node` plus room for future hit-level metadata),
+   no `pageInfo`, no cursors, a capped `first:`-style limit. **No relevance
+   score field in v1**: raw scores (`ts_rank`, trigram similarity, Oracle
+   `SCORE`) are strategy-dependent magnitudes only comparable within one
+   query; exposing them invites clients to threshold on values that change
+   scale when the backing migrates, which would break the stable-contract
+   promise. Ordering is the contract; the score is not.
+3. **Backed-only: graphitron does not shim search.** No naive `ILIKE`-OR
+   fallback arm. A shim would not scale, and as the zero-effort default it
+   would be an enticing dead end that consumers adopt and then outgrow
+   painfully (a design smell). Requiring real backend/database work is the
+   opinionated choice: the feature *requires* a native search backing, and
+   the developer documentation carries canonical, copy-pasteable migration
+   recipes per platform so the required DB work is cheap and unambiguous.
+4. **Supported backings are native database mechanisms, one per platform to
+   start**: PostgreSQL (`tsvector` + `@@` matching + `ts_rank`, GIN-backed)
+   and Oracle (Oracle Text: `CONTAINS()` + `SCORE()` over a `CTXSYS.CONTEXT`
+   domain index). Specialized engines external to the database
+   (Elasticsearch, OpenSearch, etc.) are **out of scope** unless real demand
+   appears. We are opinionated about what we support; unsupported backing
+   shapes are rejected at build time (the R13 `rejectFacetMisuse` pattern).
+5. **Weights and analyzers are index-time facts, not SDL.** Per-field
+   weighting lives in the consumer's `setweight(...)` expression (or Oracle
+   Text preferences), authored in their migrations. An SDL weight argument
+   would be either dead text (backed case) or a private scoring model we
+   invented; both are wrong.
+6. **The Slice A idea (a `search:` filter argument on existing
+   filter/connection fields) is dead**, both in its naive-`ILIKE` form
+   (decision 3) and as a backed filter arm: search lives exclusively on the
+   dedicated search field. One concept, one surface, simpler to teach.
+7. **Ranked-offset pagination is descoped** (see the archived design note
+   below). The requester's top-N answer removes the only driver for a second
+   pagination strategy.
+8. **Multi-type search is a backing shape, not a feature we design.** A
+   consumer-owned search table with an `entity_type` discriminator column
+   *is* the multi-type case; recognizing it means mapping discriminator
+   values to GraphQL types (the existing row-domain discrimination
+   machinery) and joining hits back to entity tables (the node-key
+   machinery). **Descoped for v1** (no requester), but the binding grain
+   below is chosen so it lands additively later.
 
-## Key insight 2: relevance ranking is the genuinely missing piece
+## Supply facts the backing bears
 
-Finding matches fast is the easy half. **Ranking by relevance is the hard
-half, and it is a real capability gap, not a principle violation.** A good
-ranking (`ts_rank_cd`, trigram `similarity()`, BM25) is a value the *database
-computes*, using the same index large tables need. It cannot be produced
-honestly in the Java resolver without pulling candidate rows into memory and
-scoring them there, which defeats the "DB does the work" architecture.
-Therefore relevance must be a DB expression; graphitron's role is only to
-*name and route* it (auto-derived default from weighted `@searchable` columns,
-or an explicit named DB expression/function override, same auto-default +
-escape-hatch pattern used elsewhere). Per-field weighting (`code` prefix beats
-`name` substring) is where combobox relevance quality lives and should be
-first-class.
+The facts that flow in, and what each gates:
 
-## Key insight 3: keyset is graphitron's *answer*, not a *principle* — ranked search needs a second pagination strategy
-
-`@asConnection` uses keyset/cursor pagination, which *requires* a stable,
-stored, seekable, deterministic sort key. Relevance rank violates every part of
-that: it is computed per query, non-unique (needs a tiebreak), and not seekable
-(paging by keyset would recompute the score in the WHERE for every candidate,
-defeating the index). Postgres full-text ranking is inherently
-`ORDER BY ts_rank(...) LIMIT n OFFSET m`, i.e. offset pagination.
-
-The correct conclusion is **not** "ranked search is out of architecture" (that
-would be cargo-culting keyset). It is: **graphitron has one pagination strategy
-and needs a second.** Design thesis:
-
-- **Pagination strategy is *derived*, not configured.** When the ordering key is
-  a seekable stored column → keyset (today). When ordering is a query-time
-  relevance score → keyset is impossible by construction, so codegen derives a
-  **ranked-offset** strategy. The generator can *detect* this from the ordering
-  intent; it is a forced consequence, not a knob.
-- **Keep the Relay contract; change the cursor's meaning.** Relay cursors are
-  opaque, so a cursor may encode `offset + query-fingerprint` instead of a
-  keyset tuple. The frontend keeps `edges`/`pageInfo`/opt-in `totalCount`/"load
-  more"; comboboxes and stable lists look identical on the wire. This preserves
-  the "page through a large ranked result" case that a bare top-N list would
-  discard.
-- **Declare the cost, don't hide it.** Deep offset scans-and-discards. Bound it
-  with a declared `maxDepth` that errors past the limit, rather than let an
-  unbounded OFFSET be a silent footgun. Comboboxes never approach the bound.
-- **Ordering is always `score DESC, <stable pk> ASC`** so offset paging is at
-  least deterministic within a snapshot.
-
-## Physical strategy maps to real Postgres capabilities
-
-- **trigram distance (`<->`, `pg_trgm` + GiST/GIN):** the ordering operator *is*
-  index-backed and orderable (`ORDER BY name <-> :q LIMIT n` runs off the
-  index). Sweet spot for typo-tolerant comboboxes.
-- **full-text `ts_rank`:** the `@@` filter is index-backed, but `ts_rank` is
-  *not* orderable-by-index → top-N materialize-then-sort. Fine for bounded
-  pages, which is exactly why `maxDepth` belongs here.
-- **naive weighted match (small tables):** unindexed scoring expression,
-  portable, no migration.
-
-The author's declared strategy selects among these; the SDL is unchanged across
-all three.
+- **Coverage**: which columns feed the vector, hence what a match honestly
+  means. Extending coverage is a consumer migration; the SDL reflects it.
+- **Capability set**: whether the backing can boolean-match, rank, rank *in
+  the index* (trigram `<->`) versus materialize-then-sort (`ts_rank`),
+  tolerate typos. Gates what the demand side may ask for.
+- **Analyzer semantics**: language configuration, stemming. Opaque to
+  graphitron by design; it changes what matches, not the contract.
+- **Entity multiplicity**: single-entity backing (a tsvector column on one
+  table) versus multi-entity backing (a search table with a discriminator).
+- **Freshness**: trigger-fed or materialized backings lag their sources, and
+  Oracle Text `CONTEXT` indexes are stale-by-default between `SYNC` runs.
+  Consequence: hits may reference dead rows, so the hit-to-entity join-back
+  is an inner join that drops them, and "asked for 20, got 18" is documented
+  behaviour, not a bug.
 
 ## Likely shape of the work (not committed)
 
-- **Slice A (tractable, portable):** `@searchable` as a multi-column *filter*
-  predicate — synthesizes a `search:` argument, ORs the match across marked
-  columns, composes (AND) with existing filters, **keeps keyset pagination**
-  because relevance never enters the ORDER BY. No ranking. Shippable on its own.
-- **Slice B (the real feature):** ranked-offset connection as a first-class
-  second pagination strategy, derived when ordering is relevance-based, Relay
-  contract preserved via offset-encoded cursors, depth bounded by declaration,
-  score sourced from weighted `@searchable` columns or a named DB expression.
-- Sibling to R13 (`@asFacet` / faceted-search): both mark input/columns and grow
-  an arm on the synthesized connection.
+- A binding directive (name TBD; the working shape is `@search` with a
+  sealed supply reference: vector column | index | search table, resolved
+  by name into the jOOQ catalog namespace) authored at the search surface.
+  The grain is **one directive application per search surface, binding it to
+  one backing**; there are no per-field `@searchable` tags, since membership
+  is a fact of the backing.
+- The synthesized search field and hit wrapper types, riding the same
+  promoter/synthesis path R13 shipped.
+- Validation: membership (the named object exists) plus capability checks
+  (the demand is servable), as `AuthorError`s with LSP surfacing; the
+  catalog's search-relevant region becomes completable/hoverable (the six
+  reads of R333's referenced-namespace model apply unchanged).
+- Runtime: one ranked query per search invocation, `ORDER BY <rank> DESC,
+  <pk> ASC LIMIT n`, filters composing (AND) with the match predicate in the
+  single-type case.
+- **Developer-facing documentation is a first-class deliverable**: a how-to
+  per platform with the canonical migration (Postgres: generated tsvector
+  column + GIN index; Oracle: `CTXSYS.CONTEXT` index + sync policy), the
+  binding SDL, and the freshness/operational notes. Being opinionated only
+  works if the blessed path is excellently documented.
+- Test fixtures: our sakila port does not carry pagila's `fulltext` column,
+  so the execution tier needs a generated tsvector column + GIN index added
+  to `graphitron-sakila-db/init.sql`. That fixture migration doubles as the
+  documented Postgres recipe, exercised by our own suite.
 
-## Open forks to close before Spec
+## Open questions gating Spec
 
-1. **Derived vs explicit strategy selection.** Infer ranked-offset purely from
-   the presence of a relevance order (idiomatic, self-documenting), or require
-   an explicit marker on `@asConnection` so the author consciously opts into
-   weaker pagination guarantees? Leaning inferred-with-a-loud-generated-note.
-2. **Default match mode:** `prefix` (combobox-friendly, btree-usable) vs
-   `contains` (`%x%`, not index-usable) vs `fulltext`.
-3. **Where the strategy/weight binding lives:** on `@searchable` itself vs on the
-   synthesized argument.
-4. **Consumption reality check (blocking):** do frontends genuinely page deep
-   through ranked results, or is bounded top-N enough for the combobox use case?
-   This decides how much of Slice B's offset machinery is actually required.
+1. **jOOQ metadata visibility (first concrete task).** Index columns are
+   readable today (`findIndexColumns`), but can the generated jOOQ 3.20 meta
+   tell a GIN from a GiST from a btree, see operator classes
+   (`gin_trgm_ops`), or expose a generated column's expression? If the meta
+   is thin, the backing's *kind* becomes an authored assertion on the
+   binding (validated for membership, trusted for semantics, the same trust
+   boundary as `@condition` Java methods); if rich, we can validate
+   capability too. This decides how much validation the Spec can promise.
+2. **Oracle and the jOOQ edition.** jOOQ's open-source edition does not
+   support Oracle; Oracle requires a commercial jOOQ license, and our build
+   and Testcontainers story is Postgres-only today. Decide whether Oracle
+   support lands as design-compatible-but-unverified, or waits on licensed
+   build infrastructure. The demand/supply design is dialect-agnostic either
+   way; this question is about what we can *test and claim*.
+3. **Directive surface details**: directive and argument naming, where the
+   synthesized field attaches and what it is called (derived name with an
+   override is the lean), collision rules.
+4. **Filter composition on the search field**: which of the parent entity's
+   filter arguments the search field inherits in the single-type case.
+5. **Second Postgres mechanism**: whether `pg_trgm` (typo-tolerant,
+   index-ordered ranking, the natural combobox fit) joins `tsvector` in v1
+   or follows later. Starting with one mechanism per platform says later,
+   but trigram's index-ordered `<->` is cheap once the binding exists.
+
+## Dead ends (recorded so they are not relitigated)
+
+- **`orderBy: RELEVANCE` on existing connections**: argument-correlation
+  validation GraphQL cannot express, a hardcoded-false `pageInfo` that
+  violates the Relay spec, dual-strategy resolvers. Rejected 2026-07-15.
+- **SDL-authored index definitions** (`@searchable` field tags with weights,
+  a logical index namespace owned by graphitron): authoring a schema object
+  we neither create nor enforce is DDL in spirit; weights are index-time
+  facts. Rejected 2026-07-15.
+- **Naive `ILIKE` shim as a zero-migration on-ramp**: does not scale, and as
+  the default path it is an enticing dead end. The on-ramp is documentation
+  of the real migration instead. Rejected 2026-07-15.
+- **Deep ranked paging (ranked-offset cursors)**: no consumer demand
+  (top-N confirmed sufficient). Archived below, not deleted, in case demand
+  appears.
+
+## Archived: ranked-offset pagination (kept for future demand)
+
+Keyset pagination requires a stable, stored, seekable sort key; a relevance
+score is computed per query, non-unique, and not seekable, so keyset is
+impossible by construction for ranked results. If deep ranked paging is ever
+demanded, the design is: keep the Relay contract, let the (opaque) cursor
+encode `offset + query-fingerprint`, derive this strategy whenever ordering
+is a query-time score (never a knob), bound depth with a declared limit that
+errors past it, and always order `score DESC, <pk> ASC` so offset paging is
+deterministic within a snapshot. Postgres reality check: trigram `<->` is
+index-ordered, `ts_rank` is materialize-then-sort, so the depth bound is
+load-bearing for the fulltext case.
+
+## History
+
+- 2026-07-02: filed from the initial issue #512 discussion (contract vs
+  execution split, no-DDL constraint, keyset-vs-rank analysis).
+- 2026-07-14: requester confirmed bounded top-N suffices for the combobox
+  case; deep ranked paging has no driver.
+- 2026-07-15: design discussion closed the major forks: dedicated generated
+  field over a connection order mode; hit wrapper without score; the
+  demand/supply inversion (the index is a consumer-owned bearer of facts,
+  graphitron maps and type-checks); backed-only with no shim; native
+  mechanisms for Postgres and Oracle in scope, external engines out;
+  documentation as a first-class deliverable.
