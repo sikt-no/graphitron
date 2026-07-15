@@ -3,7 +3,7 @@ id: R180
 title: "Resolved accessors for record-parent column reads (recordColumnReadArgs)"
 status: Spec
 theme: classification-model
-depends-on: [decompose-sourcekey]
+depends-on: []
 created: 2026-05-19
 last-updated: 2026-07-15
 ---

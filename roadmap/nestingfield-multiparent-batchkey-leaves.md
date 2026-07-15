@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: [decompose-sourcekey, collapse-split-and-record-table-leaves]
+depends-on: [collapse-split-and-record-table-leaves]
 created: 2026-06-17
 last-updated: 2026-07-15
 ---

@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 4
 theme: classification-model
-depends-on: [decompose-sourcekey]
+depends-on: []
 created: 2026-07-04
 last-updated: 2026-07-04
 ---

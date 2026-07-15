@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 7
 theme: service
-depends-on: [decompose-sourcekey]
+depends-on: []
 last-updated: 2026-07-14
 ---
 
