@@ -2744,7 +2744,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
                 var lifter = ((SourceKey.Reader.SourceRowsCall) sk.reader()).lifter();
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath()).isEqualTo(sk.path());
                 assertThat(sk.columns()).hasSize(1);
                 assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
                 assertThat(lifter.declaringClass().reflectionName()).isEqualTo("no.sikt.graphitron.rewrite.TestLifterStub");
@@ -3179,12 +3178,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
                 assertThat(sk.columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("inventory_id");
-                // Leaf-PK variant: path contains a single LiftedHop pointing at the leaf target.
-                assertThat(sk.path()).hasSize(1);
-                assertThat(sk.path().get(0)).isInstanceOf(JoinStep.LiftedHop.class);
-                assertThat(((JoinStep.LiftedHop) sk.path().get(0)).targetTable().tableName()).isEqualTo("inventory");
-                assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                // Leaf-PK variant (R431): hop-less — empty joinPath plus the pre-keyed
+                // OnLiftedSlots correlation pointing at the leaf target.
+                assertThat(f.joinPath()).isEmpty();
+                assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
+                assertThat(((ParentCorrelation.OnLiftedSlots) f.parentCorrelation()).targetTable().tableName())
+                    .isEqualTo("inventory");
                 assertThat(((SourceKey.Reader.SourceRowsCall) sk.reader()).lifter().methodName())
                     .isEqualTo("dummyRow1Integer");
             }) {
@@ -3323,8 +3322,8 @@ class GraphitronSchemaBuilderTest {
                     assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("films");
                     assertThat(sk.columns()).hasSize(1);
                     assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
-                    assertThat(f.joinPath()).hasSize(1);
-                    assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                    assertThat(f.joinPath()).isEmpty();
+                    assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
                 });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -3372,8 +3371,8 @@ class GraphitronSchemaBuilderTest {
                     assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("film");
                     assertThat(sk.columns()).hasSize(1);
                     assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
-                    assertThat(f.joinPath()).hasSize(1);
-                    assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                    assertThat(f.joinPath()).isEmpty();
+                    assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
                 });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }

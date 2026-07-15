@@ -21,17 +21,12 @@ import java.util.Objects;
  *
  * <ul>
  *   <li>{@link #columns()} — entry-point columns for the rows-method's parent-input VALUES
- *       table. When {@link #path()} is empty: target-side columns (the catalog-FK / accessor
- *       arms). When {@link #path()} is non-empty: first-hop source-side columns (the
- *       {@code @sourceRow + @reference} chain).</li>
- *   <li>{@link #path()} — empty when the source is target-aligned ({@link Reader.ColumnRead},
- *       {@link Reader.AccessorCall} for the leaf-PK shape, {@link Reader.ServiceTableRecord}
- *       returning the target record); non-empty when traversal walks an FK chain to the
- *       target ({@link Reader.SourceRowsCall} on a {@code @reference} path) or a single
- *       {@link JoinStep.LiftedHop} (lifter-leaf and accessor arms). {@link JoinStep} (rather
- *       than a narrower FK-only list) admits both
- *       FK-derived {@link JoinStep.Hop}s and {@link JoinStep.LiftedHop}; the lifter / accessor arms
- *       carry the latter.</li>
+ *       table: target-side columns for the catalog-FK / accessor arms, first-hop source-side
+ *       columns for the {@code @sourceRow + @reference} chain. (R431: the {@code path}
+ *       component — a denormalized copy of the {@code joinPath} carried first-class on the
+ *       leaves, plus the smuggled single {@code LiftedHop} now expressed as
+ *       {@code ParentCorrelation.OnLiftedSlots} — is deleted; it had zero generator
+ *       readers.)</li>
  *   <li>{@link #wrap()} — the Java shape of one row of source data:
  *       {@link Wrap.Row} ({@code RowN<...>}), {@link Wrap.Record} ({@code RecordN<...>}),
  *       or {@link Wrap.TableRecord} (the typed jOOQ {@code TableRecord} subclass, with the
@@ -56,19 +51,19 @@ import java.util.Objects;
  *       {@code TableRecord}; both the single ({@code AccessorKeyedSingle}) and the
  *       loadMany ({@code AccessorKeyedMany}) projections produce {@code RecordN<...>} keys
  *       at emit time.</li>
- *   <li>{@link Reader.ResultRowWalk} → {@link Wrap.Record} or {@link Wrap.TableRecord},
- *       and {@link #path()} empty. The upstream producer (DML mutation fetcher or
- *       carrier-shaped {@code @service} method) emits target-aligned rows; cardinality
- *       determines whether the consumer sees a single row ({@link Cardinality#ONE}) or a
- *       list / {@code Result} ({@link Cardinality#MANY}). (R431: the {@code TableRecord}
- *       className-equals-target and the {@code ServiceTableRecord} target-aligned empty-path
- *       checks asserted a denormalized copy agreed with its source; they left with the
- *       {@code target} component.)</li>
+ *   <li>{@link Reader.ResultRowWalk} → {@link Wrap.Record} or {@link Wrap.TableRecord}.
+ *       The upstream producer (DML mutation fetcher or carrier-shaped {@code @service}
+ *       method) emits target-aligned rows; cardinality determines whether the consumer sees
+ *       a single row ({@link Cardinality#ONE}) or a list / {@code Result}
+ *       ({@link Cardinality#MANY}). (R431: the {@code TableRecord} className-equals-target
+ *       and the {@code ServiceTableRecord} target-aligned empty-path checks asserted a
+ *       denormalized copy agreed with its source; they left with the {@code target}
+ *       component. The two empty-path checks lost their carrier when {@code path}
+ *       deleted.)</li>
  * </ul>
  */
 public record SourceKey(
     List<ColumnRef> columns,
-    List<JoinStep> path,
     Wrap wrap,
     Cardinality cardinality,
     Reader reader
@@ -110,7 +105,6 @@ public record SourceKey(
         Objects.requireNonNull(wrap, "wrap");
         Objects.requireNonNull(cardinality, "cardinality");
         columns = List.copyOf(columns);
-        path = List.copyOf(path);
 
         if (reader instanceof Reader.SourceRowsCall && !(wrap instanceof Wrap.Row)) {
             throw new IllegalArgumentException(
@@ -130,11 +124,6 @@ public record SourceKey(
                     + "Wrap.TableRecord (upstream producer emits target-aligned rows; the "
                     + "data-field fetcher's typed source read relies on wrap to type the row "
                     + "shape); got " + wrap);
-            }
-            if (!path.isEmpty()) {
-                throw new IllegalArgumentException(
-                    "SourceKey: Reader.ResultRowWalk requires empty path (target-aligned by "
-                    + "construction; the producer's row shape IS the data table).");
             }
             // R275: the Outcome envelope only ever pairs with the @service carrier (Wrap.TableRecord);
             // the DML carrier (Wrap.Record) delivers its row(s) bare on env.getSource(). Pinning the
@@ -170,7 +159,7 @@ public record SourceKey(
      * pair alone. Used by {@link MethodRef.Param.Sourced} and {@link ParamSource.Sources}
      * consumers that hold the triple {@code (wrap, columns, container)} directly without a
      * full {@link SourceKey} (only the source-shape side of the data is available, not the
-     * field-side {@code path} / {@code cardinality} / {@code reader}).
+     * field-side {@code cardinality} / {@code reader}).
      */
     public static TypeName keyElementType(Wrap wrap, List<ColumnRef> columns) {
         return switch (wrap) {
@@ -305,8 +294,8 @@ public record SourceKey(
          * DML and {@code @service} error-channel carriers at the read site, so it rides on the
          * reader rather than being re-derived from sibling fields at emit time.
          *
-         * <p>{@link SourceKey#path()} is empty by construction (target-aligned: the
-         * producer's row shape IS the data table); {@link SourceKey#wrap()} is either
+         * <p>Target-aligned by construction (the producer's row shape IS the data
+         * table); {@link SourceKey#wrap()} is either
          * {@link Wrap.Record} (DML mutation fetcher producer emits {@code RecordN<...>})
          * or {@link Wrap.TableRecord} ({@code @service} payload producer returns
          * a typed {@code XRecord} or {@code List<XRecord>} verbatim). Cardinality matches

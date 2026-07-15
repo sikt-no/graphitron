@@ -268,7 +268,6 @@ class FieldBuilder {
             MethodRef.Param.Sourced sourced, ReturnTypeRef.TableBoundReturnType rt) {
         return new SourceKey(
             sourced.columns(),
-            List.of(),
             sourced.wrap(),
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
@@ -282,7 +281,6 @@ class FieldBuilder {
             MethodRef.Param.Sourced sourced, ReturnTypeRef rt) {
         return new SourceKey(
             sourced.columns(),
-            List.of(),
             sourced.wrap(),
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceUntypedRecord());
@@ -5426,14 +5424,8 @@ class FieldBuilder {
         SourceKey.Cardinality cardinality = isList
             ? SourceKey.Cardinality.MANY
             : SourceKey.Cardinality.ONE;
-        List<JoinSlot.LifterSlot> hopSlots = pkColumns.stream()
-            .map(JoinSlot.LifterSlot::new)
-            .toList();
-        JoinStep.LiftedHop hop = new JoinStep.LiftedHop(targetTable, hopSlots, name + "_0");
-        List<JoinStep> joinPath = List.of(hop);
         SourceKey sourceKey = new SourceKey(
             pkColumns,
-            joinPath,
             new SourceKey.Wrap.Row(),
             cardinality,
             new SourceKey.Reader.ProducedRecordRead());
@@ -5444,13 +5436,11 @@ class FieldBuilder {
             false,
             LoaderRegistration.Container.POSITIONAL_LIST,
             isList ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
-        // Always a single LiftedHop (source=target re-fetch), so buildParentCorrelation yields
-        // OnFkSlots — never an AuthorError; the direct Resolved cast is safe.
-        var pcResolution = ctx.buildParentCorrelation(joinPath, null);
-        var parentCorrelation =
-            ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
+        // Source=target re-fetch: PK self-identity is the degenerate case of the FK pairing, the
+        // hop-less OnLiftedSlots correlation (R431; formerly a single LiftedHop in the joinPath).
+        var parentCorrelation = new ParentCorrelation.OnLiftedSlots(targetTable, pkColumns);
         return new ChildField.RecordTableField(
-            parentTypeName, name, location, tb, joinPath,
+            parentTypeName, name, location, tb, List.of(),
             List.of(), new OrderBySpec.None(), null,
             sourceKey, loaderRegistration, parentCorrelation);
     }
@@ -5570,7 +5560,6 @@ class FieldBuilder {
                     : SourceKey.Reader.SourceEnvelope.DIRECT;
                 var idSourceKey = new SourceKey(
                     nodeType.nodeKeyColumns(),
-                    List.of(),
                     new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
                     idCardinality,
                     new SourceKey.Reader.ResultRowWalk(idEnvelope));
@@ -5631,6 +5620,7 @@ class FieldBuilder {
             SourceKey sourceKey;
             LoaderRegistration loaderRegistration;
             List<JoinStep> joinPath;
+            ParentCorrelation.OnLiftedSlots lifted = null;
             if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
                 var sr = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName0);
                 if (sr instanceof SourceRowDirectiveResolver.Resolved.Rejected rj) {
@@ -5640,6 +5630,7 @@ class FieldBuilder {
                 sourceKey = ok.sourceKey();
                 loaderRegistration = ok.loaderRegistration();
                 joinPath = ok.joinPath();
+                lifted = ok.lifted();
             } else {
                 String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr
                         && jtr.table() != null
@@ -5674,9 +5665,12 @@ class FieldBuilder {
             // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
             // condition-join (or hop-0-filter) first hop has no parent table to anchor the source
             // argument. parentTable=null routes the parent-anchor (OnParentJoin) arm to AuthorError,
-            // mirroring RecordTableField / RecordLookupTableField. Filter-less FK-derived / LiftedHop
-            // first hops produce ParentCorrelation.OnFkSlots and don't consult parentTable.
-            var rtmPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
+            // mirroring RecordTableField / RecordLookupTableField. Filter-less FK-derived
+            // first hops produce ParentCorrelation.OnFkSlots and don't consult parentTable; the
+            // @sourceRow leaf-PK shape arrives pre-resolved as OnLiftedSlots (R431).
+            var rtmPcResolution = lifted != null
+                ? new BuildContext.ParentCorrelationResolution.Resolved(lifted)
+                : ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
             if (rtmPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
@@ -5713,15 +5707,17 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
             var tfc = (TableFieldComponents.Ok) components;
-            // joinPath: [hop] for LifterLeafKeyed (no @reference), the resolved FK chain for
-            // LifterPathKeyed (@reference present). The resolver already constructs the right
-            // shape and surfaces it as ok.joinPath().
+            // joinPath: empty + OnLiftedSlots for LifterLeafKeyed (no @reference; R431), the
+            // resolved FK chain for LifterPathKeyed (@reference present). The resolver already
+            // constructs the right shape and surfaces it as ok.joinPath() / ok.lifted().
             List<JoinStep> joinPath = ok.joinPath();
             // class-backed-parent carriers: the surface SDL parent type has no @table binding, so a
             // condition-join first hop has no parent table to anchor against and routes to
-            // AuthorError. The FK-derived / LiftedHop arms (the normal cases) produce
-            // ParentCorrelation.OnFkSlots and don't consult parentTable.
-            var srPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
+            // AuthorError. The FK-derived arm produces ParentCorrelation.OnFkSlots and doesn't
+            // consult parentTable; the leaf-PK shape arrives pre-resolved as OnLiftedSlots.
+            var srPcResolution = ok.lifted() != null
+                ? new BuildContext.ParentCorrelationResolution.Resolved(ok.lifted())
+                : ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
             if (srPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
@@ -5848,15 +5844,22 @@ class FieldBuilder {
                 }
                 var resolved = (RecordParentSourceResolution.Resolved) resolution;
                 var resolvedJoinPath = resolved.joinPath();
+                // The accessor arm resolves to the hop-less OnLiftedSlots correlation with an
+                // empty joinPath (R431); the FK arm derives its correlation from the path.
                 // class-backed-parent carriers: see the @sourceRow branch above for the parentTable
                 // null rationale. The parent-anchor arm (a condition-join first hop, or any hop-0
                 // filter — R450) is the only one that consults parentTable, and it routes to
                 // AuthorError without one.
-                var resolvedPcResolution = ctx.buildParentCorrelation(resolvedJoinPath, /* parentTable= */ null);
-                if (resolvedPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
-                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+                ParentCorrelation resolvedParentCorrelation;
+                if (resolved.lifted() != null) {
+                    resolvedParentCorrelation = resolved.lifted();
+                } else {
+                    var resolvedPcResolution = ctx.buildParentCorrelation(resolvedJoinPath, /* parentTable= */ null);
+                    if (resolvedPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+                    }
+                    resolvedParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) resolvedPcResolution).correlation();
                 }
-                var resolvedParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) resolvedPcResolution).correlation();
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         resolved.sourceKey(), resolved.loaderRegistration(), tfc.lookupMapping(),
@@ -6094,7 +6097,6 @@ class FieldBuilder {
             : parentTable.primaryKeyColumns();
         SourceKey sourceKey = new SourceKey(
             entryColumns,
-            List.of(),
             new SourceKey.Wrap.Row(),
             isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
@@ -6119,7 +6121,6 @@ class FieldBuilder {
             List<ColumnRef> pkCols) {
         return new no.sikt.graphitron.rewrite.model.SourceKey(
             pkCols,
-            List.of(),
             new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
@@ -6153,7 +6154,6 @@ class FieldBuilder {
         boolean isList = tb.wrapper().isList();
         SourceKey sourceKey = new SourceKey(
             fkJoin.sourceSideColumns(),
-            List.of(),
             new SourceKey.Wrap.Row(),
             isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
@@ -6186,7 +6186,8 @@ class FieldBuilder {
          * leaf-PK call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the
          * target-side columns through {@link no.sikt.graphitron.rewrite.model.HasSlots} uniformly.
          */
-        record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath) implements RecordParentSourceResolution {}
+        record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath,
+                        ParentCorrelation.OnLiftedSlots lifted) implements RecordParentSourceResolution {}
         record Rejected(Rejection rejection) implements RecordParentSourceResolution {}
     }
 
@@ -6205,13 +6206,13 @@ class FieldBuilder {
         var fkSource = deriveFkRecordParentSource(joinPath, parentResultType, tb);
         if (fkSource != null) {
             return new RecordParentSourceResolution.Resolved(
-                fkSource.sourceKey(), fkSource.loaderRegistration(), joinPath);
+                fkSource.sourceKey(), fkSource.loaderRegistration(), joinPath, null);
         }
 
         var derived = deriveAccessorRecordParentSource(fieldName, accessorBaseName, tb, parentResultType);
         return switch (derived) {
             case AccessorDerivation.Ok ok -> new RecordParentSourceResolution.Resolved(
-                ok.sourceKey(), ok.loaderRegistration(), List.of(ok.hop()));
+                ok.sourceKey(), ok.loaderRegistration(), List.of(), ok.lifted());
             case AccessorDerivation.Ambiguous a -> new RecordParentSourceResolution.Rejected(
                 Rejection.structural(a.message()));
             case AccessorDerivation.CardinalityMismatch m -> new RecordParentSourceResolution.Rejected(
@@ -6229,12 +6230,13 @@ class FieldBuilder {
      * name-and-shape rule; {@link CardinalityMismatch} when at least one accessor matches name
      * + element table but the field/accessor cardinalities don't align (and no other accessor
      * matched cleanly). The {@link Ok} arm carries the resolved {@link SourceKey} +
-     * {@link LoaderRegistration} pair plus the {@link JoinStep.LiftedHop} the orchestrator
-     * needs to assemble the {@code joinPath} for the surrounding
+     * {@link LoaderRegistration} pair plus the hop-less {@link ParentCorrelation.OnLiftedSlots}
+     * correlation (R431) the orchestrator threads into the surrounding
      * {@link RecordParentSourceResolution.Resolved}.
      */
     private sealed interface AccessorDerivation {
-        record Ok(SourceKey sourceKey, LoaderRegistration loaderRegistration, JoinStep.LiftedHop hop) implements AccessorDerivation {}
+        record Ok(SourceKey sourceKey, LoaderRegistration loaderRegistration,
+                  ParentCorrelation.OnLiftedSlots lifted) implements AccessorDerivation {}
         record None() implements AccessorDerivation {}
         record Ambiguous(String message) implements AccessorDerivation {}
         record CardinalityMismatch(String message) implements AccessorDerivation {}
@@ -6310,15 +6312,11 @@ class FieldBuilder {
 
         // Exactly one resolvable match; build the corresponding SourceKey + LoaderRegistration
         // pair. The accessor's DataLoader key tuple equals the element table's PK tuple by
-        // classifier construction (Invariant Acc-1), so each slot is a LifterSlot whose single
-        // ColumnRef is the PK col. Wrap is Record (the accessor returns a TableRecord, projected
+        // classifier construction (Invariant Acc-1) — the hop-less OnLiftedSlots correlation
+        // (R431). Wrap is Record (the accessor returns a TableRecord, projected
         // as RecordN<...> keys at emit time); the container axis is always POSITIONAL_LIST and
         // the dispatch fork is Single → LOAD_ONE, Many → LOAD_MANY (the loadMany contract that
         // emits one Record per element-PK).
-        List<JoinSlot.LifterSlot> hopSlots = expectedTable.primaryKeyColumns().stream()
-            .map(JoinSlot.LifterSlot::new)
-            .toList();
-        var hop = new JoinStep.LiftedHop(expectedTable, hopSlots, fieldName + "_0");
         AccessorMatch only = resolvable.get(0);
         boolean accessorIsMany = only instanceof AccessorMatch.Many;
         java.lang.reflect.Method accessorMethod = switch (only) {
@@ -6337,7 +6335,6 @@ class FieldBuilder {
             ClassName.get(accessorElementClass));
         SourceKey sourceKey = new SourceKey(
             expectedTable.primaryKeyColumns(),
-            List.of(hop),
             new SourceKey.Wrap.Record(),
             accessorIsMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.AccessorCall(ref));
@@ -6345,7 +6342,8 @@ class FieldBuilder {
             false,
             LoaderRegistration.Container.POSITIONAL_LIST,
             accessorIsMany ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
-        return new AccessorDerivation.Ok(sourceKey, loaderRegistration, hop);
+        return new AccessorDerivation.Ok(sourceKey, loaderRegistration,
+            new ParentCorrelation.OnLiftedSlots(expectedTable, expectedTable.primaryKeyColumns()));
     }
 
     /**
@@ -6545,7 +6543,6 @@ class FieldBuilder {
                 // (each parent is one entity, not field-cardinality-derived).
                 SourceKey parentSourceKey = new SourceKey(
                     pkCols,
-                    List.of(),
                     new SourceKey.Wrap.Row(),
                     SourceKey.Cardinality.ONE,
                     new SourceKey.Reader.ColumnRead());
@@ -6643,11 +6640,6 @@ class FieldBuilder {
             new IllegalStateException("collectAccessorMatches verified element table presence "
                 + "but resolveTableByRecordClass returned empty for " + elementClass.getName()));
 
-        List<JoinSlot.LifterSlot> hopSlots = hubTable.primaryKeyColumns().stream()
-            .map(JoinSlot.LifterSlot::new)
-            .toList();
-        var hop = new JoinStep.LiftedHop(hubTable, hopSlots, fieldName + "_0");
-
         // Polymorphic accessor arm: the hub table (where the accessor's typed return lives) is
         // carried as the leaf's parentKeyOwnerTable; cardinality follows the accessor (Single →
         // ONE, Many → MANY for per-element walk through the parent's typed list-accessor).
@@ -6657,7 +6649,6 @@ class FieldBuilder {
             ClassName.get(elementClass));
         SourceKey parentSourceKey = new SourceKey(
             hubTable.primaryKeyColumns(),
-            List.of(hop),
             new SourceKey.Wrap.Record(),
             accessorIsMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.AccessorCall(ref));

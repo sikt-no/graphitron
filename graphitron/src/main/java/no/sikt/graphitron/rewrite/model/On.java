@@ -88,7 +88,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
      * and baked into the pair, so readers are direction-blind. The list is empty when the jOOQ
      * catalog is unavailable (unit tests).
      */
-    record ColumnPairs(Keying keying, List<JoinSlot.FkSlot> slots) implements On, HasSlots {
+    record ColumnPairs(Keying keying, List<JoinSlot.FkSlot> slots) implements On {
         public ColumnPairs {
             if (keying == null) {
                 throw new NullPointerException("On.ColumnPairs.keying must not be null");
@@ -96,7 +96,26 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
             slots = List.copyOf(slots);
         }
 
-        @Override public int slotCount() { return slots.size(); }
+        public int slotCount() { return slots.size(); }
+
+        /**
+         * Source-side columns, materialised as a {@link List} for readers that need the columns
+         * themselves (e.g. constructing a {@code SourceKey} entry-point column tuple) rather
+         * than slot-by-slot iteration. The order matches {@link #slots()}; index {@code i} is
+         * {@code slots[i].sourceSide()}. (R431: formerly on the {@code HasSlots} capability,
+         * which died with {@code JoinStep.LiftedHop} — this is its only implementor.)
+         */
+        public List<ColumnRef> sourceSideColumns() {
+            return slots.stream().map(JoinSlot::sourceSide).toList();
+        }
+
+        /**
+         * Target-side columns, materialised as a {@link List}. The order matches
+         * {@link #slots()}; index {@code i} is {@code slots[i].targetSide()}.
+         */
+        public List<ColumnRef> targetSideColumns() {
+            return slots.stream().map(JoinSlot::targetSide).toList();
+        }
     }
 
     /**

@@ -93,7 +93,7 @@ public final class InlineTableFieldEmitter {
             // self-referential subselects never shadow each other's aliases. For the base (outermost)
             // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
             // giving globally unique aliases at every depth. Every Hop (and the
-            // unreachable-here LiftedHop) exposes targetTable() through HasTargetTable.
+            // steps) exposes targetTable() through HasTargetTable.
             // Invariant (R379): the terminal hop's targetTable equals the field return type's
             // @table, and every condition method's concretely-typed parameters match the aliases
             // passed here — both asserted at build time in BuildContext.parsePath (Check 1 / 2),
@@ -186,9 +186,6 @@ public final class InlineTableFieldEmitter {
                             DSL, aliases.get(i));
                     }
                 }
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear in an @reference-composed path; this path is "
-                    + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");
             }
         }
 
@@ -222,6 +219,10 @@ public final class InlineTableFieldEmitter {
                 // step-0 WHERE contributes nothing.
                 case ParentCorrelation.OnLateralArgs ignored ->
                     where.add("$T.noCondition()", DSL);
+                case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
+                    "ParentCorrelation.OnLiftedSlots never reaches the inline emitters; the "
+                    + "pre-keyed lifted shape is DataLoader-batched through SplitRowsMethodEmitter "
+                    + "(non-empty inline paths are @reference-composed Hop chains)");
             }
         }
         for (JoinStep step : path) {

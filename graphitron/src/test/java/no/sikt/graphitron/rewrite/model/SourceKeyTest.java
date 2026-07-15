@@ -18,16 +18,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@link SourceKey.Reader.SourceRowsCall} ⇒ {@link SourceKey.Wrap.Row}.</li>
  *   <li>{@link SourceKey.Reader.AccessorCall} ⇒ {@link SourceKey.Wrap.Record}.</li>
  *   <li>{@link SourceKey.Reader.ResultRowWalk} ⇒ {@link SourceKey.Wrap.Record} /
- *       {@link SourceKey.Wrap.TableRecord}, empty {@link SourceKey#path()}, and
- *       {@code OUTCOME_SUCCESS} only on {@link SourceKey.Wrap.TableRecord}.</li>
+ *       {@link SourceKey.Wrap.TableRecord}, and {@code OUTCOME_SUCCESS} only on
+ *       {@link SourceKey.Wrap.TableRecord}.</li>
  * </ul>
  *
- * <p>R431 dispositions (the {@code target} component is deleted): the
- * {@code ServiceTableRecord}(target-aligned) ⇒ empty-path and
- * {@code ResultRowWalk} {@code TableRecord}-className-equals-target rejections asserted a
- * denormalized copy agreed with its source, exactly the drift class the decomposition removes;
- * both left with the component ({@code serviceTableRecordAcceptsNonEmptyPath} pins the widened
- * acceptance).
+ * <p>R431 dispositions: the {@code target} and {@code path} components are deleted. The
+ * {@code ServiceTableRecord}(target-aligned) ⇒ empty-path and {@code ResultRowWalk}
+ * {@code TableRecord}-className-equals-target rejections asserted a denormalized copy agreed
+ * with its source, exactly the drift class the decomposition removes; the two
+ * {@code ResultRowWalk} empty-path rejections lost their carrier with {@code path} (the
+ * lifted shape now lives on {@code ParentCorrelation.OnLiftedSlots}, and
+ * {@code ParentCorrelation.checkCarrierInvariant} pins hop-lessness at the leaf).
  *
  * <p>Exercises the canonical-constructor invariants and the {@link SourceKey#keyElementType()}
  * derivation on the flat-record model.
@@ -53,13 +54,11 @@ class SourceKeyTest {
     void rowKeyedColumnReadProjectsToCleanShape() {
         var key = new SourceKey(
             List.of(FILM_ID),
-            List.of(),
             new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ColumnRead());
 
         assertThat(key.columns()).containsExactly(FILM_ID);
-        assertThat(key.path()).isEmpty();
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
     }
 
@@ -67,7 +66,6 @@ class SourceKeyTest {
     void sourceRowsCallRequiresWrapRow() {
         assertThatThrownBy(() -> new SourceKey(
                 List.of(FILM_ID),
-                List.of(),
                 new SourceKey.Wrap.Record(),
                 SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.SourceRowsCall(LIFTER)))
@@ -80,7 +78,6 @@ class SourceKeyTest {
     void sourceRowsCallAcceptsWrapRow() {
         var key = new SourceKey(
             List.of(FILM_ID),
-            List.of(),
             new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.ONE,
             new SourceKey.Reader.SourceRowsCall(LIFTER));
@@ -91,7 +88,6 @@ class SourceKeyTest {
     void accessorCallRequiresWrapRecord() {
         assertThatThrownBy(() -> new SourceKey(
                 List.of(FILM_ID),
-                List.of(),
                 new SourceKey.Wrap.Row(),
                 SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.AccessorCall(ACCESSOR)))
@@ -104,7 +100,6 @@ class SourceKeyTest {
     void accessorCallAcceptsWrapRecord() {
         var key = new SourceKey(
             List.of(FILM_ID),
-            List.of(),
             new SourceKey.Wrap.Record(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.AccessorCall(ACCESSOR));
@@ -112,27 +107,9 @@ class SourceKeyTest {
     }
 
     @Test
-    void serviceTableRecordAcceptsNonEmptyPath() {
-        // R431: with the target component deleted, the former "target-aligned ⇒ empty path"
-        // rejection has no subject; a ServiceTableRecord key may carry a bridging path
-        // regardless of what record type the service returns. The alignment concern re-homes
-        // with the reader decomposition (the producer's declared return shape is a MethodRef
-        // signature fact, not a SourceKey slot).
-        ClassName filmRecordClass = FILM_TABLE.recordClass();
-        var key = new SourceKey(
-            List.of(FILM_ID),
-            List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-            new SourceKey.Wrap.TableRecord(filmRecordClass),
-            SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ServiceTableRecord(filmRecordClass));
-        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
-    }
-
-    @Test
     void resultRowWalkAcceptsWrapRecord() {
         var key = new SourceKey(
             List.of(FILM_ID),
-            List.of(),
             new SourceKey.Wrap.Record(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
@@ -147,7 +124,6 @@ class SourceKeyTest {
         // component.
         var key = new SourceKey(
             List.of(FILM_ID),
-            List.of(),
             new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
@@ -161,7 +137,6 @@ class SourceKeyTest {
         // Wrap.TableRecord — the producer wrapped its typed record in Outcome.
         var key = new SourceKey(
             List.of(FILM_ID),
-            List.of(),
             new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
             SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS));
@@ -175,7 +150,6 @@ class SourceKeyTest {
         // carrier). Wrap.Record is the DML carrier, which delivers its row bare and is always DIRECT.
         assertThatThrownBy(() -> new SourceKey(
                 List.of(FILM_ID),
-                List.of(),
                 new SourceKey.Wrap.Record(),
                 SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS)))
@@ -185,37 +159,9 @@ class SourceKeyTest {
     }
 
     @Test
-    void resultRowWalkRejectsNonEmptyPathUnderRecordWrap() {
-        assertThatThrownBy(() -> new SourceKey(
-                List.of(FILM_ID),
-                List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-                new SourceKey.Wrap.Record(),
-                SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("ResultRowWalk")
-            .hasMessageContaining("empty path");
-    }
-
-    @Test
-    void resultRowWalkRejectsNonEmptyPathUnderTableRecordWrap() {
-        // R158: even the admitted TableRecord wrap must carry empty path.
-        assertThatThrownBy(() -> new SourceKey(
-                List.of(FILM_ID),
-                List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-                new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
-                SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("ResultRowWalk")
-            .hasMessageContaining("empty path");
-    }
-
-    @Test
     void resultRowWalkRejectsWrapRow() {
         assertThatThrownBy(() -> new SourceKey(
                 List.of(FILM_ID),
-                List.of(),
                 new SourceKey.Wrap.Row(),
                 SourceKey.Cardinality.MANY,
                 new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
@@ -224,12 +170,11 @@ class SourceKeyTest {
     }
 
     @Test
-    void columnsAndPathAreImmutable() {
+    void columnsAreImmutable() {
         var mutableColumns = new java.util.ArrayList<ColumnRef>();
         mutableColumns.add(FILM_ID);
         var key = new SourceKey(
             mutableColumns,
-            List.of(),
             new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ColumnRead());

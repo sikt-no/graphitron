@@ -1,15 +1,16 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Pre-resolved shape of the step-0 parent correlation for {@code @reference}-carrying child
- * fields. Lifts the binary fork between slot-pair correlation and condition-method correlation
- * out of the emitters into the model — the five emitter sites (inline {@code TableField} /
- * {@code LookupTableField} / {@code ColumnReferenceField} step-0; split-rows
- * {@code buildListMethod} / {@code buildSingleMethod} / {@code buildConnectionMethod}) all read
- * variant identity from a sealed switch on this carrier rather than inspecting
- * {@code joinPath.get(0)} themselves.
+ * Pre-resolved shape of the step-0 parent correlation for source-correlated child fields.
+ * Lifts the fork between slot-pair correlation, condition-method correlation, lateral-argument
+ * correlation, and the pre-keyed lifted correlation out of the emitters into the model — the
+ * emitter sites (inline {@code TableField} / {@code LookupTableField} / {@code ColumnReferenceField}
+ * step-0; split-rows {@code buildListMethod} / {@code buildSingleMethod} /
+ * {@code buildConnectionMethod}) all read variant identity from a sealed switch on this carrier
+ * rather than inspecting {@code joinPath.get(0)} themselves.
  *
  * <p>The two axes are decoupled by design: {@link JoinStep.HasTargetTable} handles "what is this
  * hop's target table" (uniform across permits); {@link ParentCorrelation} handles "what shape does
@@ -25,25 +26,16 @@ import java.util.List;
  * (a filter-less FK hop keeps {@link OnFkSlots}). {@link #parentKeyColumns()} projects the grain
  * off the arm so it cannot disagree with the topology the same arm dictates.
  *
- * <p>Classifier-time invariant: each carrier field's compact constructor verifies
- * {@code parentCorrelation.firstHop() == joinPath.get(0)} so the model can never carry a
- * correlation that disagrees with the path it sits on. The carrier is a denormalised view of
- * data already on {@code joinPath.get(0)} + {@code sourceKey} (where present) + the carrier
- * field's parent type's {@code @table} binding — pre-resolved once at parse time so consumers
- * don't re-derive at each emit site.
+ * <p>Classifier-time invariant ({@link #checkCarrierInvariant}): a hop-anchored correlation's
+ * first hop is the same instance as {@code joinPath.get(0)}, and the hop-less {@link OnLiftedSlots}
+ * arm pairs only with an empty {@code joinPath} — the model can never carry a correlation that
+ * disagrees with the path it sits on. The hop-anchored arms are denormalised views of data already
+ * on {@code joinPath.get(0)} + the carrier field's parent type's {@code @table} binding —
+ * pre-resolved once at parse time so consumers don't re-derive at each emit site.
  */
 public sealed interface ParentCorrelation
-        permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnParentJoin,
-                ParentCorrelation.OnLateralArgs {
-
-    /**
-     * Identity of the first hop this correlation pairs against, declared on the
-     * {@link JoinStep} root so the carrier-side invariant
-     * {@code parentCorrelation.firstHop() == joinPath.get(0)} can be expressed uniformly.
-     * Both permits satisfy it through their {@code firstHop} record component
-     * ({@link OnParentJoin}'s covariantly, as {@link JoinStep.Hop}).
-     */
-    JoinStep firstHop();
+        permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnLiftedSlots,
+                ParentCorrelation.OnParentJoin, ParentCorrelation.OnLateralArgs {
 
     /**
      * The table that owns the DataLoader key columns ({@code SourceKey.columns()}) this
@@ -54,21 +46,17 @@ public sealed interface ParentCorrelation
      * rather than re-derived per emit site:
      *
      * <ul>
-     *   <li>{@link OnFkSlots} with a {@link JoinStep.Hop} first hop — the hop-0 origin table
-     *       (the side the key columns are drawn from, per {@code deriveSplitQuerySource} /
-     *       {@code deriveFkRecordParentSource} / {@code SourceRowDirectiveResolver}).</li>
-     *   <li>{@link OnFkSlots} with a {@link JoinStep.LiftedHop} first hop — the hop's target
-     *       table (the key tuple IS the target-column tuple by {@code LiftedHop}
-     *       construction).</li>
+     *   <li>{@link OnFkSlots} — the hop-0 origin table (the side the key columns are drawn from,
+     *       per {@code deriveSplitQuerySource} / {@code deriveFkRecordParentSource}).</li>
+     *   <li>{@link OnLiftedSlots} — the target table (the key tuple IS the target-column tuple
+     *       by construction; R431, formerly the {@code LiftedHop} arm).</li>
      *   <li>{@link OnParentJoin} — the parent table (keys are the parent's own PK).</li>
      * </ul>
      */
     default TableRef parentKeyOwnerTable() {
         return switch (this) {
-            case OnFkSlots fk -> switch (fk.firstHop()) {
-                case JoinStep.Hop hop -> hop.originTable();
-                case JoinStep.LiftedHop lifted -> lifted.targetTable();
-            };
+            case OnFkSlots fk -> fk.firstHop().originTable();
+            case OnLiftedSlots lifted -> lifted.targetTable();
             case OnParentJoin pj -> pj.parentTable();
             // The lateral call's column bindings are drawn from the parent table (the chain's
             // implicit head), which is the hop-0 origin.
@@ -83,11 +71,11 @@ public sealed interface ParentCorrelation
      * arm so grain and correlation topology cannot drift apart:
      *
      * <ul>
-     *   <li>{@link OnFkSlots} — the first hop's source-side columns (the FK-holder side for a
-     *       {@link JoinStep.Hop}; the target-column tuple for a {@link JoinStep.LiftedHop}, where
-     *       source and target sides are the same column). Two parents sharing these values share
-     *       one batch entry, which is correct precisely because the correlation reads nothing off
-     *       the parent beyond them.</li>
+     *   <li>{@link OnFkSlots} — the first hop's source-side columns (the FK-holder side). Two
+     *       parents sharing these values share one batch entry, which is correct precisely
+     *       because the correlation reads nothing off the parent beyond them.</li>
+     *   <li>{@link OnLiftedSlots} — the target-column tuple itself (source and target sides are
+     *       the same columns; PK self-identity is the degenerate case of the FK pairing).</li>
      *   <li>{@link OnParentJoin} — the parent's own primary-key columns. A hop-0 filter (or a
      *       condition-join first hop) reads arbitrary parent columns, so the parent's identity is
      *       part of the fetch's inputs and the grain must be the parent PK; keying on anything
@@ -105,6 +93,7 @@ public sealed interface ParentCorrelation
     default List<ColumnRef> parentKeyColumns() {
         return switch (this) {
             case OnFkSlots fk -> fk.slots().sourceSideColumns();
+            case OnLiftedSlots lifted -> lifted.columns();
             case OnParentJoin pj -> pj.parentTable().primaryKeyColumns();
             case OnLateralArgs la -> ((TableExpr.RoutineCall) la.firstHop().target())
                 .routine().argBindings().stream()
@@ -116,19 +105,22 @@ public sealed interface ParentCorrelation
     }
 
     /**
-     * Carrier-side classifier invariant: a non-empty {@code joinPath} carries a non-null
-     * {@link ParentCorrelation} whose {@link #firstHop()} is the same instance as
-     * {@code joinPath.get(0)}; an empty joinPath carries a null correlation
-     * (the lookup runs standalone and no parent correlation is needed). Each ChildField
-     * variant compact constructor invokes this helper so the model can never carry a
-     * correlation that disagrees with the path it sits on.
+     * Carrier-side classifier invariant. A non-empty {@code joinPath} carries a non-null,
+     * hop-anchored {@link ParentCorrelation} whose first hop is the same instance as
+     * {@code joinPath.get(0)}. An empty joinPath carries either a null correlation (the lookup
+     * runs standalone and no parent correlation is needed) or the hop-less {@link OnLiftedSlots}
+     * arm (the pre-keyed lifter / accessor / re-fetch shape, R431 — formerly a single
+     * {@code JoinStep.LiftedHop} smuggled into the path). Each ChildField variant compact
+     * constructor invokes this helper so the model can never carry a correlation that disagrees
+     * with the path it sits on.
      */
     static void checkCarrierInvariant(ParentCorrelation pc, List<JoinStep> joinPath, String variantName) {
         if (joinPath.isEmpty()) {
-            if (pc != null) {
+            if (pc != null && !(pc instanceof OnLiftedSlots)) {
                 throw new IllegalArgumentException(
-                    variantName + ".parentCorrelation must be null when joinPath is empty "
-                    + "(standalone-lookup shape); got " + pc.getClass().getSimpleName());
+                    variantName + ".parentCorrelation must be null (standalone-lookup shape) or "
+                    + "OnLiftedSlots (pre-keyed lifted shape) when joinPath is empty; got "
+                    + pc.getClass().getSimpleName());
             }
             return;
         }
@@ -136,9 +128,18 @@ public sealed interface ParentCorrelation
             throw new NullPointerException(
                 variantName + ".parentCorrelation must not be null when joinPath is non-empty");
         }
-        if (pc.firstHop() != joinPath.get(0)) {
+        JoinStep firstHop = switch (pc) {
+            case OnFkSlots fk -> fk.firstHop();
+            case OnParentJoin pj -> pj.firstHop();
+            case OnLateralArgs la -> la.firstHop();
+            case OnLiftedSlots ignored -> throw new IllegalArgumentException(
+                variantName + ".parentCorrelation is OnLiftedSlots but joinPath is non-empty; "
+                + "the lifted arm is hop-less by construction (its key tuple IS the target-column "
+                + "tuple, no traversal).");
+        };
+        if (firstHop != joinPath.get(0)) {
             throw new IllegalArgumentException(
-                variantName + ".parentCorrelation.firstHop() must be the same object as "
+                variantName + ".parentCorrelation's first hop must be the same object as "
                 + "joinPath.get(0); BuildContext.buildParentCorrelation produces both from the "
                 + "same JoinStep list.");
         }
@@ -150,31 +151,55 @@ public sealed interface ParentCorrelation
      * through {@link #slots()}.
      *
      * <p>{@code firstHop} is a {@link JoinStep.Hop} whose {@code on} is
-     * {@link On.ColumnPairs}, or a {@link JoinStep.LiftedHop} — the two slot-carrying shapes.
-     * The compact constructor rejects everything else, so {@link #slots()} never throws.
+     * {@link On.ColumnPairs} — the slot-carrying shape. The compact constructor rejects
+     * everything else, so {@link #slots()} never throws.
      */
-    record OnFkSlots(JoinStep firstHop) implements ParentCorrelation {
+    record OnFkSlots(JoinStep.Hop firstHop) implements ParentCorrelation {
         public OnFkSlots {
             if (firstHop == null) {
                 throw new NullPointerException("ParentCorrelation.OnFkSlots.firstHop must not be null");
             }
-            boolean pairable = switch (firstHop) {
-                case JoinStep.Hop hop -> hop.on() instanceof On.ColumnPairs;
-                case JoinStep.LiftedHop ignored -> true;
-            };
-            if (!pairable) {
+            if (!(firstHop.on() instanceof On.ColumnPairs)) {
                 throw new IllegalArgumentException(
                     "ParentCorrelation.OnFkSlots.firstHop must carry pairable slots (a Hop with "
-                    + "On.ColumnPairs, or a LiftedHop); got " + firstHop);
+                    + "On.ColumnPairs); got " + firstHop);
             }
         }
 
         /** The slot pairs the correlation predicate is built from. */
-        public HasSlots slots() {
-            return switch (firstHop) {
-                case JoinStep.Hop hop -> (On.ColumnPairs) hop.on();
-                case JoinStep.LiftedHop lifted -> lifted;
-            };
+        public On.ColumnPairs slots() {
+            return (On.ColumnPairs) firstHop.on();
+        }
+    }
+
+    /**
+     * The pre-keyed correlation (R431, formerly {@code OnFkSlots} wrapping a
+     * {@code JoinStep.LiftedHop}): the DataLoader key tuple <em>is</em> the target-column tuple —
+     * no foreign key, no traversal, no source side distinct from the target side. Carried by the
+     * {@code @sourceRows} lifter-leaf, the class-backed-parent accessor arm, and the
+     * source=target carrier re-fetch (R305), whose correlation is PK self-identity — the
+     * degenerate case of the FK pairing (R333). The rows-method JOIN predicate is
+     * {@code target.<col> = parentInput.field(col)} per column, identical in shape to the FK
+     * case with both sides the same column.
+     *
+     * <p>Hop-less by construction: the carrier's {@code joinPath} is empty
+     * ({@link #checkCarrierInvariant}), and {@code @reference}-parsed paths are the only
+     * {@link JoinStep} population. The emitters synthesize the single target alias from
+     * {@code targetTable} exactly as the retired single-hop path did.
+     */
+    record OnLiftedSlots(
+            TableRef targetTable,
+            List<ColumnRef> columns
+    ) implements ParentCorrelation {
+        public OnLiftedSlots {
+            Objects.requireNonNull(targetTable, "targetTable");
+            if (columns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "ParentCorrelation.OnLiftedSlots requires a non-empty column tuple — every "
+                    + "arm delegating its key columns through this correlation (SourceRowsCall, "
+                    + "AccessorCall, ProducedRecordRead) needs at least one column.");
+            }
+            columns = List.copyOf(columns);
         }
     }
 

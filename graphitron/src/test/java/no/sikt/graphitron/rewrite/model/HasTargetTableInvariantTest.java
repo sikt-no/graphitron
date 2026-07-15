@@ -39,14 +39,14 @@ class HasTargetTableInvariantTest {
 
     @Test
     void everyJoinStepPermitIsConcreteOrSealed() {
-        // Defensive: assert the permit list is the final closed set today (the two-axis Hop,
-        // plus the transitional LiftedHop that R431 retires). A new permit lands by editing
-        // JoinStep's permit list, which is the right place to surface a wider audit (validator
-        // coverage, emitter dispatch, model tests).
+        // Defensive: assert the permit list is the final closed set today (the two-axis Hop;
+        // R431 retired the transitional LiftedHop onto ParentCorrelation.OnLiftedSlots). A new
+        // permit lands by editing JoinStep's permit list, which is the right place to surface a
+        // wider audit (validator coverage, emitter dispatch, model tests).
         Class<?>[] permits = JoinStep.class.getPermittedSubclasses();
         assertThat(permits)
             .extracting(Class::getSimpleName)
-            .containsExactlyInAnyOrder("Hop", "LiftedHop");
+            .containsExactlyInAnyOrder("Hop");
         Stream.of(permits).forEach(permit ->
             assertThat(Modifier.isFinal(permit.getModifiers()) || permit.isSealed() || permit.isRecord())
                 .as(permit.getName() + " should be a record or sealed leaf")

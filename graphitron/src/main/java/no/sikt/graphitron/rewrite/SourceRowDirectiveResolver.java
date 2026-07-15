@@ -5,11 +5,11 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
@@ -50,9 +50,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *   <li>Every successful {@code @sourceRow} resolution projects into {@code RecordTableField}
  *       or {@code RecordLookupTableField}; the produced {@link SourceKey}'s
  *       {@link SourceKey.Reader} is always {@link SourceKey.Reader.SourceRowsCall}.</li>
- *   <li>On the no-{@code @reference} path, the produced {@link SourceKey}'s path is a single
- *       {@link JoinStep.LiftedHop} (the leaf-PK shape).</li>
- *   <li>On the {@code @reference}-composed path, the produced {@link SourceKey}'s path is the
+ *   <li>On the no-{@code @reference} path, the resolution carries an empty {@code joinPath}
+ *       plus the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation (the leaf-PK
+ *       shape; R431).</li>
+ *   <li>On the {@code @reference}-composed path, the resolution's {@code joinPath} is the
  *       resolved FK chain (one or more FK-derived {@link JoinStep.Hop}s) from the parent's lifter
  *       columns to the leaf table.</li>
  * </ul>
@@ -90,10 +91,17 @@ final class SourceRowDirectiveResolver {
      * </ul>
      */
     sealed interface Resolved {
+        /**
+         * {@code lifted} is the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation for
+         * the leaf-PK shape (no {@code @reference}; R431 — formerly a single {@code LiftedHop}
+         * in the joinPath), {@code null} for the {@code @reference}-composed FK chain whose
+         * correlation the caller derives from {@code joinPath}.
+         */
         record Ok(
             SourceKey sourceKey,
             LoaderRegistration loaderRegistration,
             List<JoinStep> joinPath,
+            ParentCorrelation.OnLiftedSlots lifted,
             ReturnTypeRef.TableBoundReturnType tbReturnType
         ) implements Resolved {}
 
@@ -344,27 +352,21 @@ final class SourceRowDirectiveResolver {
             LoaderRegistration.Dispatch.LOAD_ONE);
         return switch (derivation) {
             case Derivation.Leaf leaf -> {
-                String alias = fieldName + "_0";
-                List<JoinSlot.LifterSlot> slots = leaf.expectedTuple().stream()
-                    .map(JoinSlot.LifterSlot::new)
-                    .toList();
-                var hop = new JoinStep.LiftedHop(leafTable, slots, alias);
                 SourceKey sourceKey = new SourceKey(
                     leaf.expectedTuple(),
-                    List.of(hop),
                     new SourceKey.Wrap.Row(),
                     cardinality,
                     new SourceKey.Reader.SourceRowsCall(lifterRef));
-                yield new Resolved.Ok(sourceKey, loaderRegistration, List.of(hop), tbReturnType);
+                yield new Resolved.Ok(sourceKey, loaderRegistration, List.of(),
+                    new ParentCorrelation.OnLiftedSlots(leafTable, leaf.expectedTuple()), tbReturnType);
             }
             case Derivation.Path path -> {
                 SourceKey sourceKey = new SourceKey(
                     path.expectedTuple(),
-                    path.steps(),
                     new SourceKey.Wrap.Row(),
                     cardinality,
                     new SourceKey.Reader.SourceRowsCall(lifterRef));
-                yield new Resolved.Ok(sourceKey, loaderRegistration, path.steps(), tbReturnType);
+                yield new Resolved.Ok(sourceKey, loaderRegistration, path.steps(), null, tbReturnType);
             }
         };
     }

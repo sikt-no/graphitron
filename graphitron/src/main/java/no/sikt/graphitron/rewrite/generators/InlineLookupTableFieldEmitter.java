@@ -221,9 +221,6 @@ public final class InlineLookupTableFieldEmitter {
                             + "multi-node routine chains classify as typed Deferred (R435)");
                     }
                 }
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear in an @reference-composed path; this path is "
-                    + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");
             }
         }
 
@@ -251,6 +248,9 @@ public final class InlineLookupTableFieldEmitter {
                 case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                     "a lateral routine hop cannot head a lookup path; @lookupKey on routine "
                     + "chains classifies as typed Deferred (R435)");
+            case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
+                "ParentCorrelation.OnLiftedSlots never reaches the inline emitters; the "
+                + "pre-keyed lifted shape is DataLoader-batched through SplitRowsMethodEmitter");
             }
         }
         for (JoinStep step : path) {

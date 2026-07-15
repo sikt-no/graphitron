@@ -199,20 +199,18 @@ class InterfaceFieldValidationTest {
     @Test
     void rejects_listArm_onAccessorKeyedManyHubArityOver21() {
         // R105: validator reads parentSourceKey.columns().size() uniformly across all record-
-        // parent SourceKey shapes. The accessor-call arm publishes the hub PK through the
-        // LiftedHop; a 22-column hub PK trips the same Row22 cap as the table-backed
+        // parent SourceKey shapes. The accessor-call arm publishes the hub PK as the key
+        // columns; a 22-column hub PK trips the same Row22 cap as the table-backed
         // ColumnRead case. The error message names the parent type and the column count.
-        var hopSlots = new java.util.ArrayList<JoinSlot.LifterSlot>();
+        var wideCols = new java.util.ArrayList<ColumnRef>();
         for (int i = 0; i < 22; i++) {
-            hopSlots.add(new JoinSlot.LifterSlot(new ColumnRef("k" + i, "K" + i, "java.lang.Integer")));
+            wideCols.add(new ColumnRef("k" + i, "K" + i, "java.lang.Integer"));
         }
-        var wideHub = TestFixtures.tableRef("wide", "WIDE", "Wide",
-            hopSlots.stream().map(JoinSlot.LifterSlot::column).toList());
-        var hop = new JoinStep.LiftedHop(wideHub, hopSlots, "occupants_0");
+        var wideHub = TestFixtures.tableRef("wide", "WIDE", "Wide", wideCols);
         var accessor = new AccessorRef(
             ClassName.bestGuess("com.example.Parent"), "occupants",
             ClassName.bestGuess("com.example.WideRecord"));
-        SourceKey parentSourceKey = TestFixtures.polymorphicAccessorParentSourceKey(wideHub, hop, accessor, true);
+        SourceKey parentSourceKey = TestFixtures.polymorphicAccessorParentSourceKey(wideHub, accessor, true);
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));

@@ -103,7 +103,9 @@ class SingleRecordPayloadPipelineTest {
         var sk = rtf.sourceKey();
         assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(sk.path()).singleElement().isInstanceOf(JoinStep.LiftedHop.class);
+        assertThat(rtf.joinPath()).isEmpty();
+        assertThat(rtf.parentCorrelation())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots.class);
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }

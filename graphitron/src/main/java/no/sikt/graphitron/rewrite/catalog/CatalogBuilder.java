@@ -559,7 +559,6 @@ public final class CatalogBuilder {
             var step = joinPath.get(i);
             var stepTarget = switch (step) {
                 case JoinStep.Hop h when h.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs -> h.targetTable();
-                case JoinStep.LiftedHop lh -> lh.targetTable();
                 default -> null;
             };
             if (stepTarget != null) {
@@ -577,7 +576,7 @@ public final class CatalogBuilder {
                 case JoinStep.Hop hop -> out.add(switch (hop.on()) {
                     case no.sikt.graphitron.rewrite.model.On.ColumnPairs cp ->
                         // Hop.targetTable() is non-null by construction (Hop guards target,
-                        // TableExpr.Catalog guards table); LiftedHop's below is not.
+                        // TableExpr.Catalog guards table).
                         new FieldClassification.FkStep(
                             hop.targetTable().tableName(),
                             fkSqlNameOrNull(cp));
@@ -588,8 +587,6 @@ public final class CatalogBuilder {
                     case no.sikt.graphitron.rewrite.model.On.Lateral ignored ->
                         new FieldClassification.FkStep(hop.targetTable().tableName(), null);
                 });
-                case JoinStep.LiftedHop lh -> out.add(new FieldClassification.FkStep(
-                    lh.targetTable() != null ? lh.targetTable().tableName() : null, null));
             }
         }
         return List.copyOf(out);

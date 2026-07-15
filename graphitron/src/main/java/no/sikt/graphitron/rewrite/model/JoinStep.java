@@ -9,23 +9,15 @@ import java.util.List;
  * All steps are fully resolved at build time; an unresolvable step causes the containing field to
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
  *
- * <ul>
- *   <li>{@link Hop} — the two-axis step (R333): a <b>target</b> node materialized by a
- *       {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
- *       ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
- *       predicate}). Every {@code @reference}-parsed step is a {@code Hop}.</li>
- *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@code @sourceRows} lifter or
- *       a class-backed-parent accessor; no FK, no source-side columns, the DataLoader key
- *       tuple <em>is</em> the target-column tuple. Transitional: its lifted slots are
- *       source-side key provenance (R333's {@code Lift} arm), which is R431's decomposition;
- *       R431 retires this permit when it re-types {@code SourceKey.path}.</li>
- * </ul>
- *
- * <p>Both permits implement {@link HasTargetTable} so emitters read {@code targetTable()} and
- * {@code alias()} uniformly. Slot iteration is the {@link HasSlots} capability, implemented by
- * {@link On.ColumnPairs} and {@link LiftedHop} — the two slot populations that coexist until
- * R431. Capabilities express what is uniformly true; how a {@link Hop} joins is a sealed
- * dispatch on {@link Hop#on()}.
+ * <p>{@link Hop} is the sole permit — the two-axis step (R333): a <b>target</b> node materialized
+ * by a {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
+ * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
+ * predicate}). Every {@code @reference}-parsed step is a {@code Hop}, and {@code @reference}
+ * parsing is the only {@code JoinStep} producer (R431: the transitional {@code LiftedHop}
+ * permit — the pre-keyed lifter / accessor / re-fetch shape — moved to the hop-less
+ * {@link ParentCorrelation.OnLiftedSlots} correlation arm; its slots were source-side key
+ * provenance, never a join step). How a {@link Hop} joins is a sealed dispatch on
+ * {@link Hop#on()}.
  *
  * <p><b>Step contrast:</b>
  * <pre>
@@ -64,7 +56,7 @@ import java.util.List;
  *       rejecting it.</li>
  * </ol>
  */
-public sealed interface JoinStep permits JoinStep.Hop, JoinStep.LiftedHop {
+public sealed interface JoinStep permits JoinStep.Hop {
 
     /**
      * Capability mixed in by every step that pre-resolves a target table the prelude joins to.
@@ -73,9 +65,7 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.LiftedHop {
      *
      * <p>Capability interfaces and sealed switches serve different roles: this interface is the
      * "uniformly true" axis (every step has a target table); how a {@link Hop} joins varies by
-     * identity and is answered by sealed dispatch on {@link Hop#on()}. Slot iteration lives on
-     * {@link HasSlots}, implemented by the slot-carrying types ({@link On.ColumnPairs},
-     * {@link LiftedHop}).
+     * identity and is answered by sealed dispatch on {@link Hop#on()}.
      */
     interface HasTargetTable {
         TableRef targetTable();
@@ -157,40 +147,4 @@ public sealed interface JoinStep permits JoinStep.Hop, JoinStep.LiftedHop {
         }
     }
 
-    /**
-     * One hop pre-keyed by a {@code @sourceRows} lifter or a class-backed-parent accessor —
-     * no foreign key, no traversal direction, no source-side-distinct-from-target columns. The
-     * DataLoader key tuple <em>is</em> the target-column tuple, encoded as a type fact: each
-     * slot is a {@link JoinSlot.LifterSlot} whose single {@code column} component answers both
-     * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()}. The JOIN-on predicate of
-     * the rows-method becomes {@code target.<slot.targetSide()> = parentInput.field(i+1)}
-     * directly, identical in shape to the FK case.
-     *
-     * <p>The leaf-PK shape (no {@code @reference}) sits at {@code SourceKey.path = [hop]} with
-     * a single {@code LiftedHop}. The {@code @reference}-composed shape is a list of FK-derived
-     * {@link Hop}s; that path does not use {@code LiftedHop}.
-     *
-     * <p>Transitional: this permit is not a join-path fact — {@code @reference} path parsing
-     * never produces it, and its lifted slots are source-side key provenance (R333's
-     * {@code Lift} arm). R431 retires it when it re-types {@code SourceKey.path}, at which
-     * point {@link HasSlots} collapses to its single {@link On.ColumnPairs} implementor.
-     */
-    record LiftedHop(
-        TableRef targetTable,
-        List<JoinSlot.LifterSlot> slots,
-        String alias
-    ) implements JoinStep, HasTargetTable, HasSlots {
-
-        public LiftedHop {
-            if (slots.isEmpty()) {
-                throw new IllegalArgumentException(
-                    "JoinStep.LiftedHop requires a non-empty slots list — every Reader arm "
-                    + "delegating its key columns through this hop (SourceRowsCall, "
-                    + "AccessorCall) needs at least one column.");
-            }
-            slots = List.copyOf(slots);
-        }
-
-        @Override public int slotCount() { return slots.size(); }
-    }
 }

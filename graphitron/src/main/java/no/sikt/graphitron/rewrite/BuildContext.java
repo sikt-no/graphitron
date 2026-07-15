@@ -1538,10 +1538,6 @@ class BuildContext {
                     "On.Lateral is never produced by @reference path parsing; routine-node "
                     + "terminus checking lives in FieldBuilder.routineChainVerdict, not this gate.");
             };
-            case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                "JoinStep.LiftedHop is never produced by @reference path parsing (single-hop "
-                + "terminal only, from the @sourceRow leaf-PK arm, which passes a null target and "
-                + "so never reaches this gate); reaching it here is a contract violation.");
         };
     }
 
@@ -2011,7 +2007,7 @@ class BuildContext {
     /**
      * Synthesises a {@link no.sikt.graphitron.rewrite.model.ParentCorrelation} for a carrier
      * field given its already-built joinPath. {@code OnFkSlots} for a filter-less FK first hop
-     * (an {@code On.ColumnPairs} {@link JoinStep.Hop} or a {@link JoinStep.LiftedHop});
+     * (an {@code On.ColumnPairs} {@link JoinStep.Hop});
      * {@code OnParentJoin} (the parent-anchor arm) when the first hop is a condition method
      * <em>or</em> carries a hop-0 {@code filter()} (R450); {@code OnLateralArgs} for a lateral
      * routine head. The grain follows the arm via
@@ -2036,15 +2032,14 @@ class BuildContext {
         if (joinPath.isEmpty()) {
             return new ParentCorrelationResolution.Resolved(null);
         }
-        JoinStep first = joinPath.get(0);
-        // Exhaustive over the step-0 join identity. A filter-less FK / lifted head mirrors to
+        // Exhaustive over the step-0 join identity (every @reference-parsed step is a Hop;
+        // the pre-keyed lifted shape never reaches here — its carriers hold an empty joinPath
+        // plus ParentCorrelation.OnLiftedSlots directly, R431). A filter-less FK head mirrors to
         // OnFkSlots and a lateral head to OnLateralArgs; a condition-join head OR any hop-0 filter
         // lands the parent-anchor arm (OnParentJoin), because a hop-0 filter reads the parent row
         // and so needs both the parent-PK grain and a parent alias to bind its source parameter
         // (R450). A new On arm is a compile error here rather than a runtime throw in a constructor.
-        return switch (first) {
-            case JoinStep.LiftedHop lifted -> new ParentCorrelationResolution.Resolved(
-                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(lifted));
+        return switch (joinPath.get(0)) {
             case JoinStep.Hop hop -> switch (hop.on()) {
                 case On.ColumnPairs ignored -> {
                     if (hop.filter() == null) {

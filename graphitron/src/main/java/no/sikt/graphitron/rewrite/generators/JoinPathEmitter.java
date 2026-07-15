@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.model.HasSlots;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
@@ -56,6 +55,20 @@ public final class JoinPathEmitter {
         return aliases;
     }
 
+    /**
+     * The single synthesized alias for the hop-less {@link
+     * no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots} shape (R431): the same
+     * derivation {@link #generateAliases} applies to a single-hop path — the target table's
+     * simple class name, first character lowercased, suffixed with hop index {@code 0}
+     * (e.g. {@code "f0"} for {@code Film}). Byte-compatible with the retired
+     * single-{@code LiftedHop} path's alias.
+     */
+    public static String liftedAlias(TableRef targetTable) {
+        String javaName = targetTable.tableClass().simpleName();
+        String basePrefix = javaName.isEmpty() ? "t" : javaName.substring(0, 1).toLowerCase();
+        return basePrefix + 0;
+    }
+
     private static String targetJavaClassName(JoinStep step, int index, int size, TableRef terminalTable) {
         // Every JoinStep permit implements HasTargetTable, so the read is uniform without a
         // sealed switch. The
@@ -86,10 +99,6 @@ public final class JoinPathEmitter {
                 case TableExpr.RoutineCall rc ->
                     RoutineCallEmitter.emitCall(rc, previousNode, argSource);
             };
-            // Transitional (retires with R431): the lifter shape's target is always a catalog
-            // table; LiftedHop carries no TableExpr axis.
-            case JoinStep.LiftedHop lh -> CodeBlock.of("$T.$L",
-                lh.targetTable().constantsClass(), lh.targetTable().javaFieldName());
         };
     }
 
@@ -161,7 +170,7 @@ public final class JoinPathEmitter {
      * time) emits a runtime-throwing {@code DSL.noCondition()} stub so the mismatch surfaces at
      * execution rather than silently producing broken SQL.
      */
-    public static CodeBlock emitCorrelationWhere(HasSlots first, String firstAlias,
+    public static CodeBlock emitCorrelationWhere(On.ColumnPairs first, String firstAlias,
             String parentAlias) {
         if (first.slotCount() == 0) {
             // No slots — jOOQ catalog was unavailable at build time. Emit a runtime-throwing

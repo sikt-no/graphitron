@@ -120,8 +120,6 @@ public final class InlineColumnReferenceFieldEmitter {
                             + "multi-node routine chains classify as typed Deferred (R435)");
                     }
                 }
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear in an @reference-composed path");
             }
         }
 
@@ -144,6 +142,9 @@ public final class InlineColumnReferenceFieldEmitter {
             case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                 "a lateral routine hop cannot head a column-reference path; routine chains do "
                 + "not produce ColumnReferenceField (R435)");
+            case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
+                "ParentCorrelation.OnLiftedSlots never reaches the inline emitters; the "
+                + "pre-keyed lifted shape is DataLoader-batched through SplitRowsMethodEmitter");
         }
         for (JoinStep step : path) {
             if (step instanceof JoinStep.Hop hop && hop.filter() != null) {

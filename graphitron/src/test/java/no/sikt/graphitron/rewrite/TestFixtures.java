@@ -204,7 +204,7 @@ public final class TestFixtures {
      */
     public static SourceKey splitSourceKey(List<ColumnRef> fkColumns,
                                             boolean isList) {
-        return new SourceKey(fkColumns, List.of(), new SourceKey.Wrap.Row(),
+        return new SourceKey(fkColumns, new SourceKey.Wrap.Row(),
             isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
     }
@@ -216,7 +216,7 @@ public final class TestFixtures {
      */
     public static SourceKey recordParentRowSourceKey(List<ColumnRef> fkColumns,
                                                       boolean isList) {
-        return new SourceKey(fkColumns, List.of(), new SourceKey.Wrap.Row(),
+        return new SourceKey(fkColumns, new SourceKey.Wrap.Row(),
             isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ColumnRead());
     }
@@ -228,24 +228,23 @@ public final class TestFixtures {
      * {@link SourceKey.Cardinality#ONE}.
      */
     public static SourceKey polymorphicRowParentSourceKey(List<ColumnRef> pkColumns) {
-        return new SourceKey(pkColumns, List.of(), new SourceKey.Wrap.Row(),
+        return new SourceKey(pkColumns, new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.ONE, new SourceKey.Reader.ColumnRead());
     }
 
     /**
      * Polymorphic-Accessor {@link SourceKey} for {@link ChildField.InterfaceField} /
      * {@link ChildField.UnionField} on a record-backed parent with a typed hub
-     * accessor: target=hubTable (where the accessor's typed return lives),
-     * columns=hubTable.PK, path=[hop], {@link SourceKey.Wrap.Record} +
+     * accessor: columns=hubTable.PK, {@link SourceKey.Wrap.Record} +
      * {@link SourceKey.Reader.AccessorCall}, cardinality per the accessor (Single ⇒ ONE,
-     * Many ⇒ MANY).
+     * Many ⇒ MANY). The hub table itself is carried as the leaf's {@code parentKeyOwnerTable}
+     * (R431: no hop, no path).
      */
     public static SourceKey polymorphicAccessorParentSourceKey(
             no.sikt.graphitron.rewrite.model.TableRef hubTable,
-            JoinStep.LiftedHop hop,
             no.sikt.graphitron.rewrite.model.AccessorRef accessor,
             boolean isMany) {
-        return new SourceKey(hubTable.primaryKeyColumns(), List.of(hop),
+        return new SourceKey(hubTable.primaryKeyColumns(),
             new SourceKey.Wrap.Record(),
             isMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.AccessorCall(accessor));
@@ -259,7 +258,7 @@ public final class TestFixtures {
     public static SourceKey serviceTableSourceKey(ReturnTypeRef.TableBoundReturnType rt,
                                                    SourceKey.Wrap wrap,
                                                    List<ColumnRef> parentKeyColumns) {
-        return new SourceKey(parentKeyColumns, List.of(), wrap,
+        return new SourceKey(parentKeyColumns, wrap,
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
     }
@@ -271,7 +270,7 @@ public final class TestFixtures {
     public static SourceKey serviceRecordSourceKey(ReturnTypeRef rt,
                                                     SourceKey.Wrap wrap,
                                                     List<ColumnRef> parentKeyColumns) {
-        return new SourceKey(parentKeyColumns, List.of(), wrap,
+        return new SourceKey(parentKeyColumns, wrap,
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceUntypedRecord());
     }
@@ -598,17 +597,12 @@ public final class TestFixtures {
     }
 
     /**
-     * Test-only constructor mirroring the pre-R82 {@code LiftedHop(targetTable, targetColumns,
-     * alias)} shape, wrapping each {@link ColumnRef} as a {@link JoinSlot.LifterSlot} (the
-     * single-column-per-slot permit that encodes "DataLoader key tuple IS target-column tuple"
-     * structurally).
+     * The hop-less pre-keyed correlation (R431; the former test-only {@code liftedHop(...)}
+     * fixture): source and target sides are the same column tuple.
      */
-    public static JoinStep.LiftedHop liftedHop(TableRef targetTable,
-                                                List<ColumnRef> targetColumns, String alias) {
-        List<JoinSlot.LifterSlot> slots = targetColumns.stream()
-            .map(JoinSlot.LifterSlot::new)
-            .toList();
-        return new JoinStep.LiftedHop(targetTable, slots, alias);
+    public static ParentCorrelation.OnLiftedSlots liftedSlots(TableRef targetTable,
+                                                               List<ColumnRef> columns) {
+        return new ParentCorrelation.OnLiftedSlots(targetTable, columns);
     }
 
     /**
@@ -616,19 +610,20 @@ public final class TestFixtures {
      * {@code BuildContext.buildParentCorrelation}: the parent-anchor arm
      * {@link ParentCorrelation.OnParentJoin} when the first hop joins on a condition method
      * <em>or</em> carries a hop-0 {@code filter()} (R450), {@link ParentCorrelation.OnFkSlots}
-     * for a filter-less FK/lifted head, and {@code null} when the joinPath is empty
-     * (standalone-lookup shape). Test fixtures use this to satisfy the ChildField
-     * compact-constructor invariant without threading the resolver state through every test case.
+     * for a filter-less FK head, and {@code null} when the joinPath is empty
+     * (standalone-lookup shape; the pre-keyed lifted shape constructs
+     * {@link ParentCorrelation.OnLiftedSlots} directly, R431). Test fixtures use this to satisfy
+     * the ChildField compact-constructor invariant without threading the resolver state through
+     * every test case.
      */
     public static ParentCorrelation pcFor(List<JoinStep> joinPath, TableRef parentTable) {
         if (joinPath.isEmpty()) {
             return null;
         }
-        JoinStep first = joinPath.get(0);
-        if (first instanceof JoinStep.Hop hop
-                && (hop.on() instanceof On.Predicate || hop.filter() != null)) {
+        JoinStep.Hop hop = (JoinStep.Hop) joinPath.get(0);
+        if (hop.on() instanceof On.Predicate || hop.filter() != null) {
             return new ParentCorrelation.OnParentJoin(hop, parentTable);
         }
-        return new ParentCorrelation.OnFkSlots(first);
+        return new ParentCorrelation.OnFkSlots(hop);
     }
 }

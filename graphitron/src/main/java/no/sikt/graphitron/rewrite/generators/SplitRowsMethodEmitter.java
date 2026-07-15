@@ -122,9 +122,9 @@ public final class SplitRowsMethodEmitter {
      * <p>{@code joinOnCols} is the column list the rows-method's {@code JOIN parentInput ... ON ...}
      * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
      * the FK hop's source-side columns (FK-holder side, terminal for list cardinality); on
-     * the lifter path, the {@link JoinStep.LiftedHop}'s
+     * the lifter path, the {@code OnLiftedSlots} correlation's
      * {@link no.sikt.graphitron.rewrite.model.HasSlots#targetSideColumns()} (the DataLoader key
-     * tuple IS the target-column tuple by {@code LiftedHop} construction); on the
+     * tuple IS the target-column tuple by construction, R431); on the
      * @sourceRow + @reference path, the FK hop's source-side columns again. The prelude resolves
      * this fork once via a sealed switch and exports the ready list; the consumer iterates without
      * re-switching.
@@ -250,7 +250,7 @@ public final class SplitRowsMethodEmitter {
 
         // Side-aware column list: ColumnRead carries parent-side FK columns (catalog-FK arm);
         // SourceRowsCall and AccessorCall carry the join target columns (target side via the
-        // LiftedHop / FK-derived Hop chain). All four produce RowN<...> of the same Java types as the
+        // lifted correlation / FK-derived Hop chain). All four produce RowN<...> of the same Java types as the
         // JOIN target columns. The SourceKey parameter encodes "only the four prelude-reachable
         // shapes reach this site" structurally; the @service Readers are unreachable here by
         // entry-point construction (only the four BatchKeyField permits with sourceKey() routed
@@ -272,24 +272,28 @@ public final class SplitRowsMethodEmitter {
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
         TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
 
-        // Classifier contract: joinPath is non-empty for a DataLoader-backed split child (the
-        // parent-correlation JOIN needs at least the first hop's slots). An empty joinPath is the
-        // standalone-lookup shape (parentCorrelation == null per ParentCorrelation.checkCarrierInvariant),
-        // which the classifier does not route here; guard it explicitly so a classifier regression
-        // fails loudly with the cause rather than as an opaque "Index -1 out of bounds" on the
-        // empty alias list below.
-        if (joinPath.isEmpty()) {
+        // Classifier contract: joinPath is non-empty for an @reference-correlated split child
+        // (the parent-correlation JOIN needs at least the first hop's slots), and empty for the
+        // pre-keyed lifted shape (ParentCorrelation.OnLiftedSlots, R431), whose single target
+        // alias is synthesized from the correlation's target table exactly as the retired
+        // single-LiftedHop path derived it. An empty joinPath with a null correlation is the
+        // standalone-lookup shape, which the classifier does not route here; guard it explicitly
+        // so a classifier regression fails loudly with the cause rather than as an opaque
+        // "Index -1 out of bounds" on the empty alias list below.
+        if (joinPath.isEmpty() && !(parentCorrelation instanceof ParentCorrelation.OnLiftedSlots)) {
             throw new IllegalStateException(
                 "SplitRowsMethodEmitter reached a standalone (empty-joinPath) shape for field '"
                 + fieldName + "'; a DataLoader-backed split child requires a parent-correlation join "
                 + "path. This is a classifier invariant violation — standalone references are emitted "
                 + "inline, not as split rows methods.");
         }
-        List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
+        List<String> aliases = parentCorrelation instanceof ParentCorrelation.OnLiftedSlots lifted
+            ? List.of(JoinPathEmitter.liftedAlias(lifted.targetTable()))
+            : JoinPathEmitter.generateAliases(joinPath, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
         // Classifier contract: joinPath is non-empty. The first step is either a filter-less FK-style
-        // hop (FK-derived Hop or LiftedHop — pairable slots through HasSlots), a parent-anchored hop
+        // hop (an FK-derived Hop with pairable slots), a pre-keyed lifted correlation, a parent-anchored hop
         // (a condition-join OR any hop-0 filter — R450), or a lateral routine head. The sealed switch
         // on parentCorrelation routes them uniformly: OnFkSlots reads the slot pairs as before;
         // OnParentJoin declares the parent-alias table local and routes parentInput's JOIN through the
@@ -303,6 +307,13 @@ public final class SplitRowsMethodEmitter {
                 joinOnAlias = firstAlias;
                 joinOnCols = firstSlots.targetSideColumns();
                 joinOnParentCols = firstSlots.sourceSideColumns();
+            }
+            case ParentCorrelation.OnLiftedSlots lifted -> {
+                // Pre-keyed shape (R431): source and target sides are the same column tuple
+                // (PK self-identity for the re-fetch, the lifter/accessor key otherwise).
+                joinOnAlias = firstAlias;
+                joinOnCols = lifted.columns();
+                joinOnParentCols = lifted.columns();
             }
             case ParentCorrelation.OnParentJoin pj -> {
                 // ParentInput joins on the parent table's own PK columns: the predicate is
@@ -354,6 +365,16 @@ public final class SplitRowsMethodEmitter {
         // HasTargetTable so every step surfaces its pre-resolved targetTable without an
         // arm-specific cast (post-R232 condition-join hops carry a resolved TableRef; see
         // BuildContext.resolveConditionJoinTarget).
+        // The lifted shape has no hops; declare its single synthesized target alias directly
+        // (byte-identical to the retired single-LiftedHop declaration: the target is always a
+        // catalog table).
+        if (parentCorrelation instanceof ParentCorrelation.OnLiftedSlots lifted) {
+            TableRef liftedTarget = lifted.targetTable();
+            body.addStatement("$T $L = $T.$L.as($S)",
+                liftedTarget.tableClass(), firstAlias,
+                liftedTarget.constantsClass(), liftedTarget.javaFieldName(),
+                fieldName + "_" + firstAlias);
+        }
         for (int i = 0; i < joinPath.size(); i++) {
             JoinStep.HasTargetTable step = (JoinStep.HasTargetTable) joinPath.get(i);
             ClassName jooqTableClass = step.targetTable().tableClass();
@@ -416,9 +437,9 @@ public final class SplitRowsMethodEmitter {
      * the multi-hop, single-cardinality, and connection shapes). The bridging loop dispatches on
      * step identity: FK hops use {@code .onKey(FK)} / the name-matched pair conjunction, condition
      * hops use {@code .on(method(prevAlias, alias))}, lateral routine hops use
-     * {@code .crossJoin(DSL.lateral(alias))}. {@link JoinStep.LiftedHop} never appears at a
-     * bridging position ({@code @reference}-composed paths are FK / condition chains; lifter
-     * shapes are single-hop), so the loop is a no-op for a single-hop path.
+     * {@code .crossJoin(DSL.lateral(alias))}. The pre-keyed lifted shape carries no hops at all
+     * ({@code @reference}-composed paths are FK / condition chains; the lifted correlation is
+     * hop-less, R431), so the loop is a no-op for it and for any single-hop path.
      */
     private static void emitFromBridgeAndParentJoin(
             CodeBlock.Builder sel,
@@ -450,6 +471,8 @@ public final class SplitRowsMethodEmitter {
         // Step 0: attach the chain's first node to parentInput, per correlation arm.
         switch (parentCorrelation) {
             case ParentCorrelation.OnFkSlots ignored ->
+                sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
+            case ParentCorrelation.OnLiftedSlots ignored ->
                 sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
             case ParentCorrelation.OnParentJoin pj -> {
                 // parentAlias pairs with parentInput on the parent's PK, then hop 0 attaches
@@ -487,9 +510,6 @@ public final class SplitRowsMethodEmitter {
                             DSL, aliases.get(i));
                     }
                 }
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear at bridging position; @reference-composed paths "
-                    + "are Hop chains, lifter shapes are single-hop");
             }
         }
     }
