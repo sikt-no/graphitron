@@ -132,7 +132,14 @@ within the technique is the implementer's judgment, but the LiftedHop re-typing 
 R438-cleanup placement, and deleting `target` / `path` first shrinks the record every later slice
 touches.
 
-- **Delete the denormalized copies.** Migrate the four `target()` readers to the table fact their
+- **Delete the denormalized copies.** *`target` shipped at `bab6f35` (slice 1): the four readers
+  migrated (`buildRecordParentKeyExtraction` gained a caller-supplied `keyOwnerTable`,
+  `SingleRecordIdField` gained a first-class `table`, CatalogBuilder reads the leaf), all twelve
+  construction sites dropped the argument (the census said eleven; a fully-qualified ctor call
+  evaded the grep, re-counted at pickup as instructed), and the two target-alignment invariant
+  sub-checks left with the component, dispositions in `SourceKeyTest`'s javadoc. `path` shipped at
+  `9c8261b` (slice 2) together with the LiftedHop retirement below. Byte-identical output verified
+  both times against a clean baseline build.* Original scope: migrate the four `target()` readers to the table fact their
   carrier already holds (`returnType.table()` / `ParentCorrelation.parentKeyOwnerTable()`; verify
   per site which one is the same table, especially the accessor arms where the element table is the
   accessor's return table). The null-`target` case (scalar-returning `@service`, the polymorphic
@@ -143,7 +150,15 @@ touches.
   invariants (`ResultRowWalk` / target-aligned `ServiceTableRecord` require empty path) re-home onto
   whatever carries the join path, or dissolve where the decomposed facts make the illegal state
   unrepresentable.
-- **Retire `JoinStep.LiftedHop`.** Its lifted slots are the `Lift` source-side provenance (R333),
+- **Retire `JoinStep.LiftedHop`.** *Shipped at `9c8261b` (slice 2): the pre-keyed correlation is
+  the new hop-less `ParentCorrelation.OnLiftedSlots(targetTable, columns)` arm; lifted carriers
+  classify with an empty `joinPath`; `OnFkSlots` narrowed to a `Hop`-with-`ColumnPairs` first hop;
+  the four defensive unreachable arms deleted; `HasSlots` died into `On.ColumnPairs`;
+  `JoinSlot.LifterSlot` left with the hop; `SourceKey.path` deleted in the same motion (its two
+  empty-path invariants lost their carrier — hop-lessness is now pinned structurally by
+  `checkCarrierInvariant`). One LSP-metadata-only delta: lifted carriers' `fkSteps` drop the
+  `FkStep(table, null)` pseudo-step. `Hop.originTable` deletability noted, not taken.* Original
+  scope: its lifted slots are the `Lift` source-side provenance (R333),
   and its live consumers reach it through `ParentCorrelation.OnFkSlots`, not through the join path:
   re-express the pre-keyed correlation as a `ParentCorrelation` arm carrying the column tuple
   directly (R333's "correlation is the FK column pairs for split and PK self-identity for re-fetch,
