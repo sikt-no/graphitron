@@ -60,3 +60,4 @@ A single helper `ExternalClassResolver.resolve(String name)` lives next to `Serv
 
 - **Sibling slice of** [`typed-context-value-registry.md`](typed-context-value-registry.md) (R45) and [`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md) (R46). All three carved out of the original R31 spec.
 - **Benefits** [`computed-field-with-reference.md`](computed-field-with-reference.md) (R48): the new `reference: { className: ... }` argument should accept short names once this lands.
+- **Touches the same scaffolding as** [`slim-servicecatalog-to-lookup.md`](slim-servicecatalog-to-lookup.md) (R72): this item replaces the direct `Class.forName` calls with `ExternalClassResolver.resolve` at the three/four reflect* sites, while R72 wants to deduplicate that triplicated lookup scaffolding into one primitive. If R72 collapses it first, R47 plugs the resolver into one consolidated site instead of three; sequence them knowingly (not a hard dependency).

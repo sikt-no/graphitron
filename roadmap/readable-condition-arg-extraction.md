@@ -7,7 +7,7 @@ priority: 3
 theme: model-cleanup
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-06-18
+last-updated: 2026-07-15
 ---
 
 # Generated @condition arg extraction is an unreadable nested-ternary one-liner
@@ -25,3 +25,10 @@ before the call, or routes through a small generated helper, so the call site re
 `Conditions.method(table, brukerId)` and each extraction is independently debuggable. Scope:
 emitter-only, generated output changes shape but not behaviour; pipeline tests must not assert on
 generated method bodies, so coverage stays at the compile/execution tier.
+
+R85 (`helper-emission-non-fetcher-hosts`) reshapes the same method: it fixes the
+`ContextArg` arm of `ArgCallEmitter.buildArgExtraction` that fails to emit the
+`graphitronContext` helper on non-fetcher hosts, while this item extracts the
+per-argument extraction into named locals or a helper for readability. Whichever
+lands first changes the other's diff; sequence knowingly (distinct deliverables,
+not a merge).

@@ -7,7 +7,7 @@ priority: 7
 theme: service
 depends-on: []
 created: 2026-05-20
-last-updated: 2026-05-20
+last-updated: 2026-07-15
 ---
 
 # Sealed UnresolvedParam classification for @service parameter rejection arms
@@ -19,3 +19,5 @@ The proposed shape is a sealed `UnresolvedParam` (or similar) classifying the pa
 Scope when this is picked up: subsumes R185 and R187 if they haven't shipped yet (or refactors over the top of them if they have); pins the chosen precedence between DTO-hint and arg-mismatch on `List<DTO>` with name typo (R187 chose DTO-hint wins on child; this is the right place to record that as a property of the classifier, not as a comment on a branch); preserves every existing diagnostic substring covered by `ServiceCatalogTest` so the rejection-message contract holds across the refactor. Out of scope: changing what the validator does with rejections, broadening the classifier to non-`@service` accessor paths, or moving rejection messages into i18n bundles.
 
 Not blocked. Right time to pick this up is after R185 and R187 have either shipped or been folded in; before then, this item carries the architectural debt and the two bugs carry the user-visible fixes, with the trade-off recorded in R187's "Architectural smell (acknowledged, deferred)" section.
+
+R72 (`slim-servicecatalog-to-lookup`) wants to move `reflectServiceMethod`'s policy and rejection-wording out to the caller; this item's sealed classifier plus single switch owns that rejection text and is a plausible vehicle for R72's extraction. Sequence but do not duplicate.

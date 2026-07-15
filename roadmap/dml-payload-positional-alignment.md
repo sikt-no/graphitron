@@ -5,7 +5,7 @@ status: Spec
 theme: mutation-write
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-07-13
+last-updated: 2026-07-15
 ---
 
 # DML payload positional input/output alignment
@@ -308,3 +308,9 @@ was produced must be `null`."
 - **R63** (`dml-dialect-requirement-on-model`) owns dialect-capability
   gating; R242 stays on Postgres-only execution-tier coverage today and
   does not duplicate that surface.
+- **R145** (`mutation-cardinality-safety-upsert`) gates R242's UPSERT arm.
+  UPSERT generation is currently disabled (R144, Done, refuses UPSERT with a
+  `Rejection.deferred` keyed to R145), so R242's UPSERT phases and rows cannot
+  be exercised until R145 re-admits UPSERT. When the two are sequenced,
+  reconcile an arg-name drift: R242 discovers the conflict key from
+  `@upsertWith`, while R145 proposes `@mutation(conflictKey:)`.

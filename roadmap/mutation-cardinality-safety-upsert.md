@@ -41,3 +41,8 @@ parameterised emitter dispatch. R141 narrowed its admitted-kinds matrix to
 `{INSERT, UPDATE}` to share R144's UPSERT carve-out before it shipped; R145's
 landing reopens UPSERT on both the direct-DML arm (`MutationUpsertTableField`)
 and R141's bulk-carrier arm in one pass.
+
+R245 (`wire-condition-emit-on-mutations`) already provisions prospective
+`overrideCondition` and `additionalConditions` slots on `MutationUpsertTableField`
+for R145's use, so R145 inherits R245's two-placement `@condition` mechanism for
+layering predicates on top of the conflict-target match (tenant-scoped UPSERT).

@@ -6,7 +6,7 @@ theme: mutation-write
 bucket: cleanup
 depends-on: []
 created: 2026-05-27
-last-updated: 2026-07-13
+last-updated: 2026-07-15
 ---
 
 # Wire @condition through to mutation WHERE (emit half + new placements)
@@ -133,6 +133,7 @@ Execution: add to `DmlBulkMutationsExecutionTest` and a single-row DML execution
 * **R215** (already shipped, admit-but-no-emit half): on this item Done, append a follow-on note to R215's `changelog.md` entry recording the emit-side closeout.
 * **R145** (UPSERT): R145 inherits the two-placement `@condition` mechanism for layering predicates on top of the conflict-target match (tenant-scoped UPSERT).
 * **R222** (dimensional model pivot): the two slots (`overrideCondition`, `additionalConditions`) on the UPDATE/DELETE field record are R222's `PredicateCarrier` slice fodder; no sealed taxonomy to relocate.
+* **R221** (`validator-walks-plain-input-unbound-fields`): adjacent on the same `@condition`-on-input admission surface in `MutationInputResolver`. R221 tightens rejection of the malformed unbound `@condition(override:false)` case; this item's broadened non-`override` admission must not re-open the hole R221 closes. Not a hard dependency; sequence knowingly.
 
 ## Out of scope
 

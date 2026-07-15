@@ -6,7 +6,7 @@ theme: docs
 bucket: architecture
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-05-21
+last-updated: 2026-07-15
 ---
 
 # Audit design-doc claims for implementation conformance
@@ -31,6 +31,8 @@ The five layers R205 named, for the audit to look for analogues of:
 5. Handoff at a phase boundary scopes the follow-up narrowly enough that the divergent half falls between the gap.
 
 If the audit finds the pattern is rare (one or two sites), point fixes per site are probably right. If common (a dozen+), a forcing function (lint, meta-test, anchor convention) is probably right. The audit's job is to decide which world we live in.
+
+Three concrete instances of this "design doc says X, code does Y, no test pinning X" pattern are already known and should feed the rare-vs-common count rather than being re-discovered by the audit: the shipped R205 (the plain-input-filter surface above), R289 (`keynodesynthesiser-resolvable-false-entity-doc`), and R443 (`post-r438-stale-reference-residue`). Those point fixes stay independently runnable.
 
 Likely starting points based on the R205 investigation:
 

@@ -6,7 +6,7 @@ theme: diagnostics
 bucket: architecture
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-05-21
+last-updated: 2026-07-15
 ---
 
 # Validator walks PlainInputArg.fields() for UnboundField rejection
@@ -26,3 +26,4 @@ Surfaced by the R215 self-review: alf flagged that the architect's brief glossed
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java:1631-1655` — consumer-arm UnboundField switch; the silent-fire-the-condition case is the reason validator coverage matters.
 - `docs/manual/how-to/migrating-from-legacy.adoc:179-191` — the cascade-divergence doc the validator gap currently lets schemas violate at runtime.
 - R215 (`column-binding-at-classification-not-usage.md`) — the parent work; the validator rule lives there but is reachable only for `@table` inputs.
+- R245 (`wire-condition-emit-on-mutations`): adjacent on the same `@condition`-on-input admission surface in `MutationInputResolver`. R245 broadens what non-`override` `@condition` admits; this item tightens rejection of the malformed unbound `@condition(override:false)` case. R245's broadened admission must not re-open the hole this item closes (not a hard dependency).

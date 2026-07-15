@@ -17,3 +17,7 @@ The visible cost today: the same `"method 'X' in class 'Y' must return 'EXP' to 
 Surfaced while reviewing FQN bleed-through in validator error messages (the trigger for that work was the `must return …` rendering using `TypeName.toString()` on both sides). Slimming the catalog is the right home for the message-text and check-shape consolidation; the in-place FQN fix is a tactical band-aid until then.
 
 Not blocking anything; pick up when someone is in `ServiceCatalog` for an unrelated reason or when the per-resolver wording diverges enough that the duplication starts hurting.
+
+R47 (`service-short-classname-resolution`) touches the same lookup scaffolding: it replaces the direct `Class.forName` calls with `ExternalClassResolver.resolve` at the three/four reflect* sites, while this item wants to deduplicate that triplicated scaffolding into one primitive. If this item collapses it first, R47 plugs the resolver into one consolidated site instead of three; sequence them knowingly (not a hard dependency).
+
+R193 (`service-param-classification-sealed-hierarchy`) refactors `reflectServiceMethod`'s rejection-arm chain into a sealed classifier plus a single switch that owns the rejection text; that sealed classifier is a plausible vehicle for the policy and rejection-wording extraction this item wants to push out to the caller. Sequence but do not duplicate.

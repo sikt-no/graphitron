@@ -54,6 +54,13 @@ deferred a structural fix. R83 is that fix.
   classify → emit → `mvn compile` path end-to-end so the bug class cannot
   go latent again.
 
+R334 (`readable-condition-arg-extraction`) reshapes the same method: it extracts
+the per-argument extraction in `ArgCallEmitter.buildArgExtraction` into named
+locals or a helper for readability, while this item fixes the `ContextArg` arm
+that fails to emit the `graphitronContext` helper on non-fetcher hosts. Whichever
+lands first changes the other's diff; sequence knowingly (distinct deliverables,
+not a merge).
+
 ## Out of scope
 
 The four other class generators that emit a `graphitronContext` helper
