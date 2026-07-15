@@ -1,5 +1,5 @@
 ---
-id: R484
+id: R485
 title: "Model-level isFkHop/pairsOf helpers for JoinStep narrowings"
 status: Backlog
 bucket: structural
