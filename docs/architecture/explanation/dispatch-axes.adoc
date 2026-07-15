@@ -6,7 +6,7 @@ This page is the chapter narrative for that contract. Reference detail (the per-
 
 == The axes
 
-Three classify-time model values carry the dispatch axes between them: a `SourceKey` per batch-keyed field (the key residue), a `KeyLift` on the record-parent leaves (how the key is lifted off the parent object), and a `LoaderRegistration` per field (DataLoader identity).
+Three classify-time model values carry the dispatch axes between them: a `SourceKey` per batch-keyed field (the key residue), a `KeyLift` on the batched re-query leaves (how the key tuple is lifted off the parent's held object; total on the merged leaves since R432), and a `LoaderRegistration` per field (DataLoader identity).
 
 `SourceKey` is the batch key itself, nothing more:
 
@@ -18,12 +18,12 @@ record SourceKey(
 )
 ----
 
-`KeyLift`, carried by `RecordTableField` / `RecordLookupTableField` / `RecordTableMethodField` and (as `parentKeyLift`) the polymorphic `InterfaceField` / `UnionField`, is pure provenance, where the key material comes from:
+`KeyLift`, carried by `BatchedTableField` / `BatchedLookupTableField` (both source shapes, R432) and `RecordTableMethodField`, and (as `parentKeyLift`) by the polymorphic `InterfaceField` / `UnionField`, names how the key tuple is lifted off the parent's held object:
 
 [source]
 ----
 KeyLift
-├─ FkColumns()                    ← per-column FK/PK reads off the parent source object
+├─ FkColumns()                    ← project the key columns off the held jOOQ record, per column
 ├─ Lifter(LifterRef)              ← @sourceRow static lifter (authored provenance)
 ├─ Accessor(AccessorRef, Arity)   ← typed zero-arg accessor; arity = the accessor's return arity
 └─ ProducedRecords(Arity)         ← R305 source=target re-fetch; arity = the produced wrapper
@@ -40,7 +40,9 @@ record LoaderRegistration(
 )
 ----
 
-The values together describe one DataLoader-backed source side. Splitting them at these seams is what makes the boundary cases representable: a table-parent `@splitQuery` field or a `@service`-backed field has a `SourceKey` and no `KeyLift` (its key extraction is the wrap-driven read against the parent's own table row or the `Sources` signature); the carrier passthrough leaves (`SingleRecordIdField`, `RecordCompositeField`) carry a first-class `SourceEnvelope` and no `LoaderRegistration` (no DataLoader at all).
+The values together describe one DataLoader-backed source side. Splitting them at these seams is what makes the boundary cases representable: a `@service`-backed field has a `SourceKey` and no `KeyLift` (its key extraction is the wrap-driven read the `Sources` signature authors); the carrier passthrough leaves (`SingleRecordIdField`, `RecordCompositeField`) carry a first-class `SourceEnvelope` and no `LoaderRegistration` (no DataLoader at all).
+
+On the merged batched leaves the lift is total (R432): a table-parent `@splitQuery` field carries `KeyLift.FkColumns`, a genuine member of the axis — the key tuple is projected off the held jOOQ record by column, exactly the mechanism `FkColumns` names on a record-backed parent. A total `lift` removes an absence case and tells no lie; that the Table arm's emit path is still wrap-driven (`GeneratorUtils.buildKeyExtraction`) while only the constructor's `checkResidueAgreement` consumes the stored lift today is deliberate provisioning for R314's unified fetcher, not a second meaning. The parent-backing fact itself is the leaf's stored `SourceShape` — it cannot be recovered from the lift, since `FkColumns` is legitimately carried by both a table-row parent and a jOOQ-record-backed result parent.
 
 === `Wrap`: per-row key shape
 
@@ -56,11 +58,11 @@ Wrap
 
 The `TableRecord` arm carries the developer-declared subtype as a payload because the column-tuple arms (`Row`, `Record`) have no use for it; an enum with a nullable `recordClass` field would be the conflated alternative. `SourceKey.keyElementType()` is total over the three arms without an extra nullable field on `SourceKey` itself.
 
-The wrap is *stored where it is authored, derived where it is inferred*: the `@splitQuery` source-shape choice and the `@service` `Sources` signature store it on the residue directly; the record-parent leaves construct their residue through `KeyLift.wrap()`, a total derivation of the lift arm (`FkColumns`/`Lifter`/`ProducedRecords` pin `Row`; `Accessor` pins `Record`), and their compact constructors assert the agreement via `KeyLift.checkResidueAgreement`.
+The wrap is *stored where it is authored, derived where it is inferred*: the `@splitQuery` source-shape choice and the `@service` `Sources` signature store it on the residue directly; the record-sourced mints construct their residue through `KeyLift.wrap()`, a total derivation of the lift arm (`FkColumns`/`Lifter`/`ProducedRecords` pin `Row`; `Accessor` pins `Record`). Either way the batched leaves' compact constructors assert lift/residue agreement via `KeyLift.checkResidueAgreement` (the Table-sourced arm's `FkColumns`/`Row` pairing satisfies it by construction).
 
-=== `KeyLift`: record-parent lift provenance
+=== `KeyLift`: how the key tuple is lifted off the held object
 
-The four arms name how the emitted fetcher lifts the batch key off a class-backed parent, and nothing else. Where the key points is the leaf's `returnType.table()` / `ParentCorrelation`; what shape the parent arrived in is the enclosing `GraphitronType.ResultType`; the two arity-bearing arms carry the `Arity` of the endpoint that owns it (the accessor's return arity, the produced wrapper). Adding a new arm breaks the one exhaustive switch (`GeneratorUtils.buildRecordParentKeyExtraction`) at compile time until it is handled.
+The four arms name how the batch key is lifted off the parent's held object, and nothing else. `FkColumns` is the column-projection mechanism (a jOOQ record — the parent's own table row on the Table-sourced arm, a record-backed result on the Record-sourced arm); the member-read arms (`Lifter` / `Accessor` / `ProducedRecords`) are class-backed-parent mechanisms, which is why the merged leaves' constructors pin `sourceShape == Table ⟹ FkColumns`. Where the key points is the leaf's `returnType.table()` / `ParentCorrelation`; what shape the parent arrived in is the leaf's stored `SourceShape` (and, for class-backed parents, the enclosing `GraphitronType.ResultType`); the two arity-bearing arms carry the `Arity` of the endpoint that owns it (the accessor's return arity, the produced wrapper). Adding a new arm breaks the one exhaustive switch (`GeneratorUtils.buildRecordParentKeyExtraction`) at compile time until it is handled.
 
 === `SourceEnvelope`: carrier read-site fork
 

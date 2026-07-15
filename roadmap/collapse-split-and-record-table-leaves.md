@@ -1,7 +1,7 @@
 ---
 id: R432
 title: "Collapse SplitTableField and RecordTableField into one source-gated leaf"
-status: In Progress
+status: In Review
 bucket: structural
 priority: 4
 theme: classification-model
@@ -230,22 +230,33 @@ Signed off as sound; two refinements to fold into the implementation, neither a 
 
 ## Slices
 
-Each slice lands full-reactor green (`mvn install -Plocal-db`) and ships to trunk.
+All four slices shipped (2026-07-15), each full-reactor green and pushed to trunk:
 
-1. **Containment check first, on the current shapes.** Land the two-walk cross-check against
-   today's four leaves, keyed on the `BatchKeyField` capability + `sourceShape()` (never leaf
-   identity, so slices 2-3 do not touch it), plus its unit test with the recursion-omission
-   fire-case. It then guards the re-gating that follows: if a merge slice drops a force-include
-   arm, the build fails loudly instead of regressing to R425.
-2. **Merge the non-lookup pair** into `BatchedTableField`: the leaf, the mints, the full migration
-   walk above, tests migrated. Acceptance: execution-tier equivalence (same rows, same order,
-   error paths intact), fact-level classification stability (below); byte-identical generated
-   output is expected here in practice (the emit arms only re-gate) but not required.
-3. **Merge the lookup pair** into `BatchedLookupTableField`: same walk, lookup-specific sites
-   (`LookupField` permits, VALUES-join input-rows helpers, lookup validation tests).
-4. **Docs + spec-notes sweep:** `dispatch-axes.adoc` (the leaf table), `code-generation-triggers.adoc`,
-   `BatchKeyField` / `KeyLift.FkColumns` javadoc, R333's leaf mentions get a shipped-note, this
-   spec's phases collapse to shipped-at notes.
+1. **Containment check** — shipped at `3b873c3`. `ParentProjectionContainmentCheck` at the
+   `$fields` emit site, keyed on `BatchKeyField` + `sourceShape()` (never leaf identity; slices
+   2-3 did not touch it); unit fire-case is the nesting-omission shape. The reviewer note landed:
+   the `IllegalStateException` message and class javadoc name it a generator invariant, not an
+   author-facing rejection. One implementation-level deviation from the spec text: nested
+   plain-object coordinates are *not* in the classifier's flat field index (they resolve through
+   the embedding `NestingField`), so the requirement side enumerates the anchor's own flat-index
+   coordinates and descends nesting sub-trees with its own worklist — independent code, not the
+   audited walk's recursion. The R436 `TableRecord`-wrap fire-case lives on `ServiceTableField`,
+   where that wrap is authored (the merged leaf's Table arm pins `FkColumns`/`Row` and can never
+   carry it).
+2. **Non-lookup merge** into `BatchedTableField` — shipped at `9253bca`. All six ctor
+   invariants, full migration walk, tests merged/renamed. Generated output across the sakila
+   corpus was **byte-identical** to the pre-merge baseline (`diff -r` empty), so execution-tier
+   equivalence and fact-level classification stability hold trivially.
+3. **Lookup merge** into `BatchedLookupTableField` — shipped at `f6ebfaf`. Invariants 1/2/3/6;
+   invariant 4 (Record ⟹ non-Connection) deliberately absent on the lookup leaf — a
+   Connection-shaped lookup is an author-reachable schema the validator rejects on both arms,
+   not an unrepresentable generator state. Byte-identical output again.
+4. **Docs + spec-notes sweep** — this commit. `dispatch-axes.adoc` reframes the whole `KeyLift`
+   axis (per the reviewer note: "how the key tuple is lifted off the held jOOQ record", total
+   lift leading with "removes an absence case and tells no lie", R314 provisioning as the
+   bonus); `code-generation-triggers.adoc` tables; `KeyLift` / `FkColumns` / `BatchKeyField`
+   javadoc; `supported-schema-shapes.adoc` + `inference-axis-coverage.adoc` regenerated from
+   fresh traces; R333's leaf mentions get a shipped-note.
 
 ## Decided forks
 

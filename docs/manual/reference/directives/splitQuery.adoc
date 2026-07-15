@@ -41,7 +41,7 @@ type Store @table(name: "store") {
 
 `Store.manager` traverses a *nullable* FK; the §4 null-FK short-circuit returns `null` without a round-trip when the column is `NULL`. The `@reference` is required even though `Customer.address_id` would auto-infer, because `store` and `staff` have two FKs between them and inference would be ambiguous.
 
-Multi-hop list with `@lookupKey` (`SplitLookupTableField` — flat `SELECT` + `VALUES+ON` keyset + per-parent scatter):
+Multi-hop list with `@lookupKey` (Table-sourced `BatchedLookupTableField` — flat `SELECT` + `VALUES+ON` keyset + per-parent scatter):
 
 [source,graphql]
 ----

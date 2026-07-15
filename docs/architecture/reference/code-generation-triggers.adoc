@@ -121,8 +121,8 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 |===
 | Property | Effect
 
-| *`@splitQuery`* | On a table-mapped source, forces a new scope via DataLoader: `TableField` (no `@lookupKey`) → `SplitTableField`; field with `@lookupKey` → `SplitLookupTableField`. On a result-mapped source it is redundant ; the record handoff already opens a new scope ; and should produce a build *warning*, not an error.
-| *`@lookupKey`* | Argument values become the derived target table (see <<derived-tables,Derived tables>>). Blocks pagination (preserves the N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → `SplitLookupTableField`. Orthogonal to scope ; see <<scope,Scope>>.
+| *`@splitQuery`* | On a table-mapped source, forces a new scope via DataLoader: `TableField` (no `@lookupKey`) → Table-sourced `BatchedTableField`; field with `@lookupKey` → Table-sourced `BatchedLookupTableField` (R432 merged the former Split/Record leaf pairs onto these source-gated leaves). On a result-mapped source it is redundant ; the record handoff already opens a new scope ; and should produce a build *warning*, not an error.
+| *`@lookupKey`* | Argument values become the derived target table (see <<derived-tables,Derived tables>>). Blocks pagination (preserves the N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → Table-sourced `BatchedLookupTableField`. Orthogonal to scope ; see <<scope,Scope>>.
 |===
 
 '''
@@ -287,7 +287,7 @@ type FilmDetails {
 }
 ----
 
-`Film.language` (`TableField`) and `FilmDetails.language` (`RecordTableField`) return the same `Language`
+`Film.language` (`TableField`) and `FilmDetails.language` (a record-sourced `BatchedTableField`) return the same `Language`
 over the same `film_language_id_fkey` foreign key and carry the same `Fetch` / `Table` operation and
 target; they differ only on the source shape (`Child(Table)` vs `Child(Record)`), and the record handoff
 forces a derived keyed re-query under `FilmDetails`, not a different asserted axis.
@@ -524,9 +524,9 @@ The four `Mutation*TableField` permits are guaranteed never to carry a class-bac
 | `@tableMethod` | `TableMethodField` | Fetcher method
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table | `ServiceRecordField` | Fetcher method
-| Return `@table`, `@splitQuery` + `@lookupKey` | `SplitLookupTableField` | Async DataLoader fetcher + `rows*()` method
+| Return `@table`, `@splitQuery` + `@lookupKey` | `BatchedLookupTableField` (Table-sourced) | Async DataLoader fetcher + `rows*()` method
 | Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Inline projection in `$fields` ; correlated subquery via `DSL.multiset` + VALUES/JOIN lookup keyset
-| Return `@table`, `@splitQuery` | `SplitTableField` | Async DataLoader fetcher + `rows*()` method
+| Return `@table`, `@splitQuery` | `BatchedTableField` (Table-sourced) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` (default) | `TableField` | Inline projection in `$fields` ; correlated subquery via `DSL.multiset` (single cardinality adds `.limit(1)` + a read-side unwrap lambda)
 | Return `@table`+`@discriminate` interface | `TableInterfaceField` | Fetcher method
 | Return multi-table interface | `InterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
@@ -545,9 +545,9 @@ The parent here is a type whose backing class is reflection-derived from its pro
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | Scalar/enum with `@field` | `PropertyField` | Wiring value ; property read off the parent record
-| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
-| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
-| Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (`SourceKey.Reader.SourceRowsCall`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
+| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedLookupTableField` (Record-sourced, `KeyLift.FkColumns`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `BatchedTableField` / `BatchedLookupTableField` (Record-sourced, `KeyLift.Lifter`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
 | Return non-table type | `RecordField` | Wiring value ; read off the parent record
 | `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
@@ -568,7 +568,7 @@ The parent here is a type whose backing class is reflection-derived from its pro
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
 
-**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 8 SQL-generating child field variants (`TableField`, `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `TableInterfaceField`, `ServiceTableField`, `RecordTableField`, `RecordLookupTableField`).
+**\*\* `UnclassifiedField`** is a direct permit of `GraphitronField`; it is not nested under `QueryField`, `MutationField`, or `ChildField`. It is listed in the tables above for completeness, but structurally it sits at the top level of the sealed hierarchy. `TableTargetField` is an intermediate sealed sub-interface of `ChildField` grouping all 6 SQL-generating child field variants (`TableField`, `BatchedTableField`, `LookupTableField`, `BatchedLookupTableField`, `TableInterfaceField`, `ServiceTableField`; R432 collapsed the former Split/Record pairs onto the two source-gated batched leaves).
 
 === DataLoader-backed field categories
 
@@ -579,8 +579,8 @@ Four categories of DataLoader-backed child field, distinguished by `@splitQuery`
 
 | *`QueryLookupTableField`* (root lookup, no `@splitQuery`) | No ; synchronous | Derived target only | Allowed ; must preserve N × M contract† | Never ; result count = M exactly
 | *`LookupTableField`* (`@lookupKey`, no `@splitQuery`, table-mapped parent) | No ; correlated subquery | Derived target + correlated parent join | Allowed ; must preserve N × M contract† | Never
-| *`SplitTableField`* (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed
-| *`SplitLookupTableField`* (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Allowed ; must preserve N × M contract† | Never ; result count = N × M
+| *`BatchedTableField`* (Table-sourced: `@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed
+| *`BatchedLookupTableField`* (`@splitQuery` + `@lookupKey`) | Yes | Both | Allowed ; must preserve N × M contract† | Never ; result count = N × M
 |===
 
 † See <<derived-tables,Derived tables>> for the contract definition.

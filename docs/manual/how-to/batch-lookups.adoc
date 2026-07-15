@@ -99,13 +99,13 @@ Per request, the framework gathers every parent Film's `film_id`, dispatches one
 
 Without `@splitQuery`, the same `[Actor!]!` field with `@lookupKey` paginates across *all* parents in one wide SELECT: the lookup keys narrow the union of all parents' actors, not per-parent slices. That is rarely the right shape at the child level. The `actors(actor_id: [Int!] @lookupKey)` field on `Film` shows the inline (non-split) variant: it ships an inline correlated subquery per parent, useful when parent fan-out is small but wasteful at scale.
 
-The same composition applies at deeper nesting depths through plain-object `NestingField` parents. `Film.info.castByKey(actor_id: [Int!] @lookupKey)` (`info: FilmInfo`, `FilmInfo` plain-object) treats the nested arm as just another `SplitLookupTableField`: same DataLoader shape, deeper path.
+The same composition applies at deeper nesting depths through plain-object `NestingField` parents. `Film.info.castByKey(actor_id: [Int!] @lookupKey)` (`info: FilmInfo`, `FilmInfo` plain-object) treats the nested arm as just another Table-sourced `BatchedLookupTableField`: same DataLoader shape, deeper path.
 
 `@splitQuery` + `@lookupKey` + `@asConnection` is *not* a valid composition. The `@asConnection` rejection mentioned above applies to any `@lookupKey` field, including `@splitQuery` ones; combine `@splitQuery` + `@asConnection` (covered in xref:connections.adoc[connections]) for per-parent paginated children, or `@splitQuery` + `@lookupKey` for per-parent narrowed batches, but not all three at once.
 
 == `@lookupKey` on class-backed parents
 
-A class-backed parent reachable from `@service` is implicitly DataLoader-batched on its `@table`-typed children (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields). That same pattern admits `@lookupKey`: a `RecordLookupTableField` batches keyed by the parent record's PK and narrowed by the caller-provided lookup keys. Explicit `@splitQuery` is redundant on these fields, not rejected.
+A class-backed parent reachable from `@service` is implicitly DataLoader-batched on its `@table`-typed children (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields). That same pattern admits `@lookupKey`: a record-sourced `BatchedLookupTableField` batches keyed by the parent record's PK and narrowed by the caller-provided lookup keys. Explicit `@splitQuery` is redundant on these fields, not rejected.
 
 [source,graphql]
 ----

@@ -3,22 +3,28 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.Objects;
 
 /**
- * The field-level key-lift fact for a class-backed (record-parent) batched field: how the
- * emitted fetcher lifts the DataLoader batch key off the parent source object. Pure provenance —
- * where the key material comes from — with nothing about where the key points (the leaf's
- * {@code returnType.table()} / {@link ParentCorrelation}) or what shape the parent arrived in
- * (the enclosing {@link GraphitronType.ResultType}). R431: these are the four live arms of the
+ * The field-level key-lift fact for a batched field: how the emitted fetcher lifts the
+ * DataLoader batch key off the parent's held object. The mechanism only — with nothing about
+ * where the key points (the leaf's {@code returnType.table()} / {@link ParentCorrelation}) or
+ * what backing the parent has (the leaf's stored {@link SourceShape}; for class-backed parents,
+ * the enclosing {@link GraphitronType.ResultType}). R431: these are the four live arms of the
  * retired seven-arm {@code SourceKey.Reader}, whose service arms duplicated the producer's
  * {@link MethodRef} signature and whose {@code ResultRowWalk} arm dissolved into the
  * {@link ChildField.SingleRecordIdField} leaf plus the first-class {@link SourceEnvelope}.
+ * R432 made the axis total on the merged batched leaves: a total {@code lift} removes an
+ * absence case and tells no lie — a table-parent {@code @splitQuery} field genuinely lifts by
+ * column projection ({@link FkColumns}), the same mechanism a record-backed result parent uses.
  *
  * <p>Carried by {@link ChildField.BatchedTableField} (total since R432; the Table-sourced arm
  * always carries {@link FkColumns}), {@link ChildField.BatchedLookupTableField} (same gate),
  * {@link ChildField.RecordTableMethodField}, and (as {@code parentKeyLift}) the polymorphic
  * {@link ChildField.InterfaceField} / {@link ChildField.UnionField}. Dispatched exhaustively by
- * {@code GeneratorUtils.buildRecordParentKeyExtraction}. Table-parent batched fields
- * ({@code Split*}) and {@code @service}-backed fields never carry one: their key extraction is
- * the wrap-driven {@code GeneratorUtils.buildKeyExtraction} against the parent's own table row.
+ * {@code GeneratorUtils.buildRecordParentKeyExtraction} on the record-sourced paths; the
+ * Table-sourced emit path stays wrap-driven ({@code GeneratorUtils.buildKeyExtraction} against
+ * the parent's own table row), so the Table arm's stored {@link FkColumns} is consumed only by
+ * the constructor's {@link #checkResidueAgreement} today — deliberate provisioning for R314's
+ * unified fetcher. {@code @service}-backed fields never carry a lift: their key extraction is
+ * authored by the {@code Sources} signature.
  *
  * <p>The emitted key-row shape is a total derivation of the arm ({@link #wrap()}): the two
  * member-read arms pin their shape by contract (the accessor returns a {@code TableRecord}
@@ -32,11 +38,13 @@ import java.util.Objects;
 public sealed interface KeyLift {
 
     /**
-     * N per-column reads off the parent source object: catalog-FK columns on a
-     * {@code TableRecord}-backed parent (or sql-name / accessor reads per the enclosing
-     * {@link GraphitronType.ResultType}), packaged as a {@code RowN<...>} key via
-     * {@code DSL.row(...)}. Also the polymorphic Row arm, where the parent IS the source and
-     * the key is its PK tuple.
+     * The key tuple is projected off the held jOOQ record by column, packaged as a
+     * {@code RowN<...>} key via {@code DSL.row(...)}. The mechanism, not the provenance: on a
+     * Table-sourced batched leaf the held record is the parent's own table row (the
+     * {@code @splitQuery} shape, R432); on a record-backed result parent it is the producer's
+     * record (catalog-FK columns, or sql-name / accessor reads per the enclosing
+     * {@link GraphitronType.ResultType}). Also the polymorphic Row arm, where the parent IS the
+     * source and the key is its PK tuple.
      */
     record FkColumns() implements KeyLift {}
 
@@ -100,7 +108,7 @@ public sealed interface KeyLift {
      * Pins the construction rule on a lift-carrying leaf: the residue key's stored wrap is the
      * lift arm's {@link #wrap()} derivation, so the retired reader-to-wrap pairings cannot
      * silently disagree on a hand-built instance. Called from the compact constructors of the
-     * five carrying {@link ChildField} variants; a violation is a classifier-side bug.
+     * carrying {@link ChildField} variants; a violation is a classifier-side bug.
      */
     static void checkResidueAgreement(KeyLift lift, SourceKey key, String variantName) {
         if (lift == null) return;

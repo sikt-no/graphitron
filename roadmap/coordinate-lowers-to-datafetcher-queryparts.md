@@ -1754,6 +1754,16 @@ outbound `$fields` edges. That split is the evidence for E and F.
 
 ### First slice (the beachhead)
 
+> **Shipped (R432, 2026-07-15).** The beachhead landed: `SplitTableField` + `RecordTableField`
+> merged into `BatchedTableField` and the lookup twins into `BatchedLookupTableField`, each gated
+> on a stored `SourceShape` with a total `KeyLift` (the split arm carries `FkColumns`); the
+> parent-projection containment check named under *Query anchors and the two flows* shipped first
+> (`ParentProjectionContainmentCheck`, keyed on `BatchKeyField` + `sourceShape()`). Generated
+> output stayed byte-identical across the sakila corpus in both merge slices. Leaf mentions of
+> the four retired names below this point are historical design narrative; the live names are the
+> two `Batched*` leaves. The fetcher fork survives inside one seam gated on `sourceShape` — its
+> unification is R314's re-platforming.
+
 `SplitTableField` / `RecordTableField` is the cheapest honest demonstration of the cut. Both child sides
 lower to the same `load<X>` rows-method and the same fetcher; Split's only extra is the key projection,
 which relocates to the parent type's `$fields` (where `collectRequiredProjection` already puts it).

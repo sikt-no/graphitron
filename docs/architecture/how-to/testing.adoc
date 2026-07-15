@@ -79,7 +79,7 @@ Two shapes:
 *Classification truth tables:* `GraphitronSchemaBuilderTest`.
 Each variant family is a `// ===== VariantName =====` section with an enum where each constant is one `(description, SDL, assertion)` triple; one parameterised test iterates the table.
 
-*Deeper SDL → TypeSpec / variant-shape tests:* `*PipelineTest` files: `NodeIdPipelineTest`, `SplitTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
+*Deeper SDL → TypeSpec / variant-shape tests:* `*PipelineTest` files: `NodeIdPipelineTest`, `BatchedTableFieldPipelineTest`, `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`, `NestingFieldPipelineTest`, `ServiceRootFetcherPipelineTest`, `TaggedInputsPipelineTest`, `StubbedVariantPipelineTest`; and in `generators/`: `FetcherPipelineTest`, `TablePipelineTest`.
 Build a schema with `TestSchemaHelper.buildSchema(sdl)`, assert structural shape on the resulting variant or generated `TypeSpec`.
 Banned: code-string body matching.
 
