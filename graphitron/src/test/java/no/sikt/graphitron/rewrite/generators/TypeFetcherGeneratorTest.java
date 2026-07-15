@@ -270,7 +270,7 @@ class TypeFetcherGeneratorTest {
             rt,
             path,
             List.of(), new OrderBySpec.None(), null,
-            TestFixtures.splitSourceKey(keyCols, rt.wrapper().isList()),
+            TestFixtures.splitSourceKey(keyCols),
             TestFixtures.loaderRegistration(rt, false, false),
             TestFixtures.pcFor(path, LANGUAGE_TABLE));
     }
@@ -356,7 +356,7 @@ class TypeFetcherGeneratorTest {
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
-            TestFixtures.serviceTableSourceKey(returnType, wrap, keyCols),
+            TestFixtures.serviceSourceKey(wrap, keyCols),
             TestFixtures.loaderRegistration(returnType, false, false),
             java.util.Optional.empty());
     }
@@ -420,7 +420,7 @@ class TypeFetcherGeneratorTest {
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
-            TestFixtures.serviceTableSourceKey(returnType, shape.wrap(), shape.columns()),
+            TestFixtures.serviceSourceKey(shape.wrap(), shape.columns()),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
@@ -1568,7 +1568,7 @@ class TypeFetcherGeneratorTest {
             List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns()),
+            TestFixtures.serviceSourceKey(shape.wrap(), shape.columns()),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
@@ -1586,7 +1586,7 @@ class TypeFetcherGeneratorTest {
             List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns()),
+            TestFixtures.serviceSourceKey(shape.wrap(), shape.columns()),
             TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
@@ -2151,7 +2151,8 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
+            filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
+            filmActorParentTableForList(), filmActorParentResultType());
     }
 
     private static ChildField.UnionField childUnionField(String parentType, String name, boolean isList) {
@@ -2165,7 +2166,8 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.UnionField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
+            filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
+            filmActorParentTableForList(), filmActorParentResultType());
     }
 
     @Test
@@ -2275,7 +2277,7 @@ class TypeFetcherGeneratorTest {
                 "Project", null, null, parentTable);
         return new ChildField.InterfaceField("Project", "items", null,
             returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, parentTable, parentResultType);
+            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType);
     }
 
     @Test
@@ -2307,7 +2309,8 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
+            filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
+            filmActorParentTableForList(), filmActorParentResultType());
     }
 
     private static ChildField.UnionField childUnionConnectionField(
@@ -2322,7 +2325,8 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.UnionField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
+            filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
+            filmActorParentTableForList(), filmActorParentResultType());
     }
 
     /**
@@ -2535,7 +2539,7 @@ class TypeFetcherGeneratorTest {
                 "Project", null, null, parentTable);
         return new ChildField.InterfaceField("Project", "itemsConnection", null,
             returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, parentTable, parentResultType);
+            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType);
     }
 
     @Test

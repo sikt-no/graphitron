@@ -2,12 +2,14 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -198,81 +200,72 @@ public final class TestFixtures {
     // these to compose the same per-axis shapes the producers build.
 
     /**
-     * Split-query parent-side {@link SourceKey}: {@link SourceKey.Wrap.Row} +
-     * {@link SourceKey.Reader.ColumnRead} over the FK columns, target-aligned (empty path).
-     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}.
+     * Split-query parent-side {@link SourceKey}: {@link SourceKey.Wrap.Row} over the FK columns.
+     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}. (R431:
+     * arity left the key — the split fetcher's cardinality is the field's wrapper position.)
      */
-    public static SourceKey splitSourceKey(List<ColumnRef> fkColumns,
-                                            boolean isList) {
-        return new SourceKey(fkColumns, new SourceKey.Wrap.Row(),
-            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ColumnRead());
+    public static SourceKey splitSourceKey(List<ColumnRef> fkColumns) {
+        return new SourceKey(fkColumns, new SourceKey.Wrap.Row());
     }
 
     /**
-     * Catalog-FK record-parent {@link SourceKey}: {@link SourceKey.Wrap.Row} +
-     * {@link SourceKey.Reader.ColumnRead} over the FK source-side columns, target-aligned (empty
-     * path). Mirrors the FK arm of {@code FieldBuilder.deriveFkRecordParentSource}.
+     * Catalog-FK record-parent {@link SourceKey} + {@link KeyLift.FkColumns} pairing helpers.
+     * Mirrors the FK arm of {@code FieldBuilder.deriveFkRecordParentSource}: the residue key's
+     * wrap is the lift arm's derivation.
      */
-    public static SourceKey recordParentRowSourceKey(List<ColumnRef> fkColumns,
-                                                      boolean isList) {
-        return new SourceKey(fkColumns, new SourceKey.Wrap.Row(),
-            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ColumnRead());
+    public static SourceKey recordParentRowSourceKey(List<ColumnRef> fkColumns) {
+        return new SourceKey(fkColumns, fkColumnsLift().wrap());
+    }
+
+    /** The catalog-FK / polymorphic-Row lift arm (per-column reads off the parent). */
+    public static KeyLift fkColumnsLift() {
+        return new KeyLift.FkColumns();
     }
 
     /**
      * Polymorphic-Row {@link SourceKey} for an {@link ChildField.InterfaceField} /
-     * {@link ChildField.UnionField} on a table-backed parent: target=null (the parent IS the
-     * source), {@link SourceKey.Wrap.Row} + {@link SourceKey.Reader.ColumnRead},
-     * {@link SourceKey.Cardinality#ONE}.
+     * {@link ChildField.UnionField} on a table-backed parent: the parent IS the
+     * source; pairs with {@link #fkColumnsLift()} as the leaf's {@code parentKeyLift}.
      */
     public static SourceKey polymorphicRowParentSourceKey(List<ColumnRef> pkColumns) {
-        return new SourceKey(pkColumns, new SourceKey.Wrap.Row(),
-            SourceKey.Cardinality.ONE, new SourceKey.Reader.ColumnRead());
+        return new SourceKey(pkColumns, fkColumnsLift().wrap());
     }
 
     /**
-     * Polymorphic-Accessor {@link SourceKey} for {@link ChildField.InterfaceField} /
+     * Polymorphic-Accessor lift for {@link ChildField.InterfaceField} /
      * {@link ChildField.UnionField} on a record-backed parent with a typed hub
-     * accessor: columns=hubTable.PK, {@link SourceKey.Wrap.Record} +
-     * {@link SourceKey.Reader.AccessorCall}, cardinality per the accessor (Single ⇒ ONE,
-     * Many ⇒ MANY). The hub table itself is carried as the leaf's {@code parentKeyOwnerTable}
-     * (R431: no hop, no path).
+     * accessor (Single ⇒ {@link Arity#ONE}, Many ⇒ {@link Arity#MANY}). Pair with
+     * {@link #polymorphicAccessorParentSourceKey}; the hub table itself is carried as the
+     * leaf's {@code parentKeyOwnerTable} (R431: no hop, no path).
+     */
+    public static KeyLift.Accessor polymorphicAccessorParentLift(
+            no.sikt.graphitron.rewrite.model.AccessorRef accessor,
+            boolean isMany) {
+        return new KeyLift.Accessor(accessor, isMany ? Arity.MANY : Arity.ONE);
+    }
+
+    /**
+     * Polymorphic-Accessor {@link SourceKey}: columns=hubTable.PK, wrap from the accessor lift
+     * arm's derivation ({@code RecordN}).
      */
     public static SourceKey polymorphicAccessorParentSourceKey(
             no.sikt.graphitron.rewrite.model.TableRef hubTable,
             no.sikt.graphitron.rewrite.model.AccessorRef accessor,
             boolean isMany) {
         return new SourceKey(hubTable.primaryKeyColumns(),
-            new SourceKey.Wrap.Record(),
-            isMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.AccessorCall(accessor));
+            polymorphicAccessorParentLift(accessor, isMany).wrap());
     }
 
     /**
-     * Service-table {@link SourceKey}: target=rt.table(), {@code parentKeyColumns} as entry
-     * columns, empty path, {@code wrap} per developer's source-shape declaration, cardinality
-     * from rt, {@link SourceKey.Reader.ServiceTableRecord} carrying {@code rt.table().recordClass()}.
+     * Service-backed {@link SourceKey}: the {@code (columns, wrap)} pair read off the
+     * {@code @service} method's {@code Sources} signature fact. Mirrors
+     * {@code FieldBuilder.buildServiceSourceKey}. (R431: the service reader arms died into the
+     * {@link MethodRef} signature; no lift — service fields never reach the record-parent key
+     * extraction.)
      */
-    public static SourceKey serviceTableSourceKey(ReturnTypeRef.TableBoundReturnType rt,
-                                                   SourceKey.Wrap wrap,
-                                                   List<ColumnRef> parentKeyColumns) {
-        return new SourceKey(parentKeyColumns, wrap,
-            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
-    }
-
-    /**
-     * Service-record {@link SourceKey}: {@code parentKeyColumns} as entry columns, empty path,
-     * {@code wrap} per declaration, cardinality from rt, {@link SourceKey.Reader.ServiceUntypedRecord}.
-     */
-    public static SourceKey serviceRecordSourceKey(ReturnTypeRef rt,
-                                                    SourceKey.Wrap wrap,
-                                                    List<ColumnRef> parentKeyColumns) {
-        return new SourceKey(parentKeyColumns, wrap,
-            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ServiceUntypedRecord());
+    public static SourceKey serviceSourceKey(SourceKey.Wrap wrap,
+                                              List<ColumnRef> parentKeyColumns) {
+        return new SourceKey(parentKeyColumns, wrap);
     }
 
     /**

@@ -10,10 +10,12 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
+import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -521,6 +523,7 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             SourceKey parentSourceKey,
+            KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             boolean isList,
@@ -531,12 +534,12 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         if (isList && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentKeyOwnerTable, parentResultType, outputPackage));
+            methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType, outputPackage));
             methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, parentSourceKey, parentKeyOwnerTable, outputPackage));
         } else {
             methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentSourceKey, isList, outputPackage));
+                participantJoinPaths, parentKeyLift, isList, outputPackage));
         }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
@@ -604,6 +607,7 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, ParticipantCorrelation> participantJoinPaths,
             int defaultPageSize,
             SourceKey parentSourceKey,
+            KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage,
@@ -616,7 +620,7 @@ public final class MultiTablePolymorphicEmitter {
         // The empty-tableBound defensive path falls into the root branch; both fetcher builders
         // emit a non-throwing empty payload when participants is empty.
         if (parentSourceKey != null && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentKeyOwnerTable, parentResultType,
+            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType,
                 outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, defaultPageSize, parentSourceKey, parentKeyOwnerTable, outputPackage));
@@ -706,12 +710,12 @@ public final class MultiTablePolymorphicEmitter {
      * value off a {@code parentRecord} local whose binding depends on the parent's classification:
      *
      * <ul>
-     *   <li><b>Table-backed parent</b> ({@link GraphitronType.JooqTableRecordType}; {@link
-     *       SourceKey.Reader.ColumnRead}): {@code Record parentRecord = (Record) env.getSource()}.
+     *   <li><b>Table-backed parent</b> ({@link GraphitronType.JooqTableRecordType};
+     *       {@link KeyLift.FkColumns}): {@code Record parentRecord = (Record) env.getSource()}.
      *       The parent record is the hub itself; its FK columns are read by name.</li>
      *   <li><b>Record-backed parent</b> ({@link GraphitronType.PojoResultType} / {@link
-     *       GraphitronType.JavaRecordType}; {@link SourceKey.Reader.AccessorCall} at {@link
-     *       SourceKey.Cardinality#ONE}): {@code Record parentRecord = ((Backing) env.getSource())
+     *       GraphitronType.JavaRecordType}; {@link KeyLift.Accessor} at {@link
+     *       Arity#ONE}): {@code Record parentRecord = ((Backing) env.getSource())
      *       .<accessor>()}, where {@code Backing} and the accessor name come straight off the
      *       {@link no.sikt.graphitron.rewrite.model.AccessorRef}. The single-cardinality typed
      *       accessor returns the hub {@code TableRecord} directly; its FK columns are read by name
@@ -722,14 +726,14 @@ public final class MultiTablePolymorphicEmitter {
      * <p>Mirrors the list arm's {@link GeneratorUtils#buildRecordParentKeyExtraction} accessor
      * handling, but inline: single cardinality reads the hub record's FK columns directly rather
      * than projecting a batch key and joining a {@code VALUES} table, so it needs only
-     * {@code parentSourceKey} (the {@code AccessorRef}), not the parent {@code ResultType} the
+     * {@code parentKeyLift} (the {@code AccessorRef}), not the parent {@code ResultType} the
      * batched key extraction threads through.
      */
     private static MethodSpec buildScalarPerParentFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
-            SourceKey parentSourceKey,
+            KeyLift parentKeyLift,
             boolean isList, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -756,12 +760,11 @@ public final class MultiTablePolymorphicEmitter {
             return builder.build();
         }
 
-        if (parentSourceKey != null
-                && parentSourceKey.reader() instanceof SourceKey.Reader.AccessorCall ac) {
+        if (parentKeyLift instanceof KeyLift.Accessor ac) {
             // Record-backed parent: the typed single-cardinality accessor returns the hub
             // TableRecord whose FK columns branchParentFkWhere reads by name. A null hub means no
-            // polymorphic child for this parent. Reaching here implies cardinality ONE: emitMethods
-            // routes list-cardinality AccessorCall parents to the batched buildBatchedListFetcher,
+            // polymorphic child for this parent. Reaching here implies arity ONE: emitMethods
+            // routes list-cardinality Accessor parents to the batched buildBatchedListFetcher,
             // so the accessor return is a single TableRecord (not a List), assignable to Record.
             var accessor = ac.accessor();
             builder.addStatement("$T parentRecord = (($T) env.getSource()).$L()",
@@ -1377,6 +1380,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName,
             SourceKey parentSourceKey,
+            KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
@@ -1412,9 +1416,9 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        // Parent-object key extraction: delegated to the canonical Reader × Cardinality helper.
+        // Parent-object key extraction: delegated to the canonical KeyLift helper.
         // Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyOwnerTable, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType));
 
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
@@ -1431,13 +1435,13 @@ public final class MultiTablePolymorphicEmitter {
      * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
      * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
      *
-     * <p>The load site forks on the parent key's
-     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality}, matching what
+     * <p>The load site forks on the parent lift's
+     * {@link no.sikt.graphitron.rewrite.model.Arity}, matching what
      * {@link GeneratorUtils#buildRecordParentKeyExtraction} declared:
-     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#ONE} readers (catalog-FK
-     * {@code ColumnRead} on a {@code @table} parent, accessor-single on a record parent) declare a
+     * {@link no.sikt.graphitron.rewrite.model.Arity#ONE} lifts (catalog-FK
+     * {@code FkColumns} on a {@code @table} parent, accessor-single on a record parent) declare a
      * single {@code key} and dispatch {@code loader.load(key, env)};
-     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY} readers (accessor-many,
+     * {@link no.sikt.graphitron.rewrite.model.Arity#MANY} lifts (accessor-many,
      * produced-record-many on a Pojo / {@code @record} carrier) declare a {@code List<key> keys}
      * and dispatch {@code loader.loadMany(keys, …)}, then concat the one-bucket-per-element
      * {@code List<List<Record>>} into the field's single flat {@code List<Record>}. Without this
@@ -1448,6 +1452,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName,
             SourceKey parentSourceKey,
+            KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
@@ -1482,14 +1487,15 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyOwnerTable, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType));
 
-        // Dispatch on the parent key's cardinality, mirroring how
+        // Dispatch on the parent lift's arity, mirroring how
         // TypeFetcherGenerator.buildRecordBasedDataFetcher branches load vs loadMany. The key
-        // extraction above declares a single {@code key} for the ONE readers (ColumnRead,
-        // AccessorCall-single) and a {@code List<key> keys} for the MANY readers
-        // (AccessorCall-many, ProducedRecordRead-many); the load site must match.
-        if (parentSourceKey.cardinality() == SourceKey.Cardinality.MANY) {
+        // extraction above declares a single {@code key} for the ONE lifts (FkColumns,
+        // Accessor-single) and a {@code List<key> keys} for the MANY lifts
+        // (Accessor-many, ProducedRecords-many); the load site must match.
+        if (parentKeyLift instanceof KeyLift.Accessor a && a.arity() == Arity.MANY
+                || parentKeyLift instanceof KeyLift.ProducedRecords pr && pr.arity() == Arity.MANY) {
             // loadMany yields one List<Record> bucket per element key (the loader value is
             // List<Record>, not Record, on this polymorphic path). The field surface is a single
             // flat list, so concat the per-element buckets in key order before the async tail.

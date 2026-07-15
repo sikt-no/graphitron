@@ -35,6 +35,8 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -876,7 +878,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
                 assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
@@ -893,7 +895,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
                 assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
@@ -934,7 +936,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.joinPath().get(1)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 // Keyed off the first hop's FK source columns (customer.store_id), hop-count
                 // agnostic per FieldBuilder.deriveSplitQuerySource; the emitter bridges store -> address.
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
                 assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("store_id");
             }) {
@@ -1745,7 +1747,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(castField).isInstanceOf(SplitTableField.class);
         var stf = (SplitTableField) castField;
         assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
-        assertThat(stf.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+        assertThat(stf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(stf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 
@@ -2376,7 +2378,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
                 assertThat(f.sourceKey().columns()).isNotEmpty();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
@@ -2420,7 +2422,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
@@ -2448,7 +2450,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "language");
                 assertThat(f.returnType().wrapper()).isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Single.class);
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
                 assertThat(f.emitsSingleRecordPerKey()).isTrue();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -2741,8 +2743,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
                 var sk = f.sourceKey();
-                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
-                var lifter = ((SourceKey.Reader.SourceRowsCall) sk.reader()).lifter();
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
+                var lifter = ((KeyLift.Lifter) f.lift()).lifter();
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(sk.columns()).hasSize(1);
                 assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
@@ -2772,7 +2774,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.lookupMapping()).isNotNull();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
@@ -2841,7 +2843,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -3072,7 +3074,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.sourceKey().columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }) {
@@ -3097,7 +3099,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.filters())
                     .filteredOn(filter -> filter instanceof ConditionFilter)
                     .extracting(filter -> ((ConditionFilter) filter).methodName())
@@ -3126,7 +3128,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
                 assertThat(orderBy.typeName()).isEqualTo("InventoryOrder");
@@ -3175,7 +3177,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
                 var sk = f.sourceKey();
-                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(sk.columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("inventory_id");
                 // Leaf-PK variant (R431): hop-less — empty joinPath plus the pre-keyed
@@ -3184,7 +3186,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
                 assertThat(((ParentCorrelation.OnLiftedSlots) f.parentCorrelation()).targetTable().tableName())
                     .isEqualTo("inventory");
-                assertThat(((SourceKey.Reader.SourceRowsCall) sk.reader()).lifter().methodName())
+                assertThat(((KeyLift.Lifter) f.lift()).lifter().methodName())
                     .isEqualTo("dummyRow1Integer");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -3317,9 +3319,10 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(RecordTableField.class, f -> {
                     var sk = f.sourceKey();
-                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-                    assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("films");
+                    assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
+                        assertThat(ac.arity()).isEqualTo(Arity.MANY);
+                        assertThat(ac.accessor().methodName()).isEqualTo("films");
+                    });
                     assertThat(sk.columns()).hasSize(1);
                     assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
                     assertThat(f.joinPath()).isEmpty();
@@ -3343,9 +3346,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(RecordTableField.class, f -> {
                     var sk = f.sourceKey();
-                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-                    // The Set<X> vs List<X> split inside Many is not preserved on the SourceKey; emit
+                    assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac ->
+                        assertThat(ac.arity()).isEqualTo(Arity.MANY));
+                    // The Set<X> vs List<X> split inside Many is not preserved on the lift; emit
                     // is uniform via Iterable. The fixture still exercises the Set classifier path.
                 });
             }) {
@@ -3366,9 +3369,10 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(RecordTableField.class, f -> {
                     var sk = f.sourceKey();
-                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-                    assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("film");
+                    assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
+                        assertThat(ac.arity()).isEqualTo(Arity.ONE);
+                        assertThat(ac.accessor().methodName()).isEqualTo("film");
+                    });
                     assertThat(sk.columns()).hasSize(1);
                     assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
                     assertThat(f.joinPath()).isEmpty();
@@ -3436,11 +3440,11 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(RecordTableField.class, f -> {
                     var sk = f.sourceKey();
-                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+                    assertThat(f.lift()).isInstanceOf(KeyLift.Accessor.class);
+                    assertThat(((KeyLift.Accessor) f.lift()).arity()).isEqualTo(Arity.ONE);
                     // The carried method name is the actual accessor name (the directive value),
                     // not the SDL field name.
-                    assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName())
+                    assertThat(((KeyLift.Accessor) f.lift()).accessor().methodName())
                         .isEqualTo("filmRecord");
                     assertThat(sk.columns()).hasSize(1);
                     assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
@@ -3538,8 +3542,8 @@ class GraphitronSchemaBuilderTest {
                 var f = (RecordTableMethodField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
-                assertThat(f.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
+                assertThat(f.returnType().wrapper().isList()).isTrue();
                 assertThat(f.method().methodName()).isEqualTo("getInventory");
             }),
 
@@ -3562,7 +3566,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (RecordTableMethodField) schema.field("FilmDetails", "language");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
-                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
             }),
 
         FREE_FORM_PARENT_NO_SOURCEROW_REJECTED(
@@ -6982,9 +6986,10 @@ class GraphitronSchemaBuilderTest {
                 // level, not carried on the SourceKey).
                 var dataField = schema.field("FilmsPayload", "films");
                 assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
-                var sk = ((no.sikt.graphitron.rewrite.model.ChildField.RecordTableField) dataField).sourceKey();
-                assertThat(sk.cardinality()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
-                assertThat(sk.reader()).isInstanceOf(no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead.class);
+                var lift = ((no.sikt.graphitron.rewrite.model.ChildField.RecordTableField) dataField).lift();
+                assertThat(lift).isInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords) lift).arity())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.Arity.MANY);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -7033,9 +7038,9 @@ class GraphitronSchemaBuilderTest {
                 var dataField = schema.field("FilmIdsPayload", "filmIds");
                 assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField.class);
                 var idField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField) dataField;
-                assertThat(idField.sourceKey().cardinality()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
-                assertThat(((no.sikt.graphitron.rewrite.model.SourceKey.Reader.ResultRowWalk) idField.sourceKey().reader()).envelope())
-                    .isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+                assertThat(idField.returnType().wrapper().isList()).isTrue();
+                assertThat(idField.envelope())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.OUTCOME_SUCCESS);
                 assertThat(idField.table().tableName()).isEqualTo("film");
             }) {
             @Override public Set<Class<?>> variants() {

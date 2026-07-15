@@ -7,6 +7,8 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
+import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -52,9 +54,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         // R305: source=target re-fetch key — ProducedRecordRead reads the PK off the produced
         // record, Wrap.Row carries the PK tuple. The DIRECT/OUTCOME_SUCCESS envelope is no longer
         // on the SourceKey (the generator derives it at the type level).
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+            pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
         assertThat(rtf.joinPath()).isEmpty();
         assertThat(rtf.parentCorrelation())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots.class);
@@ -93,7 +95,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var sk = ((ChildField.RecordTableField) dataField).sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(((ChildField.RecordTableField) dataField).lift())
+            .isInstanceOf(KeyLift.ProducedRecords.class);
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
 
         // The sibling errors field rides the WrapperArm transport (the Outcome.ErrorList arm).
@@ -137,9 +140,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             .isInstanceOf(MutationField.MutationServiceRecordField.class);
         var dataField = schema.field("FilmListPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        var sk = ((ChildField.RecordTableField) dataField).sourceKey();
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(((ChildField.RecordTableField) dataField).lift())
+            .isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+                pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         var errorsField = schema.field("FilmListPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
         assertThat(((ChildField.ErrorsField) errorsField).transport())
@@ -186,10 +189,10 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdField.class);
         var idField = (ChildField.SingleRecordIdField) dataField;
         var sk = idField.sourceKey();
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(idField.returnType().wrapper().isList()).isTrue();
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
-        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(idField.envelope())
+            .isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.OUTCOME_SUCCESS);
         assertThat(idField.table().tableName()).isEqualTo("film");
         assertThat(idField.encode().encodeMethod()).isNotNull();
         var errorsField = schema.field("FilmIdsPayload", "errors");
@@ -227,10 +230,10 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             .isInstanceOf(MutationField.MutationServiceRecordField.class);
         var dataField = schema.field("FilmIdPayload", "filmId");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdField.class);
-        var sk = ((ChildField.SingleRecordIdField) dataField).sourceKey();
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        var idField = (ChildField.SingleRecordIdField) dataField;
+        assertThat(idField.returnType().wrapper().isList()).isFalse();
+        assertThat(idField.envelope())
+            .isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.OUTCOME_SUCCESS);
     }
 
     /**
@@ -254,9 +257,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
         var dataField = schema.field("FilmIdPayload", "filmId");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdField.class);
-        var sk = ((ChildField.SingleRecordIdField) dataField).sourceKey();
-        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.DIRECT);
+        assertThat(((ChildField.SingleRecordIdField) dataField).envelope())
+            .isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.DIRECT);
     }
 
     /**
@@ -340,9 +342,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var rtf = (ChildField.RecordTableField) dataField;
         var sk = rtf.sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+            pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
 
@@ -367,9 +369,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var rtf = (ChildField.RecordTableField) dataField;
         var sk = rtf.sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+            pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         // Composite PK: both columns in declaration order from the catalog.
         assertThat(sk.columns()).extracting(c -> c.sqlName())
             .containsExactly("actor_id", "film_id");
@@ -402,8 +404,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var rtf = (ChildField.RecordTableField) dataField;
-        assertThat(rtf.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
-        assertThat(rtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+            pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
         // Each payload element's single film re-fetches through LOAD_ONE; graphql-java coalesces the
         // per-element loads into one batched rows-method query (proven end-to-end at the execution tier).
         assertThat(rtf.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);

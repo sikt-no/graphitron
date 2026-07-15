@@ -7,7 +7,7 @@ package no.sikt.graphitron.rewrite.model;
  * the shape the field projects.
  *
  * <p>The wrapper is read straight off the field's GraphQL return type ({@code field.getType()} /
- * {@link FieldWrapper}): the value {@code SourceKey.Cardinality} computes today from
+ * {@link FieldWrapper}): the value the retired {@code SourceKey.Cardinality} computed from
  * {@code wrapper().isList()}. Keeping cardinality <em>as a wrapper bound to this endpoint</em>, never a
  * free {@code One} / {@code Many} enum, is the structural fix R316's wrapper algebra exists to hold: the
  * same {@code {One, Many}} values appear on the {@link Source} wrapper (accumulated) and here (local), so

@@ -515,7 +515,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * the singleton-data-field case ({@code Payload { film: Film }}, single input), this
      * covers the bulk-data-field case ({@code Payload { films: [Film!] }}, bulk input). The
      * carrier's data field is classified as {@link ChildField.RecordTableField} with
-     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}.
+     * a many-arity source.
      *
      * <p>The classifier admits exactly
      * {@code (tableInputArg.list() == true, dataField.wrapper().isList() == true,
@@ -660,7 +660,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Emit follows the bulk record-carrier skeleton: per-row UPDATE inside one
      * {@code dsl.transactionResult(...)}, collecting PK echoes into a {@code Result<RecordN<PK>>} in
      * input order so the data field's {@link ChildField.RecordTableField}
-     * ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) fetcher renders rows in
+     * (many-arity) fetcher renders rows in
      * input order. The per-row SET/WHERE partition is sourced from the {@link UpdateRows} carrier
      * (PK-or-UK matched-key membership) rather than {@code @value}; see
      * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator} for the emit path and the
@@ -725,7 +725,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Emit follows the bulk record-carrier skeleton: per-row DELETE inside one
      * {@code dsl.transactionResult(...)}, collecting PK echoes into a {@code Result<RecordN<PK>>} in
      * input order so the data field's {@link ChildField.RecordTableField}
-     * ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) fetcher renders rows in
+     * (many-arity) fetcher renders rows in
      * input order. The per-row WHERE columns are sourced from the {@link DeleteRows} carrier rather
      * than {@code tableInputArg.fieldBindings()}; see
      * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator} for the emit path and the

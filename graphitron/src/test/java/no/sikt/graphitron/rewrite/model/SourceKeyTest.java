@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -8,176 +9,83 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit-tier coverage of the {@link SourceKey} compact-constructor invariants. Pins the
- * cross-axis rejections classifiers must respect:
+ * Unit-tier coverage of the {@link SourceKey} residue: the {@code (columns, wrap)} pair and the
+ * {@link SourceKey#keyElementType()} derivation.
+ *
+ * <p>R431 dispositions of the retired compact-constructor invariant families (slice 3; the
+ * {@code target} / {@code path} families are dispositioned in the slice-1/2 history of this
+ * javadoc):
  *
  * <ul>
- *   <li>{@link SourceKey.Reader.SourceRowsCall} ⇒ {@link SourceKey.Wrap.Row}.</li>
- *   <li>{@link SourceKey.Reader.AccessorCall} ⇒ {@link SourceKey.Wrap.Record}.</li>
- *   <li>{@link SourceKey.Reader.ResultRowWalk} ⇒ {@link SourceKey.Wrap.Record} /
- *       {@link SourceKey.Wrap.TableRecord}, and {@code OUTCOME_SUCCESS} only on
- *       {@link SourceKey.Wrap.TableRecord}.</li>
+ *   <li>{@code SourceRowsCall} ⇒ {@code Wrap.Row} and {@code AccessorCall} ⇒ {@code Wrap.Record}:
+ *       unrepresentable by construction — the lift arms pin their key shape via
+ *       {@link KeyLift#wrap()}, the derivation every lift-carrying leaf constructs its residue
+ *       through; {@link KeyLiftTest} pins the derivation and the
+ *       {@link KeyLift#checkResidueAgreement} construction-rule tripwire.</li>
+ *   <li>{@code ResultRowWalk} ⇒ {@code Wrap.Record}/{@code Wrap.TableRecord} and
+ *       {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒ {@code Wrap.TableRecord} (the hard one): the
+ *       named join site is {@link ChildField.SingleRecordIdField}'s compact constructor — the
+ *       only envelope-bearing typed-record read left once the DML {@code Wrap.Record} walk died
+ *       into the R305 re-fetch — which requires {@code Wrap.TableRecord} unconditionally
+ *       (strictly stronger than the retired conditional coupling). Pinned by
+ *       {@link SingleRecordIdFieldKeyShapeInvariantTest}.</li>
+ *   <li>The service arms' shape duplication ({@code ServiceTableRecord} carrying the producer's
+ *       record class) left with the reader seal; the service residue is read straight off the
+ *       {@link MethodRef.Param.Sourced} signature fact.</li>
  * </ul>
- *
- * <p>R431 dispositions: the {@code target} and {@code path} components are deleted. The
- * {@code ServiceTableRecord}(target-aligned) ⇒ empty-path and {@code ResultRowWalk}
- * {@code TableRecord}-className-equals-target rejections asserted a denormalized copy agreed
- * with its source, exactly the drift class the decomposition removes; the two
- * {@code ResultRowWalk} empty-path rejections lost their carrier with {@code path} (the
- * lifted shape now lives on {@code ParentCorrelation.OnLiftedSlots}, and
- * {@code ParentCorrelation.checkCarrierInvariant} pins hop-lessness at the leaf).
- *
- * <p>Exercises the canonical-constructor invariants and the {@link SourceKey#keyElementType()}
- * derivation on the flat-record model.
  */
 @UnitTier
 class SourceKeyTest {
 
     private static final ColumnRef FILM_ID =
         new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
+    private static final ColumnRef LANGUAGE_ID =
+        new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Long");
     private static final TableRef FILM_TABLE =
         TestFixtures.tableRef("film", "FILM", "Film", List.of(FILM_ID));
 
-    private static final AccessorRef ACCESSOR = new AccessorRef(
-        ClassName.bestGuess("com.example.Payload"),
-        "getOwner",
-        ClassName.bestGuess("com.example.jooq.tables.records.LanguageRecord"));
-
-    private static final LifterRef LIFTER = new LifterRef(
-        ClassName.bestGuess("com.example.lifters.PayloadLifters"),
-        "filmKey");
+    @Test
+    void rowWrapDerivesRowNKeyElementType() {
+        var key = new SourceKey(List.of(FILM_ID, LANGUAGE_ID), new SourceKey.Wrap.Row());
+        assertThat(key.keyElementType()).isEqualTo(ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "Row2"),
+            ClassName.get("java.lang", "Integer"),
+            ClassName.get("java.lang", "Long")));
+    }
 
     @Test
-    void rowKeyedColumnReadProjectsToCleanShape() {
+    void recordWrapDerivesRecordNKeyElementType() {
+        var key = new SourceKey(List.of(FILM_ID), new SourceKey.Wrap.Record());
+        assertThat(key.keyElementType()).isEqualTo(ParameterizedTypeName.get(
+            ClassName.get("org.jooq", "Record1"),
+            ClassName.get("java.lang", "Integer")));
+    }
+
+    @Test
+    void tableRecordWrapDerivesTheCapturedClassName() {
         var key = new SourceKey(
             List.of(FILM_ID),
-            new SourceKey.Wrap.Row(),
-            SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.ColumnRead());
-
-        assertThat(key.columns()).containsExactly(FILM_ID);
-        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+            new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()));
+        assertThat(key.keyElementType()).isEqualTo(FILM_TABLE.recordClass());
     }
 
     @Test
-    void sourceRowsCallRequiresWrapRow() {
-        assertThatThrownBy(() -> new SourceKey(
-                List.of(FILM_ID),
-                new SourceKey.Wrap.Record(),
-                SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.SourceRowsCall(LIFTER)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("SourceRowsCall")
-            .hasMessageContaining("Wrap.Row");
-    }
-
-    @Test
-    void sourceRowsCallAcceptsWrapRow() {
-        var key = new SourceKey(
-            List.of(FILM_ID),
-            new SourceKey.Wrap.Row(),
-            SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.SourceRowsCall(LIFTER));
-        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
-    }
-
-    @Test
-    void accessorCallRequiresWrapRecord() {
-        assertThatThrownBy(() -> new SourceKey(
-                List.of(FILM_ID),
-                new SourceKey.Wrap.Row(),
-                SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.AccessorCall(ACCESSOR)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("AccessorCall")
-            .hasMessageContaining("Wrap.Record");
-    }
-
-    @Test
-    void accessorCallAcceptsWrapRecord() {
-        var key = new SourceKey(
-            List.of(FILM_ID),
-            new SourceKey.Wrap.Record(),
-            SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.AccessorCall(ACCESSOR));
-        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-    }
-
-    @Test
-    void resultRowWalkAcceptsWrapRecord() {
-        var key = new SourceKey(
-            List.of(FILM_ID),
-            new SourceKey.Wrap.Record(),
-            SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
-        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
-        assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.Record.class);
-    }
-
-    @Test
-    void resultRowWalkAcceptsWrapTableRecord() {
-        // R158: ResultRowWalk admits Wrap.TableRecord (the @service payload producer's typed
-        // XRecord return). R431: the className-equals-target sub-check left with the target
-        // component.
-        var key = new SourceKey(
-            List.of(FILM_ID),
-            new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
-            SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
-        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
-        assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
-    }
-
-    @Test
-    void resultRowWalkOutcomeSuccessEnvelopeAcceptsTableRecord() {
-        // R275: the OUTCOME_SUCCESS envelope (the @service error-channel carrier) pairs with
-        // Wrap.TableRecord — the producer wrapped its typed record in Outcome.
-        var key = new SourceKey(
-            List.of(FILM_ID),
-            new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
-            SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS));
-        assertThat(((SourceKey.Reader.ResultRowWalk) key.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
-    }
-
-    @Test
-    void resultRowWalkOutcomeSuccessEnvelopeRejectsWrapRecord() {
-        // R275: the OUTCOME_SUCCESS envelope only ever pairs with Wrap.TableRecord (the @service
-        // carrier). Wrap.Record is the DML carrier, which delivers its row bare and is always DIRECT.
-        assertThatThrownBy(() -> new SourceKey(
-                List.of(FILM_ID),
-                new SourceKey.Wrap.Record(),
-                SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("OUTCOME_SUCCESS")
-            .hasMessageContaining("Wrap.TableRecord");
-    }
-
-    @Test
-    void resultRowWalkRejectsWrapRow() {
-        assertThatThrownBy(() -> new SourceKey(
-                List.of(FILM_ID),
-                new SourceKey.Wrap.Row(),
-                SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("ResultRowWalk");
+    void staticKeyElementTypeMatchesInstanceDerivation() {
+        // The partial carriers (MethodRef.Param.Sourced, ParamSource.Sources) hold the
+        // (wrap, columns) pair without a full SourceKey; the static overload must agree.
+        var wrap = new SourceKey.Wrap.Record();
+        var key = new SourceKey(List.of(FILM_ID), wrap);
+        assertThat(SourceKey.keyElementType(wrap, List.of(FILM_ID)))
+            .isEqualTo(key.keyElementType());
     }
 
     @Test
     void columnsAreImmutable() {
         var mutableColumns = new java.util.ArrayList<ColumnRef>();
         mutableColumns.add(FILM_ID);
-        var key = new SourceKey(
-            mutableColumns,
-            new SourceKey.Wrap.Row(),
-            SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.ColumnRead());
+        var key = new SourceKey(mutableColumns, new SourceKey.Wrap.Row());
         // Mutating the original list must not affect the SourceKey's columns().
         mutableColumns.clear();
         assertThat(key.columns()).containsExactly(FILM_ID);

@@ -9,6 +9,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
@@ -101,12 +103,12 @@ class SingleRecordPayloadPipelineTest {
         // SourceKey shape: Reader.ProducedRecordRead, Wrap.Row, single LiftedHop (source=target),
         // PK columns. The bulk (list) data field is per-key cardinality MANY (the held collection).
         var sk = rtf.sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(rtf.lift()).isInstanceOf(KeyLift.ProducedRecords.class);
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(rtf.joinPath()).isEmpty();
         assertThat(rtf.parentCorrelation())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots.class);
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(((KeyLift.ProducedRecords) rtf.lift()).arity()).isEqualTo(Arity.MANY);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
 
@@ -122,8 +124,8 @@ class SingleRecordPayloadPipelineTest {
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var rtf = (ChildField.RecordTableField) dataField;
-        assertThat(rtf.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
-        assertThat(rtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+            pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
     // R307: payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
@@ -543,7 +545,8 @@ class SingleRecordPayloadPipelineTest {
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var srtf = (ChildField.RecordTableField) dataField;
-        assertThat(srtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(srtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+            pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
     @ParameterizedTest
@@ -571,8 +574,9 @@ class SingleRecordPayloadPipelineTest {
 
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) dataField).sourceKey().cardinality())
-            .isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(((ChildField.RecordTableField) dataField).lift())
+            .isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+                pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
     }
 
     @Test

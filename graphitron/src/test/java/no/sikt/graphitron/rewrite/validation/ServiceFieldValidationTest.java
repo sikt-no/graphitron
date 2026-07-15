@@ -41,7 +41,7 @@ class ServiceFieldValidationTest {
     private static final ReturnTypeRef.ResultReturnType RECORD_RT_SINGLE =
         new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null);
     private static final SourceKey RECORD_SOURCE_KEY =
-        TestFixtures.serviceRecordSourceKey(RECORD_RT_SINGLE, new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS);
+        TestFixtures.serviceSourceKey(new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS);
     private static final LoaderRegistration RECORD_LR =
         TestFixtures.loaderRegistration(RECORD_RT_SINGLE, false, false);
 
@@ -183,7 +183,7 @@ class ServiceFieldValidationTest {
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(TestFixtures.sourced("filmKeys", wrap, keyColumns, container))),
-            TestFixtures.serviceTableSourceKey(returnType, wrap, keyColumns),
+            TestFixtures.serviceSourceKey(wrap, keyColumns),
             TestFixtures.loaderRegistration(returnType, mapped, false),
             Optional.empty());
     }
@@ -197,7 +197,7 @@ class ServiceFieldValidationTest {
                 List.of(
                     TestFixtures.sourced("filmKeys1", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST),
                     TestFixtures.sourced("filmKeys2", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),
-            TestFixtures.serviceTableSourceKey(FILM_RETURN, wrap, keyCols),
+            TestFixtures.serviceSourceKey(wrap, keyCols),
             TestFixtures.loaderRegistration(FILM_RETURN, false, false),
             Optional.empty());
     }

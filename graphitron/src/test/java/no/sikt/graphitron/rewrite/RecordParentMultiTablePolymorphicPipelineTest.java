@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
+import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -18,13 +20,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code FieldBuilder.classifyChildFieldOnResultType}'s {@code PolymorphicReturnType} case:
  *
  * <ul>
- *   <li>{@link SourceKey.Reader.ColumnRead} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType}
+ *   <li>{@link KeyLift.FkColumns} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType}
  *       parent (hub = parent's mapped table).</li>
- *   <li>{@link SourceKey.Reader.AccessorCall} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType}
+ *   <li>{@link KeyLift.Accessor} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType}
  *       parent with a single-cardinality typed accessor
- *       ({@link SourceKey.Cardinality#ONE}, hub = accessor's element-Record table).</li>
- *   <li>{@link SourceKey.Reader.AccessorCall} on a Pojo parent with a list / set typed accessor
- *       ({@link SourceKey.Cardinality#MANY}, hub = accessor's element-Record table).</li>
+ *       ({@link Arity#ONE}, hub = accessor's element-Record table).</li>
+ *   <li>{@link KeyLift.Accessor} on a Pojo parent with a list / set typed accessor
+ *       ({@link Arity#MANY}, hub = accessor's element-Record table).</li>
  * </ul>
  *
  * <p>Driven through the full SDL → classifier pipeline so the new arm is exercised, not bypassed
@@ -85,8 +87,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             """);
         var field = (ChildField.InterfaceField) schema.field("FilmInfo", "referrers");
-        assertThat(field.parentSourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
-        assertThat(field.parentSourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(field.parentKeyLift()).isInstanceOf(KeyLift.FkColumns.class);
         assertThat(field.parentSourceKey().columns()).hasSize(1);
         assertThat(field.parentSourceKey().columns().get(0).sqlName()).isEqualTo("film_id");
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
@@ -149,12 +150,13 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             """);
         var field = (ChildField.InterfaceField) schema.field("SinglePayloadType", "film");
         var psk = field.parentSourceKey();
-        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        var lift = field.parentKeyLift();
+        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
+        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.ONE);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         assertThat(psk.columns()).hasSize(1);
         assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
-        assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("film");
+        assertThat(((KeyLift.Accessor) lift).accessor().methodName()).isEqualTo("film");
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
     }
 
@@ -173,12 +175,13 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             """);
         var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "films");
         var psk = field.parentSourceKey();
-        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        var lift = field.parentKeyLift();
+        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
+        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         assertThat(psk.columns()).hasSize(1);
         assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
-        assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("films");
+        assertThat(((KeyLift.Accessor) lift).accessor().methodName()).isEqualTo("films");
     }
 
     @Test
@@ -198,12 +201,13 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             """);
         var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "referrers");
         var psk = field.parentSourceKey();
-        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        var lift = field.parentKeyLift();
+        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
+        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
         // The carried method name is the actual accessor name (the directive value), not the SDL
         // field name.
-        assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName())
+        assertThat(((KeyLift.Accessor) lift).accessor().methodName())
             .isEqualTo("films");
     }
 
@@ -222,7 +226,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             """);
         var field = (ChildField.UnionField) schema.field("FilmInfo", "referrers");
-        assertThat(field.parentSourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+        assertThat(field.parentKeyLift()).isInstanceOf(KeyLift.FkColumns.class);
         assertThat(field.parentSourceKey().columns()).hasSize(1);
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
     }
@@ -240,10 +244,11 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             """);
         var field = (ChildField.UnionField) schema.field("SinglePayloadType", "film");
         var psk = field.parentSourceKey();
-        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        var lift = field.parentKeyLift();
+        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
+        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.ONE);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
-        assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("film");
+        assertThat(((KeyLift.Accessor) lift).accessor().methodName()).isEqualTo("film");
     }
 
     @Test
@@ -258,8 +263,9 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             """);
         var field = (ChildField.UnionField) schema.field("ListPayloadType", "films");
         var psk = field.parentSourceKey();
-        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        var lift = field.parentKeyLift();
+        assertThat(lift).isInstanceOf(KeyLift.Accessor.class);
+        assertThat(((KeyLift.Accessor) lift).arity()).isEqualTo(Arity.MANY);
         assertThat(field.parentKeyOwnerTable().tableName()).isEqualTo("film");
     }
 

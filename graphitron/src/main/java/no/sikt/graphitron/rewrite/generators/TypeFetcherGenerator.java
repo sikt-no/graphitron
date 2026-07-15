@@ -18,6 +18,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.RowsMethodBody;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -491,7 +492,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, null, outputPackage, registry)
+                                conn.defaultPageSize(), null, null, null, null, outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -504,7 +505,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, null, outputPackage, registry)
+                                conn.defaultPageSize(), null, null, null, null, outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -555,11 +556,11 @@ public class TypeFetcherGenerator {
                 // LightFetcher), collected below. No-op arm here.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), rtf.lift(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(ctx, rtf, outputPackage, registry));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), rltf.lift(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage, registry));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
@@ -572,7 +573,7 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
                 case ChildField.RecordTableMethodField rtmf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), rtmf.lift(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
                 }
                 // R156 — SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
@@ -587,13 +588,13 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyOwnerTable(),
+                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
-                                f.parentSourceKey(), f.parentKeyOwnerTable(), f.parentResultType(),
+                                f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
                                 f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
@@ -602,13 +603,13 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyOwnerTable(),
+                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
-                                f.parentSourceKey(), f.parentKeyOwnerTable(), f.parentResultType(),
+                                f.parentSourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
                                 f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
@@ -5826,7 +5827,7 @@ public class TypeFetcherGenerator {
     /**
      * Bulk variant of {@link #singleRecordSentinelFor}: emits
      * {@code DSL.using(SQLDialect.DEFAULT).newResult(<pk fields>)}. The empty {@code Result}
-     * source feeds the {@code SourceKey.Cardinality.MANY} data fetcher, which projects no rows
+     * source feeds the many-arity data fetcher, which projects no rows
      * and renders the SDL data field as an empty list. The errors field reads localContext.
      */
     private static CodeBlock bulkRecordSentinelFor(no.sikt.graphitron.rewrite.model.TableRef tableRef,
@@ -6005,7 +6006,7 @@ public class TypeFetcherGenerator {
      * {@code dsl.transactionResult(...)}, collects the PK records into a typed
      * {@code Result<RecordN<...>>} in input order, and returns the accumulated Result. The
      * downstream data field's fetcher ({@link FetcherEmitter#buildSingleRecordTableFetcherValue}
-     * with {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) reads that Result
+     * with {@link no.sikt.graphitron.rewrite.model.Arity#MANY}) reads that Result
      * via {@code env.getSource()} and runs the bulk response SELECT outside the transaction.
      *
      * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
@@ -6589,7 +6590,7 @@ public class TypeFetcherGenerator {
     private static <T extends GraphitronField & BatchKeyField> MethodSpec
             buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field,
                     ReturnTypeRef.TableBoundReturnType returnType,
-                    SourceKey sourceKey,
+                    SourceKey sourceKey, KeyLift lift,
                     GraphitronType.ResultType resultType, boolean sourceIsOutcome,
                     String outputPackage) {
 
@@ -6626,7 +6627,7 @@ public class TypeFetcherGenerator {
                 .endControlFlow()
                 .build();
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
-                sourceKey, returnType.table(), resultType, CodeBlock.of("success.value()"));
+                sourceKey, lift, returnType.table(), resultType, CodeBlock.of("success.value()"));
         } else {
             // R305: short-circuit on a null source. The LocalContext errors transport fires the
             // data-channel fetcher with a null source (data(null).localContext(errors)); the former
@@ -6640,7 +6641,7 @@ public class TypeFetcherGenerator {
                 .endControlFlow()
                 .build();
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
-                sourceKey, returnType.table(), resultType);
+                sourceKey, lift, returnType.table(), resultType);
         }
 
         return DataLoaderFetcherEmitter.build(

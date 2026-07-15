@@ -27,7 +27,7 @@ import java.util.Objects;
  *
  * <p>Permits are intentionally distinct types even though the four SQL framings are identical
  * today: distinct permits make the dispatch axis first-class so the construction site's
- * projection from the field's {@code (SourceKey.reader(), LoaderRegistration.container())}
+ * projection from the field's {@code (variant, LoaderRegistration.container())}
  * pair lands in a single typed slot rather than a runtime branch.
  *
  * <p>The body content is an opaque {@link CodeBlock} so the skeleton is decoupled from the

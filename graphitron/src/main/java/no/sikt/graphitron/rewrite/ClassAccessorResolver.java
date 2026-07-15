@@ -84,7 +84,7 @@ public final class ClassAccessorResolver {
      * this set so each reduction sees only the arms it can consume: the property-read reduction and
      * the probe accept all three, while the record-source reduction accepts
      * {@link #PER_ARGUMENT_METHOD} only (a field, env-taking, or per-argument candidate is
-     * unrepresentable in its view — {@code SourceKey.Reader.AccessorCall} emits {@code parent.method()}
+     * unrepresentable in its view — {@code KeyLift.Accessor} emits {@code parent.method()}
      * with no environment or arguments), so a candidate it structurally cannot emit is never produced
      * rather than filtered out by a local rule that could drift.
      */

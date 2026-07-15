@@ -34,8 +34,8 @@ class SplitTableFieldValidationTest {
     private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
     private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = actorReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = actorReturn(new FieldWrapper.Connection(false, 100));
-    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.splitSourceKey(PARENT_KEY_COLS, false);
-    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.splitSourceKey(PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.splitSourceKey(PARENT_KEY_COLS);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.splitSourceKey(PARENT_KEY_COLS);
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
     private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 

@@ -74,10 +74,10 @@ class SettKvotesporsmalShapeRegressionTest {
 
         var df = schema.field("Payload", "film");
         assertThat(df).isInstanceOf(ChildField.RecordTableField.class);
-        // R305: the standard record-parent path (not the carrier re-fetch); its SourceKey reader is
-        // the catalog-FK/accessor read, not the source=target ProducedRecordRead carrier reader.
-        assertThat(((ChildField.RecordTableField) df).sourceKey().reader())
-            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead.class);
+        // R305: the standard record-parent path (not the carrier re-fetch); its lift is
+        // the catalog-FK/accessor read, not the source=target ProducedRecords carrier lift.
+        assertThat(((ChildField.RecordTableField) df).lift())
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
 
     /**
@@ -104,8 +104,8 @@ class SettKvotesporsmalShapeRegressionTest {
 
         var df = schema.field("Payload", "film");
         assertThat(df).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) df).sourceKey().reader())
-            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(((ChildField.RecordTableField) df).lift())
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
 
     // R276: classBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord was deleted. It

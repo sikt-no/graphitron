@@ -6,8 +6,10 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
+import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -183,12 +185,11 @@ class GeneratorUtils {
     /**
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} (or list-shaped
      * variants) statement for a class-backed-parent batched DataFetcher, extracting the
-     * batch-key value(s) from the parent. Switches on {@link SourceKey#reader()} (with the
-     * {@code AccessorCall} arm forking on {@link SourceKey#cardinality()}); the
-     * {@code @service}-only readers are unreachable here and rejected eagerly.
+     * batch-key value(s) from the parent. Switches exhaustively on the field's {@link KeyLift}
+     * (with the arity-bearing arms forking on their own {@link Arity}).
      *
      * <ul>
-     *   <li>{@link SourceKey.Reader.ColumnRead} (catalog FK on a class-backed parent's
+     *   <li>{@link KeyLift.FkColumns} (catalog FK on a class-backed parent's
      *       backing class) — emits {@code RowN<...>} via {@code DSL.row(...)} over per-column
      *       accessors derived from the {@link GraphitronType.ResultType} variant:
      *       <ul>
@@ -198,18 +199,18 @@ class GeneratorUtils {
      *         <li>{@link GraphitronType.PojoResultType}: {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
      *       </ul>
      *   </li>
-     *   <li>{@link SourceKey.Reader.SourceRowsCall} ({@code @sourceRows} lifter) — calls the
+     *   <li>{@link KeyLift.Lifter} ({@code @sourceRows} lifter) — calls the
      *       developer-supplied static lifter on the parent's backing class:
      *       {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}. Leaf-PK and
-     *       {@code @reference}-composed shapes share emit logic; the path identity is carried by
-     *       {@link SourceKey#path()} but not consumed here.</li>
-     *   <li>{@link SourceKey.Reader.AccessorCall} + {@link SourceKey.Cardinality#ONE} — single
+     *       {@code @reference}-composed shapes share emit logic; the path identity is carried
+     *       first-class on the leaf's {@code joinPath} but not consumed here.</li>
+     *   <li>{@link KeyLift.Accessor} + {@link Arity#ONE} — single
      *       typed {@code TableRecord} via instance accessor, projected to the element table's PK
      *       columns: <pre>{@code
      *   ElementRecord element = ((BackingClass) env.getSource()).<accessor>();
      *   RecordN<...> key = element.into(Tables.T.PK1, Tables.T.PK2);
      * }</pre></li>
-     *   <li>{@link SourceKey.Reader.AccessorCall} + {@link SourceKey.Cardinality#MANY} —
+     *   <li>{@link KeyLift.Accessor} + {@link Arity#MANY} —
      *       {@code List<X>} / {@code Set<X>} accessor; each element projects to a
      *       {@code RecordN<...>} key via a typed for-loop over {@code Iterable}: <pre>{@code
      *   List<RecordN<...>> keys = new ArrayList<>();
@@ -222,14 +223,15 @@ class GeneratorUtils {
      */
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
+            KeyLift lift,
             TableRef keyOwnerTable,
             GraphitronType.ResultType resultType) {
-        return buildRecordParentKeyExtraction(sourceKey, keyOwnerTable, resultType, SOURCE_FROM_ENV);
+        return buildRecordParentKeyExtraction(sourceKey, lift, keyOwnerTable, resultType, SOURCE_FROM_ENV);
     }
 
     /**
      * Source-bound variant of
-     * {@link #buildRecordParentKeyExtraction(SourceKey, TableRef, GraphitronType.ResultType)}.
+     * {@link #buildRecordParentKeyExtraction(SourceKey, KeyLift, TableRef, GraphitronType.ResultType)}.
      * {@code sourceExpr} is the Java expression the backing object is read from before the cast:
      * {@code env.getSource()} on the normal path, {@code success.value()} when this fetcher is an
      * immediate child of a flipped {@code Outcome} payload (R268) and the caller has already narrowed
@@ -238,44 +240,32 @@ class GeneratorUtils {
      * extraction rather than re-deriving it.
      *
      * <p>{@code keyOwnerTable} is the table whose typed {@code Tables.X.COL} constants the
-     * {@link SourceKey.Reader.AccessorCall} and single-cardinality
-     * {@link SourceKey.Reader.ProducedRecordRead} arms project the key through — the field's
+     * {@link KeyLift.Accessor} and single-arity
+     * {@link KeyLift.ProducedRecords} arms project the key through — the field's
      * return-type table on the child-field path, the hub table ({@code parentKeyOwnerTable}) on
      * the polymorphic record-parent path. Read off the carrier at the call site (R431); the
-     * other reader arms ignore it.
+     * other lift arms ignore it.
      */
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
+            KeyLift lift,
             TableRef keyOwnerTable,
             GraphitronType.ResultType resultType,
             CodeBlock sourceExpr) {
         TypeName keyType = sourceKey.keyElementType();
-        return switch (sourceKey.reader()) {
-            case SourceKey.Reader.ColumnRead ignored ->
+        return switch (lift) {
+            case KeyLift.FkColumns ignored ->
                 buildFkRowKey(sourceKey.columns(), keyType, resultType, sourceExpr);
-            case SourceKey.Reader.SourceRowsCall src ->
-                buildLifterRowKey(src.lifter(), keyType, resultType, sourceExpr);
-            case SourceKey.Reader.AccessorCall ac ->
-                sourceKey.cardinality() == SourceKey.Cardinality.MANY
+            case KeyLift.Lifter l ->
+                buildLifterRowKey(l.lifter(), keyType, resultType, sourceExpr);
+            case KeyLift.Accessor ac ->
+                ac.arity() == Arity.MANY
                     ? buildAccessorKeyMany(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr)
                     : buildAccessorKeySingle(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr);
-            case SourceKey.Reader.ServiceTableRecord ignored ->
-                throw new IllegalArgumentException(
-                    "buildRecordParentKeyExtraction does not handle Reader.ServiceTableRecord "
-                    + "(record-parent dispatch path only).");
-            case SourceKey.Reader.ServiceUntypedRecord ignored ->
-                throw new IllegalArgumentException(
-                    "buildRecordParentKeyExtraction does not handle Reader.ServiceUntypedRecord "
-                    + "(record-parent dispatch path only).");
-            case SourceKey.Reader.ResultRowWalk ignored ->
-                throw new IllegalArgumentException(
-                    "buildRecordParentKeyExtraction does not handle Reader.ResultRowWalk "
-                    + "(single-record DML carrier dispatch path; the parent is the mutation's "
-                    + "Result<RecordN<...>>, not a record-backed Java class).");
             // R305 — source=target carrier re-fetch: ONE reads the PK off the single produced
             // record; MANY iterates the produced collection, one PK key per element.
-            case SourceKey.Reader.ProducedRecordRead ignored ->
-                sourceKey.cardinality() == SourceKey.Cardinality.MANY
+            case KeyLift.ProducedRecords pr ->
+                pr.arity() == Arity.MANY
                     ? buildProducedRecordsKeyMany(sourceKey, resultType, sourceExpr)
                     : buildKeyExtractionWithNullCheck(sourceKey, keyOwnerTable, sourceExpr);
         };
@@ -324,7 +314,7 @@ class GeneratorUtils {
     }
 
     /**
-     * R305 — {@link SourceKey.Reader.ProducedRecordRead} at {@link SourceKey.Cardinality#MANY}: the
+     * R305 — {@link KeyLift.ProducedRecords} at {@link Arity#MANY}: the
      * source is the producer's held collection of target records (a {@code List<XRecord>} on
      * {@code env.getSource()} or {@code Outcome.Success.value()}). Iterates it and builds one
      * {@code RowN} PK key per element, collected into {@code List<key> keys} for the {@code LOAD_MANY}
@@ -447,7 +437,7 @@ class GeneratorUtils {
             return ClassName.bestGuess(jrt.fqClassName());
         }
         throw new IllegalStateException(
-            "Reader.SourceRowsCall must come from a PojoResultType.Backed or JavaRecordType parent; got "
+            "KeyLift.Lifter must come from a PojoResultType.Backed or JavaRecordType parent; got "
             + resultType.getClass().getSimpleName());
     }
 
@@ -459,11 +449,10 @@ class GeneratorUtils {
      * on the parent can never match {@code terminal.pk = parentInput.fk_value}, so dispatching
      * to the DataLoader is a wasted round-trip.
      *
-     * <p>Only {@link SourceKey.Wrap.Row} + {@link SourceKey.Reader.ColumnRead} reaches here
-     * (single-cardinality {@code @splitQuery} on a {@code @table} parent is the only caller
-     * today). The wrap check is asserted at the entry point; the reader narrowing rides on the
-     * call-site invariant ({@code @splitQuery} on a table-backed parent projects to
-     * {@code ColumnRead}).
+     * <p>Only {@link SourceKey.Wrap.Row} keys reach here (single-cardinality
+     * {@code @splitQuery} on a {@code @table} parent, and the single-arity
+     * {@link KeyLift.ProducedRecords} re-fetch, are the only callers today). The wrap check is
+     * asserted at the entry point; the column-read shape rides on the call-site invariant.
      */
     static CodeBlock buildKeyExtractionWithNullCheck(SourceKey sourceKey, TableRef parentTable) {
         return buildKeyExtractionWithNullCheck(sourceKey, parentTable, SOURCE_FROM_ENV);

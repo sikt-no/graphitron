@@ -700,7 +700,7 @@ public class GraphitronSchemaValidator {
      * {@code Row23}-doesn't-exist compile failure.
      *
      * <p>Reads {@code field.parentSourceKey().columns()} uniformly across all five
-     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Reader} permits the polymorphic parent
+     * {@link no.sikt.graphitron.rewrite.model.KeyLift} arms the polymorphic parent
      * can land on — the same column tuple the rows-method prelude uses, so the validator's
      * arity surface tracks the actual key tuple regardless of producer.
      *

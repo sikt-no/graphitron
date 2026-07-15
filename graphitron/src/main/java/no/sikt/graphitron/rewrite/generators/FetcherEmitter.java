@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -545,9 +546,8 @@ public final class FetcherEmitter {
         var recordType = ((SourceKey.Wrap.TableRecord) sk.wrap()).className();
         var keyColumns = sk.columns();
         var encoder = carrier.encode().encodeMethod();
-        boolean many = sk.cardinality() == SourceKey.Cardinality.MANY;
-        boolean outcomeWrapped = ((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope()
-            == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
+        boolean many = carrier.returnType().wrapper().isList();
+        boolean outcomeWrapped = carrier.envelope() == SourceEnvelope.OUTCOME_SUCCESS;
 
         var body = CodeBlock.builder();
         if (many) {
@@ -602,7 +602,7 @@ public final class FetcherEmitter {
             ChildField.RecordCompositeField field, String outputPackage) {
         boolean isList = field.returnType().wrapper().isList();
         boolean outcomeWrapped =
-            field.envelope() == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
+            field.envelope() == SourceEnvelope.OUTCOME_SUCCESS;
         ClassName compositeClass = ClassName.bestGuess(field.returnType().fqClassName());
         TypeName sourceType = isList
             ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), compositeClass)

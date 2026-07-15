@@ -178,7 +178,7 @@ public final class CatalogBuilder {
             var field = entry.getValue();
             boolean isPayloadData =
                 (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordTableField rtf
-                    && rtf.sourceKey().reader() instanceof no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead)
+                    && rtf.lift() instanceof no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords)
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
             if (isPayloadData) {

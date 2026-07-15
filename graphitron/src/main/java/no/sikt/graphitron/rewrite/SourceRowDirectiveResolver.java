@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -48,8 +49,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *
  * <ul>
  *   <li>Every successful {@code @sourceRow} resolution projects into {@code RecordTableField}
- *       or {@code RecordLookupTableField}; the produced {@link SourceKey}'s
- *       {@link SourceKey.Reader} is always {@link SourceKey.Reader.SourceRowsCall}.</li>
+ *       or {@code RecordLookupTableField}; the produced {@link KeyLift} is always the authored
+ *       {@link KeyLift.Lifter} arm.</li>
  *   <li>On the no-{@code @reference} path, the resolution carries an empty {@code joinPath}
  *       plus the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation (the leaf-PK
  *       shape; R431).</li>
@@ -92,13 +93,16 @@ final class SourceRowDirectiveResolver {
      */
     sealed interface Resolved {
         /**
-         * {@code lifted} is the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation for
+         * {@code lift} is always the authored {@link KeyLift.Lifter} arm ({@code @sourceRow}'s
+         * whole point is the developer-supplied lifter). {@code lifted} is the hop-less
+         * {@link ParentCorrelation.OnLiftedSlots} correlation for
          * the leaf-PK shape (no {@code @reference}; R431 — formerly a single {@code LiftedHop}
          * in the joinPath), {@code null} for the {@code @reference}-composed FK chain whose
          * correlation the caller derives from {@code joinPath}.
          */
         record Ok(
             SourceKey sourceKey,
+            KeyLift lift,
             LoaderRegistration loaderRegistration,
             List<JoinStep> joinPath,
             ParentCorrelation.OnLiftedSlots lifted,
@@ -339,34 +343,25 @@ final class SourceRowDirectiveResolver {
             }
         }
 
-        // 7. Construct the SourceKey + LoaderRegistration pair. Wrap is always Row (the lifter
-        // contract emits a RowN<...> key), Reader is SourceRowsCall(lifter). Cardinality follows
-        // the field wrapper. LoaderRegistration is the @sourceRow constant
+        // 7. Construct the SourceKey + KeyLift + LoaderRegistration triple. The lift is the
+        // authored Lifter arm; the key's wrap is its derivation (always Row — the lifter
+        // contract emits a RowN<...> key). LoaderRegistration is the @sourceRow constant
         // (POSITIONAL_LIST + LOAD_ONE + valueIsList from wrapper).
-        var lifterRef = new LifterRef(ClassName.get(lifterClass), lifterMethodName);
+        var lift = new KeyLift.Lifter(new LifterRef(ClassName.get(lifterClass), lifterMethodName));
         boolean isList = tbReturnType.wrapper().isList();
-        SourceKey.Cardinality cardinality = isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
         LoaderRegistration loaderRegistration = new LoaderRegistration(
             isList,
             LoaderRegistration.Container.POSITIONAL_LIST,
             LoaderRegistration.Dispatch.LOAD_ONE);
         return switch (derivation) {
             case Derivation.Leaf leaf -> {
-                SourceKey sourceKey = new SourceKey(
-                    leaf.expectedTuple(),
-                    new SourceKey.Wrap.Row(),
-                    cardinality,
-                    new SourceKey.Reader.SourceRowsCall(lifterRef));
-                yield new Resolved.Ok(sourceKey, loaderRegistration, List.of(),
+                SourceKey sourceKey = new SourceKey(leaf.expectedTuple(), lift.wrap());
+                yield new Resolved.Ok(sourceKey, lift, loaderRegistration, List.of(),
                     new ParentCorrelation.OnLiftedSlots(leafTable, leaf.expectedTuple()), tbReturnType);
             }
             case Derivation.Path path -> {
-                SourceKey sourceKey = new SourceKey(
-                    path.expectedTuple(),
-                    new SourceKey.Wrap.Row(),
-                    cardinality,
-                    new SourceKey.Reader.SourceRowsCall(lifterRef));
-                yield new Resolved.Ok(sourceKey, loaderRegistration, path.steps(), null, tbReturnType);
+                SourceKey sourceKey = new SourceKey(path.expectedTuple(), lift.wrap());
+                yield new Resolved.Ok(sourceKey, lift, loaderRegistration, path.steps(), null, tbReturnType);
             }
         };
     }

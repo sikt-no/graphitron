@@ -40,9 +40,9 @@ class RecordLookupTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
-    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, false);
-    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, true);
-    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
+    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
     private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
     private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
@@ -61,33 +61,33 @@ class RecordLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61",
-            new RecordLookupTableField("Language", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP,
+            new RecordLookupTableField("Language", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), LR_SINGLE, EMPTY_LOOKUP,
                 /* parentCorrelation */ null),
             List.of()),
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordLookupTableField("Language", "film", null, RT_SINGLE,
                 FK_PATH,
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), LR_SINGLE, EMPTY_LOOKUP,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies, no validation error (R232)",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
                 CONDITION_PATH,
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, TestFixtures.fkColumnsLift(), LR_LIST, EMPTY_LOOKUP,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
                 FK_PATH,
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, TestFixtures.fkColumnsLift(), LR_LIST, EMPTY_LOOKUP,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — lookup-field rejection",
-            new RecordLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP,
+            new RecordLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, TestFixtures.fkColumnsLift(), LR_CONN, EMPTY_LOOKUP,
                 /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 

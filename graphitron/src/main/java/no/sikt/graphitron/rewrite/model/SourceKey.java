@@ -8,72 +8,45 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Singular per-field metadata for a DataLoader-backed (or otherwise source-bearing) child
- * field. A flat record whose components encode orthogonal axes the dispatch sites resolve
- * by reading components rather than {@code instanceof} branches.
+ * The batch key extracted from a source-bearing field's parent: the key column tuple plus the
+ * Java shape one emitted key row takes. Nothing about where the key points (the leaf's
+ * {@code returnType.table()} / {@link ParentCorrelation}), how it is lifted off the parent
+ * ({@link KeyLift} on the record-parent leaves), or what envelope the parent arrived in
+ * ({@link SourceEnvelope} on the carrier leaves). R431 decomposed the former six-component
+ * record onto those facts; this residue is what remains — and it is exactly the
+ * {@code (wrap, columns)} pair the partial carriers ({@link MethodRef.Param.Sourced},
+ * {@link ParamSource.Sources}, {@code ServiceCatalog.SourcesShape}) always held.
  *
- * <p>Pairs with {@link LoaderRegistration} (DataLoader container kind + dispatch shape) at
- * the field-classifier site: one {@link SourceKey} per field; the {@link LoaderRegistration}
- * is a separate value because the same {@link SourceKey} shape can be loaded into either a
- * positional or mapped DataLoader container.
+ * <p>Pairs with {@link LoaderRegistration} (DataLoader container kind + dispatch shape) at the
+ * field-classifier site: one {@code SourceKey} per {@link BatchKeyField}; the
+ * {@link LoaderRegistration} is a separate value because the same key shape can be loaded into
+ * either a positional or mapped DataLoader container.
  *
  * <h2>Components</h2>
  *
  * <ul>
  *   <li>{@link #columns()} — entry-point columns for the rows-method's parent-input VALUES
  *       table: target-side columns for the catalog-FK / accessor arms, first-hop source-side
- *       columns for the {@code @sourceRow + @reference} chain. (R431: the {@code path}
- *       component — a denormalized copy of the {@code joinPath} carried first-class on the
- *       leaves, plus the smuggled single {@code LiftedHop} now expressed as
- *       {@code ParentCorrelation.OnLiftedSlots} — is deleted; it had zero generator
- *       readers.)</li>
- *   <li>{@link #wrap()} — the Java shape of one row of source data:
- *       {@link Wrap.Row} ({@code RowN<...>}), {@link Wrap.Record} ({@code RecordN<...>}),
- *       or {@link Wrap.TableRecord} (the typed jOOQ {@code TableRecord} subclass, with the
- *       {@link ClassName} payload).</li>
- *   <li>{@link #cardinality()} — {@link Cardinality#ONE} (one source row per
- *       DataLoader key) or {@link Cardinality#MANY} (a list / accessor walk).</li>
- *   <li>{@link #reader()} — the rows-method body's input contract (where the body reads
- *       its data from): catalog-FK column, typed accessor on a class-backed parent,
- *       {@code @sourceRows} static lifter, or {@code @service} return record.</li>
- * </ul>
- *
- * <h2>Compact-constructor invariants</h2>
- *
- * <p>Cross-axis consistency rules. Each rejection here is a classifier-side bug (a producer
- * built a malformed key); the classifier is expected to never produce these shapes, and the
- * rejections double as a tripwire for future producers.
- *
- * <ul>
- *   <li>{@link Reader.SourceRowsCall} → {@link Wrap#ROW}. The {@code @sourceRows} lifter
- *       contract pins output to entry-point columns shaped as {@code RowN<...>}.</li>
- *   <li>{@link Reader.AccessorCall} → {@link Wrap#RECORD}. The accessor returns a
- *       {@code TableRecord}; both the single ({@code AccessorKeyedSingle}) and the
- *       loadMany ({@code AccessorKeyedMany}) projections produce {@code RecordN<...>} keys
- *       at emit time.</li>
- *   <li>{@link Reader.ResultRowWalk} → {@link Wrap.Record} or {@link Wrap.TableRecord}.
- *       The upstream producer (DML mutation fetcher or carrier-shaped {@code @service}
- *       method) emits target-aligned rows; cardinality determines whether the consumer sees
- *       a single row ({@link Cardinality#ONE}) or a list / {@code Result}
- *       ({@link Cardinality#MANY}). (R431: the {@code TableRecord} className-equals-target
- *       and the {@code ServiceTableRecord} target-aligned empty-path checks asserted a
- *       denormalized copy agreed with its source; they left with the {@code target}
- *       component. The two empty-path checks lost their carrier when {@code path}
- *       deleted.)</li>
+ *       columns for the {@code @sourceRow + @reference} chain.</li>
+ *   <li>{@link #wrap()} — the Java shape of one key row: {@link Wrap.Row} ({@code RowN<...>}),
+ *       {@link Wrap.Record} ({@code RecordN<...>}), or {@link Wrap.TableRecord} (the typed jOOQ
+ *       {@code TableRecord} subclass, with the {@link ClassName} payload). Stored where the
+ *       shape is authored (the {@code @splitQuery} source-shape choice, the {@code @service}
+ *       {@code Sources} signature); derived from the lift arm ({@link KeyLift#wrap()}) where it
+ *       is inferred (the record-parent leaves, whose constructors pin the derivation via
+ *       {@link KeyLift#checkResidueAgreement}).</li>
  * </ul>
  */
 public record SourceKey(
     List<ColumnRef> columns,
-    Wrap wrap,
-    Cardinality cardinality,
-    Reader reader
+    Wrap wrap
 ) {
 
     /**
-     * The Java shape of one row of source data. Sealed so the {@link TableRecord} arm can
-     * carry the developer-declared {@code TableRecord} subclass payload that the column-tuple
-     * arms have no use for; {@link #keyElementType()} is total without an extra nullable
-     * field on {@link SourceKey}.
+     * The Java shape of one key row. Sealed so the {@link TableRecord} arm can carry the
+     * developer-declared {@code TableRecord} subclass payload that the column-tuple arms have
+     * no use for; {@link #keyElementType()} is total without an extra nullable field on
+     * {@link SourceKey}.
      */
     public sealed interface Wrap {
         /** {@code RowN<...>} — values only, no value-N accessors. */
@@ -92,51 +65,9 @@ public record SourceKey(
         }
     }
 
-    /** Source-side cardinality per DataLoader key. */
-    public enum Cardinality {
-        /** One source row per key (catalog-FK, accessor-single, service-target-aligned). */
-        ONE,
-        /** Many source rows per key (list-valued source, accessor-many, list-valued service). */
-        MANY
-    }
-
     public SourceKey {
-        Objects.requireNonNull(reader, "reader");
         Objects.requireNonNull(wrap, "wrap");
-        Objects.requireNonNull(cardinality, "cardinality");
         columns = List.copyOf(columns);
-
-        if (reader instanceof Reader.SourceRowsCall && !(wrap instanceof Wrap.Row)) {
-            throw new IllegalArgumentException(
-                "SourceKey: Reader.SourceRowsCall requires Wrap.Row (lifter contract pins "
-                + "output to RowN<...>); got " + wrap);
-        }
-        if (reader instanceof Reader.AccessorCall && !(wrap instanceof Wrap.Record)) {
-            throw new IllegalArgumentException(
-                "SourceKey: Reader.AccessorCall requires Wrap.Record (accessor returns "
-                + "TableRecord; rows-method body reads valueN() off the key); got " + wrap);
-        }
-        if (reader instanceof Reader.ResultRowWalk rrw) {
-            boolean wrapOk = wrap instanceof Wrap.Record || wrap instanceof Wrap.TableRecord;
-            if (!wrapOk) {
-                throw new IllegalArgumentException(
-                    "SourceKey: Reader.ResultRowWalk requires Wrap.Record or "
-                    + "Wrap.TableRecord (upstream producer emits target-aligned rows; the "
-                    + "data-field fetcher's typed source read relies on wrap to type the row "
-                    + "shape); got " + wrap);
-            }
-            // R275: the Outcome envelope only ever pairs with the @service carrier (Wrap.TableRecord);
-            // the DML carrier (Wrap.Record) delivers its row(s) bare on env.getSource(). Pinning the
-            // coupling here lets the data-field emitter handle the narrowing in the TableRecord arm
-            // only, with no envelope branch in the Record (DML) arm.
-            if (rrw.envelope() == Reader.SourceEnvelope.OUTCOME_SUCCESS
-                    && !(wrap instanceof Wrap.TableRecord)) {
-                throw new IllegalArgumentException(
-                    "SourceKey: Reader.ResultRowWalk(OUTCOME_SUCCESS) requires Wrap.TableRecord "
-                    + "(the Outcome envelope is the @service error-channel carrier, whose producer "
-                    + "returns a typed TableRecord); got " + wrap);
-            }
-        }
     }
 
     /**
@@ -157,9 +88,8 @@ public record SourceKey(
     /**
      * Static derivation of the DataLoader key element type from the {@code (wrap, columns)}
      * pair alone. Used by {@link MethodRef.Param.Sourced} and {@link ParamSource.Sources}
-     * consumers that hold the triple {@code (wrap, columns, container)} directly without a
-     * full {@link SourceKey} (only the source-shape side of the data is available, not the
-     * field-side {@code cardinality} / {@code reader}).
+     * consumers that hold the pair {@code (wrap, columns[, container])} directly without a
+     * full {@link SourceKey}.
      */
     public static TypeName keyElementType(Wrap wrap, List<ColumnRef> columns) {
         return switch (wrap) {
@@ -175,153 +105,5 @@ public record SourceKey(
             .map(ColumnRef::columnType)
             .toArray(TypeName[]::new);
         return ParameterizedTypeName.get(container, args);
-    }
-
-    /**
-     * The rows-method body's input contract.
-     *
-     * <p>The permits split on what data the rows-method body reads to produce its
-     * output:
-     *
-     * <ul>
-     *   <li>{@link ColumnRead} — read FK columns from the parent record (catalog-FK arms on
-     *       table-backed parents, or class-backed parents whose backing class is a
-     *       jOOQ {@code TableRecord}).</li>
-     *   <li>{@link AccessorCall} — call a typed zero-arg instance accessor on the parent's
-     *       backing class (single or list/set cardinality recorded by
-     *       {@link SourceKey#cardinality()}).</li>
-     *   <li>{@link SourceRowsCall} — call a {@code @sourceRows} static lifter on a utility
-     *       class to produce a {@code RowN<...>} (single-hop and FK-chain shapes both).</li>
-     *   <li>{@link ServiceTableRecord} — invoke a {@code @service} method whose return
-     *       type is a typed jOOQ {@code TableRecord}.</li>
-     *   <li>{@link ServiceUntypedRecord} — invoke a {@code @service} method whose return
-     *       type is {@code Record<>} or scalar; no typed {@code TableRecord} subclass.</li>
-     *   <li>{@link ResultRowWalk} — source rows come from a {@code Result<RecordN<...>>}
-     *       that an upstream DML mutation fetcher produced and graphql-java is now
-     *       traversing. The data field's fetcher reads {@code env.getSource()} typed by
-     *       {@link SourceKey#wrap()} × {@link SourceKey#columns()} and extracts
-     *       {@code SourceRow} instances directly; no DataLoader, no
-     *       {@link LoaderRegistration}.</li>
-     *   <li>{@link ProducedRecordRead} — the source <em>is</em> the produced target record(s):
-     *       a DML or {@code @service} producer handed back the target table's record(s), and
-     *       the field reads the identifying PK off them to re-project the {@code @table}
-     *       (source=target re-fetch).</li>
-     * </ul>
-     */
-    public sealed interface Reader {
-
-        /**
-         * How a {@link ResultRowWalk} reaches its source row(s) inside {@code env.getSource()}.
-         * The row shape ({@link Wrap}) is identical on both arms; this axis records only the
-         * outer envelope the upstream producer wrapped the row(s) in, so the data-field fetcher
-         * knows whether to read {@code env.getSource()} directly or unwrap an {@code Outcome} first.
-         */
-        enum SourceEnvelope {
-            /** {@code env.getSource()} is the row(s) directly (DML mutation carrier). */
-            DIRECT,
-            /**
-             * {@code env.getSource()} is the non-null {@code Outcome} of an error-channel
-             * {@code @service} carrier (R244/R275): the row(s) live in
-             * {@code Outcome.Success.value()}, and the {@code Outcome.ErrorList} arm resolves the
-             * data field to {@code null}. Set at classification time when the carrier payload
-             * carries an {@code errors} field, the same condition that gives the producer its
-             * {@code ErrorChannel.Mapped} channel.
-             */
-            OUTCOME_SUCCESS
-        }
-
-        /**
-         * Catalog-FK column read off the parent record. The body emits
-         * {@code parent.get(fkColumn)} (or the equivalent indexed access against a
-         * {@code TableRecord}) and packages the result as a {@code RowN<...>} key.
-         */
-        record ColumnRead() implements Reader {}
-
-        /**
-         * Typed zero-arg instance accessor on a class-backed parent's backing class
-         * whose return type is a concrete jOOQ {@code TableRecord} (single, list, or set
-         * cardinality recorded by {@link SourceKey#cardinality()} +
-         * {@link LoaderRegistration#container()}, not by the {@link Reader} permit).
-         */
-        record AccessorCall(AccessorRef accessor) implements Reader {
-            public AccessorCall {
-                Objects.requireNonNull(accessor, "accessor");
-            }
-        }
-
-        /**
-         * {@code @sourceRows} static lifter producing a {@code RowN<...>} batch key from a
-         * class-backed parent's backing class.
-         */
-        record SourceRowsCall(LifterRef lifter) implements Reader {
-            public SourceRowsCall {
-                Objects.requireNonNull(lifter, "lifter");
-            }
-        }
-
-        /**
-         * {@code @service} method whose return type is a typed jOOQ {@code TableRecord}
-         * subclass. {@code recordType} is the resolved {@link ClassName} of that subclass
-         * (e.g. {@code FilmRecord}); the rows-method body's call shape uses it to type the
-         * loader's per-key value and the rows-method's outer return.
-         */
-        record ServiceTableRecord(ClassName recordType) implements Reader {
-            public ServiceTableRecord {
-                Objects.requireNonNull(recordType, "recordType");
-            }
-        }
-
-        /**
-         * {@code @service} method whose return type is {@code Record<>} or scalar — no
-         * typed {@code TableRecord} subclass. The rows-method body falls back to the
-         * scalar / untyped record code path; the loader's per-key value is the field's
-         * scalar Java type or raw {@code org.jooq.Record}.
-         */
-        record ServiceUntypedRecord() implements Reader {}
-
-        /**
-         * Source rows come from an upstream producer's row(s) that graphql-java is now
-         * traversing. The data field's fetcher reads them off {@code env.getSource()} typed by
-         * {@link SourceKey#wrap()} × {@link SourceKey#columns()} and extracts {@code SourceRow}
-         * instances directly; the single-record carrier's data field is plain {@code DataFetcher},
-         * not DataLoader-batched, so the paired {@link LoaderRegistration} is absent at the field
-         * record level.
-         *
-         * <p>{@link #envelope()} records whether {@code env.getSource()} is the row(s) directly
-         * ({@link SourceEnvelope#DIRECT}, DML mutation carrier) or the non-null {@code Outcome} of
-         * an error-channel {@code @service} carrier ({@link SourceEnvelope#OUTCOME_SUCCESS}, whose
-         * row(s) live in {@code Outcome.Success.value()}). This is the only difference between the
-         * DML and {@code @service} error-channel carriers at the read site, so it rides on the
-         * reader rather than being re-derived from sibling fields at emit time.
-         *
-         * <p>Target-aligned by construction (the producer's row shape IS the data
-         * table); {@link SourceKey#wrap()} is either
-         * {@link Wrap.Record} (DML mutation fetcher producer emits {@code RecordN<...>})
-         * or {@link Wrap.TableRecord} ({@code @service} payload producer returns
-         * a typed {@code XRecord} or {@code List<XRecord>} verbatim). Cardinality matches
-         * the producer's output cardinality (single → {@link Cardinality#ONE}; list →
-         * {@link Cardinality#MANY}). The structural invariants are enforced by
-         * {@link SourceKey}'s compact constructor.
-         */
-        record ResultRowWalk(SourceEnvelope envelope) implements Reader {
-            public ResultRowWalk {
-                Objects.requireNonNull(envelope, "envelope");
-            }
-        }
-
-        /**
-         * R305: the source <em>is</em> the produced target record(s). A carrier's producer (DML
-         * write or {@code @service}) handed back the target table's record(s) on
-         * {@code env.getSource()} (or {@code Outcome.Success.value()}); the field reads the
-         * identifying PK off them and re-projects the {@code @table} — a source=target re-fetch. The
-         * read feeds the same Split-rows rows-method as the other readers (the shape is identical);
-         * the source-read is the only difference. {@link Cardinality#ONE} reads the PK off the single
-         * source record; {@link Cardinality#MANY} iterates the held collection, one PK key per
-         * element (the {@code LOAD_MANY} contract that emits one row per key). The source envelope
-         * ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is handled by the generator at the type level
-         * ({@code sourceIsOutcome}), not carried here. Pairs with {@link Wrap.Row} (the key is a
-         * {@code RowN} PK tuple).
-         */
-        record ProducedRecordRead() implements Reader {}
     }
 }

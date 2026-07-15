@@ -233,14 +233,17 @@ public sealed interface ChildField extends OutputField
      *
      * <p>{@link #table()} is the producer's table, whose typed {@code Tables.X.COL} constants
      * the encode reads (R431: first-class on the leaf, no longer a {@code SourceKey} slot).
-     * The {@link #sourceKey()} carries the node-key columns the encode
-     * reads, {@link SourceKey.Wrap.TableRecord}, the producer cardinality, and
-     * {@link SourceKey.Reader.ResultRowWalk} whose {@link SourceKey.Reader.SourceEnvelope}
-     * ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is the same axis the table-field sibling's
-     * emitter forks on; the compact constructor narrows the reader/wrap pairing. The
-     * {@link #encode} compaction mirrors the slot every other NodeId-encoded projection uses.
-     * Declines {@link TableTargetField} (element is the {@code ID} scalar) and
-     * {@link BatchKeyField} (no DataLoader).
+     * The {@link #sourceKey()} carries the node-key columns the encode reads and
+     * {@link SourceKey.Wrap.TableRecord} (the producer's typed record subclass — required by
+     * the compact constructor, which is the named join site for the retired
+     * {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒ {@code TableRecord} invariant: this leaf is the
+     * only {@link #envelope()}-bearing typed-record read, and it requires the typed wrap
+     * unconditionally). {@link #envelope()} ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is the
+     * same axis the table-field sibling's emitter derives at the type level as
+     * {@code sourceIsOutcome}; the bulk arrival is the field's own wrapper position
+     * ({@code returnType().wrapper().isList()}). The {@link #encode} compaction mirrors the
+     * slot every other NodeId-encoded projection uses. Declines {@link TableTargetField}
+     * (element is the {@code ID} scalar) and {@link BatchKeyField} (no DataLoader).
      */
     record SingleRecordIdField(
         String parentTypeName,
@@ -249,15 +252,12 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef.ScalarReturnType returnType,
         TableRef table,
         SourceKey sourceKey,
+        SourceEnvelope envelope,
         CallSiteCompaction.NodeIdEncodeKeys encode
     ) implements ChildField {
         public SingleRecordIdField {
             java.util.Objects.requireNonNull(table, "table");
-            if (!(sourceKey.reader() instanceof SourceKey.Reader.ResultRowWalk)) {
-                throw new IllegalArgumentException(
-                    "SingleRecordIdField requires SourceKey with Reader.ResultRowWalk; got "
-                    + sourceKey.reader().getClass().getSimpleName());
-            }
+            java.util.Objects.requireNonNull(envelope, "envelope");
             if (!(sourceKey.wrap() instanceof SourceKey.Wrap.TableRecord)) {
                 throw new IllegalArgumentException(
                     "SingleRecordIdField requires SourceKey.Wrap.TableRecord (the @service "
@@ -642,12 +642,15 @@ public sealed interface ChildField extends OutputField
         List<JoinStep> joinPath,
         MethodRef method,
         SourceKey sourceKey,
+        KeyLift lift,
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel> errorChannel,
         ParentCorrelation parentCorrelation
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
         public RecordTableMethodField {
+            java.util.Objects.requireNonNull(lift, "lift");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableMethodField");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "RecordTableMethodField");
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
@@ -715,6 +718,7 @@ public sealed interface ChildField extends OutputField
         List<ParticipantRef> participants,
         java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
         SourceKey parentSourceKey,
+        KeyLift parentKeyLift,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
     ) implements ChildField {
@@ -725,8 +729,10 @@ public sealed interface ChildField extends OutputField
             // unconditionally; carry the non-null contract in the type system rather than
             // by reviewer-tracked correspondence.
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
+            java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
+            KeyLift.checkResidueAgreement(parentKeyLift, parentSourceKey, "InterfaceField");
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
@@ -746,6 +752,7 @@ public sealed interface ChildField extends OutputField
         List<ParticipantRef> participants,
         java.util.Map<String, ParticipantCorrelation> participantJoinPaths,
         SourceKey parentSourceKey,
+        KeyLift parentKeyLift,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
     ) implements ChildField {
@@ -753,8 +760,10 @@ public sealed interface ChildField extends OutputField
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
+            java.util.Objects.requireNonNull(parentKeyLift, "parentKeyLift");
             java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
+            KeyLift.checkResidueAgreement(parentKeyLift, parentSourceKey, "UnionField");
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
@@ -926,11 +935,14 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         SourceKey sourceKey,
+        KeyLift lift,
         LoaderRegistration loaderRegistration,
         ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField {
         public RecordTableField {
+            java.util.Objects.requireNonNull(lift, "lift");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableField");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "RecordTableField");
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
@@ -959,12 +971,15 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         SourceKey sourceKey,
+        KeyLift lift,
         LoaderRegistration loaderRegistration,
         LookupMapping lookupMapping,
         ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField, LookupField {
         public RecordLookupTableField {
+            java.util.Objects.requireNonNull(lift, "lift");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordLookupTableField");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "RecordLookupTableField");
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
@@ -1019,7 +1034,7 @@ public sealed interface ChildField extends OutputField
      * wrapped in the typed {@code Outcome} when the payload carries an errors field. This data field
      * is a <em>source passthrough projection</em>: its fetcher reads the producer's in-memory
      * record(s) straight off {@code env.getSource()} (narrowing {@code Outcome.Success.value()} under
-     * {@link SourceKey.Reader.SourceEnvelope#OUTCOME_SUCCESS}) and returns them verbatim, with no
+     * {@link SourceEnvelope#OUTCOME_SUCCESS}) and returns them verbatim, with no
      * DataLoader, no re-fetch, and no SQL. graphql-java then maps each composite element onto the
      * data field's element SDL type ({@code returnType}), whose {@code @field}-mapped {@code @table}
      * children resolve through the record-backed accessor path off the composite.
@@ -1047,7 +1062,7 @@ public sealed interface ChildField extends OutputField
         String name,
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
-        SourceKey.Reader.SourceEnvelope envelope
+        SourceEnvelope envelope
     ) implements ChildField {
         public RecordCompositeField {
             java.util.Objects.requireNonNull(returnType, "returnType");

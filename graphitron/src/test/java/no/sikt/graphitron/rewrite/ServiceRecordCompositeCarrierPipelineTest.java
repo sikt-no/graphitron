@@ -79,7 +79,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         var rc = (ChildField.RecordCompositeField) data;
         assertThat(rc.returnType().wrapper().isList()).isTrue();
         assertThat(rc.returnType().fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestFilmWithActorsDto");
-        assertThat(rc.envelope()).isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(rc.envelope()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.OUTCOME_SUCCESS);
 
         // The errors field rides the Outcome WrapperArm transport.
         var errors = schema.field("CreateFilmsPayload", "errors");
@@ -96,7 +96,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
         var actorsRtf = (ChildField.RecordTableField) actors;
         assertThat(actorsRtf.returnType().table().tableName()).isEqualTo("actor");
-        assertThat(actorsRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(actorsRtf.returnType().wrapper().isList()).isTrue();
 
         assertThat(schema.diagnostics()).isEmpty();
     }
@@ -122,7 +122,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(data).isInstanceOf(ChildField.RecordCompositeField.class);
         var rc = (ChildField.RecordCompositeField) data;
         assertThat(rc.returnType().wrapper().isList()).isFalse();
-        assertThat(rc.envelope()).isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(rc.envelope()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.OUTCOME_SUCCESS);
         assertThat(schema.diagnostics()).isEmpty();
     }
 
@@ -214,7 +214,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         var rc = (ChildField.RecordCompositeField) data;
         assertThat(rc.returnType().wrapper().isList()).isFalse();
         assertThat(rc.returnType().fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestFilmWithActorsDto");
-        assertThat(rc.envelope()).isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(rc.envelope()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.OUTCOME_SUCCESS);
 
         // The composite's @field-mapped @table children still resolve through the record-backed
         // accessor path, unchanged by the list carrier.
@@ -223,8 +223,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(((ChildField.RecordTableField) film).returnType().table().tableName()).isEqualTo("film");
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(((ChildField.RecordTableField) actors).sourceKey().cardinality())
-            .isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(((ChildField.RecordTableField) actors).returnType().wrapper().isList()).isTrue();
 
         assertThat(schema.diagnostics()).isEmpty();
     }
@@ -288,7 +287,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
         var data = schema.field("CreateFilmsPayload", "results");
         assertThat(data).isInstanceOf(ChildField.RecordCompositeField.class);
         assertThat(((ChildField.RecordCompositeField) data).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.DIRECT);
+            .isEqualTo(no.sikt.graphitron.rewrite.model.SourceEnvelope.DIRECT);
     }
 
     /**
@@ -337,14 +336,14 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
         var filmRtf = (ChildField.RecordTableField) film;
         assertThat(filmRtf.returnType().table().tableName()).isEqualToIgnoringCase("film");
-        assertThat(filmRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(filmRtf.returnType().wrapper().isList()).isFalse();
 
         // The to-many child likewise resolves (list cardinality), not dropped to UnclassifiedField.
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
         var actorsRtf = (ChildField.RecordTableField) actors;
         assertThat(actorsRtf.returnType().table().tableName()).isEqualToIgnoringCase("actor");
-        assertThat(actorsRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(actorsRtf.returnType().wrapper().isList()).isTrue();
 
         assertThat(schema.diagnostics()).isEmpty();
     }

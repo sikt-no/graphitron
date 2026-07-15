@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -97,10 +99,10 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
             .isInstanceOf(ChildField.RecordTableField.class);
         var rtf = (ChildField.RecordTableField) field;
 
-        var sk = rtf.sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("events");
-        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
+            assertThat(ac.accessor().methodName()).isEqualTo("events");
+            assertThat(ac.arity()).isEqualTo(Arity.MANY);
+        });
         // The source target is the qualified element table, pinned by class identity (its name()
         // is the verbatim "multischema_a.event" echo; tableClass is jOOQ's Event under schema A).
         assertThat(rtf.returnType().table().tableClass()).isEqualTo(SCHEMA_A_EVENT);

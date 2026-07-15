@@ -15,7 +15,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
  * Single entry point for emitting a DataLoader rows-method's {@link MethodSpec}. Consumed by
  * the five rows-method emitter sites in R38 Phase 2 (today: {@code SplitRowsMethodEmitter}'s
  * four entry points + {@code TypeFetcherGenerator.buildServiceRowsMethod}); each construction
- * site projects from the field's {@code (SourceKey.reader(), LoaderRegistration.container())}
+ * site projects from the field's {@code (variant, LoaderRegistration.container())}
  * pair to the matching {@link RowsMethodBody} permit and hands it here.
  *
  * <p>Owns the per-method declaration scaffolding:

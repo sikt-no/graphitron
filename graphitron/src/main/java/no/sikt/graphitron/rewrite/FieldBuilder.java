@@ -64,6 +64,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.KeyLift;
+import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -261,30 +263,15 @@ class FieldBuilder {
     }
 
     /**
-     * Builds the service-table-field's {@link SourceKey} from the resolved {@code @service}
-     * method's {@code Sources} parameter and the field's table-bound return type. Reads
-     * {@code wrap} and {@code columns} directly off {@code sourced}.
+     * Builds a service-backed field's {@link SourceKey} from the resolved {@code @service}
+     * method's {@code Sources} parameter: the {@code (columns, wrap)} pair read directly off
+     * the signature fact. (R431: the retired {@code ServiceTableRecord} /
+     * {@code ServiceUntypedRecord} reader arms duplicated the producer's declared return shape,
+     * a {@link MethodRef} fact, and were dispatch-dead — the service rows-method emit reads the
+     * method and return type directly.)
      */
-    private static SourceKey buildServiceTableSourceKey(
-            MethodRef.Param.Sourced sourced, ReturnTypeRef.TableBoundReturnType rt) {
-        return new SourceKey(
-            sourced.columns(),
-            sourced.wrap(),
-            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
-    }
-
-    /**
-     * Builds the service-record-field's {@link SourceKey} from the resolved {@code @service}
-     * method's {@code Sources} parameter and the field's (untyped) return type.
-     */
-    private static SourceKey buildServiceRecordSourceKey(
-            MethodRef.Param.Sourced sourced, ReturnTypeRef rt) {
-        return new SourceKey(
-            sourced.columns(),
-            sourced.wrap(),
-            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ServiceUntypedRecord());
+    private static SourceKey buildServiceSourceKey(MethodRef.Param.Sourced sourced) {
+        return new SourceKey(sourced.columns(), sourced.wrap());
     }
 
     /**
@@ -980,12 +967,14 @@ class FieldBuilder {
                     Rejection.structural("multi-table interface child field requires a non-empty "
                         + "primary key on parent type '" + parentTypeName + "'"));
             }
-            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = buildTableBackedPolymorphicParentSourceKey(pkCols);
+            var parentKeyLift = new KeyLift.FkColumns();
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey =
+                buildTableBackedPolymorphicParentSourceKey(pkCols, parentKeyLift);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new InterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                interfaceType.participants(), resolved.paths(), parentSourceKey,
+                interfaceType.participants(), resolved.paths(), parentSourceKey, parentKeyLift,
                 parentTableType.table(), parentResultType);
         }
 
@@ -1001,12 +990,14 @@ class FieldBuilder {
                     Rejection.structural("multi-table union child field requires a non-empty "
                         + "primary key on parent type '" + parentTypeName + "'"));
             }
-            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = buildTableBackedPolymorphicParentSourceKey(pkCols);
+            var parentKeyLift = new KeyLift.FkColumns();
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey =
+                buildTableBackedPolymorphicParentSourceKey(pkCols, parentKeyLift);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new UnionField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                unionType.participants(), resolved.paths(), parentSourceKey,
+                unionType.participants(), resolved.paths(), parentSourceKey, parentKeyLift,
                 parentTableType.table(), parentResultType);
         }
 
@@ -5388,7 +5379,7 @@ class FieldBuilder {
      * {@code @service} carrier's producer routes through the typed {@code Outcome} wrapper (the
      * mutation field's {@link ErrorChannel.Mapped} channel from
      * {@link #resolveServiceOutcomeChannel}); the data field uses it to record its
-     * {@link SourceKey.Reader.SourceEnvelope}. Mirrors the errors-field detection in
+     * {@link SourceEnvelope}. Mirrors the errors-field detection in
      * {@code resolveServiceOutcomeChannel} so the consumer-side envelope and the producer-side
      * channel agree on the same structural signal.
      */
@@ -5409,12 +5400,12 @@ class FieldBuilder {
      * {@code @service} producer) collapse into {@link ChildField.RecordTableField} — a
      * source=target re-fetch. The producer hands back the target table's record on
      * {@code env.getSource()}; the field re-projects the {@code @table} by correlating the record's
-     * primary key to the catalog rows. Modeled as the {@code @sourceRow} leaf shape: a single
-     * {@link JoinStep.LiftedHop} over the target PK (each {@link JoinSlot.LifterSlot} folds the
-     * source side and target side onto one {@link ColumnRef}, the source=target key fact),
-     * {@link SourceKey.Reader.ColumnRead} (the data-fetcher reads the PK off the source record via
-     * the enclosing type's {@code ResultType}), {@link SourceKey.Wrap.Row} (the DataLoader key is a
-     * {@code RowN} PK tuple), and the {@code @sourceRow} {@link LoaderRegistration} constant. The
+     * primary key to the catalog rows. Modeled as the hop-less lifted shape:
+     * {@link ParentCorrelation.OnLiftedSlots} over the target PK (the source=target key fact),
+     * {@link KeyLift.ProducedRecords} carrying the produced wrapper's arity (the data-fetcher
+     * reads the PK off the source record via the enclosing type's {@code ResultType}; the
+     * DataLoader key is a {@code RowN} PK tuple, the lift arm's derived wrap), and the
+     * {@code @sourceRow} {@link LoaderRegistration} constant. The
      * source envelope ({@code DIRECT} vs {@code OUTCOME_SUCCESS}) is derived at the type level by the
      * generator ({@code sourceIsOutcome}), not carried on the key. R305 batches every re-fetch field
      * (source cardinality {@code Many}); the single-source case is a correct one-element batch.
@@ -5425,14 +5416,8 @@ class FieldBuilder {
         TableRef targetTable = tb.table();
         List<ColumnRef> pkColumns = targetTable.primaryKeyColumns();
         boolean isList = tb.wrapper().isList();
-        SourceKey.Cardinality cardinality = isList
-            ? SourceKey.Cardinality.MANY
-            : SourceKey.Cardinality.ONE;
-        SourceKey sourceKey = new SourceKey(
-            pkColumns,
-            new SourceKey.Wrap.Row(),
-            cardinality,
-            new SourceKey.Reader.ProducedRecordRead());
+        var lift = new KeyLift.ProducedRecords(isList ? Arity.MANY : Arity.ONE);
+        SourceKey sourceKey = new SourceKey(pkColumns, lift.wrap());
         // ONE: a single produced record -> one key, loader.load. MANY: a held collection -> one key
         // per element, loader.loadMany (one re-projected row per key). valueIsList is false either
         // way: each PK key resolves to exactly one target row.
@@ -5446,7 +5431,7 @@ class FieldBuilder {
         return new ChildField.RecordTableField(
             parentTypeName, name, location, tb, List.of(),
             List.of(), new OrderBySpec.None(), null,
-            sourceKey, loaderRegistration, parentCorrelation);
+            sourceKey, lift, loaderRegistration, parentCorrelation);
     }
 
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
@@ -5457,8 +5442,8 @@ class FieldBuilder {
         // R178 (step 1, DML-only cutover): a child field on a DML-emitted payload classifies
         // through the unified path against the producer's inner @table. The parent's source at
         // runtime is the DML fetcher's RecordN<PK> (single) or Result<RecordN<PK>> (bulk); the
-        // child reads its key columns off that source via SourceKey.Wrap.Row +
-        // Reader.ColumnRead, which is shape-agnostic with respect to whether the parent is a
+        // child reads its key columns off that source as a RowN key over per-column reads,
+        // which is shape-agnostic with respect to whether the parent is a
         // sparse RecordN<PK> or a full @table record (parent.get(<column>) works on both).
         //
         // Step 1 admits only @table-typed children on DML-emitted parents (the SettKvotesporsmal
@@ -5553,22 +5538,17 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
                 }
                 var nodeType = ((IdEncoderResolution.Resolved) encoderResolution).nodeType();
-                var idCardinality = scalarReturn.wrapper().isList()
-                    ? SourceKey.Cardinality.MANY
-                    : SourceKey.Cardinality.ONE;
                 // Same envelope signal as the @table-element sibling above: an errors-bearing
                 // carrier routes the producer through the typed Outcome wrapper, so the id
                 // fetcher narrows Outcome.Success before encoding.
                 var idEnvelope = carrierPayloadHasErrorsField(parentTypeName)
-                    ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
-                    : SourceKey.Reader.SourceEnvelope.DIRECT;
+                    ? SourceEnvelope.OUTCOME_SUCCESS
+                    : SourceEnvelope.DIRECT;
                 var idSourceKey = new SourceKey(
                     nodeType.nodeKeyColumns(),
-                    new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
-                    idCardinality,
-                    new SourceKey.Reader.ResultRowWalk(idEnvelope));
+                    new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()));
                 return new ChildField.SingleRecordIdField(parentTypeName, name, location,
-                    scalarReturn, binding.tableRef(), idSourceKey,
+                    scalarReturn, binding.tableRef(), idSourceKey, idEnvelope,
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()));
             }
         }
@@ -5597,8 +5577,8 @@ class FieldBuilder {
                 // recomputed at emit: an errors-bearing carrier routes the producer through the typed
                 // Outcome wrapper, so the passthrough narrows Outcome.Success before projecting.
                 var envelope = carrierPayloadHasErrorsField(parentTypeName)
-                    ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
-                    : SourceKey.Reader.SourceEnvelope.DIRECT;
+                    ? SourceEnvelope.OUTCOME_SUCCESS
+                    : SourceEnvelope.DIRECT;
                 return new ChildField.RecordCompositeField(parentTypeName, name, location, rrt, envelope);
             }
         }
@@ -5622,6 +5602,7 @@ class FieldBuilder {
                 ? ctx.connectionElementTypeName(rawTypeName0) : rawTypeName0;
 
             SourceKey sourceKey;
+            KeyLift lift;
             LoaderRegistration loaderRegistration;
             List<JoinStep> joinPath;
             ParentCorrelation.OnLiftedSlots lifted = null;
@@ -5632,6 +5613,7 @@ class FieldBuilder {
                 }
                 var ok = (SourceRowDirectiveResolver.Resolved.Ok) sr;
                 sourceKey = ok.sourceKey();
+                lift = ok.lift();
                 loaderRegistration = ok.loaderRegistration();
                 joinPath = ok.joinPath();
                 lifted = ok.lifted();
@@ -5652,6 +5634,7 @@ class FieldBuilder {
                         + parentTypeName + "' has neither."));
                 }
                 sourceKey = fkSource.sourceKey();
+                lift = fkSource.lift();
                 loaderRegistration = fkSource.loaderRegistration();
                 joinPath = tmPath.elements();
             }
@@ -5665,6 +5648,7 @@ class FieldBuilder {
             }
             var capturedJoinPath = joinPath;
             var capturedSourceKey = sourceKey;
+            var capturedLift = lift;
             var capturedLoaderRegistration = loaderRegistration;
             // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
             // condition-join (or hop-0-filter) first hop has no parent table to anchor the source
@@ -5682,8 +5666,8 @@ class FieldBuilder {
             return buildMethodBackedWithChannel(tbReturn, tmTb.method(),
                 parentTypeName, name, location, fieldDef,
                 ch -> new ChildField.RecordTableMethodField(parentTypeName, name, location, tbReturn,
-                    capturedJoinPath, tmTb.method(), capturedSourceKey, capturedLoaderRegistration, ch,
-                    rtmParentCorrelation));
+                    capturedJoinPath, tmTb.method(), capturedSourceKey, capturedLift,
+                    capturedLoaderRegistration, ch, rtmParentCorrelation));
         }
 
         // @sourceRow is owned by its dedicated resolver from this point onward: the resolver
@@ -5728,12 +5712,12 @@ class FieldBuilder {
             var srParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) srPcResolution).correlation();
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration(), tfc.lookupMapping(),
-                    srParentCorrelation);
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.lift(),
+                    ok.loaderRegistration(), tfc.lookupMapping(), srParentCorrelation);
             }
             return new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration(),
-                srParentCorrelation);
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.lift(),
+                ok.loaderRegistration(), srParentCorrelation);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -5751,7 +5735,7 @@ class FieldBuilder {
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
                     var sourced = extractSourced(tb.method());
-                    var sk = sourced == null ? null : buildServiceTableSourceKey(sourced, tb.returnType());
+                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
                     var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, tb.returnType());
                     yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
@@ -5866,11 +5850,11 @@ class FieldBuilder {
                 }
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        resolved.sourceKey(), resolved.loaderRegistration(), tfc.lookupMapping(),
+                        resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(), tfc.lookupMapping(),
                         resolvedParentCorrelation);
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    resolved.sourceKey(), resolved.loaderRegistration(),
+                    resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(),
                     resolvedParentCorrelation);
             }
             case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
@@ -6075,8 +6059,8 @@ class FieldBuilder {
      * empty-joinPath standalone shape carries a {@code null} correlation and falls back to the
      * parent PK.
      *
-     * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} +
-     * {@link SourceKey.Reader.ColumnRead} (catalog-FK column read on the parent); the
+     * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} (catalog-FK column
+     * reads on the parent's own table row); the
      * {@link LoaderRegistration} is {@link LoaderRegistration.Container#POSITIONAL_LIST} +
      * {@link LoaderRegistration.Dispatch#LOAD_ONE} (the {@code @splitQuery} loader contract).
      *
@@ -6099,11 +6083,7 @@ class FieldBuilder {
         List<ColumnRef> entryColumns = correlation != null
             ? correlation.parentKeyColumns()
             : parentTable.primaryKeyColumns();
-        SourceKey sourceKey = new SourceKey(
-            entryColumns,
-            new SourceKey.Wrap.Row(),
-            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ColumnRead());
+        SourceKey sourceKey = new SourceKey(entryColumns, new SourceKey.Wrap.Row());
         LoaderRegistration loaderRegistration = new LoaderRegistration(
             isList,
             LoaderRegistration.Container.POSITIONAL_LIST,
@@ -6115,19 +6095,15 @@ class FieldBuilder {
      * Builds the parent-side {@link SourceKey} for a table-backed multi-table polymorphic child
      * field ({@link InterfaceField} / {@link UnionField} on a {@code @table} parent). The
      * parent's identity is its PK, read directly off {@code env.getSource()} (a typed
-     * {@code TableRecord}), so the projection is {@link SourceKey.Wrap.Row} +
-     * {@link SourceKey.Reader.ColumnRead} + {@link SourceKey.Cardinality#ONE} with no traversal.
-     * Mirrors the polymorphic-Row arm of the deleted {@code SourceKeyResolver
+     * {@code TableRecord}), so the lift is {@link KeyLift.FkColumns} (per-column PK reads, one
+     * parent entity) and the key's wrap is that arm's {@code RowN} derivation, with no
+     * traversal. Mirrors the polymorphic-Row arm of the deleted {@code SourceKeyResolver
      * .resolveRecordParentForPolymorphic} (the parent IS the source — no separate target
      * table).
      */
     private static no.sikt.graphitron.rewrite.model.SourceKey buildTableBackedPolymorphicParentSourceKey(
-            List<ColumnRef> pkCols) {
-        return new no.sikt.graphitron.rewrite.model.SourceKey(
-            pkCols,
-            new SourceKey.Wrap.Row(),
-            SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ColumnRead());
+            List<ColumnRef> pkCols, KeyLift parentKeyLift) {
+        return new no.sikt.graphitron.rewrite.model.SourceKey(pkCols, parentKeyLift.wrap());
     }
 
     /**
@@ -6139,8 +6115,8 @@ class FieldBuilder {
      * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when the join
      * path is empty or its first step is not FK-derived.
      *
-     * <p>Otherwise returns the projection: {@link SourceKey.Wrap.Row} +
-     * {@link SourceKey.Reader.ColumnRead} (the catalog-FK row-keyed shape) with
+     * <p>Otherwise returns the projection: {@link KeyLift.FkColumns} with its {@code RowN}
+     * wrap derivation (the catalog-FK row-keyed shape) and
      * {@code fkJoin.sourceSideColumns()} as the entry columns, and
      * {@link LoaderRegistration.Container#POSITIONAL_LIST} +
      * {@link LoaderRegistration.Dispatch#LOAD_ONE}.
@@ -6156,24 +6132,21 @@ class FieldBuilder {
             return null;
         }
         boolean isList = tb.wrapper().isList();
-        SourceKey sourceKey = new SourceKey(
-            fkJoin.sourceSideColumns(),
-            new SourceKey.Wrap.Row(),
-            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.ColumnRead());
+        var lift = new KeyLift.FkColumns();
+        SourceKey sourceKey = new SourceKey(fkJoin.sourceSideColumns(), lift.wrap());
         LoaderRegistration loaderRegistration = new LoaderRegistration(
             isList,
             LoaderRegistration.Container.POSITIONAL_LIST,
             LoaderRegistration.Dispatch.LOAD_ONE);
-        return new RecordParentSource(sourceKey, loaderRegistration);
+        return new RecordParentSource(sourceKey, lift, loaderRegistration);
     }
 
     /**
-     * Builder-internal pair returned by {@link #deriveFkRecordParentSource}: the FK-arm or
-     * accessor-arm projection of a class-backed-parent table-bound field's source-side
-     * metadata. Pairs the two values so the producer computes both in one place.
+     * Builder-internal triple returned by {@link #deriveFkRecordParentSource}: the FK-arm
+     * projection of a class-backed-parent table-bound field's source-side
+     * metadata. Groups the values so the producer computes them in one place.
      */
-    private record RecordParentSource(SourceKey sourceKey, LoaderRegistration loaderRegistration) {}
+    private record RecordParentSource(SourceKey sourceKey, KeyLift lift, LoaderRegistration loaderRegistration) {}
 
     /**
      * Outcome of {@link #resolveRecordParentSource} for a class-backed-parent table-bound
@@ -6190,7 +6163,8 @@ class FieldBuilder {
          * leaf-PK call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the
          * target-side columns through {@link no.sikt.graphitron.rewrite.model.HasSlots} uniformly.
          */
-        record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath,
+        record Resolved(SourceKey sourceKey, KeyLift lift, LoaderRegistration loaderRegistration,
+                        List<JoinStep> joinPath,
                         ParentCorrelation.OnLiftedSlots lifted) implements RecordParentSourceResolution {}
         record Rejected(Rejection rejection) implements RecordParentSourceResolution {}
     }
@@ -6210,13 +6184,13 @@ class FieldBuilder {
         var fkSource = deriveFkRecordParentSource(joinPath, parentResultType, tb);
         if (fkSource != null) {
             return new RecordParentSourceResolution.Resolved(
-                fkSource.sourceKey(), fkSource.loaderRegistration(), joinPath, null);
+                fkSource.sourceKey(), fkSource.lift(), fkSource.loaderRegistration(), joinPath, null);
         }
 
         var derived = deriveAccessorRecordParentSource(fieldName, accessorBaseName, tb, parentResultType);
         return switch (derived) {
             case AccessorDerivation.Ok ok -> new RecordParentSourceResolution.Resolved(
-                ok.sourceKey(), ok.loaderRegistration(), List.of(), ok.lifted());
+                ok.sourceKey(), ok.lift(), ok.loaderRegistration(), List.of(), ok.lifted());
             case AccessorDerivation.Ambiguous a -> new RecordParentSourceResolution.Rejected(
                 Rejection.structural(a.message()));
             case AccessorDerivation.CardinalityMismatch m -> new RecordParentSourceResolution.Rejected(
@@ -6239,7 +6213,7 @@ class FieldBuilder {
      * {@link RecordParentSourceResolution.Resolved}.
      */
     private sealed interface AccessorDerivation {
-        record Ok(SourceKey sourceKey, LoaderRegistration loaderRegistration,
+        record Ok(SourceKey sourceKey, KeyLift lift, LoaderRegistration loaderRegistration,
                   ParentCorrelation.OnLiftedSlots lifted) implements AccessorDerivation {}
         record None() implements AccessorDerivation {}
         record Ambiguous(String message) implements AccessorDerivation {}
@@ -6337,16 +6311,13 @@ class FieldBuilder {
             ClassName.get(parentClass),
             accessorMethod.getName(),
             ClassName.get(accessorElementClass));
-        SourceKey sourceKey = new SourceKey(
-            expectedTable.primaryKeyColumns(),
-            new SourceKey.Wrap.Record(),
-            accessorIsMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.AccessorCall(ref));
+        var lift = new KeyLift.Accessor(ref, accessorIsMany ? Arity.MANY : Arity.ONE);
+        SourceKey sourceKey = new SourceKey(expectedTable.primaryKeyColumns(), lift.wrap());
         LoaderRegistration loaderRegistration = new LoaderRegistration(
             false,
             LoaderRegistration.Container.POSITIONAL_LIST,
             accessorIsMany ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
-        return new AccessorDerivation.Ok(sourceKey, loaderRegistration,
+        return new AccessorDerivation.Ok(sourceKey, lift, loaderRegistration,
             new ParentCorrelation.OnLiftedSlots(expectedTable, expectedTable.primaryKeyColumns()));
     }
 
@@ -6475,12 +6446,12 @@ class FieldBuilder {
 
         if (isInterface) {
             return new InterfaceField(parentTypeName, name, location, returnType,
-                participants, paths.paths(), resolved.parentSourceKey(), resolved.hubTable(),
-                parentResultType);
+                participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
+                resolved.hubTable(), parentResultType);
         }
         return new UnionField(parentTypeName, name, location, returnType,
-            participants, paths.paths(), resolved.parentSourceKey(), resolved.hubTable(),
-            parentResultType);
+            participants, paths.paths(), resolved.parentSourceKey(), resolved.parentKeyLift(),
+            resolved.hubTable(), parentResultType);
     }
 
     /**
@@ -6492,7 +6463,7 @@ class FieldBuilder {
      * VALUES cells through the hub columns' registered Converter DataTypes.
      */
     private sealed interface PolymorphicRecordParentResolution {
-        record Resolved(SourceKey parentSourceKey, TableRef hubTable)
+        record Resolved(SourceKey parentSourceKey, KeyLift parentKeyLift, TableRef hubTable)
             implements PolymorphicRecordParentResolution {}
         record Rejected(Rejection rejection) implements PolymorphicRecordParentResolution {}
     }
@@ -6543,14 +6514,11 @@ class FieldBuilder {
                         + "' requires a non-empty primary key on the record-backed parent table '"
                         + jtr.table().tableName() + "'"));
                 }
-                // Polymorphic Row arm: the parent IS the source; cardinality is variant-derived
-                // (each parent is one entity, not field-cardinality-derived).
-                SourceKey parentSourceKey = new SourceKey(
-                    pkCols,
-                    new SourceKey.Wrap.Row(),
-                    SourceKey.Cardinality.ONE,
-                    new SourceKey.Reader.ColumnRead());
-                yield new PolymorphicRecordParentResolution.Resolved(parentSourceKey, jtr.table());
+                // Polymorphic Row arm: the parent IS the source; the key is its PK tuple, read
+                // per column (a single parent entity — the arity fork is accessor-only).
+                var rowLift = new KeyLift.FkColumns();
+                SourceKey parentSourceKey = new SourceKey(pkCols, rowLift.wrap());
+                yield new PolymorphicRecordParentResolution.Resolved(parentSourceKey, rowLift, jtr.table());
             }
             case GraphitronType.PojoResultType _, GraphitronType.JavaRecordType _ ->
                 // Both cardinalities route through the hub-deriving accessor classifier. The
@@ -6651,12 +6619,9 @@ class FieldBuilder {
             ClassName.get(parentClass),
             accessorMethod.getName(),
             ClassName.get(elementClass));
-        SourceKey parentSourceKey = new SourceKey(
-            hubTable.primaryKeyColumns(),
-            new SourceKey.Wrap.Record(),
-            accessorIsMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
-            new SourceKey.Reader.AccessorCall(ref));
-        return new PolymorphicRecordParentResolution.Resolved(parentSourceKey, hubTable);
+        var hubLift = new KeyLift.Accessor(ref, accessorIsMany ? Arity.MANY : Arity.ONE);
+        SourceKey parentSourceKey = new SourceKey(hubTable.primaryKeyColumns(), hubLift.wrap());
+        return new PolymorphicRecordParentResolution.Resolved(parentSourceKey, hubLift, hubTable);
     }
 
     private record ReturnAxis(ServiceCatalog.ContainerKind container, Class<?> elementClass) {}
@@ -6705,7 +6670,7 @@ class FieldBuilder {
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
                     var sourced = extractSourced(tb.method());
-                    var sk = sourced == null ? null : buildServiceTableSourceKey(sourced, tb.returnType());
+                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
                     var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, tb.returnType());
                     yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
@@ -6715,7 +6680,7 @@ class FieldBuilder {
                 }
                 case ServiceDirectiveResolver.Resolved.Result r -> {
                     var sourced = extractSourced(r.method());
-                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, r.returnType());
+                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
                     var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, r.returnType());
                     yield buildMethodBackedWithChannel(r.returnType(), r.method(),
                         parentTypeName, name, location, fieldDef,
@@ -6724,7 +6689,7 @@ class FieldBuilder {
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s -> {
                     var sourced = extractSourced(s.method());
-                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, s.returnType());
+                    var sk = sourced == null ? null : buildServiceSourceKey(sourced);
                     var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, s.returnType());
                     yield buildMethodBackedWithChannel(s.returnType(), s.method(),
                         parentTypeName, name, location, fieldDef,

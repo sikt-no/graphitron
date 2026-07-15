@@ -35,8 +35,8 @@ class RecordTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
-    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, false);
-    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
+    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
     private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
 
@@ -56,35 +56,35 @@ class RecordTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61 (single-record-per-key arm)",
-            new RecordTableField("FilmDetails", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+            new RecordTableField("FilmDetails", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), LR_SINGLE,
                 /* parentCorrelation */ null),
             List.of()),
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
                 FK_PATH,
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), LR_SINGLE,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — classifies, no validation error (R232)",
             new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
                 CONDITION_PATH,
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), LR_SINGLE,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies, no validation error (R232)",
             new RecordTableField("FilmDetails", "film", null, RT_LIST,
                 CONDITION_PATH,
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, TestFixtures.fkColumnsLift(), LR_LIST,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordTableField("FilmDetails", "films", null, RT_LIST,
                 FK_PATH,
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, TestFixtures.fkColumnsLift(), LR_LIST,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
@@ -98,7 +98,7 @@ class RecordTableFieldValidationTest {
         LIST_NO_ORDER_REFETCH_EXEMPT("PK-less list re-fetch with OrderBySpec.None — exempt via requiresReFetch (R305 latent-bug guard)",
             new RecordTableField("FilmDetails", "films", null, RT_LIST,
                 FK_PATH,
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, TestFixtures.fkColumnsLift(), LR_LIST,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of());
 
