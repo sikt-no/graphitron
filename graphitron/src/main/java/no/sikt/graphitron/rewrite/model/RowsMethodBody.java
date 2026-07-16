@@ -30,7 +30,7 @@ import java.util.Objects;
  * pair lands in a single typed slot rather than a runtime branch.
  *
  * <p>The body content is an opaque {@link CodeBlock} so the skeleton is decoupled from the
- * SELECT / scatter / service-call construction logic. R38 Phase 2 wires the existing
+ * SELECT / scatter / service-call construction logic. A later phase wires the existing
  * body builders ({@code SplitRowsMethodEmitter}, {@code TypeFetcherGenerator}'s
  * {@code buildServiceRowsMethod}) into the construction sites that produce these permits.
  */
@@ -47,7 +47,7 @@ public sealed interface RowsMethodBody {
     /**
      * SQL body for {@code BatchedTableField} — flat correlated-batch SELECT plus scatter, keyed
      * off the parent-lifted key tuple (both source shapes; the SQL framing was identical for the
-     * pre-merge {@code SqlSplitTable} / {@code SqlRecordTable} permits, R432).
+     * pre-merge {@code SqlSplitTable} / {@code SqlRecordTable} permits).
      */
     record SqlBatchedTable(CodeBlock content) implements RowsMethodBody {
         public SqlBatchedTable {
@@ -57,7 +57,7 @@ public sealed interface RowsMethodBody {
 
     /**
      * SQL body for {@code BatchedLookupTableField} — {@link SqlBatchedTable} plus a
-     * {@code @lookupKey} VALUES join (both source shapes, R432).
+     * {@code @lookupKey} VALUES join (both source shapes).
      */
     record SqlBatchedLookupTable(CodeBlock content) implements RowsMethodBody {
         public SqlBatchedLookupTable {

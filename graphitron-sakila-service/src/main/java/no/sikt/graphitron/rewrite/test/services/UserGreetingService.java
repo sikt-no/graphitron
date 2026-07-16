@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R190 fixture: minimal {@code @service} class whose {@link #greet} method takes a
+ * Minimal {@code @service} class whose {@link #greet} method takes a
  * {@code userId} parameter classified as {@code ParamSource.Context}. Drives the generated
  * {@code Graphitron.newExecutionInput(DSLContext, String userId)} factory signature in the
  * sakila-example compile and execution fixtures (the schema declares zero other

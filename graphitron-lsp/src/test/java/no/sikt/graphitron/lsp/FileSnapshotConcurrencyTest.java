@@ -17,7 +17,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R456 enforcer: a {@link FileSnapshot} taken off a live {@link WorkspaceFile}
+ * The concurrency enforcer: a {@link FileSnapshot} taken off a live {@link WorkspaceFile}
  * stays walkable and internally consistent after the live file has edited its
  * byte array, swapped its tree, and eagerly {@code close()}d the previous tree,
  * which is exactly what {@code didChange} does on the dispatch thread while a
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * fixed order rather than under real concurrency.
  *
  * <p>This test is a named guard, not just correct-by-construction code, because
- * R347 Slice 5's {@code didClose} {@code close()} lands on the same lifecycle;
+ * the {@code didClose} {@code close()} path lands on the same lifecycle;
  * if the clone-on-read ever regresses to handing out the live tree, test 1 fails
  * with a freed-arena error instead of the failure surfacing intermittently in
  * production.

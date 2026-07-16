@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
- * R446 boundary-decode coverage: the catalog decides each column's javapoet type once, at the jOOQ
+ * Boundary-decode coverage: the catalog decides each column's javapoet type once, at the jOOQ
  * reflection boundary, via {@code TypeName.get(col.getType())}. This pins <em>our use</em> of that
  * decode (not javapoet's own contract): a scalar column yields a {@link ClassName}, an array column
  * yields an {@link ArrayTypeName} of the right element type. The paired {@code columnClass} string

@@ -13,15 +13,15 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * The R428 {@code execute} MCP tool: runs a GraphQL query or mutation against the generated
+ * The {@code execute} MCP tool: runs a GraphQL query or mutation against the generated
  * resolvers in-process (through {@link DevQueryExecutor} and the generated
  * {@code GraphitronDevExecutor}) on the configured dev database, and returns the
  * {@code ExecutionResult.toSpecification()} JSON. Mutations always roll back (the executor pins
- * R429's {@code ROLLBACK_ONLY} commit policy), so exploration never persists a write.
+ * the {@code ROLLBACK_ONLY} commit policy), so exploration never persists a write.
  *
  * <p>The tool exists only when a dev database is configured: {@link GraphitronMcpServer} registers
  * it conditionally, the stronger form of the degrade-gracefully posture (the RAG tools stay
- * advertised and degrade; this tool is simply absent, per the R428 spec's first-client doc).
+ * advertised and degrade; this tool is simply absent).
  *
  * <p>Claims resolution happens per call, so a {@code @/path/to/file} payload picks up file edits
  * without a dev-loop restart. A per-call {@code claims} argument is honored only when the config

@@ -9,7 +9,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier (R385): the bundle write → read round-trip preserves the chunk count, ids, dimension, and
+ * Unit-tier: the bundle write → read round-trip preserves the chunk count, ids, dimension, and
  * vector widths, and the opaque payload decodes back to the chunk's display fields (including a body
  * carrying the field/heading separators, which the Base64 encoding must not collide with).
  */

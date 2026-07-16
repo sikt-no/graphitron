@@ -216,7 +216,7 @@ class GeneratedSourcesLintTest {
      * {@link #DUNDER_IDENTIFIER} in the first place; the GraphQL introspection {@code __typename}
      * meta-field (and the synthetic {@code __typename} SQL column sharing its spelling) reaches
      * generated code only as a string literal, so it is masked before the scan and needs no
-     * allowlist entry. R436's {@code __src_<col>__} full-parent-row aliases are the same case:
+     * allowlist entry. The {@code __src_<col>__} full-parent-row aliases are the same case:
      * string-literal-only ({@code table.COL.as("__src_col__")} / {@code source.get("__src_col__",
      * …)}), masked before the scan, no allowlist entry needed. See development-principles.adoc,
      * "Readability rules".
@@ -224,8 +224,8 @@ class GeneratedSourcesLintTest {
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
     /**
-     * The no-regression guard for R271: no emitted Java <em>identifier</em> (local, parameter, or
-     * field) may lead with {@code __}. The generator emits every name in scope, including the
+     * The no-regression guard against lazy dunder names: no emitted Java <em>identifier</em>
+     * (local, parameter, or field) may lead with {@code __}. The generator emits every name in scope, including the
      * method signature, so a collision is always knowable at generation time; the {@code __}
      * prefix buys no safety that a readable name plus generation-time awareness does not provide.
      * Author-derived identifiers (a GraphQL argument or input-component name becoming a local)
@@ -233,7 +233,7 @@ class GeneratedSourcesLintTest {
      * never a blanket {@code __}.
      *
      * <p>Synthetic SQL column aliases ({@code __sort__}, {@code __idx__}, {@code __rn__},
-     * {@code __typename}, {@code __pkN__}, and R436's {@code __src_<col>__} full-parent-row
+     * {@code __typename}, {@code __pkN__}, and the {@code __src_<col>__} full-parent-row
      * aliases) live in the result-set column namespace alongside consumer-controlled table
      * columns and wrap in {@code __} precisely to avoid colliding with a real column. They are
      * deliberate collision-avoidance names that reach generated code only as string literals, so

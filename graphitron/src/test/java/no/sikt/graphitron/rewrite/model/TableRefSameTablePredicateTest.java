@@ -9,7 +9,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R358 Phase 2: {@link TableRef#sameTable(String)} / {@link TableRef#denotesSameTableAs(TableRef)}
+ * {@link TableRef#sameTable(String)} / {@link TableRef#denotesSameTableAs(TableRef)}
  * are the canonical case-insensitive table-identity comparison. {@code tableName()} stays the
  * case-preserved verbatim {@code @table(name:)} echo, so the same logical table can carry the
  * Oracle-style UPPERCASE {@code @table} casing on one ref and the lowercase jOOQ
@@ -64,7 +64,7 @@ class TableRefSameTablePredicateTest {
         assertThat(ref("film").denotesSameTableAs(null)).isFalse();
     }
 
-    // --- R441 identity arm ---
+    // --- identity arm ---
 
     /**
      * Arm 1: same {@code tableClass}, divergent names/casing. A schema-qualified {@code @table}

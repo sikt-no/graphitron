@@ -554,7 +554,7 @@ class ErrorChannelClassificationTest {
             .contains("java.lang.RuntimeException");
     }
 
-    // ===== Carrier-walk LocalContext binding (R12 Phase C) =====
+    // ===== Carrier-walk LocalContext binding =====
 
     private static final String CARRIER_WALK_ERROR_SDL = """
             type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
@@ -693,12 +693,12 @@ class ErrorChannelClassificationTest {
             .containsExactly(tuple("detail", "localizedMessage"));
     }
 
-    // ===== R201: @field(name:) in @error payload construction shape resolution =====
+    // ===== @field(name:) in @error payload construction shape resolution =====
     //
     // Each fixture backs a child @service field's payload with a dummy class from
     // AccessorPayloads (bean / record) or a JDK type (name-less POJO), reaching
     // FieldBuilder.resolveErrorChannel's PayloadClass arm. The construction-shape resolution
-    // (ctor vs. bean) is what R201 teaches to honor @field(name:); the read side already did.
+    // (ctor vs. bean) must honor @field(name:); the read side already did.
 
     private static final String R201_SIMPLE_ERR = """
             type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
@@ -844,7 +844,7 @@ class ErrorChannelClassificationTest {
     @Test
     void anyArm_blankFieldValue_rejectsChannel() {
         // A present-but-blank @field(name: "") on any payload field rejects the channel
-        // (contract rule 3, R200/R202 precedent).
+        // (contract rule 3, matching the input-bean and error-type extra-field precedent).
         var schema = build(r201Schema("""
             type BlankPayload {
                 data: String
@@ -862,7 +862,8 @@ class ErrorChannelClassificationTest {
     @Test
     void regressionFloor_divergentNamesWithoutDirective_rejectsAsToday() {
         // DivergentBeanErrorsPayload exposes setInfo / setFailures. Without a @field directive the
-        // bean arm still looks up setData / setErrors and rejects, exactly as before R201.
+        // bean arm still looks up setData / setErrors and rejects, exactly as it did before
+        // @field(name:) was honored in construction-shape resolution.
         var schema = build(r201Schema("""
             type RegressionPayload {
                 data: String

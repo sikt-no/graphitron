@@ -364,7 +364,7 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }
 
-    // ===== plain InterfaceType / UnionType TypeResolver emission (R36 Track B1) =====
+    // ===== plain InterfaceType / UnionType TypeResolver emission (Track B1) =====
 
     private static final String PLAIN_INTERFACE_SDL = """
         type Query { search: [Searchable!]! }
@@ -381,7 +381,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_typeResolverForPlainInterface_readsTypenameViaDslField() {
-        // Reads the synthetic __typename column R36 Track B's stage-1 emitter projects on every
+        // Reads the synthetic __typename column Track B's stage-1 emitter projects on every
         // branch. DSL.field(DSL.name("__typename")) is the typed read used elsewhere in the
         // generated code; the bare-string overload would also work but the typed form is what
         // the plan specifies and what stage 2's typed Records carry forward.
@@ -451,7 +451,7 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }
 
-    // ===== @error-only union/interface TypeResolver emission (R12 §2c) =====
+    // ===== @error-only union/interface TypeResolver emission =====
 
 
     private static final String ERROR_UNION_SDL = """
@@ -473,7 +473,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_emitsErrorTypeResolver_forUnionOfErrorTypes() {
-        // Per R12 §2c, an @error-only union gets a TypeResolver that dispatches by source-class
+        // An @error-only union gets a TypeResolver that dispatches by source-class
         // instanceof; the runtime sources are throwables (GENERIC/DATABASE) or GraphQLErrors
         // (VALIDATION), never jOOQ records. The TypeResolver must therefore NOT emit the
         // jOOQ-record __typename probe used for table-backed unions.
@@ -505,7 +505,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_emitsErrorTypeFieldFetchers_forPathAndMessage() {
-        // Per R12 §2c, every @error type gets path/message DataFetchers; path is synthesized
+        // Every @error type gets path/message DataFetchers; path is synthesized
         // from the GraphQL execution context for non-GraphQLError sources (Throwable has no
         // getPath()) so the schema's [String!]! contract holds for GENERIC/DATABASE handlers.
         var body = buildBody(ERROR_UNION_SDL);
@@ -606,12 +606,12 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(customizerIdx).isGreaterThan(0).isLessThan(buildIdx);
     }
 
-    // ===== Phase 2 of R101: scalar registration via the resolver =====
+    // ===== Phase 2: scalar registration via the resolver =====
 
     @Test
     void scalarRegistration_specBuiltIns_emitOneAdditionalTypePerReferencedScalar() {
         // A fixture using all five spec built-ins must produce the same five .additionalType
-        // lines the pre-R101 literal block emitted. Anchors Phase 2's "no regression for
+        // lines the pre-resolver literal block emitted. Anchors the "no regression for
         // consumers using only spec built-ins" claim.
         var body = buildBody("""
             type Query {
@@ -676,7 +676,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void scalarRegistration_unreferencedSpecBuiltInIsNotEmitted() {
-        // The pre-R101 literal block hardcoded all five spec built-ins regardless of usage. The
+        // The pre-resolver literal block hardcoded all five spec built-ins regardless of usage. The
         // resolver-driven path only emits scalars the schema actually references. Graphql-java's
         // implicit introspection / directive surface pulls in Int, Boolean, and ID for any
         // schema, but Float has no implicit reference and is omitted when the SDL doesn't use it.
@@ -692,7 +692,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     /**
      * Renders the full generated class. Substring assertions in this test cover both the
-     * {@code build()} body and the private static helper methods the post-R254 emitter
+     * {@code build()} body and the private static helper methods the emitter
      * factors out (per-directive-definition, per-applied-directive, per-synthesised-scalar).
      */
     private static String buildBody(String sdl) {

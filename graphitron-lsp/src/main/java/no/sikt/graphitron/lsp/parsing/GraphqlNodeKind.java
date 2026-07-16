@@ -3,7 +3,7 @@ package no.sikt.graphitron.lsp.parsing;
 import io.github.treesitter.jtreesitter.Node;
 
 /**
- * R347 (Slice 1) — the closed set of tree-sitter-graphql <em>intra-declaration</em> node kinds the
+ * The closed set of tree-sitter-graphql <em>intra-declaration</em> node kinds the
  * LSP navigates: the structural children ({@code name}, {@code value}, {@code arguments}, ...) and
  * the value-shape nodes ({@code object_value}, {@code list_value}, {@code string_value}) that every
  * feature reaches for when walking inside a single declaration.

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp.fixtures;
 
 /**
- * R157 pipeline test fixture: a plain Java class with bean accessors so the
+ * Pipeline test fixture: a plain Java class with bean accessors so the
  * classifier produces
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.Backed}
  * and the projector picks up {@code getFilmId} / {@code getTitle} as

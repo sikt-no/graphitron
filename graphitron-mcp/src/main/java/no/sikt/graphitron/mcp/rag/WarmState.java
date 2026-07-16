@@ -1,9 +1,9 @@
 package no.sikt.graphitron.mcp.rag;
 
 /**
- * The warm lifecycle of a RAG handle (R372 D3): a value resolves the Backlog's prose
- * "loading / ready / failed" into a typed shape, mirroring R361's exhaustive {@code LspSchemaSnapshot}
- * switch posture. "Bind sync, warm async, never block the dev loop" is the R118 cross-cutting
+ * The warm lifecycle of a RAG handle: a value resolves the prose
+ * "loading / ready / failed" into a typed shape, mirroring the exhaustive {@code LspSchemaSnapshot}
+ * switch posture. "Bind sync, warm async, never block the dev loop" is the cross-cutting
  * principle this slice owns the state machine for; the consuming tools report through it.
  *
  * <p><strong>Generic over the warmed handle</strong> because one harness drives two distinct warms:
@@ -31,7 +31,7 @@ public sealed interface WarmState<T> permits WarmState.Warming, WarmState.Ready,
     record Failed<T>(Throwable cause) implements WarmState<T> {}
 
     /**
-     * The single shared degradation message (R372 D3): the standard "index warming, use the
+     * The single shared degradation message: the standard "index warming, use the
      * structured tools meanwhile" wording, produced once here so the semantic tools of slices 9/10
      * do not each re-author it. Handle-agnostic: it reads any {@code WarmState<?>} and branches only
      * on the two non-{@code Ready} states. Exhaustive over the sealed permits with no {@code default},

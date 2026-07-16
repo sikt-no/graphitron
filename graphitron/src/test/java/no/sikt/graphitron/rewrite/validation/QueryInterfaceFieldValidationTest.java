@@ -96,7 +96,7 @@ class QueryInterfaceFieldValidationTest {
 
     @Test
     void rejects_sameTableParticipantsWithoutDiscriminator() {
-        // R365 discriminability floor: two participant types backed by the same table share a
+        // Discriminability floor: two participant types backed by the same table share a
         // recordClass, so a returned record cannot be discriminated from its Java type alone.
         // Without a @discriminator this is a build error rather than a silent misdispatch.
         var participants = List.<ParticipantRef>of(
@@ -117,7 +117,7 @@ class QueryInterfaceFieldValidationTest {
 
     @Test
     void rejects_sameTableParticipantsWithDiscriminator() {
-        // R365 floor: same-table polymorphism belongs in a single-table discriminated interface
+        // Same-table polymorphism belongs in a single-table discriminated interface
         // (TableInterfaceType), not a plain multitable interface/union — even when every colliding
         // type carries a @discriminator, record-class dispatch can't tell them apart (shared
         // recordClass). Same AUTHOR_ERROR as the no-discriminator case (use TableInterfaceType or split).

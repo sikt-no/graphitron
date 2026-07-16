@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 /**
  * {@code enum-values-screaming-snake-case}: enum value names are UPPER_SNAKE_CASE, independent of any
  * {@code @order} / {@code @index} directive on the value. No fix in v1: an enum-value rename can hit
- * SDL default values (see R398).
+ * SDL default values.
  */
 public final class EnumValuesScreamingSnakeCaseVisitor implements LintVisitor {
 

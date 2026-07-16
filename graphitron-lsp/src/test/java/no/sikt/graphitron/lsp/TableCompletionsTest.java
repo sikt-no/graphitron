@@ -61,8 +61,8 @@ class TableCompletionsTest {
 
     @Test
     void referenceElementTableNestedFieldAlsoCompletesCatalogTables() {
-        // Per R119 phase 2, ReferenceElement.table is a CatalogTableBinding
-        // in the canonical overlay. The same provider that fires on
+        // ReferenceElement.table is a CatalogTableBinding in the canonical
+        // overlay. The same provider that fires on
         // @table(name:) now also fires on @reference(path: [{table:}]) —
         // the directive-name switch dropped, dispatch goes through the
         // coordinate's behavior arm.

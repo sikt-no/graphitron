@@ -13,18 +13,18 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R368 slice 5 — the {@code diagnostics} read tool: the current validation errors and warnings off
+ * The {@code diagnostics} read tool: the current validation errors and warnings off
  * {@code Workspace.validationReport()}, closing the authoring loop (an agent edits, then reads its
  * own diagnostics back). Pure read projection of already-classified data (the validation report's
  * typed rejections); no new validate-time arm.
  *
- * <p>R410 slice 6 folds in the {@code graphitron:dev} incremental-compile round's diagnostics off
+ * <p>The {@code graphitron:dev} incremental-compile round's diagnostics are folded in off
  * {@code Workspace.compileDiagnostics()}. Every entry now carries a {@code source} discriminator:
  * {@code "schema"} for the validator rejections, {@code "compile"} for generated-code javac errors.
  * These are separate channels by design (a generated-file javac error has no schema coordinate to
  * fabricate), unioned here so an agent editing through MCP reads both back in the one tool it polls.
  *
- * <p>Reports the live snapshot's availability / freshness axes alongside (R361 D3), so an agent can
+ * <p>Reports the live snapshot's availability / freshness axes alongside, so an agent can
  * tell whether the diagnostics are current relative to the schema it just read, without a
  * consistency lock.
  */
@@ -71,7 +71,7 @@ final class DiagnosticsTool {
                 m.put("message", w.message());
                 // A lint finding (the sealed BuildWarning's tagged arm) carries a typed LintRule;
                 // project its stable id so an agent sees which rule fired, not just the message.
-                // The no-rule arm carries no id, so there is no nullable field to guard (R398).
+                // The no-rule arm carries no id, so there is no nullable field to guard.
                 if (w instanceof no.sikt.graphitron.rewrite.BuildWarning.LintFinding lf) {
                     m.put("lintRule", lf.rule().id());
                 }
@@ -79,7 +79,7 @@ final class DiagnosticsTool {
                 entries.add(m);
             }
         }
-        // Generated-code compile diagnostics (R410). They carry no schema coordinate, so a coordinate
+        // Generated-code compile diagnostics. They carry no schema coordinate, so a coordinate
         // filter excludes them by construction, matching how warnings are handled. javac's ERROR kind
         // maps to the "error" severity gate; every other kind (WARNING / MANDATORY_WARNING / NOTE)
         // maps to "warning".

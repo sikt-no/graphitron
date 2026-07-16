@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R160 — verifies the initialisation-time {@code workspace/configuration} pull path. The
+ * Verifies the initialisation-time {@code workspace/configuration} pull path. The
  * spec commits to both push (via {@code workspace/didChangeConfiguration}) AND pull (via
  * {@code workspace/configuration}) for the three inlay-hint / hover toggles; this test
  * pins the pull half so clients that don't push on init still see the right state on

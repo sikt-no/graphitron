@@ -25,8 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline coverage for the
- * multi-schema jOOQ fixture R78 introduced. The fixture's whole point is to make the
- * R78 bug class ("imports emitted as {@code <jooqPackage>.tables.X}, dropping the schema
+ * multi-schema jOOQ fixture. The fixture's whole point is to make the
+ * bug class ("imports emitted as {@code <jooqPackage>.tables.X}, dropping the schema
  * segment") visible at the tier where it actually lives. Single-schema fixtures cannot
  * reproduce the bug because their generated jOOQ classes happen to live at the root
  * package; the multi-schema fixture distributes them across {@code multischema_a.tables.*}
@@ -151,7 +151,7 @@ class MultiSchemaPipelineTest {
         var firstPairs = TestFixtures.fkPairs(widgetField.joinPath().get(0));
 
         // Keys class: FK constraint is held on multischema_b (gadget's schema); the lookup
-        // routes to the FK-holder side (B), not the target side (A). The R78 bug case is a
+        // routes to the FK-holder side (B), not the target side (A). The bug case is a
         // per-emit-site `ClassName.get(jooqPackage, "Keys")` that compiles to root.Keys —
         // a class which does not exist under multi-schema codegen.
         assertThat(TestFixtures.fkRef(firstPairs).keysClass())
@@ -161,7 +161,7 @@ class MultiSchemaPipelineTest {
         assertThat(TestFixtures.fkRef(firstPairs).constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
 
         // Target-table class: every emitter that traverses the FK reads
-        // firstHop.targetTable().tableClass() to bind the joined-table alias. R78's bug
+        // firstHop.targetTable().tableClass() to bind the joined-table alias. The bug
         // class includes this surface: a regression that re-derives the target table's
         // ClassName from the bare jooqPackage emits root.tables.Widget here.
         assertThat(firstHop.targetTable().tableClass())
@@ -179,7 +179,7 @@ class MultiSchemaPipelineTest {
                 if (!cn.canonicalName().startsWith(MULTI_JOOQ_PACKAGE + ".")) continue;
                 // Every multi-schema fixture reference must be under multischema_a.* or
                 // multischema_b.*; the bare-root forms (jooqPackage.tables.X, jooqPackage.Keys,
-                // jooqPackage.Tables) are exactly the R78 bug shape and must never appear.
+                // jooqPackage.Tables) are exactly the bug shape and must never appear.
                 assertThat(cn.packageName())
                     .as("ClassName %s in TypeSpec %s lives at %s; expected a multischema_a / "
                         + "multischema_b sub-package",
@@ -237,8 +237,8 @@ class MultiSchemaPipelineTest {
     }
 
     /**
-     * Every {@link TypeSpec} the multischema-fixture SDL produces across the three emit
-     * surfaces R83 covers (TypeClass + QueryConditions). The pipeline test's negative-form
+     * Every {@link TypeSpec} the multischema-fixture SDL produces across the two emit
+     * surfaces covered here (TypeClass + QueryConditions). The pipeline test's negative-form
      * sweep walks every spec; positive-form tests reach in for specific ones.
      */
     private static List<TypeSpec> allEmittedTypeSpecs(GraphitronSchema schema) {

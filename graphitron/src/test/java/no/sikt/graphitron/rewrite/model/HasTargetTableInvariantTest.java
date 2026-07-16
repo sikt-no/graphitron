@@ -9,7 +9,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R232 invariant: every {@link JoinStep} permit implements {@link JoinStep.HasTargetTable}.
+ * Invariant: every {@link JoinStep} permit implements {@link JoinStep.HasTargetTable}.
  * This is what lets {@link no.sikt.graphitron.rewrite.generators.JoinPathEmitter},
  * {@link no.sikt.graphitron.rewrite.generators.InlineTableFieldEmitter}, and the split-rows
  * prelude read {@code targetTable()} uniformly through one capability cast without an
@@ -40,7 +40,7 @@ class HasTargetTableInvariantTest {
     @Test
     void everyJoinStepPermitIsConcreteOrSealed() {
         // Defensive: assert the permit list is the final closed set today (the two-axis Hop;
-        // R431 retired the transitional LiftedHop onto ParentCorrelation.OnLiftedSlots). A new
+        // the transitional LiftedHop was retired onto ParentCorrelation.OnLiftedSlots). A new
         // permit lands by editing JoinStep's permit list, which is the right place to surface a
         // wider audit (validator coverage, emitter dispatch, model tests).
         Class<?>[] permits = JoinStep.class.getPermittedSubclasses();

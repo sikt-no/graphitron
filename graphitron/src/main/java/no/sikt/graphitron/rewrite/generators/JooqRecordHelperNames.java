@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  *
  * <h3>Why shape, not record class (D1)</h3>
  *
- * <p>The pre-R437 dedup keyed on {@code jr.table().recordClass()}, so two {@code @service} fields
+ * <p>The earlier dedup keyed on {@code jr.table().recordClass()}, so two {@code @service} fields
  * binding one jOOQ record through two different input types (different {@code @field} column sets)
  * collapsed to the first-seen shape's helper; every call site then routed to that survivor and the
  * second mutation silently dropped the columns unique to its input. A
@@ -36,7 +36,8 @@ import java.util.stream.Collectors;
  * <h3>Naming (D2)</h3>
  *
  * <p>A record class reached by exactly one distinct shape keeps the bare {@code create<Record>} /
- * {@code create<Record>List} name (the overwhelmingly common case, byte-identical to pre-R437). A
+ * {@code create<Record>List} name (the overwhelmingly common case, byte-identical to the previous
+ * behaviour). A
  * record class reached by more than one distinct shape is <em>contended</em>: its shapes are ordered
  * by {@link #canonicalRender} (a names-only render, stable across runs where the record's own
  * {@code hashCode} is not) and each gets a 1-based ordinal suffix ({@code create<Record>1},
@@ -64,7 +65,7 @@ final class JooqRecordHelperNames {
     /** Carrier shape → contended-helper legibility javadoc, or {@code null} for an uncontended helper. */
     private final Map<CallSiteExtraction.JooqRecord, String> javadocs;
     /** Distinct shapes in first-encounter order: the helper-emission work-list. For the common
-     *  uncontended case this is exactly the pre-R437 emission order, so no generated output churns. */
+     *  uncontended case this is exactly the previous emission order, so no generated output churns. */
     private final List<CallSiteExtraction.JooqRecord> distinctShapes;
 
     private JooqRecordHelperNames(boolean populated,
@@ -108,7 +109,7 @@ final class JooqRecordHelperNames {
             String simpleName = group.getKey().simpleName();
             var shapes = group.getValue();
             if (shapes.size() == 1) {
-                // Uncontended: bare stem, no javadoc. Byte-identical to pre-R437.
+                // Uncontended: bare stem, no javadoc. Byte-identical to the previous behaviour.
                 stems.put(shapes.get(0), simpleName);
             } else {
                 // Contended: order by canonical render (stable), 1-based ordinal suffix, legibility javadoc.
@@ -157,7 +158,7 @@ final class JooqRecordHelperNames {
         String stem = stems.get(jr);
         if (stem == null) {
             // A populated resolver asked to name a carrier it never collected is a routing hole: a
-            // silent bare-name fallback here would re-bury R437 (a call site routing to a helper that
+            // silent bare-name fallback here would re-bury the original bug (a call site routing to a helper that
             // was never emitted, or to the wrong shape's helper). Fail at generation time instead.
             throw new IllegalStateException(
                 "JooqRecordHelperNames was asked to name a jOOQ-record carrier it never collected: "

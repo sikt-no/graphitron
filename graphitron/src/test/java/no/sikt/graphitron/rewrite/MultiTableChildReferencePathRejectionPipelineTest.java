@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → classified schema pipeline tests for the R452 build-time gate on multi-table
+ * SDL → classified schema pipeline tests for the build-time gate on multi-table
  * interface/union child fields. The only supported per-participant join shape is the
  * auto-discovered single-hop foreign key from each participant's table back to the parent/hub
  * table; every richer shape is rejected at classification time in

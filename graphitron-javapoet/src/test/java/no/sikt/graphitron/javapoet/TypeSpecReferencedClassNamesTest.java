@@ -5,7 +5,7 @@ import org.junit.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R455 workstream A — the reference walk must see every structured {@code $T}, including ones nested
+ * The reference walk must see every structured {@code $T}, including ones nested
  * inside {@code $L} blocks / anonymous classes / annotations and ones reachable only through
  * type-variable bounds. These were the blind spots that let {@link TypeSpec#referencedClassNames()}
  * silently under-report, falsifying the compile-graph completeness oracle's superset guarantee.

@@ -36,8 +36,8 @@ public sealed interface Behavior {
 
     /**
      * {@code argMapping} content-syntax binding. The actual
-     * {@code "javaParam: graphqlArg, ..."} parser lives in a sibling roadmap
-     * item; this arm is a marker that R119 ships and that follow-up wires up.
+     * {@code "javaParam: graphqlArg, ..."} parser is deferred to a follow-up;
+     * this arm is a marker that ships now and that the follow-up wires up.
      */
     record ArgMappingBinding() implements Behavior {}
 

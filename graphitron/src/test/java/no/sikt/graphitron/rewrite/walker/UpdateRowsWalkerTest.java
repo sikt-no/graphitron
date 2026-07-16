@@ -24,7 +24,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R246 unit coverage for {@link UpdateRowsWalker}: the PK-or-UK identification and SET/WHERE
+ * Unit coverage for {@link UpdateRowsWalker}: the PK-or-UK identification and SET/WHERE
  * partition over already-classified {@link InputField} permits. Uses the real fixture catalogs so
  * the jOOQ {@code getPrimaryKey()} / {@code getKeys()} metadata is genuine:
  * <ul>
@@ -116,7 +116,7 @@ class UpdateRowsWalkerTest {
     @Test
     void compositeReferenceStraddlesKey_crossTableFk_rejectsWithMixedCarrierKeyMembership() {
         // A CROSS-table FK reference (selfReference = false) whose lifted columns straddle the
-        // (actor_id, film_id) PK still rejects under R354: a cross-table FK's lifted column can
+        // (actor_id, film_id) PK still rejects: a cross-table FK's lifted column can
         // legitimately be the row's own identity, so it partitions by membership and a straddle is
         // unexpressible. (A self-FK with the same shape instead routes wholly to SET — see
         // selfFkReference_* below.)
@@ -192,7 +192,7 @@ class UpdateRowsWalkerTest {
 
     @Test
     void selfFkReference_formerlyBulkRejected_nowAdmitsAndRoutesAllSet() {
-        // The bulk self-FK reject (R354's Stage 2b) is gone. The walker is cardinality-independent —
+        // The bulk self-FK reject is gone. The walker is cardinality-independent —
         // a self-FK @reference routes its lifted columns wholly to SET regardless of the @table arg's list
         // shape (the bulk vs single-row split is the emitter's). This is the same email shape the bulk
         // reject used to fence off; it now admits, with the shared mailbox_id in both partitions for the
@@ -380,7 +380,7 @@ class UpdateRowsWalkerTest {
             lifted, List.of(), lifted, true, Optional.empty(), dummyDecode(lifted));
     }
 
-    // R186 admits a plain (non-list) NestingField by flattening it; a list-typed nesting stays
+    // A plain (non-list) NestingField is admitted by flattening it; a list-typed nesting stays
     // unsupported, so this helper builds the list-typed shape for the unsupported-shape coverage.
     private static InputField.NestingField listNestingField(String name) {
         return new InputField.NestingField("In", name, loc(), "Nested", false, true, List.of(), Optional.empty());

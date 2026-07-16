@@ -64,7 +64,7 @@ class CatalogFactsTest {
 
     @Test
     void storageBin_carriesUniqueKeyDistinctFromPrimaryKey() {
-        // storage_bin (R266 fixture): PK bin_id, UNIQUE(code). The unique key surfaces with the PK
+        // storage_bin: PK bin_id, UNIQUE(code). The unique key surfaces with the PK
         // excluded from uniqueKeys.
         var bin = resolved(sakilaFacts(), "storage_bin");
         assertThat(bin.primaryKey()).isPresent();

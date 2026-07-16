@@ -16,10 +16,10 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R158 pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
+ * Pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
  * DML carrier data fields. Verifies that an {@code @service} mutation returning {@code XRecord}
  * (single-record carrier) or {@code List<XRecord>} (list-record carrier) lands a
- * {@link ChildField.BatchedTableField} on the carrier's data field (R305: the former
+ * {@link ChildField.BatchedTableField} on the carrier's data field (the former
  * {@code SingleRecordTableField} collapsed into it) keyed on a source=target re-fetch key
  * ({@link SourceKey.Reader.ProducedRecordRead} + {@link SourceKey.Wrap.Row}, the PK read off the
  * produced record(s)). The {@code DIRECT} / {@code OUTCOME_SUCCESS} source envelope is no longer
@@ -70,7 +70,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
      * re-fetch) and the sibling errors field is the {@code WrapperArm} transport. The
      * {@code OUTCOME_SUCCESS} envelope is no longer recorded on the data field's SourceKey — the
      * generator derives it from the payload's error channel at the type level. This is the opptak
-     * {@code { sak: Sak, errors: [...] }} shape that buckets B/D failed on before R275.
+     * {@code { sak: Sak, errors: [...] }} shape that buckets B/D failed on before service-carrier
+     * error channels were supported.
      */
     @Test
     void serviceProducer_withErrorsField_collapsesToRecordTableField() {
@@ -107,7 +108,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 reopened scope: the {@code @splitQuery}-list source-record carrier (the opptak
+     * The {@code @splitQuery}-list source-record carrier (the opptak
      * {@code leggTilTagger -> { saker: [Sak!] @splitQuery, errors }} shape). {@code @splitQuery}
      * on the carrier data field is tolerated by the {@code @service}-carrier scan (redundant:
      * the carrier emit already runs a PK-keyed follow-up SELECT off the producer's records), so
@@ -154,8 +155,8 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 requirement 2 (formerly {@code serviceProducer_idElementCarrier_rejectsLoudly},
-     * which pinned the interim loud rejection): the {@code [ID] @nodeId} data field on an
+     * Formerly {@code serviceProducer_idElementCarrier_rejectsLoudly},
+     * which pinned the interim loud rejection: the {@code [ID] @nodeId} data field on an
      * errors-bearing {@code @service} carrier classifies as {@code SingleRecordIdField} —
      * MANY cardinality, {@code OUTCOME_SUCCESS} envelope, the Film node encoder on the
      * compaction — encoding node ids straight off the producer's in-memory records with no
@@ -202,7 +203,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 requirement 2, single arm (the opptak {@code fjernSakTagg -> { taggId: ID @nodeId,
+     * Single arm (the opptak {@code fjernSakTagg -> { taggId: ID @nodeId,
      * errors }} shape): a single-record producer into an {@code ID @nodeId} data field
      * classifies with ONE cardinality and the {@code OUTCOME_SUCCESS} envelope.
      */
@@ -237,7 +238,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 requirement 2, errors-less sibling: with no errors field the producer returns the
+     * Errors-less sibling: with no errors field the producer returns the
      * record bare, so the envelope is {@code DIRECT} — the same envelope split the
      * {@code @table}-element sibling carries.
      */
@@ -262,7 +263,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 requirement 2, grounding failure stays a loud author error: the producer's record
+     * Grounding failure stays a loud author error: the producer's record
      * class ({@code LanguageRecord}) does not match {@code @nodeId(typeName: "Film")}'s table
      * record, so no {@code ServiceEmitted} binding grounds, the payload never promotes, and
      * the orphan-carrier guard rejects the mutation field with the ID-element guidance.
@@ -294,7 +295,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 requirement 2, encoder failure at the field edge: {@code @nodeId(typeName:)} names
+     * Encoder failure at the field edge: {@code @nodeId(typeName:)} names
      * a type that is {@code @table}-bound (so the binding grounds and the payload promotes)
      * but not {@code @node}-registered; the data field rejects with the unknown-node
      * diagnostic while the payload type itself survives (no dangling {@code typeRef}).
@@ -382,8 +383,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
      * a single {@code @table} data field, produced by {@code List<FilmRecord>}. graphql-java iterates
      * the producer list into the {@code [FilmPayload]} list, so each element is one payload whose
      * single {@code film} resolves through a {@code LOAD_ONE} that coalesces into one batched
-     * rows-method query. This shape worked by accident before R308 (no test exercised it at any tier);
-     * the shape verdict now admits it explicitly and this test pins the BatchedTableField model +
+     * rows-method query. This shape worked by accident before the shape verdict existed (no test
+     * exercised it at any tier); the shape verdict now admits it explicitly and this test pins the
+     * BatchedTableField model +
      * LOAD_ONE dispatch. Contrast the single-carrier {@code FilmListPayload { films: [Film!] }} above,
      * whose list data field is filled by the same producer list.
      */
@@ -415,13 +417,13 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     // ===== Rejection cases =====
 
     /**
-     * R308 (a1, formerly a silent admit): a <em>list</em> carrier ({@code [FilmPayload]}) with a single
+     * Case a1 (formerly a silent admit): a <em>list</em> carrier ({@code [FilmPayload]}) with a single
      * {@code @table} data field, produced by a <em>single</em> {@code FilmRecord}. graphql-java cannot
      * iterate a single record into the {@code [FilmPayload]} list, so list coercion fails at runtime.
      * The shape verdict rejects at classify time with the typed
      * {@link ServiceCarrierShapeError.ProducerArrivalMismatch}, naming the carrier-vs-producer arrival
-     * mismatch and the {@code List<…>} fix (before R308 the return-match gate short-circuited on the
-     * null {@code fqClassName} and this shape built green).
+     * mismatch and the {@code List<…>} fix (before the shape verdict the return-match gate
+     * short-circuited on the null {@code fqClassName} and this shape built green).
      */
     @Test
     void serviceProducer_listCarrier_singleProducer_rejectsProducerArrivalMismatch() {
@@ -444,7 +446,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R308 (a2, formerly a silent admit broken at runtime): a <em>list</em> carrier
+     * Case a2 (formerly a silent admit broken at runtime): a <em>list</em> carrier
      * ({@code [FilmListPayload]}) whose {@code @table} data field is <em>itself</em> a list
      * ({@code films: [Film!]}), produced by a flat {@code List<FilmRecord>}. The producer list is
      * consumed element-by-element into the {@code [FilmListPayload]} carrier, so a single record reaches
@@ -534,10 +536,10 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R204 / R279 slice 4 mixed-producer carrier reject (DML-first declaration order). Pins that the
+     * Mixed-producer carrier reject (DML-first declaration order). Pins that the
      * conflict surfaces regardless of declaration order; the sibling test pins the other direction.
      *
-     * <p>R279 slice 4 retired the builder-side demote-to-{@link UnclassifiedField} post-pass: the two
+     * <p>The builder-side demote-to-{@link UnclassifiedField} post-pass was retired: the two
      * producer mutations now stay classified as their producer leaves, and the disagreement rides on
      * the model as a {@code MultiProducerDomainTypeDisagreement} the validator surfaces as a single
      * {@link no.sikt.graphitron.rewrite.ValidationError}. The message names the payload SDL type, both
@@ -572,7 +574,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R204 / R279 slice 4 mixed-producer carrier reject (@service-first declaration order). Pins that
+     * Mixed-producer carrier reject (@service-first declaration order). Pins that
      * the conflict surfaces regardless of declaration order; the sibling test pins the other
      * direction.
      */

@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * surface plus a small allow-list of whole-directive deprecations that are
  * documented prose-side on the directive's own reference page.
  *
- * <p>R68 Phase 5 closing slice. A future PR that adds a {@code @deprecated()}
+ * <p>A future PR that adds a {@code @deprecated()}
  * marker to a directive argument or input field cannot land green without adding
  * a row to {@code deprecations.adoc}; a PR that removes a marker must remove the
  * row (or the build fails).

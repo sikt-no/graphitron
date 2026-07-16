@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pins {@code Graphitron.newExecutionInput(...)}'s wiring against graphql-java's builder
- * semantics. R190 collapses the legacy two-overload shape into a single schema-driven
- * factory whose parameter list reflects the schema's {@code contextArguments} (alphabetical,
+ * semantics. {@code newExecutionInput} collapses the legacy two-overload shape into a single
+ * schema-driven factory whose parameter list reflects the schema's {@code contextArguments} (alphabetical,
  * after {@code DSLContext defaultDsl}). The sakila-example schema declares zero
  * contextArguments today, so the factory collapses to {@code newExecutionInput(DSLContext)}.
  *

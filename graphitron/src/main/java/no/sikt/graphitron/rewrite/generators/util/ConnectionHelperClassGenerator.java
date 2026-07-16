@@ -65,7 +65,7 @@ public class ConnectionHelperClassGenerator {
     public static List<TypeSpec> generate(String outputPackage) {
         var connectionResultClass = ClassName.get(
             outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
-        // R378 client-error marker: pageRequest's client-mistake guards throw it so the
+        // Client-error marker: pageRequest's client-mistake guards throw it so the
         // no-channel disposition surfaces the real message instead of redacting.
         var clientException = ClassName.get(outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);

@@ -28,17 +28,17 @@ import java.util.function.Consumer;
  * the schema's declared {@code contextArguments} (one typed parameter per contextArgument name,
  * alphabetical, read from the cached {@link GraphitronSchema#contextArguments()} classification):
  * <ul>
- *   <li>{@code newExecutionInput(DSLContext defaultDsl, ...)}, the R190 low-opinion escape hatch, where
+ *   <li>{@code newExecutionInput(DSLContext defaultDsl, ...)}, the low-opinion escape hatch, where
  *       the caller brings the {@code DSLContext} and owns transactions and identity; and</li>
- *   <li>{@code newOwnedExecutionInput(String claims, ...)}, the R429 owned-connection path, where the
+ *   <li>{@code newOwnedExecutionInput(String claims, ...)}, the owned-connection path, where the
  *       caller brings only the opaque claims and the execution instrumentation pins the connection,
  *       mounts identity, and produces the {@code DSLContext}.</li>
  * </ul>
  * They are distinct names, not overloads, so a caller cannot silently opt out of the owned-path
  * guarantees by passing a {@code DSLContext}; the escape-hatch name is frozen by additive-by-construction.
  *
- * <p>R190 collapsed the legacy two-overload shape ({@code (GraphitronContext)} +
- * {@code (DSLContext)}) into the typed escape-hatch entry point. The sealed
+ * <p>The legacy two-overload shape ({@code (GraphitronContext)} +
+ * {@code (DSLContext)}) was collapsed into the typed escape-hatch entry point. The sealed
  * {@code GraphitronContext} now permits only the generated {@code GraphitronContextImpl}
  * singleton; the factories ARE the per-request wiring point.
  */
@@ -105,7 +105,7 @@ public final class GraphitronFacadeGenerator {
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, ownedExecutionInputJavadoc(contextArgs));
 
-        // R429 slice 6: the escape-hatch engine attaches no connection-lifecycle instrumentation, so on
+        // The escape-hatch engine attaches no connection-lifecycle instrumentation, so on
         // this path the caller owns transaction demarcation and session identity and graphitron's
         // owned-connection guarantees do not apply. Emit that notice once at wiring time (guarded so it
         // fires once per process even if the engine is rebuilt).

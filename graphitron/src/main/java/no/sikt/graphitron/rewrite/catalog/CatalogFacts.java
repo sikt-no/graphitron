@@ -11,7 +11,7 @@ import java.util.Optional;
  * The frozen, SQL-name-centric catalog-data projection the {@code catalog.tables} /
  * {@code catalog.describe} MCP tools read. Built once per catalog rebuild in
  * {@link CatalogBuilder#buildCatalogFacts(JooqCatalog)} while the codegen loader is still open
- * (R361 D1, build-time enrichment), carried alongside {@link CompletionData} on the build
+ * (build-time enrichment), carried alongside {@link CompletionData} on the build
  * artifacts, and swapped onto the live {@code Workspace} on every generator pass.
  *
  * <p><b>Load-bearing invariant:</b> every field on this record and its nested records holds only
@@ -32,7 +32,7 @@ import java.util.Optional;
  * pairs.
  *
  * <p>The map is keyed by the schema-qualified SQL table name ({@code "schema.table"}), which is the
- * stable table ID R118 walks: FK endpoints ({@link OutgoingForeignKey#targetTable()} /
+ * stable table ID the discovery tools walk: FK endpoints ({@link OutgoingForeignKey#targetTable()} /
  * {@link IncomingForeignKey#sourceTable()}) name neighbours by that same ID. Iteration order is the
  * stable schema-then-table order the build fixes; {@code catalog.tables} pages over it.
  */

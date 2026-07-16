@@ -112,7 +112,7 @@ class RejectionSeverityCoverageTest {
                     "com.example.FilmService", "getFilm", new SourceLocation(1, 1))));
         }
         if (permit == Rejection.AuthorError.TypeConflict.class) {
-            // R190: cross-site contextArgument type-agreement rejection. Build a minimal
+            // Cross-site contextArgument type-agreement rejection. Build a minimal
             // ConflictSite list with two entries so message() renders the multi-site shape.
             return new Rejection.AuthorError.TypeConflict(
                 "fnr",
@@ -129,7 +129,7 @@ class RejectionSeverityCoverageTest {
                         no.sikt.graphitron.javapoet.ClassName.get(Long.class))));
         }
         if (permit == Rejection.AuthorError.MultiProducerDomainTypeDisagreement.class) {
-            // R204: cross-producer DomainReturnType disagreement. Two participants on the same
+            // Cross-producer DomainReturnType disagreement. Two participants on the same
             // SDL payload type with disagreeing arms is the minimum shape that exercises the
             // multi-arm message rendering; both samples below construct the typed payload arms
             // the validator emits.
@@ -153,7 +153,7 @@ class RejectionSeverityCoverageTest {
                                 "com.example.jooq.tables.records.FilmRecord")))));
         }
         if (permit == Rejection.AuthorError.SortEnumMissingOrder.class) {
-            // R453: an @orderBy sort enum carrying values with no ordering directive. Two missing
+            // An @orderBy sort enum carrying values with no ordering directive. Two missing
             // values exercise the accumulate-all multi-line message shape; Diagnostics.compute's
             // switch on Rejection.AuthorError catches it uniformly (Error severity).
             return new Rejection.AuthorError.SortEnumMissingOrder(
@@ -176,10 +176,10 @@ class RejectionSeverityCoverageTest {
                 "summary", "plan-slug",
                 new Rejection.StubKey.VariantClass(null));
         }
-        // R238: ServiceMethodCallError sub-seal of AuthorError. The seal carries only the two arms
+        // ServiceMethodCallError sub-seal of AuthorError. The seal carries only the two arms
         // the translator-walker actually produces; the minimal sample is sufficient for the
         // severity-coverage walk (Diagnostics.compute's switch on Rejection.AuthorError catches the
-        // whole sub-family uniformly). Further arms re-land under R256 as their producer paths do.
+        // whole sub-family uniformly). Further arms re-land later as their producer paths do.
         if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots.class) {
             return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots(
                 "com.example.Svc",
@@ -189,7 +189,7 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable(
                 "title", List.of("name", "year"), "name");
         }
-        // R256: re-added ServiceMethodCallError service-binding arms. One sample per arm;
+        // Re-added ServiceMethodCallError service-binding arms. One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error),
         // and lspCodeOf forwards each arm's stable graphitron.service-method-call.* code.
         if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible.class) {
@@ -209,7 +209,7 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.UnrecognizedSourcesType(
                 "input", "getFilms", "java.util.List<com.example.Weird>");
         }
-        // R256: ReflectionError sub-seal of AuthorError (shared reflection-intrinsic arms). One
+        // ReflectionError sub-seal of AuthorError (shared reflection-intrinsic arms). One
         // sample per arm; lspCodeOf forwards each arm's stable graphitron.reflect.* code.
         if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class) {
             return new no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded("com.example.Missing");
@@ -227,7 +227,7 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod(
                 "com.example.Svc", "getFilm", List.of(0, 1));
         }
-        // R246: UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity).
         if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class) {
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage(
@@ -246,8 +246,8 @@ class RejectionSeverityCoverageTest {
         }
         if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership.class) {
             // Models a cross-table FK reference whose lifted columns straddle the matched key — the
-            // only carrier shape that still reaches this arm after R354 (a self-FK reference routes
-            // wholly to SET instead of straddling).
+            // only carrier shape that still reaches this arm now that a self-FK reference routes
+            // wholly to SET instead of straddling the matched key.
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership(
                 "ref",
                 List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
@@ -265,7 +265,7 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.PlainColumnCollision(
                 "name", "alias", "name");
         }
-        // R266: DeleteRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // DeleteRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity),
         // and lspCodeOf forwards each arm's stable graphitron.delete-rows.* code.
         if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class) {
@@ -284,14 +284,14 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
-        // R457: MutationTableArgError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // MutationTableArgError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards the stable graphitron.mutation-table-arg.* code.
         if (permit == no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb.class) {
             return new no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb(
                 "INSERT", List.of("DELETE"));
         }
-        // R244: ErrorChannelWalkerError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // ErrorChannelWalkerError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards each arm's stable graphitron.error-channel.* code.
         if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields.class) {
@@ -314,7 +314,7 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
                 "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", "code", List.of("message", "path"));
         }
-        // R261: WireCoercionError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // WireCoercionError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches them uniformly (Error severity), and lspCodeOf
         // forwards each arm's stable graphitron.wire-coercion.* code.
         if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability.class) {
@@ -326,7 +326,7 @@ class RejectionSeverityCoverageTest {
                 "com.example.jooq.enums.MpaaRating", List.of("PG_13"), List.of("G", "PG", "R"),
                 "input-bean field 'rating' of method 'createFilm'");
         }
-        // R308: ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
+        // ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
         // severity), and lspCodeOf forwards each arm's stable graphitron.service-carrier-shape.* code.
         if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch.class) {

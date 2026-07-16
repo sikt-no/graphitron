@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 /**
  * The reusable shape for an LSP-side SDL refactor: detection of
  * matched literals plus per-match rewriting that produces a
- * {@link RewriteResult}. R93's first instantiation is the
+ * {@link RewriteResult}. The first instantiation is the
  * {@code ExternalCodeReference.name → className} migration; future
  * deprecation migrations or directive renames instantiate it
  * differently.

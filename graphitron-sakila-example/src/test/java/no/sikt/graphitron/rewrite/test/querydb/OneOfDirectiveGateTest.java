@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * R283 gate guard: the runtime {@code OneOfDirectiveSdl} helper is emitted only on the federation
+ * Gate guard: the runtime {@code OneOfDirectiveSdl} helper is emitted only on the federation
  * arm. {@code GraphQLRewriteGenerator} gates its emission on {@code federationLink && usesOneOf};
  * the federation-only runtime/file assertions in {@link FederationBuildSmokeTest} and
  * {@code SchemaSdlEmitterTest} would still pass if the {@code federationLink} conjunct were

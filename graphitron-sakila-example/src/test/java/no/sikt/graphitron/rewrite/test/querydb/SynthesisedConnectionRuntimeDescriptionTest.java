@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R292 runtime-rebuild seam: the descriptions on synthesised Connection/Edge boilerplate must
+ * Runtime-rebuild seam: the descriptions on synthesised Connection/Edge boilerplate must
  * reach the schema a consumer rebuilds via {@link Graphitron#buildSchema}, which is assembled
  * from the generated {@code <Type>} classes ({@code ObjectTypeGenerator} emits
  * {@code b.description(...)} per type and field). This is the second published seam, distinct

@@ -15,7 +15,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R255 regression coverage: a composite {@code @node(keyColumns: [...])} type with a sibling
+ * Regression coverage: a composite {@code @node(keyColumns: [...])} type with a sibling
  * {@code @field} that overlaps one of the key columns classifies into two emit arms whose
  * projections collide on the same column.
  *

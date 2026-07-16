@@ -23,14 +23,14 @@ import java.util.regex.Pattern;
  * sub-chain. The schema-class assembler and per-type emitters share a sink per class they
  * emit; on the way out they call {@link #contributeTo(TypeSpec.Builder)} once.
  *
- * <p>R254 motivation: javac's chained-call attribution recurses on {@code Apply}/{@code Select}
+ * <p>Motivation: javac's chained-call attribution recurses on {@code Apply}/{@code Select}
  * nodes, and incremental compile pays the per-frame cost cold. A schema's
- * {@code GraphitronSchema.build()} pre-R254 emitted one fluent expression whose chain depth
+ * {@code GraphitronSchema.build()} once emitted one fluent expression whose chain depth
  * scaled with schema element count, eventually overflowing the stack on regen-then-incremental
  * cycles. Each helper this sink allocates becomes a separately-compiled method body whose
  * own chain depth is O(1).
  *
- * <p>Naming follows the spec in {@code roadmap/schema-class-bounded-emission.md}:
+ * <p>Naming convention:
  * <ul>
  *   <li>Applied directives are indexed by emission order ({@code appliedDirective_<n>}). The
  *       same SDL directive can be applied multiple times with different argument literals;

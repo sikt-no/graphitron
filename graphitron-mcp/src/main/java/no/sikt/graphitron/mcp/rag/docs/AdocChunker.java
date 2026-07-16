@@ -6,7 +6,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Heading-aware structural chunker for AsciiDoc source (R385). A pure function
+ * Heading-aware structural chunker for AsciiDoc source. A pure function
  * {@code (adoc, sourcePath) -> List<DocChunk>}: it reads the raw {@code .adoc} heading syntax line by
  * line, with no AsciiDoctor render, which is what keeps the docs RAG index off the docs module's
  * JRuby render cost.

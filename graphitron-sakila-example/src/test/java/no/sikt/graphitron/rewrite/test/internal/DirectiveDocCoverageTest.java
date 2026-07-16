@@ -27,14 +27,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * corresponds to a directive declared in the schema. Failures print the missing
  * pages or stale files so the fix is mechanical.
  *
- * <p>R68 Phase 2 closing slice. A future PR that adds a directive cannot land green
+ * <p>A future PR that adds a directive cannot land green
  * without adding the doc page; a PR that removes a directive must remove its page
- * (or the build fails). The roadmap entry calls for this test in the docs-verifier
- * module if one exists, otherwise in {@code graphitron-sakila-example}; we use the
- * latter since {@code graphitron-sakila-example} already carries cross-cutting
- * structural tests against the project layout.
+ * (or the build fails). This test lives in {@code graphitron-sakila-example} because
+ * that module already carries cross-cutting structural tests against the project
+ * layout.
  *
- * <p>R400 carve-out: a directive may be declared in {@code directives.graphqls} (so
+ * <p>Carve-out: a directive may be declared in {@code directives.graphqls} (so
  * legacy schemas keep parsing) yet withheld from the advertised v1 surface, in which
  * case it has no reference page on purpose. The withheld set is not duplicated here;
  * it is derived from the generated {@code supported-directives.adoc} fragment that
@@ -58,7 +57,7 @@ class DirectiveDocCoverageTest {
     /**
      * Generated migration fragment listing the advertised directive surface (Supported +
      * Removed/rejected + shape-changes). Rendered by {@code DirectiveSupportReport}; the set
-     * of declared directives absent from it is exactly the R400 withheld-from-v1 set.
+     * of declared directives absent from it is exactly the withheld-from-v1 set.
      */
     private static final String SUPPORTED_DIRECTIVES_FRAGMENT =
         "docs/manual/_generated/supported-directives.adoc";
@@ -90,7 +89,7 @@ class DirectiveDocCoverageTest {
         Set<String> pages = pagesFromDocs();
         Set<String> advertised = advertisedDirectives();
 
-        // R400: directives declared but absent from the advertised surface are withheld
+        // Directives declared but absent from the advertised surface are withheld
         // from v1 and intentionally page-less. Derived from the report's own output so the
         // exemption cannot drift from DirectiveSupportReport.WITHHELD_FROM_V1.
         Set<String> withheld = new TreeSet<>(directives);
@@ -122,7 +121,7 @@ class DirectiveDocCoverageTest {
     /**
      * Directive names mentioned in the generated {@code supported-directives.adoc} fragment,
      * i.e. the advertised v1 surface. A directive declared in the schema but missing from
-     * this set is withheld from v1 (R400) and needs no reference page.
+     * this set is withheld from v1 and needs no reference page.
      */
     private static Set<String> advertisedDirectives() throws IOException {
         Path fragment = locate(SUPPORTED_DIRECTIVES_FRAGMENT);

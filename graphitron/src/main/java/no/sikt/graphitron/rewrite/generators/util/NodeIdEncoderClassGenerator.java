@@ -117,7 +117,7 @@ public class NodeIdEncoderClassGenerator {
             .endControlFlow()
             .build();
 
-        // PUBLIC (not package-private): the R195 input-bean record-decode helpers land in the
+        // PUBLIC (not package-private): the input-bean record-decode helpers land in the
         // generated `…fetchers` package and call decodeValues directly to materialise a typed
         // jOOQ record from the raw key values, so the raw unpack must cross the package boundary.
         var decodeValues = MethodSpec.methodBuilder("decodeValues")
@@ -175,7 +175,7 @@ public class NodeIdEncoderClassGenerator {
 
     /**
      * Emits {@code static void requireColumnAgreement(String conflictLabel, DataType<?> type,
-     * Object a, Object b)} — the shared value-agreement predicate (R322, D3). When more than one
+     * Object a, Object b)} — the shared value-agreement predicate. When more than one
      * writer ({@code @nodeId} decode or plain {@code @field}) lands on a single row column, this
      * checks that the present writers agree on the column's value, throwing
      * {@code GraphqlErrorException} on disagreement.

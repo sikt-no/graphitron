@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier coverage for {@link QueryConditionsGenerator}'s composite-key NodeId helper
  * registry: when two distinct {@code QueryTableField}s on the same root type consume the same
  * NodeId type via {@code [ID!] @nodeId(typeName: T)}, the generator emits exactly one shared
- * {@code decode<T>RowsOrThrow} private static helper on the {@code QueryConditions} class (R378:
- * authored filters throw on a bad id), and both condition methods reference it.
+ * {@code decode<T>RowsOrThrow} private static helper on the {@code QueryConditions} class (authored
+ * filters throw on a bad id), and both condition methods reference it.
  *
  * <p>Uses the {@code nodeidfixture} jOOQ catalog so the composite-key {@code Bar} NodeType
  * (PK {@code (id_1, id_2)}) is available; sakila has no composite-key NodeType usable from
@@ -52,7 +52,7 @@ class QueryConditionsPipelineTest {
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 
-        // Exactly one helper, deduplicated across both call sites. R378: an authored input-field
+        // Exactly one helper, deduplicated across both call sites. An authored input-field
         // [ID!] @nodeId filter classifies to ThrowOnMismatch, so the shared helper is the throwing
         // form (`…OrThrow`); a bad filter id surfaces an error rather than dropping silently.
         var helpers = queryConditions.methodSpecs().stream()
@@ -74,7 +74,7 @@ class QueryConditionsPipelineTest {
 
     @Test
     void multiHopIdentityCarryingLift_emitsHelperOnLiftedTuple() {
-        // R114 pipeline-tier emitter check: a 2-hop @reference path on @nodeId that satisfies
+        // Pipeline-tier emitter check: a 2-hop @reference path on @nodeId that satisfies
         // the lift predicate produces a generated `<Type>Conditions` method that takes the
         // decoded record list as input. The structural shape (helper exists with the expected
         // signature) is what differentiates the lift case from a hypothetical EXISTS-subquery

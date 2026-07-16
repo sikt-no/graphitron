@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.maven;
 import java.util.List;
 
 /**
- * POM XML binding for the {@code <sessionState>} block (R429 slice 3). Collapses into a
+ * POM XML binding for the {@code <sessionState>} block. Collapses into a
  * {@link no.sikt.graphitron.rewrite.session.SessionStateConfig} on
  * {@link no.sikt.graphitron.rewrite.RewriteContext}, from which
  * {@code ConnectionRuntimeClassGenerator} emits the concrete {@code SessionHook}.

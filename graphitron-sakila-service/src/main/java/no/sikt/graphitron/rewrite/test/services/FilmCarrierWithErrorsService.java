@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
 /**
- * R275 execution-tier fixture: the source-record carrier shape. An {@code @service} mutation
+ * Execution-tier fixture: the source-record carrier shape. An {@code @service} mutation
  * whose method returns a bare jOOQ {@code FilmRecord} (not a {@code @record} payload object)
  * into a payload pairing a {@code @table}-bound data field ({@code film}) with an {@code errors}
  * union field. This is the opptak {@code { sak: Sak, errors: [...] }} shape distilled onto sakila.
@@ -15,9 +15,9 @@ import org.jooq.DSLContext;
  * {@code Outcome.ErrorList} on a mapped {@code @error} throw). The data field therefore classifies
  * as a carrier data field whose {@code SourceEnvelope} is
  * {@code OUTCOME_SUCCESS}: its generated fetcher narrows {@code Outcome.Success}, reads
- * the record off {@code success.value()}, and resolves null on the {@code ErrorList} arm. Before
- * R275 it cast {@code env.getSource()} (an {@code Outcome}) straight to {@code FilmRecord} and threw
- * a {@code ClassCastException}.
+ * the record off {@code success.value()}, and resolves null on the {@code ErrorList} arm. Earlier
+ * this fetcher cast {@code env.getSource()} (an {@code Outcome}) straight to {@code FilmRecord} and
+ * threw a {@code ClassCastException}.
  */
 public final class FilmCarrierWithErrorsService {
 
@@ -42,7 +42,7 @@ public final class FilmCarrierWithErrorsService {
     }
 
     /**
-     * R275 requirement-2 fixture, single arm (the opptak {@code fjernSakTagg -> { taggId: ID
+     * The {@code @nodeId}-from-record fixture, single arm (the opptak {@code fjernSakTagg -> { taggId: ID
      * @nodeId, errors }} shape): a delete-shaped service whose payload data field is an
      * {@code ID @nodeId(typeName: "Film")} scalar encoded straight off the returned record's
      * key columns, with no follow-up SELECT. The method deliberately synthesizes the
@@ -64,7 +64,7 @@ public final class FilmCarrierWithErrorsService {
     }
 
     /**
-     * R275 requirement-2 fixture, list arm (the opptak {@code fjernSakTagger -> { tagger: [ID]
+     * The {@code @nodeId}-from-record fixture, list arm (the opptak {@code fjernSakTagger -> { tagger: [ID]
      * @nodeId, errors }} shape): the MANY-cardinality sibling of {@link #deleteFilmById}.
      * Returns synthesized records in input order; id 999 anywhere in the list throws the mapped
      * "missing film" {@code @error}.
@@ -81,7 +81,7 @@ public final class FilmCarrierWithErrorsService {
     }
 
     /**
-     * R275 reopened-scope list arm (the opptak {@code leggTilTagger -> { saker: [Sak!]
+     * The {@code @splitQuery}-list carrier arm (the opptak {@code leggTilTagger -> { saker: [Sak!]
      * @splitQuery, errors }} shape): returns the films with the given ids in input order, or
      * throws the mapped "missing film" {@code @error} when any id is unknown (exercises the
      * {@code Outcome.ErrorList} arm over a MANY-cardinality carrier: the data field renders

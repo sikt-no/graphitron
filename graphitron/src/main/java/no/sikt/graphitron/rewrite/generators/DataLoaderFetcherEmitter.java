@@ -13,7 +13,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
 
 /**
  * Single entry point for emitting a DataFetcher's {@link MethodSpec} when the field is backed
- * by a DataLoader. R38 Phase 2 replaces the three handcrafted DataFetcher builders in
+ * by a DataLoader. Replaces the three handcrafted DataFetcher builders in
  * {@code TypeFetcherGenerator} ({@code buildServiceDataFetcher},
  * {@code buildSplitQueryDataFetcher}, {@code buildRecordBasedDataFetcher}) with one call to
  * {@link #build}. The five concrete fetcher shapes share the same outer dance:
@@ -130,13 +130,13 @@ public final class DataLoaderFetcherEmitter {
             ? "newMappedDataLoader"
             : "newDataLoader";
 
-        // R436 Defect 2: the key extraction runs synchronously, before dispatch and the async
+        // The key extraction runs synchronously, before dispatch and before the async
         // .exceptionally tail exists, so a throw out of it (e.g. a jOOQ into(...)/accessor failure)
         // used to escape DataFetcher.get() unrouted — leaking a raw, record-dumping message past
         // ErrorRouter's redaction. Wrap the extraction + dispatch + async tail in a
         // try/catch(Throwable) whose arm routes through the SAME disposition the .exceptionally tail
         // uses (threaded as syncCatchBody), lifted into a completed future. The
-        // preRegistrationPrelude (R268 Outcome narrowing) stays outside the guard: its early return
+        // preRegistrationPrelude (Outcome narrowing) stays outside the guard: its early return
         // is deliberate control flow, not a failure path, and precedes loader registration by
         // design. keyExtraction's own early returns (single-cardinality null-FK short-circuit) stay
         // legal inside the try.

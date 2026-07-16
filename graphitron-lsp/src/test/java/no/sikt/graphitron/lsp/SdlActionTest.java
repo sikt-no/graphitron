@@ -13,7 +13,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Detector + rewrite slot of the R93 {@code name → className} migration
+ * Detector + rewrite slot of the {@code name → className} migration
  * exercised against synthetic SDL fixtures. Drift / activation-point
  * coverage lives in {@code SdlActionDriftTest} and
  * {@code CodeActionsTest}; this test is about the per-instance

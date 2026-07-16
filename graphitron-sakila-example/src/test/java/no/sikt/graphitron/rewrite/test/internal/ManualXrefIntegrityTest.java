@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * URLs ({@code http(s)://}) are not xrefs and never match the pattern in the first
  * place.
  *
- * <p>Since R182 the {@code architecture/} chapter is first-class local content under
+ * <p>The {@code architecture/} chapter is first-class local content under
  * {@code docs/architecture/} (Diataxis-shaped), so source-relative xrefs from the
  * manual into it resolve directly with no staging-time remap.
  */

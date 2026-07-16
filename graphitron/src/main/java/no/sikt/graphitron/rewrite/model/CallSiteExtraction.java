@@ -21,7 +21,7 @@ import java.util.List;
  *       level; used for {@code @condition} on {@code INPUT_FIELD_DEFINITION}.</li>
  * </ul>
  *
- * <p>R229 retired the {@code TextMapLookup} permit: graphql-java's
+ * <p>The {@code TextMapLookup} permit was retired: graphql-java's
  * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)} runtime
  * form, so graphql-java does the wire-form → runtime-form translation at the boundary and the
  * Java-side map became an identity lookup. Text-mapped enum args route through {@link Direct}.
@@ -54,7 +54,7 @@ public sealed interface CallSiteExtraction
      * Coerce a GraphQL {@code ID} scalar (delivered as {@code String} by GraphQL-Java) to the
      * column Java type by binding it through the column's {@code DataType} (and any registered
      * {@code Converter}) via {@code DSL.val(Object, DataType<T>).getValue()} — the non-deprecated
-     * replacement for {@code DataType.convert(Object)} (forRemoval in jOOQ 3.20; R384 phase a).
+     * replacement for {@code DataType.convert(Object)} (forRemoval in jOOQ 3.20).
      *
      * <p>{@code columnJavaName} is the jOOQ field constant name (e.g. {@code "FILM_ID"}) used to
      * reach the target {@code DataType} from the table alias:
@@ -127,7 +127,7 @@ public sealed interface CallSiteExtraction
      *
      * <ul>
      *   <li>{@link SkipMismatchedElement} — a {@code null} return short-circuits the bad element to
-     *       "no row matches"; never throws. After R378 this arm is produced <em>only</em> by the
+     *       "no row matches"; never throws. This arm is now produced <em>only</em> by the
      *       legacy {@code __NODE_*} synthesis shims (on the {@code retire-synthesis-shims} track);
      *       authored {@code @nodeId} filters no longer use it.</li>
      *   <li>{@link ThrowOnMismatch} — every authored {@code @nodeId} argument or input-object-field
@@ -154,7 +154,7 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * Skip the bad element on a {@code null} decode return. After R378 this arm is produced only by
+     * Skip the bad element on a {@code null} decode return. This arm is produced only by
      * the legacy {@code __NODE_*} synthesis shims ({@code retire-synthesis-shims} track); authored
      * {@code @nodeId} filters classify to {@link ThrowOnMismatch} instead.
      */
@@ -439,11 +439,11 @@ public sealed interface CallSiteExtraction
  * composite key). For a same-table identity decode these are the record's own key columns;
  * for a cross-table FK-reference decode they are the FK's child columns on this record,
      * resolved by FK-constraint pairing in {@code BuildContext}. That identity-vs-FK distinction lives
-     * <em>only in the resolver</em>; the carrier holds the resolved target either way (see the R315
-     * spec, D1: no {@code KeyProjection} sub-axis, because both arms load the columns identically).
+     * <em>only in the resolver</em>; the carrier holds the resolved target either way (there is no
+     * {@code KeyProjection} sub-axis, because both arms load the columns identically).
      *
      * <p>{@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}) and drives
-     * the emitter's null semantics (R315, D4), applied identically to identity and FK-reference decodes:
+     * the emitter's null semantics, applied identically to identity and FK-reference decodes:
  * a {@code nonNull} ({@code ID!}) decode always loads, throwing on a null / type-mismatched id;
      * a nullable ({@code ID}) decode is conditional on the wire key being present (omitted → columns left
      * unwritten / {@code changed=false}, present-{@code null} → columns set to {@code NULL},

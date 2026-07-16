@@ -35,8 +35,8 @@ public sealed interface InputField extends GraphitronField
      * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
  * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate, each
      * leaf rewrapped with a {@link CallSiteExtraction.NestedInputField} access path; a nested
-     * {@code @table} input that introduces a second DML target remains R122's compound-entity-
-     * mutations territory.
+     * {@code @table} input that introduces a second DML target remains compound-entity-mutation
+     * territory.
      */
     sealed interface LookupKeyField extends InputField permits ColumnField, CompositeColumnField,
             ColumnReferenceField, CompositeColumnReferenceField {}
@@ -98,7 +98,7 @@ public sealed interface InputField extends GraphitronField
      * @param selfReference {@code true} when this carrier is a <em>self-FK</em> reference — a
      *     same-table {@code @nodeId @reference} whose {@code @reference} names a foreign key back to
  * the carrier's own table. The decoded keys land on the self-FK's child columns, a
-     *     pointer to a sibling row, never the row's own identity. R354 reads this to route a self-FK's
+     *     pointer to a sibling row, never the row's own identity. {@link UpdateRows} reads this to route a self-FK's
      *     lifted columns wholly to the UPDATE SET partition (a self-FK is a write of "who this row
      *     points at", never identity), in contrast to a cross-table FK reference whose lifted column
      *     can legitimately be the row's own identity. The fact is decided once at the {@code @nodeId}
@@ -173,7 +173,7 @@ public sealed interface InputField extends GraphitronField
      * <p>{@code selfReference} carries the same self-FK fact as {@link ColumnReferenceField#selfReference()}:
      * {@code true} for a composite same-table {@code @nodeId @reference} (e.g. {@code email}'s
      * {@code inReplyTo}, whose {@code email_in_reply_to_fk} child columns are
-     * {@code (mailbox_id, in_reply_to_no)}), driving R354's all-SET routing on UPDATE.
+     * {@code (mailbox_id, in_reply_to_no)}), driving all-SET routing on UPDATE.
      */
     record CompositeColumnReferenceField(
         String parentTypeName,
@@ -233,8 +233,8 @@ public sealed interface InputField extends GraphitronField
      *   <li>{@code condition.isPresent() && condition.get().override()} — the field carries an
      *       explicit {@code @condition(override: true)} (with or without a matching column on the
      *       resolving table). The condition method owns the WHERE predicate entirely; no implicit
-     *       column predicate is emitted by construction. This is the lift of R210's
-     *       {@code ConditionOnlyField} plus R215's {@code ColumnField + override:true} collapse.</li>
+     *       column predicate is emitted by construction. This folds together the former
+     *       condition-only field and the {@code ColumnField + override:true} case.</li>
      *   <li>{@code condition.isPresent() && !condition.get().override()} — the field carries
      *       {@code @condition(override: false)} but has no matching column. Validator-side
      *       rejection (the classifier admits to keep call-site cascade resolution honest, but

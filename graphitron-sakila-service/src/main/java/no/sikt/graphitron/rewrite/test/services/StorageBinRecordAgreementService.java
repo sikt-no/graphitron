@@ -3,10 +3,10 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.StorageBinRecord;
 
 /**
- * R322 execution-tier fixture: a jOOQ {@link StorageBinRecord} bound directly as a {@code @service}
+ * Execution-tier fixture: a jOOQ {@link StorageBinRecord} bound directly as a {@code @service}
  * input param, whose input carries <em>two writers landing on the same column</em> ({@code bin_id}) — a
  * same-table identity {@code @nodeId(typeName: "StorageBin")} decode and a plain {@code @field} bound to
- * {@code bin_id}. The generated {@code createStorageBinRecord} helper emits the R322 value-agreement
+ * {@code bin_id}. The generated {@code createStorageBinRecord} helper emits the value-agreement
  * check ({@code NodeIdEncoder.requireColumnAgreement}) before the loads: the present writers are coerced
  * through {@code bin_id}'s integer {@code DataType} and must resolve to the same value, else it throws
  * {@code GraphqlErrorException} and the service body never runs.

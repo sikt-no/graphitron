@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The {@code @mutation(table:)} field-relative DELETE write target. Pins the override rung
  * (rung 2) and the migration bridge (rung 3): a DELETE names its write target on the consuming field
  * rather than on the input type's deprecated {@code @table}. There is deliberately no return-derived
- * rung (a DELETE cannot return the deleted row's {@code @table} type; R287), so every DELETE without
+ * rung (a DELETE cannot return the deleted row's {@code @table} type), so every DELETE without
  * {@code @table} on its input must carry {@code @mutation(table:)}.
  */
 @PipelineTier
@@ -136,7 +136,7 @@ class MutationTableArgClassificationTest {
 
     @Test
     void validatorMirrorParity_nonOverrideUnboundField_rejectsOnBothPaths() {
-        // R330 validator-bypass pin: a @condition(override: false) field with no resolving column is a
+        // Validator-bypass pin: a @condition(override: false) field with no resolving column is a
         // validateTableInputType rejection. On the field-derived path the input never lands in that
         // registry walk, so without the call-site mirror the rule would slip through. Both paths must
         // surface the same rule.

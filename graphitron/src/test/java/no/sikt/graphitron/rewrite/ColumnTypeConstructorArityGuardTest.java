@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R446 structural guard. {@code ColumnRef} and {@code JooqCatalog.ColumnEntry} carry a
+ * Structural guard for array-safe column typing. {@code ColumnRef} and {@code JooqCatalog.ColumnEntry} carry a
  * {@code TypeName columnType} decided once at the catalog reflection boundary via
  * {@code TypeName.get(col.getType())}, which decodes array-typed columns natively. Both records
  * also expose a hand-built auxiliary constructor (the 3-arg {@code ColumnRef} / 4-arg

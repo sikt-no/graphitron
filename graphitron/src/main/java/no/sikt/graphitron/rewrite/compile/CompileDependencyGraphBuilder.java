@@ -19,7 +19,7 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 import java.util.List;
 
 /**
- * R410 slice 2 — produces the {@link CompileDependencyGraph} by coarsening the classified model.
+ * Produces the {@link CompileDependencyGraph} by coarsening the classified model.
  * This is the model-sourced arm of the sourcing seam: the one method
  * ({@link #fromModel(GraphitronSchema, String)}) that turns the classified {@link GraphitronSchema}
  * into a file-level graph, mirroring {@code CatalogBuilder.projectFieldClassification}'s discipline
@@ -31,7 +31,7 @@ import java.util.List;
  * declared), {@link #addFieldEdges} over the {@link GraphitronField} leaves (a new field variant
  * fails to compile until its reference contribution is declared), and {@link #addProjectionChildEdges}
  * over the {@link ChildField} leaves (a new inline-projecting field variant fails to compile until its
- * type-to-type projection edge is declared). The R333 step (a later item) re-targets these switches
+ * type-to-type projection edge is declared). A later step re-targets these switches
  * onto the method graph without changing this consumer.
  *
  * <p>Edge policy (see {@link CompileDependencyGraph}'s superset contract and {@link UtilSingleton}):
@@ -495,7 +495,7 @@ public final class CompileDependencyGraphBuilder {
     /**
  * Registers the {@code <Type>Fetchers} node a fetcher-owning nesting type contributes. A
      * plain-object nesting type that owns a fetcher (any nested field that is not
-     * {@link GraphitronField.UnclassifiedField}, per R303) emits a {@code <Type>Fetchers} class, and
+     * {@link GraphitronField.UnclassifiedField}) emits a {@code <Type>Fetchers} class, and
      * its schema-shape wiring class references it ({@code FilmMetaType → FilmMetaFetchers}). Those
      * nested types are absent from {@code schema.types()} and their fields are absent from both
      * {@code schema.fields()} and {@code schema.fieldsOf(...)} (they live only on the
@@ -517,7 +517,7 @@ public final class CompileDependencyGraphBuilder {
      * {@code schemaShape → ownFetcher}, {@code schemaClass → fetcher}, and the blanket
      * frozen-scaffold / {@code GraphitronContext} edges with no new edge code.
      *
-     * <p>Collapse target (named, not blocking): R459 is the third independent re-walk of the
+     * <p>Collapse target (named, not blocking): this walk is the third independent re-walk of the
      * {@code NestingField} tree (this walk, the {@link #addProjectionChildEdges} projection walk, and
      * the emitter) and the third copy of the fetcher-ownership fact. A future item, in the spirit of
      * the {@code InlineProjectingField} note on {@link #addTypeProjectionEdges}, should expose nested
@@ -613,7 +613,7 @@ public final class CompileDependencyGraphBuilder {
         }
         acc.addEdge(facade, schemaClass);
         acc.addEdge(facade, context);
-        // R429 connection-lifecycle runtime: the facade builds the runtime, which owns the pinned
+        // Connection-lifecycle runtime: the facade builds the runtime, which owns the pinned
         // connection and the session-hook seam. These units are schema-invariant (ABI-frozen), so the
         // edges never drive a recompile; they are modelled precisely rather than blanketed because no
         // fetcher references them. The TypeSpecReferenceWalk oracle pins this wiring.
@@ -624,7 +624,7 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(graphitronRuntime, pinnedConnection);
         acc.addEdge(graphitronRuntime, sessionHook);
         acc.addEdge(pinnedConnection, sessionHook);
-        // R429 slice 2: the operation-typed transaction seam. The runtime's newGraphQL(schema) attaches
+        // The operation-typed transaction seam. The runtime's newGraphQL(schema) attaches
         // the instrumentation, which binds a DSLContext through the transaction provider over the pinned
         // connection. Same schema-invariant, ABI-frozen character as the slice-1 substrate.
         String transactionProvider = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider");
@@ -633,17 +633,17 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(connectionInstrumentation, graphitronRuntime);
         acc.addEdge(connectionInstrumentation, pinnedConnection);
         acc.addEdge(connectionInstrumentation, transactionProvider);
-        // R429 slice 5: the facade's owned-path factory (newOwnedExecutionInput) publishes the claims
+        // The facade's owned-path factory (newOwnedExecutionInput) publishes the claims
         // under the instrumentation's CLAIMS_KEY constant, so the facade references that class.
         acc.addEdge(facade, connectionInstrumentation);
-        // R429 slice 4: the per-operation tenant-keyed connection carrier. Always emitted (generic over the
+        // The per-operation tenant-keyed connection carrier. Always emitted (generic over the
         // erased tenant key); its edges to the runtime, the pinned connection, and the transaction provider
-        // are the tenant-keyed acquisition + provider-bound DSLContext seam R45's routed fetchers consume.
+        // are the tenant-keyed acquisition + provider-bound DSLContext seam the eventual routed fetchers consume.
         String tenantConnections = units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections");
         acc.addEdge(tenantConnections, graphitronRuntime);
         acc.addEdge(tenantConnections, pinnedConnection);
         acc.addEdge(tenantConnections, transactionProvider);
-        // R429 slice 3: when a <sessionState> block is configured the runtime constructor bakes
+        // When a <sessionState> block is configured the runtime constructor bakes
         // `new GraphitronSessionHook()` in place of SessionHook.NONE, and the impl implements the hook
         // seam. Conditionally emitted; the edges are inert (render-skipped) in schema-driven builds that
         // configure no session state, and accurate once slice 5 turns the block on.
@@ -651,7 +651,7 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(graphitronRuntime, sessionHookImpl);
         acc.addEdge(sessionHookImpl, sessionHook);
         // The dev-loop query executor drives the facade's schema build and owned-input factory
-        // through the R429 runtime with an explicit ROLLBACK_ONLY commit policy. Conditionally emitted
+        // through the connection-lifecycle runtime with an explicit ROLLBACK_ONLY commit policy. Conditionally emitted
         // (non-federation schemas only), so the edges are inert (render-skipped) in federation builds.
         String devExecutor = units.rootUnit("GraphitronDevExecutor");
         acc.addEdge(devExecutor, facade);
@@ -700,12 +700,12 @@ public final class CompileDependencyGraphBuilder {
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
-        // R429 slice 2: the operation-typed transaction seam.
+        // The operation-typed transaction seam.
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation"));
-        // R429 slice 4: the per-operation tenant-keyed connection carrier (always emitted, generic).
+        // The per-operation tenant-keyed connection carrier (always emitted, generic).
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections"));
-        // R429 slice 3: the concrete session hook the runtime bakes from <sessionState>. Conditionally
+        // The concrete session hook the runtime bakes from <sessionState>. Conditionally
         // emitted (only when a <sessionState> block is configured), so it is absent from schema-driven
         // builds; modelling it unconditionally is superset-safe (the render skips units never emitted) and
         // pre-covers the sakila migration in slice 5, which turns the block on.

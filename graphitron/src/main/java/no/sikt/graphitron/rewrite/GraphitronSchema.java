@@ -30,8 +30,8 @@ import java.util.Map;
  * {@code GraphitronFacadeGenerator}'s factory parameter emission) read this field directly
  * rather than re-classifying, so a "single producer" guarantee holds across the two consumers.
  *
- * <p>{@link #diagnostics} (R317 slice 5, generalising the R204 / R279 slice 4
- * {@code domainReturnTypeConflicts} one-off) carries the build-time validation findings the
+ * <p>{@link #diagnostics} (generalising the {@code domainReturnTypeConflicts} one-off)
+ * carries the build-time validation findings the
  * immutable validate phase accumulated instead of demoting a classified verdict to
  * {@code UnclassifiedType} / {@code UnclassifiedField}: the multi-producer {@code DomainReturnType}
  * disagreements, node-typeId collisions, case-fold collisions, the dangling-reference backstop, and
@@ -86,7 +86,7 @@ public record GraphitronSchema(
     }
 
     /**
-     * Five-arg convenience constructor (pre-R463 shape, retained for tests): no arrival index, so
+     * Five-arg convenience constructor (the pre-arrival-index shape, retained for tests): no arrival index, so
      * every nested field folds to the conservative {@link Arrival#MANY} ({@code Child}).
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
@@ -98,7 +98,7 @@ public record GraphitronSchema(
     }
 
     /**
-     * Seven-arg convenience constructor (the pre-R463 canonical shape, retained for tests that supply
+     * Seven-arg convenience constructor (the pre-arrival-index canonical shape, retained for tests that supply
      * a pre-grouped {@code fieldsByType} and an explicit {@link ContextArgumentClassifier.Classification}):
      * no arrival index.
      */

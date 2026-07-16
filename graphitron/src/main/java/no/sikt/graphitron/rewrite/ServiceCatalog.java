@@ -114,7 +114,7 @@ class ServiceCatalog {
      * {@code null} when the type has no associated table.
      */
     String getTableSqlNameForType(String typeName) {
-        // R317 slice 4 — resolve table-backedness through the pure TableIndex (a fixed point built
+        // Resolve table-backedness through the pure TableIndex (a fixed point built
         // before the walk), not ctx.types: under the single classify-and-emit walk a field's target
         // composite may not be registered yet when the field classifies, so a registry read would miss
         // it. The index agrees with the registry for table-backed types by construction (slice 3d).
@@ -262,8 +262,8 @@ class ServiceCatalog {
                         // dedicated batch-at-root diagnostic — `@service at the root does not
                         // support List<Row>/List<Record> batch parameters`. List<TableRecord> at
                         // root is the canonical InputBeanResolver shape and falls through to the
-                        // arg-mismatch arm if the parameter name doesn't bind (R185 narrowed
-                        // looksLikeSourcesShape so TableRecord is excluded). classifySourcesType
+                        // arg-mismatch arm if the parameter name doesn't bind
+                        // (looksLikeSourcesShape excludes TableRecord). classifySourcesType
                         // returns empty for parentPkColumns.isEmpty(), so the detection happens
                         // here on the parameter type directly.
                         if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
@@ -397,7 +397,7 @@ class ServiceCatalog {
     private record InstanceHolderResolution(List<MethodRef.Param> ctorParams, Rejection rejection) {}
 
     /**
-     * Resolves the holder constructor for an instance {@code @service} method (R256 relaxation).
+     * Resolves the holder constructor for an instance {@code @service} method.
      * The class must be concrete (not abstract / an interface); it must expose a public constructor
      * whose parameters are each bindable from a {@code DSLContext} slot or a declared context key
      * (so the legacy {@code (DSLContext)} ctor still resolves, and a {@code (DSLContext, ctxArg)}
@@ -523,7 +523,7 @@ class ServiceCatalog {
      *       {@code Table<?>}; reflection must find exactly one Table parameter and emit it as
      *       {@link ParamSource.Table}. argMapping entries targeting the Table slot are rejected
      *       (the reserved-slot typo guard).</li>
-     *   <li>{@link #FORBIDDEN} — {@code @tableMethod} (after R43): the developer's method
+     *   <li>{@link #FORBIDDEN} — {@code @tableMethod}: the developer's method
      *       receives GraphQL field arguments and context values only; graphitron derives the
      *       target table from the method's return type. Any {@code Table<?>} parameter is
      *       rejected outright.</li>
@@ -539,8 +539,8 @@ class ServiceCatalog {
      * parameters whose name matches a context key get {@link ParamSource.Context}.
      * The {@link TableSlotPolicy} governs how {@code Table<?>}-typed parameters are handled:
      * {@code REQUIRED} (the {@code @condition} caller) treats them as the parent Table slot and
-     * emits {@link ParamSource.Table}; {@code FORBIDDEN} (the {@code @tableMethod} caller after
-     * R43) rejects them. Any other parameter shape is an error.
+     * emits {@link ParamSource.Table}; {@code FORBIDDEN} (the {@code @tableMethod} caller)
+     * rejects them. Any other parameter shape is an error.
      *
      * <p>{@code argBindings} carries the Java-target → GraphQL-arg-name mapping per
      * {@link #reflectServiceMethod}. Override entries pointing at non-existent Java parameters are
@@ -749,7 +749,7 @@ class ServiceCatalog {
      * Override-target check for {@link TableSlotPolicy#REQUIRED} callers ({@code @condition}):
      * rejects argMapping entries that target the reserved {@code Table<?>} parameter slot, then
      * defers to {@link #checkOverrideTargets} for missing-parameter detection. Mirrors the legacy
-     * {@code checkTableMethodOverrideTargets} that {@code @tableMethod} no longer needs after R43.
+     * {@code checkTableMethodOverrideTargets} that {@code @tableMethod} no longer needs.
      */
     private static String checkConditionOverrideTargets(Map<String, PathExpr> argByJavaName,
                                                         java.lang.reflect.Method javaMethod,
@@ -803,7 +803,7 @@ class ServiceCatalog {
     /**
      * Legacy extraction (no wire-coercion check): a jOOQ enum gets {@link CallSiteExtraction.EnumValueOf},
      * everything else {@link CallSiteExtraction.Direct}. Retained for the {@code @tableMethod} /
-     * {@code @condition} argument path (sites C/D), which R261 Slice 1 does not touch: those sites
+     * {@code @condition} argument path (sites C/D), which Slice 1 does not touch: those sites
  * consume the same predicate in a later slice once their dimensional channel is pinned, so
      * threading the reject here now would fire ahead of the channel that surfaces it. Slice 1 gates
      * only the {@code @service} path (site B) via {@link #argExtraction}.
@@ -819,7 +819,7 @@ class ServiceCatalog {
 
     /**
      * Returns the {@link CallSiteExtraction} for a GraphQL {@code Arg} parameter given its declared
-     * Java type and the resolved SDL leaf type at the bound argument position (R261, D2). A
+     * Java type and the resolved SDL leaf type at the bound argument position (the D2 lift). A
      * jOOQ-generated enum gets {@link CallSiteExtraction.EnumValueOf} after an enum-constant parity
      * check against the SDL enum values (site E: a divergent value name rejects rather than emitting
      * an {@code Enum.valueOf} that throws at runtime); a scalar gets {@link CallSiteExtraction.Direct}
@@ -1324,7 +1324,7 @@ class ServiceCatalog {
     }
 
     /**
-     * R355 depth-1 name-based descent. For an unbound Java parameter named {@code paramName} with
+     * Depth-1 name-based descent. For an unbound Java parameter named {@code paramName} with
      * parameterized-type name {@code paramJavaTypeName}, scans every unclaimed slot whose unwrapped
      * (non-null) GraphQL type is a {@link GraphQLInputObjectType} and looks for the direct field
      * named {@code paramName} whose {@link #mapToJavaTypeName mapped Java type} is non-null and
@@ -1337,7 +1337,7 @@ class ServiceCatalog {
      * a list-shaped slot is not a {@link GraphQLInputObjectType} and is skipped, so a list-shaped
      * intermediate is never descended through. Routing the leaf through {@link #mapToJavaTypeName}
      * means a field whose type is a named input object, enum, or unclassified scalar (mapped type
-     * {@code null}) never matches: R355 binds only canonical-scalar-typed leaves (a scalar or a
+     * {@code null}) never matches: this rule binds only canonical-scalar-typed leaves (a scalar or a
      * list thereof), the same null-is-no-match discipline the {@code unambiguousReachablePath}
      * suggestion uses. Requiring both the name and the type to match keeps this branch exactly as
      * confident as its arity-unique / type-unique siblings, which also gate on

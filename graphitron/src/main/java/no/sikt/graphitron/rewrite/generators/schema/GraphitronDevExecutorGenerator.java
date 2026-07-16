@@ -21,7 +21,7 @@ import java.util.Objects;
 
 /**
  * Generates the {@code GraphitronDevExecutor} class in {@code <outputPackage>} (the root output
- * package, beside the {@code Graphitron} facade): the R428 in-process query-execution entry point
+ * package, beside the {@code Graphitron} facade): the in-process query-execution entry point
  * the {@code graphitron:dev} MCP {@code execute} tool drives reflectively.
  *
  * <p>The load-bearing property is the signature: one public static {@code execute} method whose
@@ -30,9 +30,9 @@ import java.util.Objects;
  * graphql-java type ever crosses the host-to-generated-classloader boundary. Everything
  * schema-varying (the {@code newOwnedExecutionInput} signature, the typed contextArgument
  * binding, whether {@code <sessionState>} is configured) is absorbed here at generation time,
- * compiled in the same R410 pass over the same classpath as the rest of the closure.
+ * compiled in the same pass over the same classpath as the rest of the closure.
  *
- * <p>Inside, the executor is a plain consumer of the R429 machinery: it wraps the host's single
+ * <p>Inside, the executor is a plain consumer of the owned-connection machinery: it wraps the host's single
  * dev connection in a one-connection {@code DataSource}, constructs the {@code GraphitronRuntime}
  * with the requested dialect, and attaches the connection instrumentation with the
  * {@code ROLLBACK_ONLY} commit policy so mutations settle by rolling back; the dev loop exercises
@@ -41,7 +41,7 @@ import java.util.Objects;
  *
  * <p>Emission is gated to non-federation schemas: a federation subgraph builds through the
  * two-arg {@code buildSchema(schemaCustomizer, federationCustomizer)} and needs an entity
- * fetcher, so its executor is a follow-on variant (see the R428 federation section). The
+ * fetcher, so its executor is a follow-on variant. The
  * compile-dependency graph models the unit unconditionally, which is superset-safe: the render
  * skips units never emitted.
  */
@@ -203,8 +203,8 @@ public final class GraphitronDevExecutorGenerator {
     }
 
     /**
-     * The one-connection {@code DataSource} the executor hands the runtime: the R429 acquisition
-     * path asks a {@code DataSource} for its per-operation connection, and in the dev loop that
+     * The one-connection {@code DataSource} the executor hands the runtime: the owned-connection
+     * acquisition path asks a {@code DataSource} for its per-operation connection, and in the dev loop that
      * connection is the single host-opened one. Release closes it (the runtime treats close as
      * return-to-pool), which is fine: the host's own {@code close()} in its {@code finally} is
      * then an idempotent no-op.

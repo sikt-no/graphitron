@@ -110,7 +110,7 @@ public class GraphQLRewriteGenerator {
 
     /**
      * The dev-loop variant of {@link #generate()}: emits every source and additionally builds the
-     * {@link CompileDependencyGraph} the R410 incremental compile driver needs to compute the per-save
+     * {@link CompileDependencyGraph} the incremental compile driver needs to compute the per-save
      * recompile set. Production one-shot generation ({@code GenerateMojo}) stays on {@link #generate()}
      * and never pays the graph-build cost; only {@code graphitron:dev} (with compilation enabled) reaches
      * for this. The graph is built from the same classified model this run rendered, so it is always
@@ -123,7 +123,7 @@ public class GraphQLRewriteGenerator {
     /**
      * A {@link #generateIncremental()} run's products: the {@link GenerationResult} (emitted set + writer
      * delta + emitted {@link TypeSpec}s) paired with the {@link CompileDependencyGraph} coarsened from
-     * the same classified model. Together these are the raw material the R410 dev-loop compile driver
+     * the same classified model. Together these are the raw material the dev-loop compile driver
      * reads: the graph and the ABI hashes derived from {@code result.emittedUnits()} decide which units a
      * save must recompile.
      */
@@ -138,7 +138,7 @@ public class GraphQLRewriteGenerator {
      *
      * <p>{@code emittedUnits} and {@code changedUnits} are the same two sets keyed by fully-qualified
      * class name rather than path, and {@code emittedUnits} additionally carries the emitted
-     * {@link TypeSpec} per unit. This is the raw material R410's incremental compile driver reads: the
+     * {@link TypeSpec} per unit. This is the raw material the incremental compile driver reads: the
      * FQCN keys are the graph's node identities (and the live set for the {@code .class} orphan sweep),
      * the {@link TypeSpec} values feed {@code AbiSignature.hash} for ABI-vs-body discrimination, and
      * {@code changedUnits} is the writer's delta by FQCN. Hashing is left to the consumer, so a
@@ -146,8 +146,8 @@ public class GraphQLRewriteGenerator {
      * specs is a transient reference the run discards. The SDL resource is not a compilation unit and
      * appears in neither map.
      *
-     * <p>{@code methodCommands} is the run's committed method-command relation (R333 thread I level 2,
-     * landed by R314): every named method a covered emit family claims, one command per method,
+     * <p>{@code methodCommands} is the run's committed method-command relation: every named method a
+     * covered emit family claims, one command per method,
      * populated by the reentry declaration seams. The bidirectional closure oracle joins it against
      * {@code emittedUnits}.
      */
@@ -231,7 +231,7 @@ public class GraphQLRewriteGenerator {
         CatalogFacts catalogFacts
     ) {
         /**
-         * Convenience for callers that do not populate the R362 {@link CatalogFacts} projection
+         * Convenience for callers that do not populate the {@link CatalogFacts} projection
          * (LSP / maven dev-loop tests, the catalog-refresh path that reuses a prior catalog);
          * defaults it to {@link CatalogFacts#empty()}.
          */
@@ -412,7 +412,7 @@ public class GraphQLRewriteGenerator {
         // federation @link injector's generator-owned definitions at the same boundary.
         all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
             .run(attributed.registry(), attributed.injectedNames()));
-        // R429 codegen-config advisories about the owned-connection runtime's identity posture, derived
+        // Codegen-config advisories about the owned-connection runtime's identity posture, derived
         // from the <sessionState> config and whether the schema uses @service. Folded in here so they ride
         // the same suppression, LSP replay, and MCP projection as every other warning.
         boolean hasService = schema.fields().values().stream()

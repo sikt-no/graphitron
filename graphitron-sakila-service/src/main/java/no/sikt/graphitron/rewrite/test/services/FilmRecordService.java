@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * R311 compilation / execution-tier fixtures: a jOOQ {@code TableRecord} bound <em>directly</em> as a
+ * Compilation / execution-tier fixtures: a jOOQ {@code TableRecord} bound <em>directly</em> as a
  * {@code @service} input param (root singular, root {@code List<…>}, composite-key, and the
  * child-{@code @service} coordinate). The generated fetcher constructs the record via a
  * {@code createFilmRecord} / {@code createFilmRecordList} helper ({@code NodeIdEncoder.decodeValues}
@@ -29,7 +29,7 @@ public final class FilmRecordService {
     private FilmRecordService() {}
 
     /**
-     * R311 root singular: the {@code @service} param is a jOOQ {@link FilmRecord} constructed from a
+     * Root singular: the {@code @service} param is a jOOQ {@link FilmRecord} constructed from a
      * {@code @nodeId} identity (decoded {@code film_id}) plus {@code @field} columns ({@code title},
      * {@code release_year}). Reads all three back to prove the column-axis SET and the scalar-key
      * decode land together.
@@ -42,7 +42,7 @@ public final class FilmRecordService {
     }
 
     /**
-     * R311 root list: the consumer's motivating shape ({@code List<…Record>} against {@code [Input!]!}).
+     * Root list: the consumer's motivating shape ({@code List<…Record>} against {@code [Input!]!}).
      * One {@link FilmRecord} is constructed per element through the same singular helper the
      * {@code createFilmRecordList} variant delegates to; the body reads each decoded {@code film_id}
      * and set {@code title} back.
@@ -57,7 +57,7 @@ public final class FilmRecordService {
     }
 
     /**
-     * R311 composite-key root: a jOOQ {@link FilmActorRecord} (composite PK {@code actor_id, film_id})
+     * Composite-key root: a jOOQ {@link FilmActorRecord} (composite PK {@code actor_id, film_id})
      * whose {@code @nodeId} identity decodes both key columns in one {@code fromArray} call. Reads
      * both back.
      */
@@ -69,7 +69,7 @@ public final class FilmRecordService {
     }
 
     /**
-     * R311 child coordinate: a child {@code @service} rows-method on the {@code @table}-bound
+     * Child coordinate: a child {@code @service} rows-method on the {@code @table}-bound
      * {@code Film} parent, taking the parent keys (Sources, {@code Set<Record1<Integer>>}) plus a
      * {@link FilmRecord} arg. The arg classifies to a jOOQ-record call-site binding exactly as the root
      * param does, and the child rows-method emits {@code createFilmRecord} through {@code ArgCallEmitter}

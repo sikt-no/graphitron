@@ -20,12 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Spike: pin down graphql-java's behavior when a parent DataFetcher returns a list-shaped
- * source and the SDL parent type is non-list. Informs R178's bulk-DML alignment section:
+ * source and the SDL parent type is non-list. Informs the bulk-DML alignment work:
  * is "the films DataFetcher iterates the list internally" the only honest encoding, or
  * does graphql-java auto-traverse the parent list and invoke the films DataFetcher per
  * element?
  *
- * <p>The five variants below cover the encodings R178 might lean on:
+ * <p>The five variants below cover the encodings the bulk-DML emit might lean on:
  * <ol>
  *   <li><b>V1</b> baseline: single payload, single child. env.getSource() == payload.</li>
  *   <li><b>V2</b> single payload, list child, DataFetcher returns an explicit list.
@@ -208,7 +208,7 @@ public class ListSourceBehaviorSpike {
     // films field — does graphql-java auto-walk the list for the non-list
     // payload type?
     //
-    // This is the load-bearing question for bulk DML under R178: if
+    // This is the load-bearing question for bulk DML: if
     // graphql-java rejects this (or coerces in an unexpected way), the
     // emit shape MUST include a DataFetcher that consciously handles the
     // list at the payload->films boundary.

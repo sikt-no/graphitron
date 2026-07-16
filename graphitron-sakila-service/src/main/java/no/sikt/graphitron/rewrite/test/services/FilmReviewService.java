@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R12 fixture: mutation-side {@code @error} end-to-end. The {@code submit} method drives the
+ * Fixture: mutation-side {@code @error} end-to-end. The {@code submit} method drives the
  * {@code MutationServiceRecordField} emit path that broke in production (a
  * {@code @service}-backed mutation returning a {@code @record} payload with an {@code errors}
  * slot) through compile-spec and execute-spec, mirroring the query-side
@@ -37,7 +37,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R150 fixture: takes a consumer-authored input bean. The fetcher generator emits a
+     * Fixture: takes a consumer-authored input bean. The fetcher generator emits a
      * {@code createFilmReviewDetails(Map<String, Object>)} helper that walks the SDL field map
      * and instantiates this record positionally. The body delegates to {@link #submit} for the
      * actual review logic; the new surface is the bean instantiation seam, not the service
@@ -51,7 +51,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R200 fixture: takes a {@link FilmReviewSummary} whose record components ({@code film},
+     * Fixture: takes a {@link FilmReviewSummary} whose record components ({@code film},
      * {@code stars}) diverge from the SDL input field names ({@code filmId}, {@code rating}), bridged
      * by {@code @field(name:)}. The body reads the typed bean's components and delegates to
      * {@link #submit}; the surface under test is the {@code @field}-driven member binding in the
@@ -65,7 +65,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R195 fixture: takes a {@link FilmRecordAssignment} whose member is a jOOQ
+     * Fixture: takes a {@link FilmRecordAssignment} whose member is a jOOQ
      * {@code FilmRecord} decoded from an {@code ID! @nodeId(typeName: "Film")} input-bean field.
      * The generated fetcher decodes the wire id into the record before calling this method; the
      * body simply reads back the populated key column to prove the decode-and-materialize seam.
@@ -78,7 +78,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R195 composite-key fixture: takes a {@link FilmActorRecordAssignment} whose member is a jOOQ
+     * Composite-key fixture: takes a {@link FilmActorRecordAssignment} whose member is a jOOQ
      * {@code FilmActorRecord} (composite PK {@code actor_id, film_id}) decoded from a single
      * {@code FilmActor} NodeId. The body reads both populated key columns back to prove the
      * composite per-column {@code set} fills every key column.
@@ -91,7 +91,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R195 list fixture: takes a {@link FilmRecordListAssignment} whose member is a
+     * List fixture: takes a {@link FilmRecordListAssignment} whose member is a
      * {@code List<FilmRecord>} decoded from a list of {@code Film} NodeIds. The body reads each
      * populated {@code film_id} back to prove the list variant materialises one record per element.
      */
@@ -105,7 +105,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R195 both-dimensions fixture: takes a {@link FilmActorRecordListAssignment} whose member is a
+     * Both-dimensions fixture: takes a {@link FilmActorRecordListAssignment} whose member is a
      * {@code List<FilmActorRecord>} decoded from a list of {@code FilmActor} NodeIds. The body reads
      * each element's composite key back to prove the list variant wraps the composite per-element
      * decode.
@@ -120,8 +120,8 @@ public final class FilmReviewService {
     }
 
     /**
-     * R154 fixture: identical branching to {@link #submit} but returns the setter-shape sibling
-     * payload class. Drives the {@code MutationServiceRecordField} emit through R154's
+     * Fixture: identical branching to {@link #submit} but returns the setter-shape sibling
+     * payload class. Drives the {@code MutationServiceRecordField} emit through the
      * mutable-bean construction shape (no-arg ctor + setters) end-to-end through the execution
      * tier.
      */
@@ -142,7 +142,7 @@ public final class FilmReviewService {
     }
 
     /**
-     * R201 fixture: identical branching to {@link #submitSetterShape} but returns the
+     * Fixture: identical branching to {@link #submitSetterShape} but returns the
      * {@code @field(name:)}-renamed setter-shape payload. Drives the {@code MutationServiceRecordField}
      * emit through the mutable-bean construction shape whose setter names are resolved from
      * {@code @field(name:)} rather than the SDL field names, end-to-end through the execution tier.

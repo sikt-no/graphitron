@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * encoded-ID / scalar-return INSERT/UPSERT suppression) is verified without a compilation /
  * execution fixture.
  *
- * <p>This is the test that fails when R97 Phase 2b moves the INSERT/UPSERT write-target derivation
+ * <p>This is the test that fails when a later change moves the INSERT/UPSERT write-target derivation
  * off the input's {@code @table}: at that point {@code encodedWriteTargetInputTypes} empties and the
  * two carve-out assertions here flip to expecting the warning, which is the intended signal that the
  * carve-out has been retired.
@@ -65,7 +65,8 @@ class TableOnInputDeprecationWarningTest {
     @Test
     void encodedIdReturnInsert_doesNotWarnOnInput() {
         // The return is an encoded ID: the return type carries no @table, so the input's @table is
-        // currently the only signal naming the write target. Carved out until R97 Phase 2b lands.
+        // currently the only signal naming the write target. Carved out until write-target derivation
+        // moves off the input's @table.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
             input BarInput @table(name: "bar") { name: String }
@@ -82,14 +83,14 @@ class TableOnInputDeprecationWarningTest {
             .noneMatch(m -> m.contains("BarInput") && m.contains(DEPRECATION_FRAGMENT));
     }
 
-    // No encoded-UPSERT case: @mutation(typeName: UPSERT) is refused upstream under the R144
-    // cardinality-safety regime (lifts at R145), so no MutationUpsertTableField can be constructed
+    // No encoded-UPSERT case: @mutation(typeName: UPSERT) is refused upstream under the
+    // cardinality-safety regime (lifts when UPSERT generation is restored), so no MutationUpsertTableField can be constructed
     // today. encodedWriteTargetInputTypes still reads that leaf so the carve-out follows the sealed
     // model the moment UPSERT lands, but there is nothing to pin here yet.
 
     @Test
     void deleteConsumedInput_warnsNamingMutationTableArg() {
-        // R457 cutover: DELETE now has a field-relative write-target path (@mutation(table:)), so its
+        // DELETE now has a field-relative write-target path (@mutation(table:)), so its
         // inputs are no longer carved out of the deprecation warning; the warning fires and names the
         // replacement explicitly. (This is the flip the commit-1 carve-out anticipated.)
         var schema = TestSchemaHelper.buildSchema("""

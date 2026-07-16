@@ -13,8 +13,8 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R374 (D-A) — the {@code edges} tool: takes one node selector + a direction and returns that
- * node's typed neighbours, the traversal layer over the frozen R362 / R368 structured tools. One
+ * The {@code edges} tool: takes one node selector + a direction and returns that
+ * node's typed neighbours, the traversal layer over the frozen structured tools. One
  * dedicated tool, not a {@code neighbours} field retrofitted onto every result, so the eight
  * existing contracts stay frozen and both directions (forward, and the reverse-index impact
  * analysis) live behind one contract.

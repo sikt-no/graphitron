@@ -5,18 +5,18 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.AddressRecord;
 import org.jooq.DSLContext;
 
 /**
- * R315 execution-tier fixture: a jOOQ {@link AddressRecord} bound directly as a {@code @service} input
+ * Execution-tier fixture: a jOOQ {@link AddressRecord} bound directly as a {@code @service} input
  * param, populated from a <em>nullable same-table identity</em> {@code @nodeId(typeName: "Address")} —
  * Address's own table, so the decode resolves to the record's own primary key {@code address_id} (the
- * {@code X.table == record.table} arm R311 first shipped, here exercised with a nullable {@code ID}).
+ * {@code X.table == record.table} arm, here exercised with a nullable {@code ID}).
  *
- * <p>This is the end-to-end pin for D4's nullable-same-table-identity behavior change. R311 always threw
- * on a null / omitted identity (whether {@code ID!} or {@code ID}); R315 makes a nullable identity
- * skip-when-omitted, so a DB-assignable serial PK can be left unset for the service-owned INSERT to
- * assign. {@link #upsertAddress} branches on the per-column {@code changed} flag:
+ * <p>This is the end-to-end pin for D4's nullable-same-table-identity behavior change. Binding a jOOQ
+ * record as a service param previously always threw on a null / omitted identity (whether {@code ID!}
+ * or {@code ID}); a nullable identity now skips-when-omitted, so a DB-assignable serial PK can be left
+ * unset for the service-owned INSERT to assign. {@link #upsertAddress} branches on the per-column {@code changed} flag:
  * <ul>
  *   <li><b>omitted</b> ({@code addressId} absent → {@code address_id} {@code changed=false}): the
- *       service owns the INSERT (R311: the service owns the DML). It fills the table's other
+ *       service owns the INSERT (and thus the DML). It fills the table's other
  *       {@code NOT NULL} columns and inserts; the database assigns the serial {@code address_id}, which
  *       jOOQ refreshes back into the record — proving an omitted nullable identity does not throw and is
  *       left for the DB to populate.</li>

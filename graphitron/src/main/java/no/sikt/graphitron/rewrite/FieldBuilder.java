@@ -158,7 +158,7 @@ class FieldBuilder {
     /**
  * The deferral prose for the single-node {@code @routine} on a Mutation root field
      * (no {@code @reference} hop), landed by {@link #classifyMutationField}'s top check. The
-     * multi-node chain classifies for real since R451 ({@link #classifyMutationRoutineChain},
+     * multi-node chain classifies for real ({@link #classifyMutationRoutineChain},
      * landing {@code MutationRoutineWriteField}); the single-node shape has no post-commit table
      * to re-read from, so its result-shape story is carried by the {@code
      * routine-write-result-shapes} follow-up alongside procedures and scalar / void routines —
@@ -235,7 +235,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 2b sibling to {@link #dmlEmittedBinding}: resolves the
+     * Sibling to {@link #dmlEmittedBinding}: resolves the
      * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted} binding for an
      * SDL payload type observed as the return of an {@code @service}-carrier mutation field.
      */
@@ -264,7 +264,7 @@ class FieldBuilder {
     /**
      * Builds a service-backed field's {@link SourceKey} from the resolved {@code @service}
      * method's {@code Sources} parameter: the {@code (columns, wrap)} pair read directly off
-     * the signature fact. (R431: the retired {@code ServiceTableRecord} /
+     * the signature fact. (The retired {@code ServiceTableRecord} /
      * {@code ServiceUntypedRecord} reader arms duplicated the producer's declared return shape,
      * a {@link MethodRef} fact, and were dispatch-dead — the service rows-method emit reads the
      * method and return type directly.)
@@ -646,7 +646,7 @@ class FieldBuilder {
 
     /**
      * The {@code (remapped to '<base>' by @field)} parenthetical for a reject string, or the empty
-     * string when no remap is in play (R202 precedent). Shown only when the directive is present
+     * string when no remap is in play. Shown only when the directive is present
      * <em>and</em> the resolved base diverges from the SDL field name, so a failed override reads
      * as an override rather than a plain missing member.
      */
@@ -739,12 +739,12 @@ class FieldBuilder {
      * participant surfaces as that participant's classifier rejection, failing the build. The
      * {@code @asConnection} same-table advisory is emitted at most once across participants.
      *
-     * <p>Developer {@code @condition} filters (R384 phase c) lower through the same per-participant
+     * <p>Developer {@code @condition} filters lower through the same per-participant
      * loop: {@link #resolveTableFieldComponents} reflects the {@code @condition} method once per
      * participant, and the branch emitter calls it against each participant's stage-1 alias. The
      * contract is the one every {@code @condition} already carries: a {@code Table<?>}-typed first
      * parameter serves every branch, while a concrete participant-table parameter surfaces a
-     * mismatched branch at the consumer's javac (mirroring R379's concrete-parameter semantics).
+     * mismatched branch at the consumer's javac (mirroring @reference's concrete-parameter semantics).
      */
     private ParticipantFiltersResult lowerParticipantFilters(
             GraphQLFieldDefinition fieldDef, List<ParticipantRef> participants) {
@@ -785,10 +785,10 @@ class FieldBuilder {
      * ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) cannot emit, or {@code null} if every
      * filter is branch-safe. The branch path reuses the single-table condition-term emission with
      * the enclosing fetcher class's {@code CompositeDecodeHelperRegistry} and the pre-declared lift
-     * locals threaded through it (R384 phase 0), and supports {@code Direct}, {@code EnumValueOf},
-     * {@code ContextArg}, {@code JooqConvert} (R384 phase a), {@code NodeIdDecodeKeys} (R384
-     * phase b), a {@code NestedInputField} whose leaf is itself one of those, and developer
-     * {@code @condition} filters (R384 phase c: {@code ConditionFilter} /
+     * locals threaded through it, and supports {@code Direct}, {@code EnumValueOf},
+     * {@code ContextArg}, {@code JooqConvert}, {@code NodeIdDecodeKeys},
+     * a {@code NestedInputField} whose leaf is itself one of those, and developer
+     * {@code @condition} filters ({@code ConditionFilter} /
      * {@code FkTargetConditionFilter} gate on their per-param extractions like every other filter;
      * the FK-target alias pass and the registry supply their plumbing). {@code InputBean} and the
      * record-decode shapes stay rejected. Rejecting at classify time keeps the failure a clean
@@ -797,13 +797,13 @@ class FieldBuilder {
      */
     private static String firstUnsupportedFilterArg(List<WhereFilter> filters) {
         for (var filter : filters) {
-            // R384 phase c: developer @condition filters (ConditionFilter / FkTargetConditionFilter)
+            // Developer @condition filters (ConditionFilter / FkTargetConditionFilter)
             // are no longer rejected outright — the phase-0 threading supplies the FK-target alias
             // pass and the decode registry their emission needs, so every filter kind is gated
             // uniformly on its per-param extractions below. The developer method runs once per
             // branch against that participant's stage-1 alias; a method whose Table parameter is
             // declared as a concrete participant table surfaces any mismatch at the consumer's
-            // javac (the same contract as R379's concrete-parameter checks), while the common
+            // javac (the same contract as @reference's concrete-parameter checks), while the common
             // Table<?> signature serves every branch.
             for (var param : filter.callParams()) {
                 if (!isBranchSafeExtraction(param.extraction())) {
@@ -816,7 +816,7 @@ class FieldBuilder {
 
     /**
      * The polymorphic branch emitter ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) emits
-     * a filter term with the plumbing R384 phase 0 threads through it (the enclosing fetcher
+     * a filter term with the plumbing threaded through it (the enclosing fetcher
      * class's {@code CompositeDecodeHelperRegistry}, pre-declared {@code <name>Keys} /
      * lifted-outer locals, and FK-target aliases); each arm below states whether the corresponding
      * extraction's emission is covered by that plumbing.
@@ -826,9 +826,9 @@ class FieldBuilder {
      * emitter's {@code NestedInputField} arm ({@code ArgCallEmitter.buildArgExtraction}) emits a
      * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal. A nested
      * plain {@code @field} column carries a {@link CallSiteExtraction.Direct} leaf, an ID-typed one
-     * a {@link CallSiteExtraction.JooqConvert} leaf ({@code FieldBuilder.implicitBodyParam}, R384
-     * phase a), and a nested {@code @nodeId} field a {@code NodeIdDecodeKeys} leaf (R384 phase b,
-     * lifting its decode helper through the threaded registry) — all admitted through the
+     * a {@link CallSiteExtraction.JooqConvert} leaf ({@code FieldBuilder.implicitBodyParam}), and a
+     * nested {@code @nodeId} field a {@code NodeIdDecodeKeys} leaf (lifting its decode helper
+     * through the threaded registry) — all admitted through the
      * recursion. The condition-method generator ({@code TypeConditionsGenerator}) is
      * extraction-agnostic, so the generated {@code <Participant>Conditions} method is identical
      * whether the value arrives top-level or Map-traversed.
@@ -843,13 +843,13 @@ class FieldBuilder {
             case CallSiteExtraction.EnumValueOf ignored -> true;
             case CallSiteExtraction.ContextArg ignored -> true;
             case CallSiteExtraction.NestedInputField nif -> isBranchSafeExtraction(nif.leaf());
-            // R384 phase a: branch-safe. The shared arm now emits the non-deprecated
+            // Branch-safe. The shared arm now emits the non-deprecated
             // DSL.val(raw, col.getDataType()).getValue() coercion, and the branch path pre-declares
             // the shared <name>Keys local (deduped across participants) ahead of the stage-1 union
             // (MultiTablePolymorphicEmitter.declareFilterPlumbing); the nested-leaf form is a
             // self-contained traversal-plus-coercion expression needing no local at all.
             case CallSiteExtraction.JooqConvert ignored -> true;
-            // R384 phase b: branch-safe. The enclosing <Type>Fetchers class's
+            // Branch-safe. The enclosing <Type>Fetchers class's
             // CompositeDecodeHelperRegistry is threaded through branchFilterWhere (phase 0), so a
             // NodeId-decoded filter arg lifts its decode helper onto the class hosting the branch
             // call site — top-level and as a NestedInputField leaf, which the recursion above
@@ -886,9 +886,9 @@ class FieldBuilder {
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName)
             : rawTypeName;
-        // R317 slice 3d — the table-backed fact comes from the pure TableIndex (a fixed point threaded
-        // in, not the in-progress registry), so no edge reads a sibling/parent verdict for it. R317
-        // slice 3e — the interface / union / result arms below resolve their target through the
+        // The table-backed fact comes from the pure TableIndex (a fixed point threaded
+        // in, not the in-progress registry), so no edge reads a sibling/parent verdict for it. The
+        // interface / union / result arms below resolve their target through the
         // registry-free look-ahead (TypeBuilder.lookAheadVerdict), not ctx.types, so the field's
         // output target need not have been registered: the precondition for the enter-only single
         // walk, where the target is a not-yet-visited child.
@@ -897,7 +897,7 @@ class FieldBuilder {
 
         if (tableBacked instanceof TableBackedType tbt && !(tableBacked instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
-            // R317 slice 3d — build the TableBoundReturnType from the index verdict's table directly
+            // Build the TableBoundReturnType from the index verdict's table directly
             // rather than casting ctx.resolveReturnType (which reads the registry). The pure TableIndex
             // keeps a typeId-collided node visible here, whereas validateNodeTypeIdUniqueness has
             // already demoted it in the registry; resolveReturnType would yield a ScalarReturnType and
@@ -907,7 +907,7 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
-            // R379 Check 1: this inline / split projection feeds the terminal alias to a
+            // Terminal-target check: this inline / split projection feeds the terminal alias to a
             // $fields overload typed for the return table (InlineTableFieldEmitter.buildArm), so a
             // terminal hop landing elsewhere would compile to javac-rejected generated code. Reject
             // at build time, formatting the diagnostic from the typed verdict.
@@ -923,8 +923,8 @@ class FieldBuilder {
             boolean isList = returnType.wrapper().isList();
             // Synthesise the step-0 parent correlation once per carrier — both inline and
             // split-rows arms below read this through their @reference-carrying record header.
-            // The split-query batch grain is a projection off this arm (R450:
-            // ParentCorrelation.parentKeyColumns), so build the correlation first and read the
+            // The split-query batch grain is a projection off this arm
+            // (ParentCorrelation.parentKeyColumns), so build the correlation first and read the
             // entry columns off it rather than re-deriving them from the path.
             var tbtPcResolution = ctx.buildParentCorrelation(
                 referencePath.elements(), parentTableType.table());
@@ -982,7 +982,7 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
-            // R379 Check 1: same $fields(terminalAlias) invariant as the TableBoundReturnType arm.
+            // Terminal-target check: same $fields(terminalAlias) invariant as the TableBoundReturnType arm.
             if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch.diagnostic()));
             }
@@ -1001,7 +1001,7 @@ class FieldBuilder {
 
         if (elementType instanceof InterfaceType interfaceType) {
             // Per-participant FK auto-discovery from parent table to each participant's table.
-            // resolveChildPolymorphicJoinPaths is the R452 gate: it rejects a field-level
+            // resolveChildPolymorphicJoinPaths is the gate: it rejects a field-level
             // @reference (which cannot express per-participant joins), a same-table participant,
             // and zero/multi-FK auto-discovery failures, so only the auto-discovered single-hop
             // FK shape reaches the emitter.
@@ -1059,7 +1059,7 @@ class FieldBuilder {
         // their respective leaves). class-backed parents cannot reach here; this path is gated
         // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
         //
-        // R317 slice 3a — "no domain classification" is decided structurally by
+        // "no domain classification" is decided structurally by
         // TypeBuilder.isDirectivelessNestingTarget (the type pass's null verdict, minus carriers and
         // multi-producer rejections), not by reading ctx.types here. The former
         // `elementType == null || elementType instanceof NestingType` guard read the in-progress
@@ -1101,7 +1101,7 @@ class FieldBuilder {
 
         // A @table parent whose child returns a record-backed/service result type has no way to build that
         // child from the parent's own row. The former ConstructorField passthrough materialised the
-        // child from the @table parent's Record; R290 dissolved that leaf as wrong-by-design (no
+        // child from the @table parent's Record; that leaf was dissolved as wrong-by-design (no
         // production schema relies on it, and its only coverage was self-referential), so the clash is
         // now a build-time rejection that GraphitronSchemaValidator surfaces. The field needs an
         // explicit producer, or the child type needs a catalog backing.
@@ -1200,7 +1200,7 @@ class FieldBuilder {
         // InputType (Pojo / Java record / jOOQ record) and UnclassifiedType (input resolution
         // failed — e.g. FilmKey unresolvable against the surrounding table) both go through the
         // plain-input path so lookup-key search still runs and produces a focused error.
-        // R317 slice 3e — registry-free look-ahead at the argument's input type, reachable from this
+        // Registry-free look-ahead at the argument's input type, reachable from this
         // field; reproduces the ctx.types verdict (including a binding-rejected UnclassifiedType)
         // without reading the in-progress registry.
         var resolvedType = typeBuilder.lookAheadVerdict(typeName);
@@ -1293,7 +1293,7 @@ class FieldBuilder {
                     // GraphitronClientException via ThrowOnMismatch: a bad filter id is a
                     // client mistake worth surfacing, not silently dropping to "no row matches".
                     // Explicit @lookupKey re-enables the N×M derived-table lookup shape — the only
-                    // remaining same-table-arg path into QueryLookupTableField after R106. The
+                    // remaining same-table-arg path into QueryLookupTableField. The
                     // emitter's per-row decode site branches on the NodeIdDecodeKeys arm; both
                     // filter and synthesised-lookup-key paths now throw, distinguished only by the
                     // decode helper's two-branch message.
@@ -1311,7 +1311,7 @@ class FieldBuilder {
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                     // FK-target @nodeId arg = filter semantics. Throw extraction (malformed or
-                    // wrong-type ids surface a GraphitronClientException, R378, rather than dropping
+                    // wrong-type ids surface a GraphitronClientException rather than dropping
                     // silently to "no match"). projectFilters emits BodyParam.In/Eq/RowIn/RowEq
                     // using DirectFk's fkSourceColumns directly — no JOIN, the resolver has already
                     // verified the FK's targetColumns positionally match the NodeType key columns.
@@ -1397,7 +1397,7 @@ class FieldBuilder {
         // mis-binds against the field's own table. v1 supports FK-derived paths only; a condition-join
         // hop is deferred (mirrors FkTargetConditionEmitter and the output-side @reference stub).
         if (arg.hasAppliedDirective(DIR_REFERENCE)) {
-            // R435 made @reference repeatable so field-level applications compose the table
+            // @reference is repeatable, so field-level applications compose the table
             // chain; order-composition has no meaning on an argument, so repetition here is a
             // conflict, not a chain.
             if (arg.getAppliedDirectives(DIR_REFERENCE).size() > 1) {
@@ -1810,9 +1810,9 @@ class FieldBuilder {
      * {@code override: true}, gets an implicit column-equality predicate, a {@link BodyParam}
      * with a {@link CallSiteExtraction.NestedInputField} extraction, added to
      * {@code implicitBodyParams}. {@code implicitBodyParams} is required non-null at entry
-     * (enforced by {@link java.util.Objects#requireNonNull}); R205 unified the
+     * (enforced by {@link java.util.Objects#requireNonNull}); the
      * {@link ArgumentRef.InputTypeArg.TableInputArg} and
-     * {@link ArgumentRef.InputTypeArg.PlainInputArg} branches so both emit implicit predicates
+     * {@link ArgumentRef.InputTypeArg.PlainInputArg} branches are unified so both emit implicit predicates
      * symmetrically. Fields that carry an explicit {@code @condition} (any override value) never
      * also emit an implicit predicate.
      *
@@ -1968,9 +1968,9 @@ class FieldBuilder {
                     // compose, and there's no column to bind) or the field has no filter
                     // contribution at all (condition.isEmpty()). The first arm is the
                     // validator's job per spec but the validator's plain-input walk doesn't
-                    // exist yet (R221: validator-walks-plain-input-unbound-fields); the
-                    // consumer-side reject acts as a safety net for plain inputs until R221
-                    // lands. @table inputs are caught by GraphitronSchemaValidator.validateInputUnboundField
+                    // exist yet; the
+                    // consumer-side reject acts as a safety net for plain inputs until that
+                    // walk lands. @table inputs are caught by GraphitronSchemaValidator.validateInputUnboundField
                     // at the directive's location independent of this path.
                     boolean rejectAtConsumer = !enclosingOverride
                         && (uf.condition().isEmpty()
@@ -1987,7 +1987,7 @@ class FieldBuilder {
     }
 
     /**
-     * R215 consumer-side rejection for an {@link InputField.UnboundField} reached at a call site
+     * Consumer-side rejection for an {@link InputField.UnboundField} reached at a call site
      * with no enclosing {@code @condition(override: true)} cascade. The field carries no column
      * binding and either no {@code @condition} of its own or one with {@code override:false}
      * (the latter is also caught by the validator at the directive's location). The rejection
@@ -2043,7 +2043,7 @@ class FieldBuilder {
                                                String graphqlTypeName, boolean nonNull, boolean list,
                                                CallSiteExtraction leaf,
                                                String outerArgName, List<String> leafPath) {
-        // R384 phase a: align the nested @field leaf with the top-level conversion semantics
+        // Align the nested @field leaf with the top-level conversion semantics
         // (EnumMappingResolver.deriveExtraction) — a nested ID-typed @field over a plain column
         // coerces through the column's DataType via a JooqConvert leaf instead of the hardcoded
         // Direct leaf BuildContext builds, so a converted column's wire String reaches the
@@ -2147,7 +2147,7 @@ class FieldBuilder {
     GraphitronField classifyField(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
             Class<?> parentBackingClass) {
         var result = classifyFieldInner(fieldDef, parentTypeName, parentType, parentBackingClass);
-        // R458 placement gate: @referenceFor is only meaningful on a multi-table interface/union
+        // Placement gate: @referenceFor is only meaningful on a multi-table interface/union
         // child field (the only site resolveChildPolymorphicJoinPaths reads it). On any other field
         // the directive is silently ignored by classification, so a field that carries it yet
         // classifies successfully as something other than an InterfaceField / UnionField (a plain
@@ -2174,11 +2174,11 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // R449 D1 — the root position is read once here and feeds both the hoisted D2 query
-        // conflict detector below and the R435 chain interception's Query-only root arm, so no
+        // The root position is read once here and feeds both the hoisted query
+        // conflict detector below and the chain interception's Query-only root arm, so no
         // second string-comparison site appears (the fuller fix, lifting RootType into
         // Query/Mutation/Subscription so dispatch is exhaustive rather than string-compared, is a
-        // model-cleanup follow-up out of R449's scope).
+        // model-cleanup follow-up).
         boolean isRoot = parentType instanceof RootType;
         boolean isQueryRoot = isRoot && parentTypeName.equals("Query");
         boolean isMutationRoot = isRoot && parentTypeName.equals("Mutation");
@@ -2208,8 +2208,8 @@ class FieldBuilder {
             }
         }
 
-        // R449 D2 — the query conflict detector, hoisted from classifyQueryField so it runs before
-        // the R435 chain interception below (one detector site per position: child above, Query
+        // The query conflict detector, hoisted from classifyQueryField so it runs before
+        // the chain interception below (one detector site per position: child above, Query
         // here). @service @routine on a Query field now rejects as a DirectiveConflict at every
         // shape — single-node and multi-node chain alike — where the interception would otherwise
         // silently route the multi-node chain to the routine classifier. Guarded by D1's single
@@ -2223,15 +2223,15 @@ class FieldBuilder {
 
         // Order-significant @routine / @reference composition. The ordered field-level
         // applications compose the field's table chain, and this is the only pass that reads
-        // their order. Root chains land QueryRoutineTableField (the single-node R300 shape via
+        // their order. Root chains land QueryRoutineTableField (the single-node shape via
         // classifyRootField's @routine branch, routine-then-hops via classifyRootRoutineChain);
         // child chains with a routine node land ChildField.TableField via the chain walker
         // (classifyChildRoutineChain — head, mid-chain, or terminus routine position); child
         // chains of repeated @reference applications carry no routine node and fall through to
         // the ordinary classification (parsePath concatenates their elements). Misorderings
         // reject as AuthorError at classify time. Chain rule and shapes are documented in
-        // docs/manual/reference/directives/routine.adoc; remaining fetch-form breadth is
-        // roadmap/routine-chain-fetch-form-breadth.md.
+        // docs/manual/reference/directives/routine.adoc; some fetch-form breadth remains as a
+        // recognized capability gap.
         var chainDirectives = chainDirectiveNames(fieldDef);
         long routineApplications = chainDirectives.stream().filter(DIR_ROUTINE::equals).count();
         if (routineApplications > 0 || chainDirectives.size() > 1) {
@@ -2302,10 +2302,10 @@ class FieldBuilder {
      * .synthesizeNameMatchedJoin}, gated on the catalog's table-valued-function fact); later hops
      * ride the ordinary FK / condition machinery. Lands
      * {@link QueryField.QueryRoutineTableField} carrying the {@code (start, hops)} chain; the
-     * R300 single-node shape is the degenerate chain with no {@code @reference} applications
+     * single-node shape is the degenerate chain with no {@code @reference} applications
      * ({@code hops = []}).
      *
-     * <p>Ordering note: like the R300 single-node root, the chain root carries no ordering
+     * <p>Ordering note: like the single-node root, the chain root carries no ordering
      * surface ({@code QueryRoutineTableField} is not a {@code SqlGeneratingField}); an
      * {@code @defaultOrder} surface over the catalog terminus is recorded as pending in the plan.
      */
@@ -2341,7 +2341,7 @@ class FieldBuilder {
      * per-hop {@code filter}. The write fetcher's step 2 anchors the post-commit re-read on hop
      * 0's table keyed by the captured routine columns, so a condition-joined or filtered hop 0
      * (whose predicate references the routine alias, absent from step 2) has no derivable re-read
-     * anchor; it lands a typed {@code Deferred} with an empty planSlug (the R435 precedent for a
+     * anchor; it lands a typed {@code Deferred} with an empty planSlug (the established precedent for a
      * shape someone may file a follow-up for) rather than reaching the leaf. Hops past 0 keep
      * their filters — both aliases are in scope in step 2's SELECT.
      *
@@ -2428,7 +2428,7 @@ class FieldBuilder {
                 boolean lateralHead = walk.steps().get(0) instanceof JoinStep.Hop h
                     && h.on() instanceof On.Lateral;
                 // Build the step-0 correlation first; the split batch grain is a projection off
-                // it (R450: ParentCorrelation.parentKeyColumns), so it must exist before the grain
+                // it (ParentCorrelation.parentKeyColumns), so it must exist before the grain
                 // is derived and the uncorrelated-routine check below can read the derived key.
                 var pcResolution = ctx.buildParentCorrelation(walk.steps(), tbt.table());
                 if (pcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError ae) {
@@ -2624,7 +2624,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 2 overload taking the parent's reflected backing class. Threaded by
+     * Overload taking the parent's reflected backing class. Threaded by
      * {@link #classifyChildFieldOnResultType} so the transport selector can probe the parent
      * class for an accessor matching the errors-shaped SDL field. The 3-arg overload above
      * stays for the {@code ServiceDirectiveResolver} caller, where the parent's backing class
@@ -2649,7 +2649,7 @@ class FieldBuilder {
         java.util.List<ErrorType> errorTypes = new java.util.ArrayList<>();
         java.util.List<String> nonErrorMembers = new java.util.ArrayList<>();
         for (String memberName : memberNames) {
-            // R317 slice 3d — the error-member fact comes from the pure ErrorIndex (a fixed point, not
+            // The error-member fact comes from the pure ErrorIndex (a fixed point, not
             // the in-progress registry); a member two hops below the field being classified no longer
             // forces that deep type to be registered first. Present ⇒ error member; absent ⇒ non-error.
             var errorType = ctx.errors.forName(memberName);
@@ -2689,9 +2689,9 @@ class FieldBuilder {
                 new ErrorChannelWalkerError.NonNullableErrorsField(parentTypeName, name));
         }
 
-        // R178 step 2 / Phase 4: transport selection runs through {@link #selectErrorsTransport}
+        // Transport selection runs through {@link #selectErrorsTransport}
         // (the unit-tier rule table pinned by {@link ErrorsTransportSelectionTest}). The active-
-        // channel gate ahead of the rule firing reads the R96 producer-binding maps: a parent
+        // channel gate ahead of the rule firing reads the producer-binding maps: a parent
         // is treated as having an active error channel iff a payload-returning producer
         // (DmlEmitted or ServiceEmitted) is bound to it. Non-producer-bound parents (plain
         // class-backed types reachable as service / query returns whose errors-shaped field is a
@@ -2742,7 +2742,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 2: probe the parent's reflected class for an accessor matching the SDL
+     * Probe the parent's reflected class for an accessor matching the SDL
      * errors-shaped field name. Returns {@code false} when the parent has no developer-
      * supplied class or when no accessor matches.
      *
@@ -2765,11 +2765,11 @@ class FieldBuilder {
     }
 
     /**
-     * R178 errors-field transport selection (commit 3A scaffolding; wired up in 3B).
+     * Errors-field transport selection (commit 3A scaffolding; wired up in 3B).
      *
      * <p>Pure decision: given the parsed {@code @field(name:)} value on an SDL errors-shaped
      * field and whether the parent payload's backing class exposes a matching {@code errors}
-     * accessor, returns the {@link ChildField.Transport} arm per the R178 errors-field
+     * accessor, returns the {@link ChildField.Transport} arm per the errors-field
      * defaulting rule:
      *
      * <ul>
@@ -2802,7 +2802,7 @@ class FieldBuilder {
      * {@code ErrorsTransportSelectionTest}; 3B wires this into a {@code FieldBuilder} site
      * adapter that reads {@code @field(name:)} from the SDL field and queries
      * {@code ClassAccessorResolver} for the {@code errors} accessor against the parent
-     * class resolved by R96's reflection walk.
+     * class resolved by the reflection walk.
      */
     static ChildField.Transport selectErrorsTransport(
             FieldSourceSigil.ParseResult parsed, boolean accessorMatchesErrors) {
@@ -2850,7 +2850,7 @@ class FieldBuilder {
     private static final ErrorChannelResult NO_CHANNEL = new ErrorChannelResult.NoChannel();
 
     /**
-     * R244 result of resolving an {@code @service} outcome field's channel onto the typed
+     * Result of resolving an {@code @service} outcome field's channel onto the typed
      * {@code Outcome} wrapper transport. Three terminal states mirroring {@link ErrorChannelResult},
      * except the channel arm is the new {@link ErrorChannel.Mapped} and the reject arm carries the
      * <em>typed</em> {@link ErrorChannelWalkerError} (preserved into {@code UnclassifiedField} so the
@@ -2908,7 +2908,7 @@ class FieldBuilder {
                         result.returnTypeName(), f.getName()));
             }
         }
-        // R317 slice 3e — registry-free look-ahead at the payload's data type; reproduces the
+        // Registry-free look-ahead at the payload's data type; reproduces the
         // ctx.types verdict (including a producer-bound carrier) without reading the in-progress registry.
         if (!(typeBuilder.lookAheadVerdict(result.returnTypeName()) instanceof GraphitronType.ResultType backing)) {
             return new ServiceOutcomeResult.NoChannel();
@@ -3036,7 +3036,7 @@ class FieldBuilder {
                 f.hasAppliedDirective(DIR_FIELD)))
             .toList();
         // Contract rule 3: a present-but-blank @field(name: "") on any payload field rejects the
-        // channel (R200/R202 precedent). It can name no Java member, and silently falling back to
+        // channel. It can name no Java member, and silently falling back to
         // the SDL name would ignore a directive the author explicitly wrote.
         for (var carrier : sdlFieldCarriers) {
             if (carrier.fieldDirectivePresent() && carrier.javaBaseName().isBlank()) {
@@ -3244,7 +3244,7 @@ class FieldBuilder {
      * step (§5) and never reaches the dispatch arm, so no shadowing window remains.)
      */
     static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
-        // Rule 7 (multiple VALIDATION handlers). Single implementation lives in the R244 walker's
+        // Rule 7 (multiple VALIDATION handlers). Single implementation lives in the walker's
         // internal helper; this method delegates so the DML path and the legacy PayloadClass path
         // share one body with the ErrorChannelWalker (no drift during the additive window). Commit 4
         // rewires the remaining callers onto ChannelRuleChecks directly and deletes this delegator.
@@ -3582,7 +3582,7 @@ class FieldBuilder {
  * <p>For a two-level record-composite carrier ({@link TypeBuilder.CarrierBinding.ClassBacked}),
      * the payload's backing class names the per-element composite, and the method returns
      * {@code List<composite>} (or {@code composite}) keyed on whether the producer must yield a
-     * collection. R308 — that cardinality is no longer re-derived here from the carrier / data-field
+     * collection. That cardinality is no longer re-derived here from the carrier / data-field
      * wrappers; it is the {@code verdictProducerArrival} the shape verdict
      * ({@link BuildContext.ServiceCarrierShape.Coherent#producerArrival()}) decided once at the
      * carrier-arrival home and carried down. This check now does only its residual job, the producer
@@ -3633,7 +3633,7 @@ class FieldBuilder {
      * shape's model and emit stay byte-for-byte unchanged.
      *
      * <p>Reads three axes, each from its one home: carrier arrival straight off the carrier field's
-     * SDL wrapper here; producer arrival from the typed fact decided once at the R96 reflection
+     * SDL wrapper here; producer arrival from the typed fact decided once at the reflection
      * boundary ({@link TypeBuilder#serviceCarrierProducerArrival}); data-field arrival from the
      * canonical {@link BuildContext#scanStructuralServiceCarrierPayload} shape. This replaces the
      * uncoordinated wrapper reads that previously decided list-carrier admission (the
@@ -3667,7 +3667,7 @@ class FieldBuilder {
             ? Arity.MANY : Arity.ONE;
         // The cardinality the SDL shape requires the producer's return to have — carried on Coherent so
         // the downstream return-type match reads this one fact instead of re-deriving it. A collection
-        // is required when the carrier is a list ([Payload], one composite per element) or when an R329
+        // is required when the carrier is a list ([Payload], one composite per element) or when a
         // class-backed record-composite data field is itself a list (a single carrier whose data field
         // projects the whole producer list). This is the read checkServiceReturnMatchesPayload used to
         // do for itself; it now lives once, here, at the carrier-arrival home.
@@ -3721,7 +3721,7 @@ class FieldBuilder {
     /**
  * True when the payload is a class-backed record-composite carrier whose data field
      * is itself a list ({@code Payload { results: [Result] }}). Under a <em>single</em> carrier this is
-     * the coherent R329 shape whose single payload's list data field projects the whole producer list,
+     * the coherent shape whose single payload's list data field projects the whole producer list,
      * so it requires the {@code @service} producer to return a collection; the carrier-arrival home uses
      * this to compute {@code requiredProducerArrival} once, before the single-carrier early return.
      * (Under a <em>list</em> carrier the same list data field is instead the a2
@@ -3768,7 +3768,7 @@ class FieldBuilder {
      * channel side surfaces as {@code UnclassifiedField}; {@code NoChannel} yields an empty
      * channel.
      *
-     * <p>Post-R161, the {@code DmlTableField} permits never carry a class-backed return — every
+     * <p>The {@code DmlTableField} permits never carry a class-backed return — every
      * {@code ResultReturnType} routes through the {@code Mutation*DmlRecordField} permits, or
      * rejects at {@code MutationInputResolver.validateReturnType} before reaching this builder.
      * {@code resolveErrorChannel} therefore returns {@code NoChannel} by construction here; the
@@ -3829,7 +3829,7 @@ class FieldBuilder {
     }
 
     /**
-     * R159 / R178 Phase 4 — type-match check at the payload-data-field {@code $source}
+     * Type-match check at the payload-data-field {@code $source}
      * admission site. Runs when an {@code @service} mutation returns a structurally carrier-
      * shaped payload (single {@code @table}-typed data field) whose data field opts into the
      * {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
@@ -3863,7 +3863,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 Phase 4 — re-walk the payload SDL to retrieve the structurally-detected carrier's
+     * Re-walk the payload SDL to retrieve the structurally-detected carrier's
      * data field definition. Mirrors {@link #detectStructuralServicePayloadShape}'s walk but
      * returns the field definition rather than its resolved table/cardinality; both helpers
      * land at the same single {@code @table}-typed data field on payloads that
@@ -3876,7 +3876,7 @@ class FieldBuilder {
         GraphQLFieldDefinition dataField = null;
         for (var f : payloadObj.getFieldDefinitions()) {
             String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            // R317 slice 3d — the payload data field is two hops below the field being classified;
+            // The payload data field is two hops below the field being classified;
             // resolving its table-backed fact from the pure TableIndex (a fixed point) removes the
             // deep in-progress-registry read that blocks the single-walk collapse.
             if (ctx.tables.forName(unwrappedFieldType).isEmpty()) continue;
@@ -3887,7 +3887,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 Phase 4 — structural detection of a DML payload's error channel. Scans the payload
+     * Structural detection of a DML payload's error channel. Scans the payload
      * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}), runs
      * the channel-level handler rules (§1 rule 7 and rule 8) inline, and produces either an
      * {@link ErrorChannel.LocalContext} binding, an empty result when the payload has no
@@ -3925,7 +3925,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 3: structural strict-return check for {@code @service} mutations whose payload
+     * Structural strict-return check for {@code @service} mutations whose payload
      * has no resolved backing class on the SDL payload type. Inspects the
      * payload SDL directly (single {@code @table}-typed data field) and compares the method's
      * reflected return type against the expected {@code XRecord} (Cardinality.ONE) /
@@ -4010,7 +4010,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 3: structural detection for an {@code @service}-carrier shape on an unbacked
+     * Structural detection for an {@code @service}-carrier shape on an unbacked
      * SDL payload. Mirrors {@code RecordBindingResolver.groundServicePayloadBinding}'s payload
      * SDL walk: scans the payload object's field definitions, looks for exactly one
      * {@code @table}-typed data field (the field's element type is a GraphQL Object carrying
@@ -4033,7 +4033,7 @@ class FieldBuilder {
         Arity arrival = null;
         for (var f : payloadObj.getFieldDefinitions()) {
             String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            // R317 slice 3d — payload data field two hops below; table-backed fact from the pure
+            // Payload data field two hops below; table-backed fact from the pure
             // TableIndex (a fixed point) removes the deep in-progress-registry read.
             if (!(ctx.tables.forName(unwrappedFieldType).orElse(null) instanceof GraphitronType.TableBackedType tbt)) continue;
             if (dataField != null) return null;
@@ -4051,7 +4051,7 @@ class FieldBuilder {
      * data field against the table the carrier acts on (the DELETE input {@code @table} or the
      * {@code @service} producer's record table). One resolver, two consumers: the rejection
      * arms carry the typed failure so each call site derives its own diagnostic wording from
-     * the arm instead of re-walking the predicates (the pre-R275 shape was an
+     * the arm instead of re-walking the predicates (the previous shape was an
      * {@code Optional}-returning resolver plus a parallel string-returning validator that had
      * to stay in lockstep).
      */
@@ -4091,7 +4091,7 @@ class FieldBuilder {
         if (dataField.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> explicitTypeName = argString(dataField, DIR_NODE_ID, ARG_TYPE_NAME);
             if (explicitTypeName.isPresent()) {
-                // R317 slice 2 — the by-name node index replaces the keyed ctx.types lookup.
+                // The by-name node index replaces the keyed ctx.types lookup.
                 var targetNode = ctx.nodes.forName(explicitTypeName.get());
                 if (targetNode.isEmpty()) {
                     return new IdEncoderResolution.UnknownNodeType(explicitTypeName.get());
@@ -4106,7 +4106,7 @@ class FieldBuilder {
                 return new IdEncoderResolution.Resolved(targetNodeType);
             }
         }
-        // R317 slice 2 — the by-table node index (one-to-many) replaces the whole-registry scan.
+        // The by-table node index (one-to-many) replaces the whole-registry scan.
         // A table may back several @node types; the implicit form resolves only when exactly one
         // covers it (zero -> NoNodeForTable, multiple -> Ambiguous, both surfaced by the callers'
         // *IdEncoderError renderers).
@@ -4211,8 +4211,8 @@ class FieldBuilder {
     /**
      * Folds the pre-validated {@code returnType}, {@code encodeReturn} (populated for ID
      * returns that resolve to a {@code @node} type), and {@code interfaceVerdict} (present when the
-     * TableBound return is a single-table discriminated interface, R406) into the single
-     * {@link DmlReturnExpression} arm the DML emitter pattern-matches on. Total over the post-R161
+     * TableBound return is a single-table discriminated interface) into the single
+     * {@link DmlReturnExpression} arm the DML emitter pattern-matches on. Total over the
      * admitted return-type set (Scalar-ID / TableBound / discriminated-interface, single or list);
      * unreachable on anything else
      * ({@code MutationInputResolver.validateReturnType} already rejected list-payload returns
@@ -4231,7 +4231,7 @@ class FieldBuilder {
         if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
             // A single-table discriminated interface return re-projects through the
             // discriminator path rather than the concrete-type $fields projection; carry the
-            // read-side discrimination data (same as R405's *ServiceTableInterfaceField).
+            // read-side discrimination data (same as the *ServiceTableInterfaceField shapes).
             if (interfaceVerdict.isPresent()) {
                 var tit = interfaceVerdict.get();
                 var knownValues = knownDiscriminatorValues(tit);
@@ -4277,7 +4277,7 @@ class FieldBuilder {
     }
 
     /**
-     * R365 route (a) supports a {@code @service} field returning a multitable <em>interface</em>
+     * Route (a) supports a {@code @service} field returning a multitable <em>interface</em>
      * only. A {@code @service} returning a union is permanently unsupported (union polymorphism is a
      * generated-query-path capability; the service path never grew it), so reject it as an author
      * error rather than emit record-class dispatch over union members.
@@ -4293,7 +4293,7 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // R449 D2 — the query conflict detector moved to classifyField, hoisted before the R435
+        // The query conflict detector moved to classifyField, hoisted before the
         // chain interception so @service @routine on a multi-node chain rejects instead of routing
         // to the routine classifier. One detector site per position; no call here.
 
@@ -4348,8 +4348,8 @@ class FieldBuilder {
         }
 
         // Resolve the field's backing table name early so resolveTableFieldComponents has a
-        // pre-built NodeIdArgPlan to share with the lookup classification arm. After R106,
-        // the gate is purely "explicit @lookupKey opt-in"; same-table @nodeId no longer
+        // pre-built NodeIdArgPlan to share with the lookup classification arm. The gate is now
+        // purely "explicit @lookupKey opt-in"; same-table @nodeId no longer
         // promotes to a lookup unless paired with @lookupKey (whose presence shows up in
         // hasLookupKeyAnywhere).
         String lookupTypeName = baseTypeName(fieldDef);
@@ -4390,15 +4390,15 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
-            // The R300 single-node chain — the degenerate root chain with no @reference
+            // The single-node chain — the degenerate root chain with no @reference
             // applications (hops empty, the routine result is the terminus).
             return classifyRootRoutineChain(fieldDef, parentTypeName, name, location);
         }
 
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-        // R317 slice 3d — the table-backed fact comes from the pure TableIndex (a fixed point, not the
-        // in-progress registry). R317 slice 3e — the interface / union arms below resolve their target
+        // The table-backed fact comes from the pure TableIndex (a fixed point, not the
+        // in-progress registry). The interface / union arms below resolve their target
         // through the registry-free look-ahead (TypeBuilder.lookAheadVerdict), not ctx.types, so the
         // target need not have been registered yet (the enter-only single-walk precondition).
         GraphitronType tableBacked = ctx.tables.forName(elementTypeName).orElse(null);
@@ -4406,7 +4406,7 @@ class FieldBuilder {
 
         if (tableBacked instanceof TableBackedType tbt && !(tableBacked instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
-            // R317 slice 3d — build the TableBoundReturnType from the index verdict's table directly
+            // Build the TableBoundReturnType from the index verdict's table directly
             // rather than casting ctx.resolveReturnType (which reads the registry). The pure TableIndex
             // keeps a typeId-collided node visible here, whereas validateNodeTypeIdUniqueness has
             // already demoted it in the registry, so resolveReturnType would yield a ScalarReturnType
@@ -4505,7 +4505,7 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(sourceSigilError));
                     }
-                    // R178 step 3: @service-payload strict-return check detects the payload shape
+                    // The @service-payload strict-return check detects the payload shape
                     // directly from the payload SDL. The check fires only for unbacked payloads
                     // (no resolved backing class); ClassBacked payloads route through the surviving
                     // legacy-equality check inside buildServiceField, which produces the
@@ -4537,7 +4537,7 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(carrierError));
                     }
-                    // R275 / R317 slice 3c: a carrier-shaped SDL-Object return reaching the Scalar
+                    // A carrier-shaped SDL-Object return reaching the Scalar
                     // arm with no producer binding is an orphan carrier — the structural scan
                     // recognizes it as a single-data-field carrier, but it neither bound (by producer
                     // reflection) nor promoted as a producer-backed carrier, so the type is dropped
@@ -4618,7 +4618,7 @@ class FieldBuilder {
                 // PK-coverage rules from firing on either path.
                 if (kind == DmlKind.UPDATE) {
                     // multiRow: true on UPDATE is rejected outright; the broadcast semantics has no
-                    // replacement path under R246 (cover a PK or UK to express an UPDATE). DELETE,
+                    // replacement path (cover a PK or UK to express an UPDATE). DELETE,
                     // by contrast, admits multiRow as the DeleteRows.Broadcast arm (see below).
                     if (MutationInputResolver.parseMultiRow(fieldDef)) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -4632,7 +4632,7 @@ class FieldBuilder {
                 }
 
                 // Every @mutation(typeName: DELETE) classifies through the DeleteRowsWalker,
-                // mirroring R246/R258 for UPDATE. Branch on leaf identity before resolveInput: the
+                // mirroring the UPDATE walker path. Branch on leaf identity before resolveInput: the
                 // payload-returning shape (ResultReturnType) to classifyDeletePayloadField, the
                 // direct-@table/ID-return shape to classifyDeleteTableField. Both forks build the
                 // slim InputArgRef + DeleteRows carrier; carving DELETE off resolveInput retires the
@@ -4662,7 +4662,7 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
                 }
 
-                // R178 Phase 4: payload-returning DML mutations classify through structural
+                // Payload-returning DML mutations classify through structural
                 // detection of the payload SDL (single non-errors-shaped data field; element
                 // kind: @table / record-backed / ID), dispatching on the DmlElementKind permit returned
                 // by scanStructuralDmlPayload. Only INSERT / UPSERT reach here: UPDATE
@@ -4734,7 +4734,7 @@ class FieldBuilder {
                 Optional<HelperRef.Encode> encodeReturn = Optional.empty();
                 if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
                     String tableSqlName = tia.inputTable().tableName();
-                    // R317 slice 2 — the one-to-many by-table node index in place of the registry
+                    // The one-to-many by-table node index in place of the registry
                     // scan; the implicit ID encoder is well-defined only for a single-node table.
                     var nodesOnTable = ctx.nodes.forTable(tableSqlName);
                     if (nodesOnTable.isEmpty()) {
@@ -4821,7 +4821,7 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = foundTit.table().tableName();
-            // R317 slice 2 — the one-to-many by-table node index in place of the registry scan;
+            // The one-to-many by-table node index in place of the registry scan;
             // the implicit ID encoder is well-defined only for a single-node table.
             var nodesOnTable = ctx.nodes.forTable(tableSqlName);
             if (nodesOnTable.isEmpty()) {
@@ -4836,7 +4836,7 @@ class FieldBuilder {
             encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
         }
 
-        // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
+        // UpdateRows walker: PK-or-UK identification + SET/WHERE partition over the already-classified
         // input fields (the translator concession; see UpdateRowsWalker). Cardinality-independent
         //: the bulk vs single-row split is the emitter's, driven by inputArg.list() below.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
@@ -4925,7 +4925,7 @@ class FieldBuilder {
             var argType = arg.getType();
             boolean argList = GraphQLTypeUtil.unwrapNonNull(argType) instanceof GraphQLList;
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(argType)).getName();
-            // R317 slice 3e — registry-free look-ahead at the @mutation arg's input type. A @table
+            // Registry-free look-ahead at the @mutation arg's input type. A @table
             // input classifies as TableInputType; a plain input object as the sibling InputType
             // (PojoInputType et al) — both are input objects with a schemaType(), but neither is a
             // subtype of the other. A non-input-object argument (a scalar/enum) is the shape error.
@@ -4967,7 +4967,7 @@ class FieldBuilder {
  * The "@mutation fields only accept @table input arguments" rejection an UPDATE classifier
      * produces when it meets a {@link DmlWalkerInputArgResolution.RawArg} (a non-{@code @table} input
      * object). Byte-identical to the message {@link #resolveDmlWalkerInputArg} emitted for the same
-     * shape before R457 made the arm a normal outcome, so UPDATE behaviour is unchanged.
+     * shape before the arm became a normal outcome, so UPDATE behaviour is unchanged.
      */
     private GraphitronField rawArgUpdateRejection(
             String parentTypeName, String name, SourceLocation location, GraphQLFieldDefinition fieldDef,
@@ -5052,7 +5052,7 @@ class FieldBuilder {
         Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
-        // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
+        // UpdateRows walker: PK-or-UK identification + SET/WHERE partition over the already-classified
         // input fields. On Err, preserve the typed UpdateRowsError arm verbatim. Cardinality-independent
         //: the bulk vs single-row split is the emitter's, driven by inputArg.list() below.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
@@ -5075,7 +5075,7 @@ class FieldBuilder {
     /**
      * Outcome of {@link #resolveDeleteWriteTarget}: the resolved DELETE write target (the jOOQ table,
      * the input fields resolved against it, and the slim {@link InputArgRef} arg surface) or a typed
-     * rejection. R457 — the precedence and diagnostics that produce it are DELETE-only, so they live
+     * rejection. The precedence and diagnostics that produce it are DELETE-only, so they live
      * here rather than in the verb-agnostic {@link #resolveDmlWalkerInputArg}.
      */
     private sealed interface DeleteWriteTarget {
@@ -5089,12 +5089,12 @@ class FieldBuilder {
      * against it, by the DELETE precedence: {@code @mutation(table:)} (the preferred, field-relative
      * override), then the input type's {@code @table} (the deprecated migration bridge). There is
      * deliberately <em>no</em> return-derived rung: a DELETE cannot carry its table on the return type
-     * (the row is gone after the statement, so a {@code @table} return is rejected upstream; see
-     * R287), so every DELETE that lacks {@code @table} on its input must name the table with
+     * (the row is gone after the statement, so a {@code @table} return is rejected upstream),
+     * so every DELETE that lacks {@code @table} on its input must name the table with
      * {@code @mutation(table:)}.
      *
      * <p>An input {@code @table} that disagrees with {@code @mutation(table:)} is silently outranked,
-     * never cross-checked: R332 already nudges the input directive's removal, and promoting a
+     * never cross-checked: the deprecation warning already nudges the input directive's removal, and promoting a
      * directive the deprecation path wants migrated quietly into a build-breaking conflict participant
      * would invert that.
      *
@@ -5102,7 +5102,7 @@ class FieldBuilder {
      * the input), the input fields are resolved through {@link TypeBuilder#resolveInputFields} (shared
      * with {@code buildTableInputType}) and then the {@code validateTableInputType} input-field
      * rejections are mirrored at this call site, since a field-derived input never lands in that
-     * registry walk (the R330 validator-mirror obligation).
+     * registry walk (the validator-mirror obligation).
      */
     private DeleteWriteTarget resolveDeleteWriteTarget(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name, SourceLocation location) {
@@ -5128,7 +5128,7 @@ class FieldBuilder {
             }
         }
 
-        // 2. @mutation(table:) — the preferred, field-relative write target (R457 rung 2).
+        // 2. @mutation(table:) — the preferred, field-relative write target (rung 2).
         Optional<TableRef> mutationTable = Optional.empty();
         var tableArg = MutationInputResolver.parseMutationTableArg(fieldDef);
         if (tableArg.isPresent()) {
@@ -5164,7 +5164,7 @@ class FieldBuilder {
             inputFields = tit.inputFields();
         } else {
             // Field-derived path: resolve the raw input fields against the field-named table, then
-            // mirror the validator's input-field rejections here (R330 validator-mirror obligation) —
+            // mirror the validator's input-field rejections here (the validator-mirror obligation) —
             // a field-derived input never lands in GraphitronSchemaValidator.validateTableInputType.
             var schemaInput = tit != null ? tit.schemaType() : rawInput.schemaType();
             var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
@@ -5187,7 +5187,7 @@ class FieldBuilder {
     /**
  * Classifies a direct-@table/ID-return {@code @mutation(typeName: DELETE)} field into a
      * {@link MutationField.MutationDeleteTableField}. The DELETE analogue of
-     * {@link #classifyUpdateTableField}: resolves the write target and input fields (R457 precedence:
+     * {@link #classifyUpdateTableField}: resolves the write target and input fields (precedence:
      * {@code @mutation(table:)}, then the input's {@code @table}), validates the return type, resolves
      * the ID-return encoder, then runs {@code DeleteRowsWalker} for the PK-or-UK identification.
      * Unlike UPDATE, {@code multiRow: true} is admitted (the walker turns it into the
@@ -5219,7 +5219,7 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
-            // R317 slice 2 — the one-to-many by-table node index in place of the registry scan;
+            // The one-to-many by-table node index in place of the registry scan;
             // the implicit ID encoder is well-defined only for a single-node table.
             var nodesOnTable = ctx.nodes.forTable(tableSqlName);
             if (nodesOnTable.isEmpty()) {
@@ -5234,7 +5234,7 @@ class FieldBuilder {
             encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
         }
 
-        // R266 walker: PK-or-UK identification over the already-classified input fields, with
+        // DeleteRows walker: PK-or-UK identification over the already-classified input fields, with
         // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
@@ -5297,7 +5297,7 @@ class FieldBuilder {
         var wrapper = ctx.buildWrapper(dataField);
         var dataFieldLocation = locationOf(dataField);
 
-        // R266 walker: PK-or-UK identification over the already-classified input fields, multiRow
+        // DeleteRows walker: PK-or-UK identification over the already-classified input fields, multiRow
         // opting into the Broadcast arm. Run it before the per-field reclassify so an under-keyed
         // input rejects without leaving an orphaned data-field carrier in the registry — matching the
         // legacy ordering where resolveInput's PK-coverage check rejected before the reclassify ran.
@@ -5393,7 +5393,7 @@ class FieldBuilder {
 
 
     /**
-     * R449 D2 — the verdict for an unordered pair of classification-claiming directives. Two
+     * The verdict for an unordered pair of classification-claiming directives. Two
      * source-claiming directives conflict by default; the table below ({@link #pairVerdict})
      * records the two exceptions {@code @routine} draws. The sealed shape lets
      * {@link #reduceDirectiveConflict} switch exhaustively.
@@ -5408,12 +5408,12 @@ class FieldBuilder {
     }
 
     /**
-     * R449 D2 — the pairwise conflict verdict for an unordered pair of classification-claiming
+     * The pairwise conflict verdict for an unordered pair of classification-claiming
      * directives. Two source-claiming directives conflict by default; this records the exceptions
      * {@code @routine} draws: {@code @routine} × {@code @lookupKey} is a capability gap (typed
-     * {@code Deferred} on R447's {@code routine-chain-fetch-form-breadth}, the root extension of
-     * R435's shipped child verdict), and {@code @routine} × {@code @splitQuery} composes (shipped
-     * R435). {@link #reduceDirectiveConflict} projects this over the directives present at a
+     * {@code Deferred} on the {@code routine-chain-fetch-form-breadth} plan, the root extension of
+     * the shipped child verdict), and {@code @routine} × {@code @splitQuery} composes (shipped).
+     * {@link #reduceDirectiveConflict} projects this over the directives present at a
      * position; making it a table rather than a slot count with a carve-out is what lets the
      * reducer evaluate every pair (so {@code @routine @lookupKey @service} rejects the
      * {@code @service} conflicts rather than short-circuiting on the {@code @routine} × {@code
@@ -5431,7 +5431,7 @@ class FieldBuilder {
     }
 
     /**
-     * R449 D2 — reduces the classification-claiming directives present at a position to a single
+     * Reduces the classification-claiming directives present at a position to a single
      * verdict via the pairwise {@link #pairVerdict} table. Enumerates every unordered pair, looks
      * up its verdict, and reduces with Conflict-dominates-Deferred precedence: any {@code Conflict}
      * pair yields a {@link Rejection.InvalidSchema.DirectiveConflict} naming the participating
@@ -5479,7 +5479,7 @@ class FieldBuilder {
      *
      * <p>Note: {@code @reference} is a path-annotation directive, not a classification directive,
      * so it composes with any of these and is not listed. {@code @routine} <em>is</em> a
-     * classification directive (R449 D2): a valid child {@code @routine} chain carries only
+     * classification directive: a valid child {@code @routine} chain carries only
      * {@code @routine} (+ {@code @reference}), so it stays a single slot here; {@code @routine}
      * combined with any other source-claiming directive conflicts.
      */
@@ -5497,8 +5497,8 @@ class FieldBuilder {
      * Returns a {@link Rejection} when the query-field classification-claiming directives present
      * conflict or compose to a capability gap (via {@link #reduceDirectiveConflict}), or
      * {@code null}. The set is {@code @service}, {@code @lookupKey} (detected anywhere on the
-     * argument surface), {@code @tableMethod}, and {@code @routine} (R449 D2); {@code @routine} ×
-     * {@code @lookupKey} lands the typed {@code Deferred} that extends R435's child verdict to root.
+     * argument surface), {@code @tableMethod}, and {@code @routine}; {@code @routine} ×
+     * {@code @lookupKey} lands the typed {@code Deferred} that extends the child verdict to root.
      */
     private Rejection detectQueryFieldConflict(GraphQLFieldDefinition fieldDef) {
         var present = new ArrayList<String>();
@@ -5543,7 +5543,7 @@ class FieldBuilder {
      * DataLoader key is a {@code RowN} PK tuple, the lift arm's derived wrap), and the
      * {@code @sourceRow} {@link LoaderRegistration} constant. The
      * source envelope ({@code DIRECT} vs {@code OUTCOME_SUCCESS}) is derived at the type level by the
-     * generator ({@code sourceIsOutcome}), not carried on the key. R305 batches every re-fetch field
+     * generator ({@code sourceIsOutcome}), not carried on the key. Every re-fetch field is batched
      * (source cardinality {@code Many}); the single-source case is a correct one-element batch.
      */
     private ChildField buildPayloadCarrierBatchedTableField(
@@ -5562,7 +5562,7 @@ class FieldBuilder {
             LoaderRegistration.Container.POSITIONAL_LIST,
             isList ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
         // Source=target re-fetch: PK self-identity is the degenerate case of the FK pairing, the
-        // hop-less OnLiftedSlots correlation (R431; formerly a single LiftedHop in the joinPath).
+        // hop-less OnLiftedSlots correlation (formerly a single LiftedHop in the joinPath).
         var parentCorrelation = new ParentCorrelation.OnLiftedSlots(targetTable, pkColumns);
         return new ChildField.BatchedTableField(
             parentTypeName, name, location, tb, List.of(),
@@ -5576,7 +5576,7 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // R178 (step 1, DML-only cutover): a child field on a DML-emitted payload classifies
+        // A child field on a DML-emitted payload classifies
         // through the unified path against the producer's inner @table. The parent's source at
         // runtime is the DML fetcher's RecordN<PK> (single) or Result<RecordN<PK>> (bulk); the
         // child reads its key columns off that source as a RowN key over per-column reads,
@@ -5617,10 +5617,10 @@ class FieldBuilder {
             // arms below. For step 1 the relevant fixtures don't exercise this fall-through.
         }
 
-        // R178 step 2b: @service-carrier sibling. The producer is an @service method returning
+        // @service-carrier sibling. The producer is an @service method returning
         // XRecord (single) or List<XRecord> (bulk), observed as ProducerBinding.ServiceEmitted
-        // by R96's structural detection. The classifier-side dispatch mirrors the DmlEmitted
-        // arm above: R305 builds a record-sourced BatchedTableField source=target re-fetch carrier (see
+        // by the structural detection. The classifier-side dispatch mirrors the DmlEmitted
+        // arm above: it builds a record-sourced BatchedTableField source=target re-fetch carrier (see
         // buildPayloadCarrierBatchedTableField). The source-read shape (typed XRecord vs sparse
         // RecordN<PK>) and the envelope (DIRECT vs OUTCOME_SUCCESS) are resolved by the generator
         // at the type level, not carried on the SourceKey.
@@ -5658,7 +5658,7 @@ class FieldBuilder {
                 // (sourceIsOutcome = hasWrapperArmErrors), not carried on the key.
                 return buildPayloadCarrierBatchedTableField(parentTypeName, name, location, tb);
             }
-            // R275 requirement 2: ID-element data field on an @service carrier — the opptak
+            // ID-element data field on an @service carrier — the opptak
             // fjernSakTagg/fjernSakTagger @nodeId-from-record shape. The encoder resolution
             // re-asserts that @nodeId(typeName:)'s NodeType pins to the producer's table
             // (the binding grounded the table from the same typeName's SDL @table, so a
@@ -5721,7 +5721,7 @@ class FieldBuilder {
         }
 
         // @tableMethod on a class-backed parent — DTO-parent shape; dissolves onto the merged
-        // batched leaf with a TableExpr.MethodCall terminal hop (R314 slice 2b).
+        // batched leaf with a TableExpr.MethodCall terminal hop.
         // Fires BEFORE the @sourceRow branch because both directives may coexist (their roles
         // are complementary: @sourceRow provides the batch-key lifter; @tableMethod provides the
         // developer's static jOOQ table method). When @sourceRow is absent, the parent must be
@@ -5784,16 +5784,16 @@ class FieldBuilder {
                     "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
                     + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
             }
-            // R314 slice 2b: the DTO-parent @tableMethod shape dissolves onto the merged batched
+            // The DTO-parent @tableMethod shape dissolves onto the merged batched
             // leaf — the developer's method becomes the terminal hop's TableExpr.MethodCall
             // target, and the generic batched rows-method prelude materializes it through the
             // shared table-expression switch. The two shapes the retired leaf runtime-stubbed
-            // ("only single-hop FK paths ship in R43 commit 5") upgrade to classification-time
+            // ("only single-hop FK paths ship") upgrade to classification-time
             // rejections: an empty path's lifted-correlation prelude materializes its target from
             // the CATALOG constants (it would silently ignore the developer's method), and the
             // multi-hop chain was never emitted. A Connection wrapper is rejected here for the
             // same reason the merged leaf's constructor makes it unrepresentable on the Record
-            // arm (no record-parent Connection emit exists, R432).
+            // arm (no record-parent Connection emit exists).
             if (buildWrapper(fieldDef) instanceof FieldWrapper.Connection) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@tableMethod on a record-backed parent cannot return a Connection; no "
@@ -5865,7 +5865,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
             var tfc = (TableFieldComponents.Ok) components;
-            // joinPath: empty + OnLiftedSlots for LifterLeafKeyed (no @reference; R431), the
+            // joinPath: empty + OnLiftedSlots for LifterLeafKeyed (no @reference), the
             // resolved FK chain for LifterPathKeyed (@reference present). The resolver already
             // constructs the right shape and surfaces it as ok.joinPath() / ok.lifted().
             List<JoinStep> joinPath = ok.joinPath();
@@ -5929,7 +5929,7 @@ class FieldBuilder {
                             "@service on a record-backed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table",
                             "service-record-field"));
-                // R365 route (a) restores polymorphic returns on root @service fields only; a
+                // Route (a) restores polymorphic returns on root @service fields only; a
                 // child @service on a class-backed parent returning an interface/union is doubly
                 // out of scope (record-backed-parent batch key + polymorphic dispatch).
                 case ServiceDirectiveResolver.Resolved.Polymorphic p ->
@@ -6006,7 +6006,7 @@ class FieldBuilder {
                 // empty joinPath; the FK arm derives its correlation from the path.
                 // class-backed-parent carriers: see the @sourceRow branch above for the parentTable
                 // null rationale. The parent-anchor arm (a condition-join first hop, or any hop-0
-                // filter — R450) is the only one that consults parentTable, and it routes to
+                // filter) is the only one that consults parentTable, and it routes to
                 // AuthorError without one.
                 ParentCorrelation resolvedParentCorrelation;
                 if (resolved.lifted() != null) {
@@ -6156,7 +6156,7 @@ class FieldBuilder {
         }
         if (listDepth > 0) return java.util.List.class;
         if (current instanceof GraphQLScalarType s && ctx.types != null) {
-            // R317 slice 3e — registry-free look-ahead at the scalar's verdict for the assignability
+            // Registry-free look-ahead at the scalar's verdict for the assignability
             // check; resolved at this field's edge, not read from the in-progress registry.
             var classified = typeBuilder.lookAheadVerdict(s.getName());
             if (classified instanceof GraphitronType.ScalarType st
@@ -6167,7 +6167,7 @@ class FieldBuilder {
             return Object.class;
         }
         if (current instanceof GraphQLNamedType nt && ctx.types != null) {
-            // R317 slice 3e — registry-free look-ahead at the result-backed target (reproduces the
+            // Registry-free look-ahead at the result-backed target (reproduces the
             // ctx.types verdict, carrier included) so the assignability check does not depend on the
             // target having been registered.
             var classified = typeBuilder.lookAheadVerdict(nt.getName());
@@ -6209,13 +6209,13 @@ class FieldBuilder {
      *       Either way they are exactly the parent columns the emitter's correlation predicate
      *       pairs against, so the VALUES columns and the predicate agree (keying off the parent PK
      *       when the FK references a non-PK column made them disagree and silently returned zero
-     *       rows for every parent — R338).</li>
-     *   <li>{@code OnParentJoin} (a condition-join first hop, or any hop-0 {@code filter()} — R450)
+     *       rows for every parent).</li>
+     *   <li>{@code OnParentJoin} (a condition-join first hop, or any hop-0 {@code filter()})
      *       keys by the parent's own PK columns: the hop-0 predicate reads arbitrary parent
      *       columns, so the parent's identity is part of the fetch's inputs and a coarser key would
      *       hand two distinct parents one shared verdict. The emitter joins {@code parentInput} to
      *       the parent alias on these PK columns.</li>
-     *   <li>{@code OnLateralArgs} (a lateral routine first hop — R435) keys on the routine's
+     *   <li>{@code OnLateralArgs} (a lateral routine first hop) keys on the routine's
      *       column-bound inputs; a routine result is a pure function of its inputs, and the
      *       emitter reads those columns off {@code parentInput} directly inside the call
      *       expression with no correlation JOIN predicate.</li>
@@ -6584,7 +6584,7 @@ class FieldBuilder {
             SourceLocation location, String elementTypeName,
             ReturnTypeRef.PolymorphicReturnType returnType,
             GraphitronType.ResultType parentResultType) {
-        // R317 slice 3e — registry-free look-ahead at the polymorphic element (interface / union).
+        // Registry-free look-ahead at the polymorphic element (interface / union).
         GraphitronType elementType = typeBuilder.lookAheadVerdict(elementTypeName);
         List<ParticipantRef> participants;
         boolean isInterface;
@@ -6631,7 +6631,7 @@ class FieldBuilder {
      * Builder-internal sealed result of {@link #resolvePolymorphicRecordParent}. The classifier
      * arm reads {@code Resolved.parentSourceKey()} / {@code Resolved.hubTable()} when
      * constructing the {@link InterfaceField} / {@link UnionField}: the hub is handed to
-     * {@link #resolveChildPolymorphicJoinPaths} and (since R413) also carried onto the field
+     * {@link #resolveChildPolymorphicJoinPaths} and also carried onto the field
      * record as {@code parentKeyOwnerTable}, so the batched rows methods can bind the parent-key
      * VALUES cells through the hub columns' registered Converter DataTypes.
      */
@@ -6869,7 +6869,7 @@ class FieldBuilder {
                         ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
                             servicePath.elements(), s.method(), sk, lr, ch));
                 }
-                // R365 route (a) restores polymorphic returns on ROOT @service fields only.
+                // Route (a) restores polymorphic returns on ROOT @service fields only.
                 // Child @service on a @table parent returning an interface/union stays out of
                 // scope (no DataLoader-batched record-class-dispatch path yet); reject at build
                 // time rather than emit a stub, per "Validator mirrors classifier invariants".
@@ -6927,12 +6927,12 @@ class FieldBuilder {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
                 ReturnTypeRef targetType = ctx.resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
-                // R317 slice 3d — the node fact comes from the pure NodeIndex (a fixed point, not the
+                // The node fact comes from the pure NodeIndex (a fixed point, not the
                 // in-progress registry). Mirror the former two-branch logic precisely: an absent index
                 // entry that nonetheless names an existing SDL object is the "does not have @node"
                 // rejection; an absent entry naming nothing is the "does not exist in the schema"
                 // rejection (candidate list preserved as the registry keyset). The NodeIndex is pure
-                // (slice 3d dropped the typeId-uniqueness exclusion), so a typeId-collided node now
+                // (it dropped the typeId-uniqueness exclusion), so a typeId-collided node now
                 // resolves here and proceeds; the collision still fails the build at
                 // validateNodeTypeIdUniqueness before generation, so this is sound.
                 var targetNode = ctx.nodes.forName(typeName.get());
@@ -6945,7 +6945,7 @@ class FieldBuilder {
                     if (ctx.schema.getType(typeName.get()) != null) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not have @node"));
                     }
-                    // R317 slice 4 — the "did you mean" candidate set is sourced off the schema, not
+                    // The "did you mean" candidate set is sourced off the schema, not
                     // ctx.types.keySet(): under the single classify-and-emit walk the registry is only
                     // partially populated when a field classifies (its as-yet-unvisited siblings are not
                     // registered), so the partial registry would make this hint walk-order dependent. The
@@ -7021,8 +7021,7 @@ class FieldBuilder {
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(fieldDef.getType())).getName();
             // Synthesis shim: a scalar ID field on a NodeType without `@nodeId`, `@reference`, or
             // `@field` is treated as an implicit `@nodeId`. Fires a per-site deprecation diagnostic;
-            // the canonical form is to declare `@nodeId` explicitly. See plan:
-            // roadmap/retire-synthesis-shims.md.
+            // the canonical form is to declare `@nodeId` explicitly.
             if (tableType instanceof NodeType nodeType
                     && "ID".equals(typeName)
                     && !isList
@@ -7072,8 +7071,7 @@ class FieldBuilder {
      *       columns differ from the target's keyColumns, or the path has more than one step;
      *       emit through {@link ColumnReferenceField} / {@link ChildField.CompositeColumnReferenceField}
      *       carrying the target's keyColumns plus the resolved {@code joinPath}. Multi-hop and
-     *       condition-join paths surface as runtime stubs at the emitter; see
-     *       roadmap/nodeidreferencefield-join-projection-form.md.</li>
+     *       condition-join paths surface as runtime stubs at the emitter.</li>
      * </ul>
      */
     private ChildField buildNodeIdReferenceCarrier(
@@ -7198,7 +7196,7 @@ class FieldBuilder {
     }
 
     /**
-     * The roadmap slug of the deferred capability R452's rejections point authors at: per-participant
+     * The roadmap slug the deferred-capability rejections point authors at: per-participant
      * explicit join paths on multi-table interface/union child fields (multi-FK disambiguation,
      * condition joins, multi-hop chains, same-table self-FK participants). File basename under
      * {@code roadmap/}, no extension.
@@ -7206,17 +7204,17 @@ class FieldBuilder {
     private static final String PER_PARTICIPANT_JOIN_PATHS_SLUG = "per-participant-multitable-child-join-paths";
 
     /**
-     * Roadmap slug for R487: batched parent-holds-FK correlation for multi-table polymorphic child
+     * Roadmap slug for batched parent-holds-FK correlation on multi-table polymorphic child
      * fields. The gap C deferred rejection in {@link #classifyParticipantRoute} points here: a
      * list/connection field correlating through a foreign key held on the parent's table is served
      * at single cardinality; batching it needs the correlation columns carried through the
-     * DataLoader key, which R487 delivers. File basename under {@code roadmap/}, no extension.
+     * DataLoader key, which that capability delivers. File basename under {@code roadmap/}, no extension.
      */
     private static final String BATCHED_PARENT_HOLDS_FK_SLUG = "batched-polymorphic-parent-holds-fk-correlation";
 
     /**
-     * A one-line {@code @referenceFor} usage sketch, appended to R452's rule 1b / 1c steers so the
-     * author sees the sanctioned surface, not just the deferred-capability pointer (R458 slice 1).
+     * A one-line {@code @referenceFor} usage sketch, appended to the rule 1b / 1c steers so the
+     * author sees the sanctioned surface, not just the deferred-capability pointer.
      */
     private static final String REFERENCE_FOR_USAGE_SKETCH =
         "State an explicit per-participant path with @referenceFor(type: \"<Participant>\", "
@@ -7247,7 +7245,7 @@ class FieldBuilder {
      * polymorphic emitter dispatches on.
      *
      * <p>Single choke point for all four producers (interface / union × table-backed / record-backed
-     * parent). It is also the R452 build-time gate generalized by R458: a participant's correlation is
+     * parent). It is also the build-time gate: a participant's correlation is
      * either auto-discovered (the single unique FK from the participant's table to the parent's) or
      * stated explicitly with {@code @referenceFor}. Every shape the emitter cannot yet lower is
      * rejected here rather than lowered to an arbitrary-participant-row result on a green build.
@@ -7390,13 +7388,13 @@ class FieldBuilder {
      * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere} (the branch joins
      * nothing; the parent side is bound values). Every richer shape lowers to
      * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} (the branch
-     * joins real tables): a multi-hop FK chain through intermediate join tables (R458 slice 2) and any
-     * route carrying a condition ({@link On.Predicate}) hop (R458 slice 3). Both arms are now emittable
+     * joins real tables): a multi-hop FK chain through intermediate join tables and any
+     * route carrying a condition ({@link On.Predicate}) hop. Both arms are now emittable
      * by {@code MultiTablePolymorphicEmitter} in all three cardinality forms.
      *
-     * <p><b>Gap C (R481).</b> Once the correlation is resolved, a list/connection-cardinality field
+     * <p><b>Gap C.</b> Once the correlation is resolved, a list/connection-cardinality field
      * whose parent side reads a column off the parent/hub table's own key range gets a DEFERRED
-     * rejection keyed to R487: see {@link #parentHoldsFkListReject}. This is the one shape left
+     * rejection: see {@link #parentHoldsFkListReject}. This is the one shape left
      * unclosed here (a parent-holds-FK participant batched through the DataLoader key would emit
      * {@code parentInput.field("<fk-col>")} returning null); every other shape classifies.
      */
@@ -7484,11 +7482,11 @@ class FieldBuilder {
     }
 
     /**
-     * Gap C guard (R481). A list/connection-cardinality multi-table polymorphic child field whose
+     * Gap C guard. A list/connection-cardinality multi-table polymorphic child field whose
      * resolved correlation reads a parent-side column outside the parent/hub table's primary key
      * (a {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere} slot or a
      * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} FK hop-0 slot
-     * with an off-key {@code sourceSide()}) gets a {@link Rejection#deferred} keyed to R487's slug,
+     * with an off-key {@code sourceSide()}) gets a {@link Rejection#deferred} keyed to the deferred slug,
      * naming the participant and the FK column. A condition hop-0 correlates on the parent's bound key
      * ({@code parentKeyBoundWhere} / {@code parentInputKeyPredicate}) and is exempt; a lateral hop
      * cannot head a {@code @referenceFor} path, so neither reads an off-key parent column.
@@ -7498,7 +7496,7 @@ class FieldBuilder {
      * {@code isList}. The batched forms correlate the branch to a {@code parentInput VALUES} table
      * aliased to the bound-key names only, so a parent-holds-FK participant would emit
      * {@code parentInput.field("<fk-col>")} returning null; carrying correlation columns through the
-     * DataLoader key is R487's capability work. A parent-holds-FK participant is single-valued (at most
+     * DataLoader key is the deferred capability work. A parent-holds-FK participant is single-valued (at most
      * one parent row per child), so the message steers toward single cardinality.
      *
      * <p>The invariant (a list-cardinality correlation with a non-key parent side) is representable in
@@ -7565,7 +7563,7 @@ class FieldBuilder {
      */
     private ParticipantRef.TableBound.CrossTableField lookupParticipantCrossTableField(
             String parentTypeName, String fieldName) {
-        // R317 slice 2 — the participant cross-table-field fixed-point index replaces the nested
+        // The participant cross-table-field fixed-point index replaces the nested
         // whole-registry scan over every TableInterfaceType's participants.
         return ctx.crossTableFieldsByParticipant
             .getOrDefault(parentTypeName, Map.of())
@@ -7575,7 +7573,7 @@ class FieldBuilder {
     /**
      * The single-hop-FK shape predicate shared by the single-table {@link ChildField.TableInterfaceField}
      * arm ({@link #validateSingleHopFkJoin}) and the multi-table interface/union child arm
-     * ({@link #resolveChildPolymorphicJoinPaths}) (R452 rule 1d). Returns the {@link On.ColumnPairs}
+     * ({@link #resolveChildPolymorphicJoinPaths}). Returns the {@link On.ColumnPairs}
      * when {@code path} is exactly one {@link JoinStep.Hop} keyed by column pairs with at least one
      * slot; empty otherwise. Callers phrase their own per-arm rejection message.
      */

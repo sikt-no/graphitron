@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * MCP SDK's own Streamable HTTP client, asserting the contract end to end: the {@code initialize}
  * handshake carries the bundled instructions, the {@code about} prompt is advertised
  * argument-less and returns the bundled explainer, a taken port fails with an {@link IOException},
- * and (R361) the {@code tools} capability advertises the one liveness {@code status} tool whose
+ * and the {@code tools} capability advertises the one liveness {@code status} tool whose
  * {@code tools/call} reflects the live {@link Workspace} snapshot state on both the default
  * {@code Unavailable} arm and a driven {@code Built.Current} arm. Infrastructure-tier; mirrors
  * {@code DevServerTest}. The ephemeral port (never the hard-coded {@code 8488}) keeps parallel CI
@@ -136,7 +136,7 @@ class GraphitronMcpServerTest {
 
     @Test
     void executeToolIsAdvertisedExactlyWhenADevDatabaseIsConfigured() throws Exception {
-        // The R428 degrade-gracefully posture, stronger than the RAG tools' advertised-but-degrading:
+        // The degrade-gracefully posture, stronger than the RAG tools' advertised-but-degrading:
         // with no dev database the execute tool is simply absent (pinned by the containsExactlyInAnyOrder
         // in statusToolIsAdvertisedAndReportsUnavailableByDefault); with one configured it appears.
         var executeConfig = new ExecuteTool.Config(
@@ -179,7 +179,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R362: catalog.tables / catalog.describe ----
+    // ---- catalog.tables / catalog.describe ----
 
     @Test
     void catalogTablesListsAllTablesWithSchemaAndComment() throws Exception {
@@ -316,7 +316,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R368: services / conditions / records ----
+    // ---- services / conditions / records ----
 
     @Test
     @SuppressWarnings("unchecked")
@@ -381,7 +381,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R368: schema ----
+    // ---- schema ----
 
     @Test
     @SuppressWarnings("unchecked")
@@ -451,7 +451,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R368: diagnostics ----
+    // ---- diagnostics ----
 
     @Test
     @SuppressWarnings("unchecked")
@@ -483,7 +483,7 @@ class GraphitronMcpServerTest {
     @Test
     @SuppressWarnings("unchecked")
     void diagnosticsProjectsLintRuleIdForLintFindings() throws Exception {
-        // R398: a lint finding rides the ValidationReport warning channel and the diagnostics tool
+        // A lint finding rides the ValidationReport warning channel and the diagnostics tool
         // projects its typed LintRule id onto the wire, so an MCP-aware agent sees which rule fired
         // for free over the shared Workspace, with no new tool or seam.
         try (var server = new GraphitronMcpServer(loopback(0), lintFindingWorkspace());
@@ -512,7 +512,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R368: directives resource ----
+    // ---- directives resource ----
 
     @Test
     void directivesResourceIsAdvertisedAndListsBundledAndUserDeclared() throws Exception {
@@ -534,13 +534,13 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R368: stable-ID round-trip ----
+    // ---- stable-ID round-trip ----
 
     @Test
     @SuppressWarnings("unchecked")
     void methodRefIdsMatchTheSourceIndexJoinKeys() throws Exception {
         // The methodRef a tool emits is exactly fqcn#method/arity over the (className, name,
-        // paramCount) triple the SourceWalker.MethodKey carries; pin that grammar slice 7 will walk.
+        // paramCount) triple the SourceWalker.MethodKey carries; pin the grammar the edges tool walks.
         try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
              var client = connect(server.port())) {
             client.initialize();
@@ -555,7 +555,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R374: edges (cross-reference traversal) ----
+    // ---- edges (cross-reference traversal) ----
 
     @Test
     @SuppressWarnings("unchecked")
@@ -798,7 +798,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R385: docs.search (semantic retrieval over the bundled manual) ----
+    // ---- docs.search (semantic retrieval over the bundled manual) ----
 
     @Test
     @SuppressWarnings("unchecked")
@@ -940,7 +940,7 @@ class GraphitronMcpServerTest {
         }
     }
 
-    // ---- R386: catalog.search (semantic catalog discovery) ----
+    // ---- catalog.search (semantic catalog discovery) ----
 
     @Test
     @SuppressWarnings("unchecked")
@@ -1170,7 +1170,7 @@ class GraphitronMcpServerTest {
 
     private static Workspace lintFindingWorkspace() {
         // A lint finding rides the same ValidationReport warning channel; the MCP diagnostics tool
-        // projects its typed LintRule id onto the wire so an agent sees which rule fired (R398).
+        // projects its typed LintRule id onto the wire so an agent sees which rule fired.
         no.sikt.graphitron.rewrite.BuildWarning finding = no.sikt.graphitron.rewrite.BuildWarning.LintFinding.of(
             "field 'User.userName' is prefixed with its type name",
             new graphql.language.SourceLocation(3, 5, "/schema.graphqls"),
@@ -1182,7 +1182,7 @@ class GraphitronMcpServerTest {
 
     private static Workspace directivesWorkspace() {
         // A user-declared directive lands in the snapshot's directive surface with its applicable
-        // locations carried (R368 DirectiveShape widening), via the production buildSnapshot path.
+        // locations carried (the DirectiveShape widening), via the production buildSnapshot path.
         var registry = new graphql.schema.idl.SchemaParser().parse("""
             directive @guard(role: String!) on OBJECT | FIELD_DEFINITION
             type Query { x: Int }

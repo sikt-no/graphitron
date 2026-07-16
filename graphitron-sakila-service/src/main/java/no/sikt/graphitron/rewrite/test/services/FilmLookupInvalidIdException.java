@@ -1,14 +1,14 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R12 fixture: GENERIC-handler exception for the {@code filmLookup} query's
- * {@code FilmLookupInvalid} {@code @error} type. Sibling of
+ * Fixture for {@code @error} channel generation: the GENERIC-handler exception for the
+ * {@code filmLookup} query's {@code FilmLookupInvalid} {@code @error} type. Sibling of
  * {@link FilmLookupNotFoundException}; the two exist together so the union's
  * TypeResolver dispatch ladder has more than one branch and the
  * {@code GraphitronSchemaClassGenerator.buildErrorTypeFieldFetchers} loop emits
  * path/message {@code DataFetcher}s for every {@code @error} type.
  *
- * <p>R202: the {@code attemptedId} accessor is intentionally named differently from the SDL
+ * <p>The {@code attemptedId} accessor is intentionally named differently from the SDL
  * field {@code attempted: Int @field(name: "attemptedId")} on {@code FilmLookupInvalid}. It is
  * the execution-tier enforcer that {@code @field(name:)} on an {@code @error} extra field remaps
  * both the classify-time accessor check and the runtime {@code PropertyDataFetcher} to the named

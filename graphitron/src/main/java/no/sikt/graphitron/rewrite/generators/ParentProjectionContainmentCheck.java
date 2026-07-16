@@ -15,10 +15,10 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * The parent-projection containment invariant (R333 "Query anchors and the two flows", shipped by
- * R432): <em>when a child's key tuple is lifted off the parent's held object, the parent anchor's
- * projection must contain the key columns.</em> R425 is the shipped bug that shows what its
- * absence costs — a pattern-match omission inside the projection walk left a DataLoader key
+ * The parent-projection containment invariant: <em>when a child's key tuple is lifted off the
+ * parent's held object, the parent anchor's projection must contain the key columns.</em> A
+ * shipped bug shows what its absence costs: a pattern-match omission inside the projection walk
+ * left a DataLoader key
  * column out of the parent SELECT, surfacing as a silent {@code null} key at runtime; the level-1
  * closure oracle (method-name resolution) cannot see it because the projection is a value set,
  * not a name binding.
@@ -44,11 +44,11 @@ import java.util.Set;
  *
  * <p><b>Independence is the hard requirement, not a preference.</b> The requirement side must not
  * call {@code collectRequiredProjection} or borrow its {@code NestingField} recursion or
- * {@code fieldsOf} locality: R425's omission was <em>inside</em> that walk, and a requirement
+ * {@code fieldsOf} locality: that bug's omission was <em>inside</em> that walk, and a requirement
  * side sharing its traversal would reproduce the omission on both sides and pass green over the
  * exact bug family this check exists to catch. It is keyed on the {@link BatchKeyField} /
  * {@link ParentRowDemand} capabilities plus {@link ChildField#sourceShape()}, never on leaf
- * identity, so the R432 leaf merge does not touch it. Record-sourced coordinates stay out: their
+ * identity, so the leaf merge does not touch it. Record-sourced coordinates stay out: their
  * key / correlation rides the held object, not the parent SELECT (the projection walk's hard-throw
  * tripwire owns that exclusion).
  *
@@ -123,7 +123,7 @@ final class ParentProjectionContainmentCheck {
             // reads: a table-parent child whose fetcher reads parent-row columns by base name
             // (a @tableMethod correlation, a multi-table polymorphic single-fetch parent-side read,
             // or a batched polymorphic key extraction) demands every such column be projected. Keyed
-            // on the capability, never on leaf identity, so it closes the R425 family for gaps A and B
+            // on the capability, never on leaf identity, so it closes that bug family for gaps A and B
             // in one clause.
             if (f instanceof ParentRowDemand prd) {
                 for (ColumnRef col : prd.parentRowColumns()) {

@@ -18,7 +18,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * R410 slice 4 — the warm incremental compile engine. One {@link JavaCompiler}
+ * The warm incremental compile engine. One {@link JavaCompiler}
  * ({@link ToolProvider#getSystemJavaCompiler()}, no new JDK-25 dependency) with a <em>reused</em>
  * {@link StandardJavaFileManager}, so the classpath is scanned once at dev startup rather than per
  * save; a fresh compilation task per round runs over that warm manager. This is the trick that
@@ -30,7 +30,7 @@ import java.util.stream.Stream;
  * sound by construction and the {@code .class} orphan {@linkplain #sweepOrphans sweep} can drop
  * anything not backing a live unit without an {@code OWNED_SUBPACKAGES} safety fence: there is no
  * consumer bytecode under it to protect. The engine deliberately does <em>not</em> decide the
- * recompile set (that is {@link RecompileSet} + slice-6 wiring); it compiles the sources it is handed
+ * recompile set (that is {@link RecompileSet} and the wiring that drives it); it compiles the sources it is handed
  * and reports the outcome.
  *
  * <p><b>Manager staleness (the named risk).</b> Reusing a file manager risks serving a cached symbol

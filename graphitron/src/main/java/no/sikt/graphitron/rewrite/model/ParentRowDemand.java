@@ -7,10 +7,10 @@ import java.util.Map;
 /**
  * A child field whose generated fetcher reads one or more columns off the parent's
  * already-materialized row by <em>base</em> name. The parent-projection contract
- * (R333, shipped by R432) says every such column must appear in the parent anchor's
+ * says every such column must appear in the parent anchor's
  * {@code $fields} SELECT; this capability is what carries that demand uniformly, so the
  * three walks that enforce the contract key on the capability rather than on leaf identity
- * (the R425 walk-omission family).
+ * (the walk-omission family).
  *
  * <p>Standalone (does not extend {@link GraphitronField}) so it applies as an orthogonal
  * capability without being restricted by the {@link ChildField} seal, mirroring

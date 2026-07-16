@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 5 — the correctness-invariant acceptance harness, run over a realistically classified
+ * The correctness-invariant acceptance harness, run over a realistically classified
  * schema (catalog table types, a table reference, a Relay connection, a DML insert that projects its
  * {@code @table} return). Three obligations:
  *
@@ -47,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The harness lives here rather than in graphitron-maven-plugin because real generation over the
  * jOOQ catalog is a graphitron-module capability; the maven-plugin dev-mojo tests run without a real
- * catalog ({@code skipInitial=true}). Slice 6 wires the same pieces into {@code DevMojo}.
+ * catalog ({@code skipInitial=true}). {@code DevMojo} wires the same pieces into the dev loop.
  */
 @PipelineTier
 class IncrementalCompileHarnessTest {
@@ -59,15 +59,15 @@ class IncrementalCompileHarnessTest {
      * plus a node type with a {@code node(id:)} lookup so the oracle also covers the NodeType /
      * QueryNodeField arms and the precise NodeIdEncoder edges.
      *
-     * <p>R455 corpus extension: {@code Language.films} is an inline list reference filtered by a
+     * <p>Corpus extension: {@code Language.films} is an inline list reference filtered by a
      * {@code @nodeId}-decoding input. Its inline emit composes {@code Film.$fields(...)} (a same-package
-     * nested-{@code $L} projection the oracle was blind to before this item), lifts a decode helper onto
+     * nested-{@code $L} projection the oracle was blind to before), lifts a decode helper onto
      * the Language type class (exercising the {@code typeClass -> NodeIdEncoder} edge and the
      * decode-helper lift), and calls a generated {@code FilmConditions} method (exercising the inline
      * {@code typeClass -> conditions} edge). Nesting-hosted attribution is covered at unit tier in
      * {@code CompileDependencyGraphBuilderTest}.
      *
-     * <p>R459 corpus extension: {@code Film.meta: FilmMeta} is a fetcher-owning plain-object nesting
+     * <p>Corpus extension: {@code Film.meta: FilmMeta} is a fetcher-owning plain-object nesting
      * type ({@code FilmMeta { language: Language @reference }}); FilmMeta shares Film's table context,
      * emits a {@code FilmMetaFetchers} class its {@code FilmMetaType} schema-shape wires, and its one
      * nested field is an inline single-valued {@code TableField} whose reified read references no

@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R450 unit coverage for the parent-anchor arm {@link ParentCorrelation.OnParentJoin} (the
+ * Unit coverage for the parent-anchor arm {@link ParentCorrelation.OnParentJoin} (the
  * generalization of the former {@code OnConditionJoin}) and the batch-grain projection
  * {@link ParentCorrelation#parentKeyColumns()}.
  *

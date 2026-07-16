@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for {@code UpdateRowsWalker}. Each typed
  * arm carries the structural data its diagnostic message and LSP {@code relatedInformation} need;
- * downstream tooling switches on the arm rather than parsing prose. Sibling to R238's
+ * downstream tooling switches on the arm rather than parsing prose. Sibling to
  * {@link ServiceMethodCallError}: per the dimensional-model-pivot principle, each walker slice adds
  * its own sub-seal of {@link Rejection.AuthorError} (and one row in that interface's {@code permits}
  * clause) rather than piling typed arms under the flat {@link Rejection.AuthorError.Structural}.
@@ -128,9 +128,9 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
     }
 
     /**
-     * An input field carries {@code @condition(override: true)}. R215's classifier admits this
+     * An input field carries {@code @condition(override: true)}. The classifier admits this
      * shape today, but its emit-side wiring never landed, so the author's filter would silently
-     * never run. R246 makes the deferral honest by rejecting with the field's name and the
+     * never run. This arm makes the deferral honest by rejecting with the field's name and the
      * directive's source location; re-admit when override-condition emit support lands.
      */
     record OverrideConditionNotSupported(
@@ -146,10 +146,10 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
     }
 
     /**
-     * R322 (D2): two or more plain {@code @field} writers (no {@code @nodeId} decode among them) resolve
+     * Two or more plain {@code @field} writers (no {@code @nodeId} decode among them) resolve
      * to one SET column. On single-row UPDATE the second {@code Map.put} silently last-write-wins; reject
-     * at validate time, the UPDATE mirror of the INSERT-path / {@code @service} R336 reject. An overlap
-     * involving a decode is admitted and reconciled by the runtime value-agreement check (D3), so it does
+     * at validate time, the UPDATE mirror of the INSERT-path / {@code @service} reject. An overlap
+     * involving a decode is admitted and reconciled by the runtime value-agreement check, so it does
      * not reach this arm.
      */
     record PlainColumnCollision(

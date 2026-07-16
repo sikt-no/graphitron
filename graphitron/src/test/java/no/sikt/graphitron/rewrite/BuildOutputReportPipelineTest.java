@@ -18,7 +18,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R149 (bullet 2): producer-side wiring of {@link GraphQLRewriteGenerator#buildOutput()}.
+ * Producer-side wiring of {@link GraphQLRewriteGenerator#buildOutput()}.
  *
  * <p>The two edges of the report are already covered in isolation: {@code ValidationReportTest}
  * pins the {@link ValidationReport#from} factory, and the LSP-side {@code ValidatorDiagnosticsTest}
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code report().warnings()}. Without this, a refactor breaking the validator pass or the
  * warnings-into-report wiring leaves the build-time log surface correct (it still runs
  * {@link GraphQLRewriteGenerator#validate()}) while silently dropping diagnostics from the LSP's
- * report, with no other test gate, the failure mode R147 named when it deferred this test.
+ * report, with no other test gate — the failure mode identified when this test was originally deferred.
  */
 @PipelineTier
 class BuildOutputReportPipelineTest {

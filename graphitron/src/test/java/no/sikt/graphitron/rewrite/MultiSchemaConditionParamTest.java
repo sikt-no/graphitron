@@ -12,7 +12,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The R379 Check-2 concrete-condition-param check must match by jOOQ class identity, not by a
+ * The Check-2 concrete-condition-param check must match by jOOQ class identity, not by a
  * bare-vs-qualified name string compare. Over the multi-schema fixture whose {@code event} table
  * collides across {@code multischema_a} / {@code multischema_b}, a concrete condition-method table
  * parameter typed with the <em>correct</em> generated jOOQ class must classify green even when the
@@ -54,7 +54,7 @@ class MultiSchemaConditionParamTest {
     void terminalConditionSource_correctSchemaClass_classifiesGreen() {
         // Parent EvA is @table(name: "multischema_a.event") (the qualification is forced: bare
         // "event" is ambiguous across the two schemas). The terminal condition joins to Widget;
-        // parameter 0 (source) is typed multischema_a.tables.Event. Before R442 the check compared
+        // parameter 0 (source) is typed multischema_a.tables.Event. Previously the check compared
         // bare "event" against the qualified "multischema_a.event" echo and false-rejected; the
         // author's only workaround was widening to Table<?>. Identity comparison classifies it green.
         var f = field("""
@@ -100,14 +100,14 @@ class MultiSchemaConditionParamTest {
     // "multischema_a.event" name independently of the method parameter. The where-filter path
     // cannot supply target-side coverage here: its FK-derived target endpoint resolves through
     // synthesizeFkJoin's bare-name catalog lookup, which is ambiguous for the colliding "event"
-    // table — that bare-endpoint resolution is R440's scope (fk-join-endpoint-class-identity,
-    // Backlog), not R442's. The where-filter path's qualified *source* operand is covered below.
+    // table; resolving that bare endpoint by jOOQ class identity is a separate concern from this
+    // concrete-param check. The where-filter path's qualified *source* operand is covered below.
 
     @Test
     void terminalConditionTarget_correctSchemaClass_classifiesGreen() {
         // Parent Widget joins by condition to EvA, whose return @table is the qualified
         // "multischema_a.event". Parameter 1 (target) is typed multischema_a.tables.Event; source
-        // is wildcarded so only the target check fires. Before R442 the check compared bare "event"
+        // is wildcarded so only the target check fires. Previously the check compared bare "event"
         // against "multischema_a.event" and false-rejected.
         var f = field("""
             type EvA @table(name: "multischema_a.event") {

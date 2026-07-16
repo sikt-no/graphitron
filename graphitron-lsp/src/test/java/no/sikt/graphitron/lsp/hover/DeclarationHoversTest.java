@@ -14,7 +14,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R160 — LSP-tier unit tests for the classification-hover arm. Asserts that cursor
+ * LSP-tier unit tests for the classification-hover arm. Asserts that cursor
  * on a field-definition or type-definition name token resolves through
  * {@link DeclarationHovers#compute} into a hover whose markdown carries the projection
  * payload.
@@ -128,7 +128,7 @@ class DeclarationHoversTest {
             .contains("Error channel: `ACTOR_PAYLOAD`");
     }
 
-    // ===== R216 — extend type X { ... } parity =====
+    // ===== extend type X { ... } parity =====
 
     @Test
     void cursorOnTypeExtensionNameProducesTypeClassificationHover() {

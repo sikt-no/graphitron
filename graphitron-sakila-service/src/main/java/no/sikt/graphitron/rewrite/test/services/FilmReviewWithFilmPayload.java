@@ -3,10 +3,10 @@ package no.sikt.graphitron.rewrite.test.services;
 import java.util.List;
 
 /**
- * R268 fixture (errorchannel-arm-switch-table-data-fields.md): the backing record for the root
+ * Fixture: the backing record for the root
  * {@code @service} Outcome payload {@code FilmReviewWithFilmPayload}. It pairs a {@code @table}-bound
  * DataLoader data field ({@code film}, keyed off {@link #filmId} via
- * {@link FilmReviewWithFilmPayloadLifter}) with the errors field, the combination R244's inventory
+ * {@link FilmReviewWithFilmPayloadLifter}) with the errors field, a combination
  * found nowhere in sakila.
  *
  * <p>Under the {@code Outcome} wrapper transport the record's data-field accessors ({@link #reviewId},

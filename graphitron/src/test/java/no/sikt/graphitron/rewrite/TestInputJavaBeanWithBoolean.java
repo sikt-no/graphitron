@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 /**
- * R155 fixture: JavaBean-shaped consumer bean (public no-arg constructor, JavaBean-style setters)
+ * Fixture: JavaBean-shaped consumer bean (public no-arg constructor, JavaBean-style setters)
  * with a Java-primitive setter parameter ({@code void setActive(boolean)}). The matching SDL input
  * type is {@code input TestInputJavaBeanWithBoolean { active: Boolean! }}; the {@code FieldBinding}
  * for {@code active} must carry {@code javaElementTypeName == "java.lang.Boolean"}, not

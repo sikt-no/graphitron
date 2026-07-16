@@ -7,8 +7,8 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>Implemented by all field variants that are DataLoader-backed:
  * {@link ChildField.BatchedTableField} and {@link ChildField.BatchedLookupTableField} (both
- * source shapes, R432; the {@code @tableMethod} DTO-parent shape dissolved onto the former's
- * Record arm in R314 slice 2b), {@link ChildField.ServiceTableField},
+ * source shapes; the {@code @tableMethod} DTO-parent shape dissolved onto the former's
+ * Record arm), {@link ChildField.ServiceTableField},
  * {@link ChildField.ServiceRecordField}.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that

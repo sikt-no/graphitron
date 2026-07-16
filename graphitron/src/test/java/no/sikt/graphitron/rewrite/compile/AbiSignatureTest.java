@@ -14,7 +14,7 @@ import javax.lang.model.element.Modifier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 3 — unit coverage of the signature-surface (ABI) hash. The load-bearing property is the
+ * Unit coverage of the signature-surface (ABI) hash. The load-bearing property is the
  * split the recompile-set algorithm rides on: a body-only edit must leave the hash still, while any
  * edit to the surface a dependent compiles against (a signature, a supertype, an implemented
  * interface, a field type, or a {@code static final} constant's value) must move it.

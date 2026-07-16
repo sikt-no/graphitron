@@ -20,7 +20,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R158 execution-tier coverage for {@code @service}-backed single-record DML carrier data
+ * Execution-tier coverage for {@code @service}-backed single-record DML carrier data
  * fields. Exercises the {@code Wrap.TableRecord(target.recordClass())} arm of
  * {@code FetcherEmitter.buildSingleRecordTableFetcherValue} end-to-end: the
  * {@code FilmCarrierService} producer hand-runs a SELECT to return
@@ -89,7 +89,7 @@ class SingleRecordTableFieldServiceProducerExecutionTest {
     /**
      * MANY arm end-to-end: the {@code @service} mutation returns {@code List<FilmRecord>};
      * the data-field fetcher reads PKs off the typed records, runs the response SELECT,
-     * and projects films in input order via the R141 PK-keyed-map indirection.
+     * and projects films in input order via the PK-keyed-map indirection.
      */
     @Test
     void serviceFilmsByIds_returnsFilmsInInputOrder() {
@@ -127,7 +127,7 @@ class SingleRecordTableFieldServiceProducerExecutionTest {
      * fetcher reads the typed PK pair off each record via
      * {@code r.get(Tables.FILM_ACTOR.ACTOR_ID)} / {@code r.get(Tables.FILM_ACTOR.FILM_ID)},
      * runs the response SELECT with the {@code row(actor_id, film_id).in(...)} predicate,
-     * and projects rows in input order via the R141 composite-PK-keyed map walk (map keys
+     * and projects rows in input order via the composite-PK-keyed map walk (map keys
      * are {@code List.of(r.get(actor_id), r.get(film_id))}).
      *
      * <p>Covers the typed paths in

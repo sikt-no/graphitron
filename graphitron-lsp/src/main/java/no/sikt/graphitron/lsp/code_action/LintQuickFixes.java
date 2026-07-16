@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The finding-keyed {@code QuickFix} branch (R398): projects a fix-bearing lint
+ * The finding-keyed {@code QuickFix} branch: projects a fix-bearing lint
  * {@link BuildWarning.LintFinding} in the build's {@link ValidationReport} into an editor
  * {@code QuickFix} {@link CodeAction}. This is deliberately <em>not</em> a reuse of the
  * detector-driven {@link SdlActions} path: that path re-scans each open document through an action's
@@ -31,7 +31,7 @@ import java.util.Map;
  * single evaluator; the LSP only projects the fix, sharing the {@link WorkspaceEdit} / {@link TextEdit}
  * emit primitives, never recomputing how to fix a rule.
  *
- * <p>Respects the R139 freshness-aware silence policy exactly as the diagnostics replay does: fixes
+ * <p>Respects the freshness-aware silence policy exactly as the diagnostics replay does: fixes
  * are offered only when the snapshot is {@link LspSchemaSnapshot.Built.Current}, because a finding
  * from a stale build may not reflect the buffer the user is editing, and an edit derived from a stale
  * range could corrupt the document.
@@ -41,7 +41,7 @@ public final class LintQuickFixes {
     private LintQuickFixes() {}
 
     public static List<Either<Command, CodeAction>> compute(CodeActionParams params, Workspace workspace) {
-        // R139: only a current snapshot's findings reflect the edited buffer.
+        // Only a current snapshot's findings reflect the edited buffer.
         if (!(workspace.snapshot() instanceof LspSchemaSnapshot.Built.Current)) {
             return List.of();
         }

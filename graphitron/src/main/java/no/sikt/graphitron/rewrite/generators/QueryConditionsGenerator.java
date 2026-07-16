@@ -86,18 +86,18 @@ public class QueryConditionsGenerator {
         return fieldName + "Condition";
     }
 
-    /** R13 Phase 4: the facet base condition (full filter minus every facet's own predicate). */
+    /** The facet base condition (full filter minus every facet's own predicate). */
     public static String facetBaseConditionMethodName(String fieldName) {
         return fieldName + "FacetBaseCondition";
     }
 
-    /** R13 Phase 4: one facet's own predicate, {@code <fieldName>Facet_<inputFieldName>Condition}. */
+    /** One facet's own predicate, {@code <fieldName>Facet_<inputFieldName>Condition}. */
     public static String facetConditionMethodName(String fieldName, String facetInputFieldName) {
         return fieldName + "Facet_" + facetInputFieldName + "Condition";
     }
 
     /**
-     * R13 Phase 4: the filter-minus-self fragments for a faceted {@code @asConnection} carrier.
+     * The filter-minus-self fragments for a faceted {@code @asConnection} carrier.
      * The generated {@code <field>Condition} folds every filter predicate into one, so the fetcher
      * cannot ask it to skip a facet; these additive siblings reconstruct the split:
      *
@@ -152,7 +152,7 @@ public class QueryConditionsGenerator {
      * ({@code FacetSpec.filterArgName}) whose traversal path is exactly the facet's input field.
      * Matching on the full extraction identity, outer argument included, keeps two legitimate
      * non-facet filters out of the suppression set: a same-named top-level argument, and a
-     * same-named field on a sibling input argument (the R13 review's finding 2). Both stay in the
+     * same-named field on a sibling input argument. Both stay in the
      * base fragment and out of the facet's own fragment.
      */
     private static boolean isFacetParam(CallParam param,
@@ -219,9 +219,9 @@ public class QueryConditionsGenerator {
                 List.of()))
             .toList());
         // Declare the lifted locals the retained extraction expressions reference (mirrors
-        // buildConditionMethod; omitting this loop was the R13 review's finding 1 — the emitted
-        // fragment referenced an undeclared `<outer>Map` local whenever two or more retained
-        // params shared an outer arg, failing the consumer's javac).
+        // buildConditionMethod). Omitting this loop makes the emitted fragment reference an
+        // undeclared `<outer>Map` local whenever two or more retained params share an outer arg,
+        // failing the consumer's javac.
         for (var entry : liftedOuters.entrySet()) {
             builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
                 Map.class, entry.getValue(), entry.getKey(), Map.class);

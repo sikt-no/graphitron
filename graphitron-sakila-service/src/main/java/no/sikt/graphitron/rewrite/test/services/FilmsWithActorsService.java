@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * R329 execution-tier fixture: an {@code @service} mutation whose method returns a list of a
+ * Execution-tier fixture: an {@code @service} mutation whose method returns a list of a
  * consumer-authored composite ({@link FilmWithActors}: one {@code FilmRecord} plus a
  * {@code List<ActorRecord>}), driving the two-level record-composite carrier through compile-spec and
  * execute-spec. The service hand-runs the SELECTs so the round-trip exercises the real shape: the

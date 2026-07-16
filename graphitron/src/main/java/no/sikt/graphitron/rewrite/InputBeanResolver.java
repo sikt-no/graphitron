@@ -48,8 +48,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  *
  * <p>Walks the method's parameters and rewrites the {@code CallSiteExtraction.Direct} arms that
  * the catalog could not classify in isolation (no SDL access at reflection time) into a richer
- * extraction that carries the bean instantiation plan. See R150
- * ({@code roadmap/service-method-input-bean-instantiation.md}) for the design contract.
+ * extraction that carries the bean instantiation plan.
  *
  * <p>Classification rule (SDL-driven): {@link CallSiteExtraction.Direct} is reserved for GraphQL
  * scalar SDL arguments, including custom scalars wired via {@code @scalarType}. graphql-java's
@@ -105,7 +104,8 @@ final class InputBeanResolver {
      *   <li>The bean class has no record / public no-arg-ctor construction strategy.</li>
      *   <li>For records, the component/field correspondence is not a total bijection: a component
      *       binds to no SDL field (under-arity), or an SDL field binds to no component (silent drop).
-     *       Member binding honors {@code @field(name:)} (the input-side mirror of R191), so the
+     *       Member binding honors {@code @field(name:)} (the input-side mirror of the output-side
+     *       {@code @field} accessor read), so the
      *       correspondence is by binding key, not raw name. JavaBeans tolerate partial population
      *       (unmatched fields are skipped); the empty-bindings case is the only JavaBean rejection.</li>
      *   <li>Two SDL fields resolving to the same Java-member binding key (a {@code @field(name:)}
@@ -216,9 +216,9 @@ final class InputBeanResolver {
                     new ParamSource.Arg(jr, arg.path())));
                 continue;
             }
-            // R315 (D2): an @table on the input classifies it as a TableInputType (the
+            // (D2): an @table on the input classifies it as a TableInputType (the
             // "Graphitron owns the DML" contract), which contradicts a jOOQ-record @service param
-            // (the service owns the DML, R311). Without this arm a TableRecord param against a
+            // (the service owns the DML). Without this arm a TableRecord param against a
             // @table-present input falls through to the bean path and dies on the misleading "bean
             // class … has no fields matching"; reject it honestly instead, so the binding/error
             // behavior converges with the @table-absent path. isTableRecord is narrower than
@@ -262,11 +262,11 @@ final class InputBeanResolver {
 
     /**
      * Builds the {@link CallSiteExtraction.JooqRecord} for a {@code @service} param whose SDL input
-     * type classified as {@link GraphitronType.JooqTableRecordInputType} (R311, generalized by R315).
+     * type classified as {@link GraphitronType.JooqTableRecordInputType}.
      * Walks the SDL fields binding each on the column axis: every {@code @nodeId(typeName:)} field is a
-     * {@link CallSiteExtraction.RecordKeyDecode} (R195's wire-decode mechanism) whose decoded values
-     * load into resolved target columns on this record — the record's own key (same-table identity,
-     * R311) or a foreign key's child columns (cross-table reference, R315); every other plain field names
+     * {@link CallSiteExtraction.RecordKeyDecode} (the wire-decode mechanism) whose decoded values
+     * load into resolved target columns on this record — the record's own key (same-table identity)
+     * or a foreign key's child columns (cross-table reference); every other plain field names
      * a column through {@code @field(name:)} (a resolved {@link CallSiteExtraction.ColumnBinding}). A
      * record may carry several {@code @nodeId} fields.
      *
@@ -277,22 +277,22 @@ final class InputBeanResolver {
      * {@code ["details", "title"]}). This is the column-axis analogue of the {@code @table}-input nesting
      * the filter axis already flattens.
      *
-     * <p>Rejections are R195/R97-shaped and surface at validate time as {@code UnclassifiedField} — the
+     * <p>Rejections surface at validate time as {@code UnclassifiedField} — the
      * honest replacement for the bean path's misleading "has no fields matching":
      * <ul>
      *   <li>the param record type is not in the jOOQ catalog;</li>
      *   <li>a {@code @nodeId} field whose {@code typeName:} / {@code @reference} cannot resolve to target
-     *       columns on this record (R195/R315, see {@link #buildRecordKeyDecode});</li>
+     *       columns on this record (see {@link #buildRecordKeyDecode});</li>
      *   <li>a plain {@code @field} (at any nesting depth) resolving to no column on the table;</li>
      *   <li>a nested grouping input that reaches itself (cyclic shape) — a single record cannot represent
      *       a recursive input;</li>
      *   <li>a list-shaped nested grouping field — a single record has one value per column, so a list of
      *       column-groups is a cardinality contradiction;</li>
      *   <li>a nested input carrying {@code @table} — a second DML target, not a column group to flatten
-     *       (compound multi-table mutations are R122's scope);</li>
+     *       (compound multi-table mutations are a separate scope);</li>
      *   <li>two plain {@code @field} leaves (in any nested group) resolving to the same column — two
      *       fields cannot populate one column. Decode-vs-decode / decode-vs-column on a shared column stay
-     *       with R322's runtime value-agreement deferral (last-write-wins), unchanged.</li>
+     *       with the runtime value-agreement deferral (last-write-wins), unchanged.</li>
      * </ul>
      */
     private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
@@ -321,7 +321,7 @@ final class InputBeanResolver {
         // Plain-column collision (D3): two @field leaves (in any nested group) resolving to one column
         // would last-write-wins silently. Reject, mirroring the member-axis binding-key collision reject.
         // Decode-vs-decode / decode-vs-column overlaps are intentionally NOT checked here — those stay
-        // with R322's value-agreement deferral.
+        // with the runtime value-agreement deferral.
         var byColumn = new LinkedHashMap<String, List<String>>();
         for (var cb : columnBindings) {
             List<String> prior = byColumn.putIfAbsent(cb.column().sqlName(), cb.path());
@@ -363,7 +363,7 @@ final class InputBeanResolver {
                 // Multiple @nodeId fields are legal (an FK-reference record carries several FK
                 // references). Each resolves independently to its target columns on this record; when
                 // two decodes target the same column their runtime value-agreement is a data-dependent
-                // concern deferred to R322 (last-write-wins here). The legacy single-@nodeId gate is gone.
+                // concern deferred to the runtime value-agreement check (last-write-wins here). The legacy single-@nodeId gate is gone.
                 var built = buildRecordKeyDecode(f, path, table, where);
                 if (built instanceof KeyDecodeResult.Fail kf) {
                     return kf.rejection();
@@ -436,7 +436,7 @@ final class InputBeanResolver {
     /**
      * Resolves one {@code @nodeId(typeName:)} field of a jOOQ-record param into a
      * {@link CallSiteExtraction.RecordKeyDecode}, branching on whether the referenced NodeType's table
-     * is the param record's own table (R311 identity) or a different table (R315 FK reference):
+     * is the param record's own table (same-table identity) or a different table (cross-table FK reference):
      *
      * <ul>
      *   <li><b>Same table, no {@code @reference}</b> (node table == record table) → the decode loads
@@ -618,7 +618,7 @@ final class InputBeanResolver {
 
     /**
      * The Java-member binding key for an SDL input field: the {@code @field(name:)} value when the
-     * directive is present, else the field's own name. This is the input-side mirror of R191's
+     * directive is present, else the field's own name. This is the input-side mirror of the
      * output-side "{@code @field} names the Java accessor" read
      * ({@code FieldBuilder.collectAccessorMatches}) and uses the same {@code argString(...).orElse(name)}
      * idiom as the column-axis read in {@code BuildContext}. The key names the record component /
@@ -736,10 +736,10 @@ final class InputBeanResolver {
      * Classifies one SDL-field / Java-member pair into a {@link CallSiteExtraction.FieldBinding}.
      * Member resolution has already happened (the directive selected which member binds); the
      * member's Java type now drives the leaf branch (nested {@code InputBean} / {@code EnumValueOf} /
-     * R195's {@code NodeIdDecodeRecord} / {@code Direct}), unchanged from before. The binding carries
+     * {@code NodeIdDecodeRecord} / {@code Direct}), unchanged from before. The binding carries
      * the SDL field name (the {@code Map} key the helper reads) separately from the Java member name
      * (the component / property it populates), so the emitter is agnostic to <em>how</em> the member
-     * was chosen, the same property R191 relies on on the output side.
+     * was chosen, the same property the output side relies on.
      */
     private FieldResult bindField(GraphQLInputObjectField sdlField, JavaMember member,
             String paramName, String methodName, String className, Set<Class<?>> visited) {
@@ -785,8 +785,8 @@ final class InputBeanResolver {
             leaf = new CallSiteExtraction.EnumValueOf(javaElementTypeName);
         } else {
             // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
-            // String cast to a *Record throws ClassCastException at the first request (the
-            // R150/R195 bug). Branch to a @nodeId-decode leaf, or reject loudly — never fall
+            // String cast to a *Record throws ClassCastException at the first request. Branch
+            // to a @nodeId-decode leaf, or reject loudly — never fall
             // through to Direct with a record member.
             Class<?> memberClass = tryLoad(javaElementTypeName);
             if (memberClass != null && isJooqRecord(memberClass)) {
@@ -799,7 +799,7 @@ final class InputBeanResolver {
             } else {
                 // Site A: a scalar SDL field bound to a consumer-declared Java type only
                 // lands on Direct once the wire-coercion predicate confirms graphql-java's coercion
-                // output for the SDL scalar is assignable to that declared type. This widens R195's
+                // output for the SDL scalar is assignable to that declared type. This widens the earlier
                 // narrow jOOQ-record-only rejection to the full wire-incompatible family (numeric
                 // width, ID-as-numeric, domain types). The predicate is the sole producer of Direct.
                 var wire = WireCoercionResolver.checkScalar(sdlElt.elementType(), javaElementTypeName,
@@ -909,7 +909,7 @@ final class InputBeanResolver {
      * True when {@code cls} implements {@code org.jooq.TableRecord} (transitively). Strictly narrower
      * than {@link #isJooqRecord}: a non-table {@code Record} (e.g. {@code Record1}) implements
      * {@code org.jooq.Record} but not {@code org.jooq.TableRecord} and has no backing {@code TableRef},
-     * so the R315 {@code @table}-on-input reject (D2) gates on this — a non-table record keeps falling
+     * so the {@code @table}-on-input reject (D2) gates on this — a non-table record keeps falling
      * through to the bean path rather than reaching a reject that assumes a table. Same FQN-based,
      * classloader-agnostic discipline as {@link #isJooqRecord}.
      */
@@ -988,8 +988,8 @@ final class InputBeanResolver {
      * Detection is deliberately permissive: once a candidate is paired with an input-object SDL
      * slot, the strict shape check in {@link #checkJavaBeanShape} runs, and a class lacking a
      * viable construction strategy is rejected loudly. Silent fallback to {@link
-     * CallSiteExtraction.Direct} would re-introduce the runtime {@code ClassCastException} R150
-     * exists to eliminate.
+     * CallSiteExtraction.Direct} would re-introduce the runtime {@code ClassCastException} the
+     * input-bean path exists to eliminate.
      */
     private boolean looksLikeBeanCandidate(Class<?> cls) {
         if (cls.isPrimitive() || cls.isArray() || cls.isEnum()) return false;

@@ -12,7 +12,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R405 pipeline tier: SDL → classified model → generated {@code TypeSpec} for a {@code @service} field
+ * Pipeline tier: SDL → classified model → generated {@code TypeSpec} for a {@code @service} field
  * returning a single-table discriminated interface (interface + two {@code @discriminator} implementers,
  * one carrying a cross-table {@code @reference} field). Asserts the model classifies to the new variant
  * and the generated fetcher projects {@code __discriminator__}, a discriminator-gated cross-table

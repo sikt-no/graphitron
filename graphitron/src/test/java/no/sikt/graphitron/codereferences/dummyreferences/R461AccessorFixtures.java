@@ -1,9 +1,10 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
 /**
- * Test fixtures for R461's pipeline-tier coverage of the SDL-field-to-Java-accessor resolution
- * unification, exercising the R96 binding <em>walk</em> (grounding a child backing class through a
- * parent accessor) rather than only the emission-side property read the R88 fixtures cover. Each
+ * Test fixtures for the pipeline-tier coverage of the SDL-field-to-Java-accessor resolution
+ * unification, exercising the binding <em>walk</em> (grounding a child backing class through a
+ * parent accessor) rather than only the emission-side property read the {@link R88AccessorFixtures}
+ * fixtures cover. Each
  * top-level parent is the reflected return type of a {@code DummyService.r461*} producer; its fields
  * ground child SDL types through the walk's probe under the unified rule set.
  *
@@ -56,7 +57,7 @@ public final class R461AccessorFixtures {
     /**
      * Zero-arg accessor; an argument-bearing SDL field no longer grounds through it (arity gate). The
      * {@code sibling()} accessor lets a test declare a second object field so the payload is not a
-     * single-object-field R329 carrier, isolating the sole-producer rejection from the carrier flip.
+     * single-object-field carrier, isolating the sole-producer rejection from the carrier flip.
      */
     public static final class ZeroArgParent {
         public SimpleChild child() { return null; }
@@ -79,7 +80,7 @@ public final class R461AccessorFixtures {
 
     /**
      * {@code isChild()} returns a non-boolean; the is-gate stops it grounding the child. With a single
-     * object data field in the SDL this flips the payload from a plain wrapper to an R329 two-level
+     * object data field in the SDL this flips the payload from a plain wrapper to a two-level
      * carrier (B8 flip case 1); with a second object field ({@code sibling()}) it isolates the
      * sole-producer boolean-gate rejection.
      */

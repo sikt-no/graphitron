@@ -97,7 +97,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
         /**
          * Two or more producers reach the same SDL type with disagreeing reflected backing
-         * classes. R96's reflection walk grounds at root producers ({@code @service},
+         * classes. The reflection walk grounds at root producers ({@code @service},
          * {@code @table}, {@code @tableMethod}) and extends through parent accessor returns;
          * when the same SDL type accumulates more than one distinct class in its collection
          * set, this rejection surfaces with every disagreeing site listed.
@@ -132,7 +132,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
         /**
          * Two or more directive sites reference the same {@code contextArgument} name with
-         * mutually-incompatible Java types. R190's per-name agreement walk over every
+         * mutually-incompatible Java types. The per-name agreement walk over every
          * {@link MethodRef.Param.Typed} whose source is {@link ParamSource.Context} keys by
          * parameter name and requires every site to declare the same structural
          * {@link no.sikt.graphitron.javapoet.TypeName}. The factory emitter pastes that single
@@ -319,7 +319,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * fix-its, watch-mode formatter) can read the collision group structurally on the
          * validator-projected rejection without re-parsing prose.
          *
-         * <p>Producer: {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} R194 case-fold
+         * <p>Producer: {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} case-fold
          * uniqueness pass.
          */
         record CaseFoldCollision(

@@ -7,7 +7,7 @@ import org.jooq.DSLContext;
 import java.util.List;
 
 /**
- * R158 execution-tier fixture: an {@code @service}-backed mutation that returns the
+ * Execution-tier fixture: an {@code @service}-backed mutation that returns the
  * payload's data field shape verbatim ({@code List<FilmRecord>} for MANY,
  * {@code FilmRecord} for ONE). The carrier's data field classifies as
  * {@code ChildField.SingleRecordTableField} with
@@ -30,7 +30,7 @@ public final class FilmCarrierService {
      * SELECT and walks the input order to project the result, so the producer's output
      * order matches the input array. The data-field fetcher then re-projects them through
      * the response SELECT (one-shot full-Film read against the received PKs), preserving
-     * the producer's input-aligned order via the R141 PK-keyed-map indirection.
+     * the producer's input-aligned order via the PK-keyed-map indirection.
      */
     public static List<FilmRecord> filmsByIds(List<Integer> ids, DSLContext dsl) {
         if (ids == null || ids.isEmpty()) return List.of();

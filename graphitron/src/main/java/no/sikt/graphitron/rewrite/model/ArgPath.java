@@ -13,8 +13,8 @@ import java.util.List;
  * through a plain {@code Map.get}. The head's list-shape is decided by the slot itself (handled
  * at call-site extraction time), so the {@code outerArgName} carries no list flag.
  *
- * <p>Multi-segment paths arise from default flattening over input-object arguments and (when
- * R249 lands) from the nested {@code @argMapping} syntax. Paths live on data-bearing leaves
+ * <p>Multi-segment paths arise from default flattening over input-object arguments and
+ * (eventually) from the nested {@code @argMapping} syntax. Paths live on data-bearing leaves
  * rather than on composites: in default mapping every sibling field's path shares a prefix, but
  * in the nested-mapping form sibling paths are independent, so the model represents both
  * uniformly.

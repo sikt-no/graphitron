@@ -24,8 +24,8 @@ import java.util.concurrent.CompletableFuture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end pipeline-tier coverage of the build-trigger publish path
- * (R196). Drives a {@code setBuildOutput} call against a wired
+ * End-to-end pipeline-tier coverage of the build-trigger publish path.
+ * Drives a {@code setBuildOutput} call against a wired
  * {@link Workspace} + {@link GraphitronTextDocumentService} pair and
  * asserts that the captured {@link LanguageClient} sees a fresh
  * {@code publishDiagnostics} payload per touched URI. Today's bug
@@ -53,8 +53,8 @@ class BuildTriggerPublishesDiagnosticsTest {
         // 2. Build trigger with a validator error on the open file. The
         //    listener fires from setBuildOutput -> markAllForRecalculation,
         //    drains the queue, and ships the error to the client without
-        //    waiting for another keystroke. Pre-R196 this hung until the
-        //    user typed.
+        //    waiting for another keystroke. Before the listener seam this hung
+        //    until the user typed.
         String path = pathFromUri(URI);
         var error = new ValidationError(
             "Foo.x",

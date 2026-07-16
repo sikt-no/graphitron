@@ -26,11 +26,11 @@ import java.util.Optional;
  */
 public final class FieldSourceSigil {
 
-    /** R159 sigil literal. Authors write this exact value in {@code @field(name:)} to bind the SDL field to {@code env.getSource()}. */
+    /** Sigil literal. Authors write this exact value in {@code @field(name:)} to bind the SDL field to {@code env.getSource()}. */
     public static final String UPSTREAM_ROOT_LITERAL = "$source";
 
     /**
-     * R178 sigil literal. Authors write this exact value in {@code @field(name:)} on an
+     * Sigil literal. Authors write this exact value in {@code @field(name:)} on an
      * errors-shaped field of a payload-returning mutation type to force the
      * {@code env.getLocalContext()} transport for that field's DataFetcher, bypassing the
      * default-name accessor-then-localContext fallback that fires for an unannotated
@@ -117,19 +117,19 @@ public final class FieldSourceSigil {
     }
 
     /**
-     * The set of sites where the sigil is admitted today. R159 has exactly one admitted
+     * The set of sites where the sigil is admitted today. There is exactly one admitted
      * site ({@link PayloadDataField}); every other site classifies as {@link Other}.
      * Sealed so future broadening adds a new arm rather than reshaping call sites.
      */
     public sealed interface SiteContext permits SiteContext.PayloadDataField, SiteContext.Other {
-        /** Carrier-payload data field on a {@code @service}-backed mutation (the R158 admit). */
+        /** Carrier-payload data field on a {@code @service}-backed mutation (the @service-carrier admit). */
         record PayloadDataField() implements SiteContext {}
         /** Every other site: record-backed, table-backed, POJO, root, etc. */
         record Other() implements SiteContext {}
     }
 
     /**
-     * True only at the R159-admitted site (payload data field today). Consumers
+     * True only at the admitted site (payload data field today). Consumers
      * (classifier admit, LSP completion, LSP diagnostic) ask one question and get one
      * answer; broadening admit in a future item flips a single return value here.
      */

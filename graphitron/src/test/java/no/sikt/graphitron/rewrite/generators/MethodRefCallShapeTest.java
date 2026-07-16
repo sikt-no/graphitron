@@ -11,8 +11,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R87 Phase D structural-tier coverage for the static-vs-instance fork on {@code @service} methods.
- * Replaces the body-string assertions retired from {@code TypeFetcherGeneratorTest} (R87 §3) with
+ * Structural-tier coverage for the static-vs-instance fork on {@code @service} methods.
+ * Replaces the body-string assertions retired from {@code TypeFetcherGeneratorTest} with
  * direct exercise of {@code TypeFetcherGenerator#serviceCallTarget} (widened to package-private)
  * over the two {@link MethodRef.CallShape} arms. The classifier-side mapping from real Java
  * methods to {@link MethodRef.Service#callShape()} arms is covered separately by
@@ -22,8 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code graphitron-javapoet/src/main/java/no/sikt/graphitron/javapoet/CodeBlock.java:107}, the
  * same fragility class as substring-on-emitted-code).
  *
- * <p>Emit-shape regression backstop is the {@code graphitron-sakila-example} compilation tier
- * (R87 Phase D fixture).
+ * <p>Emit-shape regression backstop is the {@code graphitron-sakila-example} compilation tier.
  */
 @UnitTier
 class MethodRefCallShapeTest {

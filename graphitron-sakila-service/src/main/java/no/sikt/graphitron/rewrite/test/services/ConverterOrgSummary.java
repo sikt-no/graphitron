@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R413 fixture: a free-form (non-table-backed) record-backed payload whose {@code orgCode}
+ * Fixture: a free-form (non-table-backed) record-backed payload whose {@code orgCode}
  * carries the converter-backed {@code converter_org} primary key as its converted user type
  * (String; see {@code OrgCodeStringConverter} in graphitron-fixtures-codegen). The schema's
  * {@code ConverterOrgSummary.org} field lifts this value via

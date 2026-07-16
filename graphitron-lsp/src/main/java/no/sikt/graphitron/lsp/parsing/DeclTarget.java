@@ -14,7 +14,7 @@ import java.util.Optional;
  * or field-name token, the trigger {@link SdlDeclaration} owns) binds to, named
  * independently of how a consumer projects it. Goto-definition projects each
  * variant to a source {@code Location}; the declaration-name hover arm projects
- * each to a Javadoc overlay (R371).
+ * each to a Javadoc overlay.
  *
  * <p>The point of sharing the resolution is that hover/goto parity becomes
  * <em>structural</em> rather than asserted: a single backing-switch

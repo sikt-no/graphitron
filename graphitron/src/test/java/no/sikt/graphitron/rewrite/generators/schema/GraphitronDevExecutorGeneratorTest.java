@@ -92,7 +92,7 @@ class GraphitronDevExecutorGeneratorTest {
 
     @Test
     void execute_hasTheJdkOnlyReflectionBoundarySignature() {
-        // The load-bearing R428 property: one public static method, parameter and return types
+        // The load-bearing property: one public static method, parameter and return types
         // all JDK, so the host reflects it without sharing jOOQ or graphql-java types.
         var execute = executeMethod(generate(emptySchema(), SessionStateConfig.none()));
         assertThat(execute.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);

@@ -4,8 +4,8 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 
 /**
  * Orphaned compilation-tier fixture. It produced the {@code SingleFilmCardCarrier} /
- * {@code createFilmCard} carrier path that R276 removed (the NoBacking carrier promotion is
- * retired; carriers now bind to {@code JooqTableRecordType}). No schema field or test references
+ * {@code createFilmCard} carrier path that has since been removed (the NoBacking carrier promotion
+ * is retired; carriers now bind to {@code JooqTableRecordType}). No schema field or test references
  * this factory any more; it is a deletion candidate. {@code FilmCardData} itself is still live
  * (used by {@code InventoryExtensions} and the schema), so only this factory is dead.
  */

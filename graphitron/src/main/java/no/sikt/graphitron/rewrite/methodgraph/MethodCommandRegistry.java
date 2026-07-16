@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-generation-run command/name registry (R333 thread I, level 2; landed by R314 and first
- * populated for the reentry family). One instance lives for one generation run, created by the
+ * Per-generation-run command/name registry, first populated for the reentry family. One instance
+ * lives for one generation run, created by the
  * pipeline and surfaced on the generation result next to the emitted units, so the bidirectional
  * closure oracle can join the two: every covered emitted method is exactly one committed
  * command's output, and every schema coordinate the covered family claims has a committed
@@ -21,7 +21,7 @@ import java.util.Map;
  * fact ({@link BatchKeyField#rowsMethodName()} — minted once on the model, read by the
  * declaration through this commit and by the DataLoader call site directly). An emitter that
  * bypasses the seam produces a covered coordinate with no command, which the oracle reports;
- * a parallel register-beside-the-formula shape (the R268 census drift) is not constructible
+ * a parallel register-beside-the-formula shape (the census drift) is not constructible
  * because there is no commit overload that accepts an externally-derived name.
  *
  * <p><b>The covered-family boundary is derived, never tagged.</b> Whether a declaration commits
@@ -33,7 +33,7 @@ import java.util.Map;
  *
  * <p>The projected-DML reentry sites do not yet commit commands: their keyed re-query is inlined
  * in the mutation fetcher body with no named unit to claim (no {@code rowsMethodName} fact).
- * They join the registry when R314 slice 4 composes the DML follow-up through the named reentry
+ * They will join the registry when the DML follow-up is composed through the named reentry
  * query unit; until then the covered family is structurally the DataLoader-backed reentry
  * coordinates ({@code emitsKeyedReQuery() && field instanceof BatchKeyField}), which the oracle
  * pins explicitly.
@@ -59,7 +59,7 @@ public final class MethodCommandRegistry {
     }
 
     /**
-     * The DML reentry declaration seam (R314 slice 4): the {@code Projected*} /
+     * The DML reentry declaration seam: the {@code Projected*} /
      * {@code Discriminated*} mutation arms' follow-up SELECT lives in a named rows method whose
      * declaration name resolves here, off the model's
      * {@code MutationField.DmlTableField#reentryRowsMethodName()} fact, committing the command

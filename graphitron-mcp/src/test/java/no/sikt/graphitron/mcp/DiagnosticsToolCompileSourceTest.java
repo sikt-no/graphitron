@@ -12,7 +12,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 6 — the {@code diagnostics} tool's compile-source arm: generated-code compile diagnostics
+ * The {@code diagnostics} tool's compile-source arm: generated-code compile diagnostics
  * (off {@code Workspace.compileDiagnostics()}) surface alongside the schema-validation entries, each
  * tagged with a {@code source} discriminator ({@code "compile"} vs {@code "schema"}). This is the
  * agent-facing half of the spec's "a compile error reaches the console block and the MCP diagnostics

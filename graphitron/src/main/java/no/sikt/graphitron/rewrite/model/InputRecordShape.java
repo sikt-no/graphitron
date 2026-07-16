@@ -12,7 +12,7 @@ import java.util.Objects;
  * leaves and {@link GraphitronType.TableInputType}). One {@link InputComponent} per SDL
  * field, in declaration order. The "record" terminology in this carrier's name and slot
  * names is forward-looking: the emitted artifact is a plain Java class today and becomes a
- * Java {@code record} once R174 lifts graphitron-javapoet's record support.
+ * Java {@code record} once graphitron-javapoet gains record emission support.
  *
  * <p>The compact constructor enforces the structural invariants consumers rely on:
  * a builder site that fails to construct a shape (null {@code recordClass}, empty
@@ -46,7 +46,7 @@ public record InputRecordShape(
      *                            to {@code sdlFieldName}; a sanitiser would diverge here if the
      *                            SDL name collides with a Java keyword).
      * @param javaType            classifier-resolved Java type the component declares. For scalar
-     *                            fields, derived via R101's
+     *                            fields, derived via the
      *                            {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}; for list
      *                            fields, a {@code List<X>} parameterisation over the element's
      *                            Java type; for nested input refs, the emitted class's

@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * Narrow interface declaring the two slots {@code DeleteRowsWalker} (and {@code FieldBuilder},
  * for the arg surface) populate on an {@code @mutation(typeName: DELETE)} field: the slim
- * {@link InputArgRef} and the {@link DeleteRows} carrier. Sibling to R246's {@link UpdateRowsField};
+ * {@link InputArgRef} and the {@link DeleteRows} carrier. Sibling to the UPDATE-verb {@link UpdateRowsField};
  * each DML walker-carrier slice declares its own narrow interface surfacing the same
  * {@link #inputArg()} accessor alongside its verb-specific carrier, so emit-time helpers reading the
  * arg surface work uniformly across kinds.

@@ -3,12 +3,12 @@ package no.sikt.graphitron.rewrite;
 import org.jooq.Condition;
 
 /**
- * R442 fixture: condition-method stub whose table parameters are typed with the multi-schema jOOQ
+ * Condition-method stub whose table parameters are typed with the multi-schema jOOQ
  * fixture's {@code Event} classes ({@code no.sikt.graphitron.rewrite.multischemafixture}). The bare
  * name {@code event} collides across {@code multischema_a} and {@code multischema_b}, so a concrete
  * parameter typed {@code multischema_a.tables.Event} vs {@code multischema_b.tables.Event} can only
  * be told apart by jOOQ class identity, not the bare-vs-qualified name string
- * {@code checkConcreteParamTable} compared before R442.
+ * {@code checkConcreteParamTable} previously compared.
  *
  * <p>Each method wildcards the operand it is not exercising ({@code Table<?>}) so exactly one
  * positional check fires, isolating the source- vs target-side coverage the plan calls for.

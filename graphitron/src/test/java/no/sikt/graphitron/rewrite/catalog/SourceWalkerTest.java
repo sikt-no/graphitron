@@ -109,7 +109,7 @@ class SourceWalkerTest {
 
     @Test
     void disjointGeneratorPackagesKeepTableJumpLocatedNotAmbiguous(@TempDir Path root) throws IOException {
-        // R369 / D1: once graphitron's own output root (target/generated-sources/graphitron)
+        // Once graphitron's own output root (target/generated-sources/graphitron)
         // is walked alongside the jOOQ root, a method that shares a simple name + arity with a
         // jOOQ table declaration must NOT route the table jump to Ambiguous. It cannot, because
         // graphitron emits into the consumer's outputPackage, disjoint by construction from the

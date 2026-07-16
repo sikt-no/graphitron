@@ -199,7 +199,7 @@ class EntityResolutionBuilderTest {
 
     @Test
     void keyReferencingUnknownField_surfacesValidationDiagnostic() {
-        // R317 slice 5 — the federation @key check registers a diagnostic instead of demoting; the
+        // The federation @key check registers a diagnostic instead of demoting; the
         // type keeps its classified verdict and the validator surfaces the rejection.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query { language: Language }
@@ -259,7 +259,7 @@ class EntityResolutionBuilderTest {
     void plainObjectTypeWithKey_surfacesValidationDiagnostic() {
         // Federation @key on a non-@table type doesn't make sense — the dispatcher needs
         // a backing table to SELECT from. The Case-B message names the classification and
-        // hints at the missing @table directive. R317 slice 5 — Foo is a directiveless object the
+        // hints at the missing @table directive. Foo is a directiveless object the
         // type pass never classified (absent from the registry, not demoted); the federation check
         // registers the diagnostic the validator surfaces.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
@@ -316,7 +316,7 @@ class EntityResolutionBuilderTest {
         // Case B's record-backed arm — the "missing @table" hint is wrong-by-coincidence
         // because record-backed types intentionally have no @table. Name the kind explicitly so
         // the author sees that @key on a record-backed type is the misuse, not a forgotten @table.
-        // R317 slice 5 — FooRec keeps its record-backed verdict; the diagnostic carries the message.
+        // FooRec keeps its record-backed verdict; the diagnostic carries the message.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query {
                 x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
@@ -358,7 +358,7 @@ class EntityResolutionBuilderTest {
     void mixedResolvableAndNonResolvableKeysOnRecordType_stillRejects() {
         // The relaxation only applies when ALL keys are resolvable: false. A type with at
         // least one resolvable @key still needs a backing table for the SELECT path, so the
-        // R176 diagnostic stays.
+        // "requires a table-bound type" rejection still fires.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query {
                 x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})

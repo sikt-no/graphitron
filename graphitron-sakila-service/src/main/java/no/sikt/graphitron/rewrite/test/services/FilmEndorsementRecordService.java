@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord
 import org.jooq.DSLContext;
 
 /**
- * R315 compilation / execution-tier fixtures: a jOOQ {@link FilmEndorsementRecord} bound directly as a
+ * Compilation / execution-tier fixtures: a jOOQ {@link FilmEndorsementRecord} bound directly as a
  * {@code @service} input param, populated from an <em>FK-reference</em> {@code @nodeId(typeName: "Film")}.
  * The generated {@code createFilmEndorsementRecord} helper decodes the Film NodeId and loads it onto the
  * renamed FK child column {@code endorsed_film} (resolved through the {@code film_endorsement → film}

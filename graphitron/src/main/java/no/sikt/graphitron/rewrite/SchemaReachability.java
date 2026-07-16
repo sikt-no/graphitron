@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * R279 slice 1 — the reachability observatory. Computes the set of named output types
+ * The reachability observatory. Computes the set of named output types
  * (object / interface / union) reachable from the operation roots plus the federation seed scan,
  * by the same {@link SchemaTraverser} walk the field-first classification driver will be built on
  * in slice 3. This slice only <em>measures</em> reachability; it changes no classification
@@ -80,7 +80,7 @@ public final class SchemaReachability {
     }
 
     /**
-     * R317 slice 4 — the single classify-and-emit walk. Runs {@code visitor} over the same
+     * The single classify-and-emit walk. Runs {@code visitor} over the same
      * reachable output surface {@link #reachableTypeNames} measures (same seeds, same descent
      * edges), driving classification on enter rather than only collecting a name set. The
      * {@link SchemaTraverser} fires the visitor's {@code visitGraphQL*Type} callbacks on enter

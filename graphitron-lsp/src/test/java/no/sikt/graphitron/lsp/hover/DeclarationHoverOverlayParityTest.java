@@ -16,7 +16,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R371 — the declaration-name hover overlay and its parity with goto-definition,
+ * The declaration-name hover overlay and its parity with goto-definition,
  * exercised <em>off</em> the tree-sitter tier. Both falsifiable pieces are pure:
  * the shared {@link DeclTarget} resolver (a function over the {@code Built}
  * backing projection) and the two projections of it,

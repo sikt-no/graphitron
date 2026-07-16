@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 /**
- * The test-only classification directives and their SDL enums (R281's {@code @classified}
+ * The test-only classification directives and their SDL enums (the {@code @classified}
  * spec-by-example). This prelude is declared <em>only</em> here, in the corpus harness, and is
  * deliberately <strong>never</strong> part of the production {@code directives.graphqls} the plugin
  * auto-injects: the directives are read by {@link ClassifiedHarness}, ignored by the classifier, and
@@ -24,8 +24,6 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  *       type classifies to. {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}; {@link ClassifiedHarness} mirrors the enum against the live leaf set.</li>
  * </ul>
- *
- * <p>See {@code roadmap/classification-test-dsl.md} §"Classification directives".
  */
 public final class ClassifiedDsl {
 

@@ -3,7 +3,7 @@ package no.sikt.graphitron.codereferences.noparams;
 import java.util.List;
 
 /**
- * R201 name-less-POJO witness. A hand-rolled class-backed payload with a single all-fields
+ * Name-less-POJO witness. A hand-rolled class-backed payload with a single all-fields
  * constructor and an errors slot, deliberately <em>not</em> a record.
  *
  * <p>This package is compiled <b>without</b> the {@code -parameters} flag (see the dedicated
@@ -11,8 +11,8 @@ import java.util.List;
  * exposes no reflected parameter names. A {@code @field(name:)} on the errors-shaped slot of a
  * payload backed by this class therefore cannot be resolved by name, and
  * {@code FieldBuilder.buildErrorChannelCtorArm} must reject with the {@code -parameters} guidance
- * rather than silently falling back to the positional rule (the failure mode R201 exists to
- * remove). Kept in its own package, self-contained, so nothing in the {@code -parameters} test
+ * rather than silently falling back to the positional rule (the failure mode this witness exists
+ * to remove). Kept in its own package, self-contained, so nothing in the {@code -parameters} test
  * tree references it at compile time; the SDL fixture names it only through its service stub's
  * class name string.
  */

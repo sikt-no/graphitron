@@ -20,7 +20,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R380 pipeline-tier coverage: a {@code @reference(path:)} filter whose terminal column lives on a
+ * Pipeline-tier coverage: a {@code @reference(path:)} filter whose terminal column lives on a
  * <em>joined</em> table lowers to a {@link BodyParam.RemoteColumnPredicate} (a correlated EXISTS at
  * emit), on <em>both</em> surfaces:
  *

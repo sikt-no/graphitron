@@ -11,13 +11,13 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R108 depth-recursion pin: the Stage-2 per-typename SELECT wraps the parent selection set
+ * Depth-recursion pin: the Stage-2 per-typename SELECT wraps the parent selection set
  * <em>once</em>, at the outer call site. Nested-projection recursion in
  * {@code TypeClassGenerator.emitSelectionSwitch} reads from {@code sf.getSelectionSet()}
  * on a {@code SelectedField} already filtered at the outer level, so depth&gt;0 levels do not
  * need (and do not get) a per-depth filter.
  *
- * <p>The shape claim from the R108 spec's "Nested polymorphic dispatch" section: the outer-level
+ * <p>The shape claim behind this: the outer-level
  * filter has already restricted the grouped map to entries matching this participant, so the
  * nested recursion sees only the active fragment's nested selection. No further filter is
  * needed at depth; the restriction is per-call, not per-depth.

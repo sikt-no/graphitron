@@ -3,7 +3,7 @@ package no.sikt.graphitron.codereferences.dummyreferences;
 import graphql.schema.DataFetchingEnvironment;
 
 /**
- * Test fixtures for {@code R88}'s pipeline-tier accessor-resolution coverage. Each public type
+ * Test fixtures for the pipeline-tier accessor-resolution coverage. Each public type
  * pins one shape the {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} either accepts or
  * rejects when classifying an SDL field on a JavaRecord-backed parent.
  *

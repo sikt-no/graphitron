@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.compile;
 import java.util.List;
 
 /**
- * R410 slice 4 — the outcome of one incremental compile round. {@code success} is javac's own verdict
+ * The outcome of one incremental compile round. {@code success} is javac's own verdict
  * (false if any unit in the round had an error), and {@code diagnostics} is the round's dedicated
  * diagnostic collection.
  *
@@ -12,7 +12,7 @@ import java.util.List;
  * on disk; surfacing {@code success == false} is what tells the dev loop the running tree is stale for
  * those units rather than letting it trust a clean compile that never happened. The engine never
  * swallows a diagnostic, but the messaging tone (mid-edit inconsistency is the usual cause, not a bug)
- * is the console renderer's job in slice 6, not this record's.
+ * is the console renderer's job, not this record's.
  */
 public record CompileRound(boolean success, List<CompileDiagnostic> diagnostics) {
 

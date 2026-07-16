@@ -26,7 +26,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R408 single-evaluator parity (MCP tier): a lint finding suppressed at the build does not surface
+ * Single-evaluator parity (MCP tier): a lint finding suppressed at the build does not surface
  * through the {@code diagnostics} tool. This drives the real
  * {@link GraphQLRewriteGenerator#buildOutput()} with a rule disabled, publishes the resulting
  * {@link no.sikt.graphitron.rewrite.ValidationReport} onto a {@link Workspace} exactly as the dev loop

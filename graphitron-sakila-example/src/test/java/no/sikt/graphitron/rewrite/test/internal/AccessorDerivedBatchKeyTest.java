@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R60: end-to-end execution test for the accessor-derived BatchKey path.
+ * End-to-end execution test for the accessor-derived BatchKey path.
  *
  * <p>Cousin of {@link MutationPayloadLifterTest}: instead of the {@code @sourceRow}
  * directive, the parent record-backed type {@code CreateFilmsPayload} carries a typed
@@ -125,7 +125,7 @@ class AccessorDerivedBatchKeyTest {
     @SuppressWarnings("unchecked")
     @Test
     void accessorDerivedManyPayloads_nullToManyBacking_rendersEmptyListWithoutNpe() {
-        // R269 (MANY arm, fork (a)): the second payload's films() accessor returns null (a to-many
+        // MANY arm null-guard (fork (a)): the second payload's films() accessor returns null (a to-many
         // @table relation that was never populated). buildAccessorKeyMany hoists the accessor result
         // to a typed local and skips the for-loop when it is null, so `keys` stays empty and the
         // existing loadMany(keys, ...) dispatch renders the field as [] — rather than NPEing in the

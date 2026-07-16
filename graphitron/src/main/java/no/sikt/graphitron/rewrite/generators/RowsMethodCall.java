@@ -11,7 +11,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 
 /**
  * Single source of truth for the {@code (keys, batchEnv) -> rowsXxx(keys, dfe)} BatchLoader
- * lambda emitted inside DataLoader registration. R38 Phase 2 replaces the three handcrafted
+ * lambda emitted inside DataLoader registration. It replaces the three handcrafted
  * inline lambda blocks (in {@code TypeFetcherGenerator}'s {@code buildServiceDataFetcher},
  * {@code buildSplitQueryDataFetcher}, {@code buildRecordBasedDataFetcher}) with one call to
  * {@link #batchLoaderLambda}. Today's three sites emit byte-identical bodies; the only

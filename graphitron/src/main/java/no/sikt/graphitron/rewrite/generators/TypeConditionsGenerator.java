@@ -169,7 +169,7 @@ public class TypeConditionsGenerator {
 
     /**
      * ANDs {@code term} into the method's {@code condition} local, guarded by the same null /
-     * empty-list policy the four local arms used before R380:
+     * empty-list policy the four local arms used before the remote (EXISTS) arm existed:
      * <ul>
      *   <li>{@code Eq} / {@code RowEq} (scalar): unguarded when non-null, else {@code if (arg != null)};</li>
      *   <li>{@code In} / {@code RowIn} (list): {@code if (!arg.isEmpty())} when non-null, else

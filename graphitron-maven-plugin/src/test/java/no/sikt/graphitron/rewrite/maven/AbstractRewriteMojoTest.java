@@ -72,7 +72,7 @@ class AbstractRewriteMojoTest {
     void collectExistingDirs_classpathAndSourceRootsCoverSameReactorProjects(@TempDir Path root) throws Exception {
         // Two reactor projects, each with an existing target/classes and src/main/java.
         // The shared traversal must visit both for both extractors, so a class
-        // scanned for completion always has its source root walked (R351).
+        // scanned for completion always has its source root walked.
         var projects = new ArrayList<MavenProject>();
         var expectedClasses = new ArrayList<Path>();
         var expectedSources = new ArrayList<Path>();
@@ -191,7 +191,7 @@ class AbstractRewriteMojoTest {
         walked.setGroupId("test"); walked.setArtifactId("walked"); walked.setVersion("1.0");
 
         // generated-only: target/classes plus an on-disk generated-sources/jooq but no
-        // hand-written source root -> NOT reported, because the auto-include covers it (R369).
+        // hand-written source root -> NOT reported, because the auto-include covers it.
         Path genClasses = Files.createDirectories(root.resolve("gen/target/classes"));
         Files.createDirectories(root.resolve("gen/target/generated-sources/jooq"));
         var gen = projectWithBuild(root.resolve("gen/target").toString(), genClasses.toString());
@@ -244,7 +244,7 @@ class AbstractRewriteMojoTest {
     void siblingModuleBasedirs_emptyWhenNoAncestorPomListsCurrent(@TempDir Path root) throws Exception {
         // A standalone module: an ancestor pom exists but does not list this module.
         // The walk finds no aggregator and returns empty, leaving behaviour exactly
-        // as pre-R99 (no widening for a genuine single-module project).
+        // as before the sibling-module widening (no widening for a genuine single-module project).
         Files.writeString(root.resolve("pom.xml"), aggregatorPom("someone-else"));
         Files.createDirectories(root.resolve("someone-else"));
         Path current = Files.createDirectories(root.resolve("standalone"));
@@ -256,7 +256,7 @@ class AbstractRewriteMojoTest {
 
     @Test
     void singleProjectReactor_widensScanAndWalkToDeclaredSiblings(@TempDir Path root) throws Exception {
-        // The sub-module-invocation shape R99 targets: a reactor with an aggregator,
+        // The sub-module-invocation shape the sibling-module widening targets: a reactor with an aggregator,
         // the spec module graphitron:dev runs from, and a sibling service module
         // holding a @condition/@service class. The session sees only the spec module
         // (getAllProjects() is size 1), so without the walk-up the sibling's classes
@@ -297,7 +297,7 @@ class AbstractRewriteMojoTest {
         var refs = ClasspathScanner.scan(ctx.classpathRoots(), "no.sikt.example.jooq");
         assertThat(refs).extracting(CompletionData.ExternalReference::className)
             .contains("no.sikt.example.service.CategoryConditions");
-        // Source side (load-bearing for R369 parity): the sibling's source root is
+        // Source side (load-bearing for scan/walk parity): the sibling's source root is
         // walked too, so goto-definition / hover on its declarations resolves rather
         // than silently no-jumping. Without this assertion the test would pass with
         // only the classpath side wired.

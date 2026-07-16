@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * <p>Both arms print through graphql-java's {@link SchemaPrinter} with
  * {@link SchemaDirectiveRegistry#isSurvivor(String)} as the directive filter, so the
  * file carries the same directive surface the generated {@code GraphitronSchema.build}
- * produces at consumer load time (R291, subsuming R253's Route 3): generator-only
+ * produces at consumer load time: generator-only
  * directive definitions and applications are consumed at generate time and never
  * printed; survivors (federation directives, {@code @deprecated}, consumer-declared
  * custom directives) keep printing. {@link #includeSchemaElement} additionally drops
@@ -79,7 +79,7 @@ public final class SchemaSdlEmitter {
      * carries cannot drift apart. Drops graphql-spec built-in directive <em>definitions</em>
      * when {@code dropSpecBuiltInDirectiveDefinitions} holds (the federation arm mirrors
      * {@code ServiceSDLPrinter.generateServiceSDLV2}; spec-built-in <em>applications</em> keep
-     * printing, which is what the R283 {@code @oneOf} augment relies on), and drops named types
+     * printing, which is what the {@code @oneOf} augment relies on), and drops named types
      * in {@code droppedTypeNames} (support types classification did not retain) on both arms.
      */
     static boolean includeSchemaElement(GraphQLSchemaElement element,

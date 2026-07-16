@@ -53,7 +53,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *       {@link KeyLift.Lifter} arm.</li>
  *   <li>On the no-{@code @reference} path, the resolution carries an empty {@code joinPath}
  *       plus the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation (the leaf-PK
- *       shape; R431).</li>
+ *       shape).</li>
  *   <li>On the {@code @reference}-composed path, the resolution's {@code joinPath} is the
  *       resolved FK chain (one or more FK-derived {@link JoinStep.Hop}s) from the parent's lifter
  *       columns to the leaf table.</li>
@@ -96,7 +96,7 @@ final class SourceRowDirectiveResolver {
          * {@code lift} is always the authored {@link KeyLift.Lifter} arm ({@code @sourceRow}'s
          * whole point is the developer-supplied lifter). {@code lifted} is the hop-less
          * {@link ParentCorrelation.OnLiftedSlots} correlation for
-         * the leaf-PK shape (no {@code @reference}; R431 — formerly a single {@code LiftedHop}
+         * the leaf-PK shape (no {@code @reference}; formerly a single {@code LiftedHop}
          * in the joinPath), {@code null} for the {@code @reference}-composed FK chain whose
          * correlation the caller derives from {@code joinPath}.
          */
@@ -145,10 +145,10 @@ final class SourceRowDirectiveResolver {
 
         // 2. Resolve the field's @table return type. The directive only applies to table-bound
         //    returns; non-table returns are rejected with a directive-specific message.
-        //    R317 slice 4 — resolved through the pure TableIndex (a fixed point built before the walk),
+        //    Resolved through the pure TableIndex (a fixed point built before the walk),
         //    not ctx.types: under the single classify-and-emit walk the field's target composite may not
         //    be registered yet when the field classifies. The index agrees with the registry for
-        //    table-backed types by construction (slice 3d).
+        //    table-backed types by construction.
         GraphitronType.TableBackedType tbt = ctx.tables.forName(elementTypeName).orElse(null);
         if (tbt == null) {
             return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName

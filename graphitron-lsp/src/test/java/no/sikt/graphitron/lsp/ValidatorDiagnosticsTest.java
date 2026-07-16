@@ -21,13 +21,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validator-error and warning surface for R147. The companion {@link DiagnosticsTest} covers the
- * pre-R147 SDL-only directive walks; this class covers the new validator slice that
+ * Validator-error and warning surface. The companion {@link DiagnosticsTest} covers the
+ * earlier SDL-only directive walks; this class covers the validator slice that
  * {@link Diagnostics#validatorDiagnostics ...validatorDiagnostics} adds.
  *
  * <p>Severity mapping has one test per {@link Rejection} sealed permit
  * ({@link Rejection.AuthorError}, {@link Rejection.InvalidSchema}, {@link Rejection.Deferred}, all
- * three mapping to {@code Error} as of R225); the {@code RejectionSeverityCoverageTest} sibling
+ * three mapping to {@code Error}); the {@code RejectionSeverityCoverageTest} sibling
  * pins exhaustiveness via reflection.
  */
 class ValidatorDiagnosticsTest {
@@ -114,7 +114,7 @@ class ValidatorDiagnosticsTest {
 
     @Test
     void recordIgnoredBuildWarning_surfacesAsUsageSiteWarning() {
-        // R307: the editor's "@record is ignored" signal is the generator's @record-ignored
+        // The editor's "@record is ignored" signal is the generator's @record-ignored
         // BuildWarning, with no new LSP machinery. It rides this same validator-warning surface as
         // any BuildWarning (pipeline -> ValidationReport.warnings() -> validatorDiagnostics ->
         // usage-site Warning). The generator producing this warning for a reachable @record is
@@ -142,7 +142,7 @@ class ValidatorDiagnosticsTest {
 
     @Test
     void engineLintFinding_surfacesAsWarningSquiggleAtItsRange() {
-        // R398 parity-for-free: an engine lint finding (here field-names-camel-case) rides the same
+        // Parity for free: an engine lint finding (here field-names-camel-case) rides the same
         // ValidationReport warning channel and replays into a Warning squiggle at its own range, no
         // second evaluator. The finding's location is the offending field name token (line 2, col 3).
         var path = "/tmp/schema.graphqls";
@@ -171,7 +171,7 @@ class ValidatorDiagnosticsTest {
 
     @Test
     void engineLintFinding_isSilencedOnStaleSnapshot() {
-        // R139: the same freshness silence that covers validator errors covers lint findings; a stale
+        // The same freshness silence that covers validator errors covers lint findings; a stale
         // snapshot yields no squiggle so the user is not punished for a buffer we cannot reliably see.
         var path = "/tmp/schema.graphqls";
         var uri = ValidationReport.canonicalUri(path);

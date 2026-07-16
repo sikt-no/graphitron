@@ -11,7 +11,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R481 unit coverage for {@link ParentRowDemand#polymorphicParentRowColumns}: the parent-row
+ * Unit coverage for {@link ParentRowDemand#polymorphicParentRowColumns}: the parent-row
  * demand a multi-table polymorphic child field ({@link ChildField.InterfaceField} /
  * {@link ChildField.UnionField}) surfaces onto its parent's {@code $fields} projection.
  *

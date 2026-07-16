@@ -7,9 +7,9 @@ import java.lang.reflect.Type;
  * Outcome of the discovery-direction accessor probe
  * ({@link no.sikt.graphitron.rewrite.ClassAccessorResolver#probe}): "which member does this SDL
  * field read on the parent's backing class, given the field's argument shape but <em>no</em>
- * expected return type?". Consumed by the R96 binding walk
+ * expected return type?". Consumed by the binding walk
  * ({@link no.sikt.graphitron.rewrite.RecordBindingResolver}) to ground child backing classes and to
- * name the resolved accessor on {@link ProducerBinding.ParentAccessor}, and by the R329 carrier
+ * name the resolved accessor on {@link ProducerBinding.ParentAccessor}, and by the carrier
  * discrimination as a pure presence probe.
  *
  * <p>A distinct sub-taxonomy from {@link AccessorResolution}, not a reuse of it: the probe has no

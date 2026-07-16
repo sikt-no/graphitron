@@ -3,7 +3,7 @@ package no.sikt.graphitron.mcp.rag;
 import java.util.List;
 
 /**
- * The vector-store seam (R372 D2): write a document, hybrid-search by query, and round-trip an
+ * The vector-store seam: write a document, hybrid-search by query, and round-trip an
  * opaque payload + stable ID per hit. Backend choice never reaches a consumer; nothing in this
  * signature names Lucene segments, BM25 tuning, or HNSW parameters. The sole shipping backend is
  * {@link LuceneEmbeddingStore} (hybrid BM25 + KNN in one index); a RAM-directory instance of that
@@ -26,7 +26,7 @@ public interface EmbeddingStore extends AutoCloseable {
     /**
      * Add one document under a stable {@code id}, with an opaque {@code payload} the store
      * round-trips verbatim on a hit. The embedding's vector width is validated against the store's
-     * configured dimension and fails loudly here on mismatch (R372 D2), rather than reaching the
+     * configured dimension and fails loudly here on mismatch, rather than reaching the
      * index as a runtime surprise. Unsupported on a load-only store.
      */
     void add(String id, Embedder.Embedding embedding, String payload);

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R12 fixture: query-side {@code @error} end-to-end. The {@code lookup} method drives the
+ * Fixture for query-side {@code @error} channel generation, end-to-end. The {@code lookup} method drives the
  * {@code GraphitronSchema.java} emit path that broke in production (the
  * {@code buildErrorTypeFieldFetchers} cast disambiguation + {@code env.getSource()} call) by
  * forcing both compile-spec (sakila-example {@code mvn compile}) and execute-spec (real

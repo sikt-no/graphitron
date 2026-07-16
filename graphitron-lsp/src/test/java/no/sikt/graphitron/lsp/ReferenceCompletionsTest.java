@@ -47,7 +47,7 @@ class ReferenceCompletionsTest {
 
     @Test
     void tableCompletionRoutesThroughTableCompletionsNotHere() {
-        // Per R119 phase 2 split, ReferenceCompletions narrows to the FK
+        // ReferenceCompletions narrows to the FK
         // (CatalogFkBinding) arm. Table completion at
         // @reference(path: [{table:}]) is the ReferenceElement.table
         // coordinate's CatalogTableBinding, served by TableCompletions.
@@ -85,7 +85,7 @@ class ReferenceCompletionsTest {
 
     @Test
     void unknownTableReturnsEmptyForKey() {
-        // R216 — snapshot is the source of truth for the type-to-table binding. When the
+        // The snapshot is the source of truth for the type-to-table binding. When the
         // classifier maps Foo to a table the catalog doesn't know about, key completion
         // returns empty.
         String source = """

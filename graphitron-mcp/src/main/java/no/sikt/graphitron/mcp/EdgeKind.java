@@ -1,7 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 /**
- * R374 (D-B) — the relationship label on an {@link Edge}. Direction-independent: the same kind
+ * The relationship label on an {@link Edge}. Direction-independent: the same kind
  * labels both directions of a traversal (a forward {@code BACKS} edge field -> column and the
  * reverse {@code BACKS} edge column -> field carry the same kind; only the {@code direction} query
  * axis and the {@link Edge#target()} slot differ).

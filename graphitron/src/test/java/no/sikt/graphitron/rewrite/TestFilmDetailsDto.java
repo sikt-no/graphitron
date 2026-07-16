@@ -7,7 +7,7 @@ package no.sikt.graphitron.rewrite;
  * argument mapping in isolation; the dangling-type-reference soundness pass
  * ({@code GraphitronSchemaBuilder.rejectDanglingTypeReferences}) now rejects that shape (the
  * payload type would be dropped while the field still emitted a typeRef to it), so the stubs
- * return this record and {@code FilmDetails} grounds through the ordinary R96 reflection
+ * return this record and {@code FilmDetails} grounds through the ordinary reflection
  * binding.
  */
 public record TestFilmDetailsDto(String title) {}

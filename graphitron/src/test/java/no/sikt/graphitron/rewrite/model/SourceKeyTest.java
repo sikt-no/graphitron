@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit-tier coverage of the {@link SourceKey} residue: the {@code (columns, wrap)} pair and the
  * {@link SourceKey#keyElementType()} derivation.
  *
- * <p>R431 dispositions of the retired compact-constructor invariant families (slice 3; the
+ * <p>Dispositions of the retired compact-constructor invariant families (slice 3; the
  * {@code target} / {@code path} families are dispositioned in the slice-1/2 history of this
  * javadoc):
  *
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒ {@code Wrap.TableRecord} (the hard one): the
  *       named join site is {@link ChildField.SingleRecordIdField}'s compact constructor — the
  *       only envelope-bearing typed-record read left once the DML {@code Wrap.Record} walk died
- *       into the R305 re-fetch — which requires {@code Wrap.TableRecord} unconditionally
+ *       into the re-fetch — which requires {@code Wrap.TableRecord} unconditionally
  *       (strictly stronger than the retired conditional coupling). Pinned by
  *       {@link SingleRecordIdFieldKeyShapeInvariantTest}.</li>
  *   <li>The service arms' shape duplication ({@code ServiceTableRecord} carrying the producer's

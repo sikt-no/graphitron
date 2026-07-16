@@ -8,9 +8,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 /**
- * R386 — the pure descriptor composer for the {@code catalog.search} semantic index. Turns a
- * frozen R362 {@link CatalogFacts.Table} into one readable, embeddable descriptor string, and
- * normalizes SQL identifiers into readable words (R118 OQ3) so the embedder sees language rather
+ * The pure descriptor composer for the {@code catalog.search} semantic index. Turns a
+ * frozen {@link CatalogFacts.Table} into one readable, embeddable descriptor string, and
+ * normalizes SQL identifiers into readable words so the embedder sees language rather
  * than {@code snake_case} tokens. Stateless and ONNX-free, so the retrieval-lift invariants pin in
  * a fast unit test.
  *
@@ -27,8 +27,8 @@ import java.util.List;
  * </pre>
  *
  * <p>When jOOQ captured no comments the {@code Comment:} line and the per-column comment
- * parentheticals are omitted; the descriptor degrades to names-only, still useful via normalization
- * (R118 OQ4).
+ * parentheticals are omitted; the descriptor degrades to names-only, still useful via
+ * normalization.
  */
 final class CatalogDescriptors {
 
@@ -63,8 +63,8 @@ final class CatalogDescriptors {
      * underscores, {@code camelCase} / {@code PascalCase} on case boundaries, and a digit run as its
      * own word ({@code customerID} -> "customer id", {@code film_actor} -> "film actor",
      * {@code lastUpdate} -> "last update", {@code address2} -> "address 2"). A single lowercase word
-     * passes through unchanged. The normalized form is the model-agnostic retrieval lift R118 OQ3
-     * calls for; it sits beside the raw token, never replacing it.
+     * passes through unchanged. The normalized form is the model-agnostic retrieval lift; it sits
+     * beside the raw token, never replacing it.
      */
     static String splitWords(String identifier) {
         if (identifier == null || identifier.isEmpty()) {

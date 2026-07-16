@@ -14,9 +14,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * R410 slice 6 — the dev-loop compile driver that ties the warm {@link IncrementalCompileEngine} to the
- * {@link CompileDependencyGraph} (slice 2), the ABI hashes ({@link AbiSignature}, slice 3), and the
- * recompile-set algorithm ({@link RecompileSet}, slice 3). It is the one long-lived component
+ * The dev-loop compile driver that ties the warm {@link IncrementalCompileEngine} to the
+ * {@link CompileDependencyGraph}, the ABI hashes ({@link AbiSignature}), and the
+ * recompile-set algorithm ({@link RecompileSet}). It is the one long-lived component
  * {@code DevMojo} holds across saves: it owns the warm compiler and the previous round's ABI hash map,
  * the state the recompile set is computed against.
  *
@@ -26,7 +26,7 @@ import java.util.Set;
  *       generated tree, establishing (or re-establishing) the ABI baseline. A consumer service ABI edit
  *       is invalidated conservatively by recompiling the whole tree rather than modelling
  *       generated→consumer edges (the graph only carries generated→generated edges; a precise
- *       generated→consumer invalidation is deferred, and belongs with R333's method graph).</li>
+ *       generated→consumer invalidation is deferred, and belongs with the eventual method graph).</li>
  *   <li><b>Schema save</b> → {@link #recompile}: recompile the writer's delta plus the reverse-transitive
  *       dependents of the delta units whose ABI moved, then advance the ABI baseline. A failed round's
  *       units are re-attempted on every later round until one compiles them clean, so an unrelated save
@@ -35,8 +35,9 @@ import java.util.Set;
  *
  * <p>The graph is supplied per call (rebuilt from the freshly classified model by
  * {@code GraphQLRewriteGenerator.generateIncremental}) rather than mutated in place: rebuilding is
- * always consistent with the sources just written and the build is cheap relative to generation. The
- * spec's "held and updated across saves" is an optimisation this driver forgoes for correctness-by-construction.
+ * always consistent with the sources just written and the build is cheap relative to generation.
+ * Holding and updating the graph across saves would be an optimisation this driver forgoes for
+ * correctness-by-construction.
  *
  * <p><b>Thread safety.</b> In the dev loop two watcher threads can drive a round: the schema-save path
  * ({@link #recompile}) and the consumer-{@code .class}-change path ({@link #compileAll}). The warm

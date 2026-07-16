@@ -5,14 +5,14 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.AddressRecord;
 import java.util.List;
 
 /**
- * R366 fixture: free-form {@code @record} payload exposing a typed zero-arg accessor returning
+ * Fixture: free-form {@code @record} payload exposing a typed zero-arg accessor returning
  * {@code List<AddressRecord>}, paired with a <em>list-cardinality multi-table polymorphic</em>
  * child ({@code occupants: [AddressOccupant!]!}, the {@code Customer | Staff} union, both FK back
  * to {@code address}). The classifier resolves the polymorphic hub ({@code address}) from the
  * {@code addresses()} accessor and produces a {@code SourceKey} with
  * {@code Reader.AccessorCall} + {@code Cardinality.MANY}.
  *
- * <p>That MANY reader is the path R366 fixes: {@code MultiTablePolymorphicEmitter}'s
+ * <p>That MANY reader is the path the fix targets: {@code MultiTablePolymorphicEmitter}'s
  * {@code buildBatchedListFetcher} used to emit {@code loader.load(key, env)} against the
  * out-of-scope loop-local {@code key} the MANY key-extraction declares (it declares a
  * {@code List<RecordN<…>> keys}), so the generated fetcher failed javac with

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 /**
- * R200 fixture: record-shaped consumer bean whose component names diverge from the SDL input field
+ * Fixture: record-shaped consumer bean whose component names diverge from the SDL input field
  * names they bind to. The matching SDL input type bridges the divergence with {@code @field(name:)}:
  * {@code title: String @field(name: "heading")} and {@code rating: Int @field(name: "score")}. The
  * resolved {@code FieldBinding}s must carry {@code javaFieldName} = the component name (the directive

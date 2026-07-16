@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
 
 /**
- * R195 fixture: a {@code @service} input bean whose member is typed as one jOOQ record
+ * Fixture: a {@code @service} input bean whose member is typed as one jOOQ record
  * ({@link FilmActorRecord}) while the backing SDL field's {@code @nodeId(typeName:)} points at a
  * <em>different</em> NodeType ({@code Film}, whose {@code @table} is {@code film} → {@code FilmRecord}).
  *

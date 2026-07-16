@@ -26,7 +26,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 /**
  * Registry of every {@link SdlAction} the LSP knows how to apply. A quick-fix
  * action is registered here explicitly; it is never divined from a deprecation's
- * prose reason (R398). Deprecation comments and quick-fix actions are independent:
+ * prose reason. Deprecation comments and quick-fix actions are independent:
  * a deprecation may carry no action, and an action need not correspond to a
  * deprecation. {@code SdlActionDriftTest} keeps the one remaining coupling honest,
  * an action that <em>does</em> target a deprecation must target a real one, so a
@@ -43,8 +43,8 @@ public final class SdlActions {
     private SdlActions() {}
 
     /**
-     * Returns every {@link SdlAction} bound to {@code catalog}. R93
-     * ships one: the {@code ExternalCodeReference.name → className}
+     * Returns every {@link SdlAction} bound to {@code catalog}. One
+     * ships today: the {@code ExternalCodeReference.name → className}
      * migration. Future deprecation migrations or directive renames
      * extend the list.
      */
@@ -55,7 +55,7 @@ public final class SdlActions {
     }
 
     /**
-     * The R93 migration: rewrites
+     * The name-to-className migration: rewrites
      * {@code ExternalCodeReference {name: "X"}} to
      * {@code ExternalCodeReference {className: "<resolved-FQN>"}}
      * when {@code "X"} resolves in the consumer's

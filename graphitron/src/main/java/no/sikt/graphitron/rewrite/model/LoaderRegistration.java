@@ -16,7 +16,7 @@ import java.util.Objects;
  * onto {@code Container.MAPPED_SET}; catalog-FK and {@code List<...>}-source declarations
  * collapse onto {@code Container.POSITIONAL_LIST}.
  *
- * <p>The R75 rooted DML payload case has no {@link LoaderRegistration} — the DataFetcher
+ * <p>The rooted DML payload case has no {@link LoaderRegistration} — the DataFetcher
  * reads {@code env.getSource()} and uses {@link SourceKey} directly to extract source-row
  * instances. {@link LoaderRegistration} being a separate value (not a field on
  * {@link SourceKey}) is what makes that absence representable.

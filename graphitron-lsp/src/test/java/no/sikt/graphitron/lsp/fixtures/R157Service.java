@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp.fixtures;
 
 /**
- * R276 test producer for {@code R157PipelineTest}. Reflection-only record binding means a type
+ * Test producer for {@code R157PipelineTest}. Reflection-only record binding means a type
  * acquires its backing class by being the reflected return type of a producer field; the
  * deprecated {@code @record} directive no longer binds. These methods let the test SDL bind
  * {@code FilmCard} / {@code FilmPojoView} to {@link R157FilmRecord} / {@link R157FilmPojo} through

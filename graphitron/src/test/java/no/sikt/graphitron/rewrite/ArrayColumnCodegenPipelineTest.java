@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * R446 regression pin: code generation must not crash on an array-typed column that flows through
+ * Regression pin: code generation must not crash on an array-typed column that flows through
  * the {@code SourceKey.Wrap.TableRecord} key-extraction path.
  *
  * <p>{@code ArrayHolder} maps the {@code array_holder} table, whose row carries a
@@ -18,7 +18,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code @service} ({@code getArrayHolderRankByRecord(Set<ArrayHolderRecord>)}), so its key wrap is
  * {@code SourceKey.Wrap.TableRecord}: the generated service datafetcher's key extraction
  * reconstructs the full {@code array_holder} row per column via {@code TableRef.allColumns()}
- * ({@code GeneratorUtils.buildKeyExtraction}, the R436 arm). Before the catalog-boundary type-lift
+ * ({@code GeneratorUtils.buildKeyExtraction}, the full-record arm). Before the catalog-boundary type-lift
  * that reconstruction called {@code ClassName.bestGuess("[Ljava.lang.Boolean;")} while building the
  * emitted {@code $T.class} argument and aborted with
  * {@code IllegalArgumentException: couldn't make a guess for [Ljava.lang.Boolean;}.

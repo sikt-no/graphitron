@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R38 structural pins: post-flip, every batched-rows DataFetcher emission site routes through
+ * Structural pins for the unified batched-rows seam: post-flip, every batched-rows DataFetcher emission site routes through
  * {@link DataLoaderFetcherEmitter#build}, and every batched-rows method emission site routes
  * through {@link RowsMethodSkeleton#build}. The pins enforce the unified-seam invariant the
  * spec promises in its Tests section
@@ -24,11 +24,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * call site, drops the count, and trips the assertion.
  *
  * <p>If a new emission site is legitimately added (e.g. a sixth rows-method body permit for
- * R75's {@code ResultRowWalk}), update the expected count here; the deliberate moment of
+ * {@code ResultRowWalk}), update the expected count here; the deliberate moment of
  * touching this test is the architectural review point the pin is designed to create.
  *
  * <p>Note: this pin doesn't cover {@link MultiTablePolymorphicEmitter}'s batched fetcher
- * family, which is its own emit family with its own structural axes. R38's seam targets the
+ * family, which is its own emit family with its own structural axes. The unified seam targets the
  * five-permit rows-method shape on table-bound batched fields; the polymorphic seam is
  * separate work.
  */
@@ -42,8 +42,8 @@ class UnifiedEmissionPinsTest {
     void fetcherEmitter_unifiedDispatch() throws IOException {
         // Every DataFetcher MethodSpec emit site in the generators package routes through
         // DataLoaderFetcherEmitter.build. Current sites (2): TypeFetcherGenerator's
-        // buildServiceDataFetcher and buildBatchedDataFetcher (R314 slice 2 merged the former
-        // buildSplitQueryDataFetcher / buildRecordBasedDataFetcher pair onto the one
+        // buildServiceDataFetcher and buildBatchedDataFetcher (the former
+        // buildSplitQueryDataFetcher / buildRecordBasedDataFetcher pair was merged onto the one
         // source-shape-gated builder; generated output stayed byte-identical).
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bDataLoaderFetcherEmitter\\.build\\b"),
@@ -62,9 +62,9 @@ class UnifiedEmissionPinsTest {
         // Every rows-method MethodSpec emit site in the generators package routes through
         // RowsMethodSkeleton.build. Current sites (5): SplitRowsMethodEmitter's three internal
         // builders (buildListMethod, buildSingleMethod, buildConnectionMethod — the dissolved
-        // record-table-method shape routes through the first two since R314 slice 2b) plus
+        // record-table-method shape routes through the first two) plus
         // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
-        // SplitRowsMethodEmitter.buildServiceTableLift (R285 ServiceTableField lift-back
+        // SplitRowsMethodEmitter.buildServiceTableLift (ServiceTableField lift-back
         // re-projection). Together they cover all three RowsMethodBody permits (the two SQL
         // permits route through the three internal SQL builders by cardinality; the Service
         // permit routes via the two service emit sites).

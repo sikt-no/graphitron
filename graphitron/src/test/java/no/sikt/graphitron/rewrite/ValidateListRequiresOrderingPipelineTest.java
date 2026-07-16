@@ -8,7 +8,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage for R39: the "list fields require deterministic ordering" check fires
+ * End-to-end coverage for the "list fields require deterministic ordering" check: it fires
  * through the full SDL → classified model → assembled {@code GraphitronSchema} → validator path,
  * not only when fed a hand-constructed fixture. Pins both the classifier/validator wiring and the
  * error-message contract.

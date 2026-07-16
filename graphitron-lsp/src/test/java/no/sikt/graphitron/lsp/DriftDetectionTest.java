@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * The R119 drift-detection guard: builds the production
+ * The drift-detection guard: builds the production
  * {@link LspVocabulary} against the bundled {@code directives.graphqls}
  * on the runtime classpath and asserts every overlay coordinate resolves.
  *
@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * canonical overlay. It complements
  * {@code LspVocabularyTest.structuralInvariant_*} by running against the
  * real SDL rather than synthetic fixtures: a coordinate the overlay
- * names but the SDL no longer declares (R110-style drift) is a hard
+ * names but the SDL no longer declares (directive drift) is a hard
  * startup failure here, before any IDE session runs.
  *
  * <p>The constructor of {@link LspVocabulary} performs the structural
@@ -53,7 +53,7 @@ class DriftDetectionTest {
 
     @Test
     void fieldSortNameResolvesAndBindsToColumnBehavior() {
-        // R343: the @defaultOrder(fields: [{name: ...}]) coordinate. Resolving against the bundled
+        // The @defaultOrder(fields: [{name: ...}]) coordinate. Resolving against the bundled
         // directives.graphqls (input FieldSort { name: String! ... }) is guarded by the startup
         // invariant in productionOverlayResolvesAgainstBundledDirectivesSdl; this pins the binding.
         var vocab = LspVocabulary.load();

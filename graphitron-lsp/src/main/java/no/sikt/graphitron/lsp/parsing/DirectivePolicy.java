@@ -15,7 +15,7 @@ import java.util.Set;
  * <p>The motivating case: {@code ExternalCodeReference.className} is the same
  * {@link SchemaCoordinate} whether it appears under {@code @enum} or the
  * deprecated {@code @record}. A consumer that must suppress class binding for
- * {@code @record} (R307) cannot read that off the coordinate's {@code Behavior};
+ * {@code @record} cannot read that off the coordinate's {@code Behavior};
  * it reads it off the enclosing directive name. Before this table that test was
  * copy-pasted as {@code "record".equals(...)} into five consumers, and the
  * method-validating set was owned by {@code Diagnostics} but only mirrored by
@@ -31,7 +31,7 @@ public final class DirectivePolicy {
 
     /**
      * Directives whose {@code className}/{@code method} slot binds no live Java
-     * element. {@code @record} (R307) is deprecated and ignored: its
+     * element. {@code @record} is deprecated and ignored: its
      * {@code ExternalCodeReference} arg wraps a type marker, not a class or
      * method invocation, so class/method diagnostics, completions, hover, and
      * goto-definition all skip it. The coordinate is shared with {@code @enum},
@@ -52,7 +52,7 @@ public final class DirectivePolicy {
     /**
      * Whether the named directive's class/method slot binds a live Java element.
      * False only for the deprecated/ignored directives in
-     * {@link #DEAD_BINDING_DIRECTIVES} (today: {@code @record}). The R307
+     * {@link #DEAD_BINDING_DIRECTIVES} (today: {@code @record}). The
      * carve-out: when this returns false, class binding (diagnostics,
      * completions, hover, goto-definition) is suppressed.
      */

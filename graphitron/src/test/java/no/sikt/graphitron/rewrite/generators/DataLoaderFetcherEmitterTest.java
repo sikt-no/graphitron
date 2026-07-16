@@ -125,7 +125,7 @@ class DataLoaderFetcherEmitterTest {
 
     @Test
     void keyExtractionAndDispatch_areWrappedInTryCatchRoutingSyncCatchBody() {
-        // R436 Defect 2: a synchronous throw out of the key extraction (before dispatch) must be
+        // A synchronous throw out of the key extraction (before dispatch) must be
         // caught and routed, not escape DataFetcher.get() unredacted. The guard wraps the
         // extraction + dispatch + async tail; the caller-supplied catch body is the arm.
         var reg = new LoaderRegistration(

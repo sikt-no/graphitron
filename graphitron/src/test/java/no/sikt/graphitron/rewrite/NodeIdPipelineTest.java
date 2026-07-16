@@ -48,7 +48,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  *   <li>{@code child_ref} — plain table; FK {@code parent_alt_key -> parent_node.alt_key} is
  *       the rooted-at-parent fixture's drive surface.</li>
  *   <li>{@code shared_node} — single-key NodeType table whose {@code __NODE_TYPE_ID} is the
- *       customized numeric {@code "10154"} (distinct from any GraphQL type name). The R377 case
+ *       customized numeric {@code "10154"} (distinct from any GraphQL type name). This case
  *       puts a {@code @node} plus a nesting-projection {@code @table} type over it to pin that the
  *       decode helper resolves through the {@code @node}-only {@link NodeIndex} ({@code decode<TypeName>}),
  *       not the typeId fallback ({@code decode10154}).</li>
@@ -1041,7 +1041,8 @@ class NodeIdPipelineTest {
     //     ColumnReferenceArg/CompositeColumnReferenceArg with the resolved joinPath. Today's
     //     emitter shipping subset is the simple direct-FK case (FK targetColumns positionally
     //     equal NodeType keyColumns); pathological cases are rejected at classify time with a
-    //     pointed deferred-emission hint, parallel to R24's output-side JOIN-with-projection.
+    //     pointed deferred-emission hint, parallel to the still-deferred output-side
+    //     JOIN-with-projection.
 
     enum ArgumentSameTableNodeIdCase {
         SAME_TABLE_SCALAR_SINGLE_PK(
@@ -1492,8 +1493,8 @@ class NodeIdPipelineTest {
                 // round-trip in.
                 assertThat(leaf.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("pk_a", "pk_b", "pk_c");
-                // liftedSourceColumns are permuted into __NODE_KEY_COLUMNS order — pre-R131 (and
-                // pre-permutation R114) these would have come out in FK declaration order
+                // liftedSourceColumns are permuted into __NODE_KEY_COLUMNS order — without that
+                // permutation these would have come out in FK declaration order
                 // (fk_b, fk_c, fk_a), which the emitter would then bind position-wise against
                 // (pk_a, pk_b, pk_c)-ordered decoded values — semantically wrong.
                 assertThat(leaf.liftedSourceColumns()).extracting(ColumnRef::sqlName)

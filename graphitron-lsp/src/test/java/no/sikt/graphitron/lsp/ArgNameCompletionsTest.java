@@ -120,7 +120,7 @@ class ArgNameCompletionsTest {
         assertThat(items).isEmpty();
     }
 
-    // ---- R142 phase 2: user-declared directives via the snapshot. ----
+    // ---- Phase 2: user-declared directives via the snapshot. ----
 
     @Test
     void userDirectiveTopLevelArgCompletion_emitsSnapshotArgs() {
@@ -185,7 +185,7 @@ class ArgNameCompletionsTest {
 
     @Test
     void bundledDirectiveShadowedBySnapshot_routesThroughBundledPath() {
-        // R139 settled design note 4: bundled shadows snapshot. The user
+        // Bundled shadows snapshot. The user
         // accidentally redeclares @table with a different arg set, and
         // typing `@table(<cursor>)` must offer the bundled args, not the
         // shadow's. Pins the precedence on the completion side, symmetric

@@ -7,18 +7,18 @@ import java.util.List;
  * model. Orthogonal to the target node itself ({@link TableExpr}): any target can in
  * principle be joined by either arm.
  *
- * <p>Non-null on every shipped hop, and it stays that way: R333 models {@code on} as absent
+ * <p>Non-null on every shipped hop, and it stays that way: the model treats {@code on} as absent
  * exactly for the path's start node, but the shipped path representation has no start-node entry
  * (the source supplies the start; {@code path[0]} already joins). When a start-node entry
- * arrives (R435's root routine node), it lands as its own sealed sibling or a
+ * arrives (a root routine node), it lands as its own sealed sibling or a
  * {@code (start, List<Hop>)} path carrier — never by widening {@code Hop.on} to
  * {@code Optional<On>}, which would reintroduce a null-in-exactly-one-case state and forfeit the
  * every-hop-joins certainty the non-null component buys.
  *
  * <p>A new way to join is a new arm here (e.g. {@link Lateral} for routine targets), not a new
  * step type. The FK-vs-derived question is its own small seal on {@link ColumnPairs}
- * ({@link Keying}, the seal R438 pre-planned): the catalog FK is one derivation of the pairs,
- * the R435 name-matched key (hops adjacent to a routine node, whose result table carries no FK
+ * ({@link Keying}): the catalog FK is one derivation of the pairs,
+ * the name-matched key (hops adjacent to a routine node, whose result table carries no FK
  * metadata) the other.
  */
 public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
@@ -56,8 +56,8 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
 
         /**
          * The pairs were derived by name-matching the target's unique key (PK by default)
-         * against the previous node's columns — R333's keying rule for FK-less nodes, minted by
-         * R435 for hops adjacent to a routine node. The build check (the previous node exposes
+         * against the previous node's columns — the keying rule for FK-less nodes, used for
+         * hops adjacent to a routine node. The build check (the previous node exposes
          * every key column by SQL name) ran at derivation time; {@code targetKeyName} is the
          * matched constraint's SQL name, retained for diagnostics only. The emitted ON is the
          * explicit column-equality conjunction over {@code slots} — there is no {@code Keys}
@@ -78,7 +78,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
      * The step joins on paired source / target columns.
      *
      * <p>{@code keying} is the pairing's derivation ({@link Keying}): a resolved catalog FK or
-     * the R435 name-matched key. Emitters dispatch on it for the ON clause shape; slot readers
+     * the name-matched key. Emitters dispatch on it for the ON clause shape; slot readers
      * do not.
      *
      * <p>{@code slots} carries the pairing as {@link JoinSlot.FkSlot}s oriented at synthesis
@@ -102,7 +102,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
          * Source-side columns, materialised as a {@link List} for readers that need the columns
          * themselves (e.g. constructing a {@code SourceKey} entry-point column tuple) rather
          * than slot-by-slot iteration. The order matches {@link #slots()}; index {@code i} is
-         * {@code slots[i].sourceSide()}. (R431: formerly on the {@code HasSlots} capability,
+         * {@code slots[i].sourceSide()}. (Formerly on the {@code HasSlots} capability,
          * which died with {@code JoinStep.LiftedHop} — this is its only implementor.)
          */
         public List<ColumnRef> sourceSideColumns() {

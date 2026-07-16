@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R481 pipeline coverage: a multi-table polymorphic child field correlating through a foreign key
+ * Pipeline coverage: a multi-table polymorphic child field correlating through a foreign key
  * held on the <em>parent's</em> table (parent-holds-FK), so the parent-side correlation column is
  * the FK column, not the parent's primary key.
  *
@@ -19,8 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       parent-side column via the {@code ParentRowDemand} capability); the resolved
  *       {@link ParticipantCorrelation.KeyTupleWhere} carries the parent's FK column as its
  *       {@code sourceSide()}.</li>
- *   <li>At list / connection cardinality the field is rejected DEFERRED (gap C), keyed to R487's
- *       slug: the batched forms alias {@code parentInput} to the bound-key names only, so a
+ *   <li>At list / connection cardinality the field is rejected DEFERRED (gap C), keyed to the
+ *       deferred-plan slug ({@link #R487_SLUG}): the batched forms alias {@code parentInput} to the
+ *       bound-key names only, so a
  *       parent-holds-FK participant would emit {@code parentInput.field("<fk-col>")} returning null.
  *       Covered on the auto-discovery arm, an explicit {@code @referenceFor} route, and a multi-hop
  *       route whose hop-0 FK lives on the parent table. A list-cardinality child-holds-FK field
@@ -73,13 +74,13 @@ class MultiTablePolymorphicParentHoldsFkPipelineTest {
             .containsExactlyInAnyOrder("address_id", "store_id");
     }
 
-    // ===== List cardinality: parent-holds-FK rejects DEFERRED (gap C, R487) =====
+    // ===== List cardinality: parent-holds-FK rejects DEFERRED (gap C) =====
 
     @Test
     void listCardinalityParentHoldsFk_autoDiscovery_rejectsDeferredNamingR487() {
         // A list field. AddressP is parent-holds-FK (customer.address_id) -> deferred. RentalP is
         // child-holds-FK (rental.customer_id -> customer) and classifies, so the aggregate carries
-        // exactly the one deferred rejection, returned verbatim with R487's slug.
+        // exactly the one deferred rejection, returned verbatim with the deferred-plan slug.
         var schema = TestSchemaHelper.buildSchema("""
             interface CustRef { rowId: Int }
             type AddressP implements CustRef @table(name: "address") { rowId: Int @field(name: "address_id") }

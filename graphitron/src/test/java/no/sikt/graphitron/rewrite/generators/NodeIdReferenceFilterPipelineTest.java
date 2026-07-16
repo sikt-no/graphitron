@@ -98,7 +98,7 @@ class NodeIdReferenceFilterPipelineTest {
     @Test
     void inlineReferenceField_conditionOnlyFilter_generatesWithRealFk() {
         // Part B regression guard: a condition-only filter on a real-FK @reference generates fine
-        // (green before R312; pins that the Part A wiring did not regress it).
+        // (green before the Part A wiring landed; pins that adding it did not regress it).
         var schema = TestSchemaHelper.buildSchema(CONDITION_ONLY_INPUT + """
             type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
             type Baz implements Node @table(name: "baz") @node {

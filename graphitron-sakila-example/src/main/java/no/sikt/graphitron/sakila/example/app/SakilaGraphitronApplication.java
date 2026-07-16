@@ -15,7 +15,7 @@ import org.jooq.SQLDialect;
  * {@code /graphql} resource, the engine, status-code semantics, the {@code /schema} SDL endpoint,
  * and the GraphiQL page) comes from {@code graphitron-jakarta-rest}.
  *
- * <p>This is the SPI seam in practice, wired to the owned-connection path (R429): the schema is
+ * <p>This is the SPI seam in practice, wired to the owned-connection path: the schema is
  * supplied as a lambda over the generated {@code Graphitron} facade (the only generated-symbol
  * reference the library never names), {@link #engineBuilder()} builds the engine from the
  * application-scoped {@code GraphitronRuntime} over the Quarkus-managed datasource so graphitron

@@ -12,8 +12,8 @@ import java.util.List;
  * plain {@link ConditionFilter} is the field's <em>own</em> table (emitted as the {@code table}
  * local), but for an FK-target field the developer method's first parameter is the FK-<em>target</em>
  * table {@code X}, not the input's own table. Handing the own-table local to such a method is the
- * R330 bug (a {@code Soknadsmangeltype} passed where {@code Regelverksamling} is expected, failing
- * at consumer compile). {@link QueryConditionsGenerator} forks on this type and emits a correlated
+ * bug this filter exists to fix (a {@code Soknadsmangeltype} passed where {@code Regelverksamling}
+ * is expected, failing at consumer compile). {@link QueryConditionsGenerator} forks on this type and emits a correlated
  * {@code EXISTS} over {@code joinPath} so the developer method receives an alias for {@code X}
  * rather than the root {@code table}.
  *
@@ -33,7 +33,7 @@ import java.util.List;
  *   <li>{@link #keyColumns()} — {@code X}'s key columns the decoded NodeId maps to.</li>
  * </ul>
  *
- * <p>Composite-key FK targets ({@code keyColumns().size() > 1}) are supported (R330 rework): the
+ * <p>Composite-key FK targets ({@code keyColumns().size() > 1}) are supported: the
  * correlated {@code EXISTS} ANDs every composite-FK slot via
  * {@code JoinPathEmitter.emitCorrelationWhere}, so the composite case wraps in this same filter and
  * reaches the emitter exactly like the single-column case.

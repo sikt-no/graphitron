@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * operation, target)} coordinate rather than re-decided per leaf. This test pins that the derivation
  * forks on a bare {@code TargetShape.Table} target combined with holds-records (a {@code @service}-table
  * field re-fetches; a {@code @service}-record field does not) and that the
- * {@code GraphitronSchemaValidator} reentry implementedness guard (R314 slice 5's replacement
- * for the retired dispatch mirror) stays quiet on every implemented reentry shape, which is
+ * {@code GraphitronSchemaValidator} reentry implementedness guard (the replacement for the
+ * retired dispatch mirror) stays quiet on every implemented reentry shape, which is
  * what makes the materialised slot earn its keep: a production consumer pulls on it.
  */
 @PipelineTier
@@ -91,7 +91,7 @@ class ReFetchDerivationTest {
     void reentryImplementednessGuardStaysQuietOnTheCorpus() {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
 
-        // R314 slice 5 retired the dispatchPerformsReFetch mirror (the reentry emit routes on the
+        // The dispatchPerformsReFetch mirror was retired (the reentry emit routes on the
         // model facts, so the per-leaf enumeration became a second derivation of the same facts);
         // its replacement is the implementedness guard — a site-level reentry classification on a
         // leaf outside the implemented shapes fails at validate time. No current leaf can fire it

@@ -32,7 +32,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINIT
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 
 /**
- * R160 — LSP inlay-hint provider. Two arms, each gated by an independent config toggle:
+ * LSP inlay-hint provider. Two arms, each gated by an independent config toggle:
  * <ul>
  *   <li><b>Inferred-directive arm</b>: at {@code @table} / {@code @field} / {@code @reference}
  *       sites where the author omitted the canonical argument ({@code name:} for the first two,
@@ -69,7 +69,7 @@ public final class InlayHints {
 
     /**
      * Registry pairing each inferred-directive entry with its present-arm renderer,
-     * keyed by directive name. R347 Slice 3 replaced the {@code switch(directiveName)}
+     * keyed by directive name. This replaced the {@code switch(directiveName)}
      * whose {@code default} silently dropped any {@link InferredDirectiveArgs.Entry}
      * without a renderer; {@code InlayHintRendererCoverageTest} now fails the build
      * when an entry has no matching key here, the LSP-side mirror of the catalog's
@@ -178,7 +178,7 @@ public final class InlayHints {
         collectAbsentDirectiveHints(out, file, built, root, visibleRange);
     }
 
-    // ===== Absent-directive arm (R217) =====
+    // ===== Absent-directive arm =====
 
     /**
      * Second pass for entries with a non-null {@link InferredDirectiveArgs.Entry#absentArm()}.

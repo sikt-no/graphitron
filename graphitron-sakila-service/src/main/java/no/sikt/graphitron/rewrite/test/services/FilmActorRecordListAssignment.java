@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
 import java.util.List;
 
 /**
- * R195 compilation-tier fixture: the both-dimensions corner — a {@code @service} input bean whose
+ * Compilation-tier fixture: the both-dimensions corner, a {@code @service} input bean whose
  * member is a {@code List} of composite-key jOOQ generated {@link FilmActorRecord}s. The backing SDL
  * field carries {@code [ID!] @nodeId(typeName: "FilmActor")}, so the generated
  * {@code decodeFilmActorRecordList} helper wraps the composite-key per-element decode

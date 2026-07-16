@@ -36,7 +36,7 @@ import java.util.List;
  * and {@code DeclarationHovers} prints {@code FieldClassification.<name>} in hover
  * headers. Renaming a permit (say, {@code TableTarget} to {@code JoinedColumnTarget})
  * is therefore <em>also</em> a user-visible-string change touching docs, screenshots,
- * and tutorials, not a purely internal refactor. R217 accepts that coupling as the
+ * and tutorials, not a purely internal refactor. That coupling is accepted as the
  * mechanism that lets the LSP teach the model.
  */
 public sealed interface FieldClassification
@@ -257,7 +257,7 @@ public sealed interface FieldClassification
      * A child field using {@code @tableMethod}. Covers {@code ChildField.TableMethodField}
      * and the dissolved DTO-parent {@code @tableMethod} shape (a record-sourced
      * {@code ChildField.BatchedTableField} whose terminal hop carries a
-     * {@code TableExpr.MethodCall} target, R314 slice 2b); the {@code recordParent} flag
+     * {@code TableExpr.MethodCall} target); the {@code recordParent} flag
      * encodes the parent-shape axis.
      */
     record TableMethod(

@@ -19,17 +19,17 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R108 execution-tier proof: the rendered SQL for an asymmetric inline-fragment query on a
+ * Execution-tier proof that the rendered SQL for an asymmetric inline-fragment query on a
  * multi-table polymorphic field projects only the columns the active fragment selected,
  * per participant.
  *
  * <p>The {@code AddressOccupant} union resolves to {@code Customer | Staff}. Both participant
- * tables expose a {@code first_name} column behind the GraphQL field {@code firstName}. Before
- * R108 the Stage-2 per-typename SELECT received the parent's flattened
+ * tables expose a {@code first_name} column behind the GraphQL field {@code firstName}.
+ * Previously the Stage-2 per-typename SELECT received the parent's flattened
  * {@code DataFetchingFieldSelectionSet}, so an asymmetric fragment query asking for
  * {@code firstName} only on {@code Customer} still produced {@code SELECT "staff"."first_name"}
  * in the Staff-branch SQL; the wire payload stayed correct (graphql-java drops the inactive
- * value at serialisation) but the SQL over-selected. R108 wraps the selection set through
+ * value at serialisation) but the SQL over-selected. The fix wraps the selection set through
  * {@code PolymorphicSelectionSet.restrictTo} at the Stage-2 emit site so each per-typename
  * SELECT projects only columns matching that variant.
  *
@@ -88,10 +88,10 @@ class PolymorphicProjectionQueryTest {
 
     @Test
     void asymmetricFragment_customerOnly_staffSelectOmitsFirstName() {
-        // Query: occupants { __typename ... on Customer { firstName } }. Pre-R108, the Staff
+        // Query: occupants { __typename ... on Customer { firstName } }. Previously, the Staff
         // Stage-2 SELECT received the flattened selection set and projected first_name even
         // though no Staff branch requested it; the response stayed correct because graphql-java
-        // dropped the value at serialisation, but the SQL over-selected. R108 wraps the
+        // dropped the value at serialisation, but the SQL over-selected. The fix wraps the
         // selection set so Staff sees no Customer-side SelectedFields.
         execute("""
             { customers(active: true) { address { occupants {
@@ -137,7 +137,7 @@ class PolymorphicProjectionQueryTest {
 
     @Test
     void symmetricFragment_bothBranchesKeepFirstName() {
-        // Symmetric query: both fragments request firstName. R108's filter is precise — the
+        // Symmetric query: both fragments request firstName. The filter is precise: the
         // wrapper restricts by participant, so a SelectedField requested on Customer survives
         // for the Customer pass, and one requested on Staff survives for the Staff pass. A
         // regression that drops the column on both sides would fail this assertion.

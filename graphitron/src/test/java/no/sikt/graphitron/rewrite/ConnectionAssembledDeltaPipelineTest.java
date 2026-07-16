@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R279 slice 5 — pins the assembled-schema delta the connection rebuild produces, the one surface
+ * Pins the assembled-schema delta the connection rebuild produces, the one surface
  * the projection-snapshot differential is blind to (it flattens assembled-schema identity). Folding
  * connection synthesis into the field-first walk made the registry the single producer of the
  * synthesised-type set; {@code rebuildAssembledForConnections} consumes that set rather than

@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pins the {@link FieldBuilder#resolvePayloadConstructionShape} predicate behaviour: predicates
  * run in order, all-fields-ctor short-circuits, mutable-bean is the fallback admission, and
- * neither-matches is the only rejection mode. R201 adds the {@code @field(name:)} remap on the
- * mutable-bean arm (setter base = directive value when present, SDL name otherwise).
+ * neither-matches is the only rejection mode. The {@code @field(name:)} remap on the
+ * mutable-bean arm sets the setter base to the directive value when present, the SDL name otherwise.
  */
 @UnitTier
 class PayloadConstructionShapeTest {
@@ -167,7 +167,7 @@ class PayloadConstructionShapeTest {
         assertThat(mb.bindings().get(0).setter().getName()).isEqualTo("setXRating");
     }
 
-    // ===== R201: @field(name:) remap on the mutable-bean arm =====
+    // ===== @field(name:) remap on the mutable-bean arm =====
 
     /** Setters whose bases diverge from the SDL field names; only @field(name:) can bind them. */
     public static final class DivergentSetterPayload {

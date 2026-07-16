@@ -189,7 +189,7 @@ class ServiceFieldValidationTest {
     }
 
     /**
-     * R314 slice 3, the row-15 enforcer's fire case: a reentry {@code @service} field carrying a
+     * The row-15 enforcer's fire case: a reentry {@code @service} field carrying a
      * present error channel is rejected at validate time. The channel slot is provably empty on
      * every classifier-built instance today (channel resolution guards on ResultReturnType and
      * this return is table-bound), so this hand-built instance is the only way to exercise the
@@ -334,16 +334,16 @@ class ServiceFieldValidationTest {
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
 
-    // ===== Instance-holder rejection arm — validator-tier reachability (R87 Phase C) =====
+    // ===== Instance-holder rejection arm — validator-tier reachability =====
 
     /**
      * Drives the instance-service-holder-shape rejection end-to-end: builds a real schema bound to
      * {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor} (an instance holder
      * whose only constructor takes an unbindable parameter), runs it through
      * {@code GraphitronSchemaBuilder} + {@code GraphitronSchemaValidator}, and asserts the typed
-     * {@code ServiceMethodCallError.InstanceHolderUnconstructible} arm surfaces (R256 relaxed the
-     * holder rule from {@code (DSLContext)}-only to any all-bindable constructor, and migrated the
-     * prose rejection onto the typed arm). Existing {@code ServiceCatalogTest} coverage is
+     * {@code ServiceMethodCallError.InstanceHolderUnconstructible} arm surfaces (the holder rule
+     * was relaxed from {@code (DSLContext)}-only to any all-bindable constructor, and the prose
+     * rejection migrated onto the typed arm). Existing {@code ServiceCatalogTest} coverage is
      * unit-tier; this test pins reachability through the validator's own dispatch surface, matching
      * {@code development-principles.adoc} ("Rejections: validator mirrors classifier invariants").
      */

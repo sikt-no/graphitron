@@ -26,7 +26,7 @@ class ScalarTypeCompletionsTest {
 
     private static final LspVocabulary VOCAB = LspVocabulary.load();
 
-    // Source of truth is `data`, not a static table (R464): two scanned classes, a library's
+    // Source of truth is `data`, not a static table: two scanned classes, a library's
     // extended-scalars holder and a consumer's own scalar holder, each carrying scalar constants.
     private static final CompletionData DATA = new CompletionData(
         List.of(),

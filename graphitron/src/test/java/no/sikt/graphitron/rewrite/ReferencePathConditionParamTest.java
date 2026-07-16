@@ -8,9 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * R379 Check 2: a path-step {@code @condition} method that <em>concretely</em> types a jOOQ table
- * parameter which does not match the alias the emitter passes it positionally is rejected at
- * classify time. The emitter calls every two-argument condition method as
+ * Reference-path validation, check 2: a path-step {@code @condition} method that <em>concretely</em>
+ * types a jOOQ table parameter which does not match the alias the emitter passes it positionally is
+ * rejected at classify time. The emitter calls every two-argument condition method as
  * {@code method(sourceAlias, targetAlias)}; a concretely-mistyped parameter would compile to
  * generated Java that javac rejects with an incompatible-types error.
  *

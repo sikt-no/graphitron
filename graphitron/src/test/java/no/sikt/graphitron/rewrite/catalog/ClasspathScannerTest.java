@@ -220,7 +220,7 @@ class ClasspathScannerTest {
     void populatesRecordComponentsForRecordClasses(@TempDir Path classes) throws IOException {
         // A Java record class carries its component list in the Record
         // attribute on the class file. The scanner reads it without
-        // re-classifying — that's the seam the R157 snapshot projection
+        // re-classifying — that's the seam the snapshot projection
         // consumes for RecordBacking dispatch.
         var fqn = "com.example.FilmCard";
         var stringDesc = ClassDesc.of("java.lang.String");

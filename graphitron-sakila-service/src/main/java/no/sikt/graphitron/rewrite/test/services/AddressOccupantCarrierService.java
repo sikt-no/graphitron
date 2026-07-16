@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.AddressRecord;
 import org.jooq.DSLContext;
 
 /**
- * R367 execution-tier fixture: a record-backed (Pojo) parent that exposes a single typed jOOQ
+ * Execution-tier fixture: a record-backed (Pojo) parent that exposes a single typed jOOQ
  * {@link AddressRecord} accessor, carrying a <em>single-cardinality</em> polymorphic child field
  * ({@code firstOccupant: AddressOccupant}).
  *
@@ -13,7 +13,7 @@ import org.jooq.DSLContext;
  * not {@code @record}-annotated), so {@code AddressOccupantCarrier} binds as a {@code PojoResultType}.
  * Its {@code address()} accessor returns the hub {@link AddressRecord}; the schema field
  * {@code firstOccupant} remaps to it via {@code @field(name: "address")}. The single-cardinality
- * multi-table polymorphic fetcher therefore takes the record-backed-parent arm added in R367:
+ * multi-table polymorphic fetcher therefore takes the record-backed-parent arm:
  * it binds {@code parentRecord} to the accessor's returned hub record (rather than casting
  * {@code env.getSource()} to a jOOQ {@code Record}) and reads {@code address_id} off it to
  * correlate the {@code Customer}/{@code Staff} stage-1 branches.

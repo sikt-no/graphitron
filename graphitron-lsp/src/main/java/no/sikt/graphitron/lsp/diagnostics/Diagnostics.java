@@ -57,7 +57,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  * <p>Replaces the per-directive case switch ({@code "table"} / {@code "field"}
  * / {@code "reference"}) plus the {@code DirectiveDefinitions.argsByInputType}
  * walk for {@code ExternalCodeReference} sites. Unification has the side
- * effect of closing the R110 {@code @sourceRow} gap (its flat
+ * effect of closing the {@code @sourceRow} gap (its flat
  * {@code className:} / {@code method:} args are
  * {@link SchemaCoordinate.DirectiveArg} coordinates with the canonical
  * overlay's bindings) and unifies table-name validation across
@@ -118,7 +118,7 @@ public final class Diagnostics {
             // failure) silence the warn arms to avoid punishing the user
             // for what we cannot reliably see. The two warn arms split on
             // the snapshot's view of the directive name: Unknown -> the
-            // R139 unknown-directive arm, User -> phase 2's arg validation
+            // unknown-directive arm, User -> arg validation
             // against the snapshot's directive shape.
             switch (snapshot) {
                 case LspSchemaSnapshot.Unavailable ignored -> { /* pre-build silence */ }
@@ -145,7 +145,7 @@ public final class Diagnostics {
     /**
      * Maps {@link ValidationReport} entries for {@code uri} into LSP diagnostics. Silent under
      * {@link LspSchemaSnapshot.Unavailable} (no build yet) and {@link LspSchemaSnapshot.Built.Previous}
-     * (stale snapshot after a parse failure), mirroring the R139 freshness-aware silence policy:
+     * (stale snapshot after a parse failure), mirroring the freshness-aware silence policy:
      * the validator's last output may not reflect the buffer the user is editing, and a stale
      * red squiggle the developer cannot fix by rewriting their schema is the noise we are trying
      * to avoid. Short-circuits when the open file has no entries in {@link ValidationReport#sourceUris}.
@@ -201,7 +201,7 @@ public final class Diagnostics {
     }
 
     /**
-     * Reads the stable wire code for typed AuthorError arms that publish one. R238's
+     * Reads the stable wire code for typed AuthorError arms that publish one. The
      * {@link no.sikt.graphitron.rewrite.model.ServiceMethodCallError} arms expose
      * {@code lspCode()} under the {@code graphitron.service-method-call.} namespace; the
      * LSP projector forwards the code into the lsp4j {@link Diagnostic#setCode} field so
@@ -242,9 +242,8 @@ public final class Diagnostics {
         // (GraphQLRewriteGenerator throws on any non-empty error list, regardless
         // of arm); the editor must surface the same finality so the developer
         // sees one consistent signal across the LSP and `mvn graphitron:dev`.
-        // R147 originally softened Deferred to Warning on "not author-actionable"
-        // grounds; R225 reverts that — the actionable hint is the roadmap slug
-        // carried by the rejection, not the severity.
+        // Deferred is Error rather than Warning: the actionable hint is the
+        // roadmap slug carried by the rejection, not the severity.
         return switch (rejection) {
             case Rejection.AuthorError ignored -> DiagnosticSeverity.Error;
             case Rejection.InvalidSchema ignored -> DiagnosticSeverity.Error;
@@ -599,7 +598,7 @@ public final class Diagnostics {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
-        // R159: if the value is the $source sigil, the diagnostic shape is sigil-aware. The
+        // If the value is the $source sigil, the diagnostic shape is sigil-aware. The
         // snapshot owns the (typeName, fieldName) -> SiteContext classification through
         // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
         // the underlying projection ourselves. At an admitted carrier-data-field site, the
@@ -617,7 +616,7 @@ public final class Diagnostics {
             }
             return;
         }
-        // R224 / R233: prefer the field classification's projected terminal table over the
+        // Prefer the field classification's projected terminal table over the
         // enclosing type's @table. FieldClassification.lspColumnDispatch() collapses the 30
         // sealed permits onto three audience-specific arms: Resolve(tableName) carries the
         // projected terminal table for the four column-bearing permits; Silent suppresses the
@@ -703,7 +702,7 @@ public final class Diagnostics {
     private static void validateClassName(
         Directives.Directive directive, Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
-        // R307 carve-out: @record is deprecated/ignored, so its className slot binds no class
+        // @record carve-out: @record is deprecated/ignored, so its className slot binds no class
         // and an unknown-class diagnostic would be noise. The ExternalCodeReference.className
         // coordinate is shared with @enum, so the carve-out keys on the directive name, not
         // the coordinate (see DirectivePolicy).
@@ -787,7 +786,7 @@ public final class Diagnostics {
         Directives.Directive directive, List<LspVocabulary.Leaf> leaves,
         FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
-        // R307 carve-out: @record is deprecated/ignored — it binds no class, so the legacy
+        // @record carve-out: @record is deprecated/ignored; it binds no class, so the legacy
         // ExternalCodeReference.name → className alias nudge is dead tooling for it. Keys on the
         // enclosing directive name (see DirectivePolicy).
         if (!DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))) return;
@@ -833,7 +832,7 @@ public final class Diagnostics {
      *       parameter names are unavailable, i.e. compiled without
      *       {@code -parameters}).</li>
      *   <li>Right: a GraphQL argument whose first path segment is not an argument
-     *       of the enclosing field. Deeper R84 dot-path segments are not
+     *       of the enclosing field. Deeper dot-path segments are not
      *       validated (the LSP carries no projection of nested input-type
      *       fields); only the head segment is checked.</li>
      * </ul>

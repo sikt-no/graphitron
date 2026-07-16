@@ -40,7 +40,7 @@ public final class TestFixtures {
 
     /**
      * Builds a {@link MethodRef.StaticOnly} for the {@code @tableMethod} / {@code @externalField}
-     * / condition-join populations. Mirrors R81's {@code tableRef(...)} factory pattern: tests
+     * / condition-join populations. Mirrors the {@code tableRef(...)} factory pattern: tests
      * that don't care about declared exceptions or call shape stay on this concise overload.
      */
     public static MethodRef.StaticOnly staticOnlyMethodRef(String className, String methodName, TypeName returnType) {
@@ -74,7 +74,7 @@ public final class TestFixtures {
     }
 
     /**
-     * Convenience overload mirroring the pre-R87 default-static {@code MethodRef.Basic} compat
+     * Convenience overload mirroring the former default-static {@code MethodRef.Basic} compat
      * constructor for {@code @service} fixtures: builds a {@link MethodRef.Service} with a
      * {@link MethodRef.CallShape.Static} arm whose {@code needsDslLocal} is derived from the
      * params (any param whose source is {@link ParamSource.DslContext} flips it on, matching
@@ -196,13 +196,13 @@ public final class TestFixtures {
     // ===== SourceKey / LoaderRegistration test fixtures =====
     //
     // The projections below replace the deleted SourceKeyResolver / LoaderRegistrationResolver
-    // helpers (R38 Phase 3 inlined them into the field-classifier producers). Test fixtures use
+    // helpers, which were inlined into the field-classifier producers. Test fixtures use
     // these to compose the same per-axis shapes the producers build.
 
     /**
      * Split-query parent-side {@link SourceKey}: {@link SourceKey.Wrap.Row} over the FK columns.
-     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}. (R431:
-     * arity left the key — the split fetcher's cardinality is the field's wrapper position.)
+     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}. (Arity
+     * left the key: the split fetcher's cardinality is the field's wrapper position.)
      */
     public static SourceKey splitSourceKey(List<ColumnRef> fkColumns) {
         return new SourceKey(fkColumns, new SourceKey.Wrap.Row());
@@ -236,7 +236,7 @@ public final class TestFixtures {
      * {@link ChildField.UnionField} on a record-backed parent with a typed hub
      * accessor (Single ⇒ {@link Arity#ONE}, Many ⇒ {@link Arity#MANY}). Pair with
      * {@link #polymorphicAccessorParentSourceKey}; the hub table itself is carried as the
-     * leaf's {@code parentKeyOwnerTable} (R431: no hop, no path).
+     * leaf's {@code parentKeyOwnerTable} (no hop, no path).
      */
     public static KeyLift.Accessor polymorphicAccessorParentLift(
             no.sikt.graphitron.rewrite.model.AccessorRef accessor,
@@ -259,8 +259,8 @@ public final class TestFixtures {
     /**
      * Service-backed {@link SourceKey}: the {@code (columns, wrap)} pair read off the
      * {@code @service} method's {@code Sources} signature fact. Mirrors
-     * {@code FieldBuilder.buildServiceSourceKey}. (R431: the service reader arms died into the
-     * {@link MethodRef} signature; no lift — service fields never reach the record-parent key
+     * {@code FieldBuilder.buildServiceSourceKey}. (The service reader arms died into the
+     * {@link MethodRef} signature; no lift, since service fields never reach the record-parent key
      * extraction.)
      */
     public static SourceKey serviceSourceKey(SourceKey.Wrap wrap,
@@ -378,7 +378,7 @@ public final class TestFixtures {
      * {@code Keys.<TABLE>__<FK>} convention closely enough for fixture purposes); tests that need
      * exact constant names should pass them explicitly via the three-arg overload.
      *
-     * <p>R81 lifted the FK-hop provenance ({@link no.sikt.graphitron.rewrite.model.On.ColumnPairs#fk()}) to a non-null
+     * <p>The FK-hop provenance ({@link no.sikt.graphitron.rewrite.model.On.ColumnPairs#fk()}) is a non-null
      * {@link ForeignKeyRef}. Fixtures that previously passed {@code null} should route through
      * this factory so the synthetic FK reference is type-correct end to end.
      */
@@ -474,9 +474,9 @@ public final class TestFixtures {
     // ===== JoinStep test fixtures =====
 
     /**
-     * Test-only constructor mirroring the pre-R82 {@code FkJoin(fk, originTable, sourceColumns,
-     * targetTable, targetColumns, whereFilter, alias)} shape (post-R81 dropped the redundant
-     * {@code fkName} component; the SQL constraint name is carried by {@code fk.sqlName()}),
+     * Test-only constructor mirroring the earlier {@code FkJoin(fk, originTable, sourceColumns,
+     * targetTable, targetColumns, whereFilter, alias)} shape (the redundant
+     * {@code fkName} component was dropped; the SQL constraint name is carried by {@code fk.sqlName()}),
      * zipping the two column lists into source-side/target-side slot pairs. Test fixtures
      * historically wrote source columns first (parent-holds-FK convention), so
      * {@code sourceColumns[i]} maps to {@code slot.sourceSide()} and {@code targetColumns[i]} to
@@ -552,7 +552,7 @@ public final class TestFixtures {
 
     /**
      * The {@link ForeignKeyRef} behind a {@link On.ColumnPairs}' keying; fails the test loudly
-     * when the pairs derive from the R435 name-matched key instead of a catalog FK. Assertion-side
+     * when the pairs derive from the name-matched key instead of a catalog FK. Assertion-side
      * narrowing for the {@link On.Keying} seal.
      */
     public static ForeignKeyRef fkRef(On.ColumnPairs pairs) {
@@ -590,7 +590,7 @@ public final class TestFixtures {
     }
 
     /**
-     * The hop-less pre-keyed correlation (R431; the former test-only {@code liftedHop(...)}
+     * The hop-less pre-keyed correlation (the former test-only {@code liftedHop(...)}
      * fixture): source and target sides are the same column tuple.
      */
     public static ParentCorrelation.OnLiftedSlots liftedSlots(TableRef targetTable,
@@ -605,7 +605,7 @@ public final class TestFixtures {
  * <em>or</em> carries a hop-0 {@code filter()}, {@link ParentCorrelation.OnFkSlots}
      * for a filter-less FK head, and {@code null} when the joinPath is empty
      * (standalone-lookup shape; the pre-keyed lifted shape constructs
-     * {@link ParentCorrelation.OnLiftedSlots} directly, R431). Test fixtures use this to satisfy
+     * {@link ParentCorrelation.OnLiftedSlots} directly). Test fixtures use this to satisfy
      * the ChildField compact-constructor invariant without threading the resolver state through
      * every test case.
      */

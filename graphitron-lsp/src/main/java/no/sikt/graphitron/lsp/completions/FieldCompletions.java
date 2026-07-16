@@ -75,7 +75,7 @@ public final class FieldCompletions {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
             return List.of();
         }
-        // R159: at the payload data field site, prepend $source as a top-level completion.
+        // At the payload data field site, prepend $source as a top-level completion.
         // The snapshot owns the (typeName, fieldName) -> SiteContext classification through
         // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
         // the underlying projection ourselves. Snapshot-uncertainty rule: when the parent type
@@ -85,7 +85,7 @@ public final class FieldCompletions {
             && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
                 built.siteContext(typeName, fieldName));
         var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
-        // R233: prefer the field classification's projected terminal table over the enclosing
+        // Prefer the field classification's projected terminal table over the enclosing
         // type's backing for @reference path fields and the other column-bearing permits.
         // lspColumnDispatch() collapses the 30 permits onto three arms; Resolve and Silent
         // each return directly through mergeWithSigil, FallThrough drops through to the

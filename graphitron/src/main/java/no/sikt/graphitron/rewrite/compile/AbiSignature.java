@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * R410 slice 3 — the <em>signature-surface</em> (ABI) hash of a generated compilation unit. This is
+ * The <em>signature-surface</em> (ABI) hash of a generated compilation unit. This is
  * the discriminator the recompile-set algorithm ({@link RecompileSet}) reads to decide whether a
  * changed unit propagates to its reverse-dependents: a body-only edit leaves the ABI hash still, an
  * edit to the public surface moves it.
@@ -45,8 +45,8 @@ import java.util.Map;
  *
  * <p>This hash is <strong>derived state, not a parallel type system</strong>: the surface it encodes
  * is the same type facts the classified model already carries (supertypes, signatures, field types).
- * Per "model metadata over parallel type systems", once R333/R314 land it is a candidate to derive
- * from those facts directly instead of re-reading the rendered {@link TypeSpec}, the same
+ * Per "model metadata over parallel type systems", once the data model surfaces those facts it is a
+ * candidate to derive from them directly instead of re-reading the rendered {@link TypeSpec}, the same
  * re-source-from-facts move as the {@code CompileDependencyGraph} sourcing seam.
  */
 public final class AbiSignature {

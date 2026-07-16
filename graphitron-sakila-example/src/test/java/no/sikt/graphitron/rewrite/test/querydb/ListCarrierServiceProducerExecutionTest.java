@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R308 execution-tier coverage for the coherent {@code @service} <em>list</em> carrier
+ * Execution-tier coverage for the coherent {@code @service} <em>list</em> carrier
  * ({@code serviceFilmsByIdsAsPayloads(ids): [FilmServicePayload]}, payload {@code FilmServicePayload
  * { film: Film }}). graphql-java iterates the producer's {@code List<FilmRecord>} into the
  * {@code [FilmServicePayload]} list, so each returned {@code FilmRecord} becomes one payload, and each
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code load()} calls within one dispatch cycle, so the whole traversal fires <b>exactly two
  * SELECTs</b> — the producer's own SELECT plus one batched data-field rows-method re-fetch — no matter
  * how many ids are requested. A regression to per-element (unbatched) re-fetch would fire {@code 1 + N}
- * statements and scale with the id count. This is the R308 premise ("post-R305 every RecordTableField
+ * statements and scale with the id count. This is the premise ("every RecordTableField
  * emits a LoaderRegistration + rows-method, and graphql-java coalesces per-element load() calls within
  * a dispatch cycle, so no shape produces an N+1 today") observed end-to-end.
  *

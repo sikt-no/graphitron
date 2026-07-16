@@ -102,7 +102,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * Whether {@code fields} include an errors field on the R244 {@code Outcome} wrapper transport.
+     * Whether {@code fields} include an errors field on the {@code Outcome} wrapper transport.
      * When true the type is a flipped outcome payload: its fetchers receive a non-null
      * {@code Outcome} as {@code env.getSource()}, so every data-channel sibling must arm-switch on
      * {@code Success}. The signal is the parent's own {@code WrapperArm} errors field, knowable at
@@ -140,12 +140,12 @@ public final class FetcherEmitter {
      * The live case is pinned by {@code FetcherPipelineTest} wiring assertions.
      *
      * <p>This is the {@code PropertyDataFetcher} (registration-escape) family only, the invariant
-     * {@code validateOutcomeChildArmSwitch} enforces per R268's spec. It does <em>not</em> claim to
+     * {@code validateOutcomeChildArmSwitch} enforces. It does <em>not</em> claim to
      * catch every non-arm-switching emit path: a {@code ComputedField} or other
      * {@code LightFetcher}-backed leaf would emit a (non-arm-switched) {@code LightDataFetcher}
      * rather than a {@code PropertyDataFetcher}, but such shapes are inventory-absent under a
      * class-backed {@code @service} payload (they need a SELECT-projected parent), which is
-     * the scope boundary R268 chose.
+     * the scope boundary the arm-switch validator draws.
      *
      * <p>An {@code UnclassifiedField} (which gets no registration at all, so graphql-java installs
      * its default {@code PropertyDataFetcher}) is the third source, but it is absence-of-registration
@@ -205,7 +205,7 @@ public final class FetcherEmitter {
      * The inline-resolved data-channel shapes that can appear as an immediate child of a
      * class-backed {@code Outcome} payload. Each is resolved here by {@link #bindRaw} as a read of
      * the field's own source; under the wrapper transport that read is repointed at
-     * {@code success.value()} (see {@link #armSwitchedInlineDataFetcher}). Post-R303 the read is
+     * {@code success.value()} (see {@link #armSwitchedInlineDataFetcher}). The read is
      * reified into a named {@code <Type>Fetchers} method rather than emitted as an inline lambda.
      *
      * <p>The errors field is excluded (it reads {@code ErrorList.errors} via its
@@ -333,7 +333,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * Emit the {@code source} local for a record-carrier fetcher body, narrowing the R244
+     * Emit the {@code source} local for a record-carrier fetcher body, narrowing the
      * {@code Outcome} wrapper when the producer flipped to it ({@code OUTCOME_SUCCESS}).
      *
      * <p>Both paths are cast-free and warning-free. {@code env.getSource()} is {@code <T> T}, so
@@ -401,7 +401,7 @@ public final class FetcherEmitter {
             // parent carrier's channel in scope) so this emission never re-walks the parent.
             return switch (ef.transport()) {
                 // PayloadAccessor still resolves via graphql-java's PropertyDataFetcher; the
-                // resolved-accessor reification (with the R268 validator reconciliation) lands as
+                // resolved-accessor reification (with the arm-switch validator reconciliation) lands as
                 // a dedicated follow-up commit.
                 case ChildField.Transport.PayloadAccessor ignored -> {
                     var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
@@ -679,7 +679,7 @@ public final class FetcherEmitter {
      * off the source (source-only, wrapped in {@code LightFetcher}); class-backed parents read the
      * pre-resolved accessor — source-only for field reads and zero-arg accessors, env-dependent when
      * the accessor injects the environment. The accessor read itself goes through the shared
-     * {@link #recordBackedAccessorRead} (the same helper the R268 arm-switch path uses), so the
+     * {@link #recordBackedAccessorRead} (the same helper the arm-switch path uses), so the
      * accessor switch lives in one place.
      */
     private static FetcherBinding propertyOrRecordBinding(
@@ -712,7 +712,7 @@ public final class FetcherEmitter {
     /**
      * The value expression reading a class-backed accessor off a source object. The
      * source is supplied as a {@link CodeBlock} ({@code env.getSource()} on the normal path,
-     * {@code success.value()} on the R268 outcome arm-switch), so this one helper serves both the
+     * {@code success.value()} on the outcome arm-switch), so this one helper serves both the
      * normal {@link #propertyOrRecordBinding} lambda and the arm-switch ternary. Field reads emit
      * {@code (($T) src).field}; method accessors delegate to {@link #methodCallValue} for the
      * zero-arg / full-environment / per-argument injection forms.

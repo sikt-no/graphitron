@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 /**
- * R200 fixture: JavaBean-shaped consumer bean (public no-arg constructor, JavaBean-style setters)
+ * Fixture: JavaBean-shaped consumer bean (public no-arg constructor, JavaBean-style setters)
  * whose property names ({@code heading}, {@code score}) diverge from the SDL input field names they
  * bind to ({@code title}, {@code rating}). The matching SDL input type bridges the divergence with
  * {@code @field(name: "heading")} / {@code @field(name: "score")}; the binding key is the directive

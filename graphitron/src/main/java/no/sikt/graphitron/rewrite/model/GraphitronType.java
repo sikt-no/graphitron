@@ -123,7 +123,7 @@ public sealed interface GraphitronType
         permits PojoResultType.Backed {
 
         /**
-         * R75 Phase 1: a payload carrier whose backing class was reflected from its
+         * A payload carrier whose backing class was reflected from its
          * producer's return type. {@code fqClassName} is non-null.
          */
         record Backed(
@@ -489,7 +489,8 @@ public sealed interface GraphitronType
      * </ul>
      *
      * <p>Consumer scalars without {@code @scalarType} (and not federation-namespaced) are not
-     * classified — the classifier returns {@code null} for them, mirroring pre-R101 behaviour, so
+     * classified — the classifier returns {@code null} for them, mirroring the behaviour before the
+     * scalar-resolver rework, so
      * the build stays green for consumers who haven't reached for the directive.
      *
      * <p>{@code schemaType} is the graphql-java object referenced from the assembled schema at
@@ -545,9 +546,8 @@ public sealed interface GraphitronType
      * {@link FacetSpec} per marked field on the carrier's filter input, empty when none are marked
      * (and always empty on the structural path — facet synthesis applies only to directive-driven
      * carriers whose Connection shape Graphitron owns). This entry is a contained denormalized view
-     * carrier, not the fact's normalized home; when R314 lowers the connection unit, it re-sources
-     * onto the facet operation fact with the rest of the view (see the R13 roadmap item's
-     * <em>Contained approach</em>).
+     * carrier, not the fact's normalized home; when the connection unit is later lowered, it re-sources
+     * onto the facet operation fact with the rest of the view.
      */
     record ConnectionType(
         String name,

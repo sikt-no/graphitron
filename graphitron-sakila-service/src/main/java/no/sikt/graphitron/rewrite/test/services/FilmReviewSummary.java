@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R200 fixture: consumer-authored input bean whose record components ({@code film}, {@code stars})
+ * Fixture: consumer-authored input bean whose record components ({@code film}, {@code stars})
  * diverge from the SDL input field names ({@code filmId}, {@code rating}). The SDL
  * {@code FilmReviewSummaryInput} bridges the divergence with {@code @field(name: "film")} /
  * {@code @field(name: "stars")}.

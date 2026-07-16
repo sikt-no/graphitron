@@ -85,7 +85,7 @@ class ClassifiedDslTest {
 
     /**
      * Operation arms the model declares but the current leaf set cannot populate, each with the reason no
-     * fixture lands on it. Five are R222's model-completeness gaps (no classified leaf exists yet);
+     * fixture lands on it. Five are model-completeness gaps (no classified leaf exists yet);
      * {@code Upsert} is the sixth shape, a leaf that exists but is upstream-rejected, following the
      * {@code VariantCoverageTest.NO_CASE_REQUIRED} precedent for {@code MutationUpsertTableField}. An arm
      * leaves this list the moment a fixture exercises it; an unexercised arm not listed here fails

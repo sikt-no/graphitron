@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R254 regression: keeps every generated schema-side {@code .java} file's per-statement
+ * Regression guard: keeps every generated schema-side {@code .java} file's per-statement
  * chain depth bounded so {@code javac}'s chained-call attribution recursion stays well clear
  * of any practical {@code -Xss} budget. The bug surfaced as a {@code StackOverflowError} in
  * incremental {@code javac} runs (e.g. {@code quarkus:dev} + {@code graphitron:dev}); cold
@@ -94,7 +94,7 @@ class SchemaEmissionChainDepthPipelineTest {
     /**
      * Same realistic mix, scaled up: many fields per type, several types, several enum values.
      * Forces the per-type {@code <Name>Type.type()} method body to register enough elements
-     * that the pre-R254 fluent form would have produced a chain dozens of segments long.
+     * that the earlier fluent form would have produced a chain dozens of segments long.
      */
     private static final String LARGE_SDL = """
         directive @auth(roles: [String!]) on FIELD_DEFINITION

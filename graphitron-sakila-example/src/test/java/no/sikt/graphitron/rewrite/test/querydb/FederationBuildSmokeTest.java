@@ -66,7 +66,7 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * R391: the default-case {@code Graphitron.newGraphQL()} convenience builds its engine off the
+     * The default-case {@code Graphitron.newGraphQL()} convenience builds its engine off the
      * single-arg {@code buildSchema(b -> {})}, which in a federation-linked module returns the
      * already-{@code Federation.transform}-wrapped schema. This pins that {@code newGraphQL().build()}
      * yields a correctly federation-wrapped engine end-to-end: {@code _service { sdl }} must resolve
@@ -91,9 +91,9 @@ class FederationBuildSmokeTest {
     /**
      * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
      * four {@code @node} types (Customer, Address, Film, and the compound-key FilmActor), the
-     * single-column-key City (the R425 service-child projection fixture), plus the two
+     * single-column-key City (the service-child projection fixture), plus the two
      * {@code @key(resolvable: false)} reference-only stubs — table-bound Language and non-table-bound
-     * FilmRefStub (R286). {@code Federation.transform} includes every {@code @key} type in the union
+     * FilmRefStub. {@code Federation.transform} includes every {@code @key} type in the union
      * regardless of resolvability; {@code resolvable: false} in the served SDL is what tells the
      * composer not to route entity queries to this subgraph for them, so their presence here is
      * benign. Catches the case where {@code @key} parsing or {@code KeyNodeSynthesiser} silently
@@ -115,7 +115,7 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * R250: the consumer's {@code extend schema @link(url:..., import:[...])}
+     * The consumer's {@code extend schema @link(url:..., import:[...])}
      * must round-trip through codegen ({@code AppliedDirectiveEmitter.
      * applicationsForSchema} → {@code .withSchemaAppliedDirectives(...)} on
      * the runtime build) so the runtime {@code _service.sdl} carries the
@@ -180,7 +180,7 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * Pipeline ↔ runtime parity (R247, closed by R291): the on-classpath
+     * Pipeline ↔ runtime parity: the on-classpath
      * {@code schema.graphqls} emitted by {@code SchemaSdlEmitter} must
      * describe the same schema a consumer rebuilding via
      * {@link Graphitron#buildSchema} sees.
@@ -195,9 +195,9 @@ class FederationBuildSmokeTest {
      *
      * <p>Locks: any directive-definition / directive-application drift
      * between codegen-time emission and runtime build (which would show
-     * up as a non-empty edit list); the R291 support-type retention
+     * up as a non-empty edit list); the support-type retention
      * decision feeding both arms from {@code schema.types()}; the
-     * {@code schema @link(...)} round-trip pinned by R250 (a missing
+     * {@code schema @link(...)} round-trip (a missing
      * schema-applied directive on either side appears as a deletion on
      * the schema vertex).
      */
@@ -230,7 +230,7 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * R283: graphitron emits the {@code @oneOf} <em>application</em> into the runtime
+     * Graphitron emits the {@code @oneOf} <em>application</em> into the runtime
      * {@code _Service.sdl} but {@code ServiceSDLPrinter.generateServiceSDLV2} strips the
      * spec-built-in <em>definition</em>. The generated {@code OneOfDirectiveSdl} helper, wrapped
      * around the federation build's return, reinstates {@code directive @oneOf on INPUT_OBJECT}
@@ -258,7 +258,7 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * R286: a {@code @key(resolvable: false)} on a non-table-bound type (here {@code FilmRefStub},
+     * A {@code @key(resolvable: false)} on a non-table-bound type (here {@code FilmRefStub},
      * a service-bound record carrier with no {@code @table} / {@code @node}) is a reference-only
      * entity stub. {@code EntityResolutionBuilder} accepts it without demoting and without an
      * {@code EntityResolution} (no backing table, no {@code _entities} handler), and the stub plus

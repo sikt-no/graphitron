@@ -71,7 +71,7 @@ class LintRuleRegistryCoverageTest {
 
     @Test
     void everyCodegenAdvisoryRuleExists() {
-        // The R429 codegen-config advisories are emitted at report assembly from the <sessionState>
+        // The codegen-config advisories are emitted at report assembly from the <sessionState>
         // config (SessionStateWarnings), not from a visitor or a classifier site; this pins the CODEGEN
         // set so a new one is a deliberate registry edit, mirroring the classifier assertion above.
         var codegen = Arrays.stream(LintRule.values())

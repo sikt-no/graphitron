@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → classified schema pipeline tests for {@code @referenceFor} (R458): the explicit
+ * SDL → classified schema pipeline tests for {@code @referenceFor}: the explicit
  * per-participant join path on multi-table interface/union child fields. Single-hop FK routes
  * (multi-FK disambiguation, same-table self-FK) lower to {@link ParticipantCorrelation.KeyTupleWhere};
  * multi-hop FK chains (slice 2) and routes carrying a condition/predicate hop (slice 3) lower to
@@ -108,8 +108,8 @@ class MultiTableChildReferenceForPipelineTest {
         // single-valued field navigates TO the parent (FK on the parent side), a list field collects
         // the CHILDREN pointing back (FK on the child side). The slots must therefore be the flip of
         // the single-valued case — sourceSide category.category_id, targetSide
-        // category.parent_category_id — or the field silently returns the wrong rows (R458 review
-        // finding: the resolver used to hardcode single-valued orientation regardless of cardinality).
+        // category.parent_category_id — or the field silently returns the wrong rows (the resolver
+        // used to hardcode single-valued orientation regardless of cardinality).
         var schema = TestSchemaHelper.buildSchema("""
             interface CatThing { rowId: Int }
             type CategorySelf implements CatThing @table(name: "category") { rowId: Int @field(name: "category_id") }

@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R431 named join site for the retired {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒
+ * The named join site for the retired {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒
  * {@code Wrap.TableRecord} invariant (the "hard one" in the decompose-sourcekey census): after
  * the envelope axis moved to the first-class {@link SourceEnvelope} and the reader seal died,
  * the two facts share no key-level carrier — so the coupling is re-asserted where they join,

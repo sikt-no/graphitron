@@ -8,7 +8,7 @@ import java.util.List;
  * {@link AuthorError} list plus diagnostics, signalling that the orchestrator must exclude the
  * field from classification.
  *
- * <p>R238 lands the wrapper alongside {@link ServiceMethodCall}; every subsequent walker-carrier
+ * <p>The wrapper landed alongside {@link ServiceMethodCall}; every subsequent walker-carrier
  * slice reuses this shape.
  */
 public sealed interface WalkerResult<C> {

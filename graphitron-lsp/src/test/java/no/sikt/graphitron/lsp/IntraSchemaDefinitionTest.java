@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Goto-definition for intra-schema type references: cursor on a {@code named_type}
  * reference jumps to the canonical {@code type Foo { ... }} declaration. When an open
  * buffer declares the type the jump lands on the live tree-sitter name span; when none
- * does (R350) it falls back to the build snapshot's type-definition-location map. Drives
+ * does it falls back to the build snapshot's type-definition-location map. Drives
  * a real {@link Workspace} (open the files, issue the request) and asserts the returned
  * {@link Location}'s URI and range, not any walk internals.
  */
@@ -195,7 +195,7 @@ class IntraSchemaDefinitionTest {
 
     @Test
     void resolvesViaSnapshotWhenDeclaringFileNotOpen() {
-        // R350: only the referencing file is open; the file declaring Film is not in any
+        // Only the referencing file is open; the file declaring Film is not in any
         // buffer. The snapshot's type-location map carries Film's on-disk position, so the
         // jump resolves workspace-wide rather than silently no-opping.
         var ws = new Workspace();
@@ -215,7 +215,7 @@ class IntraSchemaDefinitionTest {
 
     @Test
     void openBufferDeclarationWinsOverSnapshot() {
-        // R350 precedence: the declaring file is open, so the open-buffer tree-sitter span
+        // Precedence: the declaring file is open, so the open-buffer tree-sitter span
         // is authoritative even though the snapshot also carries an entry for the type
         // (which points at a deliberately different, stale position).
         var ws = new Workspace();
@@ -241,7 +241,7 @@ class IntraSchemaDefinitionTest {
 
     @Test
     void noOpenDeclarationAndNoSnapshotEntryReturnsEmpty() {
-        // R350 neither-source: the type is not declared in any open buffer and the snapshot
+        // Neither-source: the type is not declared in any open buffer and the snapshot
         // (here Unavailable) carries no entry for it, so the provider preserves its no-op.
         var ws = new Workspace();
         String uri = "file:///schema.graphqls";

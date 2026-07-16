@@ -117,9 +117,10 @@ public class TypeClassGenerator {
         // Recurse into NestingField.nestedFields() so nested fields' required columns are also
         // projected by the outer parent's SELECT.
         var requiredProjection = collectRequiredProjection(schema.fieldsOf(typeName));
-        // R432 slice 1 — cross-check the walk above against an independent demand enumeration
-        // (the R333 parent-projection containment invariant; R425 is the omission it exists to
-        // catch). Keyed on the BatchKeyField capability + sourceShape(), not leaf identity.
+        // Cross-check the walk above against an independent demand enumeration (the
+        // parent-projection containment invariant); the omission it exists to catch is a child's
+        // DataLoader key column being absent from the parent row and silently null. Keyed on the
+        // BatchKeyField capability + sourceShape(), not leaf identity.
         ParentProjectionContainmentCheck.check(schema, typeName, requiredProjection);
         return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage);
     }
@@ -260,7 +261,7 @@ public class TypeClassGenerator {
         // SDL selection — SourceKey columns for DataLoader-backed BatchKeyField children, FK
         // source-side columns for child @tableMethod fields (both base-named), and/or the whole
         // parent row under reserved __src_<col>__ aliases when a child's key wrap is
-        // SourceKey.Wrap.TableRecord (R436; see collectRequiredProjection for the full taxonomy).
+        // SourceKey.Wrap.TableRecord (see collectRequiredProjection for the full taxonomy).
         // The two axes are independent and both emitted: the reserved full row no longer
         // supplies base-named columns, so a base-named Wrap.Row/Wrap.Record/TableMethodField read
         // still needs its columns projected under their base names even when the full row is also
@@ -415,7 +416,7 @@ public class TypeClassGenerator {
      *       ({@code parentRecord.get(DSL.name("<src>"), …)}) resolves them by base name.</li>
      * </ul>
      *
-     * <p>These were a sealed sum before R436, with {@code FullParentRow} absorbing {@code Columns}
+     * <p>These were previously a sealed sum, with {@code FullParentRow} absorbing {@code Columns}
      * on the premise that a base-named {@code table.fields()} full-row append subsumed any
      * base-named column list — "a type fact, not a dedup accident". That premise is now false: the
      * full row is projected under reserved aliases, not base names, so it no longer supplies the

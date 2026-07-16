@@ -36,7 +36,7 @@ import java.util.Optional;
  *       jumps to the generated table class, column field, or FK constant. The
  *       position comes from the LSP-owned {@link SourceWalker.Index} at request
  *       time, joined by the table / {@code Keys} class FQN the catalog carries,
- *       so it rides the {@code .java} source cadence (R352).</li>
+ *       so it rides the {@code .java} source cadence.</li>
  *   <li><b>service half</b> ({@link Behavior.ClassNameBinding} /
  *       {@link Behavior.MethodNameBinding}: {@code @service},
  *       {@code @externalField}, {@code @enum}, {@code @condition},

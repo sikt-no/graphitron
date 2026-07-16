@@ -23,7 +23,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
  * exception that still needs the wider tuple because it walks to a
  * sibling slot.
  *
- * <p>R307: also carries the enclosing directive name (from
+ * <p>Also carries the enclosing directive name (from
  * {@link LspVocabulary.CursorLocation}) so a provider can discriminate by
  * directive when the coordinate is shared across directives, e.g.
  * {@link ClassNameCompletions} skips {@code @record}, whose

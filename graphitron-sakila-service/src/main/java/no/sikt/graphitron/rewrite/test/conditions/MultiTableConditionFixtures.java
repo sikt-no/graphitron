@@ -6,13 +6,13 @@ import org.jooq.impl.DSL;
 
 /**
  * Condition-method fixtures for developer {@code @condition} on multitable interface/union query
- * fields (R384 phase c).
+ * fields.
  *
  * <p>The polymorphic branch emitter calls a {@code @condition} method once per UNION branch,
  * passing that participant's own stage-1 table local, so a multitable condition method declares its
  * first parameter as {@code Table<?>} and resolves shared columns by name ({@code first_name}
  * exists on both {@code customer} and {@code staff}). A concrete participant-table parameter would
- * instead surface a mismatched branch at this module's javac, mirroring R379's concrete-parameter
+ * instead surface a mismatched branch at this module's javac, mirroring the concrete-parameter
  * semantics.
  */
 public final class MultiTableConditionFixtures {

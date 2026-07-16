@@ -8,8 +8,8 @@ import java.util.Optional;
  * Pure-text decomposition of an {@code argMapping} string's content (the bytes
  * between the quotes), shared by {@code ArgMappingCompletions} and the
  * {@code argMapping} diagnostics. The grammar is a comma-separated list of
- * {@code javaParam: graphqlArg} entries; the right side may be an R84 dot-path
- * ({@code input.nested.leaf}). Whitespace around {@code :} and {@code ,} is
+ * {@code javaParam: graphqlArg} entries; the right side may be a dot-path
+ * ({@code input.nested.leaf}) that walks into nested input fields. Whitespace around {@code :} and {@code ,} is
  * permitted, and an all-blank content is identity (no entries).
  *
  * <p>This class does no catalog or schema lookup; it only slices the string

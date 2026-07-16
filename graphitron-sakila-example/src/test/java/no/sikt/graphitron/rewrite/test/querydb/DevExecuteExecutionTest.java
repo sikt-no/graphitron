@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R428 execution-tier coverage of the generated {@code GraphitronDevExecutor} against real
+ * Execution-tier coverage of the generated {@code GraphitronDevExecutor} against real
  * PostgreSQL: the dev tool's execution path is the emitted executor over a single caller-supplied
  * connection, and this proves it sees what the app sees.
  *
@@ -35,10 +35,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code toSpecification()} payloads serialize identically.
  *
  * <p>The rollback proof drives a real mutation through the executor: the write is observable in
- * the response (the R429 mutation transaction ran) but leaves no trace in the database (the
+ * the response (the mutation transaction ran) but leaves no trace in the database (the
  * {@code ROLLBACK_ONLY} commit policy settled it by rolling back).
  *
- * <p>The claims round-trip (R428 slice 3) rides this module's real {@code <sessionState>}
+ * <p>The claims round-trip rides this module's real {@code <sessionState>}
  * {@code <variables>} sugar: a successful execution proves the configured claims payload mounts
  * through the generated connect hook (the runtime is fail-closed, so execution proceeds only if
  * the hook ran), a malformed payload surfaces the hook's own database error verbatim (the

@@ -36,7 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The sole shipping {@link EmbeddingStore} backend (R372 D2): Lucene HNSW, with BM25 lexical search
+ * The sole shipping {@link EmbeddingStore} backend: Lucene HNSW, with BM25 lexical search
  * and KNN vector search in a single index, fused by reciprocal-rank fusion. Pure Java, so the only
  * native footprint in the RAG stack is the embedder; this store ships no JNI.
  *
@@ -53,7 +53,7 @@ import java.util.Map;
  * validates each embedding's vector length against it at that one point and fails loudly on
  * mismatch, so the embedder that produces vectors and the index that stores them agree by
  * construction, not by prose. The store needs the embedder's width, not the embedder itself, so a
- * load-only index still loads off disk before the embedder is {@code Ready} (R372 D3).
+ * load-only index still loads off disk before the embedder is {@code Ready}.
  *
  * <p>Construction picks build vs load and never names the backend at the consumer: {@link #inMemory}
  * (RAM directory, the seam's test fake), {@link #building} (writable on-disk index), and

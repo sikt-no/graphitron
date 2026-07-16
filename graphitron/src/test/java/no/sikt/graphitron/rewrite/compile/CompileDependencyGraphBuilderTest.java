@@ -27,7 +27,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 2 — unit coverage of {@link CompileDependencyGraphBuilder} over a hand-built classified
+ * Unit coverage of {@link CompileDependencyGraphBuilder} over a hand-built classified
  * model, exercising the node switch (per-type file contributions + singletons), the structural edge
  * projection (a fetcher references its target type's projection class and its parent conditions), the
  * blanket frozen-scaffolding edges, and the wiring-hub edges (schema class references every fetcher;
@@ -179,7 +179,7 @@ class CompileDependencyGraphBuilderTest {
 
         // The Film type class's $fields composes Language.$fields(...) inline for the @reference
         // field, so types.Film references types.Language (a same-package, nested-$L reference the
-        // R455 fix made the oracle see).
+        // completeness oracle now sees).
         assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".types.Language");
     }
 

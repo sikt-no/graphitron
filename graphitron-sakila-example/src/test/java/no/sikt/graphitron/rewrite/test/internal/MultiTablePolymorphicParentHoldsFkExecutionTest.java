@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R481 execution-tier coverage for parent-holds-FK correlation on multi-table polymorphic child
+ * Execution-tier coverage for parent-holds-FK correlation on multi-table polymorphic child
  * fields, and for the projection-independence the {@code ParentRowDemand} capability restores.
  *
  * <p>Gaps A and B were masked because every prior multi-table polymorphic execution query happened

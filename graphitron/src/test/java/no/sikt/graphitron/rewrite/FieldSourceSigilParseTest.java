@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit-tier rule-table pin for {@link FieldSourceSigil#parseRawValue}. Covers both admitted
- * sigil literals ({@code $source} from R159, {@code $errors} from R178), the {@code BareName}
+ * sigil literals ({@code $source} and {@code $errors}), the {@code BareName}
  * fall-through, blank/null absence, and the {@code UnknownSigil} arm for any other
  * {@code $}-prefixed value. The directive-container plumbing in
  * {@link FieldSourceSigil#parseArgFieldNameRef} is covered separately by
@@ -92,8 +92,8 @@ class FieldSourceSigilParseTest {
 
     @Test
     void unknownSigilMessageMentionsBothAdmittedLiterals() {
-        // The diagnostic family is what authors see in LSP and build output; both R159's
-        // $source and R178's $errors must appear so an author writing $context (or any
+        // The diagnostic family is what authors see in LSP and build output; both the
+        // $source and $errors literals must appear so an author writing $context (or any
         // other $-prefixed literal) sees the actual menu of valid choices.
         String msg = FieldSourceSigil.unknownSigilMessage("$context");
         assertThat(msg).contains("$source").contains("$errors").contains("$context");

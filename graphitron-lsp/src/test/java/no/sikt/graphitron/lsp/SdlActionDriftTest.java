@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the {@link SdlActions} registry. Mirrors the pattern of
  * {@code DeprecationsDocCoverageTest} (SDL ↔ docs index) one layer down: SDL ↔ tooling.
  *
- * <p>Deprecation comments and quick-fix actions are independent (R398): a deprecation
+ * <p>Deprecation comments and quick-fix actions are independent: a deprecation
  * may carry no action, and a quick fix is registered explicitly rather than divined
  * from the deprecation's prose. So there is no "every deprecation must have a
  * migration" invariant. The one coupling that remains is a stale-reference guard:
@@ -36,7 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link LspVocabulary#deprecatedCoordinates()} and the registry's
  * {@link SdlAction#targets()} both hold {@code Set<SchemaCoordinate>}. The previous
  * parallel {@code SdlAction.DeprecationTarget} hierarchy collapsed into the
- * vocabulary type as part of R119 phase 3 cleanup.
+ * {@link LspVocabulary} type when LSP completion and diagnostics were rebuilt
+ * around GraphQL schema coordinates.
  */
 class SdlActionDriftTest {
 
@@ -48,7 +49,7 @@ class SdlActionDriftTest {
             new SchemaCoordinate.InputField("ExternalCodeReference", "name"),
             new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
             new SchemaCoordinate.Directive("index"),
-            // R398: @record's docstring carries the @deprecated marker, so the deprecation
+            // @record's docstring carries the @deprecated marker, so the deprecation
             // convention is uniform (hover / deprecatedCoordinates). It carries no registered
             // migration action; its removal is offered contextually by the redundant-record
             // advisory's build-side fix, and a deprecation without an action is fine.

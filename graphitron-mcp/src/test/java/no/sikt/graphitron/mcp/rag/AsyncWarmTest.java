@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Seam-tier (R372): the {@link AsyncWarm} harness drives both warm instantiations to their terminal
+ * Seam-tier: the {@link AsyncWarm} harness drives both warm instantiations to their terminal
  * {@link WarmState}, a read during warm sees {@link WarmState.Warming}, and the await affordance
  * returns the terminal value (never {@code Warming}) so a dependent build-warm maps an upstream
  * {@code Failed} into its own {@code Failed} rather than hanging. Both type parameters

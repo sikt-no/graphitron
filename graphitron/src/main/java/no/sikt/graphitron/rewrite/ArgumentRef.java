@@ -145,8 +145,10 @@ public sealed interface ArgumentRef {
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
          * columns when those columns positionally match the target's NodeType key columns
          * (the simple direct-FK case); pathological cases where they differ are rejected at
-         * classify time with a deferred-emission hint (see
-         * roadmap/nodeid-fk-target-arg-join-translation.md).
+         * classify time with a deferred-emission hint. Full joinPath-aware emission for the case
+         * where the FK-target columns differ from the resolved NodeType key columns (translating
+         * decoded parent-key values into a predicate against the FK-target columns via a JOIN or
+         * EXISTS subquery) is not yet implemented.
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: input
          * filters are not contract-violation surfaces, so the failure mode is
@@ -233,12 +235,12 @@ public sealed interface ArgumentRef {
          * Used by composite-key lookups and by mutations.
          *
          * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}.
-         * After R246 / R258 / R266 routed UPDATE and DELETE through their walker carriers, the only
+         * Now that UPDATE and DELETE are routed through their walker carriers, the only
          * verbs constructing a {@code TableInputArg} are INSERT and the query-side composite-key
          * lookup; for both, {@code setFields} is empty and every admissible input field flows into
-         * {@code lookupKeyFields} (R266 retired the {@code @value} marker that was UPDATE's old SET
-         * partition source). Both lists are sealed on {@link InputField.LookupKeyField} /
-         * {@link InputField.SetField} respectively (R130 admitted-carrier set: {@code ColumnField},
+         * {@code lookupKeyFields} (the {@code @value} marker that was UPDATE's old SET partition
+         * source has been retired). Both lists are sealed on {@link InputField.LookupKeyField} /
+         * {@link InputField.SetField} respectively (admitted-carrier set: {@code ColumnField},
          * {@code CompositeColumnField}); reference carriers stay outside the permits set. Construct
          * via {@link #of} so the partition has a single derivation path.
          *
@@ -270,11 +272,11 @@ public sealed interface ArgumentRef {
 
             /**
              * Factory: every top-level admissible carrier goes to {@code lookupKeyFields}, with an
-             * empty {@code setFields}. After R246 / R258 intercept UPDATE and R266 intercepts DELETE,
-             * the only callers are INSERT and the query-side composite-key lookup; neither has a
-             * SET partition. INSERT walks {@code fields()} directly for VALUES emit, so an empty
-             * {@code setFields} is correct. R266 retired the {@code @value} marker (the old
-             * UPDATE-only SET partition source), so there is no per-verb branch left.
+             * empty {@code setFields}. Since UPDATE and DELETE are intercepted upstream onto their
+             * walker carriers, the only callers are INSERT and the query-side composite-key lookup;
+             * neither has a SET partition. INSERT walks {@code fields()} directly for VALUES emit,
+             * so an empty {@code setFields} is correct. The {@code @value} marker (the old
+             * UPDATE-only SET partition source) has been retired, so there is no per-verb branch left.
              *
  * <p>A nested non-{@code @table} grouping input ({@link InputField.NestingField})
              * is admitted by flattening onto the outer table, but {@code lookupKeyFields} is left as
@@ -312,7 +314,7 @@ public sealed interface ArgumentRef {
         /**
          * Input type without {@code @table}. Resolved against the surrounding query field's
          * target table by {@link InputFieldResolver}: every classified field contributes the
-         * same implicit / explicit predicates as a {@code @table} input (R205 path B). Any
+         * same implicit / explicit predicates as a {@code @table} input. Any
          * unresolvable field rejects the surrounding argument as
          * {@link no.sikt.graphitron.rewrite.ArgumentRef.UnclassifiedArg} carrying a typed
          * {@link Rejection}, mirroring the {@code @table}-input whole-type rejection at

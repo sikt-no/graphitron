@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Direct dispatch coverage on tiny schemas. The federation arm mirrors the option shape of
- * {@link ServiceSDLPrinter#generateServiceSDLV2} plus the R291 survivor/support-type filters,
+ * {@link ServiceSDLPrinter#generateServiceSDLV2} plus the survivor/support-type filters,
  * so on a schema with no generator-only surface it must produce exactly what that printer
  * yields; the non-federation arm mirrors graphql-java's {@link SchemaPrinter} under the
  * documented include flags the same way. SDL assertions on the filtered surface re-parse the
@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class SchemaSdlEmitterTest {
 
-    /** Schema exercising the R291 filtered surface: generator-only directives, a consumer
+    /** Schema exercising the filtered surface: generator-only directives, a consumer
      * survivor directive, and a retained published support type. */
     private static final String FILTERED_SDL = """
         directive @auth(roles: [String!]) on OBJECT | FIELD_DEFINITION
@@ -93,7 +93,7 @@ class SchemaSdlEmitterTest {
     /**
      * On a schema with no generator-only directives and no support types, the federation arm's
      * printer must be byte-identical to {@link ServiceSDLPrinter#generateServiceSDLV2}: the
-     * R291 filters are pure subtractions, and this pins the mirrored option shape.
+     * filters are pure subtractions, and this pins the mirrored option shape.
      */
     @Test
     void federationArmMatchesServiceSdlPrinterOnUnfilteredSchema(@TempDir Path root) throws IOException {
@@ -210,7 +210,7 @@ class SchemaSdlEmitterTest {
     }
 
     /**
-     * R283 no-op / byte-stability guard: a schema that never uses {@code @oneOf} must not gain
+     * No-op / byte-stability guard: a schema that never uses {@code @oneOf} must not gain
      * the definition. (The exact-equality assertion in
      * {@link #federationArmMatchesServiceSdlPrinterOnUnfilteredSchema} pins byte-stability more
      * strongly; this names the invariant explicitly.)
@@ -225,7 +225,7 @@ class SchemaSdlEmitterTest {
     }
 
     /**
-     * Regression guard on existing graphql-java 25.0 behavior, NOT coverage of R283's fix:
+     * Regression guard on existing graphql-java 25.0 behavior, NOT coverage of the @oneOf-definition fix:
      * the non-federation {@link SchemaPrinter} already prints spec-built-in directive
      * definitions, so the plain arm emits {@code @oneOf} without any graphitron augmentation.
      */

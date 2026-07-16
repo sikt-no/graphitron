@@ -22,7 +22,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R408 single-evaluator parity (LSP tier): a lint finding suppressed at the build does not replay as
+ * Single-evaluator parity (LSP tier): a lint finding suppressed at the build does not replay as
  * an editor squiggle. This drives the real {@link GraphQLRewriteGenerator#buildOutput()} with a rule
  * disabled and feeds the resulting {@link ValidationReport}, the exact object the dev-loop hands to
  * the LSP through {@code Workspace.setBuildOutput}, into {@link Diagnostics#compute}. Because

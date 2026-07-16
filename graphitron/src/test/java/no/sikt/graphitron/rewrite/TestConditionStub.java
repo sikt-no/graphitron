@@ -43,7 +43,7 @@ class TestConditionStub {
     }
 
     /**
-     * R190 fixture: {@code @condition} method whose {@code tenantId} parameter is declared as
+     * Fixture: {@code @condition} method whose {@code tenantId} parameter is declared as
      * {@link Long} instead of {@link String}. Pairs with {@link #argConditionWithContext} to force
      * a cross-site type-agreement conflict in {@link ContextArgumentClassifier} tests.
      */
@@ -77,7 +77,7 @@ class TestConditionStub {
     /**
      * Arg-level {@code @condition} method whose Java parameter name diverges from the GraphQL
      * argument name. Used with {@code argMapping: "city: cityNames"} so {@code city} binds to
-     * GraphQL arg {@code cityNames} (R53 cross-axis test).
+     * GraphQL arg {@code cityNames} (cross-axis test).
      */
     public static Condition argConditionRenamed(org.jooq.Table<?> table, String city) {
         throw new UnsupportedOperationException();
@@ -85,7 +85,7 @@ class TestConditionStub {
 
     /**
      * Field-level {@code @condition} method with renamed Java parameters. Used with
-     * {@code argMapping: "city: cityNames, country: countryId"} (R53 cross-axis test).
+     * {@code argMapping: "city: cityNames, country: countryId"} (cross-axis test).
      */
     public static Condition fieldConditionRenamed(org.jooq.Table<?> table, String city, String country) {
         throw new UnsupportedOperationException();
@@ -93,7 +93,7 @@ class TestConditionStub {
 
     /**
      * Input-field-level {@code @condition} method whose Java parameter name diverges from the
-     * input-field name. Used with {@code argMapping: "id: filmId"} (R53 cross-axis test).
+     * input-field name. Used with {@code argMapping: "id: filmId"} (cross-axis test).
      */
     public static Condition inputFieldConditionRenamed(org.jooq.Table<?> table, String id) {
         throw new UnsupportedOperationException();
@@ -109,7 +109,7 @@ class TestConditionStub {
     }
 
     /**
-     * R384 phase c fixture: arg-level / input-field {@code @condition} on a multitable
+     * Fixture: arg-level / input-field {@code @condition} on a multitable
      * interface/union query field. The {@code Table<?>} first parameter serves every participant
      * branch (the emitter passes each branch's own {@code stage1_<Type>} alias); {@code firstName}
      * binds the same-named GraphQL argument or input field.
@@ -119,16 +119,16 @@ class TestConditionStub {
     }
 
     /**
-     * R210 fixture: {@code @condition(override: true)} on an input field whose name does not
+     * Fixture: {@code @condition(override: true)} on an input field whose name does not
      * match any column on the resolving table. Parameter name {@code sakskode} matches the
-     * GraphQL input field name used in {@link GraphitronSchemaBuilderTest}'s R210 cases.
+     * GraphQL input field name used in {@link GraphitronSchemaBuilderTest}'s override-condition cases.
      */
     public static Condition sakskodeCondition(org.jooq.Table<?> table, String sakskode) {
         throw new UnsupportedOperationException();
     }
 
     /**
-     * R210 fixture: {@code @condition(override: true)} on a {@code @table}-input field with no
+     * Fixture: {@code @condition(override: true)} on a {@code @table}-input field with no
      * matching column. Parameter name {@code syntheticName} matches the field used by the
      * @table symmetry test.
      */
@@ -137,7 +137,7 @@ class TestConditionStub {
     }
 
     /**
-     * R214 fixture: arg-level {@code @condition} whose Java parameter name does not match the
+     * Fixture: arg-level {@code @condition} whose Java parameter name does not match the
      * GraphQL argument name, but the signature is type-unambiguous (one {@code Table<?>} plus
      * one {@code String}). Used to assert that {@code argMapping} can be omitted when the
      * type-based pairing is unique.
@@ -147,7 +147,7 @@ class TestConditionStub {
     }
 
     /**
-     * R214 fixture: arg-level {@code @condition} with two same-type non-Table parameters. Used
+     * Fixture: arg-level {@code @condition} with two same-type non-Table parameters. Used
      * to assert that the inference falls back to name-based matching when type alone is not
      * sufficient to disambiguate the pairing.
      */
@@ -156,7 +156,7 @@ class TestConditionStub {
     }
 
     /**
-     * R355 fixture: input-field {@code @condition} method whose two scalar parameters descend by
+     * Fixture: input-field {@code @condition} method whose two scalar parameters descend by
      * name into a nested {@code @condition}-slot input object ({@code SokVerdiRange { fra, til }}),
      * with no {@code argMapping}. Mirrors the motivating {@code searchVektingstallRange} shape.
      * Used to assert the inferred {@link no.sikt.graphitron.rewrite.PathExpr} chain equals the one
@@ -168,7 +168,7 @@ class TestConditionStub {
     }
 
     /**
-     * R355 fixture: input-field {@code @condition} method whose single list parameter descends by
+     * Fixture: input-field {@code @condition} method whose single list parameter descends by
      * name into a list-shaped nested input-object field ({@code verdier: [BigDecimal]}). Pins the
      * computed {@code liftsList=true} on the inferred depth-1 {@code Step}.
      */
@@ -178,7 +178,7 @@ class TestConditionStub {
     }
 
     /**
-     * R355 fixture: field-level {@code @condition} method whose parameter name matches a nested
+     * Fixture: field-level {@code @condition} method whose parameter name matches a nested
      * field present in two distinct input-object arguments, so the depth-1 inference finds two
      * candidates across slots and yields, leaving {@code fra} unbound for the existing
      * name-mismatch rejection.
@@ -188,7 +188,7 @@ class TestConditionStub {
     }
 
     /**
-     * R232 fixture: intermediate-hop {@code @condition} method with concrete jOOQ table
+     * Fixture: intermediate-hop {@code @condition} method with concrete jOOQ table
      * parameters. {@link no.sikt.graphitron.rewrite.BuildContext#resolveConditionJoinTarget}
      * resolves the target table by reflecting on the second parameter type and looking it up
      * via {@link no.sikt.graphitron.rewrite.JooqCatalog#findTableByClass}. Source is
@@ -202,7 +202,7 @@ class TestConditionStub {
     }
 
     /**
-     * R379 Check 2 fixture: an intermediate-hop ON-clause condition whose <em>first</em> (source)
+     * Check 2 fixture: an intermediate-hop ON-clause condition whose <em>first</em> (source)
      * parameter is a concrete table ({@code Actor}) other than the hop's actual source table
      * ({@code film}). The emitter passes the source alias positionally into parameter 0, so a
      * concretely-mistyped source parameter would compile to {@code aCondition(filmAlias, …)}
@@ -216,7 +216,7 @@ class TestConditionStub {
     }
 
     /**
-     * R379 Check 2 fixture: a <em>terminal</em>-hop condition whose <em>second</em> (target)
+     * Check 2 fixture: a <em>terminal</em>-hop condition whose <em>second</em> (target)
      * parameter is a concrete table ({@code Film}) other than the carrier field's return
      * {@code @table}. The terminal branch of {@code resolveConditionJoinTarget} builds the target
      * from the return type and never reads this parameter, so without Check 2 the mistyped target
@@ -230,7 +230,7 @@ class TestConditionStub {
     }
 
     /**
-     * R379 happy-path fixture: a terminal-hop condition whose concrete source ({@code City}) and
+     * Happy-path fixture: a terminal-hop condition whose concrete source ({@code City}) and
      * target ({@code Actor}) parameters both match the aliases the emitter passes (source = the
      * {@code City} carrier's table, target = the {@code Actor} return {@code @table}). Asserts the
      * concrete-parameter check does not reject a correctly-typed signature.
@@ -242,7 +242,7 @@ class TestConditionStub {
     }
 
     /**
-     * R379 Check 2 fixture: a {@code {table:, condition:}} whereFilter whose first parameter is a
+     * Check 2 fixture: a {@code {table:, condition:}} whereFilter whose first parameter is a
      * concrete table ({@code Actor}) other than the FK hop's source ({@code film}). The whereFilter
      * rides as {@code .where(filter(srcAlias, tgtAlias))} on the enclosing SELECT with source = the
      * FK hop's origin table and target = its target table, so a mistyped source parameter would

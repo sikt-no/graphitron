@@ -36,7 +36,7 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
     private static final Map<String, Metadata> METADATA = Map.of(
         "bar", new Metadata("Bar", List.of("ID_1", "ID_2")),
         "baz", new Metadata("Baz", List.of("ID")),
-        // R377: a customized numeric typeId ("10154") distinct from any GraphQL type name. With a
+        // A customized numeric typeId ("10154") distinct from any GraphQL type name. With a
         // @node type plus a nesting-projection @table type over this table, the decode helper must
         // resolve through the @node-only NodeIndex (decode<TypeName>); the old findGraphQLTypeForTable
         // detour returned empty (two object types) and fell back to decode10154, which the encoder
@@ -47,31 +47,31 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // GraphQLQueryTest's filmActorByNodeId round-trip for the LookupArg.DecodedRecord
         // arm. PK column order matches `init.sql`'s declaration: actor_id first, film_id second.
         "film_actor", new Metadata("FilmActor", List.of("ACTOR_ID", "FILM_ID")),
-        // R50 phase (g-B) rooted-at-parent fixture. NodeId keys on PK_ID only; the table also
+        // Rooted-at-parent fixture. NodeId keys on PK_ID only; the table also
         // exposes a unique ALT_KEY column targeted by `child_ref.parent_alt_key`'s FK. The
         // FK does not positionally match __NODE_KEY_COLUMNS — that mismatch is the test
         // surface for the rooted-at-parent JOIN-with-projection emission path.
         "parent_node", new Metadata("ParentNode", List.of("PK_ID")),
-        // R79 §6 arity > 22 rejection fixture. NodeIdLeafResolver.resolve rejects any
+        // Arity > 22 rejection fixture. NodeIdLeafResolver.resolve rejects any
         // NodeType with > 22 key columns (jOOQ's typed Record/Row caps at Row22); this
         // 23-column composite-PK table is the smallest case that exercises that guard.
         "too_wide", new Metadata("TooWide", List.of(
             "K1",  "K2",  "K3",  "K4",  "K5",  "K6",  "K7",  "K8",
             "K9",  "K10", "K11", "K12", "K13", "K14", "K15", "K16",
             "K17", "K18", "K19", "K20", "K21", "K22", "K23")),
-        // R114 multi-hop @reference on @nodeId, identity-carrying lift fixture.
+        // Multi-hop @reference on @nodeId, identity-carrying lift fixture.
         // level_a is the NodeType target reached via the chain
         // level_c -> level_b -> level_a (FK on (s, k1, k2) then FK on (k1, k2)),
         // both adjacent pairs satisfying the lift predicate so the terminal hop's
         // source-side tuple lifts back to level_c.(k1, k2) on the parent table.
         "level_a", new Metadata("LevelA", List.of("K1", "K2")),
-        // R114 lift-failure fixture: lift_fail_a has the same arity-2 NodeType key
+        // Lift-failure fixture: lift_fail_a has the same arity-2 NodeType key
         // shape, but the lift_fail_b -> lift_fail_a FK uses (a_k1, a_k2) which do not
         // appear in lift_fail_b's column list when traversed from lift_fail_c (which
         // only carries fk_b). The lift predicate fails at hop[1] and the resolver
         // rejects via LIFT_FAILURE_MARKER.
         "lift_fail_a", new Metadata("LiftFailA", List.of("K1", "K2")),
-        // R131 permutation fixture: reordered_pk_parent declares its PK as
+        // Permutation fixture: reordered_pk_parent declares its PK as
         // (pk_a, pk_b, pk_c) — the order we publish as __NODE_KEY_COLUMNS. The
         // reordered_fk_child FK references reordered_pk_parent(pk_b, pk_c, pk_a) in a
         // *different* order. NodeId encode/decode follows __NODE_KEY_COLUMNS; the FK's

@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R281 slice 2 doc-bridge guard: the {@code code-generation-triggers} page renders its taxonomy from
+ * Doc-bridge guard: the {@code code-generation-triggers} page renders its taxonomy from
  * the corpus, so every documentation example's rendered SDL must appear verbatim on the page. For each
  * {@link ClassifiedCorpus#docExamples() doc example} this re-runs {@link QueryViewRenderer} over the
  * fixture and projection query and asserts the page still contains exactly that block.

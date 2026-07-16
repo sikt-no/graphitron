@@ -456,7 +456,7 @@ public final class ScalarTypeResolver {
      * path produces for that scalar. The missing half of the existing bidirectional pair (of which
      * {@link #builtInJavaType} / {@link #isClassifiedScalarJavaType} are the other directions): where
      * those ask "is this Java type any classified scalar's resolution", this answers "what Java type
-     * does <em>this named</em> scalar coerce to". Consulted by the R261 wire-coercion predicate to
+     * does <em>this named</em> scalar coerce to". Consulted by the wire-coercion predicate to
      * confirm a {@code Direct} raw-cast leaf is genuinely wire-pass-through.
      *
      * <p>Total over the recognised scalar space:

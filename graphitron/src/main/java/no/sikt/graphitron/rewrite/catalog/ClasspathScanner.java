@@ -48,7 +48,7 @@ import java.util.stream.Stream;
  */
 public final class ClasspathScanner {
 
-    /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for R368's condition fact. */
+    /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for the condition fact. */
     private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
 
     /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion.*/

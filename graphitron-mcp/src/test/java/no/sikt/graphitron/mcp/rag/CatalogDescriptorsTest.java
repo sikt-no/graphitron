@@ -9,8 +9,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier (R386): the descriptor composer and the name normalizer are pure and ONNX-free, so the
- * retrieval-lift invariants (R118 OQ3 / OQ4) pin here without loading a model. Covers snake_case /
+ * Unit-tier: the descriptor composer and the name normalizer are pure and ONNX-free, so the
+ * retrieval-lift invariants pin here without loading a model. Covers snake_case /
  * camelCase / acronym / digit / single-word splitting, the comment-present vs name-only degradation,
  * and that every descriptor carries both the raw SQL token and its normalized words.
  */

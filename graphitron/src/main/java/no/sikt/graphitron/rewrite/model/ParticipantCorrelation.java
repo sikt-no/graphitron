@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * The resolved parent→participant correlation for one participant of a multi-table interface/union
- * child field, decided once at classification (R458, generalizing R452's single-arm
+ * child field, decided once at classification (generalizing the earlier single-arm
  * {@code ParticipantFkPath}).
  *
  * <p>Two arms, distinguished by whether the branch joins any real tables:
@@ -16,15 +16,16 @@ import java.util.Objects;
  *       (batched forms). Auto-discovered single-FK routes, multi-FK-disambiguated
  *       {@code @referenceFor} routes, and same-table self-FK {@code @referenceFor} routes all lower
  *       here: every one is a single-hop foreign key from the participant's table to the parent's,
- *       so the parent side is always bound values rather than a joined alias. This is R452's
- *       carrier arm, renamed and re-payloaded onto {@link On.ColumnPairs}.</li>
+ *       so the parent side is always bound values rather than a joined alias. This is the
+ *       former {@code ParticipantFkPath} carrier arm, renamed and re-payloaded onto
+ *       {@link On.ColumnPairs}.</li>
  *   <li>{@link JoinedCorrelation} — the branch joins real tables. Each hop's {@link On} already
  *       distinguishes an FK bridge ({@link On.ColumnPairs}) from an authored predicate
  *       ({@link On.Predicate}); multi-hop is list length greater than one, condition correlation is
  *       a hop carrying {@link On.Predicate}. Non-empty enforced at construction. The classifier
  *       physically cannot construct this arm until slices 2 (multi-hop) and 3 (condition) ship the
- *       matching emitter arms; until then it rejects those route shapes with a DEFERRED message
- *       (see {@code roadmap/per-participant-multitable-child-join-paths.md}).</li>
+ *       matching emitter arms; until then it rejects those route shapes with a DEFERRED
+ *       message.</li>
  * </ul>
  *
  * <p>The classifier ({@code FieldBuilder.resolveChildPolymorphicJoinPaths}) decides the supported

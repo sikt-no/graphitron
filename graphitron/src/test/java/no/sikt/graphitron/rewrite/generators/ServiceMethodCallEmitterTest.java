@@ -16,7 +16,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R238 emitter unit-tier tests. Asserts on the statement-list shape returned by
+ * Emitter unit-tier tests. Asserts on the statement-list shape returned by
  * {@link ServiceMethodCallEmitter#emit} for the carrier arms ({@link ServiceMethodCall.Static},
  * {@link ServiceMethodCall.Instance}) and {@link MappingEntry} arms (FromArg/FromContext/FromDsl).
  * Renders {@code CodeBlock.toString()} once per case to anchor the structural intent without
@@ -257,7 +257,7 @@ class ServiceMethodCallEmitterTest {
 
     @Test
     void emit_static_twoListBearingPath_emitsNestedStreamMap() {
-        // Two-list-deep argMapping `filmIdGroups: input.groups.items.id` from R84 Phase D-list:
+        // Two-list-deep argMapping `filmIdGroups: input.groups.items.id`:
         // streams over `groups`, then over each group's `items`. The leaf cast lands on
         // List<List<Integer>>; the walker uses Direct as the leaf transform.
         var intType = ClassName.get(Integer.class);

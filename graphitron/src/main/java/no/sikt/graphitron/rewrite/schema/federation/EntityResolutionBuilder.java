@@ -79,7 +79,7 @@ public final class EntityResolutionBuilder {
 
     /**
      * Walks the classified type map and returns an entity-resolution entry for every type
-     * whose schema element carries at least one {@code @key} directive. R317 slice 5 — a type
+     * whose schema element carries at least one {@code @key} directive. A type
      * whose {@code @key} directives cannot be resolved keeps its classified verdict; the federation
      * rejection is registered as a build-time {@link ValidationError} on {@code diagnosticSink}
      * (the validator drains it) rather than demoting the registry entry, so a verdict read after the
@@ -104,7 +104,7 @@ public final class EntityResolutionBuilder {
         // A @key object type the type pass left unclassified (a directiveless object — a
         // federation entity needs a @table) is absent from the registry, so the entity loop below
         // never sees it. Reject it here with the federation diagnostic rather than letting it slip
-        // through as a generic unclassified field. R317 slice 5 — registers the rejection on the
+        // through as a generic unclassified field. Registers the rejection on the
         // diagnostic channel; the type stays absent from the registry (it was never classified) and
         // the entity loop below still never sees it, so no entity entry is built.
         for (var named : assembled.getAllTypesAsList()) {
@@ -185,7 +185,7 @@ public final class EntityResolutionBuilder {
                 }
             }
             if (fatal != null) {
-                // R262 finding H: the typed InvalidSchema rejection is already constructed; register
+                // The typed InvalidSchema rejection is already constructed; register
                 // it verbatim and skip the type (no second structural diagnostic).
                 diagnosticSink.accept(fatal);
                 continue;
@@ -238,8 +238,8 @@ public final class EntityResolutionBuilder {
         record Ok(KeyAlternative alt) implements AltResult {}
         record Err(String message) implements AltResult {}
         /**
-         * A fatal rejection whose typed {@link ValidationError} is already constructed (R262 finding
-         * H). Distinct from {@link Err}, whose message the caller wraps in a
+         * A fatal rejection whose typed {@link ValidationError} is already constructed.
+         * Distinct from {@link Err}, whose message the caller wraps in a
          * {@link Rejection.AuthorError.Structural}; this carries an {@link Rejection.InvalidSchema}
          * the caller registers verbatim, and the caller skips the type without emitting a second
          * diagnostic.
@@ -288,7 +288,7 @@ public final class EntityResolutionBuilder {
                     + typeName + "' references field '" + name
                     + "' which is not a column-backed field on this type's table");
             }
-            // R262 finding H: a @key whose referenced field is itself an @nodeId-encoded reference
+            // A @key whose referenced field is itself an @nodeId-encoded reference
             // carrier (a ColumnReferenceField wrapping its column in NodeIdEncodeKeys) cannot resolve
             // through the DIRECT _entities path: that path binds the rep's field value verbatim, but
             // the rep carries a base64-encoded global id, so the encoded id is bound undecoded into

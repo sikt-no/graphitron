@@ -47,9 +47,9 @@ class DevMojoTest {
     @Test
     void defaultsMatchPlanContract() {
         // The literals here lock the user-facing design constants from
-        // plan-graphitron-lsp.md (port 8487, loopback bind) and R341 (MCP port 8488).
+        // plan-graphitron-lsp.md (port 8487, loopback bind) and the MCP port (8488).
         // This pins the Java source of truth for the MCP port so it cannot silently drift
-        // from the design; the static copies (.mcp.json, docs) are accepted drift per R341.
+        // from the design; the static copies (.mcp.json, docs) are accepted drift.
         assertThat(DevMojo.DEFAULT_PORT).isEqualTo(8487);
         assertThat(DevMojo.DEFAULT_MCP_PORT).isEqualTo(8488);
         assertThat(DevMojo.LOOPBACK_HOST).isEqualTo("127.0.0.1");
@@ -79,7 +79,7 @@ class DevMojoTest {
         // port already held by another graphitron:dev session. The Mojo must surface a
         // MojoExecutionException naming the MCP port, and must close the already-bound LSP socket
         // so the partial startup leaks nothing. This pins the failure-contract parity with the LSP
-        // bind that R341 promotes into scope: the user-visible MojoExecutionException, not the
+        // bind: the user-visible MojoExecutionException, not the
         // server-level IOException GraphitronMcpServerTest covers.
         // The Workspace handed in is orthogonal to this test: it exercises only the bind-failure
         // unwind, which is driven by the address, so an empty workspace suffices.
@@ -280,7 +280,7 @@ class DevMojoTest {
             .isEmpty();
     }
 
-    // ---- R428: <devDatabase> reconciliation (env wins over pom; degrade vs fail-loud) ----
+    // ---- <devDatabase> reconciliation (env wins over pom; degrade vs fail-loud) ----
 
     @Test
     void devDatabase_absent_disablesTheExecuteToolQuietly() throws Exception {
@@ -342,7 +342,7 @@ class DevMojoTest {
     @Test
     void devDatabase_urlWithoutDialect_failsLoud_neverDefaulted() {
         // A half-configured dev database is a config bug, not a degrade case; and the dialect is
-        // explicit and enumerated per the R428 spec (graphitron is multi-dialect, Sikt runs Oracle).
+        // explicit and enumerated by design (graphitron is multi-dialect, Sikt runs Oracle).
         var mojo = new DevMojo();
         mojo.environment = Map.of("GRAPHITRON_DEV_DB_URL", "jdbc:env:url");
         assertThatThrownBy(mojo::resolveDevDatabase)

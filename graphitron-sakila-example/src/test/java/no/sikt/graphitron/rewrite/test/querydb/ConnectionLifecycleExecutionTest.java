@@ -25,16 +25,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R429 slice 2 execution-tier coverage of the owned-connection path against real PostgreSQL: the
+ * Execution-tier coverage of the owned-connection path against real PostgreSQL: the
  * connection-lifecycle instrumentation ({@code GraphitronRuntime.newGraphQL(schema)}) pins one
  * connection per operation, commits and rolls back mutation fields independently, and leaves
- * incremental delivery off. (Queries run in autocommit; blanket read-only enforcement was descoped to
- * R460, so there is no read-only transaction to assert here.)
+ * incremental delivery off. (Queries run in autocommit; blanket read-only enforcement was descoped,
+ * so there is no read-only transaction to assert here.)
  *
  * <p>These run the real generated engine over a {@code GraphitronRuntime} built on a
  * {@link DataSource} (not the escape-hatch {@code Graphitron.newExecutionInput(dsl, ...)} form): the
  * instrumentation acquires the connection and publishes the pinned {@code DSLContext}. Per-request
- * assembly goes through slice 5's owned-path factory, {@code Graphitron.newOwnedExecutionInput(claims,
+ * assembly goes through the owned-path factory, {@code Graphitron.newOwnedExecutionInput(claims,
  * userId)}, via {@link #ownedInput}; this class is that factory's first client.
  */
 @ExecutionTier
@@ -147,7 +147,7 @@ class ConnectionLifecycleExecutionTest {
 
     /**
      * Assembles a per-request {@code ExecutionInput} for the owned-connection path via the emitted
-     * {@code Graphitron.newOwnedExecutionInput(claims, userId)} factory (R429 slice 5), the first client
+     * {@code Graphitron.newOwnedExecutionInput(claims, userId)} factory, the first client
      * of that factory. It stashes the opaque claims under the instrumentation's key, the sealed
      * {@code GraphitronContext} singleton, and the {@code userId} contextArgument, plus a fresh
      * {@code DataLoaderRegistry}; the instrumentation publishes the pinned {@code DSLContext} itself.

@@ -8,14 +8,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit-tier rule-table pin for {@link FieldBuilder#selectErrorsTransport}. The helper encodes
- * R178's errors-field defaulting rule as a pure switch over the parsed {@code @field(name:)}
+ * the errors-field defaulting rule as a pure switch over the parsed {@code @field(name:)}
  * value and an accessor-existence boolean; this test fixes every branch so a regression on
  * the default-name fallback or the explicit-name no-fallback rule fires immediately.
  *
  * <p>The site adapter that derives the inputs (reads {@code @field(name:)} from the SDL
  * field; queries {@code ClassAccessorResolver} for the {@code errors} accessor against the
- * payload class resolved by R96's reflection walk) is added in R178 Phase 3B; this class
- * pins the rule table alone so the site adapter can be reviewed against a frozen contract.
+ * payload class resolved by the reflection-driven binding walk) is added separately; this
+ * class pins the rule table alone so the site adapter can be reviewed against a frozen contract.
  */
 @UnitTier
 class ErrorsTransportSelectionTest {

@@ -132,9 +132,7 @@ final class NodeIdLeafResolver {
          *       translation. This is the only shape any projection arm emits today.</li>
          *   <li>{@link TranslatedFk} — FK target-side columns differ from {@code T}'s key columns
          *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
-         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation; deferred
-         *       (see roadmap/nodeid-fk-target-arg-join-translation.md and
-         *       nodeidreferencefield-join-projection-form.md).</li>
+         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation; deferred.</li>
          * </ul>
          */
         sealed interface FkTarget extends Resolved {
@@ -179,7 +177,7 @@ final class NodeIdLeafResolver {
  * table — a self-FK: the {@code @reference} names a
              *                             foreign key back to the row's own table, so the lifted
              *                             columns point at a sibling row, never the row's own
-             *                             identity. R354 routes such a carrier wholly to the UPDATE
+             *                             identity. Such a carrier is routed wholly to the UPDATE
              *                             SET partition; a cross-table FK ({@code false}) partitions
              *                             by key membership. The fact is decided here, the single
              *                             site that already discriminates same-table from cross-table.
@@ -325,7 +323,8 @@ final class NodeIdLeafResolver {
             // Self-FK: T.table() equals the containing table, reached here only because an explicit
             // @reference was present (the no-@reference same-table case short-circuited to SameTable
             // above). The lifted columns are the self-FK's child columns on the row's own table,
-            // a pointer to a sibling, never the row's identity. R354 reads this off the carrier.
+            // a pointer to a sibling, never the row's identity. The UPDATE SET-partition routing
+            // reads this off the carrier.
             boolean selfReference = containingTable.sameTable(targetTableName);
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
@@ -345,7 +344,8 @@ final class NodeIdLeafResolver {
      * tuple) into {@code keyColumns} order: {@code aligned[j] = original[result[j]]}.
      *
      * <p>When {@code result[j] == j} for every {@code j} the permutation is identity — equivalent
-     * to the strict positional match the resolver used before R131 relaxed the discriminator.
+     * to the strict positional match the resolver used before the discriminator was relaxed to
+     * admit reorderings.
      */
     private static int[] permutationToKeyColumns(List<ColumnRef> targetSideColumns,
                                                  List<ColumnRef> keyColumns) {

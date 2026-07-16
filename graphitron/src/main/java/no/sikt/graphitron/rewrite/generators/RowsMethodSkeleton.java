@@ -13,7 +13,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 
 /**
  * Single entry point for emitting a DataLoader rows-method's {@link MethodSpec}. Consumed by
- * the five rows-method emitter sites in R38 Phase 2 (today: {@code SplitRowsMethodEmitter}'s
+ * the five rows-method emitter sites (today: {@code SplitRowsMethodEmitter}'s
  * four entry points + {@code TypeFetcherGenerator.buildServiceRowsMethod}); each construction
  * site projects from the field's {@code (variant, LoaderRegistration.container())}
  * pair to the matching {@link RowsMethodBody} permit and hands it here.
@@ -26,8 +26,8 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
  *       {@code LoaderRegistration.container()}</li>
  *   <li>declared return type — the rows method's outer wrapper, built upstream via
  *       {@link no.sikt.graphitron.rewrite.model.RowsMethodShape#outerRowsReturnType}</li>
- *   <li>empty-input short-circuit (SQL permits only — service-path gate is out of scope per
- *       R38's spec)</li>
+ *   <li>empty-input short-circuit (SQL permits only — the service-path gate is out of
+ *       scope)</li>
  *   <li>{@code DSLContext dsl = <graphitronContextCall>.getDslContext(env)} line — always for
  *       SQL permits; conditional on {@link RowsMethodBody.Service#needsDsl()} for the service
  *       permit</li>
@@ -102,9 +102,8 @@ public final class RowsMethodSkeleton {
     /**
      * Service framing: optional DSL local resolution (driven by {@code needsDsl}, which
      * mirrors the developer's {@code @service} method {@link no.sikt.graphitron.rewrite.model.MethodRef.CallShape}),
-     * then the permit's body content. The empty-input gate is intentionally omitted; per
-     * R38's "Out of scope" carve-out, adding the gate to service rows methods is a behaviour
-     * change tracked as a separate Backlog item.
+     * then the permit's body content. The empty-input gate is intentionally omitted: adding the
+     * gate to service rows methods is a behaviour change tracked as a separate Backlog item.
      */
     private static void emitServiceBody(MethodSpec.Builder b, RowsMethodBody.Service service, CodeBlock graphitronContextCall) {
         if (service.needsDsl()) {

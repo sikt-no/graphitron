@@ -7,13 +7,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * R410 slice 3 — the recompile-set algorithm as pure functions over the {@link CompileDependencyGraph}
+ * The recompile-set algorithm as pure functions over the {@link CompileDependencyGraph}
  * and the per-unit ABI hashes ({@link AbiSignature}). Given the writer's delta (the content-changed
- * units, from slice 1) this computes which units a round must recompile:
+ * units) this computes which units a round must recompile:
  *
  * <pre>recompile = delta ∪ { reverse-transitive dependents of the delta units whose ABI changed }</pre>
  *
- * <p>The two clauses the spec's acceptance gate pins live here structurally:
+ * <p>The two clauses the acceptance gate pins live here structurally:
  * <ul>
  *   <li><b>Pruning.</b> A body-only edit leaves a unit's ABI hash unchanged, so it is not in
  *       {@link #abiChanged}, so it seeds no reverse traversal: its dependents are excluded. Only the

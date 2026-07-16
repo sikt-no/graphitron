@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R431 pins for the {@link KeyLift} lift fact: the {@link KeyLift#wrap()} shape derivation and
+ * Pins for the {@link KeyLift} lift fact: the {@link KeyLift#wrap()} shape derivation and
  * the {@link KeyLift#checkResidueAgreement} construction rule.
  *
  * <p>These are the migrated homes of the retired {@code SourceKey} compact-constructor pairings

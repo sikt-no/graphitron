@@ -8,7 +8,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Infrastructure-tier (R372): actually loads {@code bge-small-en-v1.5-q} through the ONNX Runtime
+ * Infrastructure-tier: actually loads {@code bge-small-en-v1.5-q} through the ONNX Runtime
  * JNI binding and embeds real text. This is the native-binding backstop, the analogue of the
  * sakila-example compile that runs on every CI build: it is the only check that the native binding
  * produces <em>meaningful</em> output, so it runs in CI's default {@code mvn verify -Plocal-db}.

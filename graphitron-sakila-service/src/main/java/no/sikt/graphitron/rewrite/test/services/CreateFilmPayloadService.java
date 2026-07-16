@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.test.services;
 import java.util.List;
 
 /**
- * R1 Phase 2f fixture: root {@code @service} that produces three {@link CreateFilmPayload} rows
+ * Lifter fixture: root {@code @service} that produces three {@link CreateFilmPayload} rows
  * for {@code MutationPayloadLifterTest}. Two payloads share {@code languageId=1}; the third
  * has {@code languageId=2}. The execution test asserts that the framework's lifter-driven
  * DataLoader dispatches once with {@code Set} of two distinct keys (1 and 2), not three.

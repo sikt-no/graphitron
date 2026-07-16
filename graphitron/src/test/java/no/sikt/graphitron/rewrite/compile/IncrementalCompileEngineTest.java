@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 4 — unit coverage of the warm incremental compile engine over a synthetic source set:
+ * Unit coverage of the warm incremental compile engine over a synthetic source set:
  * a clean compile lands {@code .class} in the exclusive dir; a failing unit is collected as a
  * diagnostic, keeps its last-good {@code .class}, and makes the round report failure; the orphan
  * sweep drops class files no longer backing a live unit; and, the named risk, a stale symbol never

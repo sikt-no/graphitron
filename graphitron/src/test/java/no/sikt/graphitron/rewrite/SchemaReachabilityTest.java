@@ -13,11 +13,11 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R279 slice 1 / slice 6 — the reachability observatory. Asserts the durable safety invariant
- * <strong>reachable ⊆ classified</strong> (every type the walk reaches is classified, the property
- * every later slice preserves) and, since slice 6, the converse for output composites:
+ * The reachability observatory. Asserts the durable safety invariant
+ * <strong>reachable ⊆ classified</strong> (every type the walk reaches is classified, the invariant
+ * the pipeline preserves throughout) and the converse for output composites:
  * <strong>every classified output composite is reachable</strong> (the orphan prune, now an
- * invariant rather than the slice-1 observation).
+ * invariant rather than a mere observation).
  *
  * <p>The fixture is built so each descent edge and each seed is exercised in isolation:
  * <ul>
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code FilmMedia} is reachable only through the interface → implementor fan-out,</li>
  *   <li>{@code City} is reachable only through the {@code @node} seed scan (no field returns it),</li>
  *   <li>the synthesised {@code @asConnection} types are reachable through the rebuilt carrier field,</li>
- *   <li>{@code OrphanCat} is reached by nothing, so slice 6 prunes it: it is not classified.</li>
+ *   <li>{@code OrphanCat} is reached by nothing, so it is pruned: it is not classified.</li>
  * </ul>
  */
 @PipelineTier
@@ -84,7 +84,7 @@ class SchemaReachabilityTest {
         var bundle = TestSchemaHelper.buildBundle(SDL);
         var reachable = SchemaReachability.reachableTypeNames(bundle.assembled());
 
-        // R279 slice 6 — the orphan prune is now an invariant, not an observation: the field-first
+        // The orphan prune is now an invariant, not an observation: the field-first
         // walk is the sole classifier, so an output composite (object / interface / union) reached by
         // no field, union, interface, or seed is no longer classified. Restricted to output
         // composites because reachableTypeNames only reports those; input types / scalars / enums stay

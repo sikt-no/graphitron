@@ -10,15 +10,15 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R58 Phase D: end-to-end coverage for migrated producer sites that now emit
+ * End-to-end coverage for migrated producer sites that now emit
  * {@link Rejection.AuthorError.UnknownName} carrying a non-empty {@code candidates()} list,
  * not just rendered prose. Each test exercises one factory by building a representative SDL
  * fragment whose classifier path resolves through the migrated producer; the assertion is that
  * the rejection pattern-matches {@code UnknownName} with the expected {@code attemptKind} and a
- * populated candidate list. This pins the typed-shape contract that R18 (LSP fix-its) and other
+ * populated candidate list. This pins the typed-shape contract that the LSP fix-its and other
  * downstream consumers consume.
  *
- * <p>Out of scope: producer sites whose carrier widening is tracked under R66
+ * <p>Out of scope: producer sites whose carrier widening is not yet done
  * ({@code ArgumentRef.ScalarArg.UnboundArg.reason}, {@code ParsedPath.errorMessage},
  * {@code InputFieldResolution.Unresolved.reason}, {@code EnumValidation.Mismatch} message-list,
  * {@code keyColumnErrors} list); those still flatten to {@link Rejection.AuthorError.Structural}.

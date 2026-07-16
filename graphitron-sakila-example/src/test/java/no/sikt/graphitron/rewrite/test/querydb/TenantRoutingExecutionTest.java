@@ -24,15 +24,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R429 slice 4 execution-tier coverage of the tenant-keyed acquisition seam against real PostgreSQL:
+ * Execution-tier coverage of the tenant-keyed acquisition seam against real PostgreSQL:
  * the runtime's {@code Map<TenantId, DataSource>} construction and the {@code TenantConnections} carrier
  * route each divined key to its own {@code DataSource}, pinning one connection per distinct key.
  *
  * <p>Database-per-tenant is simulated with two schemas ({@code tenant_a}, {@code tenant_b}), each with a
  * {@code widget} table seeded disjointly, behind two {@code DataSource}s whose connections set
  * {@code search_path} to their schema. This proves routing "given a caller-known tenant" (test-supplied
- * keys, no R45 divination), which is the half of the isolation proof the R429/R45 split lands here; R45
- * proves the keys are divined correctly and reshapes these proofs onto inferred bindings.
+ * keys, no divination), which is the half of the isolation proof that lands here; proving the keys are
+ * divined correctly, and reshaping these proofs onto inferred bindings, is separate follow-up work.
  */
 @ExecutionTier
 class TenantRoutingExecutionTest {

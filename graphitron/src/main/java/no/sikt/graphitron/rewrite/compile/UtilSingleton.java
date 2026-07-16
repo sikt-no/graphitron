@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.compile;
 import java.util.List;
 
 /**
- * R410 slice 2 — classifies each fixed-name runtime singleton by how its bytecode behaves across a
+ * Classifies each fixed-name runtime singleton by how its bytecode behaves across a
  * schema edit, because that determines how a {@code <Type>Fetchers} node may depend on it in the
  * compile graph.
  *
@@ -12,10 +12,10 @@ import java.util.List;
  * ABI does not move on a schema edit</em> ({@link FrozenScaffold}). A singleton whose ABI grows with
  * the schema ({@link PerTypeGrowing}) must instead be reached by <em>precise</em> edges sourced from
  * the model leaves that actually use it, or a schema edit would drag every fetcher into the recompile
- * set (a clause-(b) pruning failure). Making the split a sealed variant with an exhaustive consumer
+ * set (a pruning failure). Making the split a sealed variant with an exhaustive consumer
  * switch forces a deliberate frozen-or-growing choice for any singleton added later, rather than
  * silently degrading pruning; the {@link #ALL} membership and each variant choice are pinned by the
- * clause-(b) recompile-set test (slice 5) and the {@link TypeSpecReferenceWalk} completeness oracle.
+ * recompile-set pruning test and the {@link TypeSpecReferenceWalk} completeness oracle.
  */
 sealed interface UtilSingleton {
 
@@ -28,7 +28,7 @@ sealed interface UtilSingleton {
     /**
      * A schema-independent runtime helper: the same bytecode is emitted for every schema, so its
      * public ABI never moves on a schema edit. A blanket edge into it from every fetcher is a
-     * pruning-harmless superset (slice-3 ABI-gating never fires on a node whose ABI is stable).
+     * pruning-harmless superset (ABI-gating never fires on a node whose ABI is stable).
      */
     record FrozenScaffold(String subPackage, String simpleName) implements UtilSingleton {}
 

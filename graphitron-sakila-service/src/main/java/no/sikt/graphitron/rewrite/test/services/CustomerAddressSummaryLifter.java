@@ -4,7 +4,7 @@ import org.jooq.Row1;
 import org.jooq.impl.DSL;
 
 /**
- * R110 Story 1 fixture: lifter helper for {@link CustomerAddressSummary} used by the
+ * Lifter helper for {@link CustomerAddressSummary} used by the
  * {@code @sourceRow + @reference} composition on
  * {@code CustomerAddressSummary.address}. Demonstrates the path-keyed shape: the lifter's
  * {@code Row1<Integer>} matches the first FK hop's source-side column

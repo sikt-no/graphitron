@@ -16,7 +16,7 @@ import no.sikt.graphitron.rewrite.model.WireCoercionError;
  * assignable to the declared type (a true raw pass-through), or produce a typed
  * {@link WireCoercionError.Assignability} rejection.
  *
- * <p>Before R261, every arg-classification site fell through to {@code CallSiteExtraction.Direct}
+ * <p>Previously, every arg-classification site fell through to {@code CallSiteExtraction.Direct}
  * and emitted a raw {@code (DeclaredType) wireValue} cast, never checking that graphql-java's
  * coercion for the SDL type actually yields {@code DeclaredType}. graphql-java delivers {@code ID}
  * and enum values as {@code String}, {@code Int} as {@code Integer}, {@code Float} as

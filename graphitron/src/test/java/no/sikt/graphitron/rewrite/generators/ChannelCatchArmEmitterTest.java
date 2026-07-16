@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R244 emitter unit-tier tests for {@link ChannelCatchArmEmitter} and
+ * Emitter unit-tier tests for {@link ChannelCatchArmEmitter} and
  * {@link ChannelEarlyReturnEmitter}. Renders {@code CodeBlock.toString()} once per arm to anchor
  * the structural intent (the redact-only arm, the {@code Mapped} mapping-walk that returns an
  * {@code Outcome.ErrorList}, the {@code LocalContext} sentinel arm, and the validator-pre-step

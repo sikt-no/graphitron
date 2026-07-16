@@ -50,7 +50,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * R281's query-as-view renderer (Spec §"Rendering: queries as views over the corpus"). Prose embeds a
+ * The query-as-view renderer (Spec §"Rendering: queries as views over the corpus"). Prose embeds a
  * GraphQL <em>query</em> (or a fragment {@code on Type}) naming the coordinates it wants to show; the
  * renderer resolves that selection against the assembled corpus schema and regenerates minimal SDL for
  * the touched closure. One mechanism does the three jobs the Spec asks for at once:

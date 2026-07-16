@@ -48,12 +48,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * passes {@code 127.0.0.1:8488} and tests bind an ephemeral port. The bundled prose is read once
  * at startup from jar resources under {@code /mcp/}; it is shape, not state.
  *
- * <p>R361 — the server holds the same live {@link Workspace} handle the LSP {@code DevServer}
+ * <p>The server holds the same live {@link Workspace} handle the LSP {@code DevServer}
  * holds: the one instance {@code DevMojo} builds and the schema / classpath / source watchers
  * mutate in place on every save and recompile. The {@code status} tool reads
  * {@link Workspace#snapshot()} off that shared reference, so each call observes the latest
  * build state without any new trigger or refresh path. This is the foundational seam every
- * structured-tool slice (R118 slices 2-7) builds on; slice 1 ships only the liveness read.
+ * structured-tool slice builds on; the liveness read is the first of them.
  *
  * <p>The MCP spec serves the Streamable HTTP transport over a single endpoint. The provider
  * matches an incoming request by {@code getRequestURI().equals("/mcp")}, so the servlet is
@@ -81,17 +81,17 @@ public final class GraphitronMcpServer implements AutoCloseable {
     private final ServerConnector connector;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    // R374 — the reverse-edge index is held as one lazily-built, snapshot-memoised cache (D-C): one
+    // The reverse-edge index is held as one lazily-built, snapshot-memoised cache: one
     // instance per server, constructed empty, populated on the first reverse / both traversal after
     // a build and rebuilt when the (snapshot, catalogFacts) reference pair is swapped.
     private final ReverseEdgeIndex.Cache reverseEdgeIndexCache = new ReverseEdgeIndex.Cache();
 
-    // R385 — the docs.search handler, holding the shared embedder warm and the docs-index warm. The
+    // The docs.search handler, holding the shared embedder warm and the docs-index warm. The
     // warms may be absent (the structured-tool tests / an IDE run off un-embedded classes); the tool
     // is then always advertised but reads as still-warming and degrades to the structured tools.
     private final DocsSearchTool docsSearchTool;
 
-    // R386 — the semantic catalog index behind catalog.search: self-observing the live catalogFacts
+    // The semantic catalog index behind catalog.search: self-observing the live catalogFacts
     // and persisting its Lucene index under the RagConfig cache dir, riding the *same* shared embedder
     // warm docs.search uses (the second consumer the slice-9 wiring stood the warm up for). Null when
     // the server is stood up without RAG (the structured-tool tests); catalog.search then degrades.
@@ -128,7 +128,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * caller that constructed and started them), mirroring how the live {@code Workspace} is threaded
      * in; the catalog index warm, by contrast, is owned by the {@link CatalogSearchIndex} this server
      * holds, so the server kicks it after bind. A RAG warm failure leaves the server structured-only
-     * and never blocks the bind, per the R118 cross-cutting principle.
+     * and never blocks the bind, per the cross-cutting degrade-gracefully principle.
      */
     public GraphitronMcpServer(
         InetSocketAddress address, Workspace workspace,
@@ -138,7 +138,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The full production form: the five-arg server plus the R428 {@code execute} tool
+     * The full production form: the five-arg server plus the {@code execute} tool
      * configuration. When {@code executeConfig} is {@code null} (no dev database configured), the
      * {@code execute} tool is not registered at all, the stronger form of the degrade-gracefully
      * posture: the RAG tools stay advertised and degrade, the execute tool is simply absent, and
@@ -163,11 +163,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .mcpEndpoint(MCP_ENDPOINT)
             .build();
 
-        // R368 — the bundled directive grammar projected once off the frozen vocabulary registry
+        // The bundled directive grammar projected once off the frozen vocabulary registry
         // (shape, not state). The directives resource unions this with the live snapshot's
         // user-declared directives on every read; the bundled half never changes, so it is computed
-        // here rather than per read. The projection carries applicable locations via the R368
-        // DirectiveShape widening.
+        // here rather than per read. The projection carries applicable locations via the
+        // {@link DirectiveShape} widening.
         List<DirectiveShape> bundledDirectives =
             CatalogBuilder.buildSnapshot(workspace.vocabulary().registry()).directives();
 
@@ -177,7 +177,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         // subscribe) capabilities; the seam never mutates the tool or resource list at runtime, so
         // they stay false even though the tools and resource read live state.
         // The tool list is fixed for the server's lifetime (listChanged stays false); the one
-        // conditional entry is the R428 execute tool, present exactly when a dev database is
+        // conditional entry is the execute tool, present exactly when a dev database is
         // configured.
         var tools = new java.util.ArrayList<>(List.of(
             statusTool(workspace),
@@ -226,7 +226,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             throw new IOException("graphitron:dev: failed to start MCP HTTP server", e);
         }
 
-        // R386 — kick the initial catalog-index build off the dev thread, so an agent's first search
+        // Kick the initial catalog-index build off the dev thread, so an agent's first search
         // usually lands a ready index. The shared embedder warm is already started by the caller; the
         // index warm only awaits it. The warm never touches the dev loop; a failure leaves search
         // degraded, not the server. The structured-only path has no index and so nothing to kick.
@@ -300,7 +300,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
     /**
      * The single liveness {@code status} tool: the smallest call that proves the live model read
      * works end-to-end. It takes no arguments and reads {@link Workspace#snapshot()} off the live
-     * handle on every call, so the answer reflects the latest build state (R361 D2).
+     * handle on every call, so the answer reflects the latest build state.
      *
      * <p>The snapshot is reported on its two orthogonal axes rather than a flattened tri-state:
      * {@code availability} ({@code Built} vs {@code Unavailable}) and {@code freshness}
@@ -362,7 +362,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
     private static final int DEFAULT_TABLES_LIMIT = 100;
 
     /**
-     * R362 — {@code catalog.tables}: lists the database tables the schema wires to, reading
+     * {@code catalog.tables}: lists the database tables the schema wires to, reading
      * {@link Workspace#catalogFacts()} off the live handle on every call so answers reflect the
      * latest build. Optional {@code schema} (exact, case-insensitive) and {@code name}
      * (case-insensitive substring on the SQL table name) filters; {@code limit} + opaque
@@ -426,7 +426,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * R362 — {@code catalog.describe}: one table's columns (SQL and Java names, SQL types,
+     * {@code catalog.describe}: one table's columns (SQL and Java names, SQL types,
      * nullability, comments when codegen captured them), primary / unique keys, indexes, and foreign
      * keys in both directions with their column pairs. Reads {@link Workspace#catalogFacts()} live.
      * {@code table} accepts a bare or schema-qualified SQL name; {@code schema} is the alternative to
@@ -542,7 +542,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         return m;
     }
 
-    // ---- R368: code tools (services / conditions / records) ----
+    // ---- code tools (services / conditions / records) ----
 
     /** Common {@code {name?, limit?, cursor?}} input schema shared by the three code tools. */
     private static Map<String, Object> nameLimitCursorSchema(String nameDescription) {
@@ -623,13 +623,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
     }
 
-    // ---- R368: schema tool ----
+    // ---- schema tool ----
 
     /**
      * {@code schema}: the current SDL types, their classifications, backing shapes, field
      * classifications, and definition locations off {@link Workspace#snapshot()}, joined with
      * {@code @node} metadata off {@link Workspace#catalog()} (same build cadence). Both reads are
-     * live on every call; the snapshot + catalog join is same-cadence (R361 D3).
+     * live on every call; the snapshot + catalog join is same-cadence.
      */
     private static McpServerFeatures.SyncToolSpecification schemaTool(Workspace workspace) {
         var tool = McpSchema.Tool.builder("schema", Map.of(
@@ -655,7 +655,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
     }
 
-    // ---- R368: diagnostics tool ----
+    // ---- diagnostics tool ----
 
     /**
      * {@code diagnostics}: the current validation errors and warnings off
@@ -692,11 +692,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
     }
 
-    // ---- R374: edges tool (cross-reference traversal) ----
+    // ---- edges tool (cross-reference traversal) ----
 
     /**
      * {@code edges}: takes one node selector + a direction and returns that node's typed neighbours.
-     * The traversal layer over the frozen R362 / R368 structured tools (D-A): forward edges computed
+     * The traversal layer over the frozen structured tools: forward edges computed
      * per call off the live projections, and the reverse (impact-analysis) direction served by the
      * lazily-built {@link #reverseEdgeIndexCache}. Reads {@link Workspace#snapshot()},
      * {@link Workspace#catalogFacts()}, and {@link Workspace#catalog()} external references live on
@@ -739,13 +739,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
     }
 
-    // ---- R386: catalog.search (semantic catalog discovery) ----
+    // ---- catalog.search (semantic catalog discovery) ----
 
     /** Default {@code catalog.search} top-k: semantic discovery is "find the table I can't name", not enumeration. */
     private static final int DEFAULT_SEARCH_LIMIT = 10;
 
     /**
-     * R386 — {@code catalog.search}: fuzzy, semantic discovery over the database catalog by names and
+     * {@code catalog.search}: fuzzy, semantic discovery over the database catalog by names and
      * comments. The semantic counterpart to {@code catalog.tables} / {@code catalog.describe}: those
      * answer "describe the table I named", this answers "find the table I can only describe". Drives
      * the self-observing {@link #catalogSearchIndex}, which reads the live {@code catalogFacts} and
@@ -837,7 +837,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .build();
     }
 
-    // ---- R368: directives resource ----
+    // ---- directives resource ----
 
     /**
      * The {@code directives} resource: the directive-vocabulary cheat-sheet, composed from the

@@ -13,8 +13,8 @@ import java.util.Properties;
 import java.util.ServiceLoader;
 
 /**
- * The host half of the R428 in-process query execution: opens the dev database connection, loads
- * the generated {@code GraphitronDevExecutor} from the R410-compiled classes, reflects its one
+ * The host half of the in-process query execution: opens the dev database connection, loads
+ * the generated {@code GraphitronDevExecutor} from the dev-loop-compiled classes, reflects its one
  * JDK-typed {@code execute} entry point, and hands back the JSON result string.
  *
  * <p>The reflection boundary is JDK types only ({@code java.sql.Connection}, {@code String},
@@ -31,7 +31,7 @@ import java.util.ServiceLoader;
  * latencies absorb the reload cost.
  *
  * <p>Transactions, session hooks, and rollback all run <em>inside</em> the generated executor via
- * the R429 machinery ({@code ROLLBACK_ONLY} commit policy). The host adds one defense-in-depth
+ * the generated runtime machinery ({@code ROLLBACK_ONLY} commit policy). The host adds one defense-in-depth
  * measure on the way out: if the connection comes back with an open transaction (an executor bug
  * or a mid-operation crash), it is rolled back before close rather than left to the driver's
  * close-time default.
@@ -44,7 +44,7 @@ public final class DevQueryExecutor {
 
     /**
      * Everything the host needs to locate and drive the generated executor: the consumer's
-     * {@code outputPackage} (the executor's package), the R410 class output dir, and the
+     * {@code outputPackage} (the executor's package), the dev-loop class output dir, and the
      * consumer's compile classpath. All plain values, supplied by the dev Mojo.
      */
     public record Wiring(String outputPackage, Path classesDir, List<Path> classpath) {
@@ -208,8 +208,8 @@ public final class DevQueryExecutor {
     }
 
     /**
-     * Defense-in-depth on the way out: everything should have settled inside the executor (R429
-     * demarcates and {@code ROLLBACK_ONLY} rolls back), but if a crash left a transaction open,
+     * Defense-in-depth on the way out: everything should have settled inside the executor (the
+     * generated runtime demarcates and {@code ROLLBACK_ONLY} rolls back), but if a crash left a transaction open,
      * roll it back explicitly rather than trusting the driver's close-time default.
      */
     private static void rollbackLeftovers(Connection connection) {

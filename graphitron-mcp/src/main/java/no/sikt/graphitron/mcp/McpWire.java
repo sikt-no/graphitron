@@ -13,10 +13,10 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Shared MCP wire helpers for the structured read-tools (R362 catalog tools, R368 code /
- * schema / diagnostics tools). One home for the conventions the slices agree on so they
+ * Shared MCP wire helpers for the structured read-tools (catalog tools, code / schema /
+ * diagnostics tools). One home for the conventions the slices agree on so they
  * cannot drift: argument coercion, the opaque page-cursor convention, the stable-ID grammar
- * slice 7 will walk, the source-location wire shape, and the typed source-location join the
+ * the edges tool walks, the source-location wire shape, and the typed source-location join the
  * code tools layer over the LSP source index.
  *
  * <p>Package-private: these are wire-mapping mechanics internal to the MCP module, not part of
@@ -88,9 +88,9 @@ final class McpWire {
         return new Page<>(items, to < all.size() ? Optional.of(encodeCursor(to)) : Optional.empty());
     }
 
-    // ---- stable cross-tool node IDs (R118 binding principle) ----
+    // ---- stable cross-tool node IDs (binding principle) ----
     //
-    // The slice-7 (R374) edge model walks these IDs, so the grammar is settled here, in one
+    // The edges tool walks these IDs, so the grammar is settled here, in one
     // place, so a later slice does not invent a fourth convention. Three separators are in use,
     // each over identifiers that cannot themselves contain the separator (so every form
     // round-trips by splitting):
@@ -98,7 +98,7 @@ final class McpWire {
     //   - {@code #} + {@code /} compose a method ref ({@code fqcn#method/arity}; the /arity suffix
     //     disambiguates overloads).
     //   - {@code :} binds a column to its (already-qualified) table ({@code schema.table:column}).
-    // The structured owner of these forms is the R374 {@code NodeRef} hierarchy, which composes
+    // The structured owner of these forms is the {@link NodeRef} hierarchy, which composes
     // each from its resolved parts; these helpers are the shared composers so the bare-string form
     // is produced in exactly one place.
 
@@ -194,7 +194,7 @@ final class McpWire {
 
     /**
      * Writes the live snapshot's two orthogonal axes onto a result so a reader can tell whether
-     * the projection it just read is current relative to the schema (R361 D3 / the benign
+     * the projection it just read is current relative to the schema (the benign
      * same-cadence story). Keyed {@code snapshotAvailability} / {@code snapshotFreshness} so the
      * axes never collide with a tool's own payload fields. Exhaustive over the
      * {@link LspSchemaSnapshot} sealed permits; a new arm forces a choice here.

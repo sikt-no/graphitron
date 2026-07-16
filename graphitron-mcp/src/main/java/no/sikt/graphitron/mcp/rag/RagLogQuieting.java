@@ -6,9 +6,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Best-effort quieting of the console noise the RAG warms emit when {@code graphitron:dev} starts
- * (R409). The heavy RAG dependency set (langchain4j ONNX + Lucene) is dependency-quarantined in this
- * module (R341 / R372) precisely so the plugin's compile surface never learns the logger names below;
+ * Best-effort quieting of the console noise the RAG warms emit when {@code graphitron:dev} starts.
+ * The heavy RAG dependency set (langchain4j ONNX + Lucene) is dependency-quarantined in this
+ * module precisely so the plugin's compile surface never learns the logger names below;
  * keeping the suppression here rather than in {@code DevMojo} is the same
  * separation-of-business-logic-from-API axis the {@code graphitron-lsp} / {@code graphitron-mcp}
  * split serves ({@link BgeEmbedder} names the seam). The two warmed loggers are facts about the RAG

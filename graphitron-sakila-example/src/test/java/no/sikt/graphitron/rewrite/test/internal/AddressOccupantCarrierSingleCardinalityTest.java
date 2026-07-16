@@ -15,13 +15,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R367 execution-tier coverage for the single-cardinality multi-table polymorphic child fetcher on
+ * Execution-tier coverage for the single-cardinality multi-table polymorphic child fetcher on
  * a record-backed (Pojo) parent. {@code Query.addressOccupantCarrier} returns a plain Java record
  * (a {@code PojoResultType}) holding an {@code AddressRecord} hub; its single-cardinality
  * {@code firstOccupant: AddressOccupant} child resolves the first {@code Customer|Staff} whose
  * {@code address_id} matches the hub.
  *
- * <p>This exercises the R367 record-backed-parent arm of
+ * <p>This exercises the record-backed-parent arm of
  * {@code MultiTablePolymorphicEmitter.buildScalarPerParentFetcher}: the fetcher binds
  * {@code parentRecord} to the carrier's {@code address()} accessor return (the hub
  * {@code AddressRecord}) rather than casting {@code env.getSource()} to a jOOQ {@code Record} (which

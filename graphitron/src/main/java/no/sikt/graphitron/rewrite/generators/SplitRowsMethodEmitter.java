@@ -603,7 +603,7 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForBatchedTable(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlBatchedTable::new;
-        // Declaration name resolved through the command-mint seam (R314): the Record-sourced arm
+        // Declaration name resolved through the command-mint seam: the Record-sourced arm
         // commits a reentry MethodCommand, the Table-sourced arm passes through uncommitted.
         String rowsName = ctx.rowsDeclarationName(btf);
         if (btf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
@@ -1412,7 +1412,7 @@ public final class SplitRowsMethodEmitter {
         }
 
         return RowsMethodSkeleton.build(
-            // Declaration name through the command-mint seam (R314): the child service-table
+            // Declaration name through the command-mint seam: the child service-table
             // lift is always reentry, so this commits the load<X> MethodCommand.
             ctx.rowsDeclarationName(stf),
             methodReturn,

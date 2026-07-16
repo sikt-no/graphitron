@@ -8,10 +8,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The bge-backed {@link Embedder} (R372 D1): English-only {@code bge-small-en-v1.5-q} (384-dim,
+ * The bge-backed {@link Embedder}: English-only {@code bge-small-en-v1.5-q} (384-dim,
  * MIT), wrapping langchain4j's in-process ONNX embedding model. The ONNX model is bundled in the
  * langchain4j jar, so construction loads it from the classpath with no network fetch; that load is
- * heavy, so the async-warm loader instantiates this off the dev thread (R372 D3).
+ * heavy, so the async-warm loader instantiates this off the dev thread.
  *
  * <p>This adapter owns the one piece of bge-specific business logic: the query-instruction prefix,
  * applied in {@link #embedQuery} and nowhere else. Keeping it here rather than at every call site

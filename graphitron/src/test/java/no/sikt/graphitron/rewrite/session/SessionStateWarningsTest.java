@@ -12,7 +12,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier coverage of the two R429 codegen-config advisories about the owned-connection runtime's
+ * Unit-tier coverage of the two codegen-config advisories about the owned-connection runtime's
  * identity posture. The decision is a pure function of the resolved {@link SessionStateConfig} and
  * whether the schema uses {@code @service}, so it is asserted directly here rather than through a
  * pipeline run; {@code GraphQLRewriteGenerator.withLintFindings} only supplies the two inputs.

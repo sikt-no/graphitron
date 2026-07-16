@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 
 /**
- * L6 execution-tier tests for R190's schema-driven {@code Graphitron.newExecutionInput} factory.
+ * L6 execution-tier tests for the schema-driven {@code Graphitron.newExecutionInput} factory.
  * Two complementary cases:
  *
  * <ul>

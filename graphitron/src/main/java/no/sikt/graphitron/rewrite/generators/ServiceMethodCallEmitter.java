@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * R238 emitter: turns a {@link ServiceMethodCall} carrier into the ordered statement list for
+ * Emitter that turns a {@link ServiceMethodCall} carrier into the ordered statement list for
  * a service fetcher's lambda body. The caller (today's
  * {@link TypeFetcherGenerator#buildServiceFetcherCommon(TypeFetcherEmissionContext, String,
  * no.sikt.graphitron.rewrite.model.MethodRef, String, TypeName,
@@ -76,7 +76,7 @@ public final class ServiceMethodCallEmitter {
      * instead of the carrier's reflected return type. Used by the root-fetcher emitter, which
      * sometimes declares the local with the GraphQL-side classification (e.g. a table record
      * class) rather than the dev method's reflected return; the actual method return value is
-     * shape-compatible by classifier-time validation. {@code jooqRecordHelperNames} is the R437
+     * shape-compatible by classifier-time validation. {@code jooqRecordHelperNames} is the
      * shape-aware {@code create<Record>} resolver for the enclosing class.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType,
@@ -157,7 +157,7 @@ public final class ServiceMethodCallEmitter {
      * {@link ValueShape.JavaBeanInput}, {@link ValueShape.ListOf}) delegate to the
      * {@code create<Bean>} / {@code create<Bean>List} helpers emitted on the enclosing
      * {@code *Fetchers} class by {@link InputBeanInstantiationEmitter}. The helper names follow
-     * the R150 convention; the helper queue in {@link TypeFetcherGenerator} is driven from the
+     * the {@code createBean}/{@code createBeanList} convention; the helper queue in {@link TypeFetcherGenerator} is driven from the
      * call sites that produce {@link CallSiteExtraction.InputBean} arms (today the four service
      * permits implement both {@code ServiceField} and {@code MethodBackedField} during the
      * additive cutover, so the queue still sees them via the legacy {@code method().callParams()}
@@ -177,7 +177,7 @@ public final class ServiceMethodCallEmitter {
  * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param. A
      * {@link ValueShape.JooqRecordInput} carries its own {@code sdlPath}, so it reads the arg name
      * directly rather than recovering it from a {@code fields} list (the reason it does not reuse
-     * {@link #compositeHelperCall}). R437 resolves the helper name through the class-level
+     * {@link #compositeHelperCall}). The helper name resolves through the class-level
      * {@link JooqRecordHelperNames} by this carrier's binding shape, so the root coordinate routes to the
      * same helper the drain emitted for its shape (and distinctly from a sibling field binding the same
      * record through a different shape).
@@ -242,8 +242,8 @@ public final class ServiceMethodCallEmitter {
      * find the innermost element type, then applies the leaf transform's cast against either
      * the stripped element type (non-list leaf) or its single-{@code List<>} re-wrap (list-typed
      * leaf). Mirrors {@code ArgCallEmitter#buildListAwarePathExtraction}; the older site stays
-     * live for non-R238 callsites (condition, tableMethod, externalField) until those slices
-     * migrate.
+     * live for the callsites not yet on the {@link ServiceMethodCall} carrier (condition,
+     * tableMethod, externalField) until those slices migrate.
      */
     private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path) {
         int liftCount = 0;
@@ -338,7 +338,7 @@ public final class ServiceMethodCallEmitter {
             case ValueShape.JooqRecordInput jr ->
                 // List<Record> param — the plural create<Record>List helper maps the singular
                 // create<Record> over each element; the wire value for a [Input!] arg is a
-                // List<Map<String, Object>>. R437 resolves the plural name by the element carrier's shape.
+                // List<Map<String, Object>>. The plural name resolves by the element carrier's shape.
                 CodeBlock.of("$L(env.getArgument($S))",
                     jooqRecordHelperNames.pluralName(jr.carrier()), outerArg);
             case ValueShape.Scalar ignored ->

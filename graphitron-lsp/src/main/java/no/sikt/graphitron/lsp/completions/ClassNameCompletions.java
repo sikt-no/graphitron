@@ -19,10 +19,10 @@ import java.util.List;
  *
  * <p>Coordinate-driven dispatch: every coordinate the canonical overlay
  * binds as a class-name slot fires this provider, including the flat
- * {@code @sourceRow(className:)} that the R110 rescope left silent
+ * {@code @sourceRow(className:)} that was left silent
  * under the previous hand-coded directive registry.
  *
- * <p>R307 carve-out: {@code @record} is deprecated and ignored, so its
+ * <p>Carve-out: {@code @record} is deprecated and ignored, so its
  * {@code className} slot binds no Java class. Its
  * {@code ExternalCodeReference.className} coordinate is identical to
  * {@code @enum}'s, so the carve-out cannot key on the coordinate; it reads the

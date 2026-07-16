@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * a {@code sourceSide()} column on the hop's source table and a {@code targetSide()} column on
  * the hop's target table, paired by FK constraint at index {@code i}. Synthesis-time orientation
  * (in {@code BuildContext.synthesizeFkJoin}) bakes the FK-direction decision into each slot pair
- * so emitter code reads direction-blind. (R431: the {@code LifterSlot} permit folded both sides
+ * so emitter code reads direction-blind. (The {@code LifterSlot} permit folded both sides
  * onto a single column by construction; it moved with {@code LiftedHop} onto {@code ParentCorrelation.OnLiftedSlots}.)
  *
  * <p>The regression class this guards: a composite-PK parent with FK columns declared in a

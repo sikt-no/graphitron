@@ -4,8 +4,8 @@ import java.util.List;
 
 /**
  * Capability interface for the two root routine-chain leaves —
- * {@code QueryField.QueryRoutineTableField} (the R435 read) and
- * {@code MutationField.MutationRoutineWriteField} (the R451 write) — exposing the shared
+ * {@code QueryField.QueryRoutineTableField} (the read) and
+ * {@code MutationField.MutationRoutineWriteField} (the write) — exposing the shared
  * {@link RoutineChain} carrier so the emission surface ({@code RoutineCallEmitter} /
  * {@code JoinPathEmitter} call sites in {@code TypeFetcherGenerator}) reads the chain off one
  * accessor spanning both roots rather than either concrete leaf.

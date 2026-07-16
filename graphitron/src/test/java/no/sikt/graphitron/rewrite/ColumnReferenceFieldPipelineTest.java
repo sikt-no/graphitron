@@ -16,7 +16,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField} emission with
- * {@code CallSiteCompaction.Direct} (R42 lift).
+ * {@code CallSiteCompaction.Direct}.
  *
  * <p>Asserts the structural contract: no per-field fetcher method on {@code *Fetchers}, the
  * {@code $fields} switch routes the field, and the {@code DataFetcher} value wires through

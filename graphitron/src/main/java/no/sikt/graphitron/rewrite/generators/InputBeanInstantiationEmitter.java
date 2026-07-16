@@ -23,7 +23,7 @@ import java.util.Map;
  * singular helper unconditionally — it is cheap, and the call-site emitter chooses between them
  * based on the param's Java list-shape.
  *
- * <p>Helper signatures (R150 spec):
+ * <p>Helper signatures:
  * <pre>
  *   private static Bean createBean(Map&lt;String, Object&gt; raw);
  *   private static List&lt;Bean&gt; createBeanList(Object raw);

@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Build-time generator for the pre-embedded docs bundle (R385). Bound to {@code process-classes} via
+ * Build-time generator for the pre-embedded docs bundle. Bound to {@code process-classes} via
  * {@code exec-maven-plugin} so it runs against the freshly compiled {@link BgeEmbedder} and
  * {@link AdocChunker}, after this module's own classes compile and before {@code package}, writing the
  * bundle under {@code target/classes} so it is packaged into the jar.

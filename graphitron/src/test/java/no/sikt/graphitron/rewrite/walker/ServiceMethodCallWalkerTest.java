@@ -21,13 +21,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R238 walker unit-tier tests. Exercises the {@link ServiceMethodCallWalker#walk} translator
+ * Walker unit-tier tests. Exercises the {@link ServiceMethodCallWalker#walk} translator
  * over each {@link MappingEntry} arm and the static-vs-instance {@link ServiceMethodCall} fork,
  * plus the cross-round {@code MultipleDslContextSlots} invariant.
  *
  * <p>The translator's substrate today is a resolved {@link MethodRef.Service}; the tests
  * build that input directly rather than going through the SDL+classloader path. When the
- * walker absorbs fresh reflection (follow-up to R238), these cases re-anchor on the SDL fixture.
+ * walker later absorbs fresh reflection, these cases re-anchor on the SDL fixture.
  */
 @UnitTier
 class ServiceMethodCallWalkerTest {

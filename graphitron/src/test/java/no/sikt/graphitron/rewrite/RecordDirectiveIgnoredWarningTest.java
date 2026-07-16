@@ -12,13 +12,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>{@code @record} is a deprecated, legal-but-ignored directive: it drives no binding (reflection
  * does), and a reachable type still carrying it earns a build warning telling the author to remove
- * it. R307 folds that warning into the classification pass (see
+ * it. That warning is folded into the classification pass (see
  * {@code TypeBuilder.emitDirectiveIgnoredWarning}); this test pins the three message variants, the
  * multi-producer-rejection suppression, and the reachability gate directly at the classifier, so
  * the signal no longer needs a compilation/execution fixture to verify.
  *
  * <p>These are the only applied {@code @record} occurrences left in the generator test tree
- * (binding-hint decoration elsewhere drops the inert directive; see R307). The {@code @record}
+ * (binding-hint decoration elsewhere drops the inert directive). The {@code @record}
  * declaration and {@code readRecordClassName} stay, so the schemas keep parsing.
  */
 @PipelineTier
@@ -85,7 +85,7 @@ class RecordDirectiveIgnoredWarningTest {
         // @record is ignored, so the type classifies table-backed rather than demoting to
         // UnclassifiedType. (The reachable-input variant, which also fires the shadowed warning, is
         // above; this object carrier pins only the no-conflict classification. Reached via Query.c so
-        // the R279 field-first walk classifies it; an unreachable type is pruned, not classified.)
+        // the field-first walk classifies it; an unreachable type is pruned, not classified.)
         var schema = TestSchemaHelper.buildSchema("""
             type Query { c: Conflicted }
             type Conflicted @table(name: "film") @record(record: {className: "no.sikt.graphitron.rewrite.TestDtoStub"}) {

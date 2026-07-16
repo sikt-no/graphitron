@@ -1,7 +1,7 @@
 package no.sikt.graphitron.mcp;
 
 /**
- * R374 (D-D) — the sealed node-ID model the {@code edges} tool walks. One permit per stable-ID
+ * The sealed node-ID model the {@code edges} tool walks. One permit per stable-ID
  * grammar the structured tools already emit and accept: a schema coordinate ({@code Type} /
  * {@code Type.field}), a schema-qualified table ID ({@code schema.table}), a column-of-table ID
  * ({@code schema.table:column}), a method ref ({@code fqcn#method/arity}), and a class FQN

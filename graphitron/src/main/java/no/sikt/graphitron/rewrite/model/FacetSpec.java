@@ -10,9 +10,7 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>The list of these rides {@link GraphitronType.ConnectionType#facets()} as a contained
  * denormalized view: the {@code @asFacet} fact is authored at the filter input type's member
- * coordinate, and this record is its use-site resolution against the carrier's table (R13; see the
- * roadmap item's <em>Contained approach</em> section for the R333 framing and the R314
- * re-sourcing path).
+ * coordinate, and this record is its use-site resolution against the carrier's table.
  *
  * <p>{@code valueNullable} mirrors the annotated filter field's list-element nullability. It
  * drives both the {@code *FacetValue} type name (via

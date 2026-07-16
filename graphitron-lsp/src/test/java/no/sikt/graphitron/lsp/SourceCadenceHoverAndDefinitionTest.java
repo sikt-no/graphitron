@@ -20,7 +20,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage of the R349/R352 decoupling through the real pieces: a
+ * End-to-end coverage of the source-cadence decoupling through the real pieces: a
  * real {@link Workspace} owns and walks real {@code .java} files with the real
  * {@code SourceWalker} ({@link Workspace#refreshSourceIndex}), and the real
  * {@link Hovers} and {@link Definitions} entry points resolve against the

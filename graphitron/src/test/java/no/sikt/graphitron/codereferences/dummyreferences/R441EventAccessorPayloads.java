@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.record
 import java.util.List;
 
 /**
- * R441 pipeline-tier fixtures for the typed-accessor / schema-qualified {@code @table} match.
+ * Pipeline-tier fixtures for the typed-accessor / schema-qualified {@code @table} match.
  * Each type is a free-form DTO payload parent exposing a single typed accessor returning a jOOQ
  * {@code EventRecord} from one of the two colliding {@code event} tables in the multischema
  * fixture ({@code multischema_a.event} / {@code multischema_b.event}, both with the bare SQL name
@@ -15,9 +15,9 @@ import java.util.List;
  * resolves each accessor's element table by record-class identity, so the surviving
  * {@code TableRef} carries jOOQ's <em>unqualified</em> canonical name {@code "event"}. The payload
  * element type's {@code @table} must be spelled schema-qualified ({@code "multischema_a.event"})
- * because the bare {@code "event"} is ambiguous across the two schemas. Before R441 the match
- * compared the qualified echo against the bare canonical name and dropped the accessor; R441 routes
- * the compare through the reified {@code tableClass} identity so it matches (schema A) or is
+ * because the bare {@code "event"} is ambiguous across the two schemas. Previously the match
+ * compared the qualified echo against the bare canonical name and dropped the accessor; the compare
+ * now routes through the reified {@code tableClass} identity so it matches (schema A) or is
  * correctly rejected (schema B).
  *
  * <p>Co-located with the other dummy references so a test SDL can bind a payload type to one of

@@ -13,9 +13,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R13 Phase 4: structural coverage for the facet emitters, at the method-surface level only
+ * Structural coverage for the facet emitters, at the method-surface level only
  * (per testing.adoc's ban on code-string assertions against generated method bodies, applied to
- * this class in the R13 review's finding 4). What each fragment and the fetcher's facet plan
+ * this class in the review's finding 4). What each fragment and the fetcher's facet plan
  * actually *do* is pinned behaviourally elsewhere: the sakila example's faceted fixture covers
  * the emitted shapes at the compilation tier (including the lifted-local base-fragment shape and
  * the cross-arg name collision), and {@code GraphQLQueryTest}'s {@code filmsFaceted} cases pin

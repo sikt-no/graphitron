@@ -7,7 +7,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier (R385): {@link AdocChunker} produces heading-aware chunks from raw {@code .adoc} syntax.
+ * Unit-tier: {@link AdocChunker} produces heading-aware chunks from raw {@code .adoc} syntax.
  * Pins the section-boundary breadcrumbs, the {@code // rag:split} override, that a near-miss comment
  * does not masquerade as a split, and that {@code ==}-prefixed lines inside a fenced block are body,
  * not headings.

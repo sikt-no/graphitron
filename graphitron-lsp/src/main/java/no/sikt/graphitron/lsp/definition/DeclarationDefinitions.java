@@ -34,7 +34,7 @@ import java.util.Optional;
  * both switch over the same target, and a new backing permit breaks both
  * switches at compile time. The catalog / class / column / field arms route
  * through the sealed {@link DefinitionTarget} and {@link Definitions#resolve},
- * the single empty-resolution contract R349 settled on: {@code Located} jumps,
+ * the single empty-resolution contract: {@code Located} jumps,
  * {@code SourceAbsent} stays put. The method arm shares
  * {@link Definitions#methodLocation} with the hover overlay, so its
  * arity-then-name resolution cannot drift from hover's.
@@ -58,7 +58,7 @@ public final class DeclarationDefinitions {
      * Projects the shared {@link DeclTarget} to the editor jump for its declaration.
      * Public so {@code DeclarationHoverOverlayParityTest} can assert, per variant,
      * that this jump is present exactly when the declaration-name hover overlay is
-     * (the R371 parity property), without a tree-sitter round-trip.
+     * (the parity property), without a tree-sitter round-trip.
      */
     public static Optional<Location> locate(DeclTarget target, SourceWalker.Index sourceIndex) {
         return switch (target) {

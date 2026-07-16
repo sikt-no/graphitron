@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 3 — unit coverage of the recompile-set algorithm over hand-built graphs, plus the
+ * Unit coverage of the recompile-set algorithm over hand-built graphs, plus the
  * end-to-end tie between {@link AbiSignature} and {@link RecompileSet}. Covers the spec's three
  * required cases: a body-only edit does not propagate, an ABI edit propagates one hop and
  * transitively, and a {@code static final} constant-value edit propagates (its hash moves, so it is

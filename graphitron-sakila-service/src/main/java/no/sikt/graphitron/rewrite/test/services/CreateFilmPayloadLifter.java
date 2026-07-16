@@ -4,7 +4,7 @@ import org.jooq.Row1;
 import org.jooq.impl.DSL;
 
 /**
- * R110 fixture: lifter helper for {@link CreateFilmPayload} used by the {@code @sourceRow}
+ * Fixture: lifter helper for {@link CreateFilmPayload} used by the {@code @sourceRow}
  * directive on {@code CreateFilmPayload.language}. Demonstrates the leaf-PK shape (no
  * {@code @reference}): the lifter's {@code Row1<Integer>} matches the leaf table
  * {@code language}'s primary key directly, so the resolver derives the parent-side tuple

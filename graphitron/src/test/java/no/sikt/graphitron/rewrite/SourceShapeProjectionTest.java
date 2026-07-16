@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Source-shape mirror. {@link ChildField#sourceShape()} is a leaf-exhaustive switch the
  * model documents as "a projection of the parent's backing": a {@code @table}-backed (catalog)
  * parent puts a table row at {@code env.getSource()}; a {@code @service} / DML payload or DTO parent
- * hands back a domain record. Since R305 makes
- * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} consume source-shape (the
+ * hands back a domain record. Since
+ * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} consumes source-shape (the
  * {@code holds-records} half), a leaf wired with the wrong {@code sourceShape} arm would silently
  * flip a re-fetch verdict with no failing test.
  *
@@ -34,11 +34,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <pre>{@code c.sourceShape() == Table  iff  schema.type(c.parentTypeName()) is a TableBackedType
  *                          == Record otherwise}</pre>
  *
- * is asserted for <em>every</em> classified {@link ChildField} the R281 spec-by-example corpus
+ * is asserted for <em>every</em> classified {@link ChildField} the spec-by-example corpus
  * demonstrates ({@link ClassifiedCorpus}), so the leaf-identity switch is cross-checked against the
  * independently-classified parent backing rather than against itself. This is the source-shape
  * analogue of the validator's retired {@code dispatchPerformsReFetch} mirror (replaced by the
- * reentry implementedness guard when R314 slice 5 made the reentry emit route on the model facts
+ * reentry implementedness guard once the reentry emit was reshaped to route on the model facts
  * directly); unlike that mirror, the parent-backing walk here is a genuinely independent
  * derivation, so this cross-check keeps earning its keep.
  *
@@ -51,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SourceShapeProjectionTest {
 
     /**
-     * Concrete {@link ChildField} leaves the R281 corpus does not reach, each with the reason. Kept
+     * Concrete {@link ChildField} leaves the corpus does not reach, each with the reason. Kept
      * deliberately small: the goal is for the corpus to demonstrate every schema-reachable leaf.
      */
     private static final Map<Class<?>, String> NOT_CORPUS_COVERED = Map.ofEntries(
@@ -153,7 +153,7 @@ class SourceShapeProjectionTest {
             }
             """);
         // FilmPayload is record-backed: the @service producer hands back a FilmRecord, so the carrier
-        // data field (the R305 collapse target) re-projects off a produced record: SourceShape.Record.
+        // data field re-projects off a produced record: SourceShape.Record.
         var film = (ChildField) schema.field("FilmPayload", "film");
         assertThat(film.sourceShape()).isEqualTo(SourceShape.Record);
         assertThat(film.sourceShape()).isEqualTo(projectedFromParentBacking(schema, film));

@@ -146,7 +146,7 @@ public final class JavaFile {
      * The outcome of a single idempotent write: the {@link Path} the source belongs at, and whether
      * this run actually {@code changed} the on-disk content (a fresh write or a content mismatch) as
      * opposed to skipping an already-identical file. The {@code changed} flag is the per-file delta
-     * signal downstream consumers (the incremental compile engine, R410) coarsen into the recompile set.
+     * signal the incremental compile engine coarsens into the recompile set.
      */
     public record WriteResult(Path path, boolean changed) {}
 

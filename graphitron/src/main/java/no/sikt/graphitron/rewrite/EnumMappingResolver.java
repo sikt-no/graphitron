@@ -48,7 +48,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
  *       scalar column field, deriving each binding's extraction via {@link #deriveExtraction}.</li>
  * </ul>
  *
- * <p>R229 retired {@code enrichArgExtractions} along with the
+ * <p>{@code enrichArgExtractions} was retired along with the
  * {@code CallSiteExtraction.TextMapLookup} permit it produced: graphql-java's
  * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)} runtime
  * form, so the wire-form → runtime-form translation happens at graphql-java's boundary and the
@@ -80,7 +80,7 @@ final class EnumMappingResolver {
 
     /**
      * Column-agnostic result of {@link #checkEnumConstants}: does every value of a GraphQL enum
-     * type map to a constant on a given Java enum class? This is the single parity home (R261, D3):
+     * type map to a constant on a given Java enum class? This is the single parity home:
      * {@link #validateEnumFilter} (the column path) delegates its value-name comparison here, and
      * the {@code @service} enum producers (site E, in {@code InputBeanResolver} / {@code ServiceCatalog})
      * call it directly, so the SDL-value vs Java-constant diff is not re-implemented at each producer.
@@ -123,7 +123,7 @@ final class EnumMappingResolver {
      * or {@link EnumConstantParity.Divergence} carrying the per-value diff. The comparison is on the
      * pre-resolved {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} (the same
      * form {@code EnumClass.valueOf(...)} receives at runtime), identical to what
-     * {@link #validateEnumFilter} did inline before R261 lifted it here.
+     * {@link #validateEnumFilter} did inline before it was lifted here.
      */
     EnumConstantParity checkEnumConstants(String graphqlTypeName, Class<?> javaEnumClass) {
         var modelType = ctx.types == null ? null : ctx.types.get(graphqlTypeName);
@@ -213,7 +213,7 @@ final class EnumMappingResolver {
      * {@link EnumValidation.NotEnum} arm) so the {@code JooqConvert} / {@code Direct} fallbacks
      * can take over.
      *
-     * <p>R229 retired the text-mapped-enum branch. Graphql-java's
+     * <p>The text-mapped-enum branch was retired. Graphql-java's
      * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)}
      * runtime form (see {@link no.sikt.graphitron.rewrite.model.EnumValueSpec}), so a text-mapped
      * enum input arrives at the resolver already in its DB-string form and routes through
@@ -231,15 +231,15 @@ final class EnumMappingResolver {
 
     /**
      * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBindingGroup} per admissible input field. R144 retired {@code @lookupKey}
-     * on {@code INPUT_FIELD_DEFINITION}; the directive no longer gates this walk. After R246 / R258
-     * / R266 routed UPDATE and DELETE through their walker carriers, the only callers are:
+     * {@link InputColumnBindingGroup} per admissible input field. {@code @lookupKey} on
+     * {@code INPUT_FIELD_DEFINITION} was retired; the directive no longer gates this walk. After
+     * UPDATE and DELETE were routed through their walker carriers, the only callers are:
      *
      * <ul>
      *   <li>Mutation-side: INSERT (via {@code MutationInputResolver.resolveInput}, which then
      *       discards the bindings — INSERT walks {@code fields()} directly for VALUES emit). UPDATE
-     *       and DELETE no longer call this; their walkers build the WHERE columns directly. R266
-     *       retired the {@code @value} marker, so there is no longer an exclude set.</li>
+     *       and DELETE no longer call this; their walkers build the WHERE columns directly. The
+     *       {@code @value} marker was retired, so there is no longer an exclude set.</li>
      *   <li>Query-side ({@code @lookupKey} on {@code ARGUMENT_DEFINITION}, with a {@code @table}
      *       input arg): every admissible input field of the input type is a lookup-key binding.
      *       The Query-side derivation reads the binding set as the VALUES-join column list.</li>

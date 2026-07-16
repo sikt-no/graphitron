@@ -5,14 +5,13 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The R281 spec-by-example corpus: the annotated fixture schemas that, between them, demonstrate the
+ * The spec-by-example corpus: the annotated fixture schemas that, between them, demonstrate the
  * classifier's dimensional verdicts. It is the single source of truth shared by everything that reads
  * the corpus, the DSL assertions ({@link ClassifiedDslTest}), the leaf-coverage bridge
  * ({@code VariantCoverageTest}), and the query-as-view documentation renderer.
  *
  * <p>Each {@code @classified} coordinate asserts the three-axis {@code (source, operation, target)}
- * verdict R316 migrated the corpus onto (from R299's {@code (carrier, intent, mapping)}, itself from
- * R281's original {@code (producer, mapping)}); between them the fixtures exercise every
+ * verdict; between them the fixtures exercise every
  * {@link no.sikt.graphitron.rewrite.model.Source} wrapper arm, every
  * {@link no.sikt.graphitron.rewrite.model.Target} wrapper and {@code TargetShape} arm, and every
  * populated {@link no.sikt.graphitron.rewrite.model.Operation} arm, with the modeled-but-unpopulated
@@ -278,7 +277,7 @@ public final class ClassifiedCorpus {
          * @classifiedType axis is asserted directly; `path` doubles as the fixture's required field
          * coordinate (Child / Fetch / Field). (The @error + @record silently-ignored verdict, the
          * D1 precedence rule, is covered by RecordDirectiveIgnoredWarningTest, the one place applied
-         * @record remains; see R307.)
+         * @record remains.)
          */
         new Example("error-type", """
             enum Severity { LOW HIGH }
@@ -308,7 +307,7 @@ public final class ClassifiedCorpus {
 
         // The former "constructor" example (a record-backed child type under a @table parent, Film.details
         // building the record-backed FilmDetails from the parent's row) left the classified corpus when
-        // R290 dissolved ConstructorField as wrong-by-design: that table-and-service clash is now a
+        // ConstructorField was dissolved as wrong-by-design: that table-and-service clash is now a
         // build-time rejection, asserted at the validator tier by ConstructorFieldValidationTest rather
         // than as a clean classification here. The Record target shape stays exercised by ErrorsField,
         // ServiceRecordField, and the DML record carriers.
@@ -321,7 +320,7 @@ public final class ClassifiedCorpus {
          * (QueryInterfaceField / QueryUnionField) share that Fetch verdict; the new-query they open is
          * derived, not an axis. The exception's verdict is the same: a @table+@discriminate interface child
          * (TableInterfaceField) is FK-correlatable from the parent and classifies as a plain Fetch,
-         * though the generator currently emits a per-parent query (the R288 defect; the corpus asserts the
+         * though the generator currently emits a per-parent query (a known defect; the corpus asserts the
          * correct verdict). Of the four shapes below (plain interface, union, table-interface, Relay Node)
          * the interface and the union render doc examples, the interface over its shared interface-level
          * field and the union through inline fragments on its participants (renderer hardening item 3);
@@ -355,7 +354,7 @@ public final class ClassifiedCorpus {
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
 
         /*
-         * R365 route (a): a root @service field returning a multitable interface
+         * Route (a): a root @service field returning a multitable interface
          * (QueryServicePolymorphicField, single cardinality). The service hands back a PK-populated
          * TableRecord per branch; the verdict is source Query, operation ServiceCall (the developer method
          * replaces the catalog read), and target Single, target shape Interface. Distinct-table
@@ -375,7 +374,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * R365 route (a): mutation analogue (MutationServicePolymorphicField), list cardinality. The
+         * Route (a): mutation analogue (MutationServicePolymorphicField), list cardinality. The
          * service returns a Result<FilmRecord>; the fetcher dispatches each returned record on its runtime
          * class. Verdict: source Mutation, operation ServiceCall, target List. Corpus-only: adds the
          * MutationServicePolymorphicField leaf and lands on the Mutation / ServiceCall coordinate.
@@ -520,7 +519,7 @@ public final class ClassifiedCorpus {
         /*
          * @tableMethod (a developer-supplied table source FK-correlatable from the parent) on a child
          * and on a root. The child `Film.language` is inline-correlatable (TableMethodField, Child /
-         * Fetch / Table; the generator's current per-parent query is the R288 defect, the corpus asserts
+         * Fetch / Table; the generator's current per-parent query is a known defect, the corpus asserts
          * the correct verdict). The root `Query.filteredFilms` starts a new query
          * (QueryTableMethodTableField, Query / Fetch / Table).
          */
@@ -770,8 +769,8 @@ public final class ClassifiedCorpus {
          * operation: Update for MutationUpdatePayloadField / MutationBulkUpdatePayloadField, and Insert for
          * the bulk INSERT carrier (MutationBulkDmlRecordField, whose DmlKind reads INSERT). Distinct
          * payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
-         * (MutationDeletePayloadField / MutationBulkDeletePayloadField) are not corpus-covered: post-R287
-         * their only admissible data field is an ID-element (a @table-element projection off a deleted
+         * (MutationDeletePayloadField / MutationBulkDeletePayloadField) are not corpus-covered: their
+         * only admissible data field is now an ID-element (a @table-element projection off a deleted
          * row is impossible), which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus
          * catalog; they are covered by MutationDmlNodeIdClassificationTest under the nodeidfixture and
          * carried in VariantCoverageTest's NO_CASE_REQUIRED.
@@ -866,7 +865,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * R463 arrival-fold edge cases. The fixtures below pin the ancestor-product arrival fold's
+         * Arrival-fold edge cases. The fixtures below pin the ancestor-product arrival fold's
          * corners with hand-asserted arrivals (source OnlyChild = One, Child = Many), each isolating one
          * rule so a regression in the fold surfaces on the specific case rather than diffusely. They are
          * corpus-only (no doc query); the dimensional verdict is the whole lesson.

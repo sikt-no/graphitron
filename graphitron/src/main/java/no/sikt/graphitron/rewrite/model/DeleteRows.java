@@ -13,12 +13,12 @@ import java.util.List;
  * has no SET destination, so <em>every</em> admitted input column is a WHERE filter and the matched
  * key is a cardinality <em>guard</em> (it proves single-row), not a column subset. {@link #whereColumns()}
  * is therefore the full admitted-column set on both arms; non-key filter columns are legitimate
- * extra ANDed predicates rather than orphans with nowhere to go. The family reuses R246's
- * {@link KeyColumn} for each WHERE contribution.
+ * extra ANDed predicates rather than orphans with nowhere to go. The family reuses the
+ * {@link UpdateRows} family's {@link KeyColumn} for each WHERE contribution.
  *
  * <p>The family is sealed on two arms, unlike {@link UpdateRows}'s single {@link UpdateRows.Identified}:
- * R246 rejects {@code multiRow: true} outright (covering a PK/UK is <em>the</em> single-row UPDATE
- * shape), but {@code multiRow: true} is a real DELETE shape ({@code deleteFilmsByReleaseYear} filters
+ * {@link UpdateRows} rejects {@code multiRow: true} outright (covering a PK/UK is <em>the</em> single-row
+ * UPDATE shape), but {@code multiRow: true} is a real DELETE shape ({@code deleteFilmsByReleaseYear} filters
  * on the non-PK {@code release_year}), so the carrier needs a {@link Broadcast} arm for it. The
  * {@link Broadcast} compact constructor rejects an empty {@link #whereColumns()} so an empty input
  * cannot degenerate into an unfiltered {@code DELETE}.

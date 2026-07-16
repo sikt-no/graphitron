@@ -37,9 +37,8 @@ class CoordinateAtTest {
 
     @Test
     void cursorOnSourceRowFlatArgReturnsDirectiveArgCoordinate() {
-        // The R110 gap closes here: today's hand-coded DirectiveDefinitions
-        // does not list @sourceRow; coordinateAt resolves it from the
-        // parsed registry.
+        // Today's hand-coded DirectiveDefinitions does not list @sourceRow;
+        // coordinateAt resolves it from the parsed registry.
         String source = """
             type Foo {
                 bar: Int @sourceRow(className: "com.example.Lifter", method: "lift")

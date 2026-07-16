@@ -1,7 +1,7 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
 /**
- * R276 backing fixtures for {@code FetcherPipelineTest}'s generic result-type emission tests.
+ * Backing fixtures for {@code FetcherPipelineTest}'s generic result-type emission tests.
  * Under reflection-only binding a standalone {@code @record} no longer fabricates a backing class,
  * so these tests bind their result type through a {@code @service} producer (in {@link DummyService})
  * returning one of these records. The component shapes match the test SDL field shapes so the
@@ -30,8 +30,8 @@ public final class DummyFetcherFixtures {
 
     /**
      * Backs {@code type FilmDetails { rating: String }} as a {@code @service} return, making
-     * {@code FilmDetails} record-backed. R290 retired the {@code @table}-parent ConstructorField that
-     * used to classify cleanly from this shape; it now backs {@code ConstructorFieldValidationTest}'s
+     * {@code FilmDetails} record-backed. The {@code @table}-parent ConstructorField that
+     * used to classify cleanly from this shape was retired; it now backs {@code ConstructorFieldValidationTest}'s
      * table-and-service clash rejection fixture (the child has no producer to build it from the
      * {@code @table} parent's row).
      */

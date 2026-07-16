@@ -25,13 +25,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit-tier coverage for the validator mirror of the local-context transport invariant: a
  * carrier admitted with {@link ChildField.Transport.LocalContext} must have a sibling
  * data-channel field whose fetcher honors the null-source short-circuit guard. The validator
- * allow-list is exercised against the variants currently reachable through the post-R178
+ * allow-list is exercised against the variants currently reachable through the
  * structural detectors; an off-allow-list
  * sibling produces a structural error.
  *
  * <p>The fixture builds {@link GraphitronSchema} instances directly rather than going through SDL
  * because today's classifier doesn't emit an off-allow-list shape. The validator mirror is
- * pre-emptive coverage for future widenings (R161 et al.), so the test fabricates the rejection
+ * pre-emptive coverage for future widenings, so the test fabricates the rejection
  * input at the model level.
  */
 @UnitTier

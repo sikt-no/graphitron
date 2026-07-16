@@ -17,7 +17,7 @@ import java.util.EnumSet;
  * variant ; becomes structurally impossible: the call only exists as the return value of
  * {@link #graphitronContextCall()}, which records the dependency on the way out.
  *
- * <p>R94 added {@link #assembledSchema()} so the validator pre-step can resolve each SDL arg's
+ * <p>The {@link #assembledSchema()} accessor lets the validator pre-step resolve each SDL arg's
  * input-type-ness without re-walking the schema from the entry point each call. {@code null}
  * when the caller did not provide an assembled schema (some unit-tier tests use the
  * model-only build via {@code TestSchemaHelper.buildSchema}); the validator pre-step falls
@@ -60,7 +60,7 @@ final class TypeFetcherEmissionContext {
 
     /**
      * Convenience no-arg overload for callers that emit out-of-band (helpers, inline
-     * subqueries, etc.) and don't need the schema-aware machinery the {@code R94} validator
+     * subqueries, etc.) and don't need the schema-aware machinery the validator
      * pre-step requires. The assembled schema and parent-type name accessors return
      * {@code null} for such contexts.
      */
@@ -99,7 +99,7 @@ final class TypeFetcherEmissionContext {
     /**
      * The classified {@link no.sikt.graphitron.rewrite.GraphitronSchema} being generated, or
      * {@code null} for schema-free callers (unit-tier model-only tests, nested-type emission).
-     * The R389 joined-table interface fetcher reads each participant's classified fields off this
+     * The joined-table interface fetcher reads each participant's classified fields off this
      * to partition base-resident ({@code ColumnReferenceField}) from detail-resident
      * ({@code ColumnField}) fields per "the emitter reads the field variant".
      */
@@ -156,7 +156,7 @@ final class TypeFetcherEmissionContext {
     }
 
     /**
-     * DML sibling of {@link #rowsDeclarationName} (R314 slice 4): resolves the named reentry
+     * DML sibling of {@link #rowsDeclarationName}: resolves the named reentry
      * query unit's declaration name for a {@code Projected*} / {@code Discriminated*} mutation
      * field through the command-mint seam.
      */
@@ -166,7 +166,7 @@ final class TypeFetcherEmissionContext {
     }
 
     // Companion methods a field-body emitter declares alongside the fetcher method it is
-    // building (the DML reentry rows methods, R314 slice 4). Class assembly drains this list
+    // building (the DML reentry rows methods). Class assembly drains this list
     // into the TypeSpec after the field loop, mirroring the HelperKind drain: a companion can
     // never be silently dropped because the only way to reference one is through the name the
     // declaring call returned.

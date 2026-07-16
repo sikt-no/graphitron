@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
  * <p>The arm-to-code mapping is exposed via {@link #lspCode()} so the orchestrator can project a
  * typed error to a {@link Diagnostic} under the {@code graphitron.error-channel.} namespace
  * without a separate dispatch table. The stable wire strings are written next to each arm rather
- * than derived from the Java identifier, mirroring R238's {@link ServiceMethodCallError} wire
+ * than derived from the Java identifier, mirroring the {@link ServiceMethodCallError} wire
  * convention.
  *
  * <p>Two arms ({@link MultipleErrorsFields}, {@link NonNullableSuccessProjectionField}) are
@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
  * smaller seam than pushing errors-field detection into the walker that
  * {@code BuildContext.detectErrorsFieldShape} already centralises.
  *
- * <p>Following R238's precedent, this is its own sibling sub-seal of {@link Rejection.AuthorError}
+ * <p>Following the {@link ServiceMethodCallError} precedent, this is its own sibling sub-seal of {@link Rejection.AuthorError}
  * rather than a set of arms under the flat {@link Rejection.AuthorError.Structural}, keeping
  * {@code AuthorError}'s permits one-row-per-walker as the dimensional pivot scales.
  */

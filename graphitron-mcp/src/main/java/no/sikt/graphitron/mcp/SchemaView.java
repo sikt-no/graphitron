@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R368 slice 4 — the {@code schema} read tool: current types / fields, classifications, backing
+ * The {@code schema} read tool: current types / fields, classifications, backing
  * shapes, and definition locations off {@code Workspace.snapshot()}, joined with {@code @node}
  * metadata off {@code Workspace.catalog().nodeMetadata()} (the snapshot carries no {@code @node}
  * projection; the snapshot + catalog join is same-cadence, both written by one

@@ -11,8 +11,8 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for the child-site
- * {@link no.sikt.graphitron.rewrite.model.ChildField.TableMethodField} fetcher (R43 commit 3:
- * lift out of {@code TypeFetcherGenerator.STUBBED_VARIANTS}).
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.TableMethodField} fetcher, lifted
+ * out of {@code TypeFetcherGenerator.STUBBED_VARIANTS}.
  *
  * <p>Two accepted-shape cases mirror the spec's pipeline-tier coverage: an explicit
  * {@code @reference(path:)} with a single FK hop, and a single-FK auto-inference where the
@@ -138,7 +138,7 @@ class TableMethodFieldPipelineTest {
     }
 
     /**
-     * R43 commit 5: DTO-parent emit. Pin the fetcher + rows-method shape for
+     * DTO-parent emit. Pin the fetcher + rows-method shape for
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField}. The classifier
      * routes a child {@code @tableMethod} on a JooqTableRecord-backed parent
      * through the new branch in {@code FieldBuilder.classifyChildFieldOnResultType}; the emit

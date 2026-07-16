@@ -5,7 +5,7 @@ package no.sikt.graphitron.rewrite.model;
  * name it came from, the jOOQ column it writes, and how to read the input value at the call-site
  * root.
  *
- * <p>Deliberately decoupled from {@link InputField}: R222's principle is that input fields have no
+ * <p>Deliberately decoupled from {@link InputField}: the principle is that input fields have no
  * semantics independent of the consuming field, so the carrier names exactly what UPDATE's SET
  * partition needs and nothing else. A composite-NodeId input field that lifts to several columns
  * produces several {@code SetColumn} rows sharing one {@link #sdlFieldName()} (the emitter groups

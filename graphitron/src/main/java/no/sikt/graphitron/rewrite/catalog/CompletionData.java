@@ -74,8 +74,8 @@ public record CompletionData(
      *                 goto-definition / hover paths join this FQN against the
      *                 LSP-owned {@link SourceWalker.Index} at request time, so the
      *                 table / column position rides the {@code .java} source
-     *                 cadence rather than the generator build cadence (R352,
-     *                 mirroring the service half R349 introduced). The catalog
+     *                 cadence rather than the generator build cadence
+     *                 (mirroring the service half). The catalog
      *                 itself holds no source position.
      */
     public record Table(
@@ -175,7 +175,7 @@ public record CompletionData(
         /**
          * Back-compat constructor defaulting {@code scalarConstants} to an empty
          * list. Keeps existing LSP / test callers that build
-         * {@link ExternalReference} without the R464 scalar-constant slot
+         * {@link ExternalReference} without the scalar-constant slot
          * compiling unchanged.
          */
         public ExternalReference(
@@ -237,7 +237,7 @@ public record CompletionData(
         /**
          * Back-compat constructor defaulting {@code returnsCondition} to
          * {@code false} (a non-condition method). Keeps existing LSP / test
-         * callers that build {@link Method} without the R368 classification
+         * callers that build {@link Method} without the condition classification
          * compiling unchanged.
          */
         public Method(String name, String returnType, String description, List<Parameter> parameters) {

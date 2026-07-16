@@ -9,18 +9,15 @@ import java.util.stream.Collectors;
  * {@code relatedInformation} need; downstream tooling switches on the arm rather than parsing
  * prose.
  *
- * <p>The arm-to-code mapping (see {@code roadmap/methodcall-walker-carrier.md}'s
- * LSP wire conventions table) is exposed via {@link #lspCode()} so the orchestrator can project
+ * <p>The arm-to-code mapping is exposed via {@link #lspCode()} so the orchestrator can project
  * a typed error to a {@link Diagnostic} without a separate dispatch table.
  *
- * <p>The two arms here are exactly what the R238 translator-walker produces today. R238 ships its
- * walker as a translator over a resolved {@code MethodRef.Service} rather than fresh SDL+classloader
- * reflection (see the spec's "Walker substrate" note), so the broader failure taxonomy the spec
- * sketched (class-load, ambiguous-method, return-type, arg-mapping, input-bean-shape, ...) is still
- * produced upstream as {@code AuthorError.Structural} prose. Wiring those rejections through typed
- * arms here is a follow-up (R256, {@code service-walker-substrate-absorption.md}); per the
- * "documentation names only live tests/code" principle this seal carries only arms a producer
- * actually instantiates.
+ * <p>The walker ships as a translator over a resolved {@code MethodRef.Service} rather than fresh
+ * SDL+classloader reflection, so the broader failure taxonomy the spec sketched (class-load,
+ * ambiguous-method, return-type, arg-mapping, input-bean-shape, ...) is still produced upstream as
+ * {@code AuthorError.Structural} prose. Wiring those remaining rejections through typed arms here is
+ * follow-up work; per the "documentation names only live tests/code" principle this seal carries only
+ * arms a producer actually instantiates.
  *
  * <p>Subsequent walker slices (condition, tableMethod, externalField) each add their own sibling
  * sub-seal alongside this one, rather than piling typed arms under a single flat
@@ -84,7 +81,7 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
     /**
      * An instance {@code @service} method's enclosing class cannot be used as a holder: it is
      * abstract / an interface, or it exposes no public constructor whose parameters are each
-     * bindable from a {@code DSLContext} slot or a declared context argument (R256 relaxed the
+     * bindable from a {@code DSLContext} slot or a declared context argument (relaxing the
      * legacy {@code (DSLContext)}-only rule). Carries the class/method coordinate, the class's
      * simple name (for the fix hint), and which {@link HolderProblem} applies.
      */

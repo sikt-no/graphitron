@@ -135,12 +135,12 @@ class TypeConditionsGeneratorTest {
             gcf, DEFAULT_OUTPUT_PACKAGE);
         var idsParam = method.parameters().stream()
             .filter(p -> p.name().equals("ids")).findFirst().orElseThrow();
-        // Post-R50 the call-site decodes wire-format String -> column-typed scalar; the
+        // The call-site decodes wire-format String -> column-typed scalar; the
         // condition method receives the typed list directly.
         assertThat(idsParam.type().toString()).isEqualTo("java.util.List<java.lang.Integer>");
     }
 
-    // ===== R380: RemoteColumnPredicate (correlated EXISTS over a @reference join path) =====
+    // ===== RemoteColumnPredicate (correlated EXISTS over a @reference join path) =====
     //
     // These exercise the body emitter's RemoteColumnPredicate arm directly. The classifier only
     // produces single-column (Eq/In) remote predicates in v1 (a plain @reference resolves one

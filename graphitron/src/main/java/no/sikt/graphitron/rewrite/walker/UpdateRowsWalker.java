@@ -30,18 +30,18 @@ import java.util.Set;
  * column set is a subset of the input-covered columns, then partitions the input fields into the
  * WHERE (matched-key) and SET (everything else) halves.
  *
- * <p><b>Substrate concession (mirrors R238's {@code ServiceMethodCallWalker}).</b> The spec's ideal
+ * <p><b>Substrate concession (mirrors {@code ServiceMethodCallWalker}).</b> The spec's ideal
  * is a walker reading {@code GraphQLFieldDefinition} + jOOQ catalog directly and re-deriving the
  * column classification from raw SDL. Re-running {@code InputFieldResolver} /
  * {@code EnumMappingResolver.buildLookupBindings} (with {@code @reference} FK-join and {@code @nodeId}
- * decode resolution) inside the walker would duplicate a substantial classifier. Following R238's
- * recorded "walker substrate concession on blast-radius grounds," this walker instead translates
+ * decode resolution) inside the walker would duplicate a substantial classifier. Following the same
+ * walker substrate concession on blast-radius grounds, this walker instead translates
  * over the already-classified {@link InputField} permits the upstream classifier produced. The
  * follow-up that retires the intermediate and reflects from SDL directly is tracked as a Backlog
  * item ({@code updaterows-walker-sdl-substrate}). The {@code field} parameter is reserved for that
  * future direct-SDL substrate; the current translator does not read it. The walk is
  * cardinality-independent: a self-FK {@code @reference} routes its columns wholly to SET on both the
- * single-row and bulk (list-input) forms (R354 + R342), so the caller's list shape never reaches here.
+ * single-row and bulk (list-input) forms, so the caller's list shape never reaches here.
  *
  * <p>The new logic this walker owns — PK-or-UK subset matching, SET/WHERE partition by key
  * membership, empty-SET rejection, and the override-condition rejection — is fully expressible over
@@ -68,7 +68,7 @@ public final class UpdateRowsWalker {
                                 boolean selfReference) {}
 
     /** True when the carrier decodes a {@code @nodeId} (directly or behind a nested-input access path),
-     *  i.e. its value is only knowable at runtime — the R322 distinction between a runtime-agreement
+     *  i.e. its value is only knowable at runtime — the distinction between a runtime-agreement
      *  overlap and the build-time plain-field collision. */
     private static boolean isDecodeExtraction(CallSiteExtraction extraction) {
         var leaf = extraction instanceof CallSiteExtraction.NestedInputField nif ? nif.leaf() : extraction;
@@ -116,7 +116,7 @@ public final class UpdateRowsWalker {
             }
         }
 
-        // Stage 4-5: PK-or-UK identification via the shared matcher (R266 extraction). Find the
+        // Stage 4-5: PK-or-UK identification via the shared matcher. Find the
         // first candidate key (PK preferred) whose column set the input covers — over the identity
         // (non-self-FK) columns only. A self-FK points at a sibling row, so it can never
         // pin the row it lives on; a PK column reachable only through a self-FK fails coverage
@@ -168,7 +168,7 @@ public final class UpdateRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // Stage 6b (R322, D2): two or more plain @field writers on one SET column silently
+        // Stage 6b: two or more plain @field writers on one SET column silently
         // last-write-wins through the single-row Map.put (and crashes the bulk VALUES-join with a
         // duplicate derived column); reject at validate time, the UPDATE mirror of the INSERT-path
         // reject. An overlap involving a @nodeId decode is admitted and reconciled by the runtime
@@ -280,7 +280,7 @@ public final class UpdateRowsWalker {
 
     /**
      * Reshape an admitted column carrier into a {@link Contribution}, unless it carries a
-     * field-level {@code @condition}. R246 does not emit input-field conditions on UPDATE, so a
+     * field-level {@code @condition}. Input-field conditions are not emitted on UPDATE, so a
      * condition would be silently dropped, the same footgun {@link UpdateRowsError.OverrideConditionNotSupported}
      * makes honest; reject rather than admit. An {@code override: true} condition reports through
      * that arm; any other condition (e.g. {@code override: false}) reports as an unsupported shape.

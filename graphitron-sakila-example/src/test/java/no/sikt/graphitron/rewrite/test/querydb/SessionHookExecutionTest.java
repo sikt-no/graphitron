@@ -20,7 +20,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R429 slice 3 execution-tier coverage of the generated session hook against real PostgreSQL with
+ * Slice-3 execution-tier coverage of the generated session hook against real PostgreSQL with
  * row-level security. This module configures the Postgres {@code <variables>} sugar
  * ({@code <sessionState>} in the pom), so graphitron emits a {@code GraphitronSessionHook} whose
  * connect sets {@code app.user_id} from the JWT {@code sub} claim and whose disconnect clears it. The

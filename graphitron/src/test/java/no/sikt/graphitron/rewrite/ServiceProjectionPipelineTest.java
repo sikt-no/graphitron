@@ -32,10 +32,10 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@code BatchKeyField} arm turns these red rather than being masked by an unrelated sibling's
  * projection.
  *
- * <p>R426 extends the same walk: when the child's key wrap is
+ * <p>A further extension of the same walk: when the child's key wrap is
  * {@code SourceKey.Wrap.TableRecord} (typed-record Sources parameter), the projection
- * requirement widens from the key columns to the full parent row — see the R426 test group
- * below and {@code TypeClassGenerator.RequiredProjection}.
+ * requirement widens from the key columns to the full parent row — see the typed-record test
+ * group below and {@code TypeClassGenerator.RequiredProjection}.
  */
 @PipelineTier
 class ServiceProjectionPipelineTest {
@@ -99,7 +99,7 @@ class ServiceProjectionPipelineTest {
             .isTrue();
     }
 
-    // ===== R426: typed-TableRecord source shape → full parent-row projection =====
+    // ===== typed-TableRecord source shape → full parent-row projection =====
     //
     // When the @service child's Sources parameter is a typed TableRecord (Set<LanguageRecord>),
     // the key wrap is SourceKey.Wrap.TableRecord and the key extraction is
@@ -146,7 +146,7 @@ class ServiceProjectionPipelineTest {
 
     /**
      * Contrast: a {@code Record1}-sourced sibling of the same shape keeps the key-columns-only
-     * projection and gets no full-row append — the R426 widening is gated on the key wrap
+     * projection and gets no full-row append — the full-row widening is gated on the key wrap
      * ({@code SourceKey.Wrap.TableRecord}), not on the {@code @service} field variants.
      */
     @Test
@@ -195,10 +195,10 @@ class ServiceProjectionPipelineTest {
     }
 
     /**
-     * R436 two-axis: a parent with <em>both</em> a {@code TableRecord}-wrap {@code @service} child
+     * Two-axis: a parent with <em>both</em> a {@code TableRecord}-wrap {@code @service} child
      * (flips the {@code reservedFullRow} axis) and a {@code Wrap.Row} {@code @splitQuery} sibling
      * (adds a base-named key column) must emit both — the reserved-aliased full row and the
-     * base-named force-included column. Before R436 the sealed {@code FullParentRow} absorbed the
+     * base-named force-included column. Previously the sealed {@code FullParentRow} absorbed the
      * columns axis, so the base-named column would have been dropped; the product record keeps both.
      */
     @Test

@@ -34,7 +34,7 @@ class TestServiceStub {
 
     /**
  * No-arg query-side producer for the {@code FilmDetails @record} fixture payload,
-     * returning the {@link TestFilmDetailsDto} backing so the payload grounds via R96 reflection
+     * returning the {@link TestFilmDetailsDto} backing so the payload grounds via reflection
      * (the dangling-type-reference soundness pass rejects unbacked payload returns).
      */
     public static TestFilmDetailsDto getDetails() { throw new UnsupportedOperationException(); }
@@ -43,21 +43,21 @@ class TestServiceStub {
     public static TestFilmDetailsDto runDetails() { throw new UnsupportedOperationException(); }
 
     /**
-     * R190 fixture: {@code @service} with one {@code String userId} contextArgument; pairs with
+     * Fixture: {@code @service} with one {@code String userId} contextArgument; pairs with
      * {@link #getRatingByFnr} on the cross-site factory pipeline test (different name, different
      * type, so the factory's parameter list reflects both alphabetically).
      */
     public static String getRatingByUser(String userId) { throw new UnsupportedOperationException(); }
 
     /**
-     * R190 fixture: {@code @service} with a {@code Long fnr} contextArgument; pairs with
+     * Fixture: {@code @service} with a {@code Long fnr} contextArgument; pairs with
      * {@link #getRatingByUser} so the factory's emitted parameter list carries both
      * {@code (DSLContext defaultDsl, Long fnr, String userId)} in alphabetical order.
      */
     public static String getRatingByFnr(Long fnr) { throw new UnsupportedOperationException(); }
 
     /**
-     * R238 fixture: {@code @service} with one {@code Long userId} contextArgument; the
+     * Fixture: {@code @service} with one {@code Long userId} contextArgument; the
      * {@code userId} name shares with {@link #getRatingByUser} but the Java type is {@code Long},
      * not {@code String} — exercises the ContextArgumentClassifier's ServiceField harvest
      * disagreement path.
@@ -65,7 +65,7 @@ class TestServiceStub {
     public static String getRatingByUserLong(Long userId) { throw new UnsupportedOperationException(); }
 
     /**
-     * R238 fixture: a static service method with two {@link DSLContext} parameters in the same
+     * Fixture: a static service method with two {@link DSLContext} parameters in the same
      * method round. The walker's {@code MultipleDslContextSlots} invariant fires when more than
      * one DSL slot lands per round; the test verifies the rejection projects to a typed
      * {@code ServiceMethodCallError.MultipleDslContextSlots} arm carrying its
@@ -90,7 +90,7 @@ class TestServiceStub {
 
     /**
      * Returns {@code Result<FilmRecord>} with a {@code List<Row1<Integer>>} keys parameter and
-     * a non-SOURCES-shaped {@code LocalDate} payload parameter — used by R187 tests pinning that
+     * a non-SOURCES-shaped {@code LocalDate} payload parameter — used by tests pinning that
      * a clearly non-SOURCES-adjacent type at a nested coordinate produces the arg-mismatch
      * diagnostic rather than "unrecognized sources type".
      */
@@ -274,10 +274,10 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R150 service-input-bean fixtures =====
+    // ===== service-input-bean fixtures =====
 
     /**
-     * Takes a single {@link TestInputBean}. Used by the R150 classifier test to verify that a
+     * Takes a single {@link TestInputBean}. Used by the classifier test to verify that a
      * scalar bean-typed parameter paired with an SDL input-object argument resolves to
      * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean}.
      */
@@ -286,7 +286,7 @@ class TestServiceStub {
     }
 
     /**
-     * R214 fixture: takes a single {@link TestInputBean} parameter whose name does not match
+     * Fixture: takes a single {@link TestInputBean} parameter whose name does not match
      * any conventional GraphQL argument name. Used to assert the arity-unique inference: when
      * the field declares exactly one argument and the method takes exactly one non-Table /
      * non-DSLContext / non-Context parameter, the pair binds positionally without
@@ -298,7 +298,7 @@ class TestServiceStub {
     }
 
     /**
-     * R214 fixture: single non-Table / non-DSLContext / non-Context {@code String} parameter
+     * Fixture: single non-Table / non-DSLContext / non-Context {@code String} parameter
      * whose name does not match any conventional GraphQL argument or slot. Used to assert
      * that the type-unique inference yields when an unclaimed sibling slot is a named input
      * object containing a reachable nested field of the same Java type — the binding is
@@ -311,7 +311,7 @@ class TestServiceStub {
     }
 
     /**
-     * R214 fixture: single {@link java.math.BigDecimal} parameter — used to assert that the
+     * Fixture: single {@link java.math.BigDecimal} parameter — used to assert that the
      * arity-unique gate routes through {@code ctx.types} rather than a hard-coded spec
      * built-in allow-list. With a consumer-defined {@code Decimal -> BigDecimal} scalar
      * registered, a {@code BigDecimal} parameter against a named input object slot defers
@@ -322,7 +322,7 @@ class TestServiceStub {
     }
 
     /**
-     * R214 fixture: single {@code List<Integer>} parameter whose name does not match any
+     * Fixture: single {@code List<Integer>} parameter whose name does not match any
      * conventional GraphQL argument. Used to assert that the arity-unique branch yields
      * (defers to the dot-path hint) when the lone unclaimed slot is a named input object
      * containing a reachable nested {@code [Int!]!} field of matching Java type — the
@@ -334,7 +334,7 @@ class TestServiceStub {
     }
 
     /**
-     * Takes a {@code List<TestInputBean>}. Used by the R150 classifier test to verify that the
+     * Takes a {@code List<TestInputBean>}. Used by the classifier test to verify that the
      * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
      * the Java type at emit time).
      */
@@ -344,7 +344,7 @@ class TestServiceStub {
 
     /**
      * Takes a {@link TestInputBeanWithPrimitive} (record with an {@code int n} component). Used
-     * by R155 to verify the primitive→wrapper box at the resolver boundary: the {@code n} field's
+     * to verify the primitive→wrapper box at the resolver boundary: the {@code n} field's
      * {@code FieldBinding} must carry {@code javaElementTypeName == "java.lang.Integer"}, not
      * {@code "int"}.
      */
@@ -354,7 +354,7 @@ class TestServiceStub {
 
     /**
      * Takes a {@link TestInputJavaBeanWithBoolean} (JavaBean with a {@code void setActive(boolean)}
-     * setter). Used by R155 to verify the primitive→wrapper box on the JavaBean indexing path:
+     * setter). Used to verify the primitive→wrapper box on the JavaBean indexing path:
      * the {@code active} field's {@code FieldBinding} must carry {@code javaElementTypeName ==
      * "java.lang.Boolean"}, not {@code "boolean"}.
      */
@@ -362,10 +362,10 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R200 @field(name:) Java-member binding on input beans =====
+    // ===== @field(name:) Java-member binding on input beans =====
 
     /**
-     * R200 fixture: takes a {@link TestInputBeanRenamed} record whose component names ({@code heading},
+     * Fixture: takes a {@link TestInputBeanRenamed} record whose component names ({@code heading},
      * {@code score}) diverge from the SDL field names ({@code title}, {@code rating}). The SDL input
      * bridges the divergence with {@code @field(name:)}; the resolved {@code FieldBinding}s must carry
      * {@code javaFieldName} = the component name and {@code sdlFieldName} = the SDL field name. Also
@@ -376,7 +376,7 @@ class TestServiceStub {
     }
 
     /**
-     * R200 fixture: takes a {@link TestInputJavaBeanRenamed} whose setter properties ({@code heading},
+     * Fixture: takes a {@link TestInputJavaBeanRenamed} whose setter properties ({@code heading},
      * {@code score}) diverge from the SDL field names, bridged by {@code @field(name:)}. Also the bean
      * for the regression-floor case: an unbridged divergent-name JavaBean (no {@code @field}) must
      * still reject with "has no fields matching", not start matching by coincidence.
@@ -386,18 +386,18 @@ class TestServiceStub {
     }
 
     /**
-     * R200 fixture: takes a {@link TestInputSubsetRecord} (two components) against an SDL input with a
-     * third field. The extra field binds to no component; R200's direction-B check rejects the field
+     * Fixture: takes a {@link TestInputSubsetRecord} (two components) against an SDL input with a
+     * third field. The extra field binds to no component; the direction-B check rejects the field
      * at classify time rather than silently dropping its value before the canonical constructor.
      */
     public static String runWithSubsetRecord(TestInputSubsetRecord input) {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R158 @service carrier-data-field fixtures =====
+    // ===== @service carrier-data-field fixtures =====
 
     /**
-     * Returns {@code List<FilmActorRecord>} — used by R158 MANY / composite-PK admission tests.
+     * Returns {@code List<FilmActorRecord>} — used by the MANY / composite-PK admission tests.
      * {@code FilmActorRecord} is the typed jOOQ record for the {@code film_actor} junction table
      * with composite PK {@code (actor_id, film_id)}.
      */
@@ -406,7 +406,7 @@ class TestServiceStub {
     }
 
     /**
-     * Returns {@code List<LanguageRecord>} — used by R158 wrong-element-type reject tests.
+     * Returns {@code List<LanguageRecord>} — used by wrong-element-type reject tests.
      * Pointed at a carrier whose data field's element table is {@code film}; the
      * service-producer-strict-return check rejects.
      */
@@ -415,7 +415,7 @@ class TestServiceStub {
     }
 
     /**
-     * Returns {@code Set<FilmRecord>} — used by R158 Set / Iterable return reject tests. The
+     * Returns {@code Set<FilmRecord>} — used by Set / Iterable return reject tests. The
      * service-producer-strict-return check requires exactly {@code List<XRecord>} or
      * {@code XRecord}; {@code Set} is rejected.
      */
@@ -424,13 +424,13 @@ class TestServiceStub {
     }
 
     /**
-     * Returns {@code Iterable<FilmRecord>} — used by R158 Set / Iterable return reject tests.
+     * Returns {@code Iterable<FilmRecord>} — used by Set / Iterable return reject tests.
      */
     public static Iterable<FilmRecord> getFilmsAsIterable() {
         throw new UnsupportedOperationException();
     }
 
-    // ===== ErrorChannel carrier-classifier fixtures (R12 §2c) =====
+    // ===== ErrorChannel carrier-classifier fixtures (§2c) =====
 
     /**
      * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.SakPayload}
@@ -444,7 +444,7 @@ class TestServiceStub {
     }
 
     /**
-     * R370 classification-tier witness: returns the <em>nested</em> dummy payload
+     * Classification-tier witness: returns the <em>nested</em> dummy payload
      * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload}
      * (binary name {@code AccessorPayloads$NestedErrorsPayload}). A child {@code @service} field
      * returning this payload resolves an {@code ErrorChannel.PayloadClass} whose {@code payloadClass()}
@@ -455,26 +455,26 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R201 @field(name:) in payload construction fixtures =====
+    // ===== @field(name:) in payload construction fixtures =====
 
-    /** R201: mutable-bean payload with divergently-named setters (info / failures). */
+    /** Mutable-bean payload with divergently-named setters (info / failures). */
     public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.DivergentBeanErrorsPayload runDivergentBeanErrors() {
         throw new UnsupportedOperationException();
     }
 
-    /** R201: mutable-bean payload with SDL-name setters (setData / setErrors). */
+    /** Mutable-bean payload with SDL-name setters (setData / setErrors). */
     public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.SetterErrorsPayload runSetterErrors() {
         throw new UnsupportedOperationException();
     }
 
-    /** R201: record whose components are reordered relative to SDL declaration order. */
+    /** Record whose components are reordered relative to SDL declaration order. */
     public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.ReorderedErrorsPayload runReorderedErrors() {
         throw new UnsupportedOperationException();
     }
 
     /**
      * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used by the
-     * validator-pre-step regression test that needs an Input-typed arg (for the R94 fromMap
+     * validator-pre-step regression test that needs an Input-typed arg (for the fromMap
      * materialisation path) plus a SakPayload return (so the surrounding ErrorChannel resolves
      * as a PayloadClass that the validator pre-step can pre-populate with violations).
      */
@@ -492,7 +492,7 @@ class TestServiceStub {
     }
 
     /**
-     * Returns the setter-shape sibling payload. Used by tests exercising R154 §2's mutable-bean
+     * Returns the setter-shape sibling payload. Used by tests exercising the mutable-bean
      * payload-construction shape: the service returns the SDL payload type directly (the
      * universal-passthrough path); the carrier classifier resolves the ErrorChannel against the
      * setter-shape payload class.
@@ -511,26 +511,26 @@ class TestServiceStub {
     }
 
     /**
-     * R178 step 3 SettKvotesporsmal-shape regression: returns the SDL payload class directly
+     * SettKvotesporsmal-shape regression: returns the SDL payload class directly
      * (legacy passthrough). The payload class exposes a {@code film()} accessor returning the
      * inner {@code FilmRecord}, but the {@code @service} method's reflected return type is the
-     * payload class itself, not the inner record. Before R178 step 3 the carrier walk admitted
+     * payload class itself, not the inner record. The legacy carrier walk would have admitted
      * the payload shape as a single-record carrier and demanded {@code FilmRecord} as the return
-     * type; after step 3 the unified path classifies the data field through the standard
+     * type; the unified path instead classifies the data field through the standard
      * record-backed parent accessor lookup, with no carrier-walk consultation.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SettKvotesporsmalShapePayload runPassthroughPayload() {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R32 child-@service strict-return-type fixtures =====
+    // ===== child-@service strict-return-type fixtures =====
 
     /**
      * Child {@code @service} fixture exercising the outer-shape rejection arm of
      * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
      * child field returning {@code Language} (single) with a {@code List<Row1<Integer>>}
      * Sources param structurally requires {@code List<LanguageRecord>} per the rows-method
-     * shape (post-R177: {@code V = tb.table().recordClass() = LanguageRecord}). This stub
+     * shape (where {@code V = tb.table().recordClass() = LanguageRecord}). This stub
      * declares scalar {@code LanguageRecord} instead of {@code List<LanguageRecord>}, so
      * classification rejects on the outer-shape mismatch (scalar vs {@code List<V>}).
      */
@@ -549,13 +549,13 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R177 child-@service TableBoundReturnType V-narrowing fixtures =====
+    // ===== child-@service TableBoundReturnType V-narrowing fixtures =====
 
     /**
-     * R177 migration arm: a list-cardinality {@code @table}-bound child field with a
-     * {@code List<Row1<Integer>>} Sources param post-R177 structurally requires
-     * {@code List<List<LanguageRecord>>} (V = {@code tb.table().recordClass()}). Pre-R177 it
-     * required {@code List<List<Record>>}, so this signature was accepted. Post-R177 the
+     * Migration arm: a list-cardinality {@code @table}-bound child field with a
+     * {@code List<Row1<Integer>>} Sources param now structurally requires
+     * {@code List<List<LanguageRecord>>} (V = {@code tb.table().recordClass()}). It previously
+     * required {@code List<List<Record>>}, so this signature was accepted. Now the
      * raw {@code Record} on V mismatches the narrowed expectation.
      */
     public static java.util.List<java.util.List<org.jooq.Record>> childServiceRowKeyedRawRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
@@ -563,9 +563,9 @@ class TestServiceStub {
     }
 
     /**
-     * R177 acceptance arm: the same list-cardinality child field, declaring
-     * {@code List<List<LanguageRecord>>}. Pre-R177 this was rejected (expected
-     * {@code List<List<Record>>}); post-R177 this is the canonical accepted shape because
+     * Acceptance arm: the same list-cardinality child field, declaring
+     * {@code List<List<LanguageRecord>>}. This was previously rejected (expected
+     * {@code List<List<Record>>}); now it is the canonical accepted shape because
      * V = {@code tb.table().recordClass() = LanguageRecord}.
      */
     public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord>> childServiceRowKeyedSpecificRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
@@ -573,10 +573,10 @@ class TestServiceStub {
     }
 
     /**
-     * R177 cross-record regression arm: same list-cardinality {@code Language}-typed child
+     * Cross-record regression arm: same list-cardinality {@code Language}-typed child
      * field, but the declared per-key record class is the wrong jOOQ record
      * ({@code FilmRecord} instead of {@code LanguageRecord}). Always rejected by
-     * {@code TypeName.equals}: pre-R177 against {@code List<List<Record>>}, post-R177
+     * {@code TypeName.equals}: previously against {@code List<List<Record>>}, now
      * against {@code List<List<LanguageRecord>>}. Pins the diagnostic-wording change to
      * the narrowed expected type without re-litigating the axis.
      */
@@ -584,7 +584,7 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R12 §4 declared-checked-exception fixtures =====
+    // ===== §4 declared-checked-exception fixtures =====
 
     /**
      * Declares {@code throws java.sql.SQLException}. Used by classifier tests verifying that
@@ -616,7 +616,7 @@ class TestServiceStub {
 
     /**
      * Takes a raw {@code Map<String, Object>} for what the SDL declares as an input-object slot.
-     * R150 rejects this shape as an anti-pattern at generation time: the only safe outcome for an
+     * The generator rejects this shape as an anti-pattern at generation time: the only safe outcome for an
      * input-object SDL arg is a populated typed bean. Legitimate open-ended-JSON use cases route
      * through {@code @scalarType} on a custom scalar instead.
      */
@@ -625,7 +625,7 @@ class TestServiceStub {
     }
 
     /**
-     * Takes a self-referential record bean. R150 rejects recursive shapes at generation time
+     * Takes a self-referential record bean. The generator rejects recursive shapes at generation time
      * (the walker would otherwise infinite-loop).
      */
     public static String runWithRecursiveBean(TestInputRecursive input) {
@@ -633,7 +633,7 @@ class TestServiceStub {
     }
 
     /**
-     * Takes a package-private record bean. R150 rejects non-public bean classes at generation
+     * Takes a package-private record bean. The generator rejects non-public bean classes at generation
      * time because the generated fetcher lives in a different package and can't reach them.
      */
     public static String runWithPackagePrivateBean(TestInputPackagePrivate input) {
@@ -641,17 +641,17 @@ class TestServiceStub {
     }
 
     /**
-     * R195 fixture: takes a {@link TestNodeIdRecordBean} whose member is a jOOQ {@link FilmRecord}.
+     * Fixture: takes a {@link TestNodeIdRecordBean} whose member is a jOOQ {@link FilmRecord}.
      * The SDL input-bean field backing that member carries {@code @nodeId(typeName: "Film")}, so the
      * classifier must decode the wire-format id into a {@code FilmRecord} rather than casting the
-     * wire {@code String} (the R150/R195 {@code ClassCastException}).
+     * wire {@code String} (the {@code ClassCastException}).
      */
     public static String assignFilm(TestNodeIdRecordBean in) {
         throw new UnsupportedOperationException();
     }
 
     /**
-     * R195 fixture: takes a {@link TestNodeIdCompositeRecordBean} whose member is a jOOQ
+     * Fixture: takes a {@link TestNodeIdCompositeRecordBean} whose member is a jOOQ
      * {@link FilmActorRecord} backed by a composite-key table ({@code film_actor}, PK
      * {@code (actor_id, film_id)}). The classifier decodes the wire-format id into a
      * {@code FilmActorRecord}, materialising both key columns with one typed {@code set} each.
@@ -661,7 +661,7 @@ class TestServiceStub {
     }
 
     /**
-     * R195 fixture: takes a {@link TestNodeIdRecordListBean} whose member is a
+     * Fixture: takes a {@link TestNodeIdRecordListBean} whose member is a
      * {@code List<FilmRecord>} backed by a {@code [ID!] @nodeId(typeName: "Film")} SDL field. The
      * classifier decodes each wire-format id into a {@code FilmRecord} via the list helper variant.
      */
@@ -670,7 +670,7 @@ class TestServiceStub {
     }
 
     /**
-     * R195 fixture: the both-dimensions corner — a {@code List<FilmActorRecord>} member backed by a
+     * Fixture: the both-dimensions corner — a {@code List<FilmActorRecord>} member backed by a
      * {@code [ID!] @nodeId(typeName: "FilmActor")} SDL field, exercising the list variant over a
      * composite-key per-element decode.
      */
@@ -679,7 +679,7 @@ class TestServiceStub {
     }
 
     /**
-     * R195 fixture: takes a {@link TestNodeIdMismatchedRecordBean} whose member is a
+     * Fixture: takes a {@link TestNodeIdMismatchedRecordBean} whose member is a
      * {@code FilmActorRecord}, while the SDL field carries {@code @nodeId(typeName: "Film")} (whose
      * {@code @table} is {@code film} → {@code FilmRecord}). The record-type / typeName mismatch must
      * be rejected at generation time, not emitted as a decode helper returning the wrong record type.
@@ -688,10 +688,10 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R311 jOOQ TableRecord @service input param fixtures (root + child coordinate) =====
+    // ===== jOOQ TableRecord @service input param fixtures (root + child coordinate) =====
 
     /**
-     * R311 root singular: a jOOQ {@link FilmRecord} bound directly as a {@code @service} input param
+     * Root singular: a jOOQ {@link FilmRecord} bound directly as a {@code @service} input param
      * (not a bean member). The SDL input names columns through {@code @field(name:)} and carries a
      * {@code @nodeId} identity, so the param binds on the column axis + scalar-key decode — never
      * bean-ified on the Java-member axis. Returns {@code String} so the field is not a record-return
@@ -702,7 +702,7 @@ class TestServiceStub {
     }
 
     /**
-     * R311 root list: a {@code List<FilmRecord>} bound directly as a {@code @service} input param —
+     * Root list: a {@code List<FilmRecord>} bound directly as a {@code @service} input param —
      * the consumer's motivating shape ({@code endreUtdanningsspesifikasjonsstatus(List<…Record>)}).
      * Differs from the singular only by a {@code ValueShape.ListOf} wrap; the same {@code JooqRecord}
      * carrier drives one shared {@code createFilmRecord} construction site.
@@ -712,7 +712,7 @@ class TestServiceStub {
     }
 
     /**
-     * R311 root composite-key: a jOOQ {@link FilmActorRecord} (composite PK {@code actor_id, film_id})
+     * Root composite-key: a jOOQ {@link FilmActorRecord} (composite PK {@code actor_id, film_id})
      * bound directly as a {@code @service} input param; the {@code @nodeId} identity decodes both key
      * columns (arity 2).
      */
@@ -721,23 +721,23 @@ class TestServiceStub {
     }
 
     /**
-     * R311 child coordinate parity: a child {@code @service} rows-method on a {@code @table} parent,
+     * Child coordinate parity: a child {@code @service} rows-method on a {@code @table} parent,
      * taking the parent key (Sources, {@code List<Row1<Integer>>}) plus a {@link FilmRecord} arg. The
      * arg classifies to {@code CallSiteExtraction.JooqRecord} exactly as the root param does, and the
      * child rows-method emits {@code createFilmRecord} through {@code ArgCallEmitter} (the real arm,
      * not a throw) — the binding is coordinate-agnostic because {@code enrich} runs for child
      * {@code @service} too. Returns {@code List<LanguageRecord>} to match a singular {@code Language}
-     * child field's rows-method outer shape (post-R177 V = {@code LanguageRecord}).
+     * child field's rows-method outer shape (V = {@code LanguageRecord}).
      */
     public static java.util.List<LanguageRecord> childModifyFilmRecord(
             java.util.List<org.jooq.Row1<Integer>> keys, FilmRecord in) {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R315 FK-reference @nodeId on jOOQ-record @service input param fixtures =====
+    // ===== FK-reference @nodeId on jOOQ-record @service input param fixtures =====
 
     /**
-     * R315 FK-constraint-not-name-match pin: a {@link FilmEndorsementRecord} whose FK child column
+     * FK-constraint-not-name-match pin: a {@link FilmEndorsementRecord} whose FK child column
      * ({@code endorsed_film}) is named differently from the referenced parent key ({@code film.film_id}).
      * An FK-reference {@code @nodeId(typeName: "Film")} must resolve the target column through the FK
      * constraint (landing the decoded Film id on {@code endorsed_film}), never a name-match shortcut.
@@ -750,7 +750,7 @@ class TestServiceStub {
     }
 
     /**
-     * R315 composite / reordered-FK decode-order reconciliation pin (nodeidfixture catalog): a
+     * Composite / reordered-FK decode-order reconciliation pin (nodeidfixture catalog): a
      * {@code ReorderedFkChildRecord} whose FK references {@code reordered_pk_parent (pk_b, pk_c, pk_a)}
      * while the parent NodeType's key is {@code (pk_a, pk_b, pk_c)}. The decode's target columns must be
      * reconciled to node-key (decode) order {@code [fk_a, fk_b, fk_c]}, not the FK declaration order.
@@ -761,7 +761,7 @@ class TestServiceStub {
     }
 
     /**
-     * R315 explicit {@code @reference(key:)} disambiguation pin (idreffixture catalog): a
+     * Explicit {@code @reference(key:)} disambiguation pin (idreffixture catalog): a
      * {@code StudierettRecord} whose table carries <em>two</em> FKs to {@code studieprogram}
      * ({@code studieprogram_id} and the renamed {@code registrar_studieprogram}). {@code @reference(key:)}
      * selects which FK an FK-reference {@code @nodeId(typeName: "Studieprogram")} resolves through;
@@ -773,7 +773,7 @@ class TestServiceStub {
     }
 
     /**
-     * R315 node-key-not-covered rejection pin (nodeidfixture catalog): a {@code ChildRefRecord} whose FK
+     * Node-key-not-covered rejection pin (nodeidfixture catalog): a {@code ChildRefRecord} whose FK
      * ({@code child_ref.parent_alt_key → parent_node.alt_key}) references the parent's <em>alternate</em>
      * unique column, while the {@code ParentNode} NodeType's key is {@code pk_id}. An FK-reference
      * {@code @nodeId(typeName: "ParentNode")} through that FK leaves {@code pk_id} uncovered, which rejects.
@@ -784,7 +784,7 @@ class TestServiceStub {
     }
 
     /**
-     * R328 self-FK reference pin (public catalog): an {@link EmailRecord} whose self-FK
+     * Self-FK reference pin (public catalog): an {@link EmailRecord} whose self-FK
      * {@code email_in_reply_to_fk (mailbox_id, in_reply_to_no) -> (mailbox_id, message_no)} lets a
      * same-table {@code @nodeId(typeName: "Email") @reference} populate the reply-pointer child columns
      * (never the record's own composite PK). The decoded Email key lands on
@@ -795,10 +795,10 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R329 @service record-composite payload carrier fixtures =====
+    // ===== @service record-composite payload carrier fixtures =====
 
     /**
-     * R329 list arm: returns {@code List<}{@link TestFilmWithActorsDto}{@code >} — the consumer's
+     * List arm: returns {@code List<}{@link TestFilmWithActorsDto}{@code >} — the consumer's
      * record-composite (one {@code FilmRecord} + a {@code List<ActorRecord>}) bundled per element.
      * Drives the two-level {@code @service} carrier whose payload data field is a list of an
      * intermediate result type bound to {@link TestFilmWithActorsDto}; the data field projects the
@@ -810,7 +810,7 @@ class TestServiceStub {
     }
 
     /**
-     * R329 single arm: returns one {@link TestFilmWithActorsDto} — the single-cardinality sibling of
+     * Single arm: returns one {@link TestFilmWithActorsDto} — the single-cardinality sibling of
      * {@link #createFilmsWithActors}. The payload's data field is a single intermediate result type
      * bound to {@link TestFilmWithActorsDto}.
      */
@@ -819,7 +819,7 @@ class TestServiceStub {
     }
 
     /**
-     * R329 near-miss: returns {@code List<FilmRecord>} (a jOOQ {@code TableRecord}, not a
+     * Near-miss: returns {@code List<FilmRecord>} (a jOOQ {@code TableRecord}, not a
      * record-composite). Pointed at a composite-carrier payload whose data field's element binds to
      * {@link TestFilmWithActorsDto}, the producer-return-element mismatch must reject loudly.
      */
@@ -840,24 +840,24 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== R261 wire-coercion fixtures =====
+    // ===== wire-coercion fixtures =====
 
     /**
-     * R261 site B: a scalar {@code ID} arg bound to a {@code Long} parameter. graphql-java delivers
+     * Site B: a scalar {@code ID} arg bound to a {@code Long} parameter. graphql-java delivers
      * {@code ID} as {@code String}, so {@code (Long) env.getArgument("id")} would throw at runtime;
      * the wire-coercion predicate must reject this as {@code WireCoercionError.Assignability}.
      */
     public static String wireIdAsLong(Long id) { throw new UnsupportedOperationException(); }
 
     /**
-     * R261 site B non-regression: a scalar {@code ID} arg bound to a {@code String} parameter. This
+     * Site B non-regression: a scalar {@code ID} arg bound to a {@code String} parameter. This
      * is a true wire pass-through (graphql-java delivers {@code ID} as {@code String}); the
      * predicate must classify it to {@code Direct}, not reject.
      */
     public static String wireIdAsString(String id) { throw new UnsupportedOperationException(); }
 
     /**
-     * R261 custom-scalar non-regression: a {@code @scalarType}-resolved {@code Money} arg bound to a
+     * Custom-scalar non-regression: a {@code @scalarType}-resolved {@code Money} arg bound to a
      * {@code Money} parameter. The predicate consults the resolved scalar Java type, so a declared
      * type equal to the resolution classifies to {@code Direct} rather than a spurious rejection.
      */
@@ -865,9 +865,9 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    /** R261 site A: an input bean whose {@code Long filmId} member is bound to an SDL {@code Int} field. */
+    /** Site A: an input bean whose {@code Long filmId} member is bound to an SDL {@code Int} field. */
     public static String useLongBean(TestWireLongBean input) { throw new UnsupportedOperationException(); }
 
-    /** R261 site E: an input bean whose jOOQ-enum member is bound to an SDL enum with a divergent value. */
+    /** Site E: an input bean whose jOOQ-enum member is bound to an SDL enum with a divergent value. */
     public static String useEnumBean(TestWireEnumBean input) { throw new UnsupportedOperationException(); }
 }

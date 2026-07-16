@@ -85,7 +85,7 @@ class MethodCompletionsTest {
 
     @Test
     void sourceRowMethodCompletesMethodsOfSiblingClassName() {
-        // The R110 gap closes here on the method-binding side. @sourceRow's
+        // The @sourceRow gap closes here on the method-binding side. @sourceRow's
         // className: and method: are flat directive args, not nested in an
         // ExternalCodeReference object. The canonical overlay's
         // MethodNameBinding(@sourceRow(className:)) reads the sibling

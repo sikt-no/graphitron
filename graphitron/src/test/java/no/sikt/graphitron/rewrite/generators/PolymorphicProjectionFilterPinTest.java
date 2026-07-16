@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R108 guarantee marker: the Stage-2 per-typename SELECT in
+ * Guarantee marker: the Stage-2 per-typename SELECT in
  * {@code MultiTablePolymorphicEmitter.buildPerTypenameSelect} threads
  * {@code PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "<Type>")}
  * into the emitted {@code <Type>.$fields(...)} call. A refactor that reverts
@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code SplitRowsMethodEmitter}, and several {@code TypeFetcherGenerator}
  * sites that are correct as-is per the "Filter at the call site, not inside
  * {@code $fields}" reasoning, plus the same-table interface emit site at
- * {@code TypeFetcherGenerator.buildInterfaceFieldsList} that R108 intentionally
+ * {@code TypeFetcherGenerator.buildInterfaceFieldsList} that this pin intentionally
  * leaves alone. A folder-wide count would couple the pin to those unrelated
  * correct sites; a single-file scope pins exactly the Stage-2 invariant.
  */
@@ -86,7 +86,7 @@ class PolymorphicProjectionFilterPinTest {
     void stage2EmitterPassesNoUnfilteredSelectionSetToFields() throws IOException {
         // Matches the JavaPoet emit-string shape `$$fields(env.getSelectionSet()` — the double
         // dollar distinguishes addStatement bodies from javadoc text (which uses single $fields).
-        // After the R108 fix, no occurrences remain in MultiTablePolymorphicEmitter.java: every
+        // After the fix, no occurrences remain in MultiTablePolymorphicEmitter.java: every
         // call passes through PolymorphicSelectionSet.restrictTo.
         String content = Files.readString(STAGE_2_EMITTER);
         long directArgs = Pattern.compile("\\$\\$fields\\(env\\.getSelectionSet\\(\\)")

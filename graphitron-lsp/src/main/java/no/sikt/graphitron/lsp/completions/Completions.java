@@ -17,8 +17,8 @@ import java.util.List;
  * cursor is on the arg-name side or on whitespace) or no value provider matched,
  * dispatch falls through to {@link ArgNameCompletions}.
  *
- * <p>R347 Slice 3: this replaces the hand-maintained 40-line waterfall that
- * lived in {@code GraphitronTextDocumentService}, where each arm called a
+ * <p>This replaces the hand-maintained 40-line waterfall that lived in
+ * {@code GraphitronTextDocumentService}, where each arm called a
  * provider with its own positional signature and the load-bearing ordering
  * (e.g. {@code @externalField}'s narrowed method list ahead of the generic one)
  * survived only in a comment. The ordering is now data: the list order in

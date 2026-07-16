@@ -143,7 +143,7 @@ class DeclarationDefinitionsTest {
         assertThat(compute(file, pointAt(file, 0, "ghost"))).isEmpty();
     }
 
-    // ---- Method-backed field name -> bound method (R376) ----
+    // ---- Method-backed field name -> bound method ----
 
     @Test
     void rootServiceFieldNameJumpsToServiceMethod() {
@@ -309,7 +309,7 @@ class DeclarationDefinitionsTest {
                 List.of(new TypeBackingShape.MemberSlot("firstName", "String", "getFirstName"))),
             "FilmStd", new TypeBackingShape.JooqRecordBacking.Standalone(STD_FQN),
             "Query", new TypeBackingShape.NoBacking.Root());
-        // R376 — method-backed field classifications, one per named variant. Each
+        // Method-backed field classifications, one per named variant. Each
         // takes precedence over the enclosing type's backing in the field-name arm.
         Map<String, FieldClassification> classifications = Map.of(
             "Query.price", new FieldClassification.QueryService(SVC_FQN, "price", false, null, null),

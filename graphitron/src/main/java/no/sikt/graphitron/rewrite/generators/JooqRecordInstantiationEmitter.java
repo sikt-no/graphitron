@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * <p>Driven by the distinct {@link CallSiteExtraction.JooqRecord} binding shapes collected in
  * {@link TypeFetcherGenerator} by the dual walk (the {@code MethodBackedField.callParams()} walk for the
  * child / root-permit coordinate and the {@code ServiceField}-carrier walk for the root
- * {@code ValueShape}). R437 keys the dedup and naming on the full binding <em>shape</em> rather than the
+ * {@code ValueShape}). The dedup and naming are keyed on the full binding <em>shape</em> rather than the
  * record class (via {@link JooqRecordHelperNames}): two {@code @service} fields taking one record through
  * different input shapes emit distinct helpers, while identical shapes still collapse to one. The helper
  * name is resolved through the same {@link JooqRecordHelperNames} the call sites consult, so a call and
@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  *
  * <p>The singular helper holds the construction; the plural one is emitted alongside it
  * unconditionally and delegates per element (exactly as {@link InputBeanInstantiationEmitter} and
- * R195's {@code decode<Record>List} do). Statement form, explicit types, named locals (per "generated
+ * the {@code decode<Record>List} helpers do). Statement form, explicit types, named locals (per "generated
  * code is read and debugged").
  */
 final class JooqRecordInstantiationEmitter {
@@ -60,7 +60,7 @@ final class JooqRecordInstantiationEmitter {
      * {@code @field} column and each {@code @nodeId} decode loads independently, so omitted-vs-null-vs-set
      * is honored per field (the jOOQ {@code changed}-flag contract: an omitted nullable field stays
      * {@code changed=false} and is excluded from the INSERT/UPDATE the {@code @service} runs). Null
-     * semantics split on the field's nullability (R315, D4); see {@link #emitKeyDecode}. A binding whose
+     * semantics split on the field's nullability (D4); see {@link #emitKeyDecode}. A binding whose
  * path descends through a nested grouping input wraps its load in a parent-{@code Map} descent,
      * so a nested field and a top-level field backing the same column behave identically. {@code fromArray}
      * is the supported, non-deprecated coercion path (no {@code DataType.convert(Object)}), so the helper
@@ -80,7 +80,7 @@ final class JooqRecordInstantiationEmitter {
             .addParameter(mapStringObject, "raw");
         // A contended helper (one of several shapes for one record class) carries a one-line
         // javadoc naming the columns it binds, so a reader maps helper → mutation without decoding the
-        // ordinal. Uncontended helpers stay javadoc-free, byte-identical to pre-R437.
+        // ordinal. Uncontended helpers stay javadoc-free, so their output is unchanged.
         String javadoc = names.javadocFor(jr);
         if (javadoc != null) {
             b.addJavadoc("$L\n", javadoc);
@@ -95,7 +95,7 @@ final class JooqRecordInstantiationEmitter {
         var writers = writersOf(jr);
         var plan = ColumnOverlap.groupByColumn(writers.stream().map(WriterView::new).toList());
         if (plan.stream().noneMatch(OverlapColumn::shared)) {
-            // No overlap: byte-identical to the pre-R322 two-loop form (pay-for-what-you-use).
+            // No overlap: byte-identical to the plain two-loop form (pay-for-what-you-use).
             // Plain @field columns: each loaded only when its wire key is present, so an omitted
             // nullable column stays changed=false (excluded from INSERT/UPDATE). A non-null (`!`) field
             // is always present (graphql-java enforces it at the boundary), so the guard is always-true.
@@ -122,10 +122,10 @@ final class JooqRecordInstantiationEmitter {
      * semantics that would leave it unchanged); a present value goes through {@code fromArray} so it
      * coerces via the column's {@code DataType}/{@code Converter} (no deprecated {@code DataType.convert}).
      *
-     * <p>For a nested binding (path depth &gt; 1, R336) the guard is wrapped in a parent-{@code Map}
+     * <p>For a nested binding (path depth &gt; 1) the guard is wrapped in a parent-{@code Map}
      * descent ({@link #openDescent}): an absent / null / non-{@code Map} enclosing group skips the column
      * entirely (it stays {@code changed=false}). At depth 1 no wrapping block is emitted and the output is
-     * byte-identical to the pre-R336 form.
+     * byte-identical to the non-nested form.
      */
     private static void emitColumnBinding(MethodSpec.Builder b, CallSiteExtraction.ColumnBinding cb,
             ClassName tablesClass, String tableField) {
@@ -145,18 +145,18 @@ final class JooqRecordInstantiationEmitter {
     }
 
     /**
-     * Emits one {@link CallSiteExtraction.RecordKeyDecode} (R315, D4). A non-null ({@code ID!}) decode
+     * Emits one {@link CallSiteExtraction.RecordKeyDecode} (D4). A non-null ({@code ID!}) decode
  * always loads and throws on a null / wrong-arity decode. A nullable ({@code ID}) decode is
      * guarded on the wire key being present: omitted → target columns left unwritten (changed=false),
      * present-{@code null} → columns set to {@code NULL}, present-value → decoded and loaded (a
      * wrong-type decode still throws). The split is on {@code nonNull} alone, not on whether the decode
      * is a same-table identity or a cross-table FK reference — both load {@code targetColumns} the same way.
      *
-     * <p>For a nested decode (path depth &gt; 1, R336) the whole body is wrapped in a parent-{@code Map}
+     * <p>For a nested decode (path depth &gt; 1) the whole body is wrapped in a parent-{@code Map}
      * descent ({@link #openDescent}). This is what makes a non-null identity field inside an
      * <em>absent</em> nullable group skip rather than throw: the descent block is never entered, so the
-     * R195 throw in its body never runs. A malformed id in a <em>present</em> group still throws (the body
-     * runs). At depth 1 no wrapping block is emitted and the output is byte-identical to the pre-R336 form.
+     * decode throw in its body never runs. A malformed id in a <em>present</em> group still throws (the body
+     * runs). At depth 1 no wrapping block is emitted and the output is byte-identical to the non-nested form.
      */
     private static void emitKeyDecode(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
             ClassName tablesClass, String tableField) {
@@ -197,7 +197,7 @@ final class JooqRecordInstantiationEmitter {
         closeDescent(b, kd.path());
     }
 
-    // ===== R322: column overlap analysis (D1) + agreement-checked emission (D4) =====
+    // ===== Column overlap analysis (D1) + agreement-checked emission (D4) =====
 
     /**
      * One writer of the record: a plain {@code @field} {@link CallSiteExtraction.ColumnBinding} or a
@@ -297,7 +297,7 @@ final class JooqRecordInstantiationEmitter {
                 emitArityThrow(b, base, arity);
             } else {
                 // Nested non-null id: present iff the enclosing group is present (an absent group skips
-                // the decode and its R195 throw, matching emitKeyDecode).
+                // the decode and its throw, matching emitKeyDecode).
                 b.addStatement("boolean $LPresent = false", base);
                 b.addStatement("$T $LKeys = null", String[].class, base);
                 String parentMap = openDescent(b, path);
@@ -467,7 +467,7 @@ final class JooqRecordInstantiationEmitter {
     /**
      * The collision-free local-name base for a binding, derived from the <em>full</em> access path so two
      * nested groups sharing a leaf name emit distinct locals (D4). A single-element path yields the leaf
-     * name verbatim (byte-identical to the pre-R336 {@code sdlFieldName}-derived locals); deeper paths
+     * name verbatim (byte-identical to the flat-path {@code sdlFieldName}-derived locals); deeper paths
      * camel-join the elements ({@code ["details", "title"] -> "detailsTitle"}).
      */
     private static String localBase(List<String> path) {

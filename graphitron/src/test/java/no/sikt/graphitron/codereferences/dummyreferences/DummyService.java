@@ -1,7 +1,7 @@
 package no.sikt.graphitron.codereferences.dummyreferences;
 
 /**
- * R276 test producer stub. Reflection-only record binding (the deprecated {@code @record}
+ * Test producer stub. Reflection-only record binding (the deprecated {@code @record}
  * directive no longer drives a backing class) means a test type acquires its backing by being the
  * return type of a producer field. These methods exist purely so a test SDL can declare
  * {@code field: SomeType @service(service: {className: "...DummyService", method: "makeX"})} and

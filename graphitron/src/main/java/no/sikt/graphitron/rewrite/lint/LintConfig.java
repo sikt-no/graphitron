@@ -11,7 +11,7 @@ import java.util.Set;
  * {@code diagnostics} tool projects it, a suppressed finding never surfaces in CI, the editor
  * squiggle, or the MCP tool, from one definition with no second filter.
  *
- * <p>The two axes have deliberately different scope (see R408):
+ * <p>The two axes have deliberately different scope:
  * <ul>
  *   <li>{@code disabledRuleIds} drops any {@link no.sikt.graphitron.rewrite.BuildWarning.LintFinding}
  *       carrying that rule id from the combined build-warning list, so it covers both engine findings

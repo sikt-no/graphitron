@@ -34,7 +34,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Drives R281's spec-by-example corpus: parses an annotated fixture schema, runs <em>today's</em>
+ * Drives the spec-by-example corpus: parses an annotated fixture schema, runs <em>today's</em>
  * classifier, and for each {@code @classified} / {@code @classifiedType} coordinate compares the
  * directive's declared verdict against what the classifier produces (read off the field model's
  * {@code source()} / {@code operation()} / {@code target()} accessors for fields, off the sealed leaf's
@@ -42,8 +42,7 @@ import java.util.stream.Collectors;
  *
  * <p>The fixture's test-only directives ({@link ClassifiedDsl#PRELUDE}) are prepended before the
  * classifier runs; the classifier ignores them, and this harness reads them straight off the parsed
- * AST. The SDL is the example, the directive is the assertion. See
- * {@code roadmap/classification-test-dsl.md} §"The shape".
+ * AST. The SDL is the example, the directive is the assertion.
  */
 public final class ClassifiedHarness {
 

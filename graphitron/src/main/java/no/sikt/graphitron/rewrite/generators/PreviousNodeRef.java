@@ -19,7 +19,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  * sqlName + owner-{@code DataType} lookup the split correlation JOIN uses, so the
  *       {@code Field}'s type metadata matches the VALUES cell binds and javac still selects the
  *       routine's {@code Field} overload.</li>
- *   <li>{@link None}: the routine node is the chain's head with no previous node (R449 D5 — the
+ *   <li>{@link None}: the routine node is the chain's head with no previous node (the
  *       root {@code @routine} fetcher). A root chain's bindings are all {@link ParamSource.Arg}
  *       (pinned by {@code QueryField.QueryRoutineTableField}'s compact constructor, which requires
  *       every start binding be {@code ParamSource.Arg} — {@code RoutineDirectiveResolver} rejects
@@ -40,7 +40,7 @@ public sealed interface PreviousNodeRef {
     record ParentInputField(String valuesLocal, TableRef ownerTable) implements PreviousNodeRef {}
 
     /**
-     * No previous node — the routine node is the chain's head (R449 D5, the root {@code @routine}
+     * No previous node — the routine node is the chain's head (the root {@code @routine}
      * fetcher). Carries no payload; a root chain binds every parameter from a GraphQL argument
      * ({@link ParamSource.Arg}), so no {@link ParamSource.SourceColumn} read against a previous
      * node is possible.

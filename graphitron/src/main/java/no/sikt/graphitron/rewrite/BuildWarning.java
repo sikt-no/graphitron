@@ -18,7 +18,7 @@ import java.util.Optional;
  * <ul>
  *   <li>{@link NoRule}: an untagged advisory not attributable to a lint rule (for example the
  *       federation compound-key advisory {@code EntityResolutionBuilder} emits). Shape-parallel to
- *       the pre-R398 flat record.</li>
+ *       the previous flat record.</li>
  *   <li>{@link LintFinding}: a lint-rule finding carrying a typed {@link LintRule} and an
  *       {@link Optional} {@link LintFix}. The classifier-owned advisories (redundant {@code @record},
  *       {@code @splitQuery}-on-record, same-table {@code @asConnection}) are this arm too, tagged at

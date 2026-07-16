@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R347 Slice 3 coverage oracle for the inferred-directive inlay arm. The
+ * Coverage oracle for the inferred-directive inlay arm. The
  * present-arm renderers in {@code InlayHints} are a registry keyed by directive
  * name ({@code InlayHints.renderedInferredDirectives()}), replacing the old
  * {@code switch(directiveName)} whose {@code default} silently dropped any

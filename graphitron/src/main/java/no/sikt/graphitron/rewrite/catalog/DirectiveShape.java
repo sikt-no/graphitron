@@ -13,7 +13,7 @@ import java.util.Optional;
  * renderable strings (e.g. {@code "OBJECT"}, {@code "FIELD_DEFINITION"}),
  * projected from {@code DirectiveDefinition.getDirectiveLocations()} at the
  * one production construction site ({@code CatalogBuilder.buildSnapshot}).
- * Added for R368's {@code directives} MCP resource, which shows applicable
+ * Added for the {@code directives} MCP resource, which shows applicable
  * locations uniformly for both bundled and user-declared directives; the
  * user-declared half reaches the resource only through this projection, which
  * had previously thrown the locations away. The existing hover / diagnostic /

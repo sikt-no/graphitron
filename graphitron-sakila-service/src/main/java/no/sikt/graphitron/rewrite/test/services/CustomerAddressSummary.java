@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R110 Story 1 fixture: a free-form (non-table-backed) {@code @record} payload modelling a
+ * Fixture: a free-form (non-table-backed) {@code @record} payload modelling a
  * third-party DTO that carries a customer's {@code address_id} but no jOOQ FK metadata. The
  * schema's {@code CustomerAddressSummary} type points at this record via
  * {@code @record(record: {className: "..."})}. The payload's {@code address} child field

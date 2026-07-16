@@ -459,7 +459,7 @@ class TypeFetcherGeneratorTest {
     @Test
     void serviceField_mappedRow_single_dataFetcherReturnsCompletableFutureProjectedRecord() {
         // Mapped vs positional only changes the rows-method return shape (Map vs List); the
-        // data fetcher's return is always CompletableFuture<DataFetcherResult<V>> (R12 §3) because
+        // data fetcher's return is always CompletableFuture<DataFetcherResult<V>> because
         // loader.load(key, env) returns a per-key promise that the wrapper lifts into the
         // DataFetcherResult envelope.
         assertThat(method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "film").returnType().toString())
@@ -603,7 +603,7 @@ class TypeFetcherGeneratorTest {
     @Test
     void connectionField_returnsConnectionResult() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        // Wrapped in DataFetcherResult<...> per R12 §3.
+        // Wrapped in DataFetcherResult<...>.
         assertThat(method(spec, "films").returnType().toString()).endsWith("ConnectionResult>");
     }
 
@@ -676,7 +676,7 @@ class TypeFetcherGeneratorTest {
         // return type is Result<Record> for a List-cardinality @table-bound return. Body-shape
         // properties (specific-table local, $fields projection, .from(table) call) are behavioural
         // and asserted at execution tier — see GraphQLQueryTest.queryTableMethod_popularFilms_*.
-        // After R43 the @tableMethod method has no Table parameter — graphitron derives the
+        // The @tableMethod method has no Table parameter — graphitron derives the
         // target table from the method's return type. Method takes only the GraphQL arg.
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
@@ -738,7 +738,7 @@ class TypeFetcherGeneratorTest {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
-        // R12 §3 wraps every fetcher's return in DataFetcherResult<P>; ScalarReturnType still
+        // Every fetcher's return is wrapped in DataFetcherResult<P>; ScalarReturnType still
         // surfaces the developer's reflected return type as the inner P.
         assertThat(method(spec, "filmCount").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.lang.Integer>");
@@ -749,7 +749,7 @@ class TypeFetcherGeneratorTest {
         // Reflection of `int filmCount()` produces returnTypeName "int". The emitter must
         // declare the primitive faithfully on the inner P slot — boxing to Integer only
         // happens because DataFetcherResult<P> requires a reference type for P, and the
-        // primitive int boxes to Integer per R12 §3.
+        // primitive int boxes to Integer.
         var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "filmCount", TypeName.INT, List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
@@ -814,7 +814,7 @@ class TypeFetcherGeneratorTest {
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<? extends java.lang.Number>>");
     }
 
-    // ===== R12 §3 try/catch wrapper: dispatch arm vs redact arm =====
+    // ===== try/catch wrapper: dispatch arm vs redact arm =====
 
     private static ErrorChannel.PayloadClass sakPayloadChannel() {
         // Mirrors the SakPayload(String data, List<?> errors) shape used by
@@ -833,7 +833,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryServiceRecordField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
-        // R12 §3: when the field's WithErrorChannel resolves to a present channel, the catch
+        // When the field's WithErrorChannel resolves to a present channel, the catch
         // arm calls ErrorRouter.dispatch with the channel's mapping-table constant and a
         // synthesized payload-factory lambda. No-channel fields still route through redact —
         // covered by every existing service-record test (all pass Optional.empty()).
@@ -858,7 +858,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryServiceRecordField_withoutErrorChannel_catchArmSurfacesOrRedacts() {
-        // Counter-test: an absent channel keeps the no-channel disposition, which since R378 routes
+        // Counter-test: an absent channel keeps the no-channel disposition, which routes
         // through surfaceClientErrorOrRedact. Same fetcher shape as the dispatch test above but with
         // Optional.empty() for the channel.
         var method = TestFixtures.staticServiceMethodRef(
@@ -895,8 +895,8 @@ class TypeFetcherGeneratorTest {
 
     // ===== MutationServiceTableField / MutationServiceRecordField =====
     //
-    // Mutation services share buildServiceFetcherCommon with the query side, so the R12 §3
-    // try/catch wrapper and §5 Jakarta validation pre-step carry over for free; the success
+    // Mutation services share buildServiceFetcherCommon with the query side, so the
+    // try/catch wrapper and Jakarta validation pre-step carry over for free; the success
     // arm is universal passthrough. Tests below assert that the mutation switch arms reach
     // the helper (rather than emitting a stub) and that the wrapper integration is observable
     // on the emitted body.
@@ -984,7 +984,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void mutationServiceTableField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
-        // R12 §3 wrapper integration on the mutation side: a present channel routes the catch
+        // Wrapper integration on the mutation side: a present channel routes the catch
         // arm through ErrorRouter.dispatch with the channel's mapping table and synthesized
         // payload-factory lambda. Direct read-out of the un-stub: this contract previously only
         // applied to query services because the mutation switch emitted a stub.
@@ -1006,8 +1006,8 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void mutationServiceTableField_withoutErrorChannel_catchArmSurfacesOrRedacts() {
-        // Counter-test: an absent channel keeps the no-channel disposition (surfaceClientErrorOrRedact
-        // since R378) on the mutation side too. Without this assertion, a regression that hard-wired
+        // Counter-test: an absent channel keeps the no-channel disposition
+        // (surfaceClientErrorOrRedact) on the mutation side too. Without this assertion, a regression that hard-wired
         // dispatch in the mutation emitter (rather than going through the shared common helper's
         // fork) would slip through.
         var method = TestFixtures.staticServiceMethodRef(
@@ -1023,12 +1023,12 @@ class TypeFetcherGeneratorTest {
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
-    // ===== R63: typed DialectRequirement rendered as the request-time guard =====
+    // ===== typed DialectRequirement rendered as the request-time guard =====
     //
     // emitDialectGuard renders the guard from the model's typed DialectRequirement. The
     // RequiresFamily(POSTGRES) arm is exercised end-to-end by the reachable bulk-UPDATE pipeline
     // path (FetcherPipelineTest). UPSERT's RejectsFamily(ORACLE) arm cannot classify through the
-    // pipeline (R144 refuses UPSERT at resolveInput, deferred to R145), so its guard rendering is
+    // pipeline (UPSERT is refused at resolveInput and deferred), so its guard rendering is
     // pinned here against a directly-constructed field. The None arm (INSERT / DELETE / single
     // UPDATE) must emit no guard at all.
 
@@ -1086,7 +1086,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void mutationServiceRecordField_withValidationHandler_emitsValidatorPreStep() {
-        // R12 §5 wrapper integration on the mutation side: when the channel carries any
+        // Validation wrapper integration on the mutation side: when the channel carries any
         // ValidationHandler, the shared helper inserts the pre-execution Jakarta validation
         // block. The block is emitted ahead of the try, walks every Arg-sourced parameter, and
         // short-circuits with the payload's errors-arm filled by the violations.
@@ -1423,11 +1423,11 @@ class TypeFetcherGeneratorTest {
         assertThat(code).contains("step = step.leftJoin(FilmContent_rating_alias).on(");
     }
 
-    // ===== R395: discriminator qualifies off the FROM table instance, not the @table directive =====
+    // ===== discriminator qualifies off the FROM table instance, not the @table directive =====
     //
     // The discriminator column must qualify to the table jOOQ renders in the FROM clause, produced
     // by the table instance's own getQualifiedName(). Qualifying off the verbatim @table(name:)
-    // directive string (the pre-R395 shape) diverges from the rendered FROM token whenever the
+    // directive string (the previous shape) diverges from the rendered FROM token whenever the
     // directive name differs in case or schema, so Postgres rejects the query with
     // "missing FROM-clause entry". These fixtures give the base a deliberately mismatched directive
     // name distinct from both the jOOQ-derived local variable (filmTable) and the column (FILM_TYPE),
@@ -1486,7 +1486,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryTableInterfaceField_discriminator_neverQualifiesOffDirectiveName() {
-        // Regression lock for R395: the verbatim @table(name:) directive string must not appear as a
+        // Regression lock: the verbatim @table(name:) directive string must not appear as a
         // SQL-name qualifier at any discriminator site. Before the fix, all three rendered
         // DSL.name("INTERFACE_BASE", "FILM_TYPE"); the directive name diverges from the FROM token
         // and Postgres rejects the query with "missing FROM-clause entry".
@@ -1550,7 +1550,7 @@ class TypeFetcherGeneratorTest {
             .doesNotContain("graphitronContext");
     }
 
-    // ===== R49: ServiceRecordField (scalar / record-backed return) =====
+    // ===== ServiceRecordField (scalar / record-backed return) =====
     //
     // ServiceRecordField shares the DataLoader emitters with ServiceTableField; the only axis
     // of variation is the per-key value type (perKeyType): RECORD for table-bound,
@@ -1668,10 +1668,10 @@ class TypeFetcherGeneratorTest {
             .isEqualTo("java.util.List<java.lang.String>");
     }
 
-    // ===== R36 Track B2: QueryInterfaceField / QueryUnionField (multi-table polymorphic) =====
+    // ===== Track B2: QueryInterfaceField / QueryUnionField (multi-table polymorphic) =====
     //
     // Two-stage emission: Stage 1 narrow UNION ALL projecting (typename, pk, sort) per branch.
-    // Stage 2 per-typename batched lookup using the post-R55 ValuesJoinRowBuilder primitive
+    // Stage 2 per-typename batched lookup using the ValuesJoinRowBuilder primitive
     // with the dispatcher-shape .on(...) join. Result records carry __typename so the
     // schema-class TypeResolver routes each row to its concrete GraphQL type.
 
@@ -1761,8 +1761,8 @@ class TypeFetcherGeneratorTest {
     @Test
     void queryInterfaceField_perTypenameHelpersExist_andCallParticipantFields() {
         // Stage 2 invokes <Type>.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(),
-        // "<Type>"), t, env) for the typed projection — R108 wraps the parent selection set so
-        // each per-typename SELECT projects only columns actually selected for that variant.
+        // "<Type>"), t, env) for the typed projection; PolymorphicSelectionSet.restrictTo wraps the
+        // parent selection set so each per-typename SELECT projects only columns actually selected for that variant.
         // Selection-set narrowing works at full strength only with $fields, not asterisk().
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
@@ -1779,7 +1779,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_perTypenameHelpers_useDispatcherShapeOnNotUsing() {
-        // R55 reviewer pivot: dispatcher uses .on(...) not .using(...) because the SELECT
+        // Dispatcher uses .on(...) not .using(...) because the SELECT
         // projection includes <Type>.$fields(...) which references t.<col> directly.
         // USING would collapse joined columns and risk colliding with $fields-emitted projections.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
@@ -1797,7 +1797,7 @@ class TypeFetcherGeneratorTest {
     @Test
     void queryInterfaceField_perTypenameHelpers_addTypenameLiteralToSelect() {
         // Each typed Record carries the synthetic __typename column so the schema-class
-        // TypeResolver (registered by GraphitronSchemaClassGenerator under R36 B1) routes
+        // TypeResolver (registered by GraphitronSchemaClassGenerator) routes
         // each row back to its concrete GraphQL type.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
@@ -1820,7 +1820,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_compositePkParticipant_emitsJsonbArraySortKey() {
-        // R36 plan: composite-key sort projects DSL.jsonbArray(pk1, pk2, ...).as("__sort__").
+        // Composite-key sort projects DSL.jsonbArray(pk1, pk2, ...).as("__sort__").
         // JSONB arrays compare element-wise in PostgreSQL, so composite ordering reduces to a
         // single comparable column at no extra Java cost.
         var compositeTable = TestFixtures.tableRef("bar", "BAR", "Bar",
@@ -1857,7 +1857,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
-        // R36 Track B2 lifts QueryInterfaceField and QueryUnionField from
+        // Track B2 lifts QueryInterfaceField and QueryUnionField from
         // STUBBED_VARIANTS to IMPLEMENTED_LEAVES; the partition test guards the
         // disjoint partition invariant, this asserts membership directly so a regression in
         // the lift surfaces here too.
@@ -1867,7 +1867,7 @@ class TypeFetcherGeneratorTest {
             .doesNotContainKeys(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
     }
 
-    // ===== R36 Track B4a: connection pagination on QueryInterfaceField / QueryUnionField =====
+    // ===== Track B4a: connection pagination on QueryInterfaceField / QueryUnionField =====
     //
     // The connection emit path mirrors the list path but: (a) returns
     // DataFetcherResult<ConnectionResult>, (b) wraps stage 1's UNION ALL in a derived table
@@ -2011,7 +2011,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_connection_compositePkParticipant_typesSortFieldAsJsonb() {
-        // R36 item 1: when any connection-mode participant has composite PK, the emitter types
+        // When any connection-mode participant has composite PK, the emitter types
         // sortField as Field<JSONB> instead of Field<ParticipantPkClass>. The synthetic __sort__
         // column is then projected as DSL.jsonbArray(...) per branch (see branchProjection +
         // buildPerTypenameSelect) and PostgreSQL's lexicographic JSONB ordering reproduces the
@@ -2097,7 +2097,7 @@ class TypeFetcherGeneratorTest {
             .contains("FILM_ID.as(\"__sort__\")");
     }
 
-    // ===== R36 Track B3: ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====
+    // ===== Track B3: ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====
     //
     // Same two-stage emission as B2's root case; differs by an additional per-branch
     // WHERE <participant>.<fk> = parentRecord.<parent_pk> derived from each participant's
@@ -2125,7 +2125,7 @@ class TypeFetcherGeneratorTest {
 
     private static no.sikt.graphitron.rewrite.model.TableRef filmActorParentTableForList() {
         // Single-column PK on FilmActor that doubles as the FK source on the participants' join
-        // paths (filmActorChildJoinPaths sources both FKs from last_update). After R102 the list
+        // paths (filmActorChildJoinPaths sources both FKs from last_update). The list
         // arm constructs a SourceKey (Wrap.Row + ColumnRead) over the parent PK; aligning the
         // parent PK with the FK source columns lets the emitted JOIN parentInput predicate land
         // on the same column the WHERE predicate used to read.
@@ -2284,7 +2284,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void childInterfaceField_isImplementedLeaf_notInNotImplementedReasons() {
-        // R36 Track B3 lifts ChildField.InterfaceField and ChildField.UnionField from
+        // Track B3 lifts ChildField.InterfaceField and ChildField.UnionField from
         // STUBBED_VARIANTS into IMPLEMENTED_LEAVES.
         assertThat(TypeFetcherGenerator.IMPLEMENTED_LEAVES)
             .contains(ChildField.InterfaceField.class, ChildField.UnionField.class);
@@ -2292,7 +2292,7 @@ class TypeFetcherGeneratorTest {
             .doesNotContainKeys(ChildField.InterfaceField.class, ChildField.UnionField.class);
     }
 
-    // ===== R36 Track B4c-1: child-case connection pagination on ChildField.InterfaceField / UnionField =====
+    // ===== Track B4c-1: child-case connection pagination on ChildField.InterfaceField / UnionField =====
     //
     // Combines B3's per-branch parent-FK WHERE with B4a/B4b's connection-mode emission. Each
     // parent invocation runs its own polymorphic UNION ALL with .seek/.limit and a totalCount
@@ -2612,7 +2612,7 @@ class TypeFetcherGeneratorTest {
                 + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType())))");
     }
 
-    // ===== R150 InputBean helper emission =====
+    // ===== InputBean helper emission =====
 
     @Test
     void inputBeanInstantiationEmitter_singularHelper_signatureAndBody() {

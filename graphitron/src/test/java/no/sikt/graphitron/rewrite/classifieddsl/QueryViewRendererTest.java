@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R281 check for {@link QueryViewRenderer}: a query selects a closure of the annotated corpus, and the
+ * A check for {@link QueryViewRenderer}: a query selects a closure of the annotated corpus, and the
  * renderer regenerates real SDL for it, pruned to the selected fields (job 3) with the test-only
  * directives stripped (job 2) but real Graphitron directives retained.
  *

@@ -8,19 +8,19 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R261 Slice 1 acceptance: the generation-time wire-coercion cast guard across the {@code @service}
- * arg-classification sites (A, B, E). Before R261 each site fell through to
+ * Slice 1 acceptance: the generation-time wire-coercion cast guard across the {@code @service}
+ * arg-classification sites (A, B, E). Previously each site fell through to
  * {@code CallSiteExtraction.Direct} and emitted a raw {@code (DeclaredType) wireValue} cast that
  * compiled cleanly and {@code ClassCastException}d (or, for enums, {@code IllegalArgumentException}d)
  * on the first request. The classifier now confirms graphql-java's coercion output is assignable to
  * the declared type before emitting {@code Direct}; a mismatch surfaces as a typed
  * {@link WireCoercionError} on the field's verdict, pinned here by the arm's stable {@code lspCode()}
- * rather than prose (per the R246/R256 precedent).
+ * rather than prose.
  *
  * <p>Sites C ({@code @condition}) and D ({@code @externalField}) are out of scope for Slice 1 — their
  * dimensional wire-coercion channel is not yet pinned — so the {@code @tableMethod} /
- * {@code @condition} argument path keeps its legacy extraction; see the carved-out follow-up
- * {@code reject-wire-coercion-nonservice-sites}.
+ * {@code @condition} argument path keeps its legacy extraction; those sites are carved out to a
+ * follow-up.
  */
 @PipelineTier
 class WireCoercionCastGuardPipelineTest {

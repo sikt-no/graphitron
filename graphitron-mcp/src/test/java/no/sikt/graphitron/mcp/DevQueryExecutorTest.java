@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit tests for {@link DevQueryExecutor}: the host half of R428. The reflection boundary is JDK
+ * Unit tests for {@link DevQueryExecutor}: the host half of the execute tool. The reflection boundary is JDK
  * types only, so these tests need no generated classpath: a synthetic
  * {@code com.example.GraphitronDevExecutor} and a fake JDBC driver are compiled with the system
  * javac into temp dirs, and the invoker is driven against them exactly as it drives the real

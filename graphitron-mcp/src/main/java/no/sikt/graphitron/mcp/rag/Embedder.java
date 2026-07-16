@@ -3,8 +3,8 @@ package no.sikt.graphitron.mcp.rag;
 import java.util.List;
 
 /**
- * The graphitron-owned embedding seam (R372 D1). A thin wrapper over whatever embedding model
- * backs it, published so consumers (the semantic tools of R118 slices 9/10) never know the model
+ * The graphitron-owned embedding seam. A thin wrapper over whatever embedding model
+ * backs it, published so consumers (the semantic tools) never know the model
  * is bge or that bge is asymmetric.
  *
  * <p><strong>Query / document asymmetry lives here, not in the caller.</strong> bge applies an
@@ -19,7 +19,7 @@ import java.util.List;
  * text it was embedded from.</strong> The two methods return {@link Query} / {@link Embedding}
  * records, and this interface is their sole producer; both bundle the BM25 text with its KNN
  * vector, so a hybrid store cannot fuse a vector from one string against the BM25 text of another.
- * The records name no backing-library type, so the swap guarantee (R118 OQ2, multilingual model)
+ * The records name no backing-library type, so the swap guarantee (a deferred multilingual model)
  * attaches to this wrapper, not to the library underneath.
  */
 public interface Embedder {

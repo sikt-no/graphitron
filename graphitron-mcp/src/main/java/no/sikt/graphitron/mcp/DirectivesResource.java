@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * R368 slice 6 — the {@code directives} resource: a directive-vocabulary cheat-sheet (arguments,
+ * The {@code directives} resource: a directive-vocabulary cheat-sheet (arguments,
  * applicable locations, descriptions). Exposed as an MCP <em>resource</em> (standing pinned
  * context the client holds), not a tool, because the directive grammar is shape, not state: it
  * sits at the top of the stability gradient (changes only with a graphitron version).
@@ -20,8 +20,8 @@ import java.util.List;
  * live snapshot ({@code Workspace.snapshot()}). Bundled entries win on a name collision; re-reads
  * reflect the latest snapshot, degrading to the bundled grammar alone when no build has succeeded.
  * Both halves render their applicable locations uniformly off {@link DirectiveShape#locations()}
- * (the slice-6 widening exists so the user-declared half, which had thrown its locations away at
- * projection time, can show them too).
+ * ({@link DirectiveShape} was widened to carry locations so the user-declared half, which had thrown
+ * its locations away at projection time, can show them too).
  */
 final class DirectivesResource {
 

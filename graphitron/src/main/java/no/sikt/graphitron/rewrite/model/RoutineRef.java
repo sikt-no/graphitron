@@ -12,7 +12,7 @@ import java.util.List;
  * {@code @tableMethod} rides a {@code MethodRef.StaticOnly}, {@code @routine} rides this. A read
  * routine is a catalog handle rather than a reflected developer method, so folding it under
  * {@link MethodRef} would be the "god accessor whose meaning depends on the variant" smell; it gets
- * its own sibling carrier (see R300).
+ * its own sibling carrier.
  *
  * <p>Day-one models the table-valued read function only. jOOQ generates such a function as a
  * first-class catalog {@code Table<R>} (so the result projection rides the existing

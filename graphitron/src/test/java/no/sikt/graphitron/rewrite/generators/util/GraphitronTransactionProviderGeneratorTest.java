@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * fake {@code Connection}, never the emitted source text.
  *
  * <p>The instrumentation that <em>uses</em> this provider (pin → publish → release) is proven
- * end-to-end at the execution tier against real Postgres (per the R429 slice-2 test plan); this class
+ * end-to-end at the execution tier against real Postgres; this class
  * pins the transaction primitive in isolation: top-level autocommit demarcation, savepoint nesting,
  * and the {@code ROLLBACK_ONLY} commit policy that a subclass of jOOQ's {@code final} default provider
  * could not express.
@@ -82,7 +82,7 @@ class GraphitronTransactionProviderGeneratorTest {
 
     @Test
     void rollbackOnly_defersTheTransactionAndSavepointsTheField() throws Throwable {
-        // ROLLBACK_ONLY is R428's rollback-everything dev mode: the operation transaction opens
+        // ROLLBACK_ONLY is the rollback-everything dev mode: the operation transaction opens
         // once and stays open across the field's settle (no commit, no rollback, no autocommit
         // restore here), so the generated DML two-step's post-settle read-back observes the write.
         // PinnedConnection.release discards the whole transaction at operation completion.

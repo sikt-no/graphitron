@@ -17,7 +17,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R365 route (a) execution tier: a {@code @service} field returning a polymorphic entity. Proves
+ * Route (a) execution tier: a {@code @service} field returning a polymorphic entity. Proves
  * the 9.3 regression end-to-end: the service hands back PK-populated {@code TableRecord}s, the
  * generated fetcher dispatches on each returned record's runtime class
  * ({@code FilmRecord} → {@code Film}, {@code ActorRecord} → {@code Actor}), tags {@code __typename},
@@ -96,7 +96,7 @@ class ServicePolymorphicReturnExecutionTest {
 
     @Test
     void searchManyMutation_dispatchesBothBranchesByRecordClass() {
-        // The item's headline shape: a @service MUTATION returning a multitable interface. Same
+        // The headline shape: a @service MUTATION returning a multitable interface. Same
         // record-class dispatch as the query arm, but pins the MutationServicePolymorphicField
         // emit + registration + runtime path end-to-end.
         String expectedFilmTitle = dsl.select(Tables.FILM.TITLE).from(Tables.FILM)

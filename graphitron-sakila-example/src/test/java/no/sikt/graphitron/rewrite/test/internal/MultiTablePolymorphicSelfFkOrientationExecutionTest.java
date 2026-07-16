@@ -16,11 +16,11 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R458 slice-1 execution-tier coverage for self-referencing foreign-key orientation on a
+ * Execution-tier coverage for self-referencing foreign-key orientation on a
  * <em>multi-table</em> polymorphic child field (the {@code @referenceFor} path through
- * {@code MultiTablePolymorphicEmitter}). This is the case R458's roadmap flags as
- * "must be pinned by an execution test; both columns live on the same table and a flipped
- * orientation is silently wrong data", and it is the regression guard for the R458 review finding:
+ * {@code MultiTablePolymorphicEmitter}). This case must be pinned by an execution test:
+ * both columns live on the same table and a flipped orientation is silently wrong data.
+ * It is the regression guard for a review finding where
  * {@code FieldBuilder.resolveChildPolymorphicJoinPaths} used to resolve every {@code @referenceFor}
  * route with a hardcoded single-valued orientation hint, so a list/connection child field with a
  * same-table self-FK route silently returned the wrong rows.
@@ -91,7 +91,7 @@ class MultiTablePolymorphicSelfFkOrientationExecutionTest {
     void singleCardinalitySelfFk_navigatesToParentCategory() {
         // parentRef is single-cardinality: the SAME self-FK key orients toward the parent, putting the
         // correlation column on the parent side (parent.parent_category_id, a non-key parent column).
-        // R481's ParentRowDemand capability force-projects that column onto the parent SELECT, so the
+        // The ParentRowDemand capability force-projects that column onto the parent SELECT, so the
         // single-fetch WHERE reads it. Action(2)'s parent is Genre(1); CategoryLabel is empty for
         // category 2 (no category_label row), so the single result is deterministically the Genre node.
         var action = categoryById(2, "parentRef " + REF_SELECTION);

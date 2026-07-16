@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R329 pipeline-tier coverage for the {@code @service} record-composite payload carrier: an
+ * Pipeline-tier coverage for the {@code @service} record-composite payload carrier: an
  * {@code @service} mutation whose method returns a list (or single) of a consumer-authored composite
  * (one {@code FilmRecord} plus a {@code List<ActorRecord>}), expressed as a two-level carrier
  * {@code Payload { results: [Result], errors }} / {@code Result { film: Film, actors: [Actor] }}.
@@ -27,9 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * List&lt;ActorRecord&gt;) returned by {@link TestServiceStub#createFilmsWithActors} /
  * {@link TestServiceStub#createFilmWithActors}.
  *
- * <p>R357 adds the casing-mismatch sibling ({@link #caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField}):
- * the same carrier whose {@code @table} children declare {@code @table(name:)} in a case that differs from
- * the lowercase jOOQ catalog name still resolves both children through the accessor path.
+ * <p>The casing-mismatch sibling ({@link #caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField})
+ * covers the same carrier whose {@code @table} children declare {@code @table(name:)} in a case that differs from
+ * the lowercase jOOQ catalog name; both children still resolve through the accessor path.
  */
 @PipelineTier
 class ServiceRecordCompositeCarrierPipelineTest {
@@ -129,7 +129,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
     /**
  * The class-backed list-carrier arrival mismatch (formerly a misleading rejection): a
      * <em>list</em> carrier ({@code [CreateFilmsPayload]}) over a class-backed composite payload,
-     * produced by a <em>single</em> composite ({@code createFilmWithActors}). Before R308 the
+     * produced by a <em>single</em> composite ({@code createFilmWithActors}). Previously the
      * {@code NoBind}-silent-drop left the payload unbacked and only the generic dangling-type-reference
      * rule rejected it (never naming the cardinality cause). The shape verdict now rejects at the seat
      * with the typed {@link ServiceCarrierShapeError.ProducerArrivalMismatch} — the same arm the
@@ -177,7 +177,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
      * a class-backed {@code JavaRecordType} payload and a single source-passthrough
      * {@code RecordCompositeField} data field, no diagnostics. Before this rework the shape false-rejected:
      * {@code checkServiceReturnMatchesPayload} re-levelled the expected producer cardinality onto the
-     * data-field wrapper alone (an R329 read that predates list carriers), so a single data field made it
+     * data-field wrapper alone (a read that predates list carriers), so a single data field made it
      * expect a single-value producer and reject the {@code List<…>} producer. Commit 0803628 fixed the
      * mirror-image false reject for the {@code @table} variant, which only surfaced because that variant
      * had a fixture; this is the missing class-backed tripwire.

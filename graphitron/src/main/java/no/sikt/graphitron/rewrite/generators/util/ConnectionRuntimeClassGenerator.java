@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.StringJoiner;
 
 /**
- * R429 slice 1 — emits the connection-lifecycle runtime substrate into the consumer's
+ * Emits the connection-lifecycle runtime substrate into the consumer's
  * {@code <outputPackage>.schema} package: an application-scoped {@code GraphitronRuntime} that owns
  * the {@code DataSource}, the acquisition-scoped {@code PinnedConnection} that mounts and unmounts
  * per-request identity around exactly one pinned connection, and the {@code SessionHook} seam the
@@ -37,7 +37,7 @@ import java.util.StringJoiner;
  * {@code Graphitron.runtime(dataSource, dialect)}); identity is acquisition-scoped
  * ({@code PinnedConnection}, one per operation). {@code PinnedConnection} carries <em>no</em>
  * transaction concept: the commit-policy axis (commit-vs-rollback) is the orthogonal transaction
- * concern that R429 slice 2's {@code TransactionProvider} + execution instrumentation layer over this
+ * concern that the {@code TransactionProvider} and execution instrumentation layer over this
  * seam. The connect OUT value is the only thing called a "handle" here.
  *
  * <h2>The lifecycle contract (unit-pinned in {@code ConnectionRuntimeClassGeneratorTest})</h2>
@@ -678,12 +678,12 @@ public final class ConnectionRuntimeClassGenerator {
      * key's connection; {@code releaseAll()} releases every pinned connection on every completion path,
      * per-connection eviction on disconnect failure, idempotent.
      *
-     * <p>The {@code DSL.using(...) + TransactionProvider} binding lives here, single-sourced, so R45's
-     * many per-field routing sites consume {@code dslFor(key)} as a drop-in for {@code getDslContext(env)}
+     * <p>The {@code DSL.using(...) + TransactionProvider} binding lives here, single-sourced, so the
+     * many per-field tenant-routing sites consume {@code dslFor(key)} as a drop-in for {@code getDslContext(env)}
      * and never re-emit the binding (only <em>which key</em> and <em>where it routes</em> are schema-shaped).
      *
  * <p>Forward note: this carrier subsumes slice 2's single-{@code pinned} instrumentation state
-     * as the one-entry case; when R45 wires tenant routing in, the untenanted path becomes a default-key
+     * as the one-entry case; when tenant routing is wired in, the untenanted path becomes a default-key
      * entry here rather than a second parallel carrier, collapsing the two release-on-completion sites into
      * one. Slice 4 lands and proves the carrier directly (test-supplied keys, fake tenant map); it does not
      * rewire the instrumentation.

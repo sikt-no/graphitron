@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp.state;
 
 /**
- * Client-side toggles for the R160 inlay-hint and classification-hover surfaces. Three
+ * Client-side toggles for the inlay-hint and classification-hover surfaces. Three
  * independent boolean axes, all defaulting to {@code false} so opt-in is explicit and
  * users who haven't asked for the surface see no behaviour change.
  *

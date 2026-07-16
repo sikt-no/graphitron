@@ -72,7 +72,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
     /**
      * The catch arm constructs a developer payload class and slots the errors list into it.
      * Active for every fetcher whose payload return is a class-backed shape today;
-     * after R161 this arm is the only one for service-backed paths
+     * it is the only arm for service-backed paths
      * ({@code MutationServiceTableField}, {@code MutationServiceRecordField},
      * {@code QueryServiceTableField}, {@code QueryServiceRecordField}) and child
      * {@code @tableMethod} / child {@code @service} variants.

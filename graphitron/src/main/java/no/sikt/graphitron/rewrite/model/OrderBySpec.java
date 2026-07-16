@@ -34,7 +34,7 @@ public sealed interface OrderBySpec
     /**
      * Per-entry sort direction. Decoupled from the SDL {@code SortDirection} enum on purpose:
      * this is the resolved truth the emitter consumes, not the directive-argument value the
-     * resolver reads. R243 lifted this from a whole-spec {@code String} on {@link Fixed} down
+     * resolver reads. This was lifted from a whole-spec {@code String} on {@link Fixed} down
      * onto each {@link ColumnOrderEntry}, so a single fixed spec can carry heterogeneous
      * directions (e.g. {@code year DESC, key ASC}).
      */

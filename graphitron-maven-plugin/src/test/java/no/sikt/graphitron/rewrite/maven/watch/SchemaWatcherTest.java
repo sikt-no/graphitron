@@ -206,7 +206,7 @@ class SchemaWatcherTest {
     }
 
     /**
-     * Backend-probe ratchet. The synthetic-dispatch lift in R198 turns on the
+     * Backend-probe ratchet. The synthetic-dispatch lift turns on the
      * assumption that macOS's WatchService is polling-only ; if a future JDK
      * ships an FSEvents-backed WatchService, this test fails loudly and the
      * Linux-only smoke gate above gets revisited. The Linux check is paired
@@ -227,7 +227,7 @@ class SchemaWatcherTest {
                     .as("Linux WatchService is expected to be inotify-backed")
                     .isEqualTo("LinuxWatchService");
             }
-            // Other OSes (Windows, BSD) are R89's surface; do not assert here.
+            // Other OSes (Windows, BSD) are out of scope for this ratchet; do not assert here.
         }
     }
 

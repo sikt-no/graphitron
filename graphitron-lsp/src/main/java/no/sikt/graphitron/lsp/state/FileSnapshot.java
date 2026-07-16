@@ -8,7 +8,7 @@ import io.github.treesitter.jtreesitter.Tree;
  * atomically under the {@link Workspace} lock. Handed to request handlers and
  * feature {@code compute()} methods so they walk a syntax tree and read source
  * bytes on a pool thread without racing the dispatch thread's
- * {@code didChange}-driven edit / tree-swap / eager {@code close()} (R456).
+ * {@code didChange}-driven edit / tree-swap / eager {@code close()}.
  *
  * <p>Distinct from {@link WorkspaceFile} by design, with no shared read
  * interface: the type is the guarantee. A method that accepts a

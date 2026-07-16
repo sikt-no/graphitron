@@ -76,7 +76,7 @@ public record CallParam(
     }
 
     /**
-     * True when emitting this argument under the {@code FromSelectedField} argument source (R424, the
+     * True when emitting this argument under the {@code FromSelectedField} argument source (the
      * two inline emission sites) produces a Java unchecked cast, so the enclosing {@code $fields}
      * method must carry {@code @SuppressWarnings("unchecked")}. This is the source-aware companion to
      * {@link #emitsUncheckedCast()}: the {@code $fields} host asks here, while the {@code Env} hosts

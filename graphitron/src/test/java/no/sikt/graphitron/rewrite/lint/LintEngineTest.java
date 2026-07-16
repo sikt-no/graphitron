@@ -216,7 +216,7 @@ class LintEngineTest {
             LintRule.NO_DEPRECATED_DIRECTIVE_USAGE)).isEmpty();
     }
 
-    // --- suggested fixes (R398 fix slice): assert the LintFix edit ranges and replacement text ---
+    // --- suggested fixes: assert the LintFix edit ranges and replacement text ---
 
     @Test
     void fieldNamesCamelCase_offersRenameFix() {

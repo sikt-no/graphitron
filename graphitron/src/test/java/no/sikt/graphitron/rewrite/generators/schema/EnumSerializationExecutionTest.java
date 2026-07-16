@@ -17,7 +17,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R229 integration test: pin graphql-java's bidirectional behavior at the
+ * Integration test pinning graphql-java's bidirectional behavior at the
  * {@code GraphQLEnumValueDefinition.name(...).value(...)} boundary that the schema emitter (see
  * {@link EnumTypeGenerator#buildValueDefinitionMethod}) writes into the generated {@code <Name>Type.type()}
  * method.
@@ -25,10 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>These tests construct the {@link GraphQLEnumType} the same way the generated code does — by
  * calling {@code GraphQLEnumType.newEnum().value(GraphQLEnumValueDefinition.newEnumValueDefinition()
  * .name(sdl).value(runtime).build())} — and exercise the full graphql-java parse / serialize path
- * around it. They document the boundary contract R229 relies on: with {@code @field(name:)} lifted
+ * around it. They document the boundary contract the generated code relies on: with {@code @field(name:)} lifted
  * into the {@code .value(...)} slot, graphql-java's wire ↔ runtime translation happens at the
  * boundary, in both directions, and the Java-side {@code TextMapLookup} translation step that
- * pre-R229 graphitron emitted is no longer needed.
+ * graphitron previously emitted is no longer needed.
  *
  * <p>This is execution-tier: the assertion is on observed graphql-java behavior, not on emitted
  * source. The unit-tier counterpart in {@link EnumTypeGeneratorTest} pins that the generator
@@ -40,7 +40,7 @@ class EnumSerializationExecutionTest {
     /**
      * Output round-trip: a resolver returns the {@code @field(name:)} runtime form ({@code "FØDSELSNUMMER"}),
      * graphql-java's Coercing layer matches it against the registered {@code .value(...)}, and the
-     * response carries the SDL identifier ({@code FODSELSNUMMER}). Pre-R229 (with {@code .value(SDL)})
+     * response carries the SDL identifier ({@code FODSELSNUMMER}). Previously (with {@code .value(SDL)})
      * this would fail with {@code Can't serialize value ... Unknown value 'FØDSELSNUMMER'}.
      */
     @Test

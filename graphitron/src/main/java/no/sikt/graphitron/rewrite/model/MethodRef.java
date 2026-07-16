@@ -190,8 +190,9 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * {@link ParamSource.DslContext}" is computed once at the parse boundary). The
      * {@link InstanceWithDslHolder} arm carries the holder constructor's resolved parameter
      * sources ({@link InstanceWithDslHolder#ctorParams()}); whether a {@code dsl} local is needed
-     * is read from those (R256 relaxed the holder from {@code (DSLContext)}-only to any constructor
-     * whose parameters bind from a DSLContext slot or a declared context argument).
+     * is read from those (the holder is not restricted to {@code (DSLContext)}-only: any
+     * constructor whose parameters bind from a DSLContext slot or a declared context argument is
+     * accepted).
      */
     sealed interface CallShape permits CallShape.Static, CallShape.InstanceWithDslHolder {
 
@@ -207,8 +208,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
          * holder constructor's parameters in declaration order, each sourced from
          * {@link ParamSource.DslContext} or {@link ParamSource.Context}; the call site emits
          * {@code new ClassName(<ctorArgs>).method(...)}. The legacy {@code (DSLContext)}-only
-         * holder is the single-{@link ParamSource.DslContext}-param case; R256 widened the arm to
-         * carry richer constructors (e.g. {@code (DSLContext, ctxArg)}).
+         * holder is the single-{@link ParamSource.DslContext}-param case; the arm also carries
+         * richer constructors (e.g. {@code (DSLContext, ctxArg)}).
          *
          * <p>The no-arg convenience constructor preserves the legacy {@code (DSLContext)} shape for
          * test fixtures and any caller that has not been updated to thread the resolved ctor

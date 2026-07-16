@@ -129,7 +129,7 @@ class DirectiveShapeSmokeTest {
 
     @Test
     void recordDirectiveSakilaShape_carveOut_noClassHover() {
-        // R307: the @record(record: {className:}) shape still parses and its className coordinate
+        // The @record(record: {className:}) shape still parses and its className coordinate
         // resolves (the hover falls through to the SDL docstring, proving shape recognition), but
         // @record is deprecated and ignored so there is no live-binding "**Class**" hover on the FQN.
         String source = """

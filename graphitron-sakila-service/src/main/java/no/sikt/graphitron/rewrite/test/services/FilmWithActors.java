@@ -6,7 +6,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import java.util.List;
 
 /**
- * R329 execution-tier fixture: a consumer-authored composite record bundling several jOOQ table
+ * Execution-tier fixture: a consumer-authored composite record bundling several jOOQ table
  * records, one {@link FilmRecord} plus a {@code List<}{@link ActorRecord}{@code >}. The Sakila-catalog
  * analog of the driving utdanningsregisteret shape (one {@code UtdanningsspesifikasjonRecord} plus a
  * {@code List<UtdanningsmulighetRecord>}). Returned by {@link FilmsWithActorsService#create} so the

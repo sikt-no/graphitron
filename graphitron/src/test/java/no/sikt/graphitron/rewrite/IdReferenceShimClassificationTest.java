@@ -126,7 +126,7 @@ class IdReferenceShimClassificationTest {
         // Case 4d: bare id: ID on a table that has nodeId metadata but no outgoing FKs.
         // studieprogram has __NODE_TYPE_ID but no outgoing FK → empty qualifier map →
         // "id" doesn't match → column lookup misses (no column named "id") →
-        // falls to the synthesis shim. Post-R50, the shim routes onto ColumnField with
+        // falls to the synthesis shim, which routes onto ColumnField with
         // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType) instead of
         // the retired wire-shape NodeIdField.
         DOES_NOT_SHIM_OWN_ID(

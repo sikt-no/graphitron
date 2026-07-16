@@ -30,7 +30,7 @@ class ErrorRouterClassGeneratorTest {
 
     @Test
     void emits_mappingNestedInterfaceWithMatchAndDescription() {
-        // R12 source-direct dispatch: Mapping has match() + description() only. The legacy
+        // Source-direct dispatch: Mapping has match() + description() only. The legacy
         // build(path, message) factory is gone; the matched source goes into the errors list
         // directly and graphql-java's PropertyDataFetcher reads each declared @error field
         // off the source.

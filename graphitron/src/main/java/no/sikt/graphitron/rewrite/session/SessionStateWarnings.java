@@ -6,11 +6,11 @@ import no.sikt.graphitron.rewrite.lint.LintRule;
 import java.util.List;
 
 /**
- * R429 slice 6 - the two generation-time advisories about the owned-connection runtime's identity
+ * The two generation-time advisories about the owned-connection runtime's identity
  * posture, derived purely from the resolved {@link SessionStateConfig} and whether the schema uses
  * {@code @service}. Kept a pure decision (no schema, no {@code RewriteContext}) so it is unit-testable
  * directly; {@code GraphQLRewriteGenerator.withLintFindings} calls it with the config and a
- * {@code hasService} flag and folds the result into the build-warning channel, where R408 lint
+ * {@code hasService} flag and folds the result into the build-warning channel, where lint
  * suppression (by rule id) applies uniformly.
  *
  * <p>Both advisories are {@link BuildWarning.LintFinding}s (rule-tagged, hence suppressible by id via

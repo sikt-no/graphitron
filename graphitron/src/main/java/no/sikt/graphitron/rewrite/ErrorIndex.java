@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R317 slice 3d — pure, typename-keyed fixed-point index over the schema's {@code @error} types
+ * A pure, typename-keyed fixed-point index over the schema's {@code @error} types
  * ({@link ErrorType}). Built once by {@link TypeBuilder#buildClassificationIndices} by
  * directive-scanning every SDL type (a superset of the reachable set, unpruned) through the same
  * producer classification uses ({@code buildErrorType}); read by field classification in place of a

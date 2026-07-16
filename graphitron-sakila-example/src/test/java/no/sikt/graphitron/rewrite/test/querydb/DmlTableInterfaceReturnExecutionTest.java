@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R406 execution-tier coverage: a DML {@code @mutation(typeName: INSERT|UPDATE)} returning a
+ * Execution-tier coverage: a DML {@code @mutation(typeName: INSERT|UPDATE)} returning a
  * single-table discriminated interface ({@code Content} over the shared {@code content} table,
  * {@code CONTENT_TYPE} discriminator, {@code FilmContent} / {@code ShortContent} pinned by
  * {@code @discriminator}). The write is a plain single-{@code @table} write; the load-bearing proof
@@ -57,8 +57,9 @@ class DmlTableInterfaceReturnExecutionTest {
 
     /**
      * The mutations under test commit to the shared {@code content} table, so remove every row this
-     * test created (all titled {@code R406 …}) after each method. Without this, the committed rows
-     * leak into read-side fixtures (e.g. {@code allContent}) that assert on the exact seeded row set.
+     * test created (they share the common title prefix matched by the {@code LIKE} filter below)
+     * after each method. Without this, the committed rows leak into read-side fixtures (e.g.
+     * {@code allContent}) that assert on the exact seeded row set.
      */
     @AfterEach
     void cleanUpCreatedContent() {

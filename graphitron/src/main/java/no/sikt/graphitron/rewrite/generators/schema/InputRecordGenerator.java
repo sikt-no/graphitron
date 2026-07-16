@@ -38,10 +38,10 @@ import java.util.Set;
  * {@code <InputName>.fromMap(env.getArgument(...))}.
  *
  * <p>The emitted shape is intentionally a plain Java class (not a Java {@code record}) and the
- * package contains no sealed marker / {@code package-info.java} pending R174's
- * {@code graphitron-javapoet} upgrade. R172 lifts the service-side-reference audit as a
- * follow-on; in the meantime the "graphitron-internal" intent rides on the package boundary
- * and the per-class Javadoc this generator stamps on every emitted carrier.
+ * package contains no sealed marker / {@code package-info.java} pending a
+ * {@code graphitron-javapoet} upgrade that can emit them. A build-time audit of service-side
+ * references is deferred as a follow-on; in the meantime the "graphitron-internal" intent rides
+ * on the package boundary and the per-class Javadoc this generator stamps on every emitted carrier.
  *
  * <p>Reachable closure: every SDL input type referenced by a field argument, transitively
  * through nested input components, gets a class. Non-reachable inputs are dead schema and the

@@ -46,7 +46,7 @@ class InterfaceFieldValidationTest {
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
 
     /**
-     * Single-PK parent {@link SourceKey} for a parent table — under R38 Phase 3 the validator
+     * Single-PK parent {@link SourceKey} for a parent table. The validator
      * reads parent-key arity off {@code field.parentSourceKey().columns()}, so test fixtures
      * must publish a real {@link SourceKey}. Empty-PK parents are unreachable through this
      * validator: the classifier routes empty-PK parents through {@code UnclassifiedField} so
@@ -59,7 +59,7 @@ class InterfaceFieldValidationTest {
     /**
      * Sentinel {@link GraphitronType.ResultType} for fixture-style test fields. The
      * {@link InterfaceField} / {@link UnionField} canonical constructors enforce non-null on
-     * {@code parentResultType} (R105 follow-up: the type system carries the contract the
+     * {@code parentResultType} (the type system carries the contract the
      * validator and emitter both depend on). The validator does not read this field; any
      * non-null permit suffices.
      */
@@ -157,7 +157,7 @@ class InterfaceFieldValidationTest {
 
     @Test
     void rejects_listArm_onParentPkArityOver21() {
-        // R102 finding #5: list arm widens to Row<N+1> via the shared parentInput VALUES emitter
+        // The list arm widens to Row<N+1> via the shared parentInput VALUES emitter
         // exactly like connection, so the arity cap is uniformly 21 across both arms (a 22-PK
         // parent would generate a reference to non-existent org.jooq.Row23 inside the rows
         // method). Validator rejects it before codegen.

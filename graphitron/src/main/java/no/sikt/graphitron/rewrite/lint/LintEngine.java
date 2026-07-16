@@ -121,7 +121,7 @@ public final class LintEngine {
     /**
  * Whether a type name matches a configured {@code excludedTypes} glob. This widens the same
      * per-type skip boundary the bundled ({@code BUNDLED_TYPE_NAMES}) and federation-injected
-     * ({@code injectedNames}, R407) name-set exclusions use, and stays scoped to the engine's AST walk;
+     * ({@code injectedNames}) name-set exclusions use, and stays scoped to the engine's AST walk;
      * a classifier advisory on an excluded type still fires.
      */
     private boolean matchesExcludedType(String typeName) {

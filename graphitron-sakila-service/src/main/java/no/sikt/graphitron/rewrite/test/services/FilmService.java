@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * R49 ServiceRecordField Phase A fixture — child {@code @service} method with a non-table
+ * {@code ServiceRecordField} Phase A fixture: child {@code @service} method with a non-table
  * scalar return type.
  *
  * <p>The signature uses {@code Record1<Integer>} (mapped) keys rather than
@@ -28,7 +28,7 @@ import java.util.Set;
  * classifies the field's {@code BatchKey} as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRecordKeyed},
  * so the framework's emitted lambda passes a {@code Set<Record1<Integer>>} into this method.
  *
- * <p>Phase B (R32) generated rows-method calls this; Phase A's emitter shipped a stub body
+ * <p>The Phase B generated rows-method calls this; Phase A's emitter shipped a stub body
  * that threw at request time.
  */
 public final class FilmService {
@@ -60,8 +60,8 @@ public final class FilmService {
     }
 
     /**
-     * R61 sibling fixture exercising the {@code Set<Row1<Integer>>} source-shape arm of the
-     * @service classifier. {@link Row1} has no {@code value<N>()} accessor (that's
+     * Sibling fixture exercising the {@code Set<Row1<Integer>>} source-shape arm of the
+     * {@code @service} classifier. {@link Row1} has no {@code value<N>()} accessor (that's
      * {@link Record1}'s addition), so the developer composes against the column tuple via
      * {@code DSL.row(...).in(filmIds)} at SQL time, then reconstructs each key by wrapping the
      * fetched scalar in a fresh {@code DSL.row(value)} — value-based {@code equals}/
@@ -92,14 +92,15 @@ public final class FilmService {
     }
 
     /**
-     * R177 fixture: child {@code @service} with a {@link no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType}
-     * return ({@code Language}). Post-R177 the rows-method's {@code V} is
+     * Fixture: child {@code @service} with a {@link no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType}
+     * return ({@code Language}). The rows-method's {@code V} is
      * {@code tb.table().recordClass()} (here {@link LanguageRecord}), so the structurally-
-     * required signature is {@code Map<Record1<Integer>, LanguageRecord>}. Pre-R177 {@code V}
-     * was raw {@code org.jooq.Record} and this signature would have been rejected by the
+     * required signature is {@code Map<Record1<Integer>, LanguageRecord>}. Were {@code V}
+     * raw {@code org.jooq.Record}, this signature would be rejected by the
      * validator's strict {@code TypeName.equals}; the fixture compiles (and classifies)
-     * only post-R177, making {@code mvn compile -pl :graphitron-sakila-example} the load-
-     * bearing guarantee against future re-widening of the emit site.
+     * only when {@code V} is the specific record class, making
+     * {@code mvn compile -pl :graphitron-sakila-example} the load-bearing guarantee against
+     * future re-widening of the emit site.
      *
      * <p>Body looks up each film's language by joining {@code film} to {@code language} on the
      * {@code film_language_id_fkey} FK and returns the per-film {@link LanguageRecord}.
@@ -125,7 +126,7 @@ public final class FilmService {
     }
 
     /**
-     * R70 sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
+     * Sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
      * developer signs {@code Set<FilmRecord>} on the parameter and {@code Map<FilmRecord, String>}
      * on the return, which classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
      * (the variant carries the typed record class). The framework's emitted lambda extracts the
@@ -164,10 +165,10 @@ public final class FilmService {
     }
 
     /**
-     * R285 lift-back fixture: a list-cardinality child {@code @service} whose mapped batch returns
+     * Lift-back fixture: a list-cardinality child {@code @service} whose mapped batch returns
      * the {@code film_actor} junction rows per film. The element type {@code FilmActor} carries an
      * {@code actor: Actor @reference} sub-field, which is a correlated multiset, not a stored
-     * column. Pre-R285 the rows-method returned these {@code FilmActorRecord}s verbatim and the
+     * column. Without the lift the rows-method returned these {@code FilmActorRecord}s verbatim and the
      * {@code actor} fetcher threw {@code "Field \"actor\" is not contained in row type"}; the lift
      * re-projects each returned record's PK through {@code FilmActor.$fields(...)} so the multiset
      * column is present. This is the in-tree analogue of opptak's

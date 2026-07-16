@@ -124,7 +124,7 @@ class ContextArgumentTypeAgreementTest {
 
     @Test
     void agreement_rejectsDisagreeingTypesAcrossSites() {
-        // R190 fixture: argConditionWithContext declares tenantId: String;
+        // Fixture: argConditionWithContext declares tenantId: String;
         // argConditionTenantIdLong declares tenantId: Long. Two arg-level @condition sites with
         // the same contextArgument name but disagreeing Java types — classifier surfaces a
         // TypeConflict.

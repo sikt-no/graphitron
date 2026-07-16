@@ -13,9 +13,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * R333 thread I, level 1 — the method-name closure walk over one generation run's emitted
+ * The level-1 method-name closure walk over one generation run's emitted
  * {@link TypeSpec}s. The emit target is a graph of Java methods calling each other by name
- * (R333 "The unit is the emitted method"); this walk extracts that graph's two relations from
+ * (the unit is the emitted method); this walk extracts that graph's two relations from
  * the current emit artifact and exposes the referential-integrity violations:
  *
  * <ul>
@@ -32,9 +32,9 @@ import java.util.regex.Pattern;
  *
  * <p><b>Level-1 scope.</b> This is the characterization form of the oracle: it walks the emit
  * artifact, not the model, so it is valid before any re-platforming and survives it as the
- * harness (R333 Scope). The bidirectional form (every emitted method is exactly one command's
+ * harness. The bidirectional form (every emitted method is exactly one command's
  * output; every callee resolves to a <em>committed command</em>) needs the command/name registry
- * and lands with the emit slices, first populated for the reentry family by R314. Two documented
+ * and lands with the emit slices, first populated for the reentry family. Two documented
  * blind spots at this level, both closed by javac in the compilation tier and by the level-2
  * registry later: unqualified same-class calls (rendered with no class qualifier, so no
  * generated-name token to resolve), and instance calls through variables (the qualifier is a

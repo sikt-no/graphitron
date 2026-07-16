@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R75 Phase 1: pipeline-tier coverage for single-record DML payloads — plain SDL Object
+ * Phase 1: pipeline-tier coverage for single-record DML payloads — plain SDL Object
  * payload types whose single {@code @table}-element data field admits without an authored
  * Java carrier.
  *
@@ -43,20 +43,20 @@ class SingleRecordPayloadPipelineTest {
 
     // ===== Trigger admission, parameterised over DmlKind (INSERT / UPDATE / UPSERT) =====
 
-    // R141 retired the single-input + list-data-field admission as a Phase 1 case: the
+    // The single-input + list-data-field admission is no longer a Phase 1 case: the
     // cardinality dispatch in validateReturnType now routes that cell to Invariant #16 and the
-    // bulk-input + list-data-field cell to the new MutationBulkDmlRecordField leaf. R141's
+    // bulk-input + list-data-field cell to the new MutationBulkDmlRecordField leaf. The
     // GraphitronSchemaBuilderTest truth-table holds the admitted-arm coverage for the new leaf;
     // this fixture file keeps single-data-field admission for MutationDmlRecordField only.
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_bulkInput_listDataField_classifiesAsBulkLeaf(DmlKind kind) {
-        // UPSERT is deferred to R145 (mutation-cardinality-safety-upsert); the classifier surfaces
-        // a deferred-to-R145 rejection rather than constructing the leaf, so the parameterised
-        // case excludes UPSERT. R258 splits the UPDATE arm: the payload-returning bulk UPDATE
-        // routes onto MutationBulkUpdatePayloadField (walker carrier), while INSERT stays on the
-        // record-carrier MutationBulkDmlRecordField.
+        // UPSERT is deferred (UPSERT is not yet supported under the cardinality-safety regime);
+        // the classifier surfaces a deferred rejection rather than constructing the leaf, so the
+        // parameterised case excludes UPSERT. The UPDATE arm is split off: the payload-returning
+        // bulk UPDATE routes onto MutationBulkUpdatePayloadField (walker carrier), while INSERT
+        // stays on the record-carrier MutationBulkDmlRecordField.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
@@ -149,7 +149,7 @@ class SingleRecordPayloadPipelineTest {
             "@table-element data field", "RETURNING carries only the primary key", "ID-typed data field");
     }
 
-    // ===== Structural carrier-shape rejection (R141: unrecognized carrier-field shape) =====
+    // ===== Structural carrier-shape rejection (unrecognized carrier-field shape) =====
 
     @Test
     void payload_withMultipleDataFields_returnsRejected() {
@@ -240,7 +240,7 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_dataFieldCarriesAtField_admitsUnderR178() {
-        // R178 retired the carrier walk's forbidden-directives HardReject on @field(name:) on
+        // The carrier walk no longer applies a forbidden-directives HardReject on @field(name:) on
         // non-$source carrier data fields (the SettKvotesporsmal bug's mechanism). With and
         // without the directive, the payload classifies identically; see
         // SettKvotesporsmalShapeRegressionTest for the contract pin.
@@ -390,7 +390,7 @@ class SingleRecordPayloadPipelineTest {
         assertThat(transactionResultCalls)
             .as("direct-@table " + kind + " fetcher wraps PK-only RETURNING in exactly one transactionResult(...)")
             .isEqualTo(1);
-        // R314 slice 4: the follow-up SELECT lives in the named reentry rows companion the
+        // The follow-up SELECT lives in the named reentry rows companion the
         // fetcher calls after the transaction commits — the durability invariant (write commits
         // before any read can fail) survives as call ordering: the rows<Name>(keys, env) call
         // sits after the transactionResult call site, and the companion (not the fetcher) owns
@@ -415,7 +415,7 @@ class SingleRecordPayloadPipelineTest {
 
     private static String directReturnInputBody(DmlKind kind) {
         // Filter-by-default. UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker
-        // (PK-or-UK), not @value (retired R266); filmId covers the PK → WHERE, title → SET.
+        // (PK-or-UK), not @value (which was retired); filmId covers the PK → WHERE, title → SET.
         return switch (kind) {
             case INSERT -> "title: String";
             case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";
@@ -429,8 +429,8 @@ class SingleRecordPayloadPipelineTest {
     @Test
     void fetcherEmitter_revertedTwoArms() throws Exception {
         // Source-level structural assertion: FetcherEmitter.dataFetcherValue has reverted the
-        // IdentityPassthrough capability arm; NestingField dispatches on its own permit. (R290
-        // dissolved ConstructorField; R305 collapsed SingleRecordTableField into BatchedTableField,
+        // IdentityPassthrough capability arm; NestingField dispatches on its own permit.
+        // (ConstructorField was dissolved; SingleRecordTableField collapsed into BatchedTableField,
         // which dispatches through the DataLoader path in TypeFetcherGenerator, not a bind arm here.)
         var src = Files.readString(Path.of(
             "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
@@ -452,15 +452,14 @@ class SingleRecordPayloadPipelineTest {
             .isGreaterThanOrEqualTo(1);
     }
 
-    // ===== R75 Phase 2: record-element data fields =====
+    // ===== Phase 2: record-element data fields =====
 
     @Test
     void payload_recordElement_orphanDataFieldStaysUnregistered() {
-        // R178 Phase 4: orphan record-element carriers (no producer mutation consuming the
-        // payload) leave the data field unregistered. graphql-java's never-traverse-unproduced-
-        // fields guarantee makes the missing registration structurally safe. Record-element
-        // identity passthrough is now handled by the unified per-field classifier on producer-
-        // bound parents.
+        // Orphan record-element carriers (no producer mutation consuming the payload) leave the
+        // data field unregistered. graphql-java's never-traverse-unproduced-fields guarantee makes
+        // the missing registration structurally safe. Record-element identity passthrough is now
+        // handled by the unified per-field classifier on producer-bound parents.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmDto { title: String }
@@ -511,7 +510,7 @@ class SingleRecordPayloadPipelineTest {
             "@service mutation");
     }
 
-    // ===== LocalContext error channel on DML payloads (R12 + structural-scan integration) =====
+    // ===== LocalContext error channel on DML payloads (structural-scan integration) =====
     //
     // The structural DML-payload scan (BuildContext.scanStructuralDmlPayload) admits a carrier
     // shape with one @table-element or record-backed element data field plus an optional errors-shaped
@@ -597,9 +596,9 @@ class SingleRecordPayloadPipelineTest {
     @Test
     void payload_withErrorsField_emittedFetcher_dispatchesThroughLocalContextRouter() throws Exception {
         // End-to-end emit pin: the MutationDmlRecordField fetcher's catch arm dispatches through
-        // ErrorRouter.dispatchToLocalContext (R12 Phase C2), and the payload's errors-field
-        // fetcher reads via env.getLocalContext() (R12 Phase C3 / FetcherEmitter LocalContext
-        // arm). The two emissions are the only emit-time consequences of the LocalContext
+        // ErrorRouter.dispatchToLocalContext, and the payload's errors-field fetcher reads via
+        // env.getLocalContext() (the FetcherEmitter LocalContext arm). The two emissions are the
+        // only emit-time consequences of the LocalContext
         // binding; pinning their presence in the generated source guards against silent
         // regressions to the PayloadAccessor transport without a model-level signal.
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.INSERT,
@@ -654,7 +653,7 @@ class SingleRecordPayloadPipelineTest {
     private static String inputBody(DmlKind kind) {
         // UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker (PK-or-UK
         // matched-key membership) — filmId (PK) into WHERE, title into SET — not from @value, which
-        // R266 retired entirely. UPSERT is refused upstream before any partition runs.
+        // was retired entirely. UPSERT is refused upstream before any partition runs.
         return switch (kind) {
             case INSERT -> "title: String";
             case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";

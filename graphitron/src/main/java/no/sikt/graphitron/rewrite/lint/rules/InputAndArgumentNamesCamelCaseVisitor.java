@@ -11,7 +11,7 @@ import java.util.Set;
 /**
  * {@code input-and-argument-names-camel-case}: input-object field names and field-argument names are
  * camelCase. No fix in v1: a renamed argument can still be referenced by a default value or a
- * directive-arg coordinate, so it stays no-fix until that confirmation lands (see R398).
+ * directive-arg coordinate, so it stays no-fix until that confirmation lands.
  */
 public final class InputAndArgumentNamesCamelCaseVisitor implements LintVisitor {
 

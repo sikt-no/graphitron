@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R268 fixture (errorchannel-arm-switch-table-data-fields.md): the {@code @service} behind
+ * Fixture for the {@code @service} behind
  * {@code Mutation.submitFilmReviewWithFilm}. Mirrors {@link FilmReviewService#submit}'s three-way
  * branching but returns a {@link FilmReviewWithFilmPayload} whose {@code film} data field is a
  * {@code @table}-bound DataLoader lookup sibling to the errors field.

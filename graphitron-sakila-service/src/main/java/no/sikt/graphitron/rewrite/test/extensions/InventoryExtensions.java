@@ -7,7 +7,7 @@ import org.jooq.Converter;
 import org.jooq.Field;
 
 /**
- * R61 execution-tier fixtures: {@code @externalField} methods returning
+ * Execution-tier fixtures: {@code @externalField} methods returning
  * {@code Field<TableRecord<?>>} and {@code Field<CustomJavaRecord>} where the custom record
  * carries a typed {@code TableRecord} accessor.
  *
@@ -15,7 +15,7 @@ import org.jooq.Field;
  * (the parent inventory's {@code film_id}) into a typed {@code FilmRecord} (or a custom
  * record wrapping one). Only the PK is set on the {@code FilmRecord} — the framework
  * batch-fetches any non-PK columns on demand via the standard {@code @record}-parent paths
- * (R61 {@code RowKeyed} via FK; the {@code @record(JavaRecord)} variant additionally fires
+ * ({@code RowKeyed} via FK; the {@code @record(JavaRecord)} variant additionally fires
  * the {@code AccessorKeyedSingle} lift via the typed {@code film()} accessor on
  * {@code FilmCardData}).
  */
@@ -52,7 +52,7 @@ public final class InventoryExtensions {
     }
 
     /**
-     * R269 execution-tier fixture: a nullable to-one accessor whose embedded {@link FilmRecord}
+     * Execution-tier fixture: a nullable to-one accessor whose embedded {@link FilmRecord}
      * is {@code null} for even {@code film_id}s (the related row is absent) and present for odd
      * ones. The parent {@link FilmCardData} is always non-null, so the child {@code film: Film}
      * fetcher reaches {@code GeneratorUtils.buildAccessorKeySingle} and must short-circuit the

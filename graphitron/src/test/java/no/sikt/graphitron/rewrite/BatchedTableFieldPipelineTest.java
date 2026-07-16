@@ -420,7 +420,7 @@ class BatchedTableFieldPipelineTest {
         assertThat(methodNames).doesNotContain("cast", "rowsCast");
     }
 
-    // ===== R450: hop-0 filter grain + topology =====
+    // ===== hop-0 filter grain + topology =====
 
     @Test
     void hop0Filter_tableBackedParent_keysOnParentPkAndAnchorsParent() {
@@ -453,7 +453,7 @@ class BatchedTableFieldPipelineTest {
 
     @Test
     void hop1Filter_keepsSlotKeyAndOnFkSlots() {
-        // R450 sibling guard: a filter on hop 1 (not hop 0) is unaffected — hop 0 stays a
+        // Sibling guard: a filter on hop 1 (not hop 0) is unaffected — hop 0 stays a
         // filter-less FK head, so the arm stays OnFkSlots and the batch keeps its slot-tuple key.
         // Only a hop-0 filter reads the parent row and forces the parent-anchor reclassification.
         var schema = TestSchemaHelper.buildSchema("""

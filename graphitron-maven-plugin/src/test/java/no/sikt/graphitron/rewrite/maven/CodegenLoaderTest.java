@@ -14,10 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Pipeline-tier coverage for R124: the Mojo's codegen scope builds a {@link ClassLoader}
+ * Pipeline-tier coverage for the codegen loader: the Mojo's codegen scope builds a {@link ClassLoader}
  * that resolves classes from the project's compile classpath (declared {@code <dependency>}
  * entries plus the consumer's own {@code target/classes}), not just from the plugin's own
- * realm. Pre-R124 the generator's reflection path went through the plugin loader, which
+ * realm. Previously the generator's reflection path went through the plugin loader, which
  * forced consumers to mirror service / catalog jars under {@code <plugin><dependencies>};
  * the new loader makes that block unnecessary.
  *

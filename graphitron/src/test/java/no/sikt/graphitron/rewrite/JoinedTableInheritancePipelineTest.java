@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R389 classification coverage for first-class discriminated joined-table (class-table) inheritance.
+ * Classification coverage for first-class discriminated joined-table (class-table) inheritance.
  * Behaviour (join orientation, NULL-through, standalone resolution) is the runtime property the
  * {@code @ExecutionTier} {@code GraphQLQueryTest.allParties_*} / {@code allIndividuals_*} tests prove
  * against real PostgreSQL; this pipeline tier pins the classification shape the emitter relies on:
@@ -110,7 +110,7 @@ class JoinedTableInheritancePipelineTest {
     @Test
     void joinedTableParticipant_withNoInheritedReference_rejectedWithCandidateFkHint() {
         // A participant on its own detail table with no base-resident field carrying @reference cannot
-        // pin the base->detail join in the unambiguous R389 shape (R393 owns disambiguation). The
+        // pin the base->detail join in the unambiguous shape (disambiguation of the ambiguous shapes is deferred). The
         // classifier rejects it at build time with a candidate-FK hint rather than guessing the join.
         var schema = TestSchemaHelper.buildSchema("""
             interface Party @table(name: "party") @discriminate(on: "party_kind") {

@@ -177,13 +177,13 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * R477: a well-formed NodeId whose decoded key has too few parts for a composite-key
+     * A well-formed NodeId whose decoded key has too few parts for a composite-key
      * {@code @node} type ({@code FilmActor}, PK actor_id + film_id) must yield a null slot,
      * not a 500. Pre-fix the batch NODE_ID decode sized {@code cols} by {@code decoded.length}
      * and {@code selectFilmActorAlt<N>} indexed {@code cols[1]} → {@code ArrayIndexOutOfBounds},
      * whose raw message ({@code Index 1 out of bounds for length 1}) leaked unredacted through the
      * federation error surface machine-to-machine. Since the {@link #execute} helper asserts the
-     * errors list is empty, a null slot with no error is exactly the R477 contract. This is the
+     * errors list is empty, a null slot with no error is exactly the contract. This is the
      * federation reproduction of the opptak {@code _entities} crash.
      */
     @Test
@@ -200,7 +200,7 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * R477 over-arity companion: a NodeId with too many key parts whose valid 2-part prefix
+     * Over-arity companion: a NodeId with too many key parts whose valid 2-part prefix
      * ({@code actor_id=1, film_id=1}) IS an existing row. Pre-fix the extra decoded part was
      * silently dropped and the rep resolved the {@code (1,1)} row, a wrong-row return arguably
      * worse than the crash. The {@code != N} guard rejects it: the rep is skipped and its slot
@@ -282,9 +282,9 @@ class FederationEntitiesDispatchTest {
             .doesNotContain("first_name").doesNotContain("last_name");
     }
 
-    // Commented out under R190: getTenantId override and per-tenant DataLoader partitioning are
-    // reintroduced under R45 (see roadmap/tenant-routing-and-execution-input.md).
-    // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof R45 will
+    // Commented out with the single-tenant baseline: getTenantId override and per-tenant DataLoader
+    // partitioning are to be reintroduced under the operation-divined multi-tenant routing work.
+    // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof that work will
     // re-anchor on once `<tenantColumn>` is configurable on the @table directive.
     // @Test
     // void entities_multiTenancyPartition_oneSelectPerTenant() { ... }
@@ -467,7 +467,7 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * R255 regression: a federated {@code _entities} query that selects both {@code id}
+     * Regression: a federated {@code _entities} query that selects both {@code id}
      * (the NodeId-encoded primary key) and a sibling SDL field whose {@code @field(name:)}
      * resolves to the same underlying column. Pre-fix the two switch arms in
      * {@code Customer.$fields} both appended {@code table.CUSTOMER_ID} to an {@code ArrayList}
@@ -508,7 +508,7 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * R425: a representations-driven {@code _entities} fetch that selects <em>only</em> a
+     * A representations-driven {@code _entities} fetch that selects <em>only</em> a
      * {@code @service} child — the key arrives via the representation ({@code cityId}) and is
      * deliberately not re-selected in the sub-selection. This is the exact Apollo Router shape
      * from the opptak reproducer: the router selects just the fields it needs and supplies key
@@ -535,9 +535,9 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * R426: a representations-driven {@code _entities} fetch that selects <em>only</em> a
+     * A representations-driven {@code _entities} fetch that selects <em>only</em> a
      * typed-{@code TableRecord}-sourced {@code @service} child whose body reads a
-     * <em>non-key</em> column ({@code title}) off the source record. R425's sibling test
+     * <em>non-key</em> column ({@code title}) off the source record. The sibling test
      * ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}) pins the key-column
      * half of the silent-null family; this pins the residual surface — the router selects just
      * the service child, the key arrives via the representation, and nothing in the selection

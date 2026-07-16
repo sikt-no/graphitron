@@ -8,12 +8,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * R379 Check 1: an {@code @reference} path whose terminal hop lands on a table other than the
- * carrier field's return-type {@code @table} is rejected at classify time, rather than compiling
+ * Reference-path validation, check 1: an {@code @reference} path whose terminal hop lands on a table
+ * other than the carrier field's return-type {@code @table} is rejected at classify time, rather than compiling
  * to generated Java that javac rejects with an incompatible-types error in a downstream consumer's
  * build (the {@code terminalAlias} is fed to a {@code $fields} overload typed for the return table).
  *
- * <p>The check is added in {@code BuildContext.parsePath}, reusing R232's already-resolved terminal
+ * <p>The check is added in {@code BuildContext.parsePath}, reusing the already-resolved terminal
  * {@code JoinStep.HasTargetTable.targetTable()}; it never re-derives the hop kind from the directive
  * element. Both terminal {@code {table:}} and terminal {@code {key:}} author forms collapse to the
  * single resolved-target comparison.
@@ -129,8 +129,8 @@ class ReferencePathTerminalTargetTest {
 
     // ===== Regression fence: intermediate-connectivity rejection is PRE-EXISTING =====
     // parsePathElement already rejects a {key:} whose FK does not touch the current source; this
-    // case documents that the whole path is covered, but the mid-path-disconnect rejection is NOT
-    // introduced by R379 — it predates this item (BuildContext.parsePathElement connectivity check).
+    // case documents that the whole path is covered, but the mid-path-disconnect rejection is
+    // pre-existing, not introduced by this check (BuildContext.parsePathElement connectivity check).
 
     @Test
     void midPathDisconnect_isRejected_preExistingBehaviour() {

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 /**
  * {@code type-names-pascal-case}: object, interface, union, enum, input, and scalar type names are
- * PascalCase. No fix in v1: a type rename touches every SDL reference (see R398).
+ * PascalCase. No fix in v1: a type rename touches every SDL reference.
  */
 public final class TypeNamesPascalCaseVisitor implements LintVisitor {
 

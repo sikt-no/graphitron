@@ -72,7 +72,7 @@ public final class ConnectionFetcherClassGenerator {
 
     /**
      * The facets delegate routes failures through the redaction contract every emitted fetcher
-     * honours (R13 review, finding 5): the facet aggregate is real per-request SQL, and letting
+     * honours: the facet aggregate is real per-request SQL, and letting
      * its exception reach graphql-java's default handler would copy the raw message — for a jOOQ
      * {@code DataAccessException}, the rendered SQL — into the client-visible errors array.
      * Catching here keeps the degrade contract (the nullable facets field resolves to null with a

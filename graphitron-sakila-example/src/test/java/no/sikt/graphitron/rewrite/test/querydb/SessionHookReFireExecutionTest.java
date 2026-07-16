@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R429 rework execution-tier enforcer for the settle re-fire: against real PostgreSQL, a transaction
+ * Execution-tier enforcer for the settle re-fire: against real PostgreSQL, a transaction
  * settle that leaves the mounted identity wiped is rescued by the re-fire, so the post-settle
  * read-back stretch always sees mounted identity. The unit tier pins the call ordering over fake JDBC
  * ({@code ConnectionRuntimeClassGeneratorTest}); this class pins the survival property itself, which a

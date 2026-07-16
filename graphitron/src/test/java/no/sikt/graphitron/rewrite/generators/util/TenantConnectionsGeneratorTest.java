@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit-tier coverage of R429 slice 4: the runtime's tenant-keyed acquisition primitive
+ * Unit-tier coverage of the runtime's tenant-keyed acquisition primitive
  * ({@code GraphitronRuntime.acquireForTenant}) and the per-operation {@code TenantConnections} carrier.
  * Because these are emitted, the honest way to assert their behaviour is to compile the real emitted
  * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the Postgres

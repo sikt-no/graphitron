@@ -19,7 +19,7 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
  * <p>A same-arity overload collision is no longer an outcome here: rather than
  * declining, {@link Definitions#methodTarget} falls back to the never-dropped
  * name-level view and resolves to {@link Located} on a declaration adjacent to
- * the overload set (R376).
+ * the overload set.
  */
 public sealed interface DefinitionTarget {
 

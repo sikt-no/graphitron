@@ -110,7 +110,7 @@ class CatalogRefreshTest {
 
     @Test
     void javaSourceWriteRefreshesSourceIndexWithoutCatalogRebuild(@TempDir Path srcDir) throws Exception {
-        // R349 source cadence: a .java edit refreshes the LSP-owned source
+        // Source cadence: a .java edit refreshes the LSP-owned source
         // position index, decoupled from the .class catalog rebuild. The
         // workspace's catalog must stay untouched (no buildOutput swap), proving
         // positions ride the source cadence rather than the generator build.

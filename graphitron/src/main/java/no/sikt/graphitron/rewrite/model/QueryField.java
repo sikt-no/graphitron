@@ -154,22 +154,21 @@ public sealed interface QueryField extends RootField
      * type is always a {@link ReturnTypeRef.TableBoundReturnType} and the existing
      * selection-narrowing projection applies unchanged.
      *
-     * <p>R435 re-homed this leaf onto the {@code (start, hops)} chain; R451 extracted that shape
-     * into the shared {@link RoutineChain} carrier: {@code start} is the routine node (the
-     * {@code FROM} source — the schema's global {@code Routines} convenience method call with IN
-     * parameters bound from GraphQL arguments), {@code hops} the {@code @reference}-contributed
-     * steps that follow it in authored directive order. The R300 single-node shape is
-     * {@code hops = []}, where the routine result is also the terminus. The start is a
-     * {@link TableExpr.RoutineCall} rather than a {@link JoinStep}: R333 models {@code on} as
-     * absent exactly for the start node, and the carrier encodes that absence structurally
-     * instead of widening {@code Hop.on} to an optional (see {@link On}). The shared chain
-     * invariants (all-{@code Arg} start bindings, catalog-only non-lateral hops) are pinned in
-     * {@link RoutineChain}'s compact constructor, one enforcer spanning this leaf and
+     * <p>This leaf's table chain is carried by the shared {@link RoutineChain}: {@code start} is
+     * the routine node (the {@code FROM} source — the schema's global {@code Routines} convenience
+     * method call with IN parameters bound from GraphQL arguments), {@code hops} the
+     * {@code @reference}-contributed steps that follow it in authored directive order. The
+     * single-node shape is {@code hops = []}, where the routine result is also the terminus. The
+     * start is a {@link TableExpr.RoutineCall} rather than a {@link JoinStep}: the model treats
+     * {@code on} as absent exactly for the start node, and the carrier encodes that absence
+     * structurally instead of widening {@code Hop.on} to an optional (see {@link On}). The shared
+     * chain invariants (all-{@code Arg} start bindings, catalog-only non-lateral hops) are pinned
+     * in {@link RoutineChain}'s compact constructor, one enforcer spanning this leaf and
      * {@link MutationField.MutationRoutineWriteField}; only the terminus rule stays here (it
      * reads this leaf's return type).
      *
      * <p>{@code target()} projects a bare {@link TargetShape.Table}, exactly as
-     * {@link QueryTableMethodTableField} does. See R300 / R435 / R451.
+     * {@link QueryTableMethodTableField} does.
      */
     record QueryRoutineTableField(
         String parentTypeName,
@@ -293,7 +292,7 @@ public sealed interface QueryField extends RootField
      * service method returns the SDL payload class (or table-bound record) directly, and
      * per-field wiring projects SDL fields off the parent's domain return.
      *
-     * <p><b>Reentry realization (R314).</b> This leaf is value-level re-fetch
+     * <p><b>Reentry realization.</b> This leaf is value-level re-fetch
      * ({@link OutputField#requiresReFetch()} is true — the service-produced record must be
      * re-projected against the catalog) but <em>not</em> site-level reentry
      * ({@link OutputField#emitsKeyedReQuery()} is false): the emitted fetcher hands the record
@@ -347,7 +346,7 @@ public sealed interface QueryField extends RootField
 
     /**
      * A root query field backed by a developer-provided service method that returns a multitable
-     * {@link GraphitronType.InterfaceType} over distinct-table participants (R365, route (a)).
+     * {@link GraphitronType.InterfaceType} over distinct-table participants (route (a)).
      *
      * <p>The service hands back a PK-populated jOOQ {@code TableRecord} per branch. The emitted
      * fetcher dispatches on each returned record's runtime class against the participant set

@@ -20,17 +20,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R102 execution-tier coverage for the list-arm DataLoader-batched multi-table polymorphic
+ * Execution-tier coverage for the list-arm DataLoader-batched multi-table polymorphic
  * child fetcher. Exercises {@code Address.occupants: [AddressOccupant!]!} (union of
  * {@code Customer | Staff}) over the full sakila customer fanout selecting their address
  * occupants; pins the batched-statement count so a regression to per-parent fanout (the
- * pre-R102 shape, which fired ~N+1 statements per parent) fails loudly.
+ * earlier shape, which fired ~N+1 statements per parent) fails loudly.
  *
- * <p>Pre-R102: per-parent inline fetcher → one stage-1 UNION ALL plus one per-typename SELECT
+ * <p>Previously: per-parent inline fetcher → one stage-1 UNION ALL plus one per-typename SELECT
  * per typename present, repeated for every parent invocation. The count grew linearly with
  * the customer count.
  *
- * <p>Post-R102: one DataLoader-batched stage-1 UNION ALL with {@code JOIN parentInput} over
+ * <p>Now: one DataLoader-batched stage-1 UNION ALL with {@code JOIN parentInput} over
  * the distinct address PKs, plus one stage-2 SELECT per participant typename — three child
  * statements regardless of customer count. The top-level customers query brings the total
  * to 4. The dedup over repeated address PKs is exercised because sakila has multiple

@@ -35,7 +35,7 @@ public record ValidationError(String coordinate, Rejection rejection, SourceLoca
      * coordinate prefix and pins {@code coordinate} to the type name. Single home for that prefix
      * convention, shared by {@link GraphitronSchemaValidator}'s {@code validateUnclassifiedType}
      * pass (honest classification-time {@code UnclassifiedType} verdicts) and the immutable validate
-     * phase's build-time diagnostics (R317 slice 5: node-typeId / case-fold / federation reductions
+     * phase's build-time diagnostics (node-typeId / case-fold / federation reductions
      * that register here instead of demoting). Both producers route through this method so the error
      * stream stays byte-identical by construction rather than by a prose convention duplicated across
      * sites.
@@ -48,7 +48,7 @@ public record ValidationError(String coordinate, Rejection rejection, SourceLoca
      * Field-level diagnostic factory: wraps {@code rejection} with the {@code "Field '<qname>': "}
      * coordinate prefix and pins {@code coordinate} to the field's qualified name. Field-axis sibling
      * of {@link #forType}, shared by {@code validateUnclassifiedField} and the dangling-reference
-     * backstop (R317 slice 5); see {@link #forType} for the single-home rationale.
+     * backstop; see {@link #forType} for the single-home rationale.
      */
     public static ValidationError forField(String qualifiedName, Rejection rejection, SourceLocation location) {
         return new ValidationError(qualifiedName, rejection.prefixedWith("Field '" + qualifiedName + "': "), location);

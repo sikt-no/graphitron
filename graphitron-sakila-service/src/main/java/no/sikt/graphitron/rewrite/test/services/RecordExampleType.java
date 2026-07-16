@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R88 execution-tier fixture: a Java record exercising three of
+ * Execution-tier fixture: a Java record exercising three of
  * {@link no.sikt.graphitron.rewrite.model.AccessorResolution.Resolved}'s arms in one type.
  * Reached via {@code Inventory.filmCardData.example} so the addition is minimal — no new
  * top-level query field, just a new {@code RecordExample} SDL type wired into the existing

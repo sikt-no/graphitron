@@ -18,7 +18,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R322 execution-tier coverage: the runtime value-agreement check that fires when more than one writer
+ * Execution-tier coverage for the runtime value-agreement check that fires when more than one writer
  * lands on a single row column, on both materialization paths.
  *
  * <p>The {@code @service} jOOQ-record path uses the {@code agreeStorageBin} fixture: a
@@ -94,7 +94,7 @@ class NodeIdValueAgreementExecutionTest {
     void serviceRecord_twoWritersDisagree_throwsAndServiceNeverRuns() {
         // The decode resolves bin_id to 1; the plain @field supplies "2". They coerce to different values,
         // so requireColumnAgreement throws inside createStorageBinRecord before the service body — the
-        // mutation surfaces an error and yields no value (the silent last-write-wins drop is what R322 closes).
+        // mutation surfaces an error and yields no value (closing the silent last-write-wins drop).
         String binId1 = NodeIdEncoder.encode("StorageBin", 1);
         ExecutionResult result = executeRaw(
             "mutation { agreeStorageBin(in: {binId: \"" + binId1 + "\", binIdText: \"2\"}) }");

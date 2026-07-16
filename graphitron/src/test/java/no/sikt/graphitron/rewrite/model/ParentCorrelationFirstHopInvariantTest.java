@@ -9,7 +9,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R232 cross-axis invariant: for every {@code @reference}-carrying {@link ChildField} variant in
+ * Cross-axis invariant: for every {@code @reference}-carrying {@link ChildField} variant in
  * a classified schema, the correlation's hop-arm {@code firstHop() == field.joinPath().get(0)}.
  * The carrier-side compact constructors call
  * {@link ParentCorrelation#checkCarrierInvariant(ParentCorrelation, List, String)} so violations

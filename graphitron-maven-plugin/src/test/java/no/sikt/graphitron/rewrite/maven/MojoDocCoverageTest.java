@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * generates from those annotations at the {@code process-classes} phase, before the
  * {@code test} phase runs, so it is reliably on disk by the time this test executes.
  *
- * <p>R68 Phase 4. Companion to {@code DirectiveDocCoverageTest}; same shape, scoped
+ * <p>Companion to {@code DirectiveDocCoverageTest}; same shape, scoped
  * to the Mojo parameter surface rather than the SDL directive surface. A new
  * {@code @Parameter} field cannot land green without a doc row; a removed field
  * forces the row's removal.

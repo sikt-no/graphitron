@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R458 slice-2 (multi-hop FK chains) and slice-3 (condition correlation) execution-tier coverage for
+ * Execution-tier coverage (multi-hop FK chains and condition correlation) for
  * {@code @referenceFor} on a <em>multi-table</em> polymorphic child field: the
  * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} arm the classifier
  * lowers a richer-than-single-hop route to, emitted by {@code MultiTablePolymorphicEmitter} in all

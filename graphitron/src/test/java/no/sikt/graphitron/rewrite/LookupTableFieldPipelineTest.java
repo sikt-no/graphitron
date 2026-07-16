@@ -91,7 +91,7 @@ class LookupTableFieldPipelineTest {
 
     @Test
     void compositeKeyInputType_producesSwitchArmAndInputRowsHelper() {
-        // Phase 3 — @table input type used as a @lookupKey-bearing arg (R144: arg-level
+        // Phase 3 — @table input type used as a @lookupKey-bearing arg (arg-level
         // @lookupKey drives the binding walk over every admissible input field). Emits inline
         // via TypeClassGenerator.$fields, with a composite VALUES helper on the type class.
         var schema = TestSchemaHelper.buildSchema("""

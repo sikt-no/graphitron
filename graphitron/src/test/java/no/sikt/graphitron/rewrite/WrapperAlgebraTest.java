@@ -28,13 +28,13 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R316 slice 5 — the wrapper-algebra invariant, made executable rather than prose.
+ * The wrapper-algebra invariant, made executable rather than prose.
  *
  * <p>The pivot keeps cardinality as a <em>wrapper bound to an endpoint</em>, never a free
  * {@code One} / {@code Many} enum: the {@link Source} arm is the field's arrival cardinality and the
  * {@link Target} arm is its output cardinality. This test pins the two-position algebra the
- * {@code source} and {@code target} axes encode (R316 "the wrapper algebra"), walking every field the
- * R281 spec-by-example corpus demonstrates ({@link ClassifiedCorpus}), the same corpus-mirror shape
+ * {@code source} and {@code target} axes encode (the wrapper algebra), walking every field the
+ * spec-by-example corpus demonstrates ({@link ClassifiedCorpus}), the same corpus-mirror shape
  * {@link SourceShapeProjectionTest} uses for the source-shape projection.
  *
  * <p>Two halves, each cross-checked against an <em>independent</em> source of truth rather than against
@@ -53,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Source half</b> ({@link #sourceWrapperIsTheFoldOfAncestorTargetWrappers()}): {@code source.wrapper}
  *       is the fold of the ancestors' target wrappers ({@link Source.Root} the empty product,
  *       {@link Source.OnlyChild} the {@code One} identity, {@link Source.Child} the {@code Many} absorber).
- *       R463 makes the fold real (the ancestor-product arrival index, read through
+ *       The fold is real (the ancestor-product arrival index, read through
  *       {@code GraphitronSchema.sourceOf}), so this half no longer asserts a hard-coded conservative arm.
  *       Reimplementing the fold test-side would be a drifting second copy, and a simplified one would be
  *       vacuous, so instead it pins the laws that stay independently checkable: the <em>Root law</em> (a
@@ -188,7 +188,7 @@ class WrapperAlgebraTest {
             });
         }
         // Coverage floor: the corpus must exercise all three arms of the fold for the laws to be
-        // meaningful. R463 makes OnlyChild reachable, so it is no longer a documented gap.
+        // meaningful. OnlyChild is reachable, so it is no longer a documented gap.
         assertThat(observedSources)
             .as("the corpus must exercise the Root (empty product), OnlyChild (One identity), and Child "
                 + "(Many absorber) arms of the arrival fold")

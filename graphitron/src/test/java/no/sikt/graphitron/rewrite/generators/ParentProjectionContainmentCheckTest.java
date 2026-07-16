@@ -28,14 +28,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit tests for {@link ParentProjectionContainmentCheck} — the R333 parent-projection
+ * Unit tests for {@link ParentProjectionContainmentCheck} — the parent-projection
  * containment invariant, called directly with a hand-built guarantee so the fire cases simulate
  * a projection walk that omitted a demand.
  *
- * <p>The load-bearing fire case is the <em>nesting-omission</em> shape (the R425 bug family): the
+ * <p>The load-bearing fire case is the <em>nesting-omission</em> shape: the
  * demanding {@code BatchKeyField} sits inside a {@link ChildField.NestingField} sub-tree, so a
  * requirement enumeration that fails to descend nesting sub-trees (the audited walk's own
- * recursion is exactly where R425's omission lived) does not find the demand and this test goes
+ * recursion is exactly where the omission lived) does not find the demand and this test goes
  * red. A bare top-level set mismatch would not pin that.
  */
 @UnitTier
@@ -64,7 +64,7 @@ class ParentProjectionContainmentCheckTest {
     }
 
     /**
-     * A Table-sourced {@code BatchKeyField} whose key wrap is caller-chosen — the R436
+     * A Table-sourced {@code BatchKeyField} whose key wrap is caller-chosen — the
      * {@code Wrap.TableRecord} shape is authored on the {@code @service Sources} signature
      * ({@link ChildField.ServiceTableField}); the batched leaf's Table arm is pinned to the
      * {@code FkColumns}/{@code Row} pairing by its constructor and can never carry it.
@@ -91,7 +91,7 @@ class ParentProjectionContainmentCheckTest {
         return new GraphitronSchema(Map.of(), map);
     }
 
-    // ===== The R425-shape fire case: the demand sits inside a NestingField sub-tree =====
+    // ===== The nesting-omission fire case: the demand sits inside a NestingField sub-tree =====
 
     @Test
     void nestedSplitKeyColumnMissingFromProjection_throwsGeneratorInvariant() {
@@ -116,7 +116,7 @@ class ParentProjectionContainmentCheckTest {
             .doesNotThrowAnyException();
     }
 
-    // ===== The R436 axis: a TableRecord key wrap demands the reserved full parent row =====
+    // ===== The table-record axis: a TableRecord key wrap demands the reserved full parent row =====
 
     @Test
     void nestedTableRecordWrapWithoutReservedFullRow_throwsGeneratorInvariant() {

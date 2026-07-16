@@ -22,10 +22,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Pins {@link LspVocabulary}'s startup invariants and the deprecation-info
  * surface. The structural guarantee asserted by
  * {@link #structuralInvariant_failsStartupWhenOverlayCoordinateDoesNotResolve}
- * is the load-bearing piece of R119: the LSP cannot start with an overlay that
- * names a coordinate the parsed registry does not declare. R110-style drift
- * surfaces here as a startup failure rather than a silent unknown-directive
- * at request time.
+ * is load-bearing: the LSP cannot start with an overlay that names a
+ * coordinate the parsed registry does not declare. Directive drift surfaces
+ * here as a startup failure rather than a silent unknown-directive at request
+ * time.
  */
 class LspVocabularyTest {
 
@@ -157,7 +157,7 @@ class LspVocabularyTest {
     }
 
     /**
-     * R100 list-fanout pin: a directive arg whose AST value is a
+     * List-fanout pin: a directive arg whose AST value is a
      * {@code list_value} fans out to one {@link LspVocabulary.Leaf} per
      * scalar element. The leaf's {@code valueNode} is always the scalar
      * element node, never the enclosing list; consumers downstream

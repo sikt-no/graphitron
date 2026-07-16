@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier coverage of the producer-side
  * {@link FieldClassification#lspColumnDispatch()} switch. Drives the full classifier on a small
  * synthetic schema covering the three audience-specific arms (Resolve / Silent / FallThrough)
- * across representative permits. R343 adds the {@code TableTarget} element-table cases, where a
- * list/connection field's {@code @defaultOrder(fields: [{name: ...}])} resolves the navigated
+ * across representative permits. The {@code TableTarget} element-table cases cover a
+ * list/connection field's {@code @defaultOrder(fields: [{name: ...}])} resolving the navigated
  * child table rather than the enclosing type's {@code @table}. The exhaustive switch is the load-bearing meta-assertion: a new
  * permit on {@link FieldClassification} fails {@code lspColumnDispatch()} to compile, forcing the
  * implementer to place it in one of the three arms deliberately in one place, ahead of any
@@ -43,8 +43,8 @@ class LspColumnDispatchProjectionTest {
 
     @Test
     void columnReferenceFieldDispatchesResolveOnTerminalTable() {
-        // The load-bearing case for R233 / R224: @reference path field dispatches to the terminal
-        // table, not the enclosing type's @table.
+        // The load-bearing case for terminal-table resolution: a @reference path field dispatches
+        // to the terminal table, not the enclosing type's @table.
         var snapshot = snapshotOf("""
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
@@ -160,7 +160,7 @@ class LspColumnDispatchProjectionTest {
         // tableName(), not from any per-arm side computation. The four column-bearing permits
         // (Column / ColumnReference / CompositeColumn / CompositeColumnReference) all read off
         // their own tableName() field; this asserts that the cross-permit invariant holds for
-        // the ColumnReference arm, which is the load-bearing one for R224 / R233.
+        // the ColumnReference arm, which is the load-bearing one for terminal-table resolution.
         var snapshot = snapshotOf("""
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])

@@ -18,7 +18,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R354 execution-tier coverage: a self-FK {@code @nodeId @reference} on a Graphitron-owned single-row
+ * Execution-tier coverage: a self-FK {@code @nodeId @reference} on a Graphitron-owned single-row
  * UPDATE, the UPDATE sibling of {@link SelfFkNodeIdInsertExecutionTest}. Reuses the {@code email} /
  * {@code mailbox} fixture verbatim (no new SQL).
  *

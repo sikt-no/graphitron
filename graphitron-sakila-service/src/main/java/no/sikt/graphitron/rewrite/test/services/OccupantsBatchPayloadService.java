@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.AddressRecord;
 import java.util.List;
 
 /**
- * R366 fixture: root {@code @service} that hand-rolls {@link OccupantsBatchPayload} rows whose
+ * Fixture: root {@code @service} that hand-rolls {@link OccupantsBatchPayload} rows whose
  * {@code addresses()} accessor returns {@code List<AddressRecord>}. The classifier walks the
  * accessor reflectively to derive a {@code Reader.AccessorCall} + {@code Cardinality.MANY}
  * polymorphic parent key for the {@code occupants} child; the generator must emit the

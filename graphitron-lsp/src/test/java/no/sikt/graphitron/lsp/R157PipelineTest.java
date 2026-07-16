@@ -36,8 +36,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Primary tier for R157: a real {@code .graphqls} containing one SDL type
- * per {@link TypeBackingShape} arm, classified through the real
+ * Primary tier for @field member completion: a real {@code .graphqls}
+ * containing one SDL type per {@link TypeBackingShape} arm, classified
+ * through the real
  * {@link GraphitronSchemaBuilder}, with real backing classes
  * ({@link R157FilmRecord}, {@link R157FilmPojo}) discoverable on the test
  * classpath through {@link no.sikt.graphitron.rewrite.catalog.ClasspathScanner}.

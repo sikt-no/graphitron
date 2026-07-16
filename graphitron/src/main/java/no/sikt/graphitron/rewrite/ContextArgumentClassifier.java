@@ -130,7 +130,7 @@ public final class ContextArgumentClassifier {
      * Walks a {@link ServiceMethodCall} carrier for {@link MappingEntry.FromContext} entries
      * across {@code ctorArgs} (when present) and {@code methodArgs}, recording each as a
      * {@link ConflictSite} keyed on the carrier's class + method coordinate. The walker enforces
-     * the same per-name fold as {@link #collectFromMethodRef}. R256: the carrier is carried
+     * the same per-name fold as {@link #collectFromMethodRef}. The carrier is carried
      * honestly through {@link ConflictSite.Site.Carrier}, retiring the empty synthetic
      * {@link MethodRef.Service} sentinel the carrier coordinate previously fabricated to satisfy
      * {@link ConflictSite}'s old {@code MethodRef}-typed field.

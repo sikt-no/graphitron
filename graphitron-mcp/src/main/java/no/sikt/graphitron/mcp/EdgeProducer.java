@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * R374 (D-A / D-B / D-D) — computes the forward edges of one {@link NodeRef} from the live
+ * Computes the forward edges of one {@link NodeRef} from the live
  * projections. The field- and type-node arms are exhaustive {@code switch}es over the
  * {@link FieldClassification} / {@link TypeClassification} sealed permits with <b>no
  * {@code default}</b>, mirroring {@code SchemaView.mapFieldClassification}: a new permit fails this

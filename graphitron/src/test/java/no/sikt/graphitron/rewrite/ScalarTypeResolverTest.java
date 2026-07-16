@@ -255,7 +255,7 @@ class ScalarTypeResolverTest {
 
     @Test
     void resolveFromDirectiveValue_sdlNameAliasesConstant_returnsSynthesised() {
-        // Canonical R313 repro: scalar LocalDate @scalarType(scalar: "...ExtendedScalars.Date").
+        // Canonical repro: scalar LocalDate @scalarType(scalar: "...ExtendedScalars.Date").
         // ExtendedScalars.Date.getName() is "Date", so the LocalDate declaration aliases it; the
         // result must register under "LocalDate" (Synthesised) borrowing the Date coercing, not
         // register the constant under "Date".

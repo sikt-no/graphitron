@@ -114,7 +114,7 @@ class GraphitronFacadeGeneratorTest {
             .contains("new org.dataloader.DataLoaderRegistry()");
     }
 
-    // ===== newOwnedExecutionInput (R429 owned-connection path) =====
+    // ===== newOwnedExecutionInput (owned-connection path) =====
 
     @Test
     void newOwnedExecutionInput_emptySchemaTakesSingleStringClaimsParameter() {
@@ -159,7 +159,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void newGraphQL_emitsCallerOwnsEverythingNoticeOncePerProcess() {
-        // R429 slice 6: the escape-hatch engine attaches no instrumentation, so the caller owns
+        // The escape-hatch engine attaches no instrumentation, so the caller owns
         // transactions and identity; newGraphQL() warns that once, guarded by the AtomicBoolean so a
         // rebuilt engine does not re-log it.
         var body = findFirstMethod("newGraphQL", false).code().toString();

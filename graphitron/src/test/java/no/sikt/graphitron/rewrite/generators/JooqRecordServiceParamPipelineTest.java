@@ -23,7 +23,7 @@ import static java.util.stream.Collectors.toMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R311 pipeline tier: a jOOQ {@code TableRecord} bound <em>directly</em> as a {@code @service} input
+ * Pipeline tier: a jOOQ {@code TableRecord} bound <em>directly</em> as a {@code @service} input
  * param (singular {@code Record} or {@code List<Record>}), not as a member of an input bean. The
  * param's SDL input type names jOOQ columns through {@code @field(name:)} and carries a {@code @nodeId}
  * identity that decodes into the record's scalar key, so the param binds on the column axis +
@@ -206,7 +206,7 @@ class JooqRecordServiceParamPipelineTest {
         // The param is a FilmRecord, and @nodeId(typeName: "FilmActor") references a different
         // table (film_actor) → the cross-table FK branch. There is no foreign key whose source is `film`
         // referencing `film_actor` (the FK runs the other way, film_actor → film), so the deduction
-        // finds zero directional FKs and rejects with the fk-count message. The old R311 "A NodeId
+        // finds zero directional FKs and rejects with the fk-count message. The old "A NodeId
         // cannot be decoded into a different record type" gate (:325) is gone — a foreign table is now a
         // legitimate FK-reference shape when an FK connects them, and an honest zero-FK rejection when not.
         var sdl = """
@@ -230,10 +230,10 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void twoNodeIdFields_classifyAsTwoKeyDecodes() {
-        // R315 flips the former twoNodeIdFields_reject: the :266 single-@nodeId gate is gone, so two
-        // @nodeId fields are legal. Here both reference Film (== the param record's table), so both are
+        // Two @nodeId fields are legal: the former twoNodeIdFields_reject and its single-@nodeId gate
+        // (:266) are gone. Here both reference Film (== the param record's table), so both are
         // same-table identity decodes resolving to film_id; their overlapping-column value-agreement is
-        // R322's runtime concern, deliberately not asserted here. The pin is that classification no
+        // a runtime concern, deliberately not asserted here. The pin is that classification no
         // longer rejects.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
@@ -312,7 +312,7 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(((UnclassifiedField) field).reason()).contains("cardinalities");
     }
 
-    // ===== R315 FK-reference @nodeId (cross-table) =====
+    // ===== FK-reference @nodeId (cross-table) =====
 
     private static final String FILM_ENDORSEMENT_RECORD_FQN =
         "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord";
@@ -466,13 +466,13 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void selfFkReferenceOnSameTableNodeId_admits_targetsSelfFkChildColumns() {
-        // R328 (D2): a same-table @nodeId(typeName: "Email") carrying an explicit @reference names the
-        // self-FK email_in_reply_to_fk. R315's same-table reject ("self-reference ... out of scope") is
+        // A same-table @nodeId(typeName: "Email") carrying an explicit @reference names the
+        // self-FK email_in_reply_to_fk. The former same-table reject ("self-reference ... out of scope") is
         // lifted; the case now routes through the same resolveRecordFkTargetColumns the cross-table
         // branch uses, oriented with selfRefFkOnSource=true. The RecordKeyDecode targets the self-FK's
         // child columns (mailbox_id, in_reply_to_no) on the record — NOT the record's own composite PK
         // (mailbox_id, message_no). mailbox_id is the column shared with the cross-table email→mailbox
-        // FK; the runtime value-agreement reconciling a second writer on it is R322's, not asserted here.
+        // FK; the runtime value-agreement reconciling a second writer on it is deferred, not asserted here.
         var sdl = """
             type Email implements Node @table(name: "email") @node { id: ID! }
             input ReplyEmailInput {
@@ -542,7 +542,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void nodeIdWithoutTypeName_rejects() {
-        // Unchanged from R311: @nodeId on a jOOQ-record param must name its NodeType explicitly (the
+        // Unchanged: @nodeId on a jOOQ-record param must name its NodeType explicitly (the
         // param record type alone does not name the NodeType to decode against).
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
@@ -581,7 +581,7 @@ class JooqRecordServiceParamPipelineTest {
             .contains("studierett_studieprogram_id_fkey");
     }
 
-    // ===== R336: nested input-object flatten onto the param record's column axis =====
+    // ===== Nested input-object flatten onto the param record's column axis =====
 
     private static final String NESTED_FLATTEN_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -620,7 +620,7 @@ class JooqRecordServiceParamPipelineTest {
     void mixedTopLevelAndNestedColumns_bothBindOnTheirOwnPaths() {
         // A top-level plain @field and a nested-group @field coexist: the top-level carries a
         // single-element path, the nested one a two-element path. Pins that the flatten does not disturb
-        // the top-level form (depth-1 paths are byte-identical to pre-R336).
+        // the top-level form (depth-1 paths are byte-identical to the pre-flatten form).
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }
             input ModifyFilmMixedInput {
@@ -688,7 +688,7 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(jr.columnBindings().get(0).column().sqlName()).isEqualTo("title");
     }
 
-    // ===== R336 rejections (D3 invariants, honest validate-time UnclassifiedField) =====
+    // ===== Nested-flatten rejections (D3 invariants, honest validate-time UnclassifiedField) =====
 
     @Test
     void cyclicNestedInput_rejects() {
@@ -738,7 +738,7 @@ class JooqRecordServiceParamPipelineTest {
     @Test
     void nestedTableInput_rejectsAsSecondDmlTarget() {
         // A nested input carrying @table is a second DML target, not a column group to flatten — reject
-        // rather than silently erase the authored directive (compound multi-table mutations are R122's scope).
+        // rather than silently erase the authored directive (compound multi-table mutations are out of scope).
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }
             type Language implements Node @table(name: "language") @node { id: ID! }
@@ -764,7 +764,7 @@ class JooqRecordServiceParamPipelineTest {
     void plainColumnCollisionAcrossNesting_rejects() {
         // Two plain @field leaves — one top-level, one in a nested group — resolving to the same column
         // would last-write-wins silently. Reject, naming both dotted paths and the column. (Decode-vs-decode
-        // / decode-vs-column overlaps stay with R322's value-agreement deferral, not checked here.)
+        // / decode-vs-column overlaps stay with the value-agreement deferral, not checked here.)
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }
             input NestedCollisionInput {
@@ -813,7 +813,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void plainFieldPlusDecodeOnOneColumn_admitsBothWriters_deferredToRuntimeAgreement() {
-        // R322 decode-vs-column overlap: a plain @field and a @nodeId decode resolve to the same column.
+        // Decode-vs-column overlap: a plain @field and a @nodeId decode resolve to the same column.
         // Admitted (the field-vs-field reject does not fire because one writer is a decode); reconciled by
         // the runtime agreement check. The carrier carries one column binding and one key decode on film_id.
         var sdl = """
@@ -836,7 +836,7 @@ class JooqRecordServiceParamPipelineTest {
             .containsExactly("filmId->film_id");
     }
 
-    // ===== R437: shape-aware create<Record> helper dedup =====
+    // ===== Shape-aware create<Record> helper dedup =====
 
     private static final String CONTENDED_SINGULAR_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -859,10 +859,10 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void contendedSingularShapes_emitTwoDistinctHelpers_andEachFetcherRoutesToItsOwn() {
-        // The R311 correctness-bug regression: two @service fields bind the same FilmRecord through
-        // different input shapes (register carries release_year, deactivate does not). Pre-R437 the
+        // The correctness-bug regression: two @service fields bind the same FilmRecord through
+        // different input shapes (register carries release_year, deactivate does not). Previously the
         // dedup keyed by record class emitted ONE createFilmRecord (the first-seen shape) and both
-        // fetchers routed to it, so one mutation silently dropped its unique column. R437 keys by shape:
+        // fetchers routed to it, so one mutation silently dropped its unique column. Keying by shape gives
         // two distinct ordinal-suffixed helpers, and each fetcher routes to the one matching its input.
         var fetchers = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
         assertThat(singularHelperNames(fetchers))

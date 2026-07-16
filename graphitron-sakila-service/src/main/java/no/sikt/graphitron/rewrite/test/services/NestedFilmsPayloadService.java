@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import java.util.List;
 
 /**
- * R370 compilation-tier fixture (producer #1): a root {@code @service} that hand-rolls two
+ * Compilation-tier fixture (producer #1): a root {@code @service} that hand-rolls two
  * {@link NestedFilmsPayloadHolder.Payload} rows. Each nested-record payload exposes a
  * {@code List<FilmRecord>} accessor the classifier walks reflectively to derive an
  * {@code AccessorCall}-keyed, list-cardinality {@code SourceKey}.
@@ -13,7 +13,7 @@ import java.util.List;
  * <p>The nested-carrier counterpart of {@link CreateFilmsPayloadService}; its only role is to give
  * {@code FieldBuilder.deriveAccessorRecordParentSource} → {@code GeneratorUtils.buildAccessorKeyMany}
  * a nested backing class to emit, so {@code mvn install -Plocal-db} compiles the generated
- * key-extraction cast ({@code Outer.Nested}, not {@code Outer$Nested}). See R370.
+ * key-extraction cast ({@code Outer.Nested}, not {@code Outer$Nested}).
  */
 public final class NestedFilmsPayloadService {
 

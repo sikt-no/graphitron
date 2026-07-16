@@ -15,14 +15,14 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R316 slice 5 — the thoroughness gate's remnant backstop. The pivot retired the
- * {@code carrier x intent x mapping} model; slices 2-4 deleted the four dimension types
+ * The remnant backstop of the field-dimensional model pivot. That pivot retired the
+ * {@code carrier x intent x mapping} model; the preceding slices deleted the four dimension types
  * ({@code Carrier}, {@code Intent}, {@code Mapping}, {@code SourceCardinality}) and the
  * {@code Mapping.TableConnection} value (decomposed into {@code Single(Connection)} + a read
  * operation). The mandate is that the old model is <em>gone</em>, not merely shadowed by the new one.
  *
  * <p>This is a source-file scan, the same shape {@code UnifiedEmissionPinsTest} uses, and it is a
- * deliberately narrow <strong>type-resurrection</strong> guard, not a prose grep. Per the R316 spec
+ * deliberately narrow <strong>type-resurrection</strong> guard, not a prose grep. Per the spec
  * ("The grep is not a coverage check and must not be relied on as one"), exhaustiveness is the
  * coverage gate's job ({@code ClassifiedDslTest.everyDimensionValueIsExercised}, the disjoint partition
  * over the {@code source} / {@code Operation} seals); the explanatory-prose sweep is the docs and
@@ -51,7 +51,7 @@ class RetiredDimensionTypesAreGoneTest {
     private static final List<Path> SOURCE_ROOTS =
         List.of(Path.of("src/main/java"), Path.of("src/test/java"));
 
-    /** The four dimension types deleted by R316 (their source files must not exist). */
+    /** The four dimension types retired by the pivot (their source files must not exist). */
     private static final List<String> RETIRED_TYPE_FILES =
         List.of("Carrier.java", "Intent.java", "Mapping.java", "SourceCardinality.java");
 

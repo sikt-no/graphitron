@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * R425 execution fixture: child {@code @service} methods on the {@code City} type, which carries
+ * Execution fixture: child {@code @service} methods on the {@code City} type, which carries
  * <em>no</em> other force-projecting children ({@code @splitQuery}/{@code @tableMethod} siblings).
  * The {@code Film} service-child fixtures ({@link FilmService}) cannot pin the SourceKey
  * force-projection because Film's {@code cast}/{@code castByKey} split children already project

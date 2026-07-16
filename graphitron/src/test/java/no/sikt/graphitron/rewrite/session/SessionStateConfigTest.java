@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * of the {@code <sessionState>} shape. Config-shape defects are a {@code pom.xml} concern with no SDL
  * coordinate, so they are validated here (throwing {@link IllegalArgumentException} the Maven seam
  * turns into a build failure) rather than routed through the SDL validator. These are the
- * "validator-tier assertions on the pairing rejections" R429 slice 3 calls for.
+ * validator-tier assertions on the pairing rejections.
  */
 @UnitTier
 class SessionStateConfigTest {

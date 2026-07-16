@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R1 Phase 2f: end-to-end execution test for the {@code @sourceRow} directive.
+ * End-to-end execution test for the {@code @sourceRow} directive.
  *
  * <p>The fixture shape lives in {@code graphitron-sakila-service}: a Java-record payload
  * ({@code CreateFilmPayload(Integer languageId)}), a static lifter

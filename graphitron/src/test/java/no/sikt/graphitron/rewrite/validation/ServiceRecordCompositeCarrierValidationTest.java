@@ -9,7 +9,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R329 validator-tier coverage for the three near-misses of the {@code @service} record-composite
+ * Validator-tier coverage for the three near-misses of the {@code @service} record-composite
  * payload carrier. The {@code ClassifiedCorpus} pins the positive classification only (a successful
  * classification); the build-time rejections are asserted here, in the per-shape {@code *ValidationTest}
  * style ({@code ConstructorFieldValidationTest}), so the admitted shape and its near-misses are pinned

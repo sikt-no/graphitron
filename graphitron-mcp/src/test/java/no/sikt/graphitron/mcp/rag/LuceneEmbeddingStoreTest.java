@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Seam-tier (R372): the real {@link LuceneEmbeddingStore} over a RAM directory (the seam's fake),
+ * Seam-tier: the real {@link LuceneEmbeddingStore} over a RAM directory (the seam's fake),
  * driven through the {@link EmbeddingStore} seam with planted vectors so no ONNX is needed. Covers
  * the KNN round-trip, the BM25 hybrid surfacing a lexical match, and the dimension guard.
  */

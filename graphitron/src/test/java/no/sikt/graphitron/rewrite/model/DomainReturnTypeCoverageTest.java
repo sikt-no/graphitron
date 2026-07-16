@@ -11,7 +11,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R204 unit-tier coverage of the sealed-hierarchy enforcement and structural shape of
+ * Unit-tier coverage of the sealed-hierarchy enforcement and structural shape of
  * {@link DomainReturnType}. The abstract {@link OutputField#domainReturnType()} method already
  * enforces compile-time coverage of every leaf permit in {@link RootField} and {@link ChildField};
  * this test is the belt-and-suspenders meta-test the spec calls for: it walks the sealed-permit
@@ -94,8 +94,8 @@ class DomainReturnTypeCoverageTest {
     @Test
     void mutationDmlRecordField_answersRecordArm() {
         // Validator's load-bearing assumption: DML mutation producer hands a sparse Record at
-        // env.getSource(). This unit-tier pin is the canonical assertion for the R204 conflict
-        // half against MutationServiceRecordField.
+        // env.getSource(). This unit-tier pin is the canonical assertion for the domain-return-type
+        // conflict half against MutationServiceRecordField.
         var permit = mutationDmlPermitFixture();
         assertThat(permit.domainReturnType()).isInstanceOf(DomainReturnType.Record.class);
         assertThat(((DomainReturnType.Record) permit.domainReturnType()).table().tableName())

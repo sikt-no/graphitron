@@ -14,16 +14,16 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R422 pipeline coverage: an {@code @reference} field whose <em>return</em> type carries a
+ * Pipeline coverage for an {@code @reference} field whose <em>return</em> type carries a
  * schema-qualified {@code @table(name:)} (e.g. {@code "multischema_a.widget"}) must classify green
  * when its terminal hop lands on that table. The terminal-target verdict
  * ({@code BuildContext.computeTerminalTargetVerdict}) now compares jOOQ table-class identity
  * ({@code TableRef.denotesSameTableAs}), so the schema-qualified echo matches jOOQ's unqualified
- * canonical name instead of the pre-R422 bare {@code equalsIgnoreCase} spuriously reporting
+ * canonical name instead of the earlier bare {@code equalsIgnoreCase} spuriously reporting
  * {@code Mismatch} and demoting the field to {@link GraphitronField.UnclassifiedField}.
  *
- * <p>Sibling of R396's {@code QualifiedSourceReferencePipelineTest}, which closed the same bug class
- * on the <em>source</em> {@code @table} shape. This item is the return-type member. The fixture is
+ * <p>Sibling of {@link QualifiedSourceReferencePipelineTest}, which closed the same bug class
+ * on the <em>source</em> {@code @table} shape. This test covers the return-type member. The fixture is
  * the multi-schema jOOQ codegen output ({@code multischema_a} / {@code multischema_b}); the
  * cross-schema FK {@code multischema_b.gadget -> multischema_a.widget}
  * ({@code gadget_widget_id_fkey}) gives the shape directly, so no new DDL is needed.
@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link GraphitronType.TableType} and the field as a {@link ChildField.TableField}, not an
  * {@link GraphitronField.UnclassifiedField}); no code-string assertions. A genuine mismatch over the
  * same fixture (return type bound to {@code multischema_b.event} while the hop lands on
- * {@code widget}) still rejects, pinning that R422 tightened the compare without disabling it.
+ * {@code widget}) still rejects, pinning that this tightened the compare without disabling it.
  */
 @PipelineTier
 class QualifiedReturnTypeReferencePipelineTest {
@@ -73,7 +73,7 @@ class QualifiedReturnTypeReferencePipelineTest {
     @Test
     void qualifiedReturnTable_terminalHopLandsThere_classifiesAsTableField() {
         // Return type Widget bound to the schema-qualified "multischema_a.widget"; the terminal hop
-        // resolves to jOOQ's unqualified canonical "widget". Pre-R422 the verbatim-echo compare
+        // resolves to jOOQ's unqualified canonical "widget". Previously the verbatim-echo compare
         // rejected this as Mismatch → UnclassifiedField; the identity compare classifies it green.
         var schema = TestSchemaHelper.buildSchema(
             sdl("Widget", "multischema_a.widget"), multiSchemaContext());

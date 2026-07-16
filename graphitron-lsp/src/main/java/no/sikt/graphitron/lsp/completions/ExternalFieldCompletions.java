@@ -32,7 +32,7 @@ import java.util.Optional;
  * {@code org.jooq.Field<X>}). Confirming the single parameter is specifically a
  * jOOQ {@code Table} would require the classifier-driven
  * {@code Parameter.source = ParamSource.Table} projection, which is generator-
- * side work the LSP catalog does not carry today (out of scope for R90); the
+ * side work the LSP catalog does not carry today (out of scope here); the
  * shape filter is the in-scope approximation.
  */
 public final class ExternalFieldCompletions {

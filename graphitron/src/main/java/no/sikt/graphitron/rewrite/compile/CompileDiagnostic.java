@@ -5,13 +5,13 @@ import javax.tools.JavaFileObject;
 import java.util.Locale;
 
 /**
- * R410 slice 4 — one compiler diagnostic from an incremental compile round, flattened to the fields
+ * One compiler diagnostic from an incremental compile round, flattened to the fields
  * the dev loop surfaces. Per the spec's <em>Surfacing compile diagnostics</em>, these stay a small
  * dedicated collection anchored to the generated {@code .java} where javac reports them (path +
  * {@code line:col} + severity + message), deliberately <em>not</em> folded into the schema-anchored
  * {@code ValidationReport} (a generated-file error has no schema coordinate to fabricate). The
  * {@code source: "compile"} discriminator that separates these from schema entries is added at the
- * MCP surface in slice 6, not here.
+ * MCP surface, not here.
  */
 public record CompileDiagnostic(String file, long line, long column, String severity, String message) {
 

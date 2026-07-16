@@ -58,7 +58,7 @@ import java.util.function.Consumer;
  *       {@code .graphql}) and re-runs the generator on every save (debounced).
  *       Editor saves arriving over the LSP fire the same trigger directly,
  *       bypassing the filesystem watcher's latency on platforms where it
- *       polls (see R198).</li>
+ *       polls.</li>
  *   <li>Watches every reactor project's {@code target/classes} for
  *       {@code .class} changes and rebuilds the in-process catalog
  *       atomically. Both jOOQ output (tables / columns / FKs) and
@@ -67,8 +67,8 @@ import java.util.function.Consumer;
  *       the same rebuild trigger.</li>
  *   <li>Watches every reactor project's compile source roots for
  *       {@code .java} changes and refreshes the LSP's source-position index
- *       on that source cadence, decoupled from the {@code .class} rebuild
- *       (R349). Service-half goto-definition reads positions from this index,
+ *       on that source cadence, decoupled from the {@code .class} rebuild.
+ *       Service-half goto-definition reads positions from this index,
  *       so a declaration that moves in a hand-edited source file is jumpable
  *       without waiting for a recompile.</li>
  * </ul>
@@ -76,7 +76,7 @@ import java.util.function.Consumer;
  * <p>Stop with Ctrl+C. See {@code getting-started.md}'s "Dev loop" for the
  * editor-side recipes.
  */
-// TEST resolution (not COMPILE like the sibling goals): the R428 execute tool's classloader needs
+// TEST resolution (not COMPILE like the sibling goals): the execute tool's classloader needs
 // the consumer's JDBC driver, and the driver is conventionally NOT on the compile classpath: a
 // plain app has it at runtime scope, and a Quarkus app often has no driver in its Maven graph at
 // all (the extension resolves it at Quarkus build time) except the test-scope driver its
@@ -98,7 +98,7 @@ public class DevMojo extends AbstractRewriteMojo {
     int port;
 
     // The MCP server's loopback port. Deliberately NOT a @Parameter: it stays non-overridable for
-    // users in the skeleton (a configurable port is deferred; see R341), while remaining settable
+    // users in the skeleton (a configurable port is deferred), while remaining settable
     // from DevMojoTest so the bind-failure case can inject a taken ephemeral port instead of the
     // well-known 8488. Mirrors DEFAULT_PORT/port.
     int mcpPort = DEFAULT_MCP_PORT;
@@ -110,7 +110,7 @@ public class DevMojo extends AbstractRewriteMojo {
     boolean skipInitial;
 
     /**
-     * R410 slice 6 — whether {@code graphitron:dev} compiles the generated sources into
+     * Whether {@code graphitron:dev} compiles the generated sources into
      * {@code target/graphitron-classes} (in-process, incrementally). On by default: the compiled tree is
      * what the in-process MCP query tools execute against. Set {@code -Dgraphitron.dev.compile=false} to
      * fall back to today's generate-only behaviour (giving up the in-process query tools too). No
@@ -121,7 +121,7 @@ public class DevMojo extends AbstractRewriteMojo {
     boolean compile = true;
 
     /**
-     * R428 — the dev database the MCP {@code execute} tool runs queries against. Optional: with no
+     * The dev database the MCP {@code execute} tool runs queries against. Optional: with no
      * {@code <devDatabase>} url (and no {@code GRAPHITRON_DEV_DB_URL} env override) the execute tool
      * is simply absent and every other dev tool works with no database. See
      * {@link DevDatabaseBinding} for the block shape and the env-wins override set.
@@ -144,7 +144,7 @@ public class DevMojo extends AbstractRewriteMojo {
     // (the MCP server failing after the LSP succeeds) is unwound in bindServer.
     DevServer server;
     private GraphitronMcpServer mcpServer;
-    // R385 — the two RAG warms docs.search rides: a shared bge embedder load (heavy, off the dev
+    // The two RAG warms docs.search rides: a shared bge embedder load (heavy, off the dev
     // thread) and the docs-index load (reads the bundled tuples, rebuilds the in-memory store). Both
     // start during bind and never block it; a warm failure leaves the dev loop structured-only.
     // Package-private so DevMojoTest can read their terminal state after a bind-failure unwind.
@@ -157,7 +157,7 @@ public class DevMojo extends AbstractRewriteMojo {
     java.util.function.Supplier<AsyncWarm<Embedder>> embedderWarmFactory = DocsRag::embedderWarm;
     java.util.function.Supplier<AsyncWarm<DocsIndex>> docsWarmFactory = DocsRag::docsWarm;
     private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
-    // R410 slice 6 — the long-lived incremental compile driver (warm compiler + ABI-hash baseline),
+    // The long-lived incremental compile driver (warm compiler + ABI-hash baseline),
     // built at startup when compilation is enabled and closed on shutdown. Null when
     // -Dgraphitron.dev.compile=false, or when no system compiler is available (graceful degrade to
     // generate-only). Package-private so DevMojoTest can assert the opt-out leaves it unbuilt.
@@ -219,12 +219,12 @@ public class DevMojo extends AbstractRewriteMojo {
         workspace.refreshSourceIndex(initialCtx.compileSourceRoots());
         // Diagnostic so a "completion works but goto-definition returns nothing"
         // report can be traced to a module whose classes are scanned but whose
-        // source root is not walked (R351): the two counts should track each other.
+        // source root is not walked: the two counts should track each other.
         getLog().info("graphitron:dev: scanning " + initialCtx.classpathRoots().size()
             + " reactor classpath root(s), " + initialCtx.compileSourceRoots().size()
             + " source root(s); " + workspace.catalog().externalReferences().size()
             + " external reference(s) indexed");
-        // Self-explain the single-module-reactor case the sibling walk-up (R99) could not
+        // Self-explain the single-module-reactor case the sibling walk-up could not
         // widen: when graphitron:dev runs from inside a sub-module and no ancestor pom lists
         // it (so no siblings were resolved), only this module's target/classes is scanned.
         // Without this line the symptom is a silent empty popup with nothing to grep for.
@@ -237,7 +237,7 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         // Name any module the auto-include could not close: scanned for completion
         // (its target/classes is on disk) but contributing no walked source root, so
-        // goto-definition / hover on its declarations is a silent no-jump (R369). The
+        // goto-definition / hover on its declarations is a silent no-jump. The
         // common residue is a table arriving only as a dependency JAR with no .java.
         var unwalked = unwalkedScannedModules();
         if (!unwalked.isEmpty()) {
@@ -291,7 +291,7 @@ public class DevMojo extends AbstractRewriteMojo {
             throw new MojoExecutionException(
                 "graphitron:dev: failed to bind " + LOOPBACK_HOST + ":" + port, e);
         }
-        // Quiet the RAG warms' non-actionable startup log noise before the warms start (R409). The
+        // Quiet the RAG warms' non-actionable startup log noise before the warms start. The
         // warms load the noisy classes (DJL tokenizer, Lucene VectorizationProvider) on their
         // graphitron-warm-* daemon threads, and thread-start is a happens-before edge, so establishing
         // the suppression on this dev thread first guarantees it is visible when those threads touch
@@ -299,7 +299,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // graphitron-mcp because the logger names are facts about the quarantined RAG dependency set.
         RagLogQuieting.quietRagWarmLogs(getLog()::info);
         // Start the RAG warms before binding the MCP server so they warm during startup; both run on
-        // their own daemon threads and never block the bind (R372 / R118). The shared embedder warm
+        // their own daemon threads and never block the bind. The shared embedder warm
         // is stood up here so slice 10 can later reuse the same handle rather than loading a second
         // bge copy. Both come from the injectable factories (see the field comment), so the heavy ONNX
         // load stays out of the fast test suite; a factory returning null runs structured-only.
@@ -334,7 +334,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Reconciles the {@code <devDatabase>} block with its environment overrides into the R428
+     * Reconciles the {@code <devDatabase>} block with its environment overrides into the
      * execute-tool configuration; env wins over the POM on every field, so credentials stay out of
      * the checked-in file. Returns {@code null}, and the execute tool is simply not registered,
      * when no url is configured from either source (the degrade-gracefully arm: every other MCP
@@ -470,7 +470,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Starts the {@code .java} source-root watcher (R349). Walks the same
+     * Starts the {@code .java} source-root watcher. Walks the same
      * compile source roots the catalog build uses, but on the source cadence:
      * a hand-edited service / condition source refreshes the LSP's
      * source-position index without waiting for a {@code .class} rebuild. The
@@ -568,7 +568,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     // stale. The compile graph carries only generated→generated edges (no
                     // generated→consumer edge to walk), so invalidate conservatively by recompiling the
                     // whole cached generated tree. Precise generated→consumer invalidation is deferred,
-                    // and belongs with R333's method graph.
+                    // and belongs with the planned method graph.
                     if (incrementalCompiler != null && lastGeneration != null) {
                         var outcome = incrementalCompiler.compileAll(lastGeneration.result().emittedUnits());
                         reportCompile(workspace, outcome, "recompile (consumer classpath change)");

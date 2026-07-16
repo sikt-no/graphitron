@@ -59,6 +59,12 @@ Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or r
 
 In `.adoc` files, use AsciiDoc table syntax (`[cols="..."]` + `|===` block) for tables; the markdown form (`| col | col |` header followed by a `|---|---|` separator) renders as paragraph text with literal pipes. The roadmap-tool `check-adoc-tables` step fails the build on any such row outside a structural block.
 
+## Javadoc conventions
+
+Comments and javadoc name live things, never transient ones. A roadmap item id (`R<n>`) or a `roadmap/<slug>` path is transient: items get renumbered, ship and leave a numbering gap, or get discarded, so a comment that leans on one is stale the moment the item moves. Do not cite roadmap items in javadoc or implementation comments. Instead, reference a live symbol with `{@link}` (compiler- and javadoc-checked, so it cannot silently rot), reference the published docs (the user manual for author-facing behavior, `docs/architecture/` for contributor-facing rationale), or just state the fact and drop the citation. Prefer terse over verbose. The three permanent roadmap artifacts (`roadmap/changelog.md`, `roadmap/workflow.adoc`, `roadmap/README.md`) are not transient items and may be cited by path.
+
+This is enforced mechanically: `RoadmapReferenceGuardTest` (a `graphitron` test-tier meta-test) fails the build if an `R<n>` or `roadmap/<slug>` citation appears in a comment or javadoc region of an in-scope module. The guard is lexically scoped, so it inspects only comment/javadoc regions and ignores string literals; a roadmap id in a user-facing message *string* is a separate habitat the guard does not police. If the guard fires, rewrite the comment per the above; do not suppress it.
+
 ## Interaction style
 
 Do not use the `AskUserQuestion` tool for open-ended design dialog or spec exploration. The structured multi-choice format constrains a conversation that should be free-flowing prose, and the user has explicitly flagged it as friction. Surface design forks inline: state the choice, give your recommendation and the reasoning, invite redirect. The user answers with a sentence, pushes back on the framing, or pivots, none of which fit the question/options shape. Reserve `AskUserQuestion` for genuinely bounded decisions where the option set is closed and prose framing would be wasteful (for example "discard the merge conflict or keep your local copy"); even there, prose first is usually fine.

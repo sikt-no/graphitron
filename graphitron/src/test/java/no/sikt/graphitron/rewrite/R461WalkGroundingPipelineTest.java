@@ -12,8 +12,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R461 pipeline-tier coverage of the SDL-field-to-Java-accessor resolution unification, exercised
- * through the R96 binding <em>walk</em>: each fixture grounds a child SDL type through a parent
+ * Pipeline-tier coverage of the SDL-field-to-Java-accessor resolution unification, exercised
+ * through the binding <em>walk</em>: each fixture grounds a child SDL type through a parent
  * accessor under the unified rule set, so the class the walk grounds and the accessor emission
  * resolves agree by construction. Companion to
  * {@link no.sikt.graphitron.rewrite.validation.RecordFieldAccessorValidationTest} (the emission-side
@@ -40,7 +40,7 @@ class R461WalkGroundingPipelineTest {
 
     /**
      * As {@link #build}, but Parent also declares a second, cleanly-grounding object field
-     * {@code sibling: Sib}. Two object data fields means Parent is not a single-object-field R329
+     * {@code sibling: Sib}. Two object data fields means Parent is not a single-object-field
      * carrier, so a gated {@code child} field surfaces its sole-producer rejection rather than
      * flipping Parent to a two-level carrier.
      */
@@ -127,13 +127,13 @@ class R461WalkGroundingPipelineTest {
             m.contains("Parent.child") && m.contains("boolean"));
     }
 
-    // ===== B8: R329 carrier discrimination through the probe =====
+    // ===== B8: carrier discrimination through the probe =====
 
     @Test
     void b8_nonBooleanIsWrapper_flipsToTwoLevelCarrier() {
         // Single non-@table object data field whose only accessor is a non-boolean is<Name>: the
-        // probe now reads it absent, so producerBindLevel flips Parent from a plain wrapper to an
-        // R329 two-level carrier and the data field becomes a source passthrough.
+        // probe now reads it absent, so producerBindLevel flips Parent from a plain wrapper to a
+        // two-level carrier and the data field becomes a source passthrough.
         var schema = build("NonBooleanIsParent", "child: Child", "tag: String");
         assertThat(schema.field("Parent", "child"))
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField.class);

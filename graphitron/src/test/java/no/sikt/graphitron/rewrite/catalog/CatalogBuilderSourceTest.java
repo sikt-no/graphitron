@@ -18,7 +18,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline coverage that pins the R352 decoupling at the build boundary:
+ * Pipeline coverage that pins the source/build decoupling at the build boundary:
  * {@link CatalogBuilder} no longer walks {@code .java} sources at all. It
  * carries the generated table / {@code Keys} class FQNs (the join keys the LSP
  * uses) and only the build-derivable {@code description} (the jOOQ table's SQL

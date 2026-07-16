@@ -18,7 +18,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R160 — LSP-tier unit tests for the inlay-hint provider. Two scopes:
+ * LSP-tier unit tests for the inlay-hint provider. Two scopes:
  * <ul>
  *   <li>The inferred-directive arm — given an authored vs bare {@code @table} /
  *       {@code @field} / {@code @reference} site and a fixed snapshot, asserts that
@@ -210,7 +210,7 @@ class InlayHintsTest {
                 .contains("film_language_id_fkey"));
     }
 
-    // ===== R216 — extend type X { ... } parity =====
+    // ===== extend type X { ... } parity =====
 
     @Test
     void classificationHintsRenderOnTypeExtensionTypeName() {
@@ -254,7 +254,7 @@ class InlayHintsTest {
 
     @Test
     void absentTableHintRendersOnTypeExtensionWithoutDirective() {
-        // The R217 absent-arm rides the broadened walk: extend type Customer whose definition
+        // The absent-arm rides the broadened walk: extend type Customer whose definition
         // lives in another file (declared @table there) should still show the inferred
         // @table(...) ghost on the extension's type-name token.
         var file = file("""

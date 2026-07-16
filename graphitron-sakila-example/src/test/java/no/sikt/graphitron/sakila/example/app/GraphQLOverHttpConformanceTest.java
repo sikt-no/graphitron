@@ -17,8 +17,8 @@ import static org.hamcrest.Matchers.containsString;
 /**
  * Spec-traceable GraphQL-over-HTTP conformance suite for {@code graphitron-jakarta-rest}, run
  * through the reference app's {@link SakilaGraphitronApplication} adapter so the reference app
- * exercises the real library and cannot drift from the spec again (the divergence R399 set out to
- * end).
+ * exercises the real library and cannot drift from the spec again (the divergence this library set
+ * out to end).
  *
  * <p>Every normative requirement in the library's committed scope has a citing case below. Each
  * carries the verbatim spec sentence it verifies as a {@code @DisplayName}, a pointer to the spec
@@ -42,13 +42,13 @@ import static org.hamcrest.Matchers.containsString;
  * | Legacy application/json -> always 200          | "application/json"                   | legacyApplicationJsonIsAlways200      |
  * | query is required                             | "Request Parameters"                 | queryParameterIsRequired              |
  * | variables/operationName/extensions handling   | "Request Parameters"                 | variablesOperationNameExtensions      |
- * | Server-side seam fault redacted -> 500 (R421) | "application/graphql-response+json"  | serverSideFaultIsRedacted500          |
+ * | Server-side seam fault redacted -> 500        | "application/graphql-response+json"  | serverSideFaultIsRedacted500          |
  * | Server-side seam fault redacted -> 200 legacy | "application/json"                   | serverSideFaultIsRedacted200Legacy    |
- * | WebApplicationException passthrough (R421)     | "application/graphql-response+json"  | webApplicationExceptionPassesThrough  |
- * | Redaction shape matches fetcher path (R421)    | "application/graphql-response+json"  | redactionShapeMatchesFetcherPath      |
+ * | WebApplicationException passthrough            | "application/graphql-response+json"  | webApplicationExceptionPassesThrough  |
+ * | Redaction shape matches fetcher path           | "application/graphql-response+json"  | redactionShapeMatchesFetcherPath      |
  * </pre>
  *
- * <p>The last four cases (R421) drive the reference adapter's {@code X-Graphitron-Fault} seam, which
+ * <p>The last four cases drive the reference adapter's {@code X-Graphitron-Fault} seam, which
  * makes {@code newExecutionInput()} throw before execution begins, the one region neither a normal
  * query nor the per-fetcher {@code ErrorRouter} can reach. They pin that a genuine fault is redacted to
  * the same reference-only wire shape the fetcher path emits (proven against {@code Film.durabilityError}
@@ -239,10 +239,10 @@ class GraphQLOverHttpConformanceTest {
             .body("errors", nullValue());
     }
 
-    // ===== server-side execution failure (R421) =====
+    // ===== server-side execution failure =====
 
     /**
-     * The one hole R421 closes: {@code newExecutionInput()} runs before execution begins, outside
+     * The one hole closed here: {@code newExecutionInput()} runs before execution begins, outside
      * every request-error branch and beyond the reach of the per-fetcher {@code ErrorRouter}. A fault
      * there must be caught by the resource, logged server-side under a correlation id, and returned as
      * a generic spec-compliant 500, never leaked as the container's raw error page.
@@ -305,7 +305,7 @@ class GraphQLOverHttpConformanceTest {
             .post("/graphql")
         .then()
             // The ordered first catch arm re-throws the ForbiddenException; JAX-RS maps it to 403.
-            // A 500 here would mean the redaction arm swallowed it, the bug R421's ordering prevents.
+            // A 500 here would mean the redaction arm swallowed it, the bug the ordering prevents.
             .statusCode(403);
     }
 

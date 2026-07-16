@@ -12,8 +12,8 @@ import java.util.Objects;
  * Java shape one emitted key row takes. Nothing about where the key points (the leaf's
  * {@code returnType.table()} / {@link ParentCorrelation}), how it is lifted off the parent
  * ({@link KeyLift} on the record-parent leaves), or what envelope the parent arrived in
- * ({@link SourceEnvelope} on the carrier leaves). R431 decomposed the former six-component
- * record onto those facts; this residue is what remains — and it is exactly the
+ * ({@link SourceEnvelope} on the carrier leaves). The former six-component record was
+ * decomposed onto those facts; this residue is what remains — and it is exactly the
  * {@code (wrap, columns)} pair the partial carriers ({@link MethodRef.Param.Sourced},
  * {@link ParamSource.Sources}, {@code ServiceCatalog.SourcesShape}) always held.
  *

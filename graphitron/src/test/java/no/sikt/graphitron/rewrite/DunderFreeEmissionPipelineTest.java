@@ -17,10 +17,10 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R271 no-regression guard, in-process variant. Generates {@code TypeSpec}s over schemas that
+ * Dunder-free-emission no-regression guard, in-process variant. Generates {@code TypeSpec}s over schemas that
  * exercise the emitters the rename touched, and asserts that no emitted Java <em>identifier</em>
  * (local, parameter, field) leads with {@code __}. Synthetic SQL column aliases ({@code __sort__},
- * {@code __idx__}, {@code __typename}, {@code __rn__}, {@code __pkN__}, and R436's
+ * {@code __idx__}, {@code __typename}, {@code __rn__}, {@code __pkN__}, and the
  * {@code __src_<col>__} full-parent-row aliases) are deliberate collision-avoidance names that
  * reach generated code only as string literals; masking literals (and comments) before the scan
  * leaves them alone. The discriminator is exactly "Java identifier vs string literal in the

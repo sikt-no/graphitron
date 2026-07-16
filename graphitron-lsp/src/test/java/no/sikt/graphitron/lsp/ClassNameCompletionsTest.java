@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @enum} (and the flat {@code @sourceRow} / {@code @tableMethod}) each
  * carry a className slot whose value is an FQN, completed from the catalog.
  * {@code @record} shares the same {@code ExternalCodeReference.className}
- * coordinate but is deprecated and ignored (R307), so its className slot is
+ * coordinate but is deprecated and ignored, so its className slot is
  * carved out and offers no completion.
  */
 class ClassNameCompletionsTest {
@@ -60,7 +60,7 @@ class ClassNameCompletionsTest {
 
     @Test
     void recordClassName_carveOut_offersNoCompletion() {
-        // R307: @record is deprecated and ignored, so its className slot binds no class and offers
+        // @record is deprecated and ignored, so its className slot binds no class and offers
         // no FQN completion, even though its ExternalCodeReference.className coordinate is identical
         // to @enum's (which does complete, see enumClassNameCompletesFqns). The carve-out gates on
         // the enclosing directive name.
@@ -125,7 +125,7 @@ class ClassNameCompletionsTest {
 
     @Test
     void sourceRowClassNameCompletesFqns() {
-        // The R110 gap closes here. Today's hand-coded DirectiveDefinitions
+        // The @sourceRow gap closes here. Today's hand-coded DirectiveDefinitions
         // doesn't list @sourceRow; the canonical overlay declares both
         // @sourceRow(className:) and @sourceRow(method:) as ECR-shaped
         // bindings, so completions now fire on either.

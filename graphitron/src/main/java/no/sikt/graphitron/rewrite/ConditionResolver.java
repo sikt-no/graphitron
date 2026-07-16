@@ -183,9 +183,9 @@ final class ConditionResolver {
      *
      * <p>For a single-name binding ({@code argPath} is a bare {@link PathExpr.Head}) the tail is
      * empty and the result is {@code leafPath} unchanged — the byte-identical behaviour every
-     * pre-R355 input-field {@code @condition} relied on, where the bound parameter reads the input
+     * input-field {@code @condition} historically relied on, where the bound parameter reads the input
      * field's own scalar value. A multi-segment {@code argPath} (an explicit
-     * {@code argMapping: "p: field.sub"} or the depth-1 binding R355 infers when {@code p} matches
+     * {@code argMapping: "p: field.sub"} or the depth-1 binding inferred when {@code p} matches
      * a nested field by name) appends the descent so the emitted
      * {@link CallSiteExtraction.NestedInputField} reads {@code outerArg.…field.sub} rather than
      * stopping at the wrapper input object and casting the whole {@code Map} to the leaf type.

@@ -15,7 +15,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → classified schema pipeline tests for the R105 record-backed parent multi-table
+ * SDL → classified schema pipeline tests for the record-backed parent multi-table
  * polymorphic ChildField classifier arm. Three permits become reachable through
  * {@code FieldBuilder.classifyChildFieldOnResultType}'s {@code PolymorphicReturnType} case:
  *
@@ -296,11 +296,11 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             .contains("@sourceRow is not yet supported for polymorphic returns");
     }
 
-    // ===== R108: asymmetric-fragment fixture =====
+    // ===== Asymmetric-fragment fixture =====
 
     @Test
     void unionParticipants_sharedFieldNameBackedByDifferentColumns_classifiesAndGeneratesStage2Helpers() {
-        // R108 asymmetric-fragment fixture: union participants Inventory and Content both expose
+        // Asymmetric-fragment fixture: union participants Inventory and Content both expose
         // a `filmId` field, backed by their respective `film_id` columns on different tables.
         // The classifier produces a JooqTableRecordType-backed parent with a single-PK
         // hub on film; the generator emits Stage-2 per-typename helpers
@@ -335,7 +335,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(field.participantJoinPaths().keySet())
             .containsExactlyInAnyOrder("Inventory", "Content");
 
-        // Emit: each per-typename Stage-2 helper exists. The R108 PolymorphicSelectionSet wrap
+        // Emit: each per-typename Stage-2 helper exists. The PolymorphicSelectionSet wrap
         // is asserted at the source-emitter level by PolymorphicProjectionFilterPinTest; here
         // we pin that the full classify → generate pipeline yields both helpers for the
         // asymmetric fixture so the wrap reaches both branches.

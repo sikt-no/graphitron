@@ -14,7 +14,7 @@ import java.util.Objects;
  * shape-absence. Naming the arms for the arrival (not a bare {@code One} / {@code Many})
  * keeps the count from being misread as the field's <em>output</em> arity: the same {@code {One, Many}}
  * values sit on the target wrapper, and cardinality only ever exists as a wrapper bound to an endpoint
- * (the wrapper algebra, R316).
+ * (the wrapper algebra).
  *
  * <ul>
  *   <li>{@link Root} (permits {@link Root.Query} / {@link Root.Mutation}) — an operation root; no
@@ -25,16 +25,13 @@ import java.util.Objects;
  *   <li>{@link Child} — many source objects arrive (arrival {@code Many}); DataLoader-batched.</li>
  * </ul>
  *
- * <p>R463 folds the true ancestor-product arrival ({@link Arrival}, computed once as a typename-keyed
- * index over the assembled SDL) and threads it into {@link OutputField#source(Arrival)}: a
+ * <p>The true ancestor-product arrival ({@link Arrival}, computed once as a typename-keyed
+ * index over the assembled SDL) is folded in and threaded into {@link OutputField#source(Arrival)}: a
  * {@link ChildField} on a {@link Arrival#ONE} parent declares {@link OnlyChild}, else the {@link Child}
  * absorber. {@link SourceShape} stays the shape wrapped by the nested arms; its internal reshaping (the
- * reflected {@code Record} facts) is the downstream {@code SourceKey} work. R316 slice 4 retired the
- * {@code carrier} axis and migrated the R281 corpus onto {@link OutputField#source(Arrival)}, so this is
+ * reflected {@code Record} facts) is the downstream {@code SourceKey} work. The {@code carrier} axis was
+ * retired and the classification corpus migrated onto {@link OutputField#source(Arrival)}, so this is
  * now the sole arrival-axis primitive.
- *
- * <p>See R316 ("Pivot the field-dimensional model to (source, operation, target)") and the {@code source}
- * axis in R222's "Field-side dimensional model".
  */
 public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Child {
 
@@ -64,9 +61,9 @@ public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Chi
      * every arrival count: direct SQL once per invocation, degrading in query count, never in rows.
      * {@link Child} stays the absorbing always-correct arm. The current emitters keep leaf-identity
      * dispatch (an {@code OnlyChild}-classified batch field still emits its DataLoader, a one-element
-     * batch), so populating this arm changes no generated code. R314's reentry re-platforming stays
+     * batch), so populating this arm changes no generated code. The reentry re-platforming stays
      * arrival-uniform by decision; the direct-SQL {@code OnlyChild} emit and this clause's enforcer
-     * are owned by R471 ({@code direct-sql-onlychild-reentry-emit}).
+     * are deferred to future work.
      */
     record OnlyChild(SourceShape shape) implements Source {
         public OnlyChild {

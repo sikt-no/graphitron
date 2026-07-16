@@ -22,19 +22,19 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * {@code @condition(override: true)} must route the developer condition method against the
  * FK-target table {@code X}, not the parent's own root table.
  *
- * <p>Before R330 the field's developer condition surfaced as a plain {@code ConditionFilter} whose
+ * <p>Previously the field's developer condition surfaced as a plain {@code ConditionFilter} whose
  * implicit {@code Table} slot {@link QueryConditionsGenerator} fills with the root {@code table}
  * local — handing {@code iRegelverksamling(Regelverksamling, ...)} a {@code Soknadsmangeltype} and
  * failing at consumer compile. The fix lifts the FK correlation onto a
  * {@link FkTargetConditionFilter} so the emitter produces a correlated {@code EXISTS} over the FK
  * join path. The acceptance test pins the classified model carrier (falsifiable: pre-fix it is a
  * bare {@code ConditionFilter}); the composite-key test pins that composite FK targets are now
- * supported (R330 rework), carrying the same FK correlation rather than being rejected.
+ * supported, carrying the same FK correlation rather than being rejected.
  *
  * <p>Uses the {@code nodeidfixture} catalog: {@code bar} carries a single-column FK
  * ({@code bar_id_1_fkey}) to {@code baz} (single-column PK {@code id}), the single-column FK-target
  * case; {@code reordered_fk_child} carries a composite FK to {@code reordered_pk_parent}, the
- * supported composite FK-target case (R330 rework).
+ * supported composite FK-target case.
  */
 @PipelineTier
 class NodeIdOverrideConditionFkTargetPipelineTest {
@@ -80,7 +80,7 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
 
     @Test
     void compositeKeyFkTarget_nodeIdWithOverrideCondition_carriesFkCorrelation() {
-        // R330 rework: composite-key NodeType targets are the common consumer shape, so the
+        // Composite-key NodeType targets are the common consumer shape, so the
         // combination must WORK (a correlated EXISTS whose correlation ANDs every composite-FK
         // slot), not be rejected. reordered_fk_child carries a composite FK to reordered_pk_parent.
         var schema = TestSchemaHelper.buildSchema("""

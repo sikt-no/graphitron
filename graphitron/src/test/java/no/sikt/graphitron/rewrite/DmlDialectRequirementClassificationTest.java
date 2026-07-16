@@ -16,8 +16,8 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * ...)} is a Postgres extension.
  *
  * <p>UPSERT ({@link DialectRequirement.RejectsFamily}({@code ORACLE})) is not exercised here: it is
- * refused at {@code MutationInputResolver.resolveInput} under R144's cardinality-safety regime
- * (deferred to R145), so no {@link MutationField.MutationUpsertTableField} classifies through the
+ * refused at {@code MutationInputResolver.resolveInput} under the cardinality-safety regime
+ * (deferred), so no {@link MutationField.MutationUpsertTableField} classifies through the
  * pipeline today. The shared {@code @mutation}-switch arm that stamps
  * {@code RejectsFamily(ORACLE)} onto it, and the emitter that renders the guard, are covered by
  * {@code TypeFetcherGeneratorTest} against a directly-constructed field.

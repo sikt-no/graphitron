@@ -33,11 +33,11 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R398 fix slice, LSP arm: the finding-keyed {@code QuickFix} branch projects a fix-bearing lint
+ * LSP arm of the lint-fix projection: the finding-keyed {@code QuickFix} branch projects a fix-bearing lint
  * {@link BuildWarning.LintFinding} in the build's {@link ValidationReport} into a
  * {@link CodeAction}, and applying its {@link org.eclipse.lsp4j.WorkspaceEdit} yields the corrected
  * SDL. Covers a local rename, an additive insertion, a multi-edit swap, the no-fix case (none
- * offered), and the R139 freshness-silence policy on a stale snapshot. The build stays the single
+ * offered), and the freshness-silence policy on a stale snapshot. The build stays the single
  * evaluator: the fix is the one the rule computed build-side; the LSP only projects it.
  */
 class LintQuickFixTest {
@@ -82,7 +82,7 @@ class LintQuickFixTest {
     void multiEditFinding_appliesEveryEdit() {
         // Projection-layer coverage: a LintFix may carry more than one edit, and LintQuickFixes must
         // project every one onto the WorkspaceEdit. The fix is constructed directly (no rule derives a
-        // multi-edit fix today, per R398 fixes are registered, not divined from prose), so this pins
+        // multi-edit fix today; fixes are registered, not divined from prose), so this pins
         // the projection mechanics rather than any rule's behaviour.
         String source = "enum Color { RED @index(name: \"r\") }\n";
         // Two edits on line 1: cols 19..24 and cols 25..29.
@@ -121,7 +121,7 @@ class LintQuickFixTest {
             "Field 'User.userName' is prefixed with its type name; drop the prefix.",
             new SourceLocation(2, 3, PATH), LintRule.NO_TYPENAME_PREFIX, Optional.of(fix));
 
-        // R139: a stale snapshot silences the fix, since the finding may not reflect the buffer.
+        // A stale snapshot silences the fix, since the finding may not reflect the buffer.
         var workspace = new Workspace(CompletionData.empty());
         workspace.didOpen(URI, 1, source);
         workspace.setBuildOutput(

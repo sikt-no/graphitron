@@ -45,7 +45,7 @@ import java.util.Optional;
  * <p><b>Structural invariant.</b> Every coordinate in the overlay must
  * resolve against the parsed registry. The constructor enforces this and
  * throws {@link LspStartupException} on any unresolved coordinate; the
- * R110-style drift that motivated this Spec becomes a loud startup
+ * directive drift that motivated this invariant becomes a loud startup
  * failure before any IDE session ever runs.
  *
  * <p>The vocabulary is read once at LSP startup and never invalidated.
@@ -332,7 +332,7 @@ public record LspVocabulary(
      * kinds the completion-range helper knows how to slice; consumers
      * that only need the coordinate use {@link #coordinateAt} instead.
      *
-     * <p>R307: also carries the enclosing directive name. Coordinates such
+     * <p>Also carries the enclosing directive name. Coordinates such
      * as {@code InputField("ExternalCodeReference", "className")} are shared
      * across directives ({@code @record} and {@code @enum} both reference
      * {@code ExternalCodeReference}), so a value provider that must
@@ -652,7 +652,7 @@ public record LspVocabulary(
 
     /**
      * Thrown from the {@link LspVocabulary} constructor when an overlay
-     * coordinate fails to resolve against the parsed registry. R110-style
+     * coordinate fails to resolve against the parsed registry. Directive
      * drift becomes a loud startup failure rather than a silent
      * unknown-directive at request time.
      */
@@ -666,8 +666,7 @@ public record LspVocabulary(
 
     /**
      * The canonical overlay shipped with the LSP. The full set of
-     * coordinates the LSP knows how to act on today; mirrors the table
-     * in the R119 spec body.
+     * coordinates the LSP knows how to act on today.
      */
     public static final class CanonicalOverlay {
         private CanonicalOverlay() {}
@@ -684,7 +683,7 @@ public record LspVocabulary(
             out.put(sourceRowClassName, new Behavior.ClassNameBinding());
             out.put(new SchemaCoordinate.DirectiveArg("sourceRow", "method"),
                 new Behavior.MethodNameBinding(sourceRowClassName));
-            // R43: @tableMethod is flat (className, method, argMapping directly on the directive),
+            // @tableMethod is flat (className, method, argMapping directly on the directive),
             // mirroring @sourceRow rather than wrapping an ExternalCodeReference.
             var tableMethodClassName = new SchemaCoordinate.DirectiveArg("tableMethod", "className");
             out.put(tableMethodClassName, new Behavior.ClassNameBinding());
@@ -696,7 +695,7 @@ public record LspVocabulary(
                 new Behavior.CatalogTableBinding());
             out.put(new SchemaCoordinate.DirectiveArg("field", "name"),
                 new Behavior.CatalogColumnBinding());
-            // R343: @defaultOrder(fields: [{name: ...}]) names a column on the list/connection
+            // @defaultOrder(fields: [{name: ...}]) names a column on the list/connection
             // field's target (element-type) table. The FieldSort.name coordinate binds to the
             // same column behavior; the target table is resolved through
             // FieldClassification.lspColumnDispatch() (TableTarget / RecordTableTarget Resolve

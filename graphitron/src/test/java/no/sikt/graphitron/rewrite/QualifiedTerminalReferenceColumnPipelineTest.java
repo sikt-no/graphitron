@@ -14,10 +14,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R444 pipeline coverage: a scalar {@code @reference} field whose FK path terminates on a table
+ * Pipeline coverage for a scalar {@code @reference} field whose FK path terminates on a table
  * whose bare name collides across generated schemas must resolve the column against the FK-pinned
  * terminal {@link no.sikt.graphitron.rewrite.model.TableRef} (class identity), not re-resolve the
- * bare SQL name through the catalog. Pre-R444, {@code ServiceCatalog.terminalTableSqlName}
+ * bare SQL name through the catalog. Previously, {@code ServiceCatalog.terminalTableSqlName}
  * collapsed the identity-resolved terminal ref to a bare name string and
  * {@code JooqCatalog.findColumn(String, ...)} hit {@code TableResolution.Ambiguous} on the
  * colliding name, demoting the field to {@link GraphitronField.UnclassifiedField} with a spurious
@@ -25,9 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @reference} key names the FK on the source table and carries no syntax to qualify the
  * FK terminal.
  *
- * <p>Sibling of R422's {@code QualifiedReturnTypeReferencePipelineTest} (object-return-type
- * terminal verdict) and R396's {@code QualifiedSourceReferencePipelineTest} (source {@code @table}
- * resolution); this member covers the scalar-column read at the FK terminal. The fixture is the
+ * <p>Sibling of {@link QualifiedReturnTypeReferencePipelineTest} (object-return-type
+ * terminal verdict) and {@link QualifiedSourceReferencePipelineTest} (source {@code @table}
+ * resolution); this test covers the scalar-column read at the FK terminal. The fixture is the
  * existing multi-schema jOOQ codegen output: {@code multischema_a.event_log} carries FK
  * {@code event_log_event_id_fkey} into {@code multischema_a.event}; {@code event} collides across
  * {@code multischema_a} / {@code multischema_b}; column {@code name} exists only on A's copy,
@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Assertions land at the classifier/model surface. The schema-pinned test (reading {@code code})
  * pins that the fix resolves against the FK-pinned schema A copy rather than scanning every schema
- * for a match; the unknown-column test pins the diagnostic path's candidate list, which pre-R444
+ * for a match; the unknown-column test pins the diagnostic path's candidate list, which previously
  * was empty on a colliding terminal (the bare-name candidate lookup was ambiguity-broken too).
  */
 @PipelineTier
@@ -75,7 +75,7 @@ class QualifiedTerminalReferenceColumnPipelineTest {
 
     @Test
     void collidingTerminal_columnOnPinnedSchema_classifiesAsColumnReferenceField() {
-        // 'name' exists on multischema_a.event (the FK-pinned terminal). Pre-R444 the bare-name
+        // 'name' exists on multischema_a.event (the FK-pinned terminal). Previously the bare-name
         // terminal lookup was ambiguous across the two 'event' tables and demoted the field to
         // UnclassifiedField; the identity-carrying resolver classifies it green.
         var field = classify(
@@ -106,7 +106,7 @@ class QualifiedTerminalReferenceColumnPipelineTest {
     @Test
     void collidingTerminal_genuineUnknownColumn_rejectsWithNonEmptyCandidates() {
         // 'bogus' exists nowhere; the author error must fire, and its candidate list must now
-        // enumerate A's event columns. Pre-R444 the diagnostic's candidate lookup went through the
+        // enumerate A's event columns. Previously the diagnostic's candidate lookup went through the
         // same ambiguity-broken bare-name resolve and came back empty on a colliding terminal.
         var field = classify(
             "eventName: String @field(name: \"bogus\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");

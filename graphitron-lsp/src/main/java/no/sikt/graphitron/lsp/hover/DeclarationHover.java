@@ -4,7 +4,7 @@ import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
 /**
- * R160 — sealed family of SDL-declaration coordinates that the classification-hover arm
+ * Sealed family of SDL-declaration coordinates that the classification-hover arm
  * recognises. Sibling to {@link no.sikt.graphitron.lsp.parsing.Behavior}, which carries
  * the directive-argument-binding shapes; this family carries the orthogonal axis of
  * <em>declaration positions</em> (a field-definition name token, a type-definition name

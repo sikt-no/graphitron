@@ -14,7 +14,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R347 (Slice 1) — pins the contract of the consolidated tree-sitter navigation helpers on
+ * Pins the contract of the consolidated tree-sitter navigation helpers on
  * {@link Nodes}, the single home the 12 per-feature {@code childOfKind} copies collapsed into.
  *
  * <p>The two copies in {@code Definitions} and {@code TypeContext} had dropped the child null-guard

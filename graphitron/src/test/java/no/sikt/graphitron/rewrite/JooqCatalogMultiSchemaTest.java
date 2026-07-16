@@ -12,16 +12,16 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R78 phase 2a coverage for {@link JooqCatalog}'s strict-resolution multi-schema API,
- * lifted by R81 onto the {@link JooqCatalog.TableResolution} sealed sub-taxonomy:
+ * Coverage for {@link JooqCatalog}'s strict-resolution multi-schema API,
+ * lifted onto the {@link JooqCatalog.TableResolution} sealed sub-taxonomy:
  * {@link JooqCatalog#parseQualifiedTableName}, {@link JooqCatalog#findTable(String)},
  * {@link JooqCatalog#findTable(String, String)},
  * and {@link JooqCatalog.TableEntry}'s typed accessors ({@code tableClass},
  * {@code recordClass}, {@code constantsClass}, {@code pkColumnRefs}).
  *
  * <p>The fixture is the multi-schema jOOQ codegen output produced by the
- * {@code jooq-codegen-multischema-fixture} execution in {@code graphitron-sakila-db}
- * (R78 phase 1): two schemas ({@code multischema_a}, {@code multischema_b}) sharing
+ * {@code jooq-codegen-multischema-fixture} execution in {@code graphitron-sakila-db}:
+ * two schemas ({@code multischema_a}, {@code multischema_b}) sharing
  * one table name ({@code event}) and connected by a cross-schema FK
  * ({@code multischema_b.gadget -> multischema_a.widget}). Single-schema fixtures elsewhere
  * cannot exercise the ambiguity-policy or qualified-name branches because their tables
@@ -38,7 +38,7 @@ class JooqCatalogMultiSchemaTest {
 
     /**
      * Fetches a raw jOOQ {@link org.jooq.ForeignKey} for tests that drive the FK-object APIs.
-     * Uses the R440 scoped lookup with a {@code null} scope; every name passed here is unique
+     * Uses the scoped lookup with a {@code null} scope; every name passed here is unique
      * across the fixture's schemas, so the lookup always {@link JooqCatalog.ForeignKeyLookup.Resolved}.
      */
     private static org.jooq.ForeignKey<?, ?> fkByName(String name) {
@@ -114,8 +114,8 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void findTable_unqualifiedAmbiguous_isAmbiguousNamingBothSchemas() {
-        // 'event' is defined in both multischema_a and multischema_b — the spec's
-        // central R81 case: callers see Ambiguous(["multischema_a", "multischema_b"]) so the
+        // 'event' is defined in both multischema_a and multischema_b, the central
+        // ambiguity case: callers see Ambiguous(["multischema_a", "multischema_b"]) so the
         // diagnostic builder can suggest qualified forms inline.
         var result = multi().findTable("event");
         assertThat(result).isInstanceOf(JooqCatalog.TableResolution.Ambiguous.class);
@@ -266,12 +266,12 @@ class JooqCatalogMultiSchemaTest {
         assertThat(fk.getKey().getTable().getSchema().getName()).isEqualTo("multischema_a");
     }
 
-    // ---- findForeignKeyRef: R440 identity-based typed FK reference ----
+    // ---- findForeignKeyRef: identity-based typed FK reference ----
 
     @Test
     void findForeignKeyRef_returnsSchemaSegmentedKeysClass() {
-        // The cross-schema FK is declared on multischema_b's Keys class — this is the
-        // multi-schema bug R78 fixes: a per-emit-site `ClassName.get(jooqPackage, "Keys")`
+        // The cross-schema FK is declared on multischema_b's Keys class; this is the
+        // multi-schema bug: a per-emit-site `ClassName.get(jooqPackage, "Keys")`
         // with jooqPackage = root would compile to the non-existent root.Keys (no Keys
         // class in the root package under multi-schema codegen). The identity lookup picks
         // the FK-holder schema's Keys class off the FK's own schema.
@@ -385,7 +385,7 @@ class JooqCatalogMultiSchemaTest {
             .noneMatch(c -> c.contains("__"));
 
         // jOOQ-constant-form attempt (contains `__`) -> Java-constant-namespace candidates, which
-        // carry the `__` separator. Fails under the pre-R259 behaviour (candidates were always the
+        // carry the `__` separator. Fails under the earlier behaviour (candidates were always the
         // SQL names regardless of the namespace the author typed).
         var constForm = (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName)
             ctx.unknownForeignKeyRejection("reordered_fk_child__bogus_fk");
@@ -461,7 +461,7 @@ class JooqCatalogMultiSchemaTest {
         // The {@link BuildContext.FkJoinResolution.UnknownForeignKey} arm covers the structural
         // case where {@code findForeignKeyRef} returns {@code NotInCatalog} despite the input
         // {@link org.jooq.ForeignKey} being non-null — defensive against catalog-vs-FK mismatch.
-        // After R440 every production caller resolves the FK by identity before reaching
+        // Every production caller now resolves the FK by identity before reaching
         // synthesizeFkJoin, so the arm is unreachable from the existing call graph; the taxonomy
         // still expresses the structural completeness so future call sites must handle the shape.
         var resolution = new BuildContext.FkJoinResolution.UnknownForeignKey("fabricated_fk");
@@ -487,11 +487,11 @@ class JooqCatalogMultiSchemaTest {
         assertThat(resolution.asHop()).isEmpty();
     }
 
-    // ---- R396: FK source-side identity primitives (schema-qualified / case-mismatched @table) ----
+    // ---- FK source-side identity primitives (schema-qualified / case-mismatched @table) ----
     //
     // The signal→widget FK (signal_widget_id_fkey) lives entirely in multischema_a. jOOQ renders
     // both endpoint names unqualified ("signal", "widget"), so a schema-qualified or case-mismatched
-    // @table echo ("multischema_a.signal", "multischema_a.SIGNAL") missed the pre-R396 bare
+    // @table echo ("multischema_a.signal", "multischema_a.SIGNAL") missed the earlier bare
     // equalsIgnoreCase compare. Class identity, resolved through findTable, restores the match.
 
     @Test
@@ -502,7 +502,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void foreignKeyTouchesTable_qualifiedUpperCaseSource_isTrue() {
-        // The schema-qualified + upper-case form the R395 execution fixture is tightened to.
+        // The schema-qualified + upper-case form the execution fixture is tightened to.
         var fk = fkByName("signal_widget_id_fkey");
         assertThat(multi().foreignKeyTouchesTable(fk, "multischema_a.SIGNAL")).isTrue();
     }
@@ -540,7 +540,7 @@ class JooqCatalogMultiSchemaTest {
     @Test
     void foreignKeyOnSource_qualifiedSourceIsReferencedSide_isFalse() {
         // From the widget (referenced) side the FK is not on the source — the orientation the
-        // pre-R396 bare compare silently inverted for a schema-qualified name.
+        // earlier bare compare silently inverted for a schema-qualified name.
         var fk = fkByName("signal_widget_id_fkey");
         assertThat(multi().foreignKeyOnSource(fk, "multischema_a.widget", /*selfRefHint=*/false)).isFalse();
     }
@@ -552,7 +552,7 @@ class JooqCatalogMultiSchemaTest {
             .containsExactly("signal_widget_id_fkey");
     }
 
-    // ---- R396: synthesizeFkJoin orients correctly under a schema-qualified source @table ----
+    // ---- synthesizeFkJoin orients correctly under a schema-qualified source @table ----
 
     @Test
     void synthesizeFkJoin_qualifiedSource_orientsOriginSignalTargetWidget() {
@@ -563,7 +563,7 @@ class JooqCatalogMultiSchemaTest {
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
         var fkJoin = ((BuildContext.FkJoinResolution.Resolved) result).hop();
 
-        // Origin is signal, target is widget — the pre-R396 bare compare would fail the
+        // Origin is signal, target is widget; the earlier bare compare would fail the
         // "multischema_a.signal".equalsIgnoreCase("signal") test, mis-orient the join, and
         // swap origin/target so the slot pairing inverts.
         assertThat(fkJoin.originTable().tableClass())
@@ -576,7 +576,7 @@ class JooqCatalogMultiSchemaTest {
         assertThat(pairs.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
     }
 
-    // ---- R440: FK-join endpoint + FK resolution by class / reference identity ----
+    // ---- FK-join endpoint + FK resolution by class / reference identity ----
     //
     // The 'note' table exists in BOTH schemas, each carrying an FK explicitly named
     // 'note_event_fk' into its OWN schema's 'event'. That yields the two collisions the earlier
@@ -601,7 +601,7 @@ class JooqCatalogMultiSchemaTest {
     }
 
     // D2: synthesizeFkJoin over the colliding-name FK resolves the endpoint 'event' by class, from
-    // each side, where the pre-R440 bare-name target lookup returned Ambiguous and the join failed.
+    // each side, where the earlier bare-name target lookup returned Ambiguous and the join failed.
 
     @Test
     void synthesizeFkJoin_collidingTargetName_resolvesSchemaAEventByClass() {

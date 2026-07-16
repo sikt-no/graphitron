@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord;
 import java.util.List;
 
 /**
- * R405 execution-tier fixture: a {@code @service} returning a single-table discriminated interface
+ * Execution-tier fixture: a {@code @service} returning a single-table discriminated interface
  * ({@code Content}: the shared {@code content} table discriminated by {@code CONTENT_TYPE} into
  * {@code FilmContent} / {@code ShortContent}).
  *

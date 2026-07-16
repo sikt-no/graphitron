@@ -11,14 +11,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * R158 composite-PK execution-tier fixture: an {@code @service}-backed mutation that
+ * Composite-PK execution-tier fixture: an {@code @service}-backed mutation that
  * returns {@code List<FilmActorRecord>} verbatim, against a two-PK data table
  * ({@code film_actor}, PK {@code (actor_id, film_id)}). The carrier's data field classifies
  * as {@code ChildField.SingleRecordTableField} with
  * {@code SourceKey.Wrap.TableRecord(FilmActorRecord)}; the FetcherEmitter's
  * {@code Wrap.TableRecord} MANY arm emits the composite-PK paths
  * ({@code row(actor_id, film_id).in(...)} predicate +
- * {@code List.of(r.get(actor_id), r.get(film_id))} PK-keyed-map walk for R141 input-order
+ * {@code List.of(r.get(actor_id), r.get(film_id))} PK-keyed-map walk for input-order
  * preservation) unique to multi-column keys.
  *
  * <p>Sibling to {@link FilmCarrierService}, which covers the single-PK shape.

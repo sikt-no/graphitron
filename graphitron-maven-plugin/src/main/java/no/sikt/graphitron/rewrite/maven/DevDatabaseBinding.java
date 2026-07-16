@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
 /**
- * POM XML binding for the {@code <devDatabase>} block (R428): the dev database the
+ * POM XML binding for the {@code <devDatabase>} block: the dev database the
  * {@code graphitron:dev} MCP {@code execute} tool runs queries against. Plain connection
  * coordinates, no pool:
  *

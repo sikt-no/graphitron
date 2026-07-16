@@ -11,11 +11,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline-tier (R385): the <em>production</em> warm path end to end. A bundle of pre-embedded tuples
+ * Pipeline-tier: the <em>production</em> warm path end to end. A bundle of pre-embedded tuples
  * is rebuilt into an in-memory store through the real {@link DocsRag#loadDocsIndex} loader (the same
  * code the server warm runs), and a query lands the expected passage. No ONNX: the vectors are planted,
  * so this exercises the reconstruction loader without the build-time embed cost (that load is covered
- * by R372's {@code @Tag("slow")} embedder test).
+ * by the {@code @Tag("slow")} embedder test).
  */
 class DocsRagWarmPathTest {
 

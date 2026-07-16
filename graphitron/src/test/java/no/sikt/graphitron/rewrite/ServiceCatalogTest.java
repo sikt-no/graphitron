@@ -109,7 +109,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_unrecognisedParam_onChildField_pointsAtArgCtxMismatch() {
-        // Non-empty parentPkColumns: child of a table-backed parent. Post-R187 the discriminator
+        // Non-empty parentPkColumns: child of a table-backed parent. The discriminator
         // is the parameter type axis, not the coordinate: a clearly non-SOURCES-adjacent type
         // (here, {@code Object}) under a non-empty parent PK still gets the arg-mismatch
         // diagnostic, matching the root-coordinate behaviour. SOURCES batching could in principle
@@ -129,7 +129,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_nonSourcesPayloadOnChildField_pointsAtArgCtxMismatch() {
-        // R187 reproduction: child @service whose key parameter is a proper SOURCES shape
+        // Child @service whose key parameter is a proper SOURCES shape
         // (List<Row1<Integer>>) and whose second parameter is a clearly non-SOURCES-adjacent
         // type (LocalDate) whose name does not match any GraphQL argument. The arg-mismatch
         // diagnostic is the one the user can act on (rename the Java parameter or bind via
@@ -186,7 +186,7 @@ class ServiceCatalogTest {
     void reflectServiceMethod_dtoSources_onChildField_rejectedWithLifterDirectiveHint() {
         // Non-empty parentPkColumns: child of a table-backed parent. This is the only context
         // where the lifter-directive hint is genuinely actionable — DataLoader batching applies
-        // and the missing piece is a DTO-to-key conversion, the feature roadmap/R1 will add.
+        // and the missing piece is a DTO-to-key conversion, the feature the @sourceRow directive provides.
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of()), Set.of(), filmPk, null);
@@ -232,7 +232,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_rootFieldNameMismatch_suggestionMentionsPathExpression() {
-        // R84 Phase F floor: when the parameter-mismatch suggestion already prints an argMapping
+        // When the parameter-mismatch suggestion already prints an argMapping
         // example (i.e. there is at least one available GraphQL arg), it also mentions that the
         // right-hand side may be a dot-path into a nested input field. Discoverability for users
         // adopting Relay-style wrapper inputs without scanning external docs.
@@ -248,7 +248,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_rootFieldNameMismatch_unambiguousReachablePath_suggestionIsPrefilled() {
-        // R84 Phase F (stretch): when the unmatched Java parameter's type matches exactly one
+        // When the unmatched Java parameter's type matches exactly one
         // reachable field under the available slots, the suggestion replaces the generic
         // `<fieldName>` placeholder with the concrete dotted path. Schema authors get a
         // copy-pasteable argMapping example instead of a doc lookup.
@@ -580,7 +580,7 @@ class ServiceCatalogTest {
             .contains("Film");
     }
 
-    // ===== R53: argMapping override on directive site =====
+    // ===== argMapping override on directive site =====
 
     @Test
     void reflectServiceMethod_argByJavaName_override_bindsJavaNameToArgName() {
@@ -638,7 +638,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_argByJavaName_override_bindsJavaNameToArgName() {
-        // @tableMethod variant (FORBIDDEN policy after R43): override targets a non-Table Java
+        // @tableMethod variant (FORBIDDEN policy): override targets a non-Table Java
         // parameter. The Java method takes only (String tenantId); the override maps "tenantId"
         // to the GraphQL arg "tenant".
         var argByJavaName = bindings(Map.of("tenantId", "tenant"));
@@ -659,7 +659,7 @@ class ServiceCatalogTest {
         // Under FORBIDDEN policy a Table<?> parameter on a @tableMethod method is rejected
         // outright; graphitron derives the target table from the return type and parent-table
         // filtering is @reference's job. The legacy `get(Table<?>)` method exercises this — but
-        // the project's TestTableMethodStub no longer declares Table parameters after R43, so
+        // the project's TestTableMethodStub no longer declares Table parameters, so
         // we exercise the rejection via TestConditionStub (which still declares Table-leading
         // methods).
         var result = newCatalog().reflectTableMethod(
@@ -690,7 +690,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_arityUniqueWithNamedInputObject_infersBindingWithoutArgMapping() {
-        // R214 (extension): a Mutation-shaped @service field declares one GraphQL argument
+        // A Mutation-shaped @service field declares one GraphQL argument
         // whose type is a named input object (no canonical Java scalar mapping). The Java
         // method declares one non-Table / non-DSLContext / non-Context parameter whose name
         // does not match. With exactly one unbound parameter and exactly one unclaimed slot,
@@ -757,7 +757,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_arityUnique_listParamMatchingNestedListField_yieldsAsAmbiguous() {
-        // R214 floor (round-2 finding): the arity-unique branch must also check for
+        // The arity-unique branch must also check for
         // reachable nested matches of the parameter's Java type, not only the type-unique
         // branch. Here a single List<Integer> parameter sits against a single named input
         // object slot whose nested [Int!]! field maps to the same Java type. Without the
@@ -787,12 +787,13 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_typeUniqueTopLevelPlusNameMatchedNested_R355BindsNestedByName() {
-        // R214 set this case up to YIELD ("the user's rule says fall back to name-based matching")
-        // so a later name-based rule could resolve it; R355 is that rule. The param `filmId`
-        // matches the top-level slot `id` by type only (name mismatch), but matches the nested
-        // `input.filmId` by BOTH name and type. The type-unique branch yields (a reachable nested
-        // match exists), then R355's depth-1 name search binds `filmId` to `input.filmId` — exactly
-        // the `argMapping: "filmId: input.filmId"` the pre-R355 rejection used only to suggest.
+        // Type-unique inference sets this case up to YIELD ("the user's rule says fall back to
+        // name-based matching") so a later name-based rule can resolve it; the depth-1 name search
+        // is that rule. The param `filmId` matches the top-level slot `id` by type only (name
+        // mismatch), but matches the nested `input.filmId` by BOTH name and type. The type-unique
+        // branch yields (a reachable nested match exists), then the depth-1 name search binds
+        // `filmId` to `input.filmId` — exactly the `argMapping: "filmId: input.filmId"` the earlier
+        // rejection used only to suggest.
         var filmInput = graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("FilmInput")
             .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
@@ -817,7 +818,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_arityUnique_scalarParamAgainstNamedInputSlot_defersToDotPathHint() {
-        // R214 floor: arity-unique inference does NOT fire when the slot is a named input
+        // Arity-unique inference does NOT fire when the slot is a named input
         // object AND the Java parameter is a canonical scalar (String / Integer / Double /
         // Boolean). The developer almost always wants a dot-path binding into a nested field
         // in this shape, and the existing unambiguousReachablePath suggestion is the
@@ -864,7 +865,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_typeAmbiguousSignature_fallsBackToNameMatchingDiagnostic() {
-        // R214 floor: when more than one Java parameter shares a type with the only slot of
+        // When more than one Java parameter shares a type with the only slot of
         // that type, the inference treats the pairing as ambiguous and falls back to
         // name-based matching. With two String parameters and one String slot, the
         // second parameter remains unbound and the existing diagnostic fires.
@@ -882,7 +883,7 @@ class ServiceCatalogTest {
             .contains("not a GraphQL argument");
     }
 
-    // ===== R355: name-based depth-1 nested-field inference =====
+    // ===== name-based depth-1 nested-field inference =====
 
     /** Builds an input-object slot type with one field of the given GraphQL type. */
     private static graphql.schema.GraphQLInputObjectType inputObject(String name, String fieldName,
@@ -966,12 +967,12 @@ class ServiceCatalogTest {
         assertThat(result.ref().returnType().toString()).isEqualTo("org.jooq.Table");
     }
 
-    // ===== R12 §4 declared-exception capture =====
+    // ===== Declared-exception capture =====
 
     @Test
     void reflectServiceMethod_capturesDeclaredCheckedExceptions() {
         // ServiceCatalog reads Method.getExceptionTypes() and stores the FQNs on
-        // MethodRef#declaredExceptions(); the classifier's §4 match check consumes them.
+        // MethodRef#declaredExceptions(); the classifier's match check consumes them.
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getThrowingSqlException", bindings(Map.of()), Set.of(), List.of(), null);
 
@@ -1028,8 +1029,8 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_instanceMethodUnbindableCtor_rejectedWithActionableMessage() {
         // Holder class's only public constructor takes a parameter that is neither a DSLContext
-        // nor a declared context key, so no constructor is bindable (R256 relaxed the holder rule
-        // from (DSLContext)-only to any all-bindable constructor). The classifier rejects with the
+        // nor a declared context key, so no constructor is bindable (the holder rule admits any
+        // all-bindable constructor, not just a (DSLContext)-only one). The classifier rejects with the
         // typed InstanceHolderUnconstructible arm spelling out both options.
         var result = newCatalog().reflectServiceMethod(
             "no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor", "getFilm",
@@ -1078,7 +1079,7 @@ class ServiceCatalogTest {
         assertThat(callShape.ctorParams().get(1).name()).isEqualTo("tenantId");
     }
 
-    // ===== R256: shared reflection-intrinsic typed arms =====
+    // ===== shared reflection-intrinsic typed arms =====
 
     @Test
     void reflectServiceMethod_classNotLoaded_producesTypedReflectionError() {
@@ -1103,8 +1104,8 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_overloadedMethod_producesAmbiguousMethod() {
-        // TestServiceStub declares two methods named getOverloaded (arity 0 and 1); R256 rejects
-        // the silent first-match pick with a typed AmbiguousMethod carrying both arities.
+        // TestServiceStub declares two methods named getOverloaded (arity 0 and 1); the classifier
+        // rejects the silent first-match pick with a typed AmbiguousMethod carrying both arities.
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getOverloaded", bindings(Map.of()), Set.of(), List.of(), null);
 

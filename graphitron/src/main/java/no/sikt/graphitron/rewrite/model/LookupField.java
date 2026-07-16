@@ -5,7 +5,7 @@ package no.sikt.graphitron.rewrite.model;
  * arguments and generate a VALUES + JOIN lookup query: {@link QueryField.QueryLookupTableField}
  * (root synchronous lookup), {@link ChildField.LookupTableField} (table-mapped parent, inline
  * correlated subquery), and {@link ChildField.BatchedLookupTableField} (DataLoader-backed, both
- * parent backings, gated on its stored {@code SourceShape} — R432).
+ * parent backings, gated on its stored {@code SourceShape}).
  *
  * <p>Per the "Capabilities reify an orthogonal axis; sealed switches fork on identity" principle
  * in {@code docs/architecture/explanation/development-principles.adoc}, the generator routes on this

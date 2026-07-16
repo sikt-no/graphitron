@@ -12,8 +12,8 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class AppliedDirectiveEmitterTest {
 
-    // A federation @key entity is backed by a @table (the dispatcher SELECTs from it); R317 slice 5
-    // stopped the federation @key check from incidentally registering a @table-less @key type as an
+    // A federation @key entity is backed by a @table (the dispatcher SELECTs from it); the
+    // federation @key check no longer incidentally registers a @table-less @key type as an
     // UnclassifiedType, which is what previously made ObjectTypeGenerator (it iterates the type
     // registry) emit a UserType for this fixture. The @table here makes User a real, emittable
     // TableType — the canonical valid federation entity — so the survivor-directive emission this
@@ -107,7 +107,7 @@ class AppliedDirectiveEmitterTest {
     }
 
     /**
-     * Regression guard for R250: when a directive application omits a nullable, no-default
+     * Regression guard: when a directive application omits a nullable, no-default
      * argument that the directive declares, graphql-java leaves that argument slot in
      * {@code InputValueWithState.NOT_SET}. The emitter previously fed that state into
      * {@code ValuesResolver.valueToLiteral} and tripped {@code assertShouldNeverHappen}.
@@ -190,7 +190,7 @@ class AppliedDirectiveEmitterTest {
             .filter(s -> s.name().equals(typeName))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no " + typeName + " in " + specs));
-        // Render the full class — the post-R254 emitter factors each non-trivial sub-value
+        // Render the full class — the emitter factors each non-trivial sub-value
         // (per field, per applied directive) into its own private static method, so the
         // assertion substrings live across the helper bodies as well as the type() method.
         return spec.toString();

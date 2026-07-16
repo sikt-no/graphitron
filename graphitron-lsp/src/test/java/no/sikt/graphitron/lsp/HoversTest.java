@@ -130,7 +130,7 @@ class HoversTest {
 
     @Test
     void cursorOnBundledDirectiveNameSurfacesDocstring() {
-        // R142 phase 2: cursor on a bundled directive's name token (the
+        // Cursor on a bundled directive's name token (the
         // @table identifier itself, not its arguments) surfaces the
         // directive's SDL docstring. The bundled SDL ships descriptions
         // on every directive, so the hover now lights up free for all
@@ -197,7 +197,7 @@ class HoversTest {
 
     @Test
     void recordClassName_carveOut_noLiveBindingHover() {
-        // R307: @record is deprecated and ignored, so hovering its className shows no live-binding
+        // @record is deprecated and ignored, so hovering its className shows no live-binding
         // "**Class**" hover even when the class resolves in the catalog. It falls through to the SDL
         // docstring on the shared ExternalCodeReference.className coordinate (the carve-out gates on
         // the enclosing directive name; the same coordinate under @enum/@service still hovers the class).
@@ -217,7 +217,7 @@ class HoversTest {
 
     @Test
     void unknownServiceClassFallsBackToSdlDocstring() {
-        // Per R119 phase 2, hover on a known coordinate without a richer
+        // Hover on a known coordinate without a richer
         // catalog match falls through to the SDL docstring on the
         // coordinate's parsed definition. ExternalCodeReference.className's
         // description in directives.graphqls describes what className means;
@@ -342,7 +342,7 @@ class HoversTest {
         assertThat(hover.getContents().getRight().getValue()).isNotBlank();
     }
 
-    // ---- R142 phase 2: user-declared directives via the snapshot. ----
+    // ---- user-declared directives via the snapshot. ----
 
     @Test
     void userDeclaredDirectiveNameHover_returnsSnapshotDescription() {
@@ -422,7 +422,7 @@ class HoversTest {
 
     @Test
     void bundledDirectiveArgHover_ignoresSnapshotShadow() {
-        // R139 settled design note 4: bundled shadows snapshot. Cursor on
+        // Settled design: bundled shadows snapshot. Cursor on
         // an arg-name that lives only in the snapshot's shadow @table
         // (not in the bundled @table) must NOT surface the shadow's arg
         // description — doing so would make the LSP appear to "know" an
@@ -473,7 +473,7 @@ class HoversTest {
         assertThat(md).doesNotContain("**Table** `film`");
     }
 
-    // R100 — @node(keyColumns:) and @nodeId(typeName:) hover.
+    // @node(keyColumns:) and @nodeId(typeName:) hover.
 
     @Test
     void nodeKeyColumnsHover_insideListElement_showsColumnMetadata() {
@@ -571,14 +571,14 @@ class HoversTest {
         );
     }
 
-    // ===== R233 — @field(name:) on @reference path field hovers on terminal-table column =====
+    // ===== @field(name:) on @reference path field hovers on terminal-table column =====
 
     @Test
     void inputTableWithReferencePathHoversOnTerminalTableColumn() {
         // The enclosing @table is "film"; the @reference path navigates to "language"; the
-        // column "name" exists on "language" but not on "film". Pre-R233 the hover dispatched
+        // column "name" exists on "language" but not on "film". Previously the hover dispatched
         // on the enclosing-type backing and either rendered the wrong column or silently failed
-        // to find one. R233 routes through FieldClassification.lspColumnDispatch() and hovers
+        // to find one. Routing through FieldClassification.lspColumnDispatch() hovers
         // the actual reachable column.
         var file = file("""
             input FilmInput @table(name: "film") {
@@ -654,13 +654,13 @@ class HoversTest {
         assertThat(Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos)).isEmpty();
     }
 
-    // ===== R331 — @field(name:) on a @table-interface participant cross-table reference =====
+    // ===== @field(name:) on a @table-interface participant cross-table reference =====
     //              hovers on the @reference terminal-table column, not the participant's @table
 
     @Test
     void participantCrossTableReferenceHoversOnTerminalTableColumn() {
         // The enclosing @table is "film" (the participant table); the field reaches "lang_name"
-        // on the terminal table "language" via a ParticipantCrossTable classification. Pre-R331
+        // on the terminal table "language" via a ParticipantCrossTable classification. Previously
         // the hover dispatched on the enclosing backing and rendered the wrong table; routing
         // ParticipantCrossTable through lspColumnDispatch() hovers the terminal-table column.
         var file = file("""
@@ -687,7 +687,7 @@ class HoversTest {
         assertThat(md).doesNotContain("on `film`");
     }
 
-    // ===== R343 — @defaultOrder(fields: [{name:}]) hovers on the element-table column =====
+    // ===== @defaultOrder(fields: [{name:}]) hovers on the element-table column =====
 
     @Test
     void defaultOrderFieldNameHoversOnElementTableColumn() {

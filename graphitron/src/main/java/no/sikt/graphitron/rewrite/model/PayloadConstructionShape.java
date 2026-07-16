@@ -12,8 +12,8 @@ import java.util.List;
  * carrier ({@link ErrorChannel}); each emit site dispatches on the arm directly, with no
  * per-instance branching.
  *
- * <p>Variant identity tracks construction shape, per the rule applied four times already (R61 /
- * R70 / R71 / R74): two structurally distinct ways of building the same artifact are modelled as
+ * <p>Variant identity tracks construction shape, per the rule applied repeatedly elsewhere in
+ * the model: two structurally distinct ways of building the same artifact are modelled as
  * a sealed sub-taxonomy where the variant identifier carries the shape, not a flag or a nullable
  * component. The all-fields-ctor path and the mutable-bean path have different mechanical
  * contracts ({@code new Payload(...)} vs. {@code var p = new Payload(); p.setX(...); ... return

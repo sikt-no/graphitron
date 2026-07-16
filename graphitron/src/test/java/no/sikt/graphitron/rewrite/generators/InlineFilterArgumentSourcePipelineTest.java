@@ -133,8 +133,9 @@ class InlineFilterArgumentSourcePipelineTest {
 
     @Test
     void inlineReferenceFilter_jooqConvertListArg_stampsUncheckedSuppressionOnFieldsMethod() {
-        // Pins the emitJooqConvertKeyLifts pre-lift (a compile-breaking latent defect pre-R424: the
-        // JooqConvert list arm referenced an undeclared <name>Keys local). Generation must succeed and
+        // Pins the emitJooqConvertKeyLifts pre-lift (a latent compile-breaking defect the SelectedField
+        // routing cleared: the JooqConvert list arm previously referenced an undeclared <name>Keys
+        // local). Generation must succeed and
         // the $fields host must stamp @SuppressWarnings("unchecked") for the pre-lift's (List<String>)
         // cast.
         var schema = TestSchemaHelper.buildSchema(JOOQ_CONVERT_LIST_SDL);

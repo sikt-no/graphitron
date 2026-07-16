@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 2 — pipeline-tier coverage that a realistically classified SDL yields the expected
+ * Pipeline-tier coverage that a realistically classified SDL yields the expected
  * file-level edges through {@link CompileDependencyGraphBuilder#fromModel}. Exercises the model
  * switch against the classifier's real leaf output (not hand-built records): a root query field
  * references its target type's projection and the root conditions; a table-navigating child field

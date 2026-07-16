@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R388 defect-2 coverage: a participant {@code @reference} field whose resolved column already
- * exists on the discriminated interface/base table is a contradiction (the column is read directly
+ * Coverage for the discriminated-interface reference contradiction: a participant {@code @reference}
+ * field whose resolved column already exists on the discriminated interface/base table is a contradiction (the column is read directly
  * off the base table, so a cross-table {@code @reference} is meaningless). The classifier resolves
  * the predicate once in {@code TypeBuilder.extractCrossTableFields} (catalog in scope), skips the
  * field from the participant's cross-table set, and registers a build diagnostic that the validator

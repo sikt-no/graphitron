@@ -12,8 +12,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Infrastructure-tier (R386): embeds a small Sakila-shaped {@link CatalogFacts} through the real bge
- * ONNX embedder and asserts the retrieval-quality payoff, the analogue of R372's
+ * Infrastructure-tier: embeds a small Sakila-shaped {@link CatalogFacts} through the real bge
+ * ONNX embedder and asserts the retrieval-quality payoff, the analogue of
  * {@code BgeEmbedderOnnxTest} for the catalog index. This is the only check that the descriptor
  * composition + name normalization + hybrid retrieval actually surface the right tables for a
  * natural-language query, so it runs in CI's default {@code mvn verify -Plocal-db}.

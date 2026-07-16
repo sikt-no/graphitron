@@ -16,7 +16,7 @@ import java.util.function.Function;
  * {@code VALUES (idx, c1, …) JOIN <table> … ORDER BY idx} SELECTs:
  * {@link no.sikt.graphitron.rewrite.generators.LookupValuesJoinEmitter} (root and inline-child
  * lookup paths), {@link SelectMethodBody} (federated {@code _entities} and
- * {@code Query.node} / {@code Query.nodes} dispatch), and — since R413 — the parent-input
+ * {@code Query.node} / {@code Query.nodes} dispatch), and the parent-input
  * {@code VALUES} cells of the DataLoader rows methods
  * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter} and
  * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}'s batched arms),
@@ -145,7 +145,7 @@ public final class ValuesJoinRowBuilder {
      * Variant of {@link #cellsCode(List, Function, CodeBlock, String, BiFunction)} whose table
      * reference is an arbitrary {@link CodeBlock} expression rather than a Java-local name —
      * typically a constants-class reference like {@code Tables.FILM} for callers that have no
-     * aliased table local in scope (the parent-input rows methods; R413). Cell shape is
+     * aliased table local in scope (the parent-input rows methods). Cell shape is
      * identical: {@code DSL.val(<value>, <tableExpr>.<COL>.getDataType())} per slot, binding
      * through the column's registered Converter.
      */

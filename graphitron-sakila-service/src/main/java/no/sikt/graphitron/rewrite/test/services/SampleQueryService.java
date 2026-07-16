@@ -30,7 +30,7 @@ public final class SampleQueryService {
     private SampleQueryService() {}
 
     /**
-     * Filters the FILM table by minimum rental rate. After R43 the {@code @tableMethod} contract
+     * Filters the FILM table by minimum rental rate. The {@code @tableMethod} contract
      * passes only GraphQL field arguments to the method (no parent or return-type table), so the
      * fixture method derives the {@code FILM} table itself. The generated jOOQ {@code Film} class
      * overrides {@code where(...)} to return {@code Film} (not {@code Table<R>}), so the filtered
@@ -63,7 +63,7 @@ public final class SampleQueryService {
     }
 
     /**
-     * R41 fixture: same logic as {@link #filmsByService} but with the Java parameter named
+     * Fixture: same logic as {@link #filmsByService} but with the Java parameter named
      * {@code filmIds}, demonstrating {@code @field(name: "filmIds")} on a GraphQL argument named
      * {@code ids} that binds to a differently-named Java parameter.
      */
@@ -75,7 +75,7 @@ public final class SampleQueryService {
     }
 
     /**
-     * R84 fixture: same logic as {@link #filmsByServiceRenamed} but the GraphQL argument is a
+     * Fixture: same logic as {@link #filmsByServiceRenamed} but the GraphQL argument is a
      * Relay-style wrapper input (`FilmsByPathInput { ids }`) and the binding uses a path
      * expression (`filmIds: input.ids`). The Java signature stays GraphQL-input-shape-agnostic;
      * the generator emits the Map traversal from `env.getArgument("input")` to the leaf `ids`
@@ -89,7 +89,7 @@ public final class SampleQueryService {
     }
 
     /**
-     * R84 Phase D-list fixture: argMapping {@code filmIds: input.items.id} walks through an
+     * List-segment fixture: argMapping {@code filmIds: input.items.id} walks through an
      * intermediate list segment ({@code items: [FilmIdItem!]!}) and projects each item's
      * {@code id} to produce the {@code List<Integer>} expected here. The Java signature is
      * identical to {@link #filmsByPath} on purpose; the difference lives entirely on the
@@ -103,7 +103,7 @@ public final class SampleQueryService {
     }
 
     /**
-     * R84 Phase D-list fixture (two-list-deep): argMapping
+     * List-segment fixture (two-list-deep): argMapping
      * {@code filmIdGroups: input.groups.items.id} walks two intermediate list segments
      * ({@code groups: [FilmIdGroup!]!} then {@code items: [FilmIdItem!]!}) and projects each
      * item's {@code id}, yielding a {@code List<List<Integer>>}. The service flattens the
@@ -119,7 +119,7 @@ public final class SampleQueryService {
     }
 
     /**
-     * R43 commit 3 fixture: child {@code @tableMethod} on a {@code @table} parent
+     * Fixture: child {@code @tableMethod} on a {@code @table} parent
      * ({@code Inventory.filmViaTableMethod: Film}). The classifier auto-infers the unique FK
      * {@code inventory.film_id -> film.film_id} and the generated fetcher correlates the
      * developer-returned table on that FK. Returning the unfiltered {@code Tables.FILM} is the
@@ -131,7 +131,7 @@ public final class SampleQueryService {
     }
 
     /**
-     * R43 commit 3 fixture: child {@code @tableMethod} on a {@code @table} parent
+     * Fixture: child {@code @tableMethod} on a {@code @table} parent
      * ({@code Film.languageViaTableMethod: Language}) with an explicit
      * {@code @reference(path: [{key: "film_language_id_fkey"}])}. The single FK is named
      * explicitly to disambiguate from {@code film_original_language_id_fkey}; the generated

@@ -32,8 +32,8 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
  *       consumer compiled without {@code -parameters}); the existing 5c
  *       diagnostic nudges toward the fix.</li>
  *   <li><b>Right</b> (GraphQL argument): the enclosing field's GraphQL argument
- *       names, read syntactically from the {@code field_definition}. R84
- *       dot-path expansion into nested input fields is deferred (the LSP carries
+ *       names, read syntactically from the {@code field_definition}. Dot-path
+ *       expansion into nested input fields is deferred (the LSP carries
  *       no projection of arbitrary input-type field trees); a right token that
  *       already contains a {@code .} yields no candidates rather than a wrong
  *       flat list.</li>

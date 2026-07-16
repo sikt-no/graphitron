@@ -135,7 +135,7 @@ public sealed interface TypeBackingShape
          * an unclassified type, or an input object whose backing class did not
          * resolve. None carry a component / accessor list a {@code @field(name:)}
          * site could resolve against, so the {@code @field} arm produces no
-         * completions. (Since R276 removed {@code @record} binding, a plain SDL
+         * completions. (Since {@code @record} binding was removed, a plain SDL
          * object no longer lands here: it either binds by reflection or
          * classifies as an {@code UnclassifiedType}.)
          */

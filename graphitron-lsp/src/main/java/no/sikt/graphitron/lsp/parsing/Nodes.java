@@ -57,7 +57,7 @@ public final class Nodes {
      * First direct child of {@code parent} whose kind is {@code kind}, or {@code null} if there is
      * none. Null-safe on {@code parent} and on the child slots tree-sitter may hand back as empty.
      *
-     * <p>R347 (Slice 1): consolidated from the 12 verbatim copies that had grown one-per-feature,
+     * <p>Consolidated from the 12 verbatim copies that had grown one-per-feature,
      * two of which ({@code Definitions}, {@code TypeContext}) had dropped the child null-guard and
      * could NPE. This is now the single navigation entry point; callers name the kind with a
      * {@link GraphqlNodeKind} constant rather than a bare string literal.

@@ -19,8 +19,8 @@ import java.util.Set;
  * SET/WHERE around the key; DELETE treats the whole input as WHERE and the key as a single-row guard)
  * stays in the respective walkers.
  *
- * <p>This is the seam Decision 6 in R266 names: a future shared {@code PredicateCarrier.LookupRows}
- * carrier (if a third consumer makes the shared contract clearest) grows from this helper plus the
+ * <p>This is the seam for a future shared {@code PredicateCarrier.LookupRows}
+ * carrier (if a third consumer makes the shared contract clearest): it grows from this helper plus the
  * verb-neutral {@link MatchedKey} / {@code KeyColumn} types, without foreclosing it now.
  */
 public final class MatchedKeys {

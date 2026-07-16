@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R13 Phases 2+3: {@code @asFacet} through the full classification pipeline. The synthesis half
+ * {@code @asFacet} through the full classification pipeline. The synthesis half
  * asserts that a faceted {@code @asConnection} carrier lands a populated
  * {@link GraphitronType.ConnectionType#facets()} plus the synthesised
  * {@link GraphitronType.FacetsType} / {@link GraphitronType.FacetValueType} entries; the rejection
@@ -333,8 +333,8 @@ class FacetedConnectionPipelineTest {
 
     @Test
     void facetNameCollidingWithSiblingArgFilterField_rejected() {
-        // The R13 review's finding-2 shape: a non-facet filter field on a sibling input arg
-        // shares the facet's name. The facet fragments and the generated condition method both
+        // A non-facet filter field on a sibling input arg shares the facet's name. The facet
+        // fragments and the generated condition method both
         // key parameters by name (the condition method cannot even declare two same-named
         // parameters), so the collision is rejected rather than resolved by position.
         var schema = TestSchemaHelper.buildSchema("""
@@ -403,7 +403,7 @@ class FacetedConnectionPipelineTest {
 
     @Test
     void asFacetOnInputSharedWithNonConnectionConsumer_notRejected() {
-        // R333's definition-keyed / use-keyed split: the directive is authored at the input type's
+        // The definition-keyed / use-keyed split: the directive is authored at the input type's
         // member coordinate; a non-connection consumer leaves it inert rather than invalid. The
         // rejection fires only when NO use site is an @asConnection field.
         var schema = TestSchemaHelper.buildSchema("""

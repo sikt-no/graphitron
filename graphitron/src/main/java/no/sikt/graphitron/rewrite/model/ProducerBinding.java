@@ -10,7 +10,7 @@ import java.util.Objects;
  * from. Surfaces in {@link Rejection.AuthorError.RecordBindingMultiProducer} when
  * two or more producers reach the same SDL type with disagreeing classes.
  *
- * <p>Five arms correspond to the producer sources R96's reflection walk visits:
+ * <p>Five arms correspond to the producer sources the reflection walk visits:
  * {@link RootService} for an {@code @service} method's return type, {@link RootTable} for an
  * SDL Object's {@code @table} resolution, {@link RootTableMethod} for a {@code @tableMethod}
  * return type, {@link ParentAccessor} for an SDL parent's accessor return type, and

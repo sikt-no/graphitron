@@ -25,7 +25,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Validator cases for {@link BatchedLookupTableField}, merged pairwise from the pre-R432
+ * Validator cases for {@link BatchedLookupTableField}, merged pairwise from the former
  * {@code SplitLookupTableFieldValidationTest} (the Table-sourced arm) and
  * {@code RecordLookupTableFieldValidationTest} (the Record-sourced arm). The
  * lookup-Connection rejection is an author-facing validator error on both arms — unlike the

@@ -26,7 +26,7 @@ import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage of R295: the federation {@code @tag} on an {@code @asConnection} carrier
+ * End-to-end coverage of federation {@code @tag} inheritance: the federation {@code @tag} on an {@code @asConnection} carrier
  * field must reach the synthesised Connection / Edge / PageInfo types on the assembled schema
  * (the federation-SDL emission source) and survive the federation SDL round-trip.
  *

@@ -47,8 +47,8 @@ public final class TestSchemaHelper {
     /**
      * Parses {@code schemaText} into a {@link TypeDefinitionRegistry} after prepending the
      * directives prelude and the Relay {@code Node} interface (when not already declared).
-     * Exposed so sibling test helpers (e.g. snapshot builders for the R160 projection
-     * truth-table) can drive the same parser without round-tripping through
+     * Exposed so sibling test helpers (e.g. snapshot builders for the classification
+     * projection truth-table) can drive the same parser without round-tripping through
      * {@code buildBundle}.
      */
     public static TypeDefinitionRegistry parseRegistryWithPrelude(String schemaText) {

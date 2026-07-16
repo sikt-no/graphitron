@@ -24,9 +24,9 @@ import java.util.Set;
  * {@code no-deprecated-directive-usage}: a deprecated graphitron directive, directive argument, or
  * directive-argument input field is used in the consumer SDL. Deprecation is recognised through
  * graphitron's unified {@code @deprecated}-marker convention via {@link DeprecationRecognizer}
- * (extracted build-side for exactly this rule, R398); no curated hardcoded list. Excludes
+ * (extracted build-side for exactly this rule); no curated hardcoded list. Excludes
  * {@code @record}, whose deprecation is owned by the redundant-record advisory, so each coordinate is
- * warned exactly once. Subsumes the retired R296.
+ * warned exactly once.
  *
  * <p>The finding carries no suggested fix: a quick fix must be registered explicitly, not divined
  * from the deprecation's prose reason (parsing "use @order(index:)" out of a docstring is fragile).

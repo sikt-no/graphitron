@@ -49,7 +49,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
  * Promotes Connection-shaped carrier fields and synthesises the supporting
  * {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entries.
  *
- * <p>Two entry points, both field-first (R279 slice 5). {@link #synthesiseForField} is called once
+ * <p>Two entry points, both field-first. {@link #synthesiseForField} is called once
  * per visited field during the classification walk: when the field is an {@code @asConnection} or
  * structural connection carrier it registers the supporting types through
  * {@code ctx.typeRegistry.register} (the accumulator owns dedup and the {@code @tag} union across
@@ -112,8 +112,8 @@ final class ConnectionPromoter {
      * {@code @asConnection} on a bare list, or a structural Connection-shaped return type), to a
      * first-class {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entry in
      * {@code ctx.types}. A no-op for every other field, so the walk calls it unconditionally per
-     * field. This is the field-first replacement for the former all-types promotion pass (R279
-     * slice 5): synthesis happens as a byproduct of visiting the carrier, never by scanning siblings.
+     * field. This is the field-first replacement for the former all-types promotion pass:
+     * synthesis happens as a byproduct of visiting the carrier, never by scanning siblings.
      *
      * <p>For directive-driven carriers the {@link GraphQLObjectType} schema form is built
      * programmatically (the synthesised types are not in the assembled schema). For structural
@@ -227,7 +227,7 @@ final class ConnectionPromoter {
      * Connection / Edge / PageInfo entry absent from the original assembled schema) via
      * {@code additionalType(...)}.
      *
-     * <p>R279 slice 5: {@code synthesisedTypes} is the set the walk synthesised via
+     * <p>{@code synthesisedTypes} is the set the walk synthesised via
      * {@link #synthesiseForField} (resolved to final forms by the builder after the walk), so this
      * method no longer re-derives it from a second {@code ctx.types} scan and the rebuilt assembled
      * schema cannot drift from the registry.
@@ -488,7 +488,7 @@ final class ConnectionPromoter {
     /**
      * The synthesised {@code <ConnName>Facets} container: one nullable list field per facet
      * ({@code [<Scalar>FacetValue!]}), field name matching the filter-input field name. Field
-     * nullability is the failure firewall (R13 "Facet failure semantics"): a facet that fails or
+     * nullability is the facet failure firewall: a facet that fails or
      * times out degrades to null on its own field, never propagating through GraphQL non-null
      * bubbling to the connection.
      */
@@ -567,7 +567,7 @@ final class ConnectionPromoter {
             .field(pageInfoField)
             .field(totalCountField);
         // Nullable, like totalCount: facets are a best-effort aggregate that must degrade to null
-        // rather than propagate a failure into the connection (R13 "Facet failure semantics").
+        // rather than propagate a failure into the connection.
         if (!facets.isEmpty()) {
             builder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("facets")
@@ -638,7 +638,7 @@ final class ConnectionPromoter {
     /**
      * The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}.
      * Read by {@link #promotionFor} to seed the synthesised forms; the cross-carrier {@code @tag}
-     * union itself lives in {@code TypeRegistry.register} (R279 slice 5).
+     * union itself lives in {@code TypeRegistry.register}.
      */
     private static final String TAG_DIRECTIVE = "tag";
 }

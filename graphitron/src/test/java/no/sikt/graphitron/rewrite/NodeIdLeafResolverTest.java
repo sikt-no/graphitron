@@ -56,7 +56,7 @@ class NodeIdLeafResolverTest {
     );
 
     /**
-     * Public (Sakila) catalog context. The R328 self-FK fixture (the {@code email} / {@code mailbox}
+     * Public (Sakila) catalog context. The self-FK fixture (the {@code email} / {@code mailbox}
      * pair, with the self-FK {@code email_in_reply_to_fk} sharing the {@code mailbox_id} child column
      * with the cross-table {@code email.mailbox_id -> mailbox} FK) lives in the public schema so the
      * same shape is reachable from both the {@code graphitron}-module classifier tests here and the
@@ -239,8 +239,8 @@ class NodeIdLeafResolverTest {
 
         assertThat(resolved).isInstanceOf(NodeIdLeafResolver.Resolved.Rejected.class);
         var rejected = (NodeIdLeafResolver.Resolved.Rejected) resolved;
-        // Anchor on the constant-named marker rather than copying prose verbatim — the
-        // R114 diagnostic-anchoring policy.
+        // Anchor on the constant-named marker rather than copying prose verbatim, per the
+        // diagnostic-anchoring policy.
         assertThat(rejected.rejection().message())
             .contains(NodeIdLeafResolver.LIFT_FAILURE_MARKER)
             .contains("aId")
@@ -312,11 +312,11 @@ class NodeIdLeafResolverTest {
         assertThat(direct.fkSourceColumns()).extracting(c -> c.sqlName()).containsExactly("id_1");
     }
 
-    // ===== R328: self-FK @nodeId @reference on a same-table leaf =====
+    // ===== self-FK @nodeId @reference on a same-table leaf =====
 
     @Test
     void selfFkReference_resolvesToDirectFk_landingOnSelfFkChildColumns() {
-        // R328 (D1): a same-table @nodeId(typeName: "Email") carrying an explicit @reference naming
+        // A same-table @nodeId(typeName: "Email") carrying an explicit @reference naming
         // the self-FK email_in_reply_to_fk is NOT own-PK identity — it points at a *different* email
         // row of the same table. The line-269 same-table short-circuit is gated on @reference being
         // absent, so this falls through to resolveFkJoinPath, which orients the self-FK with
@@ -351,7 +351,7 @@ class NodeIdLeafResolverTest {
         assertThat(direct.keyColumns()).extracting(c -> c.sqlName())
             .containsExactly("mailbox_id", "message_no");
         // Lifted columns = the self-FK child columns on email's own table, positionally aligned with
-        // the decoded keys. The shared mailbox_id is the overlap with the cross-table FK (R322 dedup).
+        // the decoded keys. The shared mailbox_id is the overlap with the cross-table FK (deduped).
         assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName())
             .containsExactly("mailbox_id", "in_reply_to_no");
         assertThat(direct.joinPath()).hasSize(1);
@@ -360,7 +360,7 @@ class NodeIdLeafResolverTest {
 
     @Test
     void sameTableNodeId_withoutReference_staysOwnPkIdentity() {
-        // R328 (D4 contrast): the same email-backed leaf WITHOUT @reference is unchanged — a same-table
+        // The same email-backed leaf WITHOUT @reference is unchanged: a same-table
         // @nodeId is own-PK identity (SameTable), not a self-FK. The @reference is the only thing that
         // flips the meaning; absent it, line 269 still short-circuits to SameTable.
         String sdl = """
@@ -387,9 +387,9 @@ class NodeIdLeafResolverTest {
 
     @Test
     void selfFkReference_classifierAndRecordPaths_landIdenticalChildColumns() {
-        // R328 (D4 anti-drift): "same-table + @reference => self-FK, not identity" lives as a one-line
-        // predicate at two sites — the classifier path (NodeIdLeafResolver.resolve, D1) and the
-        // @service jOOQ-record path (BuildContext.resolveRecordFkTargetColumns, D2). Both must map the
+        // "same-table + @reference => self-FK, not identity" lives as a one-line
+        // predicate at two sites: the classifier path (NodeIdLeafResolver.resolve) and the
+        // @service jOOQ-record path (BuildContext.resolveRecordFkTargetColumns). Both must map the
         // decoded Email key onto the SAME self-FK child columns. Feed the resolver's own node keys into
         // the record path so the two are pinned against one shared input; drift would show as differing
         // target columns. (The without-@reference identity contrast is staysOwnPkIdentity above.)
@@ -411,11 +411,11 @@ class NodeIdLeafResolverTest {
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk)
             resolver.resolve(arg, "parentId", emailTable);
 
-        // Classifier path (D1): decoded keys land on the self-FK child columns.
+        // Classifier path: decoded keys land on the self-FK child columns.
         assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName())
             .containsExactly("mailbox_id", "in_reply_to_no");
 
-        // Record-population path (D2): the same self-FK, fed the resolver's own node keys, lands the
+        // Record-population path: the same self-FK, fed the resolver's own node keys, lands the
         // decode on the identical child columns (never the record's own PK mailbox_id, message_no).
         var recordTargets = bctx.resolveRecordFkTargetColumns(
             emailTable, "email", direct.keyColumns(), Optional.of("email_in_reply_to_fk"));
@@ -428,16 +428,17 @@ class NodeIdLeafResolverTest {
 
     @Test
     void reorderedFk_classifierAndRecordPaths_reconcileIdentically_offIdentityPermutation() {
-        // R328 (D4) reconciliation anti-drift, OFF the identity permutation. The email self-FK declares
+        // Reconciliation anti-drift, OFF the identity permutation. The email self-FK declares
         // its child columns in node-key order, so the email anti-drift test above exercises both paths
         // only on the identity permutation. Orientation is the self-FK-specific axis and is shared via
         // resolveFkSlots; but RECONCILIATION (aligning FK child columns to node-key decode order) is
-        // orientation-agnostic and genuinely duplicated — D1 permutes via permutationToKeyColumns, D2
-        // matches via a targetSide-name loop. The reordered_fk_child -> reordered_pk_parent FK
+        // orientation-agnostic and genuinely duplicated: the classifier path permutes via
+        // permutationToKeyColumns, the record path matches via a targetSide-name loop.
+        // The reordered_fk_child -> reordered_pk_parent FK
         // references the parent PK in (pk_b, pk_c, pk_a) order while __NODE_KEY_COLUMNS is
         // (pk_a, pk_b, pk_c), forcing a NON-identity permutation through both reconciliation
         // implementations; they must still land identical child columns (fk_a, fk_b, fk_c). This pins
-        // the reconciliation surface the R328 self-FK rides on, which the email fixture cannot reach.
+        // the reconciliation surface the self-FK rides on, which the email fixture cannot reach.
         String sdl = """
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
             type ReorderedChild @table(name: "reordered_fk_child") {
@@ -456,11 +457,11 @@ class NodeIdLeafResolverTest {
         var direct = (NodeIdLeafResolver.Resolved.FkTarget.DirectFk)
             resolver.resolve(arg, "parentIds", childTable);
 
-        // D1 reconciliation: permutationToKeyColumns puts the lifted columns in node-key (decode) order.
+        // Classifier-path reconciliation: permutationToKeyColumns puts the lifted columns in node-key (decode) order.
         assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName())
             .containsExactly("fk_a", "fk_b", "fk_c");
 
-        // D2 reconciliation: the targetSide-name match loop, fed the resolver's own node keys, lands the
+        // Record-path reconciliation: the targetSide-name match loop, fed the resolver's own node keys, lands the
         // identical child columns — proving the two duplicated reconciliations agree off the identity
         // permutation, not just on it.
         var recordTargets = bctx.resolveRecordFkTargetColumns(

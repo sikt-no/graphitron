@@ -14,7 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R317 slice 4 — the falsifiable acceptance test for the single classify-and-emit walk: <b>no type is
+ * The falsifiable acceptance test for the single classify-and-emit walk: <b>no type is
  * registered before the field that discovers it is visited</b>. This is the structural assertion the
  * collapse is built to satisfy and that the retired two-pass model could not: {@code buildTypes} eagerly
  * classified every reachable composite <em>before</em> any field was classified, so a deep target's type

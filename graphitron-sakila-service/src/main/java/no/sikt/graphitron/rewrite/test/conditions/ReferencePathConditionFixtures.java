@@ -9,7 +9,7 @@ import org.jooq.Table;
 import org.jooq.impl.DSL;
 
 /**
- * R232 execution-tier fixtures: {@code @reference(path: [{condition: {...}}])} condition methods
+ * Execution-tier fixtures: {@code @reference(path: [{condition: {...}}])} condition methods
  * used by the Sakila example schema to exercise the {@code @condition}-join SQL shape end-to-end.
  *
  * <p>Each method here expresses an existing FK relationship as a SQL predicate so the
@@ -71,13 +71,13 @@ public final class ReferencePathConditionFixtures {
     }
 
     /**
-     * R450 grain-proof fixture: a hop-0 {@code {key:, condition:}} filter on a single-cardinality
+     * Grain-proof fixture: a hop-0 {@code {key:, condition:}} filter on a single-cardinality
      * {@code @splitQuery} whose predicate reads a <em>parent</em> column
      * ({@code split_filter_parent.include}). The parameters are the concrete parent and target
-     * jOOQ tables, so the argument order is type-checked at compile time: the pre-R450 emitter
+     * jOOQ tables, so the argument order is type-checked at compile time: the earlier emitter
      * bound the hop-0 <em>target</em> alias ({@link SplitFilterTarget}) as both parameters, which
      * fails javac against the declared {@code (SplitFilterParent, SplitFilterTarget)} signature.
-     * Post-R450 the emitter binds the parent alias as the source, so the filter is evaluated per
+     * The current emitter binds the parent alias as the source, so the filter is evaluated per
      * parent (parent-PK grain) rather than per shared target row.
      */
     public static Condition splitFilterParentIncluded(SplitFilterParent parent, SplitFilterTarget target) {

@@ -6,7 +6,7 @@ package no.sikt.graphitron.rewrite.lint;
  * stable kebab-case {@link #id()} is the only string form that crosses a wire (the MCP
  * {@code diagnostics} tool projects it so an agent sees which rule fired). It is an enum, not a
  * sealed interface, by deliberate v1 scope: the plugin follow-on can widen it when external rules
- * arrive (see the configurability follow-on noted in R398).
+ * arrive.
  *
  * <p>Every rule is a warning in v1; the enum carries no per-rule severity field. Per-rule severity
  * and enable/disable are deferred to the configurability follow-on.
@@ -49,7 +49,7 @@ public enum LintRule {
         ENGINE,
         /** A classifier verdict tagged at its existing emit site; never registered to a visitor. */
         CLASSIFIER,
-        /** A codegen-config advisory derived at report assembly (R429 {@code <sessionState>}); no visitor, no classifier site. */
+        /** A codegen-config advisory derived at report assembly from the {@code <sessionState>} config; no visitor, no classifier site. */
         CODEGEN
     }
 

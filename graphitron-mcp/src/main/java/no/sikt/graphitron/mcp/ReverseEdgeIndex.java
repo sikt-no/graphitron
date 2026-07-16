@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * R374 (D-C) — the reverse-edge index, the slice's real deliverable: the impact-analysis
+ * The reverse-edge index, the real deliverable here: the impact-analysis
  * directions agents cannot cheaply walk forward ("what schema fields break if I touch this column /
  * method / table?"). Maps each stable column / table / method ID back to the field coordinates that
  * bind it, by <b>inverting the same per-field switch the forward producer uses</b> ({@link
@@ -65,7 +65,7 @@ final class ReverseEdgeIndex {
     /**
      * Snapshot-memoised holder. The memo key is the {@code (snapshot, catalogFacts)} reference pair,
      * not the snapshot alone: the index derives from two distinct {@code volatile} projections that
-     * ride different cadences in the R118 stability gradient (schema vs classpath), even though one
+     * ride different cadences in the MCP server's stability gradient (schema vs classpath), even though one
      * {@code setBuildOutput} bundles them. Keying on the held-reference identity of both rebuilds the
      * index whenever <em>either</em> is swapped (including a {@code demoteSnapshot} that mints a fresh
      * {@code Built.Previous}); a torn read against the non-atomic multi-field swap self-heals on the

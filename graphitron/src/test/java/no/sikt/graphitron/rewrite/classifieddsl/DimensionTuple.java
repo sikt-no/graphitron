@@ -7,10 +7,10 @@ import no.sikt.graphitron.rewrite.model.Target;
 import no.sikt.graphitron.rewrite.model.TargetShape;
 
 /**
- * The three-axis classification verdict the R281 corpus asserts: a {@link Source} (the arrival
+ * The three-axis classification verdict the corpus asserts: a {@link Source} (the arrival
  * endpoint), an {@link Operation} arm (the verb), and a {@link Target} (the projection endpoint). This is
  * the dimensional fingerprint the {@code @classified} directive carries and the field model exposes
- * directly through {@code GraphitronSchema.sourceOf} (R463: the arrival fold) / {@link OutputField#operation()} /
+ * directly through {@code GraphitronSchema.sourceOf} (the arrival fold) / {@link OutputField#operation()} /
  * {@link OutputField#target()}.
  *
  * <p>The axes are not all flat, so the tuple compares each at the altitude the {@code @classified}

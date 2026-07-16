@@ -11,7 +11,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R398 fix slice, classifier arm: the two classifier-owned advisories whose ignored directive can be
+ * Lint-engine fix slice, classifier arm: the two classifier-owned advisories whose ignored directive can be
  * safely deleted carry a {@link LintFix} directly at their emit site (the classifier stays their sole
  * producer; the lint engine does not re-derive them). Pins the produced deletion edit and the
  * bare-only guard: graphql-java records a node's start location but no end, so only the argument-less

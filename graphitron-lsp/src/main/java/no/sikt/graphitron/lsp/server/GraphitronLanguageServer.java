@@ -64,7 +64,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         capabilities.setCompletionProvider(new CompletionOptions(false, null));
         capabilities.setDefinitionProvider(true);
         capabilities.setCodeActionProvider(true);
-        // R160 — advertise the inlay-hint capability so editors that opt in via
+        // Advertise the inlay-hint capability so editors that opt in via
         // graphitron.inlayHints.* config keys receive the inferred-directive and
         // classification hint surface. The handler is a no-op when all toggles default off.
         capabilities.setInlayHintProvider(true);
@@ -72,7 +72,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
     }
 
     /**
-     * R160 — pull the three inlay-hint / hover toggles from the client immediately after
+     * Pulls the three inlay-hint / hover toggles from the client immediately after
      * the initialize handshake completes. Mirrors the {@code workspace/didChangeConfiguration}
      * push path so editors that only push on user-initiated edits still see the right state
      * on first request. Clients that don't implement {@code workspace/configuration} return

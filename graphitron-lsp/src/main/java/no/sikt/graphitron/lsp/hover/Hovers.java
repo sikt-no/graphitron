@@ -60,7 +60,7 @@ public final class Hovers {
     }
 
     /**
-     * R160 — {@code classificationHoverEnabled} gates the parallel
+     * {@code classificationHoverEnabled} gates the parallel
      * {@link DeclarationHovers} dispatch on SDL declaration coordinates. Default false
      * preserves the no-behaviour-change-by-default contract; the document service flips
      * it on per {@link no.sikt.graphitron.lsp.state.Workspace#inlayHintConfig()}.
@@ -74,8 +74,8 @@ public final class Hovers {
 
     /**
      * Canonical hover entry point. {@code sourceIndex} is the LSP-owned source
-     * index hover reads class / method / column Javadoc from at request time
-     * (R352), overlaying it onto the catalog's build-derivable description so
+     * index hover reads class / method / column Javadoc from at request time,
+     * overlaying it onto the catalog's build-derivable description so
      * hover and goto-definition cannot disagree mid-edit.
      */
     public static Optional<Hover> compute(
@@ -85,9 +85,9 @@ public final class Hovers {
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) {
-            // R160 — no directive at the cursor; try the classification-hover arm on SDL
+            // No directive at the cursor; try the classification-hover arm on SDL
             // declaration coordinates (field-definition / type-definition name tokens).
-            // R371 — pass the catalog and source index so the arm overlays the bound
+            // Pass the catalog and source index so the arm overlays the bound
             // jOOQ class / column / member Javadoc beneath the classification block.
             if (classificationHoverEnabled) {
                 return DeclarationHovers.compute(file, catalog, sourceIndex, snapshot, pos);
@@ -122,9 +122,9 @@ public final class Hovers {
         }
 
         // User-arm fallback: only on User resolution. Gating here preserves
-        // bundled-shadows-snapshot precedence (R139 settled design note 4):
-        // for bundled directives, a missing bundled arg description stays
-        // empty rather than leaking through to a shadow snapshot entry.
+        // bundled-shadows-snapshot precedence: for bundled directives, a
+        // missing bundled arg description stays empty rather than leaking
+        // through to a shadow snapshot entry.
         if (resolution instanceof DirectiveResolution.User user) {
             return userArgHover(user.shape(), directive, pos, file);
         }
@@ -185,7 +185,7 @@ public final class Hovers {
         var behavior = vocabulary.behaviorAt(coord);
         if (behavior.isEmpty()) return Optional.empty();
         return switch (behavior.get()) {
-            // R307 carve-out: @record is deprecated/ignored, so its className slot is not a live
+            // @record carve-out: @record is deprecated/ignored, so its className slot is not a live
             // binding and gets no live-binding hover. Its ExternalCodeReference.className coordinate
             // is shared with @enum, so the carve-out keys on the directive name (see DirectivePolicy).
             // Falls through to the SDL docstring hover at the call site.
@@ -291,7 +291,7 @@ public final class Hovers {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
-        // R233: prefer the field classification's projected terminal table over the enclosing
+        // Prefer the field classification's projected terminal table over the enclosing
         // type's backing for @reference path fields and the other column-bearing permits.
         // lspColumnDispatch() collapses the 30 permits onto three arms; Resolve and Silent
         // each return directly from this method, FallThrough drops through to the existing

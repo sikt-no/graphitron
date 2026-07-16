@@ -21,7 +21,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R244 walker unit-tier tests. Exercises {@link ErrorChannelWalker#walk} over the happy path
+ * Walker unit-tier tests. Exercises {@link ErrorChannelWalker#walk} over the happy path
  * (single and multiple mapped {@code @error} types) and each {@link ErrorChannelWalkerError} arm
  * the walker raises (rule 7, rule 8, handler-accessor-missing). The walker reads the flattened
  * {@code @error}-type list off the {@link OutcomeType}'s errors field, so the SDL polymorphism

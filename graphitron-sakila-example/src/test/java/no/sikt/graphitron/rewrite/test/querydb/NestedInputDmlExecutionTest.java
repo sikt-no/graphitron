@@ -16,7 +16,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R186 execution-tier coverage: nested non-{@code @table} grouping inputs that flatten onto the
+ * Execution-tier coverage for nested non-{@code @table} grouping inputs that flatten onto the
  * outer {@code film} table, exercised against PostgreSQL across every classifying verb plus both
  * UPDATE walker paths (direct-{@code @table} return single + bulk-VALUES-join, payload return). The
  * load-bearing proof is the absent-vs-null contract observable on the wire: the access-path walk in

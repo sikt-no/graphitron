@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Compact-constructor invariants for {@link ProducerBinding.DmlEmitted}.
  *
- * <p>The R178 spec pins two invariants the constructor must enforce: every component is non-null,
+ * <p>The spec pins two invariants the constructor must enforce: every component is non-null,
  * and the reflected class identity matches the carried {@link TableRef}'s record class. The
  * second invariant is what lets the per-SDL-type binding fold in
  * {@link no.sikt.graphitron.rewrite.RecordBindingResolver} treat a {@code DmlEmitted} arm and a

@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R436 (Defect 1, residual collision): the narrow build-time validator that rejects a sibling
+ * The residual-collision build-time validator: it rejects a sibling
  * field whose parent projection is aliased to a name shadowing a <em>key/correlation</em> column
  * another child reads by base name off the parent record. The broad whole-row collision is fixed
  * by reserved {@code __src_<col>__} aliases and stays legal; only the base-named

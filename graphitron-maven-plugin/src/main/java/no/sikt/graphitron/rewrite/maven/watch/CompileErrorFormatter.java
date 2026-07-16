@@ -5,13 +5,13 @@ import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import java.util.List;
 
 /**
- * R410 slice 6 — the console renderer for a {@code graphitron:dev} incremental-compile round's error
+ * The console renderer for a {@code graphitron:dev} incremental-compile round's error
  * diagnostics. The companion to {@link WatchErrorFormatter}'s schema-validation tree: where that block
  * anchors on schema coordinates, this one anchors on the generated {@code .java} where javac reported
  * the error, and it is labelled as a <em>generated-code</em> compilation failure so the user is not sent
  * hunting in the schema for a javac error.
  *
- * <p>Per the spec's <em>Surfacing compile diagnostics</em>, the tone is deliberately not alarmist: a
+ * <p>The tone is deliberately not alarmist: a
  * compile error that reaches this engine is most often transient mid-edit inconsistency (a consumer
  * service ABI changed while the generated fetcher that calls it has not yet been regenerated), which the
  * next save or consumer compile clears. Only an error that survives a clean regen and a clean consumer

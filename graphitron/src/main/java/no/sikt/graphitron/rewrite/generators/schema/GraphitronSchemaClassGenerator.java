@@ -60,8 +60,8 @@ import java.util.function.Consumer;
  * schema-level applied directives) reach the schemaBuilder through {@code private static}
  * factory methods on the emitted class, allocated by {@link HelperMethodSink}. The shape
  * keeps chain depth on every emitted expression-statement O(1) regardless of schema element
- * count; R254 motivates this against the chained-call attribution stack overflow in
- * incremental {@code javac}.
+ * count; this guards against the chained-call attribution stack overflow that a single deep
+ * fluent chain triggers in incremental {@code javac} on large schemas.
  *
  * <p>The generator collects type names from an assembled {@link GraphQLSchema} produced by
  * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder}. Introspection and federation-
@@ -530,7 +530,7 @@ public final class GraphitronSchemaClassGenerator {
      * loop emits {@code <Name>Type.type()} for object / enum / input types, while the scalar
      * loop emits {@code <Owner>.<FieldName>} pointing at the resolved {@code GraphQLScalarType}
      * constant. Replaces the literal {@code .additionalType(Scalars.GraphQLInt)} ... block that
-     * lived here pre-R101.
+     * lived here before scalar registration was routed through the scalar-type resolver.
      */
     static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
         var additional = new java.util.LinkedHashSet<String>();

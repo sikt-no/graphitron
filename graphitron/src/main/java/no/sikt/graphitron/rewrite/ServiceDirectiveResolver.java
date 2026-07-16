@@ -35,7 +35,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *   <li>Strict return-type validation against {@link MethodRef} reflection (root only).</li>
  *   <li>Root invariants (Connection wrapper rejection, {@code Sources} parameter rejection).</li>
  *   <li>Errors-channel lift on a polymorphic-of-{@code @error} return type, with a
- *       {@link Resolved.Polymorphic} resolution (R365, route (a)) as the non-errors fallback.</li>
+ *       {@link Resolved.Polymorphic} resolution (route (a)) as the non-errors fallback.</li>
  * </ul>
  *
  * <p>Each classify arm projects {@link Resolved.Success} into its specific {@code GraphitronField}
@@ -82,7 +82,7 @@ final class ServiceDirectiveResolver {
         record Result(ReturnTypeRef.ResultReturnType returnType, MethodRef method) implements Success {}
         record Scalar(ReturnTypeRef.ScalarReturnType returnType, MethodRef method) implements Success {}
         /**
-         * A multitable polymorphic return (R365, route (a)). The service hands back a PK-populated
+         * A multitable polymorphic return (route (a)). The service hands back a PK-populated
          * {@code TableRecord} per branch; the fetcher dispatches on each returned record's runtime
          * class to pick the participant, then auto-fetches the selected columns by PK. The classify
          * site narrows this to a distinct-table multitable <em>interface</em>: a union return is
@@ -358,7 +358,7 @@ final class ServiceDirectiveResolver {
      * strict-equality check on the whole shape. For a non-built-in scalar leaf (an enum, or an
      * unregistered custom scalar) the schema cannot name {@code V}, so the leaf is peeled from the
      * developer's declared outer type ({@link RowsMethodShape#perKeyFromOuter}) and fed straight
-     * back into the reconstruction (R364, the same resolution the emitter's {@code elementType()}
+     * back into the reconstruction (the same resolution the emitter's {@code elementType()}
      * uses). Because the leaf round-trips through the same return type it is then compared against,
      * the {@code equals} check for that branch is effectively a key-type check; the container raw
      * type and list-nesting are gated by {@code perKeyFromOuter} returning non-null, and the leaf
@@ -385,7 +385,7 @@ final class ServiceDirectiveResolver {
             // Only a non-built-in scalar leaf (an enum, or an unregistered custom scalar) is
             // recoverable: the schema can't name V, but the developer's method declares the outer
             // Map<K, V> / List<V>, so recover V by peeling and re-derive the expected outer type
-            // from it (R364, the same leaf resolution the emitter's elementType() uses). This still
+            // from it (the same leaf resolution the emitter's elementType() uses). This still
             // rejects a wrong key type or a missing list-nesting level; the leaf itself is accepted
             // as whatever the method yields (the typed-context-value registry will tighten it
             // later). A shape too malformed to peel (a List where a Map is required, a raw type) is

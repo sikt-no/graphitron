@@ -20,7 +20,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  * {@code @reference(...)} sits inside, so column / FK suggestions can be filtered by the
  * relevant table.
  *
- * <p>R216 — the enclosing-declaration walk delegates to {@link DeclarationKind#enclosing(Node)}
+ * <p>The enclosing-declaration walk delegates to {@link DeclarationKind#enclosing(Node)}
  * so both {@code *_type_definition} ("type X { ... }") and {@code *_type_extension}
  * ("extend type X { ... }") nodes resolve uniformly. {@link #tableNameOf} is snapshot-routed
  * (asks the classifier's name-keyed projection rather than reading {@code @table(name:)} off the
@@ -32,7 +32,7 @@ public final class TypeContext {
     private TypeContext() {}
 
     /**
-     * R159 — walks ancestors of {@code inner} until the {@code field_definition} node is found.
+     * Walks ancestors of {@code inner} until the {@code field_definition} node is found.
      * Returns empty if {@code inner} is not inside a field definition (e.g. directly on the
      * type's own directive list rather than on one of its fields).
      */
@@ -52,7 +52,7 @@ public final class TypeContext {
     }
 
     /**
-     * R224 — walks ancestors of {@code inner} until the enclosing field-bearing node is found,
+     * Walks ancestors of {@code inner} until the enclosing field-bearing node is found,
      * matching either {@code field_definition} (output type) or {@code input_value_definition}
      * (input type). Both kinds carry a {@code name} child compatible with {@link #fieldNameOf};
      * callers that need the SDL field name regardless of input/output orientation route through
@@ -95,7 +95,7 @@ public final class TypeContext {
     }
 
     /**
-     * R159 — reads the field-name child of a {@code field_definition} node. Returns
+     * Reads the field-name child of a {@code field_definition} node. Returns
      * {@link Optional#empty()} when the node has no {@code name} child (shouldn't happen for a
      * well-formed parse but defensive against partial-edit trees).
      */
@@ -106,7 +106,7 @@ public final class TypeContext {
     }
 
     /**
-     * R216 — resolves the SQL table name for the type declared at {@code typeDecl} by routing
+     * Resolves the SQL table name for the type declared at {@code typeDecl} by routing
      * through the classifier's name-keyed projection on the snapshot. Returns empty when the
      * snapshot is unavailable, the declared name resolves to no classification, or the
      * classification has no {@code tableName} (e.g. plain object, scalar, enum). Works

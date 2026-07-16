@@ -39,7 +39,7 @@ import java.util.Optional;
  * <p>{@code allColumns} is the ordered list of every column on the table (each a fully resolved
  * {@link ColumnRef}), populated from the jOOQ table's fields at parse time in the same catalog
  * traversal that fixes {@code primaryKeyColumns}. It exists so emit-time consumers can enumerate
- * the whole row without reaching back for the catalog (which is closed by then): R436's
+ * the whole row without reaching back for the catalog (which is closed by then): the
  * {@code SourceKey.Wrap.TableRecord} key reconstruction ({@code GeneratorUtils.buildKeyExtraction})
  * and the reserved-alias full-parent-row projection ({@code TypeClassGenerator}) both drive their
  * per-column emit off this one list, so the projected reserved-alias names and the names the key
@@ -85,7 +85,7 @@ public record TableRef(
      * True when {@code other} names this table, compared case-insensitively. {@code tableName()}
      * stays the verbatim {@code @table(name:)} echo for diagnostics; this is the canonical identity
      * comparison, so consumers never re-establish the case-folding contract the jOOQ catalog already
-     * guarantees (and never drift to a case-sensitive {@code .equals}, the R357 bug). Null-safe:
+     * guarantees (and never drift to a case-sensitive {@code .equals}, the case-sensitivity bug). Null-safe:
      * a null {@code other} is not this table.
      */
     public boolean sameTable(String other) {

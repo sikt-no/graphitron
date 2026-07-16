@@ -18,8 +18,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R328 execution-tier coverage: a self-FK {@code @nodeId @reference} on a Graphitron-owned INSERT,
- * the neutral {@code email} form of the CAMPUS self-FK case, proven end to end through R322's
+ * Execution-tier coverage: a self-FK {@code @nodeId @reference} on a Graphitron-owned INSERT,
+ * the neutral {@code email} form of the CAMPUS self-FK case, proven end to end through the
  * shared-column dedup + value-agreement.
  *
  * <p>The {@code insertEmailReply} fixture writes {@code email}'s composite PK with two reference

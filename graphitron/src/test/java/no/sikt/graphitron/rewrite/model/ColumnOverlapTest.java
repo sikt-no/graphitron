@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>This is the anti-drift assertion the lift rests on: the <em>same</em> {@link ColumnWriter} list
  * yields both the predicate the validator rejects on ({@code shared() && allPlain()}) and the
- * predicate the emitters trigger value-agreement on ({@code shared()}). Before R356 those were two
- * hand-rolled walks that could diverge; here they read one fold.
+ * predicate the emitters trigger value-agreement on ({@code shared()}). Before this unification,
+ * those were two hand-rolled walks that could diverge; here they read one fold.
  */
 @UnitTier
 class ColumnOverlapTest {

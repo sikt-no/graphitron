@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.compile;
 import java.util.Set;
 
 /**
- * R410 slice 2 — the file-level compile-dependency graph over graphitron's generated compilation
+ * The file-level compile-dependency graph over graphitron's generated compilation
  * units. Nodes are generated {@code .java} units, identified by their fully-qualified class name
  * (FQCN); edges are "references a type declared in", coarsened to file granularity (a method-call
  * seam between two generated methods collapses into a reference between the two files those methods
@@ -11,7 +11,7 @@ import java.util.Set;
  *
  * <p>This is <em>the sourcing seam</em>: the single interface between "where the edges come from"
  * (today {@link CompileDependencyGraphBuilder}'s coarsening projection of the classified model,
- * later a view over R333's method graph) and "the compiler that consumes them" (the R410 incremental
+ * later a view over the model's method graph) and "the compiler that consumes them" (the incremental
  * engine, slice 4). The engine reads only this interface, so re-sourcing the edges never touches the
  * consumer.
  *

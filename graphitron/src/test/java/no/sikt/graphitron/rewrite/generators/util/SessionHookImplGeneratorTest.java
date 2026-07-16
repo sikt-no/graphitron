@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit-tier coverage of the concrete {@code GraphitronSessionHook} that
- * {@link ConnectionRuntimeClassGenerator} emits from a configured {@code <sessionState>} (R429 slice 3).
+ * {@link ConnectionRuntimeClassGenerator} emits from a configured {@code <sessionState>}.
  * The hook is emitted, never shipped, so the only honest assertion of its JDBC call shapes is to
  * compile the real emitted {@code TypeSpec} and drive it: {@link EmittedCodeHarness} compiles it, and
  * every assertion reads the call log recorded by a fake {@code Connection} whose

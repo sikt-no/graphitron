@@ -16,12 +16,12 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * R386 — the warm-managed, self-observing semantic index behind {@code catalog.search}. Owns the
- * content-hash-keyed Lucene index over the R362 {@link CatalogFacts} descriptors, persisted under
+ * The warm-managed, self-observing semantic index behind {@code catalog.search}. Owns the
+ * content-hash-keyed Lucene index over the {@link CatalogFacts} descriptors, persisted under
  * {@link RagConfig#cacheDir()} so a large catalog is not re-embedded on every {@code dev} restart.
  *
  * <p><strong>Refresh: lazy self-observe, no new dev trigger.</strong> The index is a pure derived
- * function of the live {@link CatalogFacts}, so it mirrors R374's {@code ReverseEdgeIndex.Cache}: no
+ * function of the live {@link CatalogFacts}, so it mirrors the {@code ReverseEdgeIndex.Cache}: no
  * {@code BuildArtifacts} component, no {@code Workspace} field, no {@code DevMojo} listener. Each
  * {@link #search} reads the {@code Supplier<CatalogFacts>} (the live {@code volatile}
  * {@code Workspace.catalogFacts()}) through two gates:
@@ -43,7 +43,7 @@ import java.util.function.Supplier;
  *
  * <p><strong>Validity = corpus hash + embedder identity.</strong> The persisted index is valid only
  * for the embedder that built it. bge-small-en and the deferred {@code multilingual-e5-small} swap
- * (R118 OQ2) are both 384-dim, so dimension alone cannot tell them apart: loading one model's index
+ * are both 384-dim, so dimension alone cannot tell them apart: loading one model's index
  * under another is a silent correctness trap. An embedder-identity manifest
  * ({@code getClass().getName()} + {@code dimension()}) is written beside each index; the loader
  * rejects (rebuilds) any index whose recorded identity differs from the live embedder.
@@ -80,7 +80,7 @@ public final class CatalogSearchIndex implements AutoCloseable {
     /**
      * @param facts        the live catalog source, typically {@code workspace::catalogFacts}; read
      *                     by reference identity on every search so a build swap is observed
-     * @param embedderWarm the shared embedder warm (R372 / R385); started by the caller, this index
+     * @param embedderWarm the shared embedder warm; started by the caller, this index
      *                     only {@link AsyncWarm#await() awaits} it before embedding
      * @param config       where to persist the content-hash-keyed index
      */
@@ -91,7 +91,7 @@ public final class CatalogSearchIndex implements AutoCloseable {
     }
 
     /**
-     * Eager warm (R118 bind-sync / warm-async): kick the initial index build from the current facts,
+     * Eager warm (bind-sync / warm-async): kick the initial index build from the current facts,
      * off the calling thread. The shared embedder warm is started by the caller; the index warm only
      * awaits it. Production calls this at {@code dev} startup; a server that never calls it warms
      * lazily on the first {@link #search}.

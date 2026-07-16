@@ -14,7 +14,7 @@ import java.util.List;
  * sit outside this sub-interface because they have no resolver and therefore no
  * {@code env.getSource()} story.
  *
- * <p>R204 / R279 slice 4: every leaf in {@link RootField} and {@link ChildField} answers
+ * <p>Every leaf in {@link RootField} and {@link ChildField} answers
  * {@link #domainReturnType()} with the Java domain type its emitted resolver puts at
  * {@code env.getSource()} for the return type's child datafetchers. The builder's group-by step
  * over the classified field registry compares the answers across producers reaching the same SDL
@@ -60,7 +60,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
  * The {@code operation} dimension: the verb this field <em>performs</em>, a sealed
      * {@link Operation} arm carrying its own payload. Built by the leaf producers from the slots they
      * already carry ({@code QueryField} / {@code MutationField} / {@code ChildField} switch on leaf
-     * identity); the verb-axis primitive (R316 retired the leaf-to-{@code intent} verdict).
+     * identity); the verb-axis primitive (the leaf-to-{@code intent} verdict has been retired).
      */
     Operation operation();
 
@@ -92,7 +92,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         return new Operation.ServiceCall(new Operation.ServiceCall.Call.ReflectedMethod(method));
     }
 
-    /** The {@link Operation.ServiceCall} for a root {@code @service} leaf (R238 {@link ServiceMethodCall}). */
+    /** The {@link Operation.ServiceCall} for a root {@code @service} leaf (a {@link ServiceMethodCall}). */
     static Operation serviceCall(ServiceMethodCall call) {
         return new Operation.ServiceCall(new Operation.ServiceCall.Call.StructuredCall(call));
     }
@@ -101,8 +101,8 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
  * The {@code target} dimension: the field's <em>projection endpoint</em>, a
      * {@link Target} wrapper ({@link Target.Single} / {@link Target.List}) around the
      * {@link TargetShape} it projects. Built by the leaf producers from the return wrapper plus the
-     * leaf's shape slot; the projection-axis primitive (R316 retired the leaf-to-{@code mapping}
-     * verdict).
+     * leaf's shape slot; the projection-axis primitive (the leaf-to-{@code mapping} verdict has been
+     * retired).
      */
     Target target();
 
@@ -155,7 +155,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
-     * Site-level reentry (R314): this coordinate's own emit includes the keyed re-query — the
+     * Site-level reentry: this coordinate's own emit includes the keyed re-query — the
      * {@code VALUES(idx, key...)} join re-projecting the target {@code @table} from keys held at
      * the source, with PK self-identity as the degenerate correlation. Distinct from
      * {@link #requiresReFetch()}, which is <em>value-level</em> ("this field's value is

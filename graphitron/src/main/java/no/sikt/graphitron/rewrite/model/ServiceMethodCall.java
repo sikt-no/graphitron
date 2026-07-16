@@ -5,7 +5,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import java.util.List;
 
 /**
- * The R238 carrier: a structured description of one {@code @service} method invocation.
+ * A structured description of one {@code @service} method invocation.
  * Produced by {@code ServiceMethodCallWalker} from the SDL definition plus codegen-classloader
  * reflection; consumed by {@code ServiceMethodCallEmitter} to emit the fetcher lambda body's
  * statement list.

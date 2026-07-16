@@ -12,7 +12,7 @@ import java.util.Base64;
 import java.util.List;
 
 /**
- * The pre-embedded docs bundle (R385): the build-time embedding output, packaged in the jar and
+ * The pre-embedded docs bundle: the build-time embedding output, packaged in the jar and
  * re-loaded into an in-memory store at warm time. Bundling the pre-embedded <em>tuples</em> rather
  * than a literal Lucene {@code FSDirectory} is the divergence the spec settled: an {@code FSDirectory}
  * cannot be read from inside a jar, so a literal index would force temp-dir extraction at warm. The
@@ -25,7 +25,7 @@ import java.util.List;
  * chunk body past the 64&nbsp;KB modified-UTF8 ceiling still round-trips.
  *
  * <p><strong>The payload is opaque to the store, so its encoding is a private detail here.</strong>
- * The R372 store seam round-trips the {@code payload} verbatim and never parses it; the spec names it
+ * The {@link no.sikt.graphitron.mcp.rag.EmbeddingStore} seam round-trips the {@code payload} verbatim and never parses it; the spec names it
  * "payloadJson", but a JSON parser would widen the quarantined RAG dependency surface for a string
  * only this module ever produces and consumes. So the payload is a dependency-free reversible encoding
  * (URL-safe Base64 fields, the same Base64 posture the MCP page cursor already uses): the chunk's

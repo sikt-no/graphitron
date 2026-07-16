@@ -18,7 +18,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R363 execution-tier proof: a {@code @field}-mapped filter input on a root multitable union query
+ * Execution-tier proof: a {@code @field}-mapped filter input on a root multitable union query
  * is lowered per participant and ANDed into each UNION branch's {@code WHERE}, so the query returns
  * only matching rows.
  *
@@ -131,7 +131,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void nestedInputFilter_matchingBothParticipants_appliesPerBranch() {
-        // R383: the same per-participant filter delivered through an input object (`filter`) rather
+        // The same per-participant filter delivered through an input object (`filter`) rather
         // than as a top-level argument. The branch emitter reaches the value via a self-contained
         // Map traversal (env.getArgument("filter") instanceof Map ...), so each UNION branch still
         // narrows by its own first_name column.
@@ -169,7 +169,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void idTypedFilter_coercesPerBranchAndReturnsMatchingRows() {
-        // R384 phase a: store_id is a shared int column; the [ID!] wire Strings coerce per branch
+        // Phase a: store_id is a shared int column; the [ID!] wire Strings coerce per branch
         // through the participant column's DataType. Store 2 holds customers Linda and Elizabeth
         // and staff Jon, so the filter must narrow EACH branch by its own store_id column.
         Map<String, Object> data = execute("""
@@ -201,7 +201,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void nestedIdTypedFilter_coercesThroughMapTraversal() {
-        // R384 phase a: the nested [ID!] @field (OccupantFilter.storeIds) routes through a
+        // Phase a: the nested [ID!] @field (OccupantFilter.storeIds) routes through a
         // JooqConvert leaf inside the self-contained Map traversal, aligned with the top-level
         // conversion semantics. Same store-2 expectation as the top-level form.
         Map<String, Object> data = execute("""
@@ -219,7 +219,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void nodeIdFilter_decodesAndFiltersPerBranch() {
-        // R384 phase b: an FK-target @nodeId(typeName: "Address") filter. Address 3 is customer
+        // Phase b: an FK-target @nodeId(typeName: "Address") filter. Address 3 is customer
         // Linda's and staff Mike's address, so the decoded key must narrow EACH branch by its own
         // address_id FK column.
         String address3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 3);
@@ -260,7 +260,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void fieldLevelCondition_runsPerBranch() {
-        // R384 phase c: a field-level developer @condition runs against each branch's own stage-1
+        // Phase c: a field-level developer @condition runs against each branch's own stage-1
         // table local. firstNameStartsWithM matches customer Mary and staff Mike.
         Map<String, Object> data = execute("""
             { occupantsStartingWithM {
@@ -279,7 +279,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void argLevelConditionOverride_replacesImplicitEquality() {
-        // R384 phase c: @condition(override: true) suppresses the implicit first_name equality and
+        // Phase c: @condition(override: true) suppresses the implicit first_name equality and
         // the developer prefix-match runs instead — equality on "M" would match no row, so Mary
         // and Mike coming back proves the method fired per branch.
         Map<String, Object> data = execute("""
@@ -297,7 +297,7 @@ class MultiTableFilterExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void nestedInputCondition_receivesMapTraversedValue() {
-        // R384 phase c: a nested-input developer @condition (OccupantFilter.namePrefix) receives
+        // Phase c: a nested-input developer @condition (OccupantFilter.namePrefix) receives
         // the Map-traversed value per branch. Prefix "Li" matches only customer Linda.
         Map<String, Object> data = execute("""
             { occupantsByFilter(filter: { namePrefix: "Li" }) {
@@ -334,7 +334,7 @@ class MultiTableFilterExecutionTest {
                 assertThat(n.get("firstName")).isEqualTo("Mike");
             });
         // The connection branch loop (buildStage1ConnectionBlock) must emit a per-branch first_name
-        // predicate; before R363 it emitted no WHERE at all.
+        // predicate; it once emitted no WHERE at all.
         assertThat(SQL_LOG)
             .as("the connection stage-1 SQL filters on first_name")
             .anyMatch(s -> s.contains("first_name") && s.contains(" in ("));

@@ -16,12 +16,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The {@code docs.search} tool (R385): natural-language retrieval over the bundled public manual, the
- * first of the two R118 semantic tools and the first to ride R372's async-warm lifecycle inside the
- * server. An author who does not yet know which directive or pattern solves their problem asks in
- * prose and gets the relevant manual passages, rather than needing the vocabulary to grep for.
+ * The {@code docs.search} tool: natural-language retrieval over the bundled public manual, the
+ * first of the two semantic tools and the first to ride the {@link AsyncWarm async-warm lifecycle}
+ * inside the server. An author who does not yet know which directive or pattern solves their problem
+ * asks in prose and gets the relevant manual passages, rather than needing the vocabulary to grep for.
  *
- * <p>Held as one instance per server (like the R374 reverse-edge cache), constructed with the shared
+ * <p>Held as one instance per server (like the reverse-edge cache), constructed with the shared
  * embedder warm and the docs-index warm. Either warm may be {@code null} when the server is stood up
  * without RAG (the structured-tool tests, an IDE run off un-embedded classes); a null warm reads as
  * still-warming, so the tool is always advertised and degrades cleanly to the structured tools.

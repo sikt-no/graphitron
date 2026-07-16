@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import java.util.List;
 
 /**
- * R374 (D-B) — one typed relationship plus the <em>other</em> node, never an untyped adjacency and
+ * One typed relationship plus the <em>other</em> node, never an untyped adjacency and
  * never a bag of per-kind nullable endpoint fields. The endpoint structure lives entirely in
  * {@link #target()} (a {@link NodeRef}); {@link #kind()} is just the label.
  *

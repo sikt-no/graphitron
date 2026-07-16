@@ -52,7 +52,7 @@ public final class FederationLinkApplier {
      * the registry to discover the same fact: the "federation link present" boolean is derivable
      * as "injected anything", and the injected names are the authoritative provenance set the lint
      * engine excludes (these definitions carry the federation spec's own names and a {@code null}
-     * source, so the author can neither rename nor document them; see R407).
+     * source, so the author can neither rename nor document them).
      *
      * <p>Throws an {@link IllegalStateException} wrapping
      * {@link MultipleFederationLinksException} if the schema contains more than one federation

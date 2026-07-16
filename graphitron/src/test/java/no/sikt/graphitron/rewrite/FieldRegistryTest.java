@@ -44,7 +44,7 @@ class FieldRegistryTest {
 
     @Test
     void classify_duplicateCoordinates_recordsConflictWithoutThrowing() {
-        // R276 robustness: a double-classification is a generator conflict, but it must not abort
+        // A double-classification is a generator conflict, but it must not abort
         // the classification pass (which would hide every other diagnostic). classify records the
         // colliding coordinate as an UnclassifiedField — surfaced cleanly by the validator — and
         // continues, rather than throwing an IllegalStateException.

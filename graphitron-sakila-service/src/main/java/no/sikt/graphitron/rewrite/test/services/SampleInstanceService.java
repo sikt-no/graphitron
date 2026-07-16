@@ -4,7 +4,7 @@ import no.sikt.graphitron.rewrite.test.jooq.Tables;
 import org.jooq.DSLContext;
 
 /**
- * R87 Phase D fixture: an instance-method {@code @service} class with a
+ * Fixture for an instance-method {@code @service} class with a
  * {@code public (DSLContext)} constructor. Drives the instance-service-holder-shape contract
  * end-to-end at the compile tier — a regression in {@code TypeFetcherGenerator#serviceCallTarget}
  * that mistakenly emitted the static {@code SampleInstanceService.titleByFilmId(...)} call shape

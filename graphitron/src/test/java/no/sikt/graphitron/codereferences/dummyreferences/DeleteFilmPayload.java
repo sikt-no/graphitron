@@ -9,11 +9,11 @@ import java.util.List;
  * return whose wrapper exposes both a data channel and an errors channel. Used as
  * {@code @record(record: {className: "...DeleteFilmPayload"})} on a {@code @mutation(typeName:
  * DELETE)} field over the {@code film} table; routes through {@code MutationDmlRecordField}
- * with the error channel wired via R12's LocalContext transport.
+ * with the error channel wired via the LocalContext transport.
  *
- * <p>The {@code FilmRecord} component is informational metadata under R161: emit no longer
+ * <p>The {@code FilmRecord} component is informational metadata: emit no longer
  * reads the developer class's row-slot type. The errors slot's {@code Object} element bound is
- * legacy: post-R161 the errors-channel data lives on {@code env.getLocalContext()} rather than
+ * legacy: the errors-channel data now lives on {@code env.getLocalContext()} rather than
  * inside the payload class.
  */
 public record DeleteFilmPayload(FilmRecord film, List<Object> errors) {}

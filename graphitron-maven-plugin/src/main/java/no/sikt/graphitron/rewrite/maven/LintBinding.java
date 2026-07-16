@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.maven;
 import java.util.List;
 
 /**
- * POM XML binding for the {@code <lint>} block (R408). Collapses into a
+ * POM XML binding for the {@code <lint>} block. Collapses into a
  * {@link no.sikt.graphitron.rewrite.lint.LintConfig} on
  * {@link no.sikt.graphitron.rewrite.RewriteContext}:
  *

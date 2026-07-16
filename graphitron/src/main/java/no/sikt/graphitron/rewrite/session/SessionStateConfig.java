@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.session;
 import java.util.List;
 
 /**
- * R429 slice 3 — the resolved, validated session-identity configuration built once from the Maven
+ * The resolved, validated session-identity configuration built once from the Maven
  * {@code <sessionState>} block and threaded through {@link no.sikt.graphitron.rewrite.RewriteContext}
  * to {@code ConnectionRuntimeClassGenerator}, which emits a concrete {@code SessionHook} from it (or
  * keeps {@code SessionHook.NONE} for {@link None}).
@@ -110,7 +110,8 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
 
         /**
          * The explicit unmount-free opt-out ({@code <disconnect/>} with no call): connect mounts state
-         * that provably never unmounts. Slice 6's generation-time warning names this exposure.
+         * that provably never unmounts. The generation-time warning in {@link SessionStateWarnings}
+         * names this exposure.
          */
         record UnmountFree() implements Unmount {
             public static final UnmountFree INSTANCE = new UnmountFree();

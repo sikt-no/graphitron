@@ -21,7 +21,7 @@ import java.util.List;
  * enclosing scalar's SDL name.
  *
  * <p>The candidates come from the classpath scan carried on
- * {@link CompletionData.ExternalReference#scalarConstants()} (R464): the scan
+ * {@link CompletionData.ExternalReference#scalarConstants()}: the scan
  * enumerates the {@code GraphQLScalarType} fields actually on the classpath,
  * so it surfaces the consumer's own scalar constants
  * ({@code com.example.Scalars.MONEY}) as well as any library's, with no

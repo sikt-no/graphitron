@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R396 pipeline coverage: a {@code @reference} field on a type whose {@code @table(name:)} carries
+ * Pipeline coverage for a {@code @reference} field on a type whose {@code @table(name:)} carries
  * a schema prefix (and/or a case difference from the real lowercase catalog name) must classify
  * to an FK-derived {@link JoinStep.Hop} with the correct origin/target identity and slot orientation, and
  * must <em>not</em> reject at schema-validation time.
@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The fixture is the multi-schema jOOQ codegen output ({@code multischema_a} / {@code multischema_b}).
  * {@code signal} and {@code widget} both live in {@code multischema_a}; the FK
  * {@code signal_widget_id_fkey} sits on {@code signal.widget_id → widget.widget_id}. jOOQ renders
- * both endpoint names unqualified, so the pre-R396 bare {@code equalsIgnoreCase} comparison of the
+ * both endpoint names unqualified, so the earlier bare {@code equalsIgnoreCase} comparison of the
  * verbatim {@code @table} echo ({@code "multischema_a.signal"}) against jOOQ's {@code "signal"}
  * rejected the FK as "does not connect", and — where a partial fix let it through — silently
  * mis-oriented the join. This test drives all three {@code @reference} directive forms
@@ -103,7 +103,7 @@ class QualifiedSourceReferencePipelineTest {
 
     @Test
     void keyForm_qualifiedUpperCaseSource_resolvesAndOrients() {
-        // Schema-qualified + upper-case, the R395 execution fixture's originally-specified spelling.
+        // Schema-qualified + upper-case, the execution fixture's originally-specified spelling.
         assertOrientedSignalToWidget(firstHop(
             "multischema_a.SIGNAL",
             "widget: Widget @reference(path: [{key: \"signal_widget_id_fkey\"}])"));

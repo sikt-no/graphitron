@@ -23,7 +23,7 @@ import java.util.Objects;
  * {@link ClassificationTrace} record per call. The backing map is private, so a new bypass site has
  * to add a public method on the registry (visible in code review).
  *
- * <p>R279 slice 6 completed the verb-collapse (the Q2 end state): {@link #register} is the
+ * <p>The verb-collapse is complete: {@link #register} is the
  * <strong>only</strong> write verb. The former {@code classify} (assert-absent), {@code demote}
  * (assert-present), {@code enrich}, and {@code synthesize} verbs all dissolved into it; every caller
  * now registers what a field or a cross-type pass implies and the accumulator reconciles. The trace
@@ -37,8 +37,8 @@ public final class TypeRegistry {
     /**
      * The single reconciling write entry. The field-first walk, connection synthesis, and every
      * cross-type pass (nesting-type registration, the case-fold collision sweep, node-typeId
-     * uniqueness, multi-producer rejection, federation entity demotion) route through here; as of
-     * R279 slice 6 there is no other write verb. Tolerates repeated registration, reconciling by the
+     * uniqueness, multi-producer rejection, federation entity demotion) route through here; there
+     * is no other write verb. Tolerates repeated registration, reconciling by the
      * rules below.
      *
      * <p>Reconciliation:
@@ -52,7 +52,7 @@ public final class TypeRegistry {
      *       (union the federation {@code @tag} applications, OR the {@code shareable} flag), so two
      *       {@code @asConnection} carriers reaching the same connection name, and the single shared
      *       {@code PageInfo}, accumulate the union of their tags without the producer reasoning about
-     *       multiplicity (R279 slice 5);
+     *       multiplicity;
      *   <li>same-kind enrichment otherwise (same concrete type, richer value) → replace (the
      *       {@code enrich} case);
      *   <li>incompatible repeat (two <em>different</em> concrete classifications) → demote to

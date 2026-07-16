@@ -3,8 +3,8 @@ package no.sikt.graphitron.rewrite.methodgraph;
 import java.util.Objects;
 
 /**
- * One committed emitted-method command (R333 thread I, level 2; landed by R314): the record that
- * a schema coordinate's emit owns exactly one named method in one generated unit. The command is
+ * One committed emitted-method command: the record that a schema coordinate's emit owns exactly
+ * one named method in one generated unit. The command is
  * the name authority for that method — the emitter obtains the declaration name from the commit
  * (see {@link MethodCommandRegistry#declareReentryRowsMethod}), it never registers a description
  * beside a name it derived independently, so a committed command with no emitted method behind it

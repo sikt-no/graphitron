@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R155 unit coverage for {@link InputBeanResolver#boxPrimitive(String)}: pins the full 8-arm
+ * Unit coverage for {@link InputBeanResolver#boxPrimitive(String)}: pins the full 8-arm
  * primitive→wrapper mapping that the {@code FieldBinding.javaElementTypeName} invariant
  * ("real class name, never a primitive literal") depends on. The two
  * {@link no.sikt.graphitron.javapoet.ClassName#bestGuess(String)} consumers in
@@ -43,7 +43,7 @@ class InputBeanResolverBoxPrimitiveTest {
     @Test
     void boxPrimitive_doesNotBoxPrimitiveArrays() {
         // int[] is not in the switch and falls through; the loud "not loadable" path in tryLoad
-        // is the existing safety net for arrays of primitives (see the R155 spec, Reachability).
+        // is the existing safety net for arrays of primitives.
         assertThat(InputBeanResolver.boxPrimitive("int[]")).isEqualTo("int[]");
     }
 }

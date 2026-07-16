@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier (R386): the three silent-staleness / lifecycle invariants over the {@link FakeEmbedder}
+ * Unit-tier: the three silent-staleness / lifecycle invariants over the {@link FakeEmbedder}
  * seam fake and a {@link LuceneEmbeddingStore} {@code FSDirectory}, so they pin deterministically
  * without ONNX. Covers hash-covers-the-corpus re-embed gating, the warming-on-change re-entry,
  * embedder-identity rejection, the persistence round-trip + sibling reaping, and the cross-warm

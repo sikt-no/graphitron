@@ -10,10 +10,10 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 /**
  * Factory for the {@link CompletionItem} shape every provider builds: a label
  * that is also the inserted text, a kind, and an explicit {@link TextEdit}
- * replacing {@code range} (R153 — clients otherwise apply per-client
- * word-boundary heuristics to dotted candidates). Before R347 Slice 3 the four
- * lines were open-coded in eight providers and the {@code formatSignature}
- * method was byte-identical in two; both live here now.
+ * replacing {@code range} (clients otherwise apply per-client word-boundary
+ * heuristics to dotted candidates). Previously the four lines were open-coded
+ * in eight providers and the {@code formatSignature} method was byte-identical
+ * in two; both live here now.
  */
 public final class CompletionItems {
 

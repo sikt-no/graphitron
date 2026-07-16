@@ -9,7 +9,7 @@ import java.util.List;
  *
  * <p>The family is sealed with one arm today ({@link Identified}); keeping it sealed rather than
  * collapsing to a bare record leaves room for a future UPDATE shape without reworking consumers.
- * R246 deliberately rejects {@code multiRow: true} upstream, so no {@code Broadcast} arm is
+ * The walker deliberately rejects {@code multiRow: true} upstream, so no {@code Broadcast} arm is
  * planned. The {@link Identified} compact constructor makes the non-empty-SET promise load-bearing
  * on the type system: the walker rejects empty-SET inputs with
  * {@link UpdateRowsError.NoSetFields} before any carrier is constructed.

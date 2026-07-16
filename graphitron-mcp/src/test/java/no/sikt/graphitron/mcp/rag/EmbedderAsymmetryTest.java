@@ -12,7 +12,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Seam-tier (R372): the bge query/document asymmetry is applied inside {@link BgeEmbedder} on the
+ * Seam-tier: the bge query/document asymmetry is applied inside {@link BgeEmbedder} on the
  * {@code embedQuery} path only, and the {@link Embedder.Query} / {@link Embedder.Embedding} records
  * carry the source text alongside the vector. A recording {@link EmbeddingModel} captures the exact
  * strings handed to the model, so the assertion is on the instruction-prefix routing, not on ONNX.

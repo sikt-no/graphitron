@@ -9,7 +9,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 
 /**
- * Test-only fault-injection seam for R421. The shipped reference adapter
+ * Test-only fault-injection seam for the error-redaction guard. The shipped reference adapter
  * ({@link SakilaGraphitronApplication}) is copy-paste template for real subgraphs, so it stays
  * pristine; this {@code @Alternative} lives in test source and is selected only during the module's
  * {@code @QuarkusTest} run (via {@link Priority}). It subclasses the real adapter, so

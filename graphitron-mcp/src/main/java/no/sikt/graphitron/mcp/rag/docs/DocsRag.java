@@ -8,8 +8,8 @@ import no.sikt.graphitron.mcp.rag.LuceneEmbeddingStore;
 import java.io.InputStream;
 
 /**
- * Stands up the two async warms the docs-retrieval tool rides (R385), the first slice to wire R372's
- * warm lifecycle into the running server.
+ * Stands up the two async warms the docs-retrieval tool rides, the first place to wire the
+ * {@link AsyncWarm} warm lifecycle into the running server.
  *
  * <ul>
  *   <li>A shared {@code AsyncWarm<Embedder>} that loads {@link BgeEmbedder} off the dev thread (the
@@ -23,7 +23,7 @@ import java.io.InputStream;
  *
  * <p>Both warms are created here but {@code start()}-ed and owned by the caller (the server's host,
  * {@code DevMojo}), mirroring how the live {@code Workspace} is threaded in. A RAG warm failure leaves
- * the server structured-only and never blocks the bind, per the R118 cross-cutting principle.
+ * the server structured-only and never blocks the bind, a cross-cutting principle of the MCP server.
  */
 public final class DocsRag {
 

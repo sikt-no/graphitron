@@ -14,7 +14,7 @@ import java.util.List;
  * permits), emitted once per code-generation run alongside other rewrite output.
  *
  * <p>The emitted interface is the per-app per-request contract every generated DataFetcher reads
- * from. R190 sealed the interface and concentrated the per-request wiring behind
+ * from. The interface is sealed and the per-request wiring concentrated behind
  * {@code Graphitron.newExecutionInput(...)}: apps no longer implement {@code GraphitronContext}
  * directly; the factory populates the per-request {@code GraphQLContext}, and the singleton
  * {@code GraphitronContextImpl} reads from it.

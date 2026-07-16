@@ -146,7 +146,7 @@ class MultiTableFilterLoweringTest {
 
     @Test
     void nestedInputFieldCondition_lowersPerParticipantAsRewrappedConditionFilter() {
-        // R384 phase c: a developer @condition on a nested input field lowers per participant as a
+        // A developer @condition on a nested input field lowers per participant as a
         // ConditionFilter whose arg param extracts via the Map traversal (rewrapForNested). The
         // field/arg-level guard never reached this shape; the relaxed extraction gate admits it.
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
@@ -197,7 +197,7 @@ class MultiTableFilterLoweringTest {
 
     @Test
     void idTypedFilter_lowersPerParticipantWithJooqConvertExtraction() {
-        // R384 phase a: store_id is a shared int column on both participants; the ID-typed @field
+        // store_id is a shared int column on both participants; the ID-typed @field
         // arg lowers per participant with a JooqConvert call-site extraction (the wire String
         // coerces through the participant column's DataType), no longer rejected at the classify
         // gate now that the branch emitter carries the shared <name>Keys pre-lift and the arm
@@ -240,7 +240,7 @@ class MultiTableFilterLoweringTest {
 
     @Test
     void nestedIdTypedFilter_lowersWithJooqConvertLeaf() {
-        // R384 phase a: the nested @field leaf is aligned with the top-level conversion semantics —
+        // The nested @field leaf is aligned with the top-level conversion semantics —
         // a nested [ID!] @field over a plain column routes through a JooqConvert leaf rather than
         // the formerly hardcoded Direct leaf, so the wire String coerces through the column's
         // DataType on the nested path exactly as it does top-level.
@@ -275,11 +275,11 @@ class MultiTableFilterLoweringTest {
 
     @Test
     void nodeIdFilter_lowersPerParticipantWithNodeIdDecodeExtraction() {
-        // R384 phase b: an FK-target @nodeId filter arg on a multitable union. Both participant
+        // An FK-target @nodeId filter arg on a multitable union. Both participant
         // tables carry an address_id FK to address (a @node type), so the decoded Address key
         // filters each branch by its own lifted FK column; the call-site extraction is the
         // NodeIdDecodeKeys decode chain, lifted through the fetcher class's registry. No rejection
-        // test flips here: phase b adds this as new coverage (the pre-R384 suite carried no
+        // test flips here: this is new coverage (the earlier suite carried no
         // NodeIdDecodeKeys rejection case).
         var schema = TestSchemaHelper.buildSchema("""
             type Address @table(name: "address") @node { id: ID! @nodeId }
@@ -322,7 +322,7 @@ class MultiTableFilterLoweringTest {
 
     @Test
     void fieldLevelCondition_lowersPerParticipant() {
-        // R384 phase c: a field-level developer @condition lowers per participant; the reflected
+        // A field-level developer @condition lowers per participant; the reflected
         // ConditionFilter is table-agnostic (Table<?> first parameter), so the same method serves
         // every branch against its own stage-1 alias.
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
@@ -348,7 +348,7 @@ class MultiTableFilterLoweringTest {
     }
 
     /**
-     * R384 phase c: the field classifies as a {@link QueryField.QueryUnionField} and every
+     * The field classifies as a {@link QueryField.QueryUnionField} and every
      * table-bound participant's filter list carries the developer
      * {@link no.sikt.graphitron.rewrite.model.ConditionFilter} with the expected method.
      */

@@ -96,7 +96,7 @@ public final class JoinPathEmitter {
     }
 
     /**
-     * {@code @tableMethod}-capable overload (R314 slice 2b): {@code ctx} and
+     * {@code @tableMethod}-capable overload: {@code ctx} and
      * {@code conditionsClassName} feed {@link ArgCallEmitter#buildMethodBackedCallArgs} for a
      * {@link TableExpr.MethodCall} node. The three-arg overload passes {@code null} for both;
      * a {@code MethodCall} node reaching it is a wiring bug (only the batched rows-method
@@ -148,7 +148,7 @@ public final class JoinPathEmitter {
 
     /**
      * Forward-order sibling of {@link #emitBridgingJoin} for chains emitted start-first (the
-     * root routine chain's fetcher, R435): the FROM clause holds the chain's start, so each hop
+     * root routine chain's fetcher): the FROM clause holds the chain's start, so each hop
      * joins its <em>own</em> alias in — {@code .join(hop)} — with the same keying-dispatched ON.
      */
     public static CodeBlock emitForwardJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
@@ -156,8 +156,8 @@ public final class JoinPathEmitter {
     }
 
     /**
-     * The whole bridging-hop join fragment for chains emitted start-first (R438 cleanup 2,
-     * landed by R431 slice 4): one exhaustive dispatch on the hop's {@link On} covering the
+     * The whole bridging-hop join fragment for chains emitted start-first: one exhaustive
+     * dispatch on the hop's {@link On} covering the
      * keyed join ({@link #emitForwardJoin}), the condition join
      * ({@code .join(hop).on(method(prev, hop))}), and the lateral routine hop
      * ({@code .crossJoin(DSL.lateral(hop))}, whose correlation rides the call arguments the
@@ -181,7 +181,7 @@ public final class JoinPathEmitter {
      * hop's own alias is already in scope, so the <em>previous</em> node's alias is joined in
      * ({@link #emitBridgingJoin} / {@code .join(prev).on(method(prev, hop))}). A lateral
      * routine hop cannot appear on these paths (multi-node routine chains classify as typed
-     * Deferred, R435); {@code pathKindLabel} names the caller's path family in the guard.
+     * Deferred); {@code pathKindLabel} names the caller's path family in the guard.
      */
     public static CodeBlock emitBackwardBridging(JoinStep.Hop hop, String prevAlias,
             String hopAlias, String pathKindLabel) {

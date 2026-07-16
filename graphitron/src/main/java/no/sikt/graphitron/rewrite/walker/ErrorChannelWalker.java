@@ -14,9 +14,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * R244 walker: resolves the {@link ErrorChannel.Mapped} carrier for an in-scope ({@code @service}
+ * Resolves the {@link ErrorChannel.Mapped} carrier for an in-scope ({@code @service}
  * / {@code @tableMethod}) outcome field from its classified {@link OutcomeType}. The output-walking
- * analogue of R238's {@code ServiceMethodCallWalker}: a thin producer over an explicit substrate,
+ * analogue of {@code ServiceMethodCallWalker}: a thin producer over an explicit substrate,
  * different SDL surface (the outcome type and its errors field rather than the field's arguments).
  *
  * <h3>Stages</h3>

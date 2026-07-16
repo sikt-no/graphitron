@@ -23,8 +23,7 @@ class ColumnReferenceFieldValidationTest {
 
     // ColumnReferenceField + condition-join now classifies and emits a real scalar
     // subquery via InlineColumnReferenceFieldEmitter; the validator no longer surfaces a
-    // deferred-rejection. The R129 slug (column-reference-on-scalar-field-condition-join)
-    // closes alongside R232.
+    // deferred-rejection.
 
     private static final String DEFERRED_NODEID_ENCODE =
         "Field 'Film.languageName': "

@@ -19,7 +19,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R165 end-to-end regression: keeps the keyset/method-emission contract between
+ * End-to-end regression: keeps the keyset/method-emission contract between
  * {@link FetcherRegistrationsEmitter}, {@link ObjectTypeGenerator}, and
  * {@link GraphitronSchemaClassGenerator} aligned, so the emitted
  * {@code GraphitronSchema.java} never calls a {@code <Name>Type.registerFetchers(...)}
@@ -45,7 +45,7 @@ class FetcherRegistrationsPipelineTest {
     @Test
     void bidirectionalInvariant_betweenCallSitesAndMethodEmission_fieldReportFixture() {
         // The field report: an unreferenced payload-shaped type whose only field is
-        // @nodeId. Before R165 this produced an empty-body entry in the bodies map,
+        // @nodeId. Before this fix this produced an empty-body entry in the bodies map,
         // surfacing as an orphan registerFetchers call in GraphitronSchema.build().
         assertBidirectionalInvariant("""
             type Query { x: String }

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R160 — verifies the {@code workspace/didChangeConfiguration} notification routes the
+ * Verifies the {@code workspace/didChangeConfiguration} notification routes the
  * three inlay-hint / hover toggles through to {@link Workspace#setInlayHintConfig}, and
  * that missing layers fall back to {@code false} per the no-behaviour-change-by-default
  * contract.

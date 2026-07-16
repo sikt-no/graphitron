@@ -25,9 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The accessor-side {@link no.sikt.graphitron.rewrite.model.TableRef} is resolved by
  * record-class identity ({@code ServiceCatalog.resolveTableByRecordClass}) and carries jOOQ's
  * unqualified canonical name {@code "event"}; the element side carries the verbatim qualified echo
- * {@code "multischema_a.event"}. Before R441 the match compared those two names and dropped the
+ * {@code "multischema_a.event"}. Previously the match compared those two names and dropped the
  * accessor, rejecting the field with the {@code BatchedTableField … requires a typed accessor or
- * @sourceRow} error; after R441 the compare routes through the reified {@code tableClass} identity.
+ * @sourceRow} error; the compare now routes through the reified {@code tableClass} identity.
  *
  * <p>Two directions are pinned. Both are real classifier outcomes reached through the full SDL →
  * classify pipeline:
@@ -89,8 +89,8 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
     void qualifiedTableEcho_matchesAccessorByClassIdentity_classifiesRecordTableField() {
         // SchemaAEventsPayload exposes `List<EventRecord> events()` where EventRecord is
         // multischema_a's. The element type's @table echo "multischema_a.event" never equals the
-        // accessor table's bare canonical name "event", so the pre-R441 bare-name compare dropped
-        // the accessor and rejected. After R441 the compare is tableClass-vs-tableClass.
+        // accessor table's bare canonical name "event", so the old bare-name compare dropped
+        // the accessor and rejected. The compare is now tableClass-vs-tableClass.
         var schema = TestSchemaHelper.buildSchema(sdl("makeR441SchemaAEventsPayload"), multiSchemaContext());
 
         var field = schema.field("EventPayload", "events");

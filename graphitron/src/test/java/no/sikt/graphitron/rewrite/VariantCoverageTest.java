@@ -23,28 +23,28 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 /**
  * Meta-test: every sealed leaf of {@link GraphitronField} and {@link GraphitronType}
  * must have at least one classification case whose {@link ClassificationCase#variants()}
- * includes it, <em>or</em> a leaf the R281 spec-by-example corpus demonstrates
+ * includes it, <em>or</em> a leaf the spec-by-example corpus demonstrates
  * ({@link ClassifiedCorpus#coveredLeaves()}), or a documented entry in {@link #NO_CASE_REQUIRED}.
  *
  * <p>Phase 2 of {@code plan-variant-coverage-meta-test.md}. Complements
  * {@link GeneratorCoverageTest#everyGraphitronFieldLeafHasAKnownDispatchStatus} (generator
  * dispatch coverage) by asserting that classification itself is demonstrated for every leaf.
  *
- * <p>R281 slice 3 splits coverage by who owns the verdict truth, retiring the slice-2 union net:
+ * <p>Coverage is split by who owns the verdict truth, retiring the earlier union net:
  *
  * <ul>
  *   <li><b>Output-field and type leaves</b> ({@link OutputField} leaves and every non-failure
  *       {@link GraphitronType} leaf) are owned by the spec-by-example corpus as the
  *       <em>single source of truth</em>; {@link #everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus()}
  *       requires each to be demonstrated by a {@link ClassifiedCorpus} fixture (the corpus is classified
- *       and its per-coordinate leaves collected), not by an enum row. This is the milestone the spec's
- *       slice 3 names: full successful output-field and type corpus coverage.</li>
+ *       and its per-coordinate leaves collected), not by an enum row. This is the milestone:
+ *       full successful output-field and type corpus coverage.</li>
  *   <li><b>Input-field leaves</b> ({@link InputField}) stay covered by the
  *       {@code GraphitronSchemaBuilderTest} enum truth table, their own game and out of scope for the
  *       corpus; {@link #everyInputFieldLeafHasAnEnumClassificationCase()} keeps that obligation.</li>
  *   <li>The failure leaves ({@code UnclassifiedField} / {@code UnclassifiedType}) are out of scope for
  *       both: the corpus asserts successful classification only, and the failure path gets a separate
- *       mechanism post-R222.</li>
+ *       mechanism later.</li>
  * </ul>
  *
  * <p>{@link #NO_CASE_REQUIRED} remains the documented escape hatch shared by both obligations.

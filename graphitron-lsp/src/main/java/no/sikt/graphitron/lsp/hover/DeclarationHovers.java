@@ -21,7 +21,7 @@ import org.eclipse.lsp4j.Range;
 import java.util.Optional;
 
 /**
- * R160 — classification-hover dispatch on SDL declaration coordinates. Parallel to
+ * Classification-hover dispatch on SDL declaration coordinates. Parallel to
  * {@link Hovers}'s directive-argument-keyed dispatch: where {@link Hovers} keys on the
  * cursor sitting inside a directive, this dispatch keys on the cursor sitting on a
  * field-declaration or type-declaration <em>name token</em> (outside any directive).
@@ -30,7 +30,7 @@ import java.util.Optional;
  * SDL declaration coordinate added to the sealed family fails to compile until its
  * hover content lands here in the same commit.
  *
- * <p>R371 — beneath the classification block, the hover overlays the jOOQ class /
+ * <p>Beneath the classification block, the hover overlays the jOOQ class /
  * column / member Javadoc the coordinate binds to, read at request time from the
  * LSP-owned {@link SourceWalker.Index}. The binding is resolved through the shared
  * {@link DeclTarget} that goto-definition ({@code DeclarationDefinitions}) also
@@ -46,7 +46,7 @@ public final class DeclarationHovers {
     /**
      * Classification-only entry: no source-index Javadoc overlay. Back-compat for
      * callers that carry no catalog / source index; the production path uses the
-     * five-arg overload so the R371 declaration-name overlay lights up.
+     * five-arg overload so the declaration-name overlay lights up.
      */
     public static Optional<Hover> compute(
         FileSnapshot file, LspSchemaSnapshot snapshot, Point pos
@@ -56,9 +56,9 @@ public final class DeclarationHovers {
 
     /**
      * Computes the declaration-name hover for {@code pos}: the classification
-     * projection (R160), and, when the catalog / source index resolve the
+     * projection, and, when the catalog / source index resolve the
      * coordinate to a jOOQ class / column / member, that declaration's Javadoc
-     * overlaid beneath it (R371). Returns {@link Optional#empty()} when the cursor
+     * overlaid beneath it. Returns {@link Optional#empty()} when the cursor
      * is not on a recognised SDL declaration name token, the snapshot is
      * unavailable, or neither a classification nor an overlay is available.
      */
@@ -75,7 +75,7 @@ public final class DeclarationHovers {
         String classification = classificationMarkdown(built, hoverDecl);
         // The overlay shares goto-definition's binding resolution. A null catalog
         // (the classification-only entry) skips it; an empty source index yields no
-        // overlay, leaving the classification block exactly as R160 rendered it.
+        // overlay, leaving the classification block exactly as the classification arm rendered it.
         String overlay = catalog == null
             ? ""
             : overlay(DeclTarget.resolve(declaration, built, catalog, file.source()), sourceIndex);
@@ -103,7 +103,7 @@ public final class DeclarationHovers {
         };
     }
 
-    /** The R160 classification block, or {@code null} when no projection entry exists. */
+    /** The classification block, or {@code null} when no projection entry exists. */
     private static String classificationMarkdown(LspSchemaSnapshot.Built built, DeclarationHover declaration) {
         return switch (declaration) {
             case DeclarationHover.FieldDeclarationHover f -> {
@@ -118,7 +118,7 @@ public final class DeclarationHovers {
     }
 
     /**
-     * The R371 Javadoc overlay for the resolved {@link DeclTarget}, or empty when the
+     * The Javadoc overlay for the resolved {@link DeclTarget}, or empty when the
      * coordinate binds to no Java declaration or the source index does not hold it.
      * Switches over the same target goto-definition projects to a {@code Location};
      * the table / column arms honour {@link Descriptions}'s catalog-description
@@ -126,7 +126,7 @@ public final class DeclarationHovers {
      * carries no description to layer under a POJO accessor or record component).
      *
      * <p>Public so {@code DeclarationHoverOverlayParityTest} can assert, per variant,
-     * that this overlay is non-empty exactly when goto-definition jumps (the R371
+     * that this overlay is non-empty exactly when goto-definition jumps (the
      * parity property), without a tree-sitter round-trip.
      */
     public static String overlay(DeclTarget target, SourceWalker.Index sourceIndex) {

@@ -10,7 +10,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R244 ; the single-errors-field invariant on outcome types, enforced by
+ * The single-errors-field invariant on outcome types, enforced by
  * {@code GraphitronSchemaValidator.validateOutcomeTypeShape}. The binary {@code Outcome} witness
  * ({@code Success | ErrorList}) has one error slot, so a type carrying two
  * {@code ChildField.ErrorsField} children has no well-defined success/error fork and is rejected at

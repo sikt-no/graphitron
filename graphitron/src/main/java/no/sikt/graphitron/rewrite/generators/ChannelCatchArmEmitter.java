@@ -19,7 +19,7 @@ import java.util.Optional;
  *
  * <ul>
  *   <li>{@code Optional.empty()} : {@code return ErrorRouter.surfaceClientErrorOrRedact(e, env);}
- *       (the shared no-channel disposition, R378/R415).</li>
+ *       (the shared no-channel disposition).</li>
  *   <li>{@link ErrorChannel.Mapped} : the inline mapping-walk loop that, on the first matching
  *       {@code (Mapping, cause)}, returns {@code DataFetcherResult.<P>newResult()
  *       .data(new Outcome.ErrorList<>(List.of(t))).build()}, falling through to

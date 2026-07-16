@@ -28,15 +28,16 @@ import java.util.stream.Stream;
  * class loader over the resulting bytecode, so a {@code @UnitTier} test can instantiate and drive
  * the <em>real emitted bytes</em> rather than assert on their source string.
  *
- * <p>R429 slice 1 needs this: the connection-lifecycle runtime is emitted into the consumer's
- * output package (never shipped as a graphitron artifact), yet the spec asks for {@code @UnitTier}
- * coverage of acquisition/connect/disconnect/release ordering "over a fake {@code DataSource}".
+ * <p>This harness exists because the connection-lifecycle runtime is emitted into the consumer's
+ * output package (never shipped as a graphitron artifact), yet {@code @UnitTier} coverage is wanted
+ * for acquisition/connect/disconnect/release ordering "over a fake {@code DataSource}".
  * The only way to exercise emitted behaviour in the {@code graphitron} module's unit tier is to
- * compile the {@code TypeSpec}s and load them; R410's {@link
+ * compile the {@code TypeSpec}s and load them; the {@link
  * no.sikt.graphitron.rewrite.compile.IncrementalCompileEngine} compiles-and-byte-compares but never
  * loads-and-invokes, so this is a separate, deliberately minimal, test-scoped seam.
  *
- * <p>Mechanics mirror the R410 engine: {@link ToolProvider#getSystemJavaCompiler()} over a
+ * <p>Mechanics mirror the {@link no.sikt.graphitron.rewrite.compile.IncrementalCompileEngine}:
+ * {@link ToolProvider#getSystemJavaCompiler()} over a
  * {@link StandardJavaFileManager} whose class path is harvested from
  * {@code System.getProperty("java.class.path")} (so jOOQ, graphql-java, and the JDK resolve exactly
  * as they do in the reactor build), sources rendered via JavaPoet's own

@@ -12,13 +12,13 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * R410 slice 5 — the completeness oracle for the model-sourced {@link CompileDependencyGraph}. This is
- * the {@code TypeSpec}-{@code ClassName} walk the spec keeps only as a <em>transitional fallback</em>:
+ * The completeness oracle for the model-sourced {@link CompileDependencyGraph}. This is
+ * the {@code TypeSpec}-{@code ClassName} walk kept only as a <em>transitional fallback</em>:
  * it reverse-engineers the file-level reference structure from the emit artifact (the emitted
  * {@link TypeSpec}s) rather than from the model, so it is explicitly <strong>not</strong> the graph's
  * source. Its sole job is to <em>falsify incompleteness</em>: if this walk finds a reference between
  * two generated units that the model-sourced graph is missing, the exhaustive-switch projection has a
- * gap to close (that is how the slice-2 DML {@code Projected*}/{@code Discriminated*} residual was
+ * gap to close (that is how the DML {@code Projected*}/{@code Discriminated*} residual was
  * caught).
  *
  * <p>Because the model graph must be a <em>superset</em> of javac's true cross-unit dependencies, the
@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * <p><b>How references are detected.</b> Two sources unioned:
  * <ol>
  *   <li>{@link TypeSpec#referencedClassNames()}: the structured {@code $T} references throughout the
- *       declaration <em>including bodies</em>. As of R455 the structured walk descends into {@code $L}
+ *       declaration <em>including bodies</em>. The structured walk descends into {@code $L}
  *       {@link CodeBlock} / anonymous-class / annotation args (so a {@code $T} nested arbitrarily deep
  *       inside {@code $L} blocks is seen) and walks type-variable-bound declarations. Unlike a rendered
  *       file's {@code import} list it also sees <em>same-package</em> references (bare simple names with
@@ -44,8 +44,8 @@ import java.util.regex.Pattern;
  *       would demand spurious model edges).</li>
  * </ol>
  *
- * <p><b>Review-only residual.</b> After R455 closed the {@code $L}-block and type-variable-bound blind
- * spots, the true residual shrinks to a generated type's simple name baked as a raw <em>code-bearing
+ * <p><b>Review-only residual.</b> With the {@code $L}-block and type-variable-bound blind
+ * spots closed, the true residual shrinks to a generated type's simple name baked as a raw <em>code-bearing
  * string</em> in a <em>same-package</em> unit (net 2's FQCN scan catches the cross-package form; a
  * same-package bare simple name in a string is caught by neither net). No emitter produces this today.
  * This is a <em>review-only</em> caveat, not an enforced contract: nothing mechanically prevents a

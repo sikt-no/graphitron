@@ -34,9 +34,9 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAMED_TYPE;
  *
  * <p>Targets here live in the tree-sitter-parsed workspace files, so when an open
  * buffer declares the type the returned range is the real declaration-name span, not
- * the {@code 0:0} placeholder the jOOQ path is stuck with pending JavaParser (see R90).
+ * the {@code 0:0} placeholder the jOOQ path is stuck with pending JavaParser.
  *
- * <p>When no open buffer declares the type (R350), the resolution falls back to the
+ * <p>When no open buffer declares the type, the resolution falls back to the
  * build snapshot's type-definition-location map ({@link LspSchemaSnapshot.Built#typeDefinitionLocations()},
  * projected from the {@code TypeDefinitionRegistry} in {@code CatalogBuilder.buildSnapshot}),
  * which covers every type in every schema file regardless of which buffers are open. The

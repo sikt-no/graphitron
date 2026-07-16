@@ -56,7 +56,7 @@ import java.util.stream.Stream;
  * absolute path, invalidated by last-modified time) and only changed files are
  * re-parsed; a refresh that touches no parsed file re-parses nothing. The cache
  * is an <em>instance</em> field, owned by the same party that owns the index
- * (the LSP {@code Workspace}, R352): there is no process-wide static cache to
+ * (the LSP {@code Workspace}): there is no process-wide static cache to
  * couple distinct cadences or distinct workspaces. Construct one
  * {@code SourceWalker} per long-lived index owner and reuse it across refreshes
  * so the cache stays warm.

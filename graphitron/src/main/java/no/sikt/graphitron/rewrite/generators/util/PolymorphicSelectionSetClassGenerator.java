@@ -22,8 +22,8 @@ import java.util.List;
  * <p>The Stage-2 per-typename SELECT in the multi-table polymorphic dispatcher
  * ({@code MultiTablePolymorphicEmitter.buildPerTypenameSelect}) feeds the wrapped view into the
  * emitted {@code <Type>.$fields(...)} call so each per-typename SELECT projects only columns
- * actually selected for that variant. The wrapper closes the over-selection hole described in
- * roadmap R108.
+ * actually selected for that variant. The wrapper closes the over-selection hole where a
+ * per-typename SELECT would otherwise project columns belonging to sibling participants.
  *
  * <p>Design note: this is a deliberate, localised wire-boundary adapter (a delegating proxy over a
  * graphql-java interface), justified because the {@code $fields} contract reads

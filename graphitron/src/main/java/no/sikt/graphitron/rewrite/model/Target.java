@@ -9,13 +9,13 @@ package no.sikt.graphitron.rewrite.model;
  * <p>The wrapper is read straight off the field's GraphQL return type ({@code field.getType()} /
  * {@link FieldWrapper}): the value the retired {@code SourceKey.Cardinality} computed from
  * {@code wrapper().isList()}. Keeping cardinality <em>as a wrapper bound to this endpoint</em>, never a
- * free {@code One} / {@code Many} enum, is the structural fix R316's wrapper algebra exists to hold: the
+ * free {@code One} / {@code Many} enum, is the structural fix the wrapper algebra exists to hold: the
  * same {@code {One, Many}} values appear on the {@link Source} wrapper (accumulated) and here (local), so
  * a detached cardinality value would be ambiguous. A Relay connection is {@code Single(Connection(inner))}
  * (the windowed-read verb is {@link Operation.Paginate}, not a wrapper fact).
  *
- * <p>{@code target()} is the projection-axis primitive (R316 slice 3 introduced it; slice 4 retired the
- * {@code mapping} axis and migrated the R281 corpus onto it). The fused {@code TableConnection} mapping
+ * <p>{@code target()} is the projection-axis primitive; the {@code mapping} axis was later retired and
+ * the classification corpus migrated onto it. The fused {@code TableConnection} mapping
  * decomposed into this wrapper's {@code Single(Connection)} shape plus the {@link Operation.Paginate}
  * windowed-read verb.
  */

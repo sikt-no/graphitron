@@ -13,17 +13,17 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R358 structural guard. {@link no.sikt.graphitron.rewrite.model.TableRef#tableName()} is the
+ * Structural guard. {@link no.sikt.graphitron.rewrite.model.TableRef#tableName()} is the
  * case-preserved verbatim {@code @table(name:)} echo, so the <em>same</em> logical table can surface
  * as two differently-cased {@code tableName()} strings: the verbatim {@code @table} casing on one
  * operand, the lowercase jOOQ {@code Table.getName()} casing the record-class resolution path feeds
  * in on the other. Comparing those strings with case-sensitive {@code .equals} silently mis-decides
- * under an Oracle-style UPPERCASE {@code @table} over a lowercase jOOQ catalog: that was the R357 bug
+ * under an Oracle-style UPPERCASE {@code @table} over a lowercase jOOQ catalog: that was the bug
  * ({@code collectAccessorMatches} dropping a record-composite carrier child), and
  * {@code FieldBuilder.resolveCarrierIdEncoder} was one explicit {@code @nodeId(typeName:)} hop from
  * the same defect.
  *
- * <p>R358 Phase 2 moves the canonical identity comparison onto the type
+ * <p>Phase 2 moved the canonical identity comparison onto the type
  * ({@link no.sikt.graphitron.rewrite.model.TableRef#sameTable(String)} /
  * {@code denotesSameTableAs(TableRef)}), so every consumer routes through one case-insensitive
  * predicate instead of re-deriving the case-folding contract the jOOQ catalog already guarantees.
@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The scan is orientation-complete and spelling-closed for the comparison mode, not a total
  * invariant: other spellings ({@code Objects.equals}, {@code ==}, {@code Set.contains}) and the
- * lookup-key consumption mode are out of scope (see R358's "Scope and residual blind spots").
+ * lookup-key consumption mode are out of scope.
  *
  * <p>The scanned-file count is asserted nonzero: a copy of the precedent's
  * ({@code UnifiedEmissionPinsTest}) non-recursive {@code Files.list} over the wrong subtree would

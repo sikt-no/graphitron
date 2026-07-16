@@ -12,7 +12,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R159 pipeline-tier coverage for the {@code @field(name: "$source")} sigil on the
+ * Pipeline-tier coverage for the {@code @field(name: "$source")} sigil on the
  * payload data field. SDL → classified model assertions (admit, type-mismatch
  * reject, unknown-sigil reject, bare-name regression, model-shape regression, and the
  * non-carrier-site regression that the sigil-aware arm does not silently rewire the
@@ -49,7 +49,7 @@ class FieldSourceSigilPipelineTest {
         """;
 
     /**
-     * R158 admit case: {@code @field(name: "$source")} on the carrier data field of a
+     * Admit case: {@code @field(name: "$source")} on the carrier data field of a
      * {@code @service}-backed mutation. The directive admits as a no-op confirmation of the
      * implicit binding the SDL element type already produces; the mutation classifies as
      * {@link MutationField.MutationServiceRecordField} and the data field classifies as
@@ -75,7 +75,7 @@ class FieldSourceSigilPipelineTest {
 
     /**
      * Model-shape regression: the same carrier without {@code @field(name: "$source")} produces
-     * a byte-identical {@link ChildField.BatchedTableField} on the data field. R159 reshapes
+     * a byte-identical {@link ChildField.BatchedTableField} on the data field. The sigil reshapes
      * no existing fixture.
      */
     @Test
@@ -161,10 +161,10 @@ class FieldSourceSigilPipelineTest {
     }
 
     /**
-     * Bare-name pin under R178: {@code @field(name: "X")} (any non-{@code $}-prefixed value) at
-     * the carrier data field admits identically to the no-{@code @field} form. R178 retired the
-     * carrier walk's forbidden-directives HardReject (the SettKvotesporsmal bug's mechanism);
-     * the bare-name value is a no-op at the data-field site.
+     * Bare-name pin: {@code @field(name: "X")} (any non-{@code $}-prefixed value) at
+     * the carrier data field admits identically to the no-{@code @field} form. The
+     * carrier walk's forbidden-directives HardReject (the SettKvotesporsmal bug's mechanism)
+     * was retired; the bare-name value is a no-op at the data-field site.
      */
     @Test
     void sourceSigil_bareNameAtCarrier_admitsUnderR178() {
@@ -183,8 +183,8 @@ class FieldSourceSigilPipelineTest {
     /**
      * Non-carrier-site regression: {@code @field(name: "$source")} on a regular
      * record-backed field continues to surface today's
-     * {@code Rejection.accessorMismatch} on the literal string {@code $source}. R159 does not
-     * silently rewire the non-carrier paths to learn about sigils.
+     * {@code Rejection.accessorMismatch} on the literal string {@code $source}. The sigil-aware
+     * arm does not silently rewire the non-carrier paths to learn about sigils.
      */
     @Test
     void sourceSigil_atNonCarrierRecordSite_surfacesAccessorMismatch() {
@@ -206,7 +206,7 @@ class FieldSourceSigilPipelineTest {
 
         // Validator-surface coverage: the non-carrier path's existing accessor-mismatch
         // rejection (today's text, NOT FieldSourceSigil.sourceSigilNotDefinedHereMessage)
-        // reaches ValidationReport.errors() unchanged. R159 intentionally leaves the
+        // reaches ValidationReport.errors() unchanged. The sigil work intentionally leaves the
         // non-carrier paths structurally identical to today.
         assertThat(validate(schema))
             .extracting(ValidationError::message)

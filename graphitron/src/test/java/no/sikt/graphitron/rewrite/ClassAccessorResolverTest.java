@@ -18,7 +18,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R461 unit-tier coverage for the shared candidate enumeration in {@link ClassAccessorResolver}: the
+ * Unit-tier coverage for the shared candidate enumeration in {@link ClassAccessorResolver}: the
  * name rules, the {@code is}-gate, the member filter, and the per-kind parameter-shape rule, driven
  * directly against small synthetic classes (a pure reflection surface). Plus the order-bridge
  * meta-test pinning {@link ClassAccessorResolver#forBackingClass} against the class-shape decision
@@ -262,7 +262,7 @@ class ClassAccessorResolverTest {
 
     @Test
     void forBackingClass_equalsRecordFirst_exactlyForJavaRecordVariant() {
-        // Matrix of backing-class shapes: the R96 walk's candidate-order derivation
+        // Matrix of backing-class shapes: the binding walk's candidate-order derivation
         // (forBackingClass) must select RECORD_FIRST exactly when buildResultTypeFromClass would
         // produce a JavaRecordType, so walk and emission never split their candidate order.
         List<Class<?>> matrix = List.of(

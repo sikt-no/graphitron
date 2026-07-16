@@ -79,7 +79,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     List<NamedReferenceBinding> namedReferences;
 
     /**
-     * Lint suppression (R408). A {@code <lint>} block naming rule ids to silence everywhere
+     * Lint suppression. A {@code <lint>} block naming rule ids to silence everywhere
      * ({@code <disabledRules>}) and type-name globs to exclude from the SDL lint engine
      * ({@code <excludedTypes>}). Threaded through {@link RewriteContext} so suppression is applied at
      * the one build evaluator; the {@code graphitron:dev} LSP and MCP diagnostics suppress
@@ -90,7 +90,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     LintBinding lint;
 
     /**
-     * Session identity (R429 slice 3). A {@code <sessionState>} block naming how per-request identity
+     * Session identity. A {@code <sessionState>} block naming how per-request identity
      * is mounted on the pinned connection: either consumer-authored database callables
      * ({@code <connect call>} / {@code <disconnect call>}, with an optional OUT {@code handle}) or the
      * Postgres {@code <variables>} sugar ({@code <variable name claim>}) that generates both hook
@@ -182,7 +182,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * disabled rule id against {@code LintRule.id()}. An unknown id is a typo the build must not
      * silently ignore, so {@link LintConfig#validated} throws and this wraps it as a
      * {@link MojoExecutionException} carrying the list of valid ids. Returns {@link LintConfig#empty()}
-     * when the block is omitted (R408).
+     * when the block is omitted.
      */
     private LintConfig buildLintConfig() throws MojoExecutionException {
         if (lint == null) {
@@ -303,7 +303,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Derives the {@code graphitron-mcp-rag} cache root under {@code project.build.directory} (R386),
+     * Derives the {@code graphitron-mcp-rag} cache root under {@code project.build.directory},
      * with the same {@code basedir/target} fallback {@link #resolveOutputResourcesDirectory(Path)}
      * uses for hand-built {@link MavenProject} test instances. The semantic catalog index persists
      * its content-hash-keyed Lucene directories here, so it survives {@code dev} restarts and dies on
@@ -322,7 +322,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The graphitron-exclusive class output root ({@code target/graphitron-classes}) the R410
+     * The graphitron-exclusive class output root ({@code target/graphitron-classes}) the
      * incremental compile driver writes into, derived from {@code project.build.directory} with the same
      * {@code basedir/target} fallback {@link #resolveOutputResourcesDirectory(Path)} uses for hand-built
      * {@link MavenProject} test instances. A directory graphitron solely writes (never the shared
@@ -342,7 +342,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The compile classpath the R410 incremental compile engine scans once at dev startup: every entry
+     * The compile classpath the incremental compile engine scans once at dev startup: every entry
      * in {@code project.getCompileClasspathElements()} (the consumer's compile dep graph plus its own
      * {@code target/classes}) unioned with every reactor sibling's {@code target/classes} (the same set
      * {@link #resolveClasspathRoots()} feeds the LSP catalog scan). This is exactly a
@@ -384,7 +384,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * multi-module build (Maven loads only that module's pom). This is the shape
      * the sibling walk-up ({@link #siblingModuleBasedirs()}) targets: the reactor
      * contains the current module alone, so its sibling service / condition /
-     * record classes would otherwise be invisible to the catalog scan (R99).
+     * record classes would otherwise be invisible to the catalog scan.
      *
      * <p>Returns {@code false} for a genuine multi-module reactor (run from the
      * parent, where {@code getAllProjects()} carries the full set even under
@@ -417,7 +417,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * returns that ancestor's <em>other</em> modules' basedirs in declared document
      * order. The walk stops at the first such ancestor (the standard aggregator
      * layout) and returns empty when none lists the current project, so a genuine
-     * standalone module is unchanged from pre-R99 behaviour.
+     * standalone module is unaffected.
      *
      * <p>Module entries are resolved against the ancestor's directory and compared
      * by normalised absolute path; an entry that points straight at a {@code pom.xml}
@@ -427,7 +427,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * sibling directories by convention, rather than constructing {@link MavenProject}
      * instances for modules the session never loaded, is the deliberate scope of this
      * fallback (a custom {@code <build>} output/source directory in a sibling is out
-     * of scope); see R99.
+     * of scope).
      */
     static List<Path> siblingModuleBasedirs(Path currentBasedir) {
         Path current = currentBasedir.toAbsolutePath().normalize();
@@ -461,7 +461,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * about an off-spec pom (a malformed or unreadable ancestor pom yields no
      * modules rather than failing the goal). Profile-scoped {@code <modules>} are
      * not consulted; the standard top-level aggregator layout is the supported
-     * shape (R99).
+     * shape.
      */
     private static List<String> parseModules(Path pom) {
         try (var reader = Files.newBufferedReader(pom)) {
@@ -504,7 +504,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * {@link #siblingModuleBasedirs()}: each sibling's {@code target/classes}.
      * The widening rides the same {@link #collectExistingDirs} existence filter
      * and dedup as the reactor roots, so a sibling already present in a
-     * non-trivial reactor collapses to a no-op (R99).
+     * non-trivial reactor collapses to a no-op.
      */
     private List<Path> resolveClasspathRoots() {
         var roots = new LinkedHashSet<>(collectExistingDirs(reactorProjects(), p -> {
@@ -528,7 +528,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * {@link #resolveClasspathRoots()} through the shared
      * {@link #collectExistingDirs} traversal, so the scan path and the walk path
      * cannot drift in which modules they cover: a class scanned for completion
-     * is a class whose source root is walked for goto-definition (R351).
+     * is a class whose source root is walked for goto-definition.
      *
      * <p>The generated-sources half is taken from disk rather than from
      * {@code project.getCompileSourceRoots()}, which only carries a
@@ -538,7 +538,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * built this session would otherwise contribute zero source roots, leaving
      * its table classes jumpable in completion but dead on goto-definition. The
      * disk scan is lifecycle-independent, the same property the classpath side
-     * already has, so it restores parity for that case (R369). A root the plugin
+     * already has, so it restores parity for that case. A root the plugin
      * also registered collapses with the discovered one in
      * {@link #collectExistingDirs} (dedup by normalised absolute path), so the
      * widening is a no-op under a full-lifecycle goal.
@@ -548,7 +548,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             collectExistingDirs(reactorProjects(), AbstractRewriteMojo::compileSourceRootsOf));
         // Mirror the classpath-side widening on the source side so a sibling
         // scanned for completion also has its source root walked for
-        // goto-definition: same sibling set, same parity invariant (R99/R369).
+        // goto-definition: same sibling set, same parity invariant.
         // Per sibling: src/main/java plus the disk-discovered generated-sources/*.
         for (Path base : siblingModuleBasedirs()) {
             addExistingDir(roots, base.resolve("src/main/java"));
@@ -628,7 +628,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * here; the sibling-widening path ({@link #resolveCompileSourceRoots()}) calls it
      * directly against {@code <siblingBasedir>/target}, since the convention is fixed
      * and an unloaded sibling has no {@link MavenProject} to read a build directory
-     * from (R99). Returns an empty list when no {@code generated-sources} directory
+     * from. Returns an empty list when no {@code generated-sources} directory
      * exists on disk.
      */
     static List<String> generatedSourceRootsUnder(Path targetDir) {

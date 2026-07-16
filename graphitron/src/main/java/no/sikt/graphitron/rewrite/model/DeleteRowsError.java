@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for {@code DeleteRowsWalker}. Each typed
  * arm carries the structural data its diagnostic message and LSP {@code relatedInformation} need;
- * downstream tooling switches on the arm rather than parsing prose. Sibling to R246's
+ * downstream tooling switches on the arm rather than parsing prose. Sibling to
  * {@link UpdateRowsError}: per the dimensional-model-pivot principle, each walker slice adds its own
  * sub-seal of {@link Rejection.AuthorError} (and one row in that interface's {@code permits} clause)
  * rather than piling typed arms under the flat {@link Rejection.AuthorError.Structural}.
@@ -49,7 +49,7 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
      * mutation did not opt into {@code multiRow: true}. Names the table, the columns the input
      * contributes, and every candidate key the walker considered (with its column set) so the
      * author can see the shortfall. A table with no keys at all is the degenerate
-     * {@code candidateKeys = []} case. Subsumes R188's {@code table-has-no-pk} rejection.
+     * {@code candidateKeys = []} case. Subsumes the legacy {@code table-has-no-pk} rejection.
      */
     record NoUniqueKeyCoverage(
         String table,
@@ -98,10 +98,10 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
     }
 
     /**
-     * An input field carries {@code @condition(override: true)}. R215's classifier admits this
+     * An input field carries {@code @condition(override: true)}. The classifier admits this
      * shape today, but its emit-side wiring never landed, so the author's filter would silently
-     * never run. R266 makes the deferral honest by rejecting with the field's name and the
- * directive's source location; re-admit when override-condition emit support lands.
+     * never run. This rejection makes the deferral honest by rejecting with the field's name and the
+     * directive's source location; re-admit when override-condition emit support lands.
      */
     record OverrideConditionNotSupported(
         String fieldName,

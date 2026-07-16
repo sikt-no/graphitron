@@ -61,7 +61,7 @@ public class ConnectionResultClassGenerator {
         // returns null on that carrier. Every reachable path binds a real pair.
         var tableField = FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build();
         var conditionField = FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build();
-        // R13 facet plan — nullable as a unit: only the root connection fetcher of a faceted
+        // Facet plan — nullable as a unit: only the root connection fetcher of a faceted
         // @asConnection carrier binds it (via the facet-carrying constructor below); every other
         // producer leaves it null and the facets resolver returns null, mirroring totalCount's
         // (table, condition) contract.
@@ -73,7 +73,7 @@ public class ConnectionResultClassGenerator {
         var facetConditionsField = FieldSpec.builder(mapOfCondition, "facetConditions", Modifier.PRIVATE, Modifier.FINAL).build();
         var facetSpecsField = FieldSpec.builder(listOfFacetSpec, "facetSpecs", Modifier.PRIVATE, Modifier.FINAL).build();
 
-        // Assigning constructor — the full component list including the R13 facet plan. Only the
+        // Assigning constructor — the full component list including the facet plan. Only the
         // facet-carrying convenience below reaches the facet slots; every legacy form delegates
         // with a null plan.
         var assigningConstructor = MethodSpec.constructorBuilder()
@@ -102,7 +102,7 @@ public class ConnectionResultClassGenerator {
             .addStatement("this.facetSpecs = facetSpecs")
             .build();
 
-        // Primary constructor (pre-R13 shape, no facet plan) — takes List<Record>. Root connection
+        // Primary constructor (pre-facet shape, no facet plan) — takes List<Record>. Root connection
         // fetcher passes a jOOQ Result<Record> (which is-a List<Record>); split-connection scatter
         // passes a per-parent ArrayList sublist.
         var constructor = MethodSpec.constructorBuilder()
@@ -136,7 +136,7 @@ public class ConnectionResultClassGenerator {
                 + " page.backward(), page.extraFields(), table, condition, null, null, null)")
             .build();
 
-        // R13 facet-carrying convenience: the faceted root connection fetcher binds the facet plan
+        // Facet-carrying convenience: the faceted root connection fetcher binds the facet plan
         // (base condition, per-facet own predicates keyed by facet label, and the decode specs)
         // alongside the page context, so ConnectionHelper.facets can issue its UNION ALL aggregate
         // with the same source and filter-minus-self predicates as the page query's filter.
@@ -154,7 +154,7 @@ public class ConnectionResultClassGenerator {
                 + " facetBaseCondition, facetConditions, facetSpecs)")
             .build();
 
-        // R13 FacetSpec — the runtime decode entry for one facet: the GraphQL-facing label (the
+        // FacetSpec — the runtime decode entry for one facet: the GraphQL-facing label (the
         // facets field name), the GROUP BY column, and whether the facet value is nullable (a
         // non-null value appends an IS NOT NULL scrub to its arm).
         var facetSpecClass = TypeSpec.classBuilder("FacetSpec")

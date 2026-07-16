@@ -780,7 +780,7 @@ public sealed interface ChildField extends OutputField
      * unsupported one. Currently every value is a
      * {@link ParticipantCorrelation.KeyTupleWhere} (single-hop FK, auto-discovered or
      * {@code @referenceFor}-disambiguated) or a {@link ParticipantCorrelation.JoinedCorrelation}
-     * (multi-hop FK chain or condition correlation, shipped by R458 slices 2-3).
+     * (multi-hop FK chain or condition correlation).
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.

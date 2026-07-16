@@ -90,7 +90,7 @@ class SchemaSdlEmissionTest {
     }
 
     /**
-     * R291: the published SDL carries no Graphitron-internal surface, for every plugin
+     * The published SDL carries no Graphitron-internal surface, for every plugin
      * execution in this module. Strictly internal support types never print; directive
      * definitions and applications are survivor-only ({@link SchemaDirectiveRegistry});
      * assertions are structural (re-parse, then walk), not substring matches.
@@ -133,7 +133,7 @@ class SchemaSdlEmissionTest {
     }
 
     /**
-     * R292: the synthesised relay boilerplate for the directive-driven {@code stores: [Store!]!
+     * The synthesised relay boilerplate for the directive-driven {@code stores: [Store!]!
      * @asConnection} carrier carries the canonical graphql-relay-js descriptions, and they survive
      * the {@code SchemaPrinter} seam end to end onto the emitted {@code schema.graphqls}. Parsed
      * structurally (re-parse, then read the description off each type/field), not by substring
@@ -143,7 +143,7 @@ class SchemaSdlEmissionTest {
      * {@code QueryStoresEdge}). This fixture declares {@code PageInfo} structurally in SDL (shared
      * by the hand-written {@code FilmsConnection} / {@code ActorsConnection}), so the synthesis
      * path reuses the consumer-owned object and does not stamp a description on it; that is the
-     * R292 scope boundary. Synthesised-{@code PageInfo} descriptions are covered at the unit tier
+     * scope boundary. Synthesised-{@code PageInfo} descriptions are covered at the unit tier
      * by {@code ConnectionPromoterTest.directiveDrivenSynthesis_carriesRelayDescriptionsOnTypesAndFields},
      * whose fixture declares no PageInfo.
      */
@@ -178,7 +178,7 @@ class SchemaSdlEmissionTest {
     }
 
     /**
-     * R291 retention split across the fixtures: the shared fixture references
+     * Retention split across the fixtures: the shared fixture references
      * {@code SortDirection} from {@code FilmOrderBy} / {@code ActorOrderBy}, so the published
      * support type prints with its description; the federated and multischema fixtures
      * reference no support type, demonstrating the all-dropped case.

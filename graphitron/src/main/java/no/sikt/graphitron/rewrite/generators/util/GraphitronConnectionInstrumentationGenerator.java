@@ -10,7 +10,7 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
- * R429 slice 2 — emits {@code GraphitronConnectionInstrumentation}, the graphql-java
+ * Emits {@code GraphitronConnectionInstrumentation}, the graphql-java
  * {@link graphql.execution.instrumentation.Instrumentation} that owns the per-operation connection
  * lifecycle, into the consumer's {@code <outputPackage>.schema} package. Wired by the emitted engine
  * assembly ({@code GraphitronRuntime.newGraphQL(schema)}), so consumers register nothing.
@@ -18,7 +18,7 @@ import java.util.List;
  * <p>Emitted (not shipped as a graphitron artifact); bodies depend only on graphql-java, jOOQ, and
  * the JDK. Valid Java 17.
  *
- * <h2>The seam this closes (R190 revision)</h2>
+ * <h2>The seam this closes</h2>
  * On the escape-hatch path {@code Graphitron.newExecutionInput(dsl, ...)} publishes the per-request
  * {@code DSLContext} under the {@code DSLContext.class} {@code graphQLContext} key at factory time. On
  * the owned-connection path the <em>producer of that key moves here</em>: at operation start this
@@ -36,11 +36,11 @@ import java.util.List;
  *   <li>Bind a {@code DSLContext} to the pinned connection through
  *       {@link GraphitronTransactionProviderGenerator the custom TransactionProvider} and publish it
  *       under {@code DSLContext.class}.</li>
- *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit (R429 drops blanket
- *       read-only enforcement; the targeted successor is R460). <b>Mutation operations</b> let each
+ *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit (blanket
+ *       read-only enforcement is dropped; a targeted successor is planned). <b>Mutation operations</b> let each
  *       field's shipped {@code dsl.transactionResult(...)} be the per-field writable boundary through
  *       the provider: under {@code COMMIT} each field's transaction commits or rolls back
- *       independently; under {@code ROLLBACK_ONLY} (R428's dev mode) the provider's deferred
+ *       independently; under {@code ROLLBACK_ONLY} (the dev-execution mode) the provider's deferred
  *       observe-then-discard topology savepoint-scopes each field inside one operation transaction
  *       that release discards.</li>
  *   <li>On completion (success, error, cancellation) release the pinned connection (disconnect hook,

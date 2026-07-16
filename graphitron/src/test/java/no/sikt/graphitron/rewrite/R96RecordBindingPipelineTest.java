@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R96 pipeline-tier coverage: reflection-driven SDL → backing-class binding through the
+ * Pipeline-tier coverage: reflection-driven SDL → backing-class binding through the
  * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}.
  *
  * <p>Binding is reflection-only and {@code @record} is inert for it, so these fixtures carry
@@ -41,8 +41,8 @@ class R96RecordBindingPipelineTest {
     @Test
     void serviceListCarrier_bindsWrapperToJooqTableRecord() {
         // FilmListPayload is a plain SDL Object returned by a @service mutation whose method returns
-        // List<FilmRecord>. R276 unifies carriers on JooqTableRecordType: the wrapper binds to the
-        // element's table record (the R75 "wrapper does not bind" path is retired), and the inner
+        // List<FilmRecord>. Carriers unify on JooqTableRecordType: the wrapper binds to the
+        // element's table record (the earlier "wrapper does not bind" path is retired), and the inner
         // data field reads off it through the standard record-backed path.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }

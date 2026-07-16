@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * not part of this test's scope. The kind-level entries on the doc page describe how to read
  * those errors.
  *
- * <p>R68 Phase 5. Companion to {@code DirectiveDocCoverageTest} and {@code MojoDocCoverageTest};
+ * <p>Companion to {@code DirectiveDocCoverageTest} and {@code MojoDocCoverageTest};
  * same shape, scoped to the diagnostics surface rather than the SDL or Mojo surface.
  */
 @UnitTier

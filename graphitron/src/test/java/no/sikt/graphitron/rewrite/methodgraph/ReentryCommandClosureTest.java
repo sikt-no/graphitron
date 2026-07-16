@@ -24,8 +24,8 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R333 thread I, level 2 — the bidirectional closure oracle over the reentry family (R314 goal
- * 4). The level-1 oracle ({@link MethodClosureOracleTest}) proves every callee name resolves to
+ * The level-2 bidirectional closure oracle over the reentry family. The level-1 oracle
+ * ({@link MethodClosureOracleTest}) proves every callee name resolves to
  * an emitted method; this oracle adds the command direction: joining the run's committed
  * {@link MethodCommand} relation (surfaced on
  * {@code GraphQLRewriteGenerator.GenerationResult#methodCommands()}) against the same emit walk

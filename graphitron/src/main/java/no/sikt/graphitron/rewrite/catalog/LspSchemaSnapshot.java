@@ -175,7 +175,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             /**
              * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
              * populate the directive surface, type-backing, and payload-data-field projections.
-             * Fills the R160 classification projections and the R350 type-definition-location
+             * Fills the classification projections and the type-definition-location
              * map with empty maps.
              */
             public Current(
@@ -187,8 +187,8 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             }
 
             /**
-             * Convenience constructor for callers that populate the R160 classification
-             * projections but not the R350 type-definition-location map (the directive /
+             * Convenience constructor for callers that populate the classification
+             * projections but not the type-definition-location map (the directive /
              * classification fixtures predate goto-definition fallback).
              */
             public Current(
@@ -223,7 +223,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             /**
              * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
              * populate the directive surface, type-backing, and payload-data-field projections.
-             * Fills the R160 classification projections and the R350 type-definition-location
+             * Fills the classification projections and the type-definition-location
              * map with empty maps.
              */
             public Previous(
@@ -235,8 +235,8 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             }
 
             /**
-             * Convenience constructor for callers that populate the R160 classification
-             * projections but not the R350 type-definition-location map.
+             * Convenience constructor for callers that populate the classification
+             * projections but not the type-definition-location map.
              */
             public Previous(
                 List<DirectiveShape> directives,

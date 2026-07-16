@@ -60,7 +60,7 @@ import java.util.Optional;
  * {@link CompletionData.Reference}, but no source positions: the LSP joins those
  * FQNs against its own {@link SourceWalker.Index} at request time, so jOOQ
  * goto-definition / hover ride the {@code .java} source cadence rather than the
- * generator build cadence (R352, mirroring the service half R349 introduced).
+ * generator build cadence (mirroring the service half).
  * This builder does not walk sources at all: the {@code description} slots carry
  * the build-derivable fallback only (the table's SQL comment; empty for columns
  * and services), and the LSP overlays the source Javadoc when its index has it.
@@ -257,8 +257,8 @@ public final class CatalogBuilder {
             // pre-merge leaves produced, gated on the stored sourceShape — the LSP/MCP surface
             // and the @classified corpus observe no verdict change from the merge.
             case ChildField.BatchedTableField f -> {
-                // The @tableMethod-terminal shape (the dissolved RecordTableMethodField, R314
-                // slice 2b) keeps its TableMethod catalog surface: the projection reads the
+                // The @tableMethod-terminal shape (the dissolved RecordTableMethodField)
+                // keeps its TableMethod catalog surface: the projection reads the
                 // hop's TableExpr.MethodCall fact, not a leaf identity.
                 var methodTarget = f.joinPath().stream()
                     .filter(s -> s instanceof JoinStep.Hop h
@@ -350,7 +350,7 @@ public final class CatalogBuilder {
                     targetTableName(f.returnType()),
                     f.method() != null ? f.method().className() : null,
                     f.method() != null ? f.method().methodName() : null);
-            // R300 day-one: a @routine read is a root table sourced from a generated Routines-class
+            // A @routine read is a root table sourced from a generated Routines-class
             // method call, so it projects onto the method-backed QueryTableMethod classification
             // (className = the generated Routines class). A dedicated QueryRoutine classification is a
             // follow-up once the LSP label/hover surface is wired.
@@ -387,7 +387,7 @@ public final class CatalogBuilder {
                     null,
                     errorChannelName(f.errorChannel()));
             case QueryField.QueryServicePolymorphicField f ->
-                // R365 route (a): a @service field returning a multitable interface/union. The
+                // Route (a): a @service field returning a multitable interface/union. The
                 // @service nature is the salient hover fact; tableBound=false / tableName=null
                 // mirrors the record variant (the return is a polymorphic type, not a single @table).
                 new FieldClassification.QueryService(
@@ -408,7 +408,7 @@ public final class CatalogBuilder {
                     errorChannelName(f.errorChannel()));
 
             // --- MutationField permits ---
-            // Like the R300 routine read above, the routine write is a root table sourced
+            // Like the routine read above, the routine write is a root table sourced
             // from a generated Routines-class method call, so it projects onto the method-backed
             // QueryTableMethod classification (className = the generated Routines class; hover and
             // jump-to-source route to the routine's call surface). A dedicated routine
@@ -452,7 +452,7 @@ public final class CatalogBuilder {
                     null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationServicePolymorphicField f ->
-                // R365 route (a): mutation analogue of QueryServicePolymorphicField.
+                // Route (a): mutation analogue of QueryServicePolymorphicField.
                 new FieldClassification.MutationService(
                     f.serviceMethodCall().fqClassName(),
                     f.serviceMethodCall().methodName(),
@@ -608,7 +608,7 @@ public final class CatalogBuilder {
 
     /**
      * The LSP-facing projection surfaces an FK constraint name where the pairs derive from a
-     * catalog FK, and {@code null} for the R435 name-matched-key derivation (which has no
+     * catalog FK, and {@code null} for the name-matched-key derivation (which has no
      * constraint of its own) — the same shape as a condition or lateral step.
      */
     private static String fkSqlNameOrNull(no.sikt.graphitron.rewrite.model.On.ColumnPairs cp) {
@@ -731,7 +731,7 @@ public final class CatalogBuilder {
             case GraphitronType.NestingType ignored ->
                 new TypeClassification.PlainObject();
             // Synthesised facet container / value types. Projected as plain objects for now;
-            // a facet-specific classification leaf is R314's to mint when the connection unit
+            // a facet-specific classification leaf is deferred to when the connection unit
             // lowers onto the fact model.
             case GraphitronType.FacetsType ignored ->
                 new TypeClassification.PlainObject();

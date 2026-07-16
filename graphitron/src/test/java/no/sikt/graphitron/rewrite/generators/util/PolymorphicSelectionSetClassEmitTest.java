@@ -12,7 +12,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R108 emit-side pin for the {@code PolymorphicSelectionSet} helper class.
+ * Emit-side pin for the {@code PolymorphicSelectionSet} helper class.
  *
  * <p>The helper is emitted once per code-generation run via
  * {@link PolymorphicSelectionSetClassGenerator#generate()} and lands at

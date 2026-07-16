@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 
 /**
- * R61 execution-tier fixture: a custom Java record that wraps a single typed
+ * Execution-tier fixture: a custom Java record that wraps a single typed
  * {@link FilmRecord}. Used as the backing class for a {@code @record(record: {...})}
  * GraphQL type whose child field {@code film: Film} traverses through the canonical
  * {@code film()} accessor — the classifier auto-derives a
@@ -19,7 +19,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 public record FilmCardData(FilmRecord film) {
 
     /**
-     * R88 execution-tier hook: surfaces a {@link RecordExampleType} so the {@code example} field
+     * Execution-tier hook: surfaces a {@link RecordExampleType} so the {@code example} field
      * on the SDL {@code FilmCardWrapper} type exercises three accessor-resolution arms in one
      * fixture. Same instance per call — the fixture covers the resolution + emit path, not
      * value identity.

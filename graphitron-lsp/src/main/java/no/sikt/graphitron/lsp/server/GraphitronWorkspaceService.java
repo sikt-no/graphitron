@@ -11,7 +11,7 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 import java.util.List;
 
 /**
- * Workspace-level notifications. R160 wires
+ * Workspace-level notifications. Wires
  * {@link #didChangeConfiguration(DidChangeConfigurationParams)} to refresh the
  * client's {@link InlayHintConfig} toggles on the workspace so the inlay-hint
  * provider sees the new state on the next request.
@@ -47,7 +47,7 @@ public class GraphitronWorkspaceService implements WorkspaceService {
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {}
 
     /**
-     * R160 — applies the response to the initialisation-time {@code workspace/configuration}
+     * Applies the response to the initialisation-time {@code workspace/configuration}
      * pull. The {@code results} list is one entry per {@code ConfigurationItem} requested
      * (today: a single {@code graphitron} section), each a Gson {@link JsonElement} carrying
      * the value at that path. A null entry, a missing {@code graphitron} object, or a request
@@ -70,7 +70,7 @@ public class GraphitronWorkspaceService implements WorkspaceService {
     }
 
     /**
-     * Pulls the three R160 toggles off a {@code workspace/didChangeConfiguration}
+     * Pulls the three toggles off a {@code workspace/didChangeConfiguration}
      * settings payload. lsp4j wires the raw JSON through Gson so the value comes in
      * as a {@link JsonElement}; we walk down through {@code graphitron.inlayHints.*}
      * and {@code graphitron.hover.*} keys defensively (any layer missing reverts to

@@ -12,7 +12,7 @@ import java.util.Objects;
  * sparse-Record projection ({@link Record}) and typed jOOQ {@code TableRecord} subclass
  * ({@link TableRecord}) into "same class."
  *
- * <p>R204 / R279 slice 4: the builder's group-by step over the classified field registry compares
+ * <p>The builder's group-by step over the classified field registry compares
  * {@code domainReturnType()} values by sealed-arm structural equality (record equality on the
  * arm's components). Two producers of the same SDL return type with disagreeing
  * {@code DomainReturnType} are recorded as a
@@ -70,7 +70,7 @@ public sealed interface DomainReturnType
      * An explicit Java type with no jOOQ surface. {@link TypeName} (not {@link Class}) so the
      * validator does not classload to compute equality; arm equality is {@code TypeName} string
      * equality (a bare FQN for a {@link ClassName} scalar, {@code Foo[]} for an
-     * {@link no.sikt.graphitron.javapoet.ArrayTypeName} column type — R446). Widened from
+     * {@link no.sikt.graphitron.javapoet.ArrayTypeName} column type). Widened from
      * {@code ClassName} so array-typed column scalars carry their real type rather than crashing
      * {@code ClassName.bestGuess}.
      */

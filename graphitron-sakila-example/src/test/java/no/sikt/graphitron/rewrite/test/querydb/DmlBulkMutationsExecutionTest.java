@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R77 Phase F execution-tier coverage for bulk DML mutations against PostgreSQL.
+ * Execution-tier coverage for bulk DML mutations against PostgreSQL.
  * Each verb's bulk arm (INSERT/UPDATE/UPSERT/DELETE) is exercised end-to-end via
  * the {@code createFilms} / {@code updateFilms} / {@code upsertFilms} /
  * {@code deleteFilms} Mutation fields wired in the Sakila schema, plus the
@@ -188,7 +188,7 @@ class DmlBulkMutationsExecutionTest {
     void upsertFilms_writesNRowsAndReturnsProjectedListAcrossBothBranches() {
         // Mixes INSERT branch (novel filmId) and UPDATE branch (pre-existing filmId)
         // in a single bulk call. Single dispatched statement; `valuesOfRows`
-        // followed by `.onConflict(filmId).doUpdate().set(...)` per Phase E5.
+        // followed by `.onConflict(filmId).doUpdate().set(...)`.
         int novelId = 999_101;
         deleteFilmById(novelId); // pre-clean
         String existingMarker = randomMarker("R77F-UPSERT-EXISTING");
@@ -257,7 +257,7 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void createFilms_omittedFieldUsesColumnDefault() {
         // Per-cell containsKey dispatch: omitted rentalDuration binds DSL.defaultValue
-        // (the smallint NOT NULL DEFAULT 3 lands). Pre-R77 the emitter wrote typed null
+        // (the smallint NOT NULL DEFAULT 3 lands). Previously the emitter wrote typed null
         // unconditionally and would have surfaced an integrity-constraint violation.
         String m1 = randomMarker("R77F-INS-DEF-A");
         String m2 = randomMarker("R77F-INS-DEF-B");
@@ -389,7 +389,7 @@ class DmlBulkMutationsExecutionTest {
         // UPDATE branch (existing filmIds). The dynamic doUpdate SET walks firstKeys
         // and binds DSL.excluded(col) only for present keys. rentalDuration is omitted
         // from the input, so it drops out of DO UPDATE SET entirely; existing value (7)
-        // survives. Pre-R77, naive `c = EXCLUDED.c` for every setFields entry would
+        // survives. Previously, naive `c = EXCLUDED.c` for every setFields entry would
         // have overwritten with EXCLUDED.rental_duration which (because the INSERT
         // branch's value cell is DEFAULT) resolves to 3 — silent data loss.
         String origTitle1 = randomMarker("R77F-UPS-UPD-A");
@@ -569,7 +569,7 @@ class DmlBulkMutationsExecutionTest {
         assertThat(QUERY_COUNT.get()).isZero();
     }
 
-    // ===== R141 bulk-input single-payload-carrier list-data-field DML mutations =====
+    // ===== bulk-input single-payload-carrier list-data-field DML mutations =====
     //
     // createFilmsPayload / updateFilmsPayload return FilmsPayload { films: [Film!] } — a single
     // carrier wrapping a list-shaped @table-element data field. The classifier routes the
@@ -639,7 +639,7 @@ class DmlBulkMutationsExecutionTest {
     void bulkUpdateWithThreeRowsInNonPkOrderPreservesInputOrderInResponse() {
         // UPDATE variant of the order-preservation test, exercising the per-row UPDATE emit
         // path. Filter columns are sourced via tableInputArg.fieldBindings() (the
-        // polarity-agnostic surface R141 reads, ahead of R144's polarity flip). Three inputs
+        // polarity-agnostic surface, read ahead of the polarity flip). Three inputs
         // whose filmIds are deliberately not in ascending order; assert the response list is
         // in input order.
         String mA = randomMarker("R141-UPDATE-A");
@@ -673,7 +673,7 @@ class DmlBulkMutationsExecutionTest {
         }
     }
 
-    // ===== R130 composite-PK @nodeId-decoded @lookupKey on DML inputs =====
+    // ===== composite-PK @nodeId-decoded @lookupKey on DML inputs =====
     //
     // Headline forcing-function execution proof: composite-PK DELETE keyed by an opaque
     // NodeId on a @table input field. The single-row path drives
@@ -681,8 +681,8 @@ class DmlBulkMutationsExecutionTest {
     // local lifted to postInGuard with ThrowOnMismatch null handling, N positional
     // value<i>() reads into a chained .eq predicate). The bulk path drives
     // buildBulkLookupRowIn's block-lambda form (decode call lifted inside the stream
-    // lambda body). These are the load-bearing emitter paths admitted by R130;
-    // pre-R130 the classifier rejected the shape outright.
+    // lambda body). These are the load-bearing emitter paths for this shape;
+    // previously the classifier rejected the shape outright.
 
     private void seedFilmActor(int actorId, int filmId) {
         dsl.insertInto(DSL.table("film_actor"))
@@ -760,7 +760,7 @@ class DmlBulkMutationsExecutionTest {
         // buildInsertDecodeLocals (one preGuard decode local per NodeId-bearing
         // carrier) plus buildPerCellValueList's NodeIdDecodeKeys arm
         // (`__insertKey_<fi>.value1()` read into the values cell). Classifies as
-        // ColumnField with NodeIdDecodeKeys extraction; before R130 the
+        // ColumnField with NodeIdDecodeKeys extraction; previously the
         // MutationInputResolver rejected this carrier outright.
         String rowKey = "R130-INSERT-" + UUID.randomUUID();
         String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", rowKey);
@@ -827,11 +827,11 @@ class DmlBulkMutationsExecutionTest {
         }
     }
 
-    // ===== R144: multiRow DELETE broadcast =====
+    // ===== multiRow DELETE broadcast =====
 
     @Test
     void deleteFilmsByReleaseYear_multiRowBroadcastsAcrossInputCardinality() {
-        // R144 end-to-end proof of the multiRow opt-out. The mutation declares
+        // End-to-end proof of the multiRow opt-out. The mutation declares
         // `@mutation(typeName: DELETE, multiRow: true)` and filters on release_year
         // (non-PK). With three pre-inserted rows sharing one release_year, a single
         // input row deletes all three — |affected rows| > |input rows| is the
@@ -875,15 +875,15 @@ class DmlBulkMutationsExecutionTest {
             .fetchOne().value1();
     }
 
-    // ===== R156 / R287: payload-returning DELETE (ID-typed carrier shape) =====
+    // ===== payload-returning DELETE (ID-typed carrier shape) =====
     //
     // deleteFilmsIdCarrier returns DeletedFilmsIdPayload { deletedIds: [ID!] }, where the
     // carrier's data field classifies as ChildField.SingleRecordIdFieldFromReturning carrying
     // the per-Film NodeId encoder. The fetcher emits `(env) -> { for r in source: __ids.add(
     // encodeFilm(r.get(...))) }`, producing the list of encoded PKs in input order. This is the
     // deletion-safe carrier shape: the PK comes straight off the RETURNING record, no follow-up
-    // read against the gone row. (R287 removed the @table-element DELETE carrier and its execution
-    // proof — a full @table projection off a deleted row is impossible.)
+    // read against the gone row. (The @table-element DELETE carrier and its execution proof were
+    // removed: a full @table projection off a deleted row is impossible.)
 
     @Test
     void deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows() {
@@ -915,15 +915,15 @@ class DmlBulkMutationsExecutionTest {
         }
     }
 
-    // ===== R266: UK-covering single-row DELETE =====
+    // ===== UK-covering single-row DELETE =====
     //
     // storage_bin is the one public-schema table with a UNIQUE constraint (`code`) distinct from
     // its `bin_id` PK. deleteStorageBinByCode covers `code` only, so the DeleteRowsWalker's
     // PK-or-UK match lands on the UniqueKey arm rather than the PK — the UK-covering single-row
     // delete every other Sakila DELETE fixture (all PK-keyed) leaves unproven at execution tier.
     // The emitted statement is `DELETE FROM storage_bin WHERE code = ? RETURNING bin_id`, and the
-    // `: ID` return encodes the matched bin_id as a StorageBin NodeId. R246 deferred the UK
-    // execution case for UPDATE; this is the DELETE-side proof.
+    // `: ID` return encodes the matched bin_id as a StorageBin NodeId. The UK execution case for
+    // UPDATE is deferred; this is the DELETE-side proof.
 
     private int insertStorageBin(String code, String label) {
         return dsl.insertInto(DSL.table("storage_bin"))

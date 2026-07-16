@@ -36,8 +36,8 @@ public final class ArgCallEmitter {
      * jOOQ table-alias local variable in the caller's scope (e.g. {@code filmTable}),
      * passed through to {@link #buildArgExtraction} so the {@code JooqConvert} branch
      * resolves the same local. {@code conditionsClassName} is retained on the signature
-     * but no current extraction arm reads it (R229 retired the {@code TextMapLookup}
-     * arm that did).
+     * but no current extraction arm reads it (the {@code TextMapLookup} arm that once
+     * did has been retired).
      */
     public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params, String conditionsClassName, String srcAlias) {
         return buildCallArgs(ctx, params, conditionsClassName, srcAlias, null, null);
@@ -116,7 +116,7 @@ public final class ArgCallEmitter {
      *   <li>{@link ParamSource.DslContext} — literal {@code dsl}; the per-leaf fetcher
      *       declares the local before calling this helper.</li>
      *   <li>{@link ParamSource.Table} — never reached by {@code @service}/{@code @tableMethod}
-     *       emission. After R43 {@code @tableMethod} methods declare no Table parameter and
+     *       emission. {@code @tableMethod} methods declare no Table parameter and
      *       {@code @service} methods never had one. The slot stays on {@link ParamSource} for
      *       {@code @condition}, whose emission lives in {@link no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator}
      *       (not this helper). Callers pass {@code null} for {@code tableExpression}; if a Table
@@ -128,12 +128,12 @@ public final class ArgCallEmitter {
      * </ul>
      *
      * @param method            the developer method to call.
-     * @param tableExpression   legacy slot; after R43 every caller passes {@code null} (neither
+     * @param tableExpression   legacy slot; every caller passes {@code null} (neither
      *                          {@code @service} nor {@code @tableMethod} methods declare a Table
      *                          parameter). Retained so a leaked {@link ParamSource.Table} surfaces
      *                          as a clear {@link IllegalStateException} rather than a NPE.
      * @param conditionsClassName  retained on the signature; no current extraction arm reads it
-     *                             (R229 retired the {@code TextMapLookup} arm that did).
+     *                             (the {@code TextMapLookup} arm that once did has been retired).
      */
     public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
         return buildMethodBackedCallArgs(ctx, method, tableExpression, null, conditionsClassName);
@@ -299,8 +299,9 @@ public final class ArgCallEmitter {
     /**
  * Source-aware variant; see
      * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry, Map, ArgumentValueSource)}.
-     * Each arm's {@link ArgumentValueSource.Env} branch is byte-identical to the pre-R424 output, so
-     * every root/{@code @splitQuery} site (which passes {@code Env}) is unchanged.
+     * Each arm's {@link ArgumentValueSource.Env} branch is byte-identical to the output before the
+     * source-aware split was introduced, so every root/{@code @splitQuery} site (which passes
+     * {@code Env}) is unchanged.
      */
     public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
             String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry,
@@ -342,7 +343,7 @@ public final class ArgCallEmitter {
             // Coerce the wire value through the column's DataType and its registered Converter via
             // DSL.val(Object, DataType<T>).getValue() — the non-deprecated replacement for
             // DataType.convert(Object), which is @Deprecated(forRemoval = true) in jOOQ 3.20 and
-            // would fail the consumer's -Xlint:all -Werror compile (R384 phase a; R267 rule: fix a
+            // would fail the consumer's -Xlint:all -Werror compile (the rule: fix a
             // deprecation-for-removal at the source, never suppress). val coerces eagerly, so
             // getValue() yields the column's Java type with any custom converter applied; null in,
             // null out. The list form reads the shared <name>Keys local the enclosing generator
@@ -385,7 +386,7 @@ public final class ArgCallEmitter {
     /**
      * The uncast runtime argument-value read expression for {@code name} under {@code source}:
      * {@code env.getArgument(name)} for {@link ArgumentValueSource.Env} (byte-identical to the
-     * pre-R424 form) or {@code <sf>.getArguments().get(name)} for
+     * form used before the source-aware split) or {@code <sf>.getArguments().get(name)} for
      * {@link ArgumentValueSource.FromSelectedField}. Callers that need a cast wrap the result.
      */
     private static CodeBlock argValueRead(ArgumentValueSource source, String name) {
@@ -451,7 +452,7 @@ public final class ArgCallEmitter {
      * class. The helper itself is emitted separately by
      * {@link InputBeanInstantiationEmitter#buildSingularHelper} (and plural variant); this method
      * only emits the call expression. The helper name follows the
-     * {@code create<TypeName>} / {@code create<TypeName>List} convention from R150.
+     * {@code create<TypeName>} / {@code create<TypeName>List} convention.
      */
     private static CodeBlock buildInputBeanCallExtraction(CallSiteExtraction.InputBean ib,
             String argName, boolean list) {
@@ -463,9 +464,9 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * R311 sibling of {@link #buildInputBeanCallExtraction} for a jOOQ {@code TableRecord} param: emits
+     * Sibling of {@link #buildInputBeanCallExtraction} for a jOOQ {@code TableRecord} param: emits
      * the {@code create<Record>} / {@code create<Record>List} call (the helper itself is emitted by
-     * {@code JooqRecordInstantiationEmitter}). R437 resolves the helper name through the class-level
+     * {@code JooqRecordInstantiationEmitter}). The helper name resolves through the class-level
      * {@link JooqRecordHelperNames} on {@code ctx} — keyed by this carrier's binding shape, not the record
      * class — so this child-coordinate call routes to the same helper the drain emitted for its shape (and
      * distinctly from a sibling field binding the same record through a different shape). The helper picks
@@ -533,9 +534,9 @@ public final class ArgCallEmitter {
             // CompositeDecodeHelperRegistry and drains it onto the class hosting the call site:
             // QueryConditionsGenerator (<Root>Conditions) for the single-table shim layer, and the
             // <Type>Fetchers collectInto bracket for the fetcher-inline sites (split/lookup rows
-            // methods; the multitable branch path, R384 phase b). A registry-less call site
+            // methods; the multitable branch path). A registry-less call site
             // reaching a decode is a wiring bug: there would be nowhere to emit the lifted helper.
-            // Fail loudly rather than fall back to the inline expression-trick form R260 removed.
+            // Fail loudly rather than fall back to the retired inline expression-trick form.
             throw new IllegalStateException(
                 "NodeId-decode extraction must be lifted into a per-class decode helper, which requires a "
                 + "CompositeDecodeHelperRegistry; none was supplied for decode '" + decode.methodName()
@@ -614,7 +615,7 @@ public final class ArgCallEmitter {
             return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf,
                 list, registry);
         }
-        // A JooqConvert leaf (a nested [ID!]/ID @field over a converted column, R384 phase a)
+        // A JooqConvert leaf (a nested [ID!]/ID @field over a converted column)
         // coerces the traversal result through the column's DataType, mirroring the top-level
         // JooqConvert arm's DSL.val(...).getValue() form. The scalar form needs no null guard
         // (val takes Object; null in, null out); the list form guards with an instanceof List

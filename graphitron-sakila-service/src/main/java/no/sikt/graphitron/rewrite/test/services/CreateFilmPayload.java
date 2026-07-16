@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 /**
- * R110 fixture: a free-form (non-table-backed) {@code @record} payload type used by
+ * Fixture: a free-form (non-table-backed) {@code @record} payload type used by
  * {@code MutationPayloadLifterTest} to exercise the {@code @sourceRow} directive (leaf-PK
  * arm) end-to-end.
  *

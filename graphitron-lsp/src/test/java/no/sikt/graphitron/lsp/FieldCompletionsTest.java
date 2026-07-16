@@ -124,7 +124,7 @@ class FieldCompletionsTest {
     }
 
     /**
-     * R100 — {@code @node(keyColumns:)} reuses
+     * {@code @node(keyColumns:)} reuses
      * {@link no.sikt.graphitron.lsp.parsing.Behavior.CatalogColumnBinding}
      * via an overlay-delta entry. The candidate set is the columns of the
      * enclosing type's {@code @table}; cursor inside a list-element string
@@ -234,7 +234,7 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
-    // ===== R159 — $source sigil completion =====
+    // ===== $source sigil completion =====
 
     @Test
     void sourceSigil_atCarrierDataField_isSuggested() {
@@ -308,14 +308,14 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
-    // ===== R233 — @field(name:) on @reference path field completes terminal-table columns =====
+    // ===== @field(name:) on @reference path field completes terminal-table columns =====
 
     @Test
     void inputTableWithReferencePathCompletesTerminalTableColumns() {
-        // The enclosing @table is "FILM"; the @reference path navigates to "LANGUAGE". Pre-R233
+        // The enclosing @table is "FILM"; the @reference path navigates to "LANGUAGE". Previously
         // the completion dropdown listed FILM's columns (FILM_ID / TITLE) which are not
-        // reachable through this field; R233 routes through FieldClassification.lspColumnDispatch()
-        // and emits LANGUAGE's columns instead.
+        // reachable through this field; the dispatch now routes through
+        // FieldClassification.lspColumnDispatch() and emits LANGUAGE's columns instead.
         String source = """
             input FilmInput @table(name: "FILM") {
                 languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
@@ -396,13 +396,13 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
-    // ===== R331 — @field(name:) on a @table-interface participant cross-table reference =====
+    // ===== @field(name:) on a @table-interface participant cross-table reference =====
     //              completes the @reference terminal-table columns, not the participant's @table
 
     @Test
     void participantCrossTableReferenceCompletesTerminalTableColumns() {
         // The enclosing @table is "FILM" (the participant table); the field reaches the terminal
-        // table "LANGUAGE" via a ParticipantCrossTable classification. Pre-R331 the dropdown
+        // table "LANGUAGE" via a ParticipantCrossTable classification. Previously the dropdown
         // listed FILM's columns; routing ParticipantCrossTable through lspColumnDispatch() emits
         // LANGUAGE's columns instead.
         String source = """
@@ -430,7 +430,7 @@ class FieldCompletionsTest {
             .doesNotContain("FILM_ID", "TITLE");
     }
 
-    // ===== R343 — @defaultOrder(fields: [{name:}]) completes the element-table columns =====
+    // ===== @defaultOrder(fields: [{name:}]) completes the element-table columns =====
     //              (the list/connection field's target table), not the enclosing type's @table.
 
     @Test

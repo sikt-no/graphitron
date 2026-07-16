@@ -10,7 +10,7 @@ import java.util.List;
  * <p>"Group the writers of a record / SET clause by backing column; a column with two or more
  * writers is an overlap; an all-plain overlap is a build-time reject and a decode-involving one
  * needs a runtime value-agreement check" was hand-rolled in six places, accreted one per write
- * surface as R322 / R354 / R342 closed the agreement gap (see the R356 spec). This is the one
+ * surface as the agreement gap was closed across the write surfaces. This is the one
  * grouping those six now read. The grouping is a pure structural fold over already-resolved
  * {@link ColumnRef#sqlName()} values, so it is a shared <em>function</em> invoked at each site, not
  * a fact stored on a carrier: the {@code @mutation} validator runs at resolution time, before the
@@ -69,7 +69,7 @@ public final class ColumnOverlap {
      * One backing column with its ordered contributing writers. {@code shared()} when two or more
      * writers land on it (the dedup + agreement case); {@code allPlain()} when no contributor is a
      * decode (the validator's build-time reject when also shared). Generalizes {@code InsertCol} and
-     * R342's near-identical clone {@code SetCol}.
+     * its near-identical clone {@code SetCol}.
      */
     public record OverlapColumn(ColumnRef column, List<Contributor> contributors) {
         public boolean shared() { return contributors.size() >= 2; }

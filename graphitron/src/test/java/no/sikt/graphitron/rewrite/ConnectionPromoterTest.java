@@ -297,7 +297,7 @@ class ConnectionPromoterTest {
         assertThat(rebuilt).isSameAs(bctx.schema);
     }
 
-    // ---- R295: federation @tag inheritance on synthesised connection types ----
+    // ---- federation @tag inheritance on synthesised connection types ----
 
     private static final String TAG_DIRECTIVE_DECL =
         "directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT\n";
@@ -423,7 +423,7 @@ class ConnectionPromoterTest {
         assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("author");
     }
 
-    // ===== R13: @asFacet synthesis =====
+    // ===== @asFacet synthesis =====
 
     @Test
     void asFacetOnFilterInput_synthesisesFacetSpecsAndTypes() {

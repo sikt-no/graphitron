@@ -75,7 +75,7 @@ class QueryUnionFieldValidationTest {
 
     @Test
     void rejects_sameTableParticipantsWithoutDiscriminator() {
-        // R365 discriminability floor, union arm: two members backed by the same table share a
+        // Discriminability floor, union arm: two members backed by the same table share a
         // recordClass and cannot be told apart from a returned record's Java type without a
         // @discriminator. The shared validateMultiTableParticipants helper rejects it here too.
         var participants = List.<ParticipantRef>of(

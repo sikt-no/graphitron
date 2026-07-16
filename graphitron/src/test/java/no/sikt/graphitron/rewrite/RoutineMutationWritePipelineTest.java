@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier pin of the routine-write fetcher's two-step shape — the routine call
  * inside {@code dsl.transactionResult(...)} (the commit boundary), the chain's follow-up SELECT
  * outside it. Without this pin, a regression to a single-statement emission (the routine joined
- * into the response SELECT, as the R435 read chain renders) would compile clean and even pass a
- * happy-path round trip, but defeat the item's pinned contract: the routine call is the write and
+ * into the response SELECT, as the read chain renders) would compile clean and even pass a
+ * happy-path round trip, but defeat the pinned contract: the routine call is the write and
  * commits before the follow-up query, so the response always observes committed state.
  *
  * <p>Like {@code SingleRecordPayloadPipelineTest.directReturn_dmlFetcher_emitsTwoStepShape}, the

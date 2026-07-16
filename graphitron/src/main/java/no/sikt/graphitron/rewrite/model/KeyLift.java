@@ -7,22 +7,22 @@ import java.util.Objects;
  * DataLoader batch key off the parent's held object. The mechanism only — with nothing about
  * where the key points (the leaf's {@code returnType.table()} / {@link ParentCorrelation}) or
  * what backing the parent has (the leaf's stored {@link SourceShape}; for class-backed parents,
- * the enclosing {@link GraphitronType.ResultType}). R431: these are the four live arms of the
+ * the enclosing {@link GraphitronType.ResultType}). These are the four live arms of the
  * retired seven-arm {@code SourceKey.Reader}, whose service arms duplicated the producer's
  * {@link MethodRef} signature and whose {@code ResultRowWalk} arm dissolved into the
  * {@link ChildField.SingleRecordIdField} leaf plus the first-class {@link SourceEnvelope}.
- * R432 made the axis total on the merged batched leaves: a total {@code lift} removes an
+ * The axis is total on the merged batched leaves: a total {@code lift} removes an
  * absence case and tells no lie — a table-parent {@code @splitQuery} field genuinely lifts by
  * column projection ({@link FkColumns}), the same mechanism a record-backed result parent uses.
  *
- * <p>Carried by {@link ChildField.BatchedTableField} (total since R432; the Table-sourced arm
+ * <p>Carried by {@link ChildField.BatchedTableField} (now total; the Table-sourced arm
  * always carries {@link FkColumns}), {@link ChildField.BatchedLookupTableField} (same gate),
  * and (as {@code parentKeyLift}) the polymorphic
  * {@link ChildField.InterfaceField} / {@link ChildField.UnionField}. Dispatched exhaustively by
  * {@code GeneratorUtils.buildRecordParentKeyExtraction} on the record-sourced paths; the
  * Table-sourced emit path stays wrap-driven ({@code GeneratorUtils.buildKeyExtraction} against
  * the parent's own table row), so the Table arm's stored {@link FkColumns} is consumed only by
- * the constructor's {@link #checkResidueAgreement}: R314's unified fetcher
+ * the constructor's {@link #checkResidueAgreement}: the unified fetcher
  * ({@code TypeFetcherGenerator.buildBatchedDataFetcher}) landed and deliberately kept the Table
  * arm's key read wrap-driven (one switch on the stored source shape; re-deriving the read
  * through the lift would have been a second spelling of the same projection), so the stored arm
@@ -44,7 +44,7 @@ public sealed interface KeyLift {
      * The key tuple is projected off the held jOOQ record by column, packaged as a
      * {@code RowN<...>} key via {@code DSL.row(...)}. The mechanism, not the provenance: on a
      * Table-sourced batched leaf the held record is the parent's own table row (the
-     * {@code @splitQuery} shape, R432); on a record-backed result parent it is the producer's
+     * {@code @splitQuery} shape); on a record-backed result parent it is the producer's
      * record (catalog-FK columns, or sql-name / accessor reads per the enclosing
      * {@link GraphitronType.ResultType}). Also the polymorphic Row arm, where the parent IS the
      * source and the key is its PK tuple.

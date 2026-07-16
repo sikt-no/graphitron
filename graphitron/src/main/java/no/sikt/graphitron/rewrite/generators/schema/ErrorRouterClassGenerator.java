@@ -164,10 +164,10 @@ public final class ErrorRouterClassGenerator {
      * {@code GraphitronClientException} and redacting everything else, as
      * {@code ErrorRouter.surfaceClientErrorOrRedact(<throwableVar>, env)}. All four no-channel
      * emit sites consult this helper: the sync catch arms and the async {@code .exceptionally}
-     * arms of both {@code TypeFetcherGenerator} and {@code MultiTablePolymorphicEmitter}. R378
-     * flipped only the sync arms, leaving the async arms on plain {@code redact} until R415;
-     * centralising the call here makes the next disposition change one edit instead of a
-     * four-site coordination.
+     * arms of both {@code TypeFetcherGenerator} and {@code MultiTablePolymorphicEmitter}. The
+     * sync arms were flipped to client-error surfacing before the async arms, which stayed on
+     * plain {@code redact} until the disposition was unified; centralising the call here makes
+     * the next disposition change one edit instead of a four-site coordination.
      */
     public static CodeBlock noChannelRouterCall(String outputPackage, String throwableVar) {
         return CodeBlock.of("$T.surfaceClientErrorOrRedact($L, env)",

@@ -13,7 +13,7 @@ import java.util.List;
  * by a {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
  * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
  * predicate}). Every {@code @reference}-parsed step is a {@code Hop}, and {@code @reference}
- * parsing is the only {@code JoinStep} producer (R431: the transitional {@code LiftedHop}
+ * parsing is the only {@code JoinStep} producer (the transitional {@code LiftedHop}
  * permit — the pre-keyed lifter / accessor / re-fetch shape — moved to the hop-less
  * {@link ParentCorrelation.OnLiftedSlots} correlation arm; its slots were source-side key
  * provenance, never a join step). How a {@link Hop} joins is a sealed dispatch on
@@ -91,7 +91,7 @@ public sealed interface JoinStep permits JoinStep.Hop {
      * enters <em>from</em>: the parent table for hop 0, the previous hop's target for subsequent
      * hops. Denormalized (it duplicates the previous step's target / the source table) and kept
      * mechanically because consumers read it pre-resolved; deleting it in favor of a
-     * path-position derivation is homed in R431. {@code null} when the source is not
+     * path-position derivation is a deferred simplification. {@code null} when the source is not
      * table-backed or the jOOQ catalog is unavailable (unit tests).
      *
      * <p>{@code filter} is an optional per-hop filter appended to the enclosing SELECT's WHERE —

@@ -25,8 +25,8 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *       is a jOOQ {@code Field} — the previous node's aliased column for column-sourced
  *       bindings, {@code DSL.val(<typed read>)} for value-sourced ones. jOOQ's TVF codegen
  *       exposes no {@code Parameter} constants, so the correlated value-arg binding rides the
- *       Java-typed read rather than a two-arg {@code DSL.val(v, dataType)}; the enum/ID-as-
- *       String coercion residue this shares with the root slice is recorded on R435.</li>
+ *       Java-typed read rather than a two-arg {@code DSL.val(v, dataType)}; this shares the
+ *       enum/ID-as-String coercion residue with the root slice.</li>
  * </ul>
  */
 public final class RoutineCallEmitter {
@@ -41,7 +41,7 @@ public final class RoutineCallEmitter {
      *                     chain node's columns — a typed alias in scope, or the batched form's
      *                     {@code parentInput} field lookup (the {@link PreviousNodeRef} fork)
      * @param argSource    where {@link ParamSource.Arg} bindings read their runtime
-     *                     values (R424's env-vs-SelectedField fork)
+     *                     values (the env-vs-SelectedField fork)
      */
     public static CodeBlock emitCall(TableExpr.RoutineCall rc, PreviousNodeRef previousNode,
             ArgumentValueSource argSource) {
@@ -74,7 +74,7 @@ public final class RoutineCallEmitter {
                         pif.valuesLocal(), sc.column().sqlName(),
                         pif.ownerTable().constantsClass(), pif.ownerTable().javaFieldName(),
                         sc.column().javaName());
-                // Classifier-unreachable (R449 D5): a SourceColumn binding reads the previous
+                // Classifier-unreachable: a SourceColumn binding reads the previous
                 // chain node's column, but a None head has no previous node. The root chain pins
                 // every start binding to ParamSource.Arg (QueryRoutineTableField's compact
                 // constructor; RoutineDirectiveResolver rejects columnMapping at root), so this

@@ -131,7 +131,7 @@ class ErrorMappingsClassGeneratorTest {
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
         var init = spec.fieldSpecs().get(0).initializer().toString();
-        // R12 source-direct: ExceptionMapping(IllegalArgumentException.class, matches, description).
+        // Source-direct emission: ExceptionMapping(IllegalArgumentException.class, matches, description).
         // No per-mapping factory: the matched throwable goes into the errors list directly.
         assertThat(init).contains("ExceptionMapping");
         assertThat(init).contains("IllegalArgumentException.class");
@@ -235,7 +235,7 @@ class ErrorMappingsClassGeneratorTest {
 
     @Test
     void emits_handlerForErrorTypeMissingClassFqn() {
-        // R12 source-direct dispatch: an @error type without a backing class still emits its
+        // Source-direct dispatch: an @error type without a backing class still emits its
         // handlers. Per §2c there is no developer-supplied @error data class: the matched
         // exception itself goes into the errors list, so the absence of a Java class on the
         // SDL @error side is no longer a reason to drop a Mapping.
@@ -257,7 +257,7 @@ class ErrorMappingsClassGeneratorTest {
 
     private static ErrorType errorType(String name, String classFqn, List<ErrorType.Handler> handlers) {
         // classFqn retained as a parameter for call-site signature stability while step-3 dust
-        // settles; under R12 source-direct dispatch the developer-supplied @error data class
+        // settles; under source-direct dispatch the developer-supplied @error data class
         // is gone and the value is ignored. Future cleanups can drop the param entirely.
         return new ErrorType(name, null, handlers, List.of());
     }

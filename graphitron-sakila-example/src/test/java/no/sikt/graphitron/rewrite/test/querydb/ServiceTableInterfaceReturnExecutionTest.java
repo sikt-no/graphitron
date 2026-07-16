@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R405 execution tier: a {@code @service} field returning a single-table discriminated interface
+ * Execution tier: a {@code @service} field returning a single-table discriminated interface
  * ({@code Content}: shared {@code content} table, {@code CONTENT_TYPE} discriminator, {@code FilmContent}
  * / {@code ShortContent} subtypes). Proves the single-table service path end-to-end: the service hands
  * back PK-only {@code ContentRecord}s (whose runtime class is always {@code ContentRecord}, so a route

@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R446 validation decision: an array-typed column used as a <em>key element</em> must be rejected
+ * Validation decision: an array-typed column used as a <em>key element</em> must be rejected
  * at {@code validate} time rather than emitted. Ordinary (non-key) array columns flow through the
  * type-lift and generate fine (pinned by {@link ArrayColumnCodegenPipelineTest}); the key sites are
  * different because Java arrays have reference-identity {@code equals}/{@code hashCode}, so an array

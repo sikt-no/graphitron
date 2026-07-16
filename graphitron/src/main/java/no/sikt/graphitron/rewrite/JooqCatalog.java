@@ -166,8 +166,8 @@ public class JooqCatalog {
     }
 
     /**
-     * Resolves a {@code @routine(name:)} value against the catalog as a table-valued read function
-     * (R300 day-one). jOOQ models such a function as a first-class catalog {@code Table<R>} tagged
+     * Resolves a {@code @routine(name:)} value against the catalog as a table-valued read function.
+     * jOOQ models such a function as a first-class catalog {@code Table<R>} tagged
      * {@code TableOptions.function()}, plus a convenience method on the schema's global
      * {@code Routines} class that returns the configured table for use in {@code FROM}. This resolves
      * both: the result table (so the caller binds the existing {@code @table} return-type machinery)
@@ -180,7 +180,7 @@ public class JooqCatalog {
      *       convenience method was found.</li>
      *   <li>{@link RoutineResolution.NonTableValuedRoutine} — the name resolves to no table, but a
      *       generated routine class by that name exists in a schema's {@code routines} sub-package:
-     *       a procedure or a scalar / void function (R451; these carry a typed {@code Deferred}
+     *       a procedure or a scalar / void function (these carry a typed {@code Deferred}
      *       signposting the non-table-valued call surface's follow-up item).</li>
      *   <li>{@link RoutineResolution.NotInCatalog} — the name resolves to no table and no generated
      *       routine at all: genuinely absent (a typo gets this structural rejection).</li>
@@ -234,7 +234,7 @@ public class JooqCatalog {
     }
 
     /**
-     * R451 probe behind {@link #resolveTableValuedFunction(String)}'s not-a-table path: looks for a
+     * Probe behind {@link #resolveTableValuedFunction(String)}'s not-a-table path: looks for a
      * generated routine class matching {@code routineName} in each schema's {@code routines}
      * sub-package (scoped to the named schema when the value is qualified). jOOQ generates one
      * class per database routine there — procedures and scalar / void functions included — under
@@ -296,7 +296,7 @@ public class JooqCatalog {
 
     /**
      * True when {@code sqlName} resolves to a table-valued function's result table
-     * ({@code TableOptions.function()}). The R435 keying gate: an FK-less routine result cannot
+     * ({@code TableOptions.function()}). The keying gate: an FK-less routine result cannot
      * key a hop through the FK machinery, so a {@code {table:}} path element whose current source
      * is one derives the name-matched key instead (see
      * {@code BuildContext.synthesizeNameMatchedJoin}). False for unresolved names — the caller's
@@ -309,7 +309,7 @@ public class JooqCatalog {
 
     /**
      * Enumerate every table in the catalog as a {@link TableEntry}, in schema-then-table order
-     * (the generated {@code Tables} class field order within each schema). Used by the R362
+     * (the generated {@code Tables} class field order within each schema). Used by the
      * {@code CatalogFacts} build pass, which walks every table once while the codegen loader is
      * open and reduces each to resolved-immutable facts. Returns the live {@link Table} handles;
      * callers must consume them within the same build pass and never retain them past the loader's
@@ -522,7 +522,7 @@ public class JooqCatalog {
     /**
      * Returns the Java constant name (e.g. {@code "FK_FILM__FILM_LANGUAGE_ID_FKEY"}) of a foreign
      * key in the generated {@code Keys} class, given the jOOQ {@link ForeignKey} instance
-     * (R440: resolved by class identity via {@link #findForeignKeyRef}, not by re-looking-up the
+     * (resolved by class identity via {@link #findForeignKeyRef}, not by re-looking-up the
      * bare SQL name). Used at build time to emit {@code Keys.FK_...} references in generated code.
      *
      * <p>Returns empty when the catalog or Keys class is not available (e.g. unit tests that do
@@ -790,7 +790,7 @@ public class JooqCatalog {
     }
 
     /**
-     * Enumerate the table's row-identifying candidate keys for the R246 UPDATE PK-or-UK match: the
+     * Enumerate the table's row-identifying candidate keys for the UPDATE PK-or-UK match: the
      * primary key first (when present), then every unique key in jOOQ declaration order, deduplicated
      * on column set so a unique key coinciding with the PK is not listed twice. Reads
      * {@code Table.getPrimaryKey()} and {@code Table.getKeys()} (jOOQ's {@code getKeys()} returns the
@@ -806,7 +806,7 @@ public class JooqCatalog {
     /**
      * Table-scoped overload of {@link #candidateKeys(String)}: enumerates a resolved table's
      * row-identifying candidate keys directly, without a (potentially ambiguous) SQL-name lookup.
-     * Used by the R362 {@code CatalogFacts} build pass, which already holds the live {@link Table}.
+     * Used by the {@code CatalogFacts} build pass, which already holds the live {@link Table}.
      */
     public java.util.List<KeyEntry> candidateKeys(Table<?> table) {
         var out = new ArrayList<KeyEntry>();
@@ -1306,7 +1306,7 @@ public class JooqCatalog {
         /**
          * Every column on the table as fully-resolved {@link ColumnRef}s, in generated-jOOQ-class
          * declaration order (the same order {@code table.fields()} yields at runtime). Backs
-         * {@link no.sikt.graphitron.rewrite.model.TableRef#allColumns()}: R436's typed-record key
+         * {@link no.sikt.graphitron.rewrite.model.TableRef#allColumns()}: the typed-record key
          * reconstruction and reserved-alias full-row projection enumerate this at generation time
          * rather than reflecting the catalog at emit time. Mirrors {@link #allColumnsOf(String)}'s
          * reflection but keyed off this entry's already-resolved {@code table()}.

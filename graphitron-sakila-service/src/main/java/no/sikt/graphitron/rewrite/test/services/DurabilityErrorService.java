@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * R75 Phase 1 durability-test fixture: a {@code @service}-backed leaf that always throws.
+ * Durability-test fixture: a {@code @service}-backed leaf that always throws.
  * Wired onto {@code Film} via the synthetic SDL field {@code durabilityError}; querying
  * it in a {@code @mutation} response forces graphql-java to invoke the field's DataLoader
  * batch mid-traversal, which throws here and surfaces as a field error on every Film row

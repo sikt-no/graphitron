@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import java.util.List;
 
 /**
- * R60 fixture: root {@code @service} that hand-rolls two {@link CreateFilmsPayload} rows for
+ * Fixture: root {@code @service} that hand-rolls two {@link CreateFilmsPayload} rows for
  * {@code AccessorDerivedBatchKeyTest}'s {@code Many} case. Each payload exposes a
  * {@code List<FilmRecord>} accessor that the classifier walks reflectively to derive
  * {@code BatchKey.AccessorKeyedMany}.
@@ -39,7 +39,7 @@ public final class CreateFilmsPayloadService {
     }
 
     /**
-     * R269 fixture: returns two payloads where the second carries a {@code null} {@code films}
+     * Fixture: returns two payloads where the second carries a {@code null} {@code films}
      * backing (a to-many relation that was never populated). The first payload lists film [1]; the
      * second's {@code films()} accessor returns {@code null}. The MANY accessor key-extraction
      * ({@code GeneratorUtils.buildAccessorKeyMany}) must skip its for-loop on the null collection so

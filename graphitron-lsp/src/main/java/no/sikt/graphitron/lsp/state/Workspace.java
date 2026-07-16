@@ -44,11 +44,11 @@ public final class Workspace {
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
     private volatile CompletionData catalog;
-    // R362 — the catalog-discovery projection the MCP catalog.* tools read. Swapped alongside the
+    // The catalog-discovery projection the MCP catalog.* tools read. Swapped alongside the
     // catalog and snapshot in setBuildOutput, so a single set of volatile reads observes one
     // consistent build state. Defaults to empty until the first build.
     private volatile CatalogFacts catalogFacts = CatalogFacts.empty();
-    // The LSP is the sole source walker (R352): the walker (and its per-file
+    // The LSP is the sole source walker: the walker (and its per-file
     // cache) lives here, alongside the index it produces, so "who refreshes this,
     // on what cadence" is answerable from the index's owner. There is no
     // process-wide static cache shared with the generator build cadence.
@@ -56,7 +56,7 @@ public final class Workspace {
     private volatile SourceWalker.Index sourceIndex = SourceWalker.Index.EMPTY;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
-    // R410 slice 6 — the last incremental-compile round's diagnostics, kept separate from the
+    // The last incremental-compile round's diagnostics, kept separate from the
     // schema-anchored validationReport (a generated-file javac error has no schema coordinate to
     // fabricate). The graphitron:dev compile driver swaps this after each round; the MCP diagnostics
     // tool surfaces it with a source:"compile" discriminator. Independent of setBuildOutput's swap: a
@@ -181,7 +181,7 @@ public final class Workspace {
     }
 
     /**
-     * R362 — the catalog-discovery projection the MCP {@code catalog.tables} / {@code catalog.describe}
+     * The catalog-discovery projection the MCP {@code catalog.tables} / {@code catalog.describe}
      * tools read off the live handle on every call. Refreshes on the catalog (classpath) build
      * cadence through {@link #setBuildOutput}, the same swap the catalog and snapshot ride. Stays
      * {@link CatalogFacts#empty()} until the first successful build. {@code volatile} so the swap is
@@ -197,7 +197,7 @@ public final class Workspace {
      * refreshes on the {@code .java} (source) cadence through
      * {@link #setSourceIndex}, driven by the dev goal's source-root watcher,
      * not on the generator / {@code .class} build cadence the catalog rides.
-     * That decoupling is the point of R349: a declaration position becomes
+     * That decoupling is the point: a declaration position becomes
      * available the instant its source is parsed, without waiting for a catalog
      * rebuild. {@code volatile} so the swap is observable on the next request
      * without taking the file lock, mirroring {@link #catalog}.
@@ -254,7 +254,7 @@ public final class Workspace {
     }
 
     /**
-     * R410 slice 6 — the last incremental-compile round's diagnostics (generated-code javac errors and
+     * The last incremental-compile round's diagnostics (generated-code javac errors and
      * warnings), anchored to the generated {@code .java} where javac reports them. Distinct from
      * {@link #validationReport()}: these have no schema coordinate, so they ride their own channel and
      * the MCP diagnostics tool tags them {@code source:"compile"}. Stays empty until the first compile
@@ -284,7 +284,7 @@ public final class Workspace {
     }
 
     /**
-     * R160 — the client's inlay-hint / hover toggles. Read on every inlay-hint and hover
+     * The client's inlay-hint / hover toggles. Read on every inlay-hint and hover
      * request; swapped atomically by {@link #setInlayHintConfig} when the document service
      * receives a {@code workspace/didChangeConfiguration} notification (or pulls fresh
      * settings via {@code workspace/configuration}). Stays at {@link InlayHintConfig#defaults()}
@@ -296,7 +296,7 @@ public final class Workspace {
     }
 
     /**
-     * R160 — atomic swap of the client's inlay-hint / hover toggles. Called by the
+     * Atomic swap of the client's inlay-hint / hover toggles. Called by the
      * document service from the configuration-pull path on initialisation and from the
      * {@code workspace/didChangeConfiguration} notification handler.
      */

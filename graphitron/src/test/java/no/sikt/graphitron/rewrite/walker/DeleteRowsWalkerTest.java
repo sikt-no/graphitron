@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R266 unit coverage for {@link DeleteRowsWalker}: the PK-or-UK identification and the
+ * Unit coverage for {@link DeleteRowsWalker}: the PK-or-UK identification and the
  * every-column-is-WHERE projection over already-classified {@link InputField} permits, plus the
  * {@code multiRow} → {@link DeleteRows.Broadcast} arm. Uses the same real fixture catalogs as
  * {@code UpdateRowsWalkerTest} so the jOOQ {@code getPrimaryKey()} / {@code getKeys()} metadata is
@@ -267,7 +267,7 @@ class DeleteRowsWalkerTest {
             columns, Optional.empty(), dummyDecode(columns));
     }
 
-    // R186 admits a plain (non-list) NestingField by flattening it; a list-typed nesting stays
+    // A plain (non-list) NestingField is admitted by flattening it; a list-typed nesting stays
     // unsupported, so this helper builds the list-typed shape for the unsupported-shape coverage.
     private static InputField.NestingField listNestingField(String name) {
         return new InputField.NestingField("In", name, loc(), "Nested", false, true, List.of(), Optional.empty());

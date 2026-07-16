@@ -22,7 +22,7 @@ import java.util.Optional;
  * <p>String identity (not constant identity) is the contract; the directive-vocabulary
  * source-of-truth in {@code BuildContext} uses the same string literals.
  *
- * <p><b>R217 absent-arm strategy.</b> {@link Entry#absentArm()} carries the renderer
+ * <p><b>Absent-arm strategy.</b> {@link Entry#absentArm()} carries the renderer
  * strategy for the absent-directive arm: a non-null {@link AbsentArm} declares that
  * the canonical argument should also render as a synthetic ghost annotation on
  * declarations that omit the directive entirely (not only on present-but-bare directive
@@ -31,7 +31,7 @@ import java.util.Optional;
  * an {@link AbsentArm} permit; flipping it on by accident no-ops at compile time, not at
  * runtime. Today only {@code @table} carries an arm ({@link AbsentArm.TableName});
  * {@code @field} would drown the view (one ghost per column-bound field) and
- * {@code @reference} has a different cost/benefit profile, per R217's judgement calls.
+ * {@code @reference} has a different cost/benefit profile.
  */
 public final class InferredDirectiveArgs {
 
@@ -61,7 +61,7 @@ public final class InferredDirectiveArgs {
      * <p>Sealed so that the absent-arm renderer in {@code InlayHints} dispatches over
      * the closed family of strategies via virtual call rather than re-matching on
      * {@link Entry#directiveName()}. A future absent-arm rule (e.g. {@code @reference}
-     * on FK fields, explicitly out of scope per R217's judgement calls) lands as a new
+     * on FK fields, explicitly out of scope) lands as a new
      * permit here and the renderer picks it up without additional dispatch arms.
      */
     public sealed interface AbsentArm {

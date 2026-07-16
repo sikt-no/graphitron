@@ -107,9 +107,9 @@ public final class TypeSpecAssertions {
 
     /**
      * True when {@code type}'s {@code $fields} method appends the whole parent row to the
-     * projection under the reserved {@code __src_<col>__} aliases — the R426 full-row projection
-     * (reshaped by R436 from {@code Collections.addAll(fields, table.fields())} to a per-column
-     * reserved-alias append) emitted when a child's DataLoader key wrap is
+     * projection under the reserved {@code __src_<col>__} aliases — the full-parent-row projection
+     * (a per-column reserved-alias append, reshaped from an earlier
+     * {@code Collections.addAll(fields, table.fields())} form) emitted when a child's DataLoader key wrap is
      * {@code SourceKey.Wrap.TableRecord}. Detects the reserved-alias family
      * ({@code fields.add(table.<COL>.as("__src_..."))}) rather than a specific column, so it stays
      * a shape assertion. Sibling of {@link #appendsRequiredColumn}.

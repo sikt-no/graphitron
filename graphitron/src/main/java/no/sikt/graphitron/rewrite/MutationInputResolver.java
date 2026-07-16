@@ -192,7 +192,7 @@ final class MutationInputResolver {
                 if ("ID".equals(s.returnTypeName())) {
                     yield null;
                 }
-                // R178 Phase 4: candidate types whose carrier-shape is structurally invalid
+                // Candidate types whose carrier-shape is structurally invalid
                 // surface a per-condition diagnostic through scanStructuralDmlPayload: if the
                 // SDL Object's fields don't classify into recognized DML element kinds, the
                 // scan's Reject arm names the offending field.
@@ -243,7 +243,7 @@ final class MutationInputResolver {
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // R178 step 3: DML accepts a class-backed carrier return; the validator screens only
+                // DML accepts a class-backed carrier return; the validator screens only
                 // for the wrapper shape (single, not list/connection). Payload-shape rejections
                 // surface from the unified path's per-child classification (the legacy-equality
                 // check inside FieldBuilder.buildServiceField on @service mutations; the
@@ -266,10 +266,10 @@ final class MutationInputResolver {
         // (Payload type, not list-wrapped) whose data field is list-shaped pairs with bulk input
         // (admitted as MutationBulkDmlRecordField) and rejects single input (new Invariant #16).
         // The singleton-data-field case (data field is single-shaped) still rejects bulk input via
-        // R138's lifted Invariant #15 below. UPSERT under R144's cardinality-safety regime is
+        // the lifted Invariant #15 below. UPSERT under the cardinality-safety regime is
         // refused upstream at resolveInput; if we ever reach this check with kind == UPSERT and
         // bulk input, the refusal there will fire before this point.
-        // R178 Phase 4: payload-shaped (ResultReturnType) returns dispatch cardinality coherence
+        // Payload-shaped (ResultReturnType) returns dispatch cardinality coherence
         // on the structural single-data-field's wrapper; non-payload returns dispatch on the
         // return's own wrapper. The structural walk via singleDataField produces the
         // admit/reject decision for the carrier-with-single-data-field case.
@@ -278,7 +278,7 @@ final class MutationInputResolver {
             if (dataField != null) {
                 boolean dataFieldIsList = ctx.buildWrapper(dataField).isList();
                 if (listInput && dataFieldIsList) {
-                    // R141 admitted arm: bulk input + list-shaped @table-element data field.
+                    // Admitted arm: bulk input + list-shaped @table-element data field.
                     return null;
                 }
                 if (!listInput && dataFieldIsList) {
@@ -311,7 +311,7 @@ final class MutationInputResolver {
     }
 
     /**
-     * R178 Phase 4 — structural lookup for a payload's single non-errors data field. Returns
+     * Structural lookup for a payload's single non-errors data field. Returns
      * the field definition when the payload SDL exposes exactly one non-errors-shaped field;
      * {@code null} for zero or multiple data fields, or non-Object payload types. Used by the
      * cardinality coherence check in {@link #validateReturnType} to read the data field's
@@ -332,18 +332,18 @@ final class MutationInputResolver {
 
     /**
      * Walks a DML {@code @mutation} field's arguments and resolves the single {@code @table}
-     * input argument that drives the statement. After R246 / R258 / R266 intercept UPDATE and
-     * DELETE before this call, INSERT is the lone verb that completes resolveInput (UPSERT is
-     * refused at the top, deferred to R145). It enforces:
+     * input argument that drives the statement. After UPDATE and DELETE are intercepted by their
+     * walker classifiers before this call, INSERT is the lone verb that completes resolveInput
+     * (UPSERT is refused at the top, deferred). It enforces:
      *
      * <ul>
-     *   <li>UPSERT is refused outright (deferred to R145).</li>
+     *   <li>UPSERT is refused outright (deferred).</li>
      *   <li>{@code multiRow: true} is rejected on INSERT (no WHERE clause to multiply over).</li>
      *   <li>Per-input-field structural checks: value carriers ({@link InputField.ColumnField} /
  * {@link InputField.CompositeColumnField}) and FK-target reference carriers are
      *       admitted. A non-{@code @table} {@link InputField.NestingField} grouping is admitted by
  * recursing on its leaves under the same rules; a list-typed nesting and a nested
-     *       {@code @table} input (R122's compound-entity territory) are not. {@code @lookupKey} on
+     *       {@code @table} input (compound-entity territory) are not. {@code @lookupKey} on
  * input fields rejects via the classifier's retirement diagnostic.
  * {@code @condition} without {@code override: true} rejects, at every nesting
      *       depth.</li>
@@ -351,9 +351,9 @@ final class MutationInputResolver {
      *
      * <p>UPDATE and DELETE never reach the body: their walker classifiers in {@link FieldBuilder}
      * intercept them before this call, and a regression that routes one back here fails loudly via
-     * the {@code IllegalStateException} guard. R266 retired {@code @value} (the last partition
-     * machinery) along with the UPDATE/DELETE PK-coverage check, both of which moved onto the
-     * {@code UpdateRowsWalker} / {@code DeleteRowsWalker}.
+     * the {@code IllegalStateException} guard. {@code @value} (the last partition
+     * machinery) was retired along with the UPDATE/DELETE PK-coverage check, both of which moved
+     * onto the {@code UpdateRowsWalker} / {@code DeleteRowsWalker}.
      *
      * <p>The empty-input case ("no fields on the {@code @table} input") needs no resolver-level
      * check: graphql-java rejects empty input types at parse time
@@ -405,8 +405,8 @@ final class MutationInputResolver {
 
             // Validate directive presence per input field. @lookupKey on any input field rejects
             // with the retirement diagnostic; @condition without override(true) is filter-
-            // shape that competes with the verb's WHERE shape and rejects. R266 retired
-            // @value (UPDATE and DELETE both classify through their walkers now; INSERT is the lone
+            // shape that competes with the verb's WHERE shape and rejects. @value has been
+            // retired (UPDATE and DELETE both classify through their walkers now; INSERT is the lone
             // verb reaching here and never partitioned its input fields), so there is no @value
             // marker to accumulate or reject.
             var directiveRejection = rejectInputFieldDirectives(iot, argTypeName);
@@ -458,9 +458,9 @@ final class MutationInputResolver {
             return admissionRejection;
         }
 
-        // R322 (D2): two or more plain @field writers on one column is a pure schema fact (no runtime
+        // Two or more plain @field writers on one column is a pure schema fact (no runtime
         // input could make them agree) and is avoidable, so it is a validate-time reject — the mutation-
-        // path mirror of the @service R336 reject, moving the failure from a Postgres "column specified
+        // path mirror of the @service reject, moving the failure from a Postgres "column specified
         // more than once" crash to an UnclassifiedField. An overlap involving a @nodeId decode is admitted
         // and reconciled at runtime by the value-agreement check (D3), so it is not caught here.
         var collisionRejection = rejectPlainColumnCollision(foundTia.fields(), foundTia.typeName());
@@ -487,7 +487,7 @@ final class MutationInputResolver {
     }
 
     /**
-     * R215 + R186: reject {@code @lookupKey} (retired by R144) and non-override {@code @condition}
+     * Reject {@code @lookupKey} (retired) and non-override {@code @condition}
      * (filter-shape that competes with the verb's WHERE) on any mutation input field, recursing into
      * nested non-{@code @table} grouping inputs so a buried leaf is held to the same rule as a
      * top-level field. The {@code @condition(override: true)} case is left to the per-field admission
@@ -517,7 +517,7 @@ final class MutationInputResolver {
             }
             // Recurse into nested non-@table grouping inputs so a nested-leaf @lookupKey /
             // @condition is rejected with the same diagnostic as a top-level field. A nested @table
-            // input is R122's territory and is not descended here.
+            // input is compound-mutation territory and is not descended here.
             var base = GraphQLTypeUtil.unwrapAll(sdlField.getType());
             if (base instanceof graphql.schema.GraphQLInputObjectType nested
                     && !nested.hasAppliedDirective(DIR_TABLE)) {
@@ -535,8 +535,8 @@ final class MutationInputResolver {
      * walkers; UPSERT is refused at the top of {@link #resolveInput}). Recurses into
  * {@link InputField.NestingField} grouping inputs: a nested leaf is admitted under the
      * same rules as a root leaf, so a buried {@link InputField.CompositeColumnField} still trips the
-     * R130 INSERT carve-out. A list-typed nesting or a nested group carrying {@code @condition}
-     * rejects naming R186. Returns the first inadmissible field's rejection, or {@code null}.
+     * INSERT carve-out. A list-typed nesting or a nested group carrying {@code @condition}
+     * rejects. Returns the first inadmissible field's rejection, or {@code null}.
      */
     private Resolved.Rejected admitMutationInputFields(List<InputField> fields, String typeName, DmlKind kind) {
         for (var f : fields) {
@@ -546,8 +546,8 @@ final class MutationInputResolver {
             if (f instanceof InputField.ColumnField) {
                 continue;
             }
-            // R144 lifts the R130 carve-out: CompositeColumnField is now admissible on every
-            // non-UPSERT verb. R130's INSERT carve-out stays in place (composite-PK INSERT shape is
+            // CompositeColumnField is now admissible on every
+            // non-UPSERT verb. The INSERT carve-out stays in place (composite-PK INSERT shape is
             // architecturally rare; lifting waits for a forcing-function schema). The carve-out fires
             // for a nested leaf too, since the recursion reaches it.
             if (f instanceof InputField.CompositeColumnField) {
@@ -624,11 +624,11 @@ final class MutationInputResolver {
     }
 
     /**
-     * R322 (D2): rejects a column written by two or more plain {@code @field} writers (no {@code @nodeId}
+     * Rejects a column written by two or more plain {@code @field} writers (no {@code @nodeId}
      * decode among them), recursing into nested grouping inputs so a buried leaf is held to the same rule.
      * Such an overlap is a pure schema fact (both names resolve to one column with no runtime input) and is
      * avoidable, so it is an author error caught at build time, the mutation-path mirror of the {@code @service}
-     * R336 reject. An overlap involving at least one decode is left to the runtime value-agreement check
+     * reject. An overlap involving at least one decode is left to the runtime value-agreement check
      * (FK topology can legitimately force a column to be written by two references), so it is admitted here.
      * Returns the first offending column's rejection, or {@code null}.
      */

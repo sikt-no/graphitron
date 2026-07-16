@@ -6,14 +6,14 @@ import java.util.List;
  * The {@code (start, hops)} shape of a root routine chain: {@code start} is the
  * routine node (the schema's global {@code Routines} convenience-method call with IN parameters
  * bound from GraphQL arguments), {@code hops} the {@code @reference}-contributed steps that follow
- * it in authored directive order. The R300 single-node shape is {@code hops = []}, where the
+ * it in authored directive order. The single-node shape is {@code hops = []}, where the
  * routine result is also the terminus.
  *
- * <p>Extracted from {@code QueryField.QueryRoutineTableField}'s compact constructor by R451 so the
+ * <p>Extracted from {@code QueryField.QueryRoutineTableField}'s compact constructor so the
  * read leaf and the mutation write leaf ({@code MutationField.MutationRoutineWriteField}) share
  * one enforcer for the chain invariants instead of duplicating them; both embed this record and
  * expose it through the {@link RoutineChainField} capability interface. A chain-wide invariant
- * change (for example R448's {@code DataType} lift) edits this constructor once.
+ * change (for example a future {@code DataType} lift) edits this constructor once.
  *
  * <p>Invariants pinned here (the shared set; each leaf adds its own — the read leaf's terminus
  * rule against its return type, the write leaf's non-empty {@code hops}):

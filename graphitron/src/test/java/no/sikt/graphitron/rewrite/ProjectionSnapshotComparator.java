@@ -10,12 +10,12 @@ import java.util.Map;
 import java.util.TreeSet;
 
 /**
- * R279 slice 1 — the differential bisect aid. Diffs two {@link Current} projection snapshots
+ * The differential bisect aid. Diffs two {@link Current} projection snapshots
  * ({@code CatalogBuilder.buildSnapshot} output) key-by-key and returns a human-readable list of
  * differences, empty when the two snapshots are value-equal.
  *
  * <p>This is a <em>development bisect aid only</em>, never a merge gate. The behavioural proof for
- * the R279 inversion is the {@code GraphitronSchemaBuilderTest} truth table plus the sakila
+ * the classifier inversion is the {@code GraphitronSchemaBuilderTest} truth table plus the sakila
  * pipeline tiers; the snapshot is a lossy shadow of the classified model (it flattens
  * assembled-schema identity, {@code ErrorType} handler aggregation, and raw graphql-java node
  * references), so elevating it above those tiers would pin the shadow rather than the behaviour.

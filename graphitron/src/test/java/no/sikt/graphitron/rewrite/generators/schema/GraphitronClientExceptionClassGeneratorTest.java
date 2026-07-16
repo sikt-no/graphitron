@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline test for {@link GraphitronClientExceptionClassGenerator}: SDL-independent emission of the
  * generated client-error marker. Pins that the type subclasses {@code GraphqlErrorException} (so it
  * <em>is</em> a {@code GraphQLError}, channel-matchable and natively serialisable) and carries a
- * message through the library builder, the two properties R378's surfacing arm relies on.
+ * message through the library builder, the two properties the client-error surfacing arm relies on.
  */
 @UnitTier
 class GraphitronClientExceptionClassGeneratorTest {

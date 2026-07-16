@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * R238 walker: produces a {@link ServiceMethodCall} carrier from an already-resolved
+ * Walker that produces a {@link ServiceMethodCall} carrier from an already-resolved
  * {@link MethodRef.Service}.
  *
  * <h3>Implementation note</h3>
@@ -29,7 +29,7 @@ import java.util.List;
  * codegen classloader, with no graphitron-internal intermediate model. The current
  * implementation takes the {@link MethodRef.Service} produced upstream by
  * {@code ServiceDirectiveResolver}/{@code ServiceCatalog} and translates it to the
- * carrier shape; this keeps R238's blast radius bounded and lets the slice land
+ * carrier shape; this keeps the slice's blast radius bounded and lets it land
  * without duplicating ~1k LOC of reflection logic. A follow-up may lift the existing
  * reflection helpers under {@code walker/internal/} and have this class call them directly,
  * retiring the {@link MethodRef.Service} intermediate at the model boundary.
@@ -53,7 +53,7 @@ import java.util.List;
  * Today's {@code ServiceCatalog.checkServiceInstanceHolderShape} restricts instance services
  * to a {@code (DSLContext)} constructor. The walker reflects that constraint structurally:
  * {@link ServiceMethodCall.Instance#ctorArgs()} is always {@code [FromDsl]} on the current
- * trunk. The R238 spec calls for first-class multi-arg constructors mixing
+ * trunk. The eventual design calls for first-class multi-arg constructors mixing
  * {@link MappingEntry.FromContext} and {@link MappingEntry.FromDsl}; expanding ctor resolution
  * is a separate change that retires the upstream restriction.
  */

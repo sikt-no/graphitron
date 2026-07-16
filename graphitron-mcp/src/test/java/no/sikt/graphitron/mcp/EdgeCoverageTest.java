@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R374 coverage pin — the live test that makes the edge switch's "drift guard" claim real rather
+ * Coverage pin: the live test that makes the edge switch's "drift guard" claim real rather
  * than a false invariant. {@link EdgeProducer}'s no-{@code default} switches force a compile-time
  * edge decision for every {@link FieldClassification} / {@link TypeClassification} permit; this test
  * additionally asserts each permit is declared, deliberately and visibly, in exactly one of the two

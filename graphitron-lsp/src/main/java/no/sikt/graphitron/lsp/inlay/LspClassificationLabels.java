@@ -4,7 +4,7 @@ import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 
 /**
- * R217 — LSP-facing labels for {@link FieldClassification} / {@link TypeClassification}
+ * LSP-facing labels for {@link FieldClassification} / {@link TypeClassification}
  * projection records. The label <em>is</em> the projection-record simple name: a hint or
  * hover renders {@code "Column"}, {@code "Table"}, {@code "DmlMutation"}, etc., and the
  * developer reading it can grep that name in the codebase to discover the taxonomy the
@@ -12,7 +12,7 @@ import no.sikt.graphitron.rewrite.catalog.TypeClassification;
  *
  * <p>This couples the LSP-visible label vocabulary to the projection-record names; a
  * future rename of (say) {@code TableTarget} to {@code JoinedColumnTarget} is also a
- * user-visible-string change. R217 accepts that coupling deliberately as the pedagogical
+ * user-visible-string change. That coupling is accepted deliberately as the pedagogical
  * mechanism that lets the LSP teach the model. See class-level Javadoc on
  * {@link FieldClassification} / {@link TypeClassification} for the dual-role note.
  *

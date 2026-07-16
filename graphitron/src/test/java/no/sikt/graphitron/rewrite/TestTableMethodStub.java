@@ -15,7 +15,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
  * methods further down ({@link #get}, {@link #getWithContext}) intentionally violate that
  * rule and exist solely so tests can assert the rejection path.
  *
- * <p>After R43 the {@code @tableMethod} contract no longer accepts a parent or return-type
+ * <p>The {@code @tableMethod} contract no longer accepts a parent or return-type
  * Table parameter: graphitron derives the target table from the method's return type and
  * parent-table filtering is {@code @reference}'s job. Methods that need GraphQL-driven
  * filtering declare regular parameters bound via {@code argMapping}.

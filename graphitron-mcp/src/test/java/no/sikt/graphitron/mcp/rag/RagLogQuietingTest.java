@@ -10,7 +10,7 @@ import java.util.logging.Logger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier (R409): pins that {@link RagLogQuieting} matches its best-effort prose. Log-noise does
+ * Unit-tier: pins that {@link RagLogQuieting} matches its best-effort prose. Log-noise does
  * not warrant a pipeline/execution-tier test; the realistic pin is that the state mutations land
  * (Lucene JUL logger at {@code SEVERE}, DJL slf4j-simple property {@code error} plus its JUL level
  * {@code SEVERE}), that a second call is a no-op, and that the group-2 hint decision is the pure

@@ -16,7 +16,7 @@ import java.util.Set;
 /**
  * Resolves an SDL field's accessor against its parent's backing Java class. The single home for the
  * SDL-field-to-Java-accessor name rules, the {@code is}-prefix gate, the member filter, and the
- * per-kind parameter-shape rules (R461 consolidation): every call site that used to re-implement
+ * per-kind parameter-shape rules: every call site that used to re-implement
  * these now shares the {@link #enumerate} candidate model, so a fix to a rule lands once.
  *
  * <p>Mirrors graphql-java's {@code PropertyDataFetcher} candidate-name lookup so a consumer
@@ -31,7 +31,7 @@ import java.util.Set;
  *   <li>{@link #resolve} — the property-read reduction: given an expected return type and argument
  *       shape, the first name+shape+return match wins.</li>
  *   <li>{@link #probe} — the discovery-direction reduction: no expected return, the first
- *       name+shape match grounds a backing class. Used by the R96 binding walk.</li>
+ *       name+shape match grounds a backing class. Used by the binding walk.</li>
  * </ul>
  * The record-source reduction ({@code FieldBuilder.collectAccessorMatches}) consumes the same
  * {@link #enumerate} directly, requesting zero-arg methods only.
@@ -67,7 +67,7 @@ public final class ClassAccessorResolver {
     public enum CandidateOrder { POJO_FIRST, RECORD_FIRST }
 
     /**
-     * The single place the class-shape-to-candidate-order rule lives, for the phase (the R96 binding
+     * The single place the class-shape-to-candidate-order rule lives, for the phase (the binding
      * walk) that has a backing {@link Class} but no {@code ResultType} variant to read the order
      * from. A Java record gets {@code RECORD_FIRST} (bare component accessor first); anything else
      * gets {@code POJO_FIRST} (bean getter first). {@code TypeBuilder.buildResultTypeFromClass}
@@ -291,9 +291,9 @@ public final class ClassAccessorResolver {
     /**
      * The discovery-direction reduction: resolves which member the SDL field reads on
      * {@code backingClass} without an expected return type. First name+shape match in candidate
-     * order grounds. Used by the R96 binding walk to ground a child backing class and to name the
+     * order grounds. Used by the binding walk to ground a child backing class and to name the
      * resolved accessor on {@code ProducerBinding.ParentAccessor}, and as a pure presence probe for
-     * the R329 carrier discrimination.
+     * the carrier discrimination.
      *
      * @return {@link AccessorProbe.Grounded} carrying the resolved member and its generic return
      *     type, or {@link AccessorProbe.NoMatch} whose reason names the closest gated near-miss

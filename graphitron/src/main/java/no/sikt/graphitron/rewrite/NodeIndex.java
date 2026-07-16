@@ -16,7 +16,7 @@ import java.util.Optional;
  * {@code ctx.types} lookup, so the field pass carries no dependency on a populated type registry for
  * node resolution.
  *
- * <p>R317 slice 3d — the index is <b>pure</b>: it carries no classification duty (no demotion, no
+ * <p>The index is <b>pure</b>: it carries no classification duty (no demotion, no
  * reachability prune, and no typeId-uniqueness exclusion). {@code validateNodeTypeIdUniqueness} is
  * the sole owner of typeId uniqueness, as a validation reduction over the registry; a typeId-collided
  * node therefore still appears in this index, and a lookup that resolves one is sound because the

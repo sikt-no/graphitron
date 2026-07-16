@@ -12,7 +12,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R290 dissolved {@code ConstructorField} as wrong-by-design. A {@code @table} parent whose child
+ * {@code ConstructorField} was dissolved as wrong-by-design. A {@code @table} parent whose child
  * returns a record-backed ({@code @service}) result type, with no producer directive on the child to
  * build it, used to classify cleanly as {@code ConstructorField} — materialising the child from the
  * {@code @table} parent's own row, a shape no production schema relies on. That table-and-service

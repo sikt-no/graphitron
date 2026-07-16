@@ -54,7 +54,7 @@ final class InputFieldResolver {
      *
      * <p>{@code enclosingOverride} threads the call site's cascade flag (the field-level
      * {@code @condition(override:true)} on the enclosing query field ORed with the consuming
-     * argument's arg-level override) into the classifier's {@link ClassifyContext}. R215: the
+     * argument's arg-level override) into the classifier's {@link ClassifyContext}. The
      * classifier's variant decisions today do not branch on this value (column-miss uniformly
      * lifts to {@link InputField.UnboundField}); the flag rides through for nested-input cascade
      * propagation and future-growth axes.

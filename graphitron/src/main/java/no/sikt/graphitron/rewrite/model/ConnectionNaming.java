@@ -5,7 +5,7 @@ package no.sikt.graphitron.rewrite.model;
  * {@code @asConnection} carrier: {@code <ParentType><FieldName>Connection}. Shared by the
  * synthesis pass ({@code ConnectionPromoter}) and the emitters that must resolve a carrier
  * field's {@link GraphitronType.ConnectionType} entry from the classified model
- * ({@code QueryConditionsGenerator}, {@code TypeFetcherGenerator} for the R13 facet plan), so
+ * ({@code QueryConditionsGenerator}, {@code TypeFetcherGenerator} for the facet plan), so
  * naming can never drift between synthesis and lookup.
  *
  * <p>The deprecated {@code @asConnection(connectionName:)} override bypasses this derivation;

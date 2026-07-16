@@ -19,10 +19,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R342 execution-tier coverage: structural column dedup + value agreement on the <b>bulk</b> UPDATE SET
+ * Execution-tier coverage: structural column dedup + value agreement on the <b>bulk</b> UPDATE SET
  * path (the {@code UPDATE t SET c = v.c FROM (VALUES …) AS v(…)} form), the list-input siblings of the
  * single-row {@link NodeIdValueAgreementExecutionTest} and {@link SelfFkNodeIdUpdateExecutionTest}. Both
- * shapes would, before R342, emit a duplicate derived-table column ({@code v(…, c, …, c, …)}) and crash
+ * shapes would previously emit a duplicate derived-table column ({@code v(…, c, …, c, …)}) and crash
  * loud; the dedup collapses each to one v-column with a coalesced, agreement-checked cell.
  *
  * <p><b>Within-SET overlap</b> ({@code updateEndorsementsOverlap}, the {@code film_endorsement} fixture):

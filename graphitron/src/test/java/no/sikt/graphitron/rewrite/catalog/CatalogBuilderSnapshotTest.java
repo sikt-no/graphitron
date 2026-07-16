@@ -128,7 +128,7 @@ class CatalogBuilderSnapshotTest {
         assertThat(shape.locations()).isEmpty();
     }
 
-    // ---- R157: per-type backing projection ----
+    // ---- per-type backing projection ----
 
     @Test
     void tableTypeProjectsToTableBacking() {
@@ -278,7 +278,7 @@ class CatalogBuilderSnapshotTest {
             .isInstanceOf(TypeBackingShape.NoBacking.UnclassifiedInterface.class);
     }
 
-    // ---- R350: type-definition source locations ----
+    // ---- type-definition source locations ----
 
     @Test
     void typeDefinitionLocationsCarryUserTypesAndScalarsButNotBuiltinsOrBundled(@TempDir Path dir) throws Exception {

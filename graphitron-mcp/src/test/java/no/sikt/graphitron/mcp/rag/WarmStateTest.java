@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Seam-tier (R372): the {@link WarmState} degradation helper. It produces the standard wording for
+ * Seam-tier: the {@link WarmState} degradation helper. It produces the standard wording for
  * both non-{@code Ready} states and rejects {@code Ready}. The switch in
  * {@link WarmState#degradationMessage} is exhaustive over the sealed permits with no {@code default},
  * so adding a fourth state would not compile until this helper handles it.

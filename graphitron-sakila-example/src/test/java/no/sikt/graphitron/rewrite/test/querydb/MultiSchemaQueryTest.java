@@ -22,7 +22,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static org.assertj.core.api.InstanceOfAssertFactories.list;
 
 /**
- * R83 execution-tier slice: drives a GraphQL query against the {@code multischema}
+ * Execution-tier slice: drives a GraphQL query against the {@code multischema}
  * generated GraphQL endpoint (the third graphitron-maven-plugin execution in
  * {@code graphitron-sakila-example}'s pom). Runs against the same {@code rewrite_test}
  * PostgreSQL database that {@link GraphQLQueryTest} hits, but loads its own
@@ -34,7 +34,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.list;
  * one row in {@code multischema_a.widget}, two rows in {@code multischema_b.gadget}
  * pointing at it, plus one row in each {@code event} collision table.
  *
- * <p>The single test exercises the cross-schema FK that motivated R78: a query for
+ * <p>The single test exercises the cross-schema FK that motivated the multi-schema table-resolution fix: a query for
  * {@code gadgets { id widget { id } }} that drills from {@code multischema_b.gadget}
  * through the {@code gadget_widget_id_fkey} reference to {@code multischema_a.widget}.
  * If a regression rewires the emitted code to look up the FK constraint or table class
@@ -124,18 +124,18 @@ class MultiSchemaQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void signalsRouteToDiscriminatedTypesUnderNamedSchema() {
-        // R395/R396 regression guard. Signal is a single-table discriminated interface over
+        // Regression guard for schema-qualified discriminated interfaces. Signal is a single-table discriminated interface over
         // multischema_a.signal, declared as @table(name: "multischema_a.SIGNAL"): schema-qualified
         // AND upper-case over the real lowercase name. 'signal' is unique to multischema_a so it
         // resolves there, yet jOOQ renders the FROM token schema-qualified as "multischema_a"."signal",
         // which the bare directive string does not match. The selection drives all three discriminator
         // emit sites: the __discriminator__ routing projection, the WHERE ... IN restriction, and the
         // AlertSignal cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK).
-        // Before R395 each qualified off the directive string and Postgres rejected the query with
-        // "missing FROM-clause entry". R396 is what lets the base @table itself be schema-qualified:
-        // before R396 the widgetName @reference rejected at schema-validation time
+        // Once, each site qualified off the directive string and Postgres rejected the query with
+        // "missing FROM-clause entry". A second fix lets the base @table itself be schema-qualified:
+        // before that fix the widgetName @reference rejected at schema-validation time
         // ("key 'signal_widget_id_fkey' does not connect to table 'multischema_a.SIGNAL'"), which is
-        // why R395 had to fall back to the unqualified @table(name: "signal"). With both fixes the rows
+        // why the fixture had to fall back to the unqualified @table(name: "signal"). With both fixes the rows
         // route to their concrete types and the cross-table column resolves. This now pins the
         // schema-qualifier AND case dimensions together at the execution tier.
         Map<String, Object> data = execute("""

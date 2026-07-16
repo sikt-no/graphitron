@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * forward/inverse identity its class javadoc asserts ("the cross-product cannot drift"). The
  * forward {@link RowsMethodShape#outerRowsReturnType} builds {@code Map<K, V>} / {@code List<V>}
  * (and their list-cardinality variants) from a per-key {@code V}; the inverse
- * {@link RowsMethodShape#perKeyFromOuter} (added for R364) peels {@code V} back out. The two must
+ * {@link RowsMethodShape#perKeyFromOuter} peels {@code V} back out. The two must
  * round-trip across the full {@code (isMapped, isList)} cross-product, otherwise the emitter's
  * {@code elementType()} and the validator's {@code validateChildServiceReturnType} would compute
  * different rows-method shapes for the same field.

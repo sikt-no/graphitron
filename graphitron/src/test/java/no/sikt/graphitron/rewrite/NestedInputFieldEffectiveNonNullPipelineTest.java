@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R230 pipeline-tier coverage: the implicit-predicate BodyParam.nonNull slot reflects
+ * Pipeline-tier coverage: the implicit-predicate BodyParam.nonNull slot reflects
  * <em>effective</em> runtime nullability at the call site (the AND of the top-level argument's
  * declared nullability and every {@link no.sikt.graphitron.rewrite.model.InputField.NestingField}
  * on the path) rather than the inner field's own SDL-declared nullability.

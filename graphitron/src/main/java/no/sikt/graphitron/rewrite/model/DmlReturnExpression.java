@@ -18,7 +18,7 @@ import java.util.List;
  *
  * <p>Class-backed-returning DML routes through the {@code Mutation*DmlRecordField} permits
  * ({@link MutationField.MutationDmlRecordField} / {@link MutationField.MutationBulkDmlRecordField})
- * rather than carrying a fifth arm here. R161 collapsed the historical {@code Payload} arm by
+ * rather than carrying a fifth arm here. The historical {@code Payload} arm was collapsed by
  * widening the structural-carrier admission to every {@code ResultType} arm: the
  * {@code Mutation*TableField} permits are now guaranteed never to carry a class-backed
  * return, and the type system enforces narrowness structurally rather than via classifier-
@@ -28,7 +28,7 @@ import java.util.List;
  * the per-shape projection ({@code Encoded}, {@code Projected}, {@code Discriminated}) and the
  * terminal cardinality ({@code .fetchOne} / {@code .fetch}) read from one switch.
  *
- * <p>R406 added the {@code Discriminated*} pair for a return that is a single-table discriminated
+ * <p>The {@code Discriminated*} pair handles a return that is a single-table discriminated
  * interface ({@code @table @discriminate}, implementers pinned by {@code @discriminator(value:)},
  * all sharing one jOOQ table). The write half is identical to {@code Projected*} (a plain
  * single-{@code @table} write); only the follow-up re-projection differs: rather than the
@@ -57,8 +57,8 @@ public sealed interface DmlReturnExpression {
      * {@code T} return where {@code T} is a single-table discriminated interface. Carries the
      * read-side single-table discrimination data (sourced verbatim from the {@code TableInterfaceType}
      * verdict) so the emitter can re-project through the shared discriminated re-projection helper
-     * keyed by the DML write's {@code RETURNING} primary key. The DML sibling of R405's
-     * {@code *ServiceTableInterfaceField}.
+     * keyed by the DML write's {@code RETURNING} primary key. The DML sibling of the
+     * {@code *ServiceTableInterfaceField} service-return variants.
      */
     record DiscriminatedSingle(String interfaceName, String discriminatorColumn,
         List<String> knownDiscriminatorValues, List<ParticipantRef> participants) implements DmlReturnExpression {}

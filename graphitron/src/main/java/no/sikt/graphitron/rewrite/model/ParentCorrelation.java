@@ -49,7 +49,7 @@ public sealed interface ParentCorrelation
      *   <li>{@link OnFkSlots} — the hop-0 origin table (the side the key columns are drawn from,
      *       per {@code deriveSplitQuerySource} / {@code deriveFkRecordParentSource}).</li>
      *   <li>{@link OnLiftedSlots} — the target table (the key tuple IS the target-column tuple
-     *       by construction; R431, formerly the {@code LiftedHop} arm).</li>
+     *       by construction; formerly the {@code LiftedHop} arm).</li>
      *   <li>{@link OnParentJoin} — the parent table (keys are the parent's own PK).</li>
      * </ul>
      */
@@ -109,7 +109,7 @@ public sealed interface ParentCorrelation
      * hop-anchored {@link ParentCorrelation} whose first hop is the same instance as
      * {@code joinPath.get(0)}. An empty joinPath carries either a null correlation (the lookup
      * runs standalone and no parent correlation is needed) or the hop-less {@link OnLiftedSlots}
-     * arm (the pre-keyed lifter / accessor / re-fetch shape, R431 — formerly a single
+     * arm (the pre-keyed lifter / accessor / re-fetch shape, formerly a single
      * {@code JoinStep.LiftedHop} smuggled into the path). Each ChildField variant compact
      * constructor invokes this helper so the model can never carry a correlation that disagrees
      * with the path it sits on.
@@ -173,7 +173,7 @@ public sealed interface ParentCorrelation
     }
 
     /**
-     * The pre-keyed correlation (R431, formerly {@code OnFkSlots} wrapping a
+     * The pre-keyed correlation (formerly {@code OnFkSlots} wrapping a
      * {@code JoinStep.LiftedHop}): the DataLoader key tuple <em>is</em> the target-column tuple —
      * no foreign key, no traversal, no source side distinct from the target side. Carried by the
      * {@code @sourceRows} lifter-leaf, the class-backed-parent accessor arm, and the
@@ -204,7 +204,7 @@ public sealed interface ParentCorrelation
     }
 
     /**
-     * The parent-anchor arm (R450, the generalization of the former {@code OnConditionJoin}): the
+     * The parent-anchor arm (the generalization of the former {@code OnConditionJoin}): the
      * batch anchors the parent table and hop 0 attaches off it. In the split-rows shape,
      * {@code parentInput} joins the parent table on its PK, then hop 0 attaches to {@code firstHop}
      * off {@code parentAlias}; the parent PK grain (see {@link #parentKeyColumns()}) is what makes
@@ -217,7 +217,7 @@ public sealed interface ParentCorrelation
      * <ul>
      *   <li>{@link On.ColumnPairs} — the ordinary forward join ({@code .onKey(FK)} / the
      *       name-matched conjunction), with any hop-0 {@code filter()} binding {@code parentAlias}
-     *       as its source. This is the R450 case: a filter-carrying FK hop that previously landed
+     *       as its source. This case is a filter-carrying FK hop that previously landed
      *       {@link OnFkSlots} and bound the hop-0 target alias as both filter parameters.</li>
      *   <li>{@link On.Predicate} — the two-arg condition method call
      *       ({@code method(parentAlias, firstAlias)}), the former {@code OnConditionJoin}

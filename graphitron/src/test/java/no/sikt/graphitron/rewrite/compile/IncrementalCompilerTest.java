@@ -20,10 +20,10 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R410 slice 6 — the incremental compile driver, exercised over synthetic {@link TypeSpec}s so it needs
- * no jOOQ catalog (unit tier). This is the seam that wires the three earlier slices together: the ABI
- * hash (slice 3), the recompile-set algorithm (slice 3) over a supplied {@link CompileDependencyGraph}
- * (slice 2), and the warm engine (slice 4). The clauses pinned here are the pruning contract at the
+ * The incremental compile driver, exercised over synthetic {@link TypeSpec}s so it needs
+ * no jOOQ catalog (unit tier). This is the seam that wires the other pieces together: the ABI
+ * hash, the recompile-set algorithm over a supplied {@link CompileDependencyGraph},
+ * and the warm engine. The clauses pinned here are the pruning contract at the
  * driver level (a body-only edit recompiles only the delta; an ABI edit pulls in its dependents), the
  * orphan-sweep on a removed unit, and the classpath-first precedence the output-ownership design
  * promises. The tier-crossing correctness harness (clause (a)/(b) over a real schema) lives in

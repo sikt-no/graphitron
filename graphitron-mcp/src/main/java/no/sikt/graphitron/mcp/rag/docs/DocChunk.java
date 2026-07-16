@@ -3,7 +3,7 @@ package no.sikt.graphitron.mcp.rag.docs;
 import java.util.List;
 
 /**
- * One heading-aware chunk of a documentation {@code .adoc} file (R385): the unit the docs RAG index
+ * One heading-aware chunk of a documentation {@code .adoc} file: the unit the docs RAG index
  * embeds and the unit {@code docs.search} returns. Produced by {@link AdocChunker}, embedded by
  * {@link DocsIndexBuilder} at build time, and reconstructed from the bundle by {@link DocsBundle} at
  * warm time.
@@ -11,7 +11,7 @@ import java.util.List;
  * <p><strong>One string feeds both the lexical and the semantic half.</strong> {@link #embedText()}
  * prepends the heading path before the body so a chunk keeps its context ("Pagination &gt; Keyset
  * seek &gt; ..." rather than an orphaned paragraph); the same string is the BM25 text and the text
- * embedded into the KNN vector. The R372 {@code Embedder.Embedding} record bundles that text with its
+ * embedded into the KNN vector. The {@code Embedder.Embedding} record bundles that text with its
  * vector, so the lexical and semantic views cannot drift.
  *
  * @param headingPath the ordered ancestor headings down to this chunk's own heading; the display

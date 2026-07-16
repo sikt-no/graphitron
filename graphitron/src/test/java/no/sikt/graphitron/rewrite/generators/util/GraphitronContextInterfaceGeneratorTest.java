@@ -29,7 +29,7 @@ class GraphitronContextInterfaceGeneratorTest {
     @Test
     void generatedInterface_hasThreeMethods() {
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
-        // GetTenantId is gone (R45 reintroduces it on top of the sealed surface).
+        // GetTenantId is gone (multi-tenant routing reintroduces it on top of the sealed surface).
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
             .containsExactlyInAnyOrder("getDslContext", "getContextArgument", "getValidator");
     }
@@ -58,7 +58,7 @@ class GraphitronContextInterfaceGeneratorTest {
     @Test
     void getContextArgument_takesEnvAndNameOnlyAndReturnsObject() {
         var method = findMethod("getContextArgument");
-        // R190-followup: the Class<T> expectedType slot moved to a Java cast at the generated
+        // The Class<T> expectedType slot moved to a Java cast at the generated
         // call site; the singleton returns Object and the throw on missing-value stays as the
         // server-log diagnostic.
         assertThat(method.returnType().toString()).isEqualTo("java.lang.Object");

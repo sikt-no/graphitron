@@ -14,7 +14,7 @@ package no.sikt.graphitron.rewrite.model;
  * {@link ErrorChannel.Mapped} channel, so the consumer-side envelope and the producer-side
  * channel agree by construction. Carried first-class on the two envelope-forking leaves,
  * {@link ChildField.SingleRecordIdField#envelope()} and
- * {@link ChildField.RecordCompositeField#envelope()}. (R431: formerly
+ * {@link ChildField.RecordCompositeField#envelope()}. (Formerly
  * {@code SourceKey.Reader.SourceEnvelope}, riding on the retired {@code ResultRowWalk} reader
  * arm; the batched re-fetch path never carries it — there the generator derives the same fork
  * at the type level as {@code sourceIsOutcome}.)

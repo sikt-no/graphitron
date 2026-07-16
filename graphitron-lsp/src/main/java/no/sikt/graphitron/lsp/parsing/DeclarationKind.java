@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 
 /**
- * R216 — closed family of tree-sitter-graphql declaration kinds that the LSP cares about,
+ * Closed family of tree-sitter-graphql declaration kinds that the LSP cares about,
  * spanning both {@code *_type_definition} ("type Foo { ... }") and {@code *_type_extension}
  * ("extend type Foo { ... }") families.
  *

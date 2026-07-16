@@ -4,7 +4,7 @@ package no.sikt.graphitron.rewrite.model;
  * One cell of a join's column-pairing relationship between the source and target tables.
  *
  * <p>{@link On.ColumnPairs} holds a {@code List} of these on its {@code slots} component.
- * {@link FkSlot} is the sole permit (R431: the {@code LifterSlot} permit — a single column
+ * {@link FkSlot} is the sole permit (the {@code LifterSlot} permit — a single column
  * answering both sides, "DataLoader key tuple IS the target-column tuple" — moved with
  * {@code JoinStep.LiftedHop} onto {@link ParentCorrelation.OnLiftedSlots}, which carries the
  * column tuple directly).

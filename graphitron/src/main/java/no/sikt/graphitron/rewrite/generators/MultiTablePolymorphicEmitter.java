@@ -130,7 +130,7 @@ public final class MultiTablePolymorphicEmitter {
      * UNION ALL has no per-branch WHERE; the SELECT spans the full participant tables.
      *
      * <p>{@code registry} is the enclosing {@code <Type>Fetchers} class's
-     * {@link CompositeDecodeHelperRegistry} (R384 phase 0): {@code @nodeId}-decoded filter args on
+     * {@link CompositeDecodeHelperRegistry}: {@code @nodeId}-decoded filter args on
      * the branch path lift their decode helpers onto the same class that hosts the fetcher call
      * site, mirroring the split-rows / lookup-rows precedent in {@code TypeFetcherGenerator}.
      */
@@ -311,7 +311,7 @@ public final class MultiTablePolymorphicEmitter {
     /**
  * Extracted service-call normalise snippet: declares {@code List<Record> records} holding
      * the service return flattened into input order. Shared by {@link #buildServiceMainFetcher}
-     * (route (a)) and {@link #buildServiceTableInterfaceFetcher} (R405 single-table interface) so the
+     * (route (a)) and {@link #buildServiceTableInterfaceFetcher} (single-table interface) so the
      * "call the service, flatten to {@code List<Record>} in input order" logic lives in one place.
      * The single-value arm routes through an {@code Object} local so the downcast to {@code Record} is
      * never flagged redundant under {@code -Werror}, whatever the method's declared single return type.
@@ -336,7 +336,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R405 entry point: a root {@code @service} field (query or mutation) returning a single-table
+     * Entry point for a root {@code @service} field (query or mutation) returning a single-table
      * discriminated interface ({@code @table @discriminate}). Unlike route (a)
      * ({@link #emitServiceMethods}), there is no runtime-class dispatch and no per-typename UNION: every
      * service-returned record is the same shared-table record, so class dispatch cannot tell the
@@ -357,7 +357,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R405 main (and only) fetcher for the single-table service-interface return. Emits: the service
+     * Main (and only) fetcher for the single-table service-interface return. Emits: the service
      * call + a {@code dsl} local (when the call did not declare one), the normalise-to-{@code records}
      * snippet, the shared-table local, a by-PK {@code WHERE row(pk…) IN (…)} condition, the reused
      * read-side re-projection (including the PK columns so the fetched Record carries them), a single
@@ -507,10 +507,10 @@ public final class MultiTablePolymorphicEmitter {
      *                              {@link ParticipantRef.TableBound} participant. The classifier
  * admits only the auto-discovered single-hop FK shape.
      * @param parentSourceKey       parent-object source-side key, projected from the field's
-     *                              parent classification. Through R102 the classifier produces
-     *                              only catalog-FK / {@code ColumnRead}-reader parent keys
-     *                              (table-backed parents); R105 wires the class-backed-parent
-     *                              classifier arm to reach the lifter and accessor reader permits.
+     *                              parent classification. The classifier produces
+     *                              catalog-FK / {@code ColumnRead}-reader parent keys
+     *                              (table-backed parents); the class-backed-parent
+     *                              classifier arm reaches the lifter and accessor reader permits.
      * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()},
      *                              threaded from the field's classification site so the batched
      *                              rows method's VALUES cells and JOIN lookups can bind through
@@ -595,7 +595,7 @@ public final class MultiTablePolymorphicEmitter {
      *                              connections, null for root queries.
      * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()};
      *                              non-null when {@code parentSourceKey} is non-null (see the
-     *                              child overload of {@code emitMethods} for the R413 rationale).
+     *                              child overload of {@code emitMethods} for the rationale).
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
      *                              non-null when {@code parentSourceKey} is non-null. Threaded
      *                              into {@link GeneratorUtils#buildRecordParentKeyExtraction} so
@@ -782,7 +782,7 @@ public final class MultiTablePolymorphicEmitter {
             builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         }
 
-        // Child polymorphic fields carry no field-level filter surface (R363 is root-only), so no
+        // Child polymorphic fields carry no field-level filter surface (filters are root-only), so no
         // decode registry is threaded here.
         builder.addCode(buildStage1Block(ctx, participants, participantJoinPaths, Map.of(), null,
             parentSourceKey, parentKeyOwnerTable));
@@ -1090,7 +1090,7 @@ public final class MultiTablePolymorphicEmitter {
      * matches the carrier {@code parentRecord}'s PK. The predicate is derived from the
      * resolved single-hop FK column pairs each {@link ParticipantCorrelation} carries. The classifier
      * rejects every shape but the auto-discovered single FK hop (a field-level {@code @reference},
-     * a same-table participant, and zero/multi-FK failures all fail at build time — R452), and the
+     * a same-table participant, and zero/multi-FK failures all fail at build time), and the
      * {@link ParticipantCorrelation} carrier makes an unsupported shape unrepresentable here, so this
      * emitter has no multi-hop / condition-join arm to guard.
      *
@@ -1125,7 +1125,7 @@ public final class MultiTablePolymorphicEmitter {
             String alias = "stage1_" + participant.typeName();
             CodeBlock bridging = branchBridgingJoins(participant, participantJoinPaths.get(participant.typeName()));
             // Combine the parent correlation predicate (child fetchers) with the @field filter
-            // predicate (R363, root fields); either may be null, in which case the other stands alone.
+            // predicate (root fields); either may be null, in which case the other stands alone.
             CodeBlock branchWhere = andWhere(
                 singleBranchCorrelationWhere(participant, participantJoinPaths, parentSourceKey),
                 branchFilterWhere(ctx, participant, participantFilters, registry, plumbing));
@@ -1152,7 +1152,7 @@ public final class MultiTablePolymorphicEmitter {
         return b.build();
     }
 
-    // ===== Per-participant correlation emission (R458) =====
+    // ===== Per-participant correlation emission =====
     //
     // A branch's parent correlation is a ParticipantCorrelation, decided once at classification:
     //   - KeyTupleWhere: the branch joins nothing; the parent side is bound values (single-hop FK).
@@ -1371,8 +1371,8 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Pre-declared extraction plumbing shared by every stage-1 branch of one fetcher method
-     * (R384 phase 0). {@code fkTargetAliases} maps each {@link no.sikt.graphitron.rewrite.model.FkTargetConditionFilter}
+     * Pre-declared extraction plumbing shared by every stage-1 branch of one fetcher method.
+     * {@code fkTargetAliases} maps each {@link no.sikt.graphitron.rewrite.model.FkTargetConditionFilter}
      * to its declared per-hop alias locals (namespaced by the participant's {@code stage1_<Type>}
      * base, so two participants' filters never collide); {@code liftedOuters} maps a
      * {@link CallSiteExtraction.NestedInputField#outerArgName()} referenced by ≥2 call params
@@ -1446,13 +1446,13 @@ public final class MultiTablePolymorphicEmitter {
      * exactly as the single-table fetcher path does — each participant's filters were lowered against
      * its own table, with a participant-named {@code <Participant>Conditions} method.
      *
-     * <p>R384 phase 0 threads the real extraction plumbing through this seam: the enclosing
+     * <p>The real extraction plumbing is threaded through this seam: the enclosing
      * {@code <Type>Fetchers} class's {@link CompositeDecodeHelperRegistry} (decode helpers land on
      * the class hosting the call site, mirroring the split-rows / lookup-rows precedent), the
      * lifted-outer Map locals, and the FK-target aliases declared by
      * {@link #declareFilterPlumbing} ahead of the union expression. The classifier
      * ({@code FieldBuilder.firstUnsupportedFilterArg}) still gates which extraction kinds reach
-     * here; each R384 phase flips one arm on top of this shared threading.
+     * here; each arm flips on top of this shared threading.
      */
     private static CodeBlock branchFilterWhere(TypeFetcherEmissionContext ctx,
             ParticipantRef.TableBound participant, Map<String, List<WhereFilter>> participantFilters,

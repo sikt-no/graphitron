@@ -20,7 +20,7 @@ import java.util.List;
  *
  * <p>The two variants carry structurally different relationships between {@code requiredFields}
  * and {@code columns}. Rather than state those relationships in prose and leave them
- * unenforced (the gap R477 lived in), each is a fact of the variant's structure:
+ * unenforced (the gap that bred arity-mismatch bugs), each is a fact of the variant's structure:
  * {@link Direct} stores {@code (rep field, column)} pairs, so its sizes cannot disagree, and
  * {@link NodeId} derives {@code requiredFields()} as a constant {@code ["id"]} rather than
  * storing it.

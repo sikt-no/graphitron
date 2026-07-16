@@ -142,7 +142,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
         /**
          * The named reentry query unit's method name for a {@code Projected*} /
-         * {@code Discriminated*} return (R314 slice 4): the follow-up SELECT that re-projects
+         * {@code Discriminated*} return: the follow-up SELECT that re-projects
          * the {@code @table} from the {@code RETURNING}-captured keys lives in a
          * {@code rows<Name>} method the mutation fetcher calls, minted through the run's
          * method-command registry exactly like the batched leaves'
@@ -351,7 +351,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * class (or table-bound record) directly, and per-field wiring projects SDL fields off the
      * parent's domain return.
      *
-     * <p><b>Reentry realization (R314).</b> Value-level re-fetch without a site-level re-query,
+     * <p><b>Reentry realization.</b> Value-level re-fetch without a site-level re-query,
      * exactly as {@link QueryField.QueryServiceTableField}: {@code requiresReFetch()} is true,
      * {@code emitsKeyedReQuery()} is false, and the re-projection is realized by the downstream
      * child fetchers' {@code $fields}. See that leaf's javadoc for the fact linkage.

@@ -17,30 +17,30 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R300 execution-tier proof for {@code @routine}: a real {@code RETURNS TABLE} function in the DB
+ * Execution-tier proof for {@code @routine}: a real {@code RETURNS TABLE} function in the DB
  * backs a root list field, invoked end-to-end with its IN parameters bound from GraphQL arguments.
  * This is the proof that the generated {@code Routines.<method>(<bound args>)} call and the
  * FROM-attach actually run and return rows, and that selection narrowing projects only the columns
  * the query selected.
  *
- * <p>R435 extends the proof to the child-positioned {@code @routine} (the correlated single-node
- * chain): {@code Actor.films} rides the inline correlated multiset whose FROM source is
+ * <p>The child-positioned {@code @routine} (the correlated single-node chain) extends the proof:
+ * {@code Actor.films} rides the inline correlated multiset whose FROM source is
  * {@code Routines.filmsForActor(parent.ACTOR_ID, DSL.val(minLength))}, asserting per-parent
  * correlation and the mixed column/argument binding.
  *
- * <p>R435's routine-then-hops chain is proven by {@code Query.recentFilmsForActor}: the routine
+ * <p>The routine-then-hops chain is proven by {@code Query.recentFilmsForActor}: the routine
  * result is the FROM source and the {@code @reference} hop lands the terminus on the {@code film}
- * catalog table, joined on the name-matched target PK ({@code source.FILM_ID = film.FILM_ID} —
- * a routine result carries no FK). Projecting film-table-only columns proves the hop keyed
+ * catalog table, joined on the name-matched target PK ({@code source.FILM_ID = film.FILM_ID},
+ * as a routine result carries no FK). Projecting film-table-only columns proves the hop keyed
  * correctly.
  *
- * <p>R435's child multi-node chains are proven per shape: {@code Actor.recentFilms}
- * (routine-then-hops at a child position — lateral head, name-matched hop out),
- * {@code Film.castFilms} (hops-then-routine — {@code columnMapping} binds against the previous
+ * <p>The child multi-node chains are proven per shape: {@code Actor.recentFilms}
+ * (routine-then-hops at a child position: lateral head, name-matched hop out),
+ * {@code Film.castFilms} (hops-then-routine: {@code columnMapping} binds against the previous
  * node, {@code film_actor.actor_id}, not the implicit head), and {@code Film.castRecentFilms}
- * (the sandwich — hops in, CROSS JOIN LATERAL, name-matched hop back out to {@code film}).
+ * (the sandwich: hops in, CROSS JOIN LATERAL, name-matched hop back out to {@code film}).
  *
- * <p>R435's batched keyed re-query form ({@code @splitQuery}) is proven by
+ * <p>The batched keyed re-query form ({@code @splitQuery}) is proven by
  * {@code Actor.filmsSplit} / {@code Actor.recentFilmsSplit}: the batch key is the routine's
  * column-bound input (design B — the {@code parentInput} VALUES table carries {@code actor_id}
  * and the lateral call reads it off {@code parentInput} directly), with per-parent scatter by
@@ -111,7 +111,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void correlatedChildRoutineReturnsPerParentRows() {
-        // R435: the child-positioned @routine (single-node chain, implicit head). pActorId is fed
+        // The child-positioned @routine (single-node chain, implicit head). pActorId is fed
         // from each parent Actor row's actor_id (columnMapping), pMinLength from the GraphQL
         // argument (argMapping). Seeded casts: PENELOPE(1) -> films 1,2,3; NICK(2) -> 1,4;
         // ED(3) -> 2,5. With minLength: 0 every cast film comes back, correlated per parent.
@@ -149,7 +149,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void rootRoutineThenHopsChainJoinsOutOfRoutineResult() {
-        // R435: the root routine-then-hops chain. The routine narrows to PENELOPE(1)'s films of
+        // The root routine-then-hops chain. The routine narrows to PENELOPE(1)'s films of
         // length >= 50 (films 1 and 3); the name-matched hop out of the routine result lands on
         // the film table, and `description` exists ONLY there (the routine result exposes just
         // film_id and title) — a mis-keyed or missing hop cannot produce these values.
@@ -170,7 +170,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void childRoutineThenHopsChainJoinsOutOfRoutineResultPerParent() {
-        // R435: routine-then-hops at a child position — the lateral routine call heads each
+        // Routine-then-hops at a child position: the lateral routine call heads each
         // actor's chain (correlated on that row's actor_id) and the name-matched hop lands on
         // the film table. `description` exists only there, so a mis-keyed hop cannot pass;
         // per-parent narrowing proves the correlation reaches the lateral call.
@@ -191,7 +191,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode() {
-        // R435: hops-then-routine — the FK hop reaches the film_actor junction first, so
+        // Hops-then-routine: the FK hop reaches the film_actor junction first, so
         // pActorId is fed from film_actor.actor_id (the previous node), NOT the implicit head.
         // For film 1 the cast is PENELOPE(1) and NICK(2): films_for_actor(1, 50) -> {1, 3},
         // films_for_actor(2, 50) -> {1, 4}; the multiset concatenates per junction row and
@@ -211,7 +211,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void childSandwichChainJoinsBackOutToCatalogTerminus() {
-        // R435: the sandwich — film -> film_actor (FK hop), CROSS JOIN LATERAL
+        // The sandwich: film -> film_actor (FK hop), CROSS JOIN LATERAL
         // films_for_actor(fa.actor_id, 50), name-matched hop back onto film. The projected
         // `description` exists only on the film table, proving the tail hop out of the routine
         // result; the row multiset mirrors castFilms' merged cast sets.
@@ -230,7 +230,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void splitRoutineChildBatchesByBoundColumns() {
-        // R435 batched form: filmsSplit rides the DataLoader keyed re-query. The batch key IS
+        // Batched form: filmsSplit rides the DataLoader keyed re-query. The batch key IS
         // the routine's column-bound input (actor_id), lifted into the parentInput VALUES table;
         // the CROSS JOIN LATERAL call reads it off parentInput with no correlation JOIN. The
         // per-parent scatter (by __idx__) must reproduce exactly the inline form's rows.
@@ -249,7 +249,7 @@ class RoutineFieldExecutionTest {
 
     @Test
     void splitRoutineThenHopsChainJoinsOutInsideBatchQuery() {
-        // R435 batched routine-then-hops: the name-matched hop out of the routine result runs
+        // Batched routine-then-hops: the name-matched hop out of the routine result runs
         // inside the batch query, after the lateral. `description` exists only on film, so a
         // mis-keyed hop cannot pass; per-parent scatter proves the batch key correlation.
         var data = execute("""

@@ -66,8 +66,8 @@ public final class CodeActions {
     }
 
     private static String countableNoun(String displayName) {
-        // Phrase the displayName for use after a count. R93's
-        // displayName ("Migrate `name:` to `className:`") becomes
+        // Phrase the displayName for use after a count. The displayName
+        // ("Migrate `name:` to `className:`") becomes
         // "ExternalCodeReference.name sites" in the spec's wording;
         // a stable, neutral phrasing here is "rewrite sites".
         return "ExternalCodeReference.name sites";
@@ -140,7 +140,7 @@ public final class CodeActions {
         // Cursor file not open: no SDL actions and, matching the prior behaviour,
         // no lint quick-fixes either.
         if (out == null) return List.of();
-        // R398: the finding-keyed lint QuickFix branch, alongside the detector-driven SdlActions
+        // The finding-keyed lint QuickFix branch, alongside the detector-driven SdlActions
         // above. It projects the LintFix the rule computed build-side straight off the
         // ValidationReport, sharing only the WorkspaceEdit / TextEdit / QuickFix emit primitives.
         out.addAll(LintQuickFixes.compute(params, workspace));

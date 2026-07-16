@@ -80,7 +80,7 @@ class ArgBindingMapTest {
 
     @Test
     void parseArgMapping_redundantCommas_areInsignificantWhitespace() {
-        // Standard GraphQL convention: commas are insignificant whitespace. The R53-era
+        // Standard GraphQL convention: commas are insignificant whitespace. The earlier
         // string-split parser rejected "a: b, , c: d" as an empty entry; the lexer-based parser
         // treats redundant commas as just more whitespace and accepts the input. This is a
         // small UX relaxation that matches Apollo Connectors' parsing behavior.
@@ -169,7 +169,7 @@ class ArgBindingMapTest {
 
     @Test
     void of_twoOverridesBindingToSameSlot_areBothPresent() {
-        // R53 spec example: argMapping "a: x, b: x" against slot {x} produces {a: x, b: x}.
+        // Spec example: argMapping "a: x, b: x" against slot {x} produces {a: x, b: x}.
         // The Java method has parameters `a` and `b`, both receiving the value of GraphQL arg `x`.
         var result = ArgBindingMap.of(scalarSlots("x"),
             headOverrides(new java.util.LinkedHashMap<>(Map.of("a", "x", "b", "x"))));
@@ -215,7 +215,7 @@ class ArgBindingMapTest {
 
     @Test
     void of_singleSegmentPath_buildsHead() {
-        // {kvotesporsmal: input}: head-only path, like an R53 single-name override.
+        // {kvotesporsmal: input}: head-only path, like a single-name override.
         var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
         slot.put("input", graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()

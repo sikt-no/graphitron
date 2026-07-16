@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline-tier coverage for R88's classifier-side accessor-resolution check. Each test builds an
+ * Pipeline-tier coverage for the classifier-side accessor-resolution check. Each test builds an
  * SDL with a JavaRecord-backed parent type pointing at a fixture class in
  * {@link no.sikt.graphitron.codereferences.dummyreferences.R88AccessorFixtures}, runs the
  * classifier and validator end-to-end, and asserts on either the resolved
@@ -34,7 +34,7 @@ class RecordFieldAccessorValidationTest {
 
     private static GraphitronSchema buildWithRecord(String fixtureSimpleName, String typeBody) {
         // Bind TestType through the real reflection path, a @service producer whose method
-        // returns the R88 fixture class, rather than the removed @record(className) idiom. The
+        // returns the fixture class, rather than the removed @record(className) idiom. The
         // backing class (and therefore the inner-field accessor classification under test) is
         // identical; only the binding source changes from directive to reflected return type.
         // DummyService declares one r88<FixtureSimpleName>() method per fixture.

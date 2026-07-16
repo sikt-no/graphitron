@@ -158,7 +158,7 @@ class DiagnosticsTest {
         Map.of());
     }
 
-    // ===== R216 — @field(name:) member validation inside extend type X { ... } =====
+    // ===== @field(name:) member validation inside extend type X { ... } =====
 
     @Test
     void unknownColumnInsideTypeExtensionProducesError() {
@@ -190,7 +190,7 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
-    // ===== R159 — $source sigil diagnostics =====
+    // ===== $source sigil diagnostics =====
 
     @Test
     void sourceSigil_atCarrierDataField_producesNoDiagnostic() {
@@ -309,12 +309,12 @@ class DiagnosticsTest {
         assertThat(diags.get(0).getMessage()).contains("GHOST");
     }
 
-    // ===== R224 — @field(name:) on @reference path field validates against terminal table =====
+    // ===== @field(name:) on @reference path field validates against terminal table =====
 
     @Test
     void inputTableWithReferencePathValidatesAgainstTerminalTable() {
         // The enclosing @table is "film"; the @reference path navigates to "language";
-        // the column "NAME" exists on "language" but not on "film". Pre-R224 the LSP
+        // the column "NAME" exists on "language" but not on "film". Previously the LSP
         // checked the enclosing type's @table and emitted a false-positive
         // "Unknown column 'NAME' on table 'film'."
         var file = file("""
@@ -386,7 +386,7 @@ class DiagnosticsTest {
         assertThat(diags).noneMatch(d -> d.getMessage().contains("Unknown column"));
     }
 
-    // ===== R331 — @field(name:) on a @table-interface participant cross-table reference =====
+    // ===== @field(name:) on a @table-interface participant cross-table reference =====
     //              validates against the @reference terminal table, not the participant's @table
 
     @Test
@@ -394,7 +394,7 @@ class DiagnosticsTest {
         // Single-table-interface participant: the enclosing @table is "film" but the field
         // reaches a column on "language" through a single-hop @reference. The field classifies
         // as ParticipantCrossTable, whose targetTableName is the terminal table. "NAME"
-        // exists on "language" but not on "film"; pre-R331 the ParticipantCrossTable arm fell
+        // exists on "language" but not on "film"; previously the ParticipantCrossTable arm fell
         // through to the enclosing @table and emitted a false-positive
         // "Unknown column 'NAME' on table 'film'." on a schema that builds clean.
         var file = file("""
@@ -442,7 +442,7 @@ class DiagnosticsTest {
         assertThat(diags).noneMatch(d -> d.getMessage().contains("on table 'film'"));
     }
 
-    // ===== R343 — @defaultOrder(fields: [{name:}]) validates against the element table =====
+    // ===== @defaultOrder(fields: [{name:}]) validates against the element table =====
 
     @Test
     void defaultOrderFieldNameValidatesAgainstElementTable() {
@@ -557,7 +557,7 @@ class DiagnosticsTest {
 
     @Test
     void recordClassName_carveOut_producesNoUnknownClassError() {
-        // R307: @record is deprecated and ignored — its className binds no class, so an unresolvable
+        // @record is deprecated and ignored — its className binds no class, so an unresolvable
         // className raises no "Unknown class" diagnostic (the carve-out gates on the enclosing
         // directive name). The same coordinate under @enum/@service still validates.
         var file = file("""
@@ -719,7 +719,7 @@ class DiagnosticsTest {
         // @sourceRow has flat className/method directive args; the canonical
         // overlay binds @sourceRow(className:) → ClassNameBinding so the
         // same validator that fires inside ExternalCodeReference fires here
-        // too. Closes the R110 gap that the old hand-coded
+        // too. Closes the gap that the old hand-coded
         // DirectiveDefinitions.ENTRIES list left silent.
         var file = file("""
             type Foo {
@@ -859,13 +859,13 @@ class DiagnosticsTest {
         assertThat(diags.get(0).getMessage()).contains("'Ghost'");
     }
 
-    // legacyName_unresolved_tableMethod removed: after R43 the @tableMethod directive
-    // is flat (className: + method: directly on the directive) and does not carry the
-    // deprecated `name:` alias.
+    // legacyName_unresolved_tableMethod removed: the @tableMethod directive is now flat
+    // (className: + method: directly on the directive) and does not carry the deprecated
+    // `name:` alias.
 
     @Test
     void legacyName_record_carveOut_producesNoError() {
-        // R307: @record is deprecated and ignored, so the legacy ExternalCodeReference.name →
+        // @record is deprecated and ignored, so the legacy ExternalCodeReference.name →
         // className alias nudge is dead tooling for it too (it would only push the author toward a
         // className the directive no longer reads). The carve-out suppresses it, mirroring the
         // className-tooling carve-out; the same legacy alias under @service/@condition still warns.
@@ -970,7 +970,7 @@ class DiagnosticsTest {
 
     @Test
     void userDeclaredDirectiveSilencedBySnapshot() {
-        // Canonical case in R139's motivation: federation directives,
+        // Canonical motivating case: federation directives,
         // @auth-style guards, etc. land in the snapshot and the
         // unknown-directive arm silences instead of pelting one warning per
         // use.
@@ -1100,7 +1100,7 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
-    // R101 Phase 4 — @scalarType(scalar:) diagnostics.
+    // @scalarType(scalar:) diagnostics.
 
     @Test
     void scalarType_malformedReference_producesError() {
@@ -1182,7 +1182,7 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
-    // ---- R142 phase 2: arg validation on user-declared directives. ----
+    // ---- Arg validation on user-declared directives. ----
 
     @Test
     void userDirectiveUnknownTopLevelArg_warns() {
@@ -1254,7 +1254,7 @@ class DiagnosticsTest {
 
     @Test
     void userDirectiveUnknownArgUnderPreviousSnapshot_silent() {
-        // Stale-snapshot silence — same R139 trade applied to phase 2.
+        // Stale-snapshot silence — same trade applied to user-declared directives.
         var file = file("""
             type Query {
                 customers: [String!]! @auth(rle: "admin")
@@ -1293,7 +1293,7 @@ class DiagnosticsTest {
             .contains("'neme'").contains("Unknown argument").contains("@table");
     }
 
-    // R100 — @node(keyColumns:) and @nodeId(typeName:) diagnostics.
+    // @node(keyColumns:) and @nodeId(typeName:) diagnostics.
 
     @Test
     void nodeKeyColumns_unknownElement_producesError() {
@@ -1460,7 +1460,7 @@ class DiagnosticsTest {
     }
 
     /**
-     * R224 — variant of {@link #filmCatalog()} where {@code language} carries the
+     * Variant of {@link #filmCatalog()} where {@code language} carries the
      * {@code NAME} column. Lets the regression tests demonstrate the @reference path
      * retarget: {@code NAME} exists on {@code language} (the path's terminal) but not
      * on {@code film} (the enclosing type's @table).

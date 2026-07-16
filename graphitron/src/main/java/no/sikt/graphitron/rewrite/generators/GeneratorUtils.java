@@ -83,7 +83,7 @@ class GeneratorUtils {
 
     /**
      * The default source binding for a record-parent key extraction: the fetcher reads its backing
-     * object straight off {@code env.getSource()}. The R268 arm-switch substitutes
+     * object straight off {@code env.getSource()}. The arm-switch substitutes
      * {@code success.value()} here once it has narrowed the {@code Outcome} source to
      * {@code Success}; see {@link #buildRecordParentKeyExtraction(SourceKey, GraphitronType.ResultType, CodeBlock)}.
      */
@@ -464,7 +464,7 @@ class GeneratorUtils {
      * {@code OUTCOME_SUCCESS} envelope) rather than {@code env.getSource()}. Reads each PK column
      * into a typed local so a {@code null} component binds as a typed {@code null} (not an untyped
      * literal), then short-circuits to {@code completedFuture(null)} if any component is {@code null}
-     * — the R305 source=target carrier path relies on both: the typed bind keeps the VALUES-join's
+     * — the source=target carrier path relies on both: the typed bind keeps the VALUES-join's
      * {@code = } comparison well-typed, and the null short-circuit returns no row for the LocalContext
      * error sentinel (an empty record with a {@code null} PK).
      */
@@ -530,8 +530,8 @@ class GeneratorUtils {
      * (see {@link #reservedSourceAlias(String)}) and this arm rebuilds the typed record column by
      * column, reading each value back by its reserved alias with an explicit type. Both sites
      * enumerate {@link TableRef#allColumns()}, so the projected names and the names read here are
-     * single-homed and cannot drift. The R426 contract is preserved: the reconstructed record
-     * carries every column on the parent table.
+     * single-homed and cannot drift. The full-parent-row contract is preserved: the reconstructed
+     * record carries every column on the parent table.
      */
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
         TypeName keyType = sourceKey.keyElementType();

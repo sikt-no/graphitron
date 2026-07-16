@@ -63,7 +63,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
  * resolution, or a {@link Rejection.AuthorError.RecordBindingMultiProducer} diagnostic.
  *
  * <p>The {@code @record} directive is read only to surface a directive-ignored warning; it does
- * not contribute to the binding under R96.
+ * not contribute to the binding.
  *
  * <p>The per-SDL-type fold is the producer-side rejection point for backing-class disagreement,
  * surfacing as {@link Rejection.AuthorError.RecordBindingMultiProducer}. The consumer is
@@ -94,7 +94,7 @@ final class RecordBindingResolver {
     private final Set<String> reachable = new LinkedHashSet<>();
 
     /**
-     * R178 DML mutation payload bindings, observed for the payload SDL type of every DML
+     * DML mutation payload bindings, observed for the payload SDL type of every DML
      * {@code @mutation} field whose payload is a non-{@code @table} SDL Object. Stored on a
      * dedicated axis (not result/input) so the existing record-binding fold and the
      * {@code recordBackingClasses} pump in {@link TypeBuilder#prepareForWalk()} continue to ignore
@@ -105,7 +105,7 @@ final class RecordBindingResolver {
     private final Map<String, ProducerBinding.DmlEmitted> dmlEmittedMemo = new LinkedHashMap<>();
 
     /**
-     * R178 step 2b: dedicated map for {@link ProducerBinding.ServiceEmitted} observations from
+     * Dedicated map for {@link ProducerBinding.ServiceEmitted} observations from
      * {@code @service} mutation fields with payload-returning shapes. Mirrors
      * {@link #dmlEmittedMemo}.
      */
@@ -124,7 +124,7 @@ final class RecordBindingResolver {
     private final Map<String, Arity> serviceCarrierProducerArrivalMemo = new LinkedHashMap<>();
 
     /**
-     * R461 reason ledger: the gated accessor near-miss (if any) the walk hit while trying to ground a
+     * Reason ledger: the gated accessor near-miss (if any) the walk hit while trying to ground a
      * child SDL type through a parent accessor. Keyed by the child SDL type; first gated near-miss
      * wins. Read by the classifier ({@link TypeBuilder}) only when the child type ends the walk with
      * no producer, so the sole-producer B2/B4/B5 tightening cases surface the accessor gate.
@@ -164,7 +164,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R178 DML mutation payload binding for an SDL type. Carries the inner {@link TableRef}
+     * DML mutation payload binding for an SDL type. Carries the inner {@link TableRef}
      * the DML producer emits rows for, the {@link DmlKind}, and the producer-side cardinality
      * lifted from the input {@code @table} arg. Held on a dedicated axis so the existing fold
      * and the {@link TypeBuilder#prepareForWalk()} {@code recordBackingClasses} pump don't see it.
@@ -174,7 +174,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R178 step 2b: resolves the optional {@link ProducerBinding.ServiceEmitted} observation
+     * Resolves the optional {@link ProducerBinding.ServiceEmitted} observation
      * for an SDL payload type whose producer is an {@code @service} mutation field with a
      * carrier-shaped payload. Mirrors {@link #resolveDmlEmitted}.
      */
@@ -255,7 +255,7 @@ final class RecordBindingResolver {
             }
         });
 
-        // @service, @externalField (ComputedField), @tableMethod, and @mutation (R178 DmlEmitted)
+        // @service, @externalField (ComputedField), @tableMethod, and @mutation (DmlEmitted)
         // on field definitions.
         ctx.schema.getAllTypesAsList().forEach(named -> {
             if (!(named instanceof GraphQLObjectType obj)) return;
@@ -310,7 +310,7 @@ final class RecordBindingResolver {
         serviceCarrierProducerArrivalMemo.put(carrierFieldKey(parent.getName(), field.getName()),
             producerIsMulti ? Arity.MANY : Arity.ONE);
 
-        // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
+        // ServiceEmitted observation for @service-carrier candidates. The check
         // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed
         // field whose record class matches the method's reflected return-element. Both plain SDL
         // Object and ClassBacked (reflection-bound) carriers ground here; this map is
@@ -413,7 +413,7 @@ final class RecordBindingResolver {
             Class<?> reflectedElement, boolean reflectedIsMulti) {
         String resultSdl = unwrappedTypeName(field.getType());
         if (resultSdl == null || isTableBackedSdlType(resultSdl)) return new ProducerBindLevel.NoBind();
-        // R329 two-level carrier: a payload with a single non-@table object data field whose element
+        // Two-level carrier: a payload with a single non-@table object data field whose element
         // the reflected return feeds. Distinguished from a plain result wrapper (whose data field IS
         // a property of the reflected class) by the absence of an accessor for the data-field name on
         // the reflected element; distinguished from the @table-data-field carrier by the data field
@@ -511,7 +511,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R178 step 2b: structural detection for an {@code @service}-carrier candidate. Grounds a
+     * Structural detection for an {@code @service}-carrier candidate. Grounds a
      * {@link ProducerBinding.ServiceEmitted} observation when the payload SDL Object exposes
      * exactly one {@code @table}-typed data field whose record class equals the
      * {@code @service} method's reflected return-element class. Skipped silently for shapes
@@ -519,7 +519,7 @@ final class RecordBindingResolver {
      * {@code @table}-typed field, unresolvable inner table, class-load failure, type mismatch
      * between method return and the data field's record class).
      *
-     * <p>R96 runs before per-type classification populates {@code ctx.types}, so the detection
+     * <p>The binding walk runs before per-type classification populates {@code ctx.types}, so the detection
      * reads directly from {@code ctx.schema} (the assembled GraphQL schema) and the catalog
      * via {@link ServiceCatalog#resolveTable}. The {@code @table}-typed predicate is "the
      * field's return type unwraps to a GraphQL Object that carries the {@code @table}
@@ -547,8 +547,8 @@ final class RecordBindingResolver {
         }
         // ID-element carrier (the opptak fjernSakTagg/fjernSakTagger shape). With no
         // @table-typed data field, recognize exactly one ID-scalar field carrying
-        // @nodeId(typeName: T); the SDL-side table comes from T's own @table directive. R96
-        // runs before per-type classification, so T's @node-ness cannot be checked here; the
+        // @nodeId(typeName: T); the SDL-side table comes from T's own @table directive. The
+        // binding walk runs before per-type classification, so T's @node-ness cannot be checked here; the
         // classifier's encoder resolution closes that loop (and re-asserts the table match
         // against this binding's tableRef) at FieldBuilder's serviceEmitted ID branch.
         if (dataField == null) {
@@ -729,7 +729,7 @@ final class RecordBindingResolver {
         // Fold the root-producer observations into resultMemo/inputMemo first, so the loop below
         // reads concrete bindings on its first pass. Without this the snapshot (further down) starts
         // empty and the cascade never propagates: it lay dormant while @record/@table bound every
-        // nested type independently, and R276 makes it load-bearing (e.g. a record-backed type reached
+        // nested type independently, and it is now load-bearing (e.g. a record-backed type reached
         // only through a parent accessor, with no @record directive left to bind it).
         foldAll();
         // Iterate until no new bindings are produced. Each pass walks every SDL Object/Input
@@ -1048,7 +1048,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R461 reason ledger: records a gated accessor near-miss (a member that name-matched on the parent
+     * Reason ledger: records a gated accessor near-miss (a member that name-matched on the parent
      * class but failed a walk tightening's gate) for the child SDL type the field references. Surfaced
      * only when that child type ends the walk with no producer at all, so the sole-producer B2/B4/B5
      * cases name the accessor gate rather than a generic no-producer cascade. A plain name-absence is

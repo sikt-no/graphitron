@@ -12,14 +12,15 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R328 (D1) read-side fallout. The same-table-{@code @reference}-means-self-FK gate lives in the
+ * Read-side fallout of self-FK {@code @nodeId} reference support. The
+ * same-table-{@code @reference}-means-self-FK gate lives in the
  * single shared {@link NodeIdLeafResolver#resolve}, so relaxing it also admits a same-table
  * {@code @nodeId @reference} on a <em>read-side query argument / filter</em>: it resolves to
  * {@link NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} and is emitted as a self-FK filter
  * ({@code WHERE child_cols IN (decoded keys)}, no self-join), exactly like a cross-table FK-target
  * arg. This is in scope by design, not an unstated side effect, and is pinned here.
  *
- * <p>Uses the public (Sakila) catalog: the R328 {@code email} self-FK fixture
+ * <p>Uses the public (Sakila) catalog: the {@code email} self-FK fixture
  * ({@code email_in_reply_to_fk (mailbox_id, in_reply_to_no) -> (mailbox_id, message_no)}) lives there
  * (see {@code init.sql}), reachable from this {@code TestSchemaHelper.buildSchema(sdl)} default
  * context.

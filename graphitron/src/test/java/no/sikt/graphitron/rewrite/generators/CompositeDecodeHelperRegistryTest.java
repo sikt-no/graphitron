@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Structural tests for {@link CompositeDecodeHelperRegistry}. The registry is the seam between
- * {@link ArgCallEmitter}'s NodeId-decode path (all arities, since R260) and
+ * {@link ArgCallEmitter}'s NodeId-decode path (all arities) and
  * {@link QueryConditionsGenerator}'s per-class helper emission; these tests pin the dedup key
  * shape and helper-naming matrix so a future refactor cannot silently break either guarantee.
  */
@@ -121,7 +121,7 @@ class CompositeDecodeHelperRegistryTest {
 
     @Test
     void register_arity1_namesKeyHelpersAndProjectsSingleColumn() {
-        // R260 extended the registry from composite-only to all arities: an arity-1 decode lifts to
+        // The registry was extended from composite-only to all arities: an arity-1 decode lifts to
         // a `decode<Type>Key`/`Keys` helper that returns the bare key column type and projects via
         // Record1.value1(), rather than the former inline ternary at the call site.
         var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);

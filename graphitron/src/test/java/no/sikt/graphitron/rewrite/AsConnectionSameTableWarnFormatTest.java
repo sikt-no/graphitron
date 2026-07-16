@@ -14,14 +14,14 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * Pins the user-facing warn-message format for {@code @asConnection} + required same-table
  * {@code @nodeId} leaf.
  *
- * <p>R113 demoted the classifier rejection on this shape to an advisory; production
+ * <p>The classifier rejection on this shape was demoted to an advisory; production
  * schemas (e.g. opptak-subgraph's {@code Query.kompetanseregelverkGittIdV2}) deliberately
  * compose required same-table {@code @nodeId} args with {@code @asConnection} to ship a
  * paginated WHERE-IN connection to consumers, and a build break on that shape would be a
  * wire-format-incompatible change. The advisory still fires (the always-bounded shape is worth
  * flagging for authors who didn't mean to compose them), but classification continues.
  *
- * <p>R294 routed the advisory through the unified {@link BuildWarning} channel
+ * <p>The advisory is routed through the unified {@link BuildWarning} channel
  * ({@code ctx.addWarning} → {@link GraphitronSchema#warnings()}), retiring the dedicated
  * {@code asConnectionSameTableHygiene} logger; this test asserts the {@link BuildWarning} on
  * {@code schema.warnings()} rather than capturing logger output.

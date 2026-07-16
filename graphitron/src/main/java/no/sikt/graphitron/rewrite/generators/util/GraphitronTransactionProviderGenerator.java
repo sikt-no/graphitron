@@ -10,7 +10,7 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
- * R429 slice 2 — emits {@code GraphitronTransactionProvider}, the custom jOOQ
+ * Emits {@code GraphitronTransactionProvider}, the custom jOOQ
  * {@link org.jooq.TransactionProvider} wrapped around the single pinned connection, into the
  * consumer's {@code <outputPackage>.schema} package. This is the one seam every transaction boundary
  * routes through.
@@ -21,8 +21,8 @@ import java.util.List;
  *
  * <h2>Why custom rather than jOOQ's {@code DefaultTransactionProvider}</h2>
  * {@code DefaultTransactionProvider.begin/commit/rollback} are {@code public final}, so a subclass
- * cannot suppress a commit. R429's commit-policy axis needs exactly that: under
- * {@link CommitPolicy#ROLLBACK_ONLY} (R428's rollback-everything dev tool, consumed by name) the
+ * cannot suppress a commit. The commit-policy axis needs exactly that: under
+ * {@link CommitPolicy#ROLLBACK_ONLY} (the rollback-everything dev tool, consumed by name) the
  * top-level {@code commit()} must roll back instead. A {@code TransactionListener} cannot fill the
  * role either: listeners observe boundaries but cannot change the outcome. So the provider is
  * reimplemented from scratch over the pinned connection.
@@ -30,10 +30,10 @@ import java.util.List;
  * <h2>Commit policy is the one axis</h2>
  * The provider governs only mutation transactions: each mutation field's shipped
  * {@code dsl.transactionResult(...)} opens a writable transaction through this provider. Query
- * operations run in autocommit and never reach it (R429 drops blanket read-only enforcement; the
- * targeted successor is R460). {@link CommitPolicy} is global provider configuration, never
+ * operations run in autocommit and never reach it (blanket read-only enforcement is dropped; a
+ * targeted successor is planned). {@link CommitPolicy} is global provider configuration, never
  * site-declared: {@code COMMIT} persists a successful top-level transaction; {@code ROLLBACK_ONLY}
- * (R428's dev mode) defers one operation transaction across field settles, savepoint-scoping each
+ * (the dev-execution mode) defers one operation transaction across field settles, savepoint-scoping each
  * field, so the generated DML two-step's post-settle payload read-back observes the uncommitted
  * write, and the whole transaction is discarded by {@code PinnedConnection#release} at operation
  * completion. A site opens a transaction to write; it does not get to choose
