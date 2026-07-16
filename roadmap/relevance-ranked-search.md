@@ -511,9 +511,11 @@ halves are authored in their phases.
   top hits (not necessarily first: "matirx" can rank a same-prefix title
   ahead, verified 2026-07-16, so the assertion is membership-in-top-N, not
   rank-1), a nonsense query returns `[]` (the threshold), a word-interior
-  match stays out (`ma` does not find "Amadeus"), distance ties order
-  deterministically by PK, and the boot probe fails fast with a named
-  error against a database missing `pg_trgm`. Tsvector: ranking
+  match stays out (`ma` does not find "Amadeus"), a single-accent mismatch
+  matches and ranks below the exact spelling ("flaklypa" finds "Flåklypa";
+  the accent dividend of the 0.4 threshold, verified 2026-07-16), distance
+  ties order deterministically by PK, and the boot probe fails fast with a
+  named error against a database missing `pg_trgm`. Tsvector: ranking
   honors weights (a title match outranks a description match). Shared:
   authored filter argument ANDs with the match; `defaultFirst` applies;
   `first` over `maxFirst` errors client-visibly; empty search string
@@ -750,6 +752,18 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-16 (Spec revision, collation question): can collations serve
+  accent-insensitive search? No: trigram similarity ignores the column's
+  collation entirely (verified: identical `word_similarity` on a plain
+  column and on an accent-insensitive nondeterministic ICU collation;
+  Postgres additionally rejects LIKE on nondeterministic collations).
+  Collations govern `=`/`ORDER BY`, never `<%`. The round did surface a
+  dividend: at the pinned 0.4 threshold, one accented character behaves as
+  a substitution typo, so "flaklypa" finds "Flåklypa" with no unaccent
+  machinery (accent-dense words still miss, ~0.29 for "blabar" vs
+  "Blåbærsyltetøy"). The how-to's earlier accent-significant claim was
+  measured at the 0.6 default and is corrected; the accent-dividend case
+  joins the trigram execution tests.
 - 2026-07-16 (Spec revision, later the same day): the docs-first round.
   Drafted the trigram combobox how-to
   (`relevance-ranked-search-howto.adoc`) ahead of implementation to force

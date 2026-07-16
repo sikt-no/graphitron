@@ -184,7 +184,7 @@ Verified behaviour against a film-title dataset, with the migration above (thres
 | `[]`. The similarity threshold filters non-matches; nonsense never returns a garbage top-N.
 |===
 
-An empty `search` string also returns `[]`. Accents are significant: "fla" does not find "Flåklypa" (typing "flå" does). If your users type unaccented, plan an unaccented generated column; that recipe is not in v1 (`unaccent()` is not `IMMUTABLE`, so it needs a wrapper function to sit in a generated column).
+An empty `search` string also returns `[]`. Accents get partial tolerance for free: to trigram matching, one accented character is structurally a substitution typo, so with the 0.4 threshold "flaklypa" finds "Flåklypa" (ranked below an exact-spelling match, honestly). Accent-dense words are out of reach ("blabar" scores ~0.29 against "Blåbærsyltetøy" and is dropped); if your users routinely type unaccented against accent-dense text, plan an unaccented generated column; that recipe is not in v1 (`unaccent()` is not `IMMUTABLE`, so it needs a wrapper function to sit in a generated column). Collations are not a lever here: trigram similarity digests characters and ignores the column's collation entirely, verified against an accent-insensitive nondeterministic ICU collation (identical similarity values; collations change `=` and `ORDER BY`, never `<%`).
 
 == Bounding and the client contract
 
@@ -207,7 +207,7 @@ On the client, the usual combobox hygiene applies and is enough: debounce keystr
 * No zero-migration mode. `@search` without the extension and index runs into the boot probe, by design.
 * `TRIGRAM` is for name-like text. No per-field weighting exists inside one concatenated column; long prose belongs to `TSVECTOR`.
 * The threshold setting is load-bearing for typo tolerance and easy to lose in environment moves; watch the boot report.
-* Accent-sensitive by default; unaccented matching needs a preprocessed column (future recipe).
+* Accent tolerance rides the typo threshold: one accented character per word matches, accent-dense text does not. Full accent insensitivity needs a preprocessed column (future recipe); collations do not affect trigram matching.
 * Ranking is string similarity, not popularity or recency. Equal-similarity ties order by primary key. If product wants "best seller first among equal matches", that is a different feature (score exposure and custom tiebreak are recorded as future work on R427).
 * Top-N only: no cursors, no `pageInfo`, no deep paging. The field answers "the best twenty", not "page 7 of matches". Use a connection field for browsing.
 
