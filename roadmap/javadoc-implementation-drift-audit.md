@@ -7,7 +7,7 @@ priority: 10
 theme: docs
 depends-on: []
 created: 2026-07-15
-last-updated: 2026-07-15
+last-updated: 2026-07-16
 ---
 
 # Audit javadoc for drift against current design and implementation
@@ -30,12 +30,18 @@ Verification then has a mechanical spine, does the cited symbol/test exist and s
 
 A coverage-percentage or sampling Done is itself an unguarded census that rots (exactly the failure mode this item exists to fix). The defensible Done is module-by-module: each module gets one recorded adversarial pass, **and** that pass leaves the surface more mechanically pinned than it found it (link-conversions, pins for load-bearing claims). The test of a finished module is not "we read all of it" but "the next drift here becomes a compile/javadoc error rather than silent rot." Modules are the natural fan-out unit; the item is done when every in-scope module has had its recorded pass.
 
-## Execution (decide at Ready)
+## Execution: multi-agent workflow, `graphitron` sub-partitioned
 
-This is unbounded semantic work and a natural fan-out: readers per module propose changes; each is adversarially verified against the implementation before it lands. Whether to run it as a multi-agent workflow (higher token cost, better coverage) or inline module-by-module is a deliberate decision to fix before leaving Spec, and depends on how large the surface is once R482 has de-noised it.
+Settled from a post-R482 surface measurement: roughly 3,400 javadoc blocks across about 520 main-source files, with `graphitron` alone holding around 74% (circa 2,540 blocks over 321 files). That is well past what a single inline pass can read against the implementation with any depth; an inline sweep would silently degrade into sampling, the census-that-rots failure the Done section rejects. So the audit runs as a fan-out.
+
+- **Fan-out unit.** Module is the coarse unit for the smaller modules (`graphitron-javapoet`, `graphitron-jakarta-rest`, `graphitron-mcp`, `graphitron-lsp`, `graphitron-maven-plugin`, `graphitron-fixtures-codegen`, `graphitron-sakila-service`, `graphitron-sakila-example`), one reader each. `graphitron` is too large for one reader and is sub-partitioned by `rewrite/*` subsystem package (`rewrite/model`, `rewrite/generators`, the `rewrite` core, `rewrite/catalog`, with the small remaining subpackages grouped), each slice sized to a single agent context. Main-source javadoc is the priority surface the partition is sized on; test-tier comments in the same slice are swept in the same pass.
+- **Pipeline, not barrier.** Each slice runs reader then adversarial verify independently: a reader proposes relink/pin/delete edits; a verify stage checks each proposed edit against the current implementation, and that any introduced pin compiles and passes, never against the comment it replaces. A slice's edits land only on passing verification. There is no cross-slice barrier; a slice finishes and lands on its own.
+- **Per-module recorded pass** is both the synthesis unit and the Done ledger (see above).
+
+Launching the fan-out is token-heavy and is authorized explicitly at In Progress; this Spec fixes the shape, not the spend.
 
 ## Scope
 
 - **In scope:** javadoc and implementation comments across the generator and runtime modules.
 - **Out of scope:** the roadmap-reference purge and its guard (R482); authoring net-new manual/architecture pages beyond what pinning a claim requires (file follow-ons).
-- **Depends on R482** landing first (de-noised surface; guard prevents the audit's rewrites from reintroducing roadmap refs).
+- **R482 has landed** (de-noised surface; the `RoadmapReferenceGuardTest` guard now prevents the audit's own rewrites from reintroducing roadmap refs). The surface numbers above are measured against that de-noised state.

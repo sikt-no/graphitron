@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | In Review | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R483` | Audit javadoc for drift against current design and implementation | Spec | 2026-07-15 | [plan](javadoc-implementation-drift-audit.md) |
+| `R483` | Audit javadoc for drift against current design and implementation | Spec | 2026-07-16 <sub>created 2026-07-15</sub> | [plan](javadoc-implementation-drift-audit.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
