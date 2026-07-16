@@ -114,7 +114,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@link ArgumentRef.InputTypeArg.TableInputArg} that drives the statement directly. UPDATE
  * and DELETE instead carry the slim {@link InputArgRef} arg surface plus their
      * walker-produced carrier ({@link UpdateRows} / {@link DeleteRows}) and implement
-     * {@link UpdateRowsField} / {@link DeleteRowsField}: per R222, input fields have no semantics
+     * {@link UpdateRowsField} / {@link DeleteRowsField}: input fields have no semantics
      * independent of the consuming field, so the SET/WHERE partition lives on the carrier, not a
      * {@code TableInputArg}.
      *
@@ -179,7 +179,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
  * The {@code @mutation(typeName: UPDATE)} field that returns its {@code @table} type
      * directly. Unlike its INSERT / DELETE / UPSERT siblings it carries no {@code TableInputArg};
      * its input semantics are dissolved into the walker-produced {@link UpdateRows} carrier plus
-     * the slim {@link InputArgRef} arg surface (per R222: input fields have no semantics
+     * the slim {@link InputArgRef} arg surface (input fields have no semantics
      * independent of the consuming field). Both slots are non-Optional; the field is only
      * constructed when the FieldBuilder pre-checks and the {@code UpdateRowsWalker} both pass.
      */
@@ -209,7 +209,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Like its UPDATE sibling {@link MutationUpdateTableField} (and unlike INSERT / UPSERT) it
      * carries no {@code TableInputArg}: its input semantics are dissolved into the
      * {@code DeleteRowsWalker}-produced {@link DeleteRows} carrier plus the slim {@link InputArgRef}
-     * arg surface (per R222: input fields have no semantics independent of the consuming field).
+     * arg surface (input fields have no semantics independent of the consuming field).
      * DELETE's carrier has no SET partition — every admitted input column is a WHERE filter
      * ({@link DeleteRows#whereColumns()}) — and supports the {@code multiRow: true}
      * {@link DeleteRows.Broadcast} arm UPDATE rejects. The non-return slots are non-Optional; the
@@ -267,15 +267,15 @@ public sealed interface MutationField extends RootField, WithErrorChannel
  * per-field {@code dsl.transactionResult(...)} boundary and captures only the columns
      * hop 0's key needs from the routine's result rows (the analog of DML's PK-only
      * {@code RETURNING}); step 2 runs after the commit, a read-only SELECT anchored on hop 0's
-     * table with the captured keys, remaining hops joined as in R435, projecting the terminus
-     * {@code @table} type. The routine never appears in step 2's {@code FROM}: re-invoking it
+     * table with the captured keys, remaining hops joined as the read chain joins them, projecting
+     * the terminus {@code @table} type. The routine never appears in step 2's {@code FROM}: re-invoking it
      * would re-execute the write, so the field's return binds to the re-read only.
      *
      * <p>The chain shape is the shared {@link RoutineChain} (the {@code QueryRoutineTableField}
      * carrier), exposed through {@link RoutineChainField}; this leaf adds one pin of its own —
      * {@code hops} non-empty. With no hop there is no post-commit table to re-read from; the
      * single-node Mutation {@code @routine} stays a typed {@code Deferred} carried by the
-     * result-shapes follow-up item (see {@code roadmap/routine-write-result-shapes.md}).
+     * result-shapes follow-up item.
      *
      * <p>{@code errorChannel()} is pinned empty: the return is the direct terminus {@code @table}
      * type (the terminus rule), never a payload carrying a typed {@code errors} field, so the
@@ -389,7 +389,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * A mutation field backed by a developer-provided service method that returns a multitable
-     * {@link GraphitronType.InterfaceType} over distinct-table participants (R365, route (a)). The
+     * {@link GraphitronType.InterfaceType} over distinct-table participants (route (a)). The
      * mutation analogue of {@link QueryField.QueryServicePolymorphicField}: the service hands back a
      * PK-populated jOOQ {@code TableRecord} per branch, and the emitted fetcher dispatches on each
      * returned record's runtime class against the participant set, tags {@code __typename}, and
@@ -446,7 +446,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R75 / Phase 1 — a record-returning DML mutation: the schema field carries
+     * A record-returning DML mutation: the schema field carries
      * {@code @mutation(typeName: INSERT|UPSERT)}, takes a {@code @table} input, and
      * returns a payload carrier (an SDL Object admitted by
      * {@code BuildContext.scanStructuralDmlPayload} as a single non-errors data field whose
@@ -488,7 +488,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // DELETE sources its WHERE columns from the DeleteRows walker carrier, not @lookupKey /
             // PK-coverage on a TableInputArg. With both carved off, the live DmlKind range here is
             // {INSERT, UPSERT}; each carve-out monotonically shrinks the range the eventual
-            // dml-record-carrier-sealed-on-kind split must carry.
+            // sealed-on-kind split must carry.
             if (kind == DmlKind.UPDATE) {
                 throw new IllegalArgumentException(
                     "MutationDmlRecordField cannot carry DmlKind.UPDATE — R258 routes the "
@@ -520,8 +520,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>The classifier admits exactly
      * {@code (tableInputArg.list() == true, dataField.wrapper().isList() == true,
      * kind == INSERT)} and pairs the input cardinality to the data field's element
-     * type. (R258 carved bulk UPDATE off onto {@link MutationBulkUpdatePayloadField}; R266 carved
-     * bulk DELETE off onto {@link MutationBulkDeletePayloadField}; UPSERT is deferred to R145.) The
+     * type. (Bulk UPDATE was carved off onto {@link MutationBulkUpdatePayloadField}; bulk DELETE
+     * onto {@link MutationBulkDeletePayloadField}; UPSERT is deferred.) The
      * data table / input table agreement is now structurally pinned by the
      * {@link ProducerBinding.DmlEmitted} compact constructor's
      * {@code reflectedClass.getName().equals(tableRef.recordClass().reflectionName())}
@@ -529,10 +529,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * disagreeing producers fold against the same SDL payload type.
      *
      * <p>UPSERT is structurally compatible with this leaf but is refused upstream by
-     * {@code MutationInputResolver} under R144's cardinality-safety regime. R145
-     * ({@code mutation-cardinality-safety-upsert}) lifts the refusal with a designed
-     * cardinality story; at that point this leaf's compact-constructor relaxes to admit
-     * {@code DmlKind.UPSERT} and the parameterised emitter gains the UPSERT branch.
+     * {@code MutationInputResolver} under the cardinality-safety regime. A future designed
+     * cardinality story lifts the refusal; at that point this leaf's compact-constructor relaxes
+     * to admit {@code DmlKind.UPSERT} and the parameterised emitter gains the UPSERT branch.
      *
      * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
      * {@code input[i]} for all {@code i ∈ [0, N)}. The emitter satisfies the invariant via
@@ -551,10 +550,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@code buildMutationBulkDmlRecordFetcher} is the find-usages anchor; the contract is a
      * runtime claim about emit-order iteration with no compile-time signal.
      *
-     * <p><b>Per-kind emit variation.</b> Only INSERT lives on this leaf today; future UPSERT lifts
-     * at R145 add a second shape with ON CONFLICT semantics. The principles-aligned target is
-     * sealed-on-kind permits mirroring {@link DmlTableField}, tracked at
-     * {@code dml-record-carrier-sealed-on-kind} as the joint lift over both record-carrier leaves.
+     * <p><b>Per-kind emit variation.</b> Only INSERT lives on this leaf today; a future UPSERT lift
+     * adds a second shape with ON CONFLICT semantics. The principles-aligned target is
+     * sealed-on-kind permits mirroring {@link DmlTableField}, the joint lift over both
+     * record-carrier leaves.
      * Until that lift lands, the {@link DmlKind} enum field encodes the per-emit-shape dispatch and
      * the parameterised emitter switches on it.
      *
@@ -628,10 +627,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * a record-sourced {@link ChildField.BatchedTableField}, emitted as a two-step PK-only {@code RETURNING}
      * inside {@code transactionResult} followed by the data field's response SELECT).
      *
-     * <p>R246 migrated the direct-return UPDATE off {@code resolveInput}'s {@code @value}-partition
+     * <p>The direct-return UPDATE was migrated off {@code resolveInput}'s {@code @value}-partition
      * onto the {@code UpdateRowsWalker}'s PK-or-UK matched-key membership; this leaf does the same
      * for the payload-return shape, so no UPDATE path reads {@code @value} (the precondition for
-     * R188 retiring the directive). Both slots are non-Optional: the field is only constructed when
+     * retiring the {@code @value} directive). Both slots are non-Optional: the field is only constructed when
      * the FieldBuilder pre-checks and the walker both pass; a walker {@code Err} surfaces as an
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} with no carrier.
      * No {@link DmlKind} slot — the leaf identity is the kind.
@@ -693,7 +692,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * as a two-step PK-only {@code RETURNING} inside {@code transactionResult} — no follow-up SELECT
      * after the row is gone).
      *
-     * <p>R266 migrated the payload DELETE off {@code resolveInput}'s {@code @lookupKey} / PK-coverage
+     * <p>The payload DELETE was migrated off {@code resolveInput}'s {@code @lookupKey} / PK-coverage
      * WHERE source onto the {@code DeleteRowsWalker}'s PK-or-UK identification; carving DELETE off
      * {@code resolveInput} retires the last live {@code @value} consumer. Both slots are non-Optional:
      * the field is only constructed when the FieldBuilder pre-checks and the walker both pass; a

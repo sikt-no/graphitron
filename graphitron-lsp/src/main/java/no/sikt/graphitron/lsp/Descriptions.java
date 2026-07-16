@@ -6,7 +6,7 @@ import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 /**
  * Resolves the description text the hover and completion surfaces render for a
  * catalog element, overlaying the source-derived Javadoc from the LSP-owned
- * {@link SourceWalker.Index} onto the catalog's build-derivable fallback (R352).
+ * {@link SourceWalker.Index} onto the catalog's build-derivable fallback.
  *
  * <p>The catalog ({@link CompletionData}) is built on the generator
  * ({@code .class}) cadence and carries only what is recoverable without parsing
@@ -71,7 +71,7 @@ public final class Descriptions {
      * not indexed. Public so the declaration-name hover arm's
      * {@link no.sikt.graphitron.lsp.parsing.DeclTarget.SourceClass} target
      * (record / POJO / standalone-jOOQ backing class) can overlay it, matching
-     * where goto-definition jumps for the same coordinate (R371).
+     * where goto-definition jumps for the same coordinate.
      */
     public static String classJavadoc(String fqn, SourceWalker.Index sourceIndex) {
         if (fqn == null) {

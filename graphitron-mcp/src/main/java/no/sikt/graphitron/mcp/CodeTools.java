@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R368 slice 3 — the {@code services} / {@code conditions} / {@code records} read tools over the
+ * The {@code services} / {@code conditions} / {@code records} read tools over the
  * consumer Java the schema wires to. Reads {@code Workspace.catalog().externalReferences()} (the
  * flat {@link CompletionData.ExternalReference} scan) joined with {@code Workspace.sourceIndex()}
  * for source locations.

@@ -40,10 +40,10 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
-     * R424: input-field {@code @condition} narrowing customers by first name. A {@code null}
+     * Input-field {@code @condition} narrowing customers by first name. A {@code null}
      * {@code firstName} maps to {@code noCondition()} (absent value == unconstrained), so a query
      * whose inline {@code @reference} filter argument is silently dropped returns UNFILTERED rows.
-     * This is the reproducer for the R424 defect: an inline (non-{@code @splitQuery}) reference
+     * This is the reproducer for the defect: an inline (non-{@code @splitQuery}) reference
      * filter used to read its argument off the ancestor fetcher's {@code env} (which has no such
      * argument), collapsing the predicate to {@code noCondition()}. The fix reads it off the inline
      * field's own {@code SelectedField}, so the predicate narrows as the client asked.
@@ -69,7 +69,7 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
-     * R330: FK-target {@code @nodeId} {@code @condition} method. The declared first parameter is
+     * FK-target {@code @nodeId} {@code @condition} method. The declared first parameter is
      * the concrete FK-target table {@link Address} (not the input's own {@code customer} table),
      * so the generated condition only compiles if {@code QueryConditionsGenerator} hands it an
      * aliased {@code Address} from the correlated {@code EXISTS} rather than the root
@@ -83,7 +83,7 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
-     * R330: field-level {@code @condition(override: true)} paired with an FK-target {@code @nodeId}
+     * Field-level {@code @condition(override: true)} paired with an FK-target {@code @nodeId}
      * input field, mirroring the opptak {@code soknadsmangeltyperCondition} shim shape. The declared
      * first parameter is the concrete root table {@link Customer} (the table the query selects from),
      * so the generated shim only compiles if it hands this method the root {@code table} local while
@@ -96,7 +96,7 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
-     * R330 rework: composite-key FK-target {@code @nodeId} {@code @condition(override)}. project_note
+     * Composite-key FK-target {@code @nodeId} {@code @condition(override)}. project_note
      * reaches project through a composite FK {@code (org_id, project_id)}. The declared first
      * parameter is the concrete FK-target {@link Project}, so the generated code only compiles if
      * {@code FkTargetConditionEmitter} hands it an aliased Project from the correlated EXISTS (whose
@@ -108,7 +108,7 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
-     * R355: input-field {@code @condition} on an input-object field
+     * Input-field {@code @condition} on an input-object field
      * ({@code RentalRateRange { fra, til }}) whose two {@code BigDecimal} parameters bind one
      * level in to the same-named nested fields BY NAME, with no {@code argMapping}. Filters films
      * whose {@code rental_rate} falls in {@code [fra, til]}; a {@code null} bound is unconstrained

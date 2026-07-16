@@ -124,7 +124,7 @@ public final class SplitRowsMethodEmitter {
      * the FK hop's source-side columns (FK-holder side, terminal for list cardinality); on
      * the lifter path, the {@code OnLiftedSlots} correlation's
      * {@link no.sikt.graphitron.rewrite.model.HasSlots#targetSideColumns()} (the DataLoader key
-     * tuple IS the target-column tuple by construction, R431); on the
+     * tuple IS the target-column tuple by construction); on the
      * @sourceRow + @reference path, the FK hop's source-side columns again. The prelude resolves
      * this fork once via a sealed switch and exports the ready list; the consumer iterates without
      * re-switching.
@@ -159,8 +159,8 @@ public final class SplitRowsMethodEmitter {
      * {@code DSL.inline(i)} followed by one
      * {@code DSL.val(<scalar>, Tables.<OWNER>.<COL>.getDataType())} per key column, delegated
      * to {@link ValuesJoinRowBuilder#cellsCode} (the single VALUES-cell authority) so jOOQ
-     * binds each cell through the column's registered {@code Converter} at the DB type (R413:
-     * an untyped bind renders converter-backed / domain-typed keys at the wrong SQL type and
+     * binds each cell through the column's registered {@code Converter} at the DB type (an
+     * untyped bind renders converter-backed / domain-typed keys at the wrong SQL type and
      * the correlation JOIN has no matching operator).
      *
      * <p>The scalar extraction forks on {@link SourceKey.Wrap} — the axis that decides whether
@@ -274,7 +274,7 @@ public final class SplitRowsMethodEmitter {
 
         // Classifier contract: joinPath is non-empty for an @reference-correlated split child
         // (the parent-correlation JOIN needs at least the first hop's slots), and empty for the
-        // pre-keyed lifted shape (ParentCorrelation.OnLiftedSlots, R431), whose single target
+        // pre-keyed lifted shape (ParentCorrelation.OnLiftedSlots), whose single target
         // alias is synthesized from the correlation's target table exactly as the retired
         // single-LiftedHop path derived it. An empty joinPath with a null correlation is the
         // standalone-lookup shape, which the classifier does not route here; guard it explicitly
@@ -294,7 +294,7 @@ public final class SplitRowsMethodEmitter {
         String firstAlias = aliases.get(0);
         // Classifier contract: joinPath is non-empty. The first step is either a filter-less FK-style
         // hop (an FK-derived Hop with pairable slots), a pre-keyed lifted correlation, a parent-anchored hop
-        // (a condition-join OR any hop-0 filter — R450), or a lateral routine head. The sealed switch
+        // (a condition-join OR any hop-0 filter), or a lateral routine head. The sealed switch
         // on parentCorrelation routes them uniformly: OnFkSlots reads the slot pairs as before;
         // OnParentJoin declares the parent-alias table local and routes parentInput's JOIN through the
         // parent's own PK columns (the parent-PK grain the arm dictates).
@@ -363,7 +363,7 @@ public final class SplitRowsMethodEmitter {
 
         // Hop aliases — one declaration per hop. Reads target accessors uniformly through
         // HasTargetTable so every step surfaces its pre-resolved targetTable without an
-        // arm-specific cast (post-R232 condition-join hops carry a resolved TableRef; see
+        // arm-specific cast (condition-join hops now carry a resolved TableRef; see
         // BuildContext.resolveConditionJoinTarget).
         // The lifted shape has no hops; declare its single synthesized target alias directly
         // (byte-identical to the retired single-LiftedHop declaration: the target is always a
@@ -422,7 +422,7 @@ public final class SplitRowsMethodEmitter {
      * there; connection appends its window tail), so each caller frames the projection and tail
      * itself.
      *
-     * <p>This block was the source of R324's bug: it lived as a byte-for-byte copy in
+     * <p>This block was once the source of a bug: it lived as a byte-for-byte copy in
      * {@code buildListMethod} and {@code buildConnectionMethod} but never grew into
      * {@code buildSingleMethod}, which projected off {@code firstAlias} with no bridging loop and
      * was therefore single-hop only. Extracting it makes the topology uniform across the
@@ -439,7 +439,7 @@ public final class SplitRowsMethodEmitter {
      * hops use {@code .on(method(prevAlias, alias))}, lateral routine hops use
      * {@code .crossJoin(DSL.lateral(alias))}. The pre-keyed lifted shape carries no hops at all
      * ({@code @reference}-composed paths are FK / condition chains; the lifted correlation is
-     * hop-less, R431), so the loop is a no-op for it and for any single-hop path.
+     * hop-less), so the loop is a no-op for it and for any single-hop path.
      */
     private static void emitFromBridgeAndParentJoin(
             CodeBlock.Builder sel,
@@ -517,7 +517,7 @@ public final class SplitRowsMethodEmitter {
      * is the hop's origin side: the previous hop's alias for hops 1..n, and for hop 0 the parent
      * alias declared by the {@link ParentCorrelation.OnParentJoin} arm. The classifier lands any
  * hop-0 {@code filter()} on that arm precisely so a parent alias exists here; under the
-     * other arms a hop-0 filter is unreachable and guarded (the pre-R450 code bound the hop-0
+     * other arms a hop-0 filter is unreachable and guarded (the earlier code bound the hop-0
      * <em>target</em> alias as both parameters, so a filter's concretely-typed source parameter
      * failed javac and a wildcard-typed one produced silently self-referential SQL).
      *
@@ -552,7 +552,7 @@ public final class SplitRowsMethodEmitter {
                     // parent-anchor arm (OnParentJoin) precisely so parentAlias is in scope to bind
                     // the filter's source parameter. Under OnFkSlots / OnLateralArgs parentInput
                     // carries no parent alias, so a hop-0 filter is classifier-unreachable — guard
-                    // it loudly rather than silently bind the target alias twice as the pre-R450
+                    // it loudly rather than silently bind the target alias twice as the earlier
                     // code did.
                     if (!(parentCorrelation instanceof ParentCorrelation.OnParentJoin)) {
                         throw new IllegalStateException(
@@ -583,7 +583,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Builds the rows-method for a {@link ChildField.BatchedTableField} (both source shapes;
-     * the SQL bodies were already shared pre-merge, R432). Sibling entry points
+     * the SQL bodies were already shared pre-merge). Sibling entry points
      * {@link #buildForSplitLookupTable} and {@link #buildForRecordLookupTable} cover the lookup
      * twins; each caller in {@code TypeFetcherGenerator} already has the concrete field type, so
      * no capability-typed dispatcher is needed at this seam.
@@ -654,7 +654,7 @@ public final class SplitRowsMethodEmitter {
      * difference is that the terminal table is materialised by calling the developer's static
      * {@code @tableMethod} (returning a generated jOOQ table) rather than referencing
      * {@code Tables.<X>} directly. Single-hop FK-derived {@link JoinStep.Hop} only, mirroring the
-     * table-parent {@link ChildField.TableMethodField} emit's shipped shape (R43 commit 3);
+     * table-parent {@link ChildField.TableMethodField} emit's shipped shape;
      * multi-hop FK paths and empty joinPaths surface a runtime
      * {@link UnsupportedOperationException}. Condition-join first-hops are
      * caught at parse time by {@link no.sikt.graphitron.rewrite.FieldBuilder}'s
@@ -674,7 +674,7 @@ public final class SplitRowsMethodEmitter {
         List<JoinStep> path = rtmf.joinPath();
         // Condition-join first-hop on class-backed parent is caught upstream by FieldBuilder's
         // parentCorrelation synthesis (no parent @table to anchor); the predicate below only
-        // covers the pre-existing R43 limits on RecordTableMethodField (empty + multi-hop).
+        // covers the pre-existing limits on RecordTableMethodField (empty + multi-hop).
         boolean unsupportedPath = path.isEmpty() || path.size() > 1;
         if (unsupportedPath) {
             String shapeLabel = path.isEmpty()
@@ -758,8 +758,8 @@ public final class SplitRowsMethodEmitter {
             parentInputTableType, DSL, parentInputAlias.build());
 
         // Terminal table: invoke the developer's static @tableMethod. Aliased so the parent-input
-        // JOIN can address its columns via the local. The leading-table parameter was retired
-        // in R43 commit 1; ArgCallEmitter is called with null for the table expression.
+        // JOIN can address its columns via the local. The leading-table parameter was retired;
+        // ArgCallEmitter is called with null for the table expression.
         var methodClass = ClassName.bestGuess(rtmf.method().className());
         String conditionsClassName = outputPackage + ".conditions."
             + rtmf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
@@ -780,7 +780,7 @@ public final class SplitRowsMethodEmitter {
         // JOIN parentInput on FK columns. The single FK hop's slots pair source (parent) and
         // target (developer table) columns; the parent-side column lookup goes by sqlName + the
         // owner column's DataType (sidestepping potential @node ordering mismatches and keeping
-        // converter-backed columns' type metadata faithful; R413).
+        // converter-backed columns' type metadata faithful).
         var firstHop = (On.ColumnPairs) ((JoinStep.Hop) rtmf.joinPath().get(0)).on();
         TableRef ownerTable = rtmf.parentCorrelation().parentKeyOwnerTable();
         var onCond = CodeBlock.builder();
