@@ -1,7 +1,7 @@
 ---
 id: R488
 title: "Concept explainers declare and cross-link their backing roadmap item(s)"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: docs

@@ -21,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
-| `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | Ready | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
+| `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | In Progress | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R201` | Honor @field(name:) in @error payload construction shape resolution | In Review | 2026-07-16 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-payload-construction-shape.md) |
 | `R427` | Free-text search backed by native database search indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -329,7 +329,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### docs
 
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
-- `R488` [**Concept explainers declare and cross-link their backing roadmap item(s)**](concept-explainer-item-crosslinks.md) — Ready, architecture
+- `R488` [**Concept explainers declare and cross-link their backing roadmap item(s)**](concept-explainer-item-crosslinks.md) — In Progress, architecture
 - `R443` [**Post-R438 stale-reference residue: ConditionResolution javadoc**](post-r438-stale-reference-residue.md) — Backlog, structural
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
