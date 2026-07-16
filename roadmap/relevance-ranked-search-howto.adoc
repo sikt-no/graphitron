@@ -214,6 +214,7 @@ On the client, the usual combobox hygiene applies and is enough: debounce keystr
 * Accent tolerance rides the typo threshold: one accented character per word matches, accent-dense text does not. Full accent insensitivity needs a preprocessed column (future recipe); collations do not affect trigram matching.
 * Ranking is string similarity, not popularity or recency. Equal-similarity ties order by primary key. If product wants "best seller first among equal matches", that is a different feature (score exposure and custom tiebreak are recorded as future work on R427).
 * Top-N only: no cursors, no `pageInfo`, no deep paging. The field answers "the best twenty", not "page 7 of matches". Use a connection field for browsing.
+* Not a table quick-filter either. A search box over a paginated admin table (narrow the rows, keep the table's order and cursors) is a different, match-only demand that graphitron does not serve yet; it is recorded on R427 as *quick-filter*. This field's matching is tuned for rank-and-bound (the 0.4 threshold admits noise precisely because ranking sinks it), so repurposing it as an unranked filter would surface that noise.
 
 == See also
 

@@ -82,6 +82,17 @@ contract.
    schema at codegen time" discipline. The search surface is a separate
    field, synthesized by graphitron (the R13 `@asFacet` synthesis machinery
    is the shipped precedent), so authoring cost stays one directive.
+   **Re-affirmed 2026-07-16 (split revisit)**, with three arguments that
+   did not exist when the fork closed: the pinned 0.4 threshold makes
+   match-without-rank defective under our own recipe (the noise it admits
+   is only acceptable because ranking sinks it and the top-N bound cuts
+   it; a filter-only fuzzy match returns that noise interleaved in keyset
+   order); the Oracle compiler makes the search string a *compiled input*,
+   categorically not a `@field`-mapped filter value; and the hit wrapper's
+   forward bet (score, highlighting as sibling fields of `node`) has no
+   landing zone on a connection's edges. The one real cost of the split,
+   the admin-table quick-filter case, is a recognized third demand in
+   Non-goals, not a merge argument.
 2. **Result shape: bounded top-N hit list.** A hit wrapper type
    (structurally an edge: `node` plus room for future hit-level metadata),
    no `pageInfo`, no cursors, a capped `first:`-style limit. **No relevance
@@ -126,8 +137,10 @@ contract.
    invented; both are wrong.
 6. **The Slice A idea (a `search:` filter argument on existing
    filter/connection fields) is dead**, both in its naive-`ILIKE` form
-   (decision 3) and as a backed filter arm: search lives exclusively on the
-   dedicated search field. One concept, one surface, simpler to teach.
+   (decision 3) and as a backed filter arm: search lives exclusively on
+   the dedicated type-ahead field. One concept, one surface, simpler to
+   teach. Re-affirmed 2026-07-16 together with decision 1; the
+   quick-filter demand it might someday serve is named in Non-goals.
 7. **Ranked-offset pagination is descoped** (see the archived design note
    below). The requester's top-N answer removes the only driver for a second
    pagination strategy.
@@ -667,6 +680,22 @@ Three landings, each through the canonical flow:
   enum-with-shared-field-set smell at the directive layer
   (principles-architect consult, 2026-07-16, superseding the earlier
   demand-axis-argument sketch from the Oracle round).
+- **Quick-filter** (the third demand, named 2026-07-16 during the split
+  revisit): a free-text input over a paginated table that narrows rows
+  while *preserving* the connection's declared order and keyset cursors;
+  match-only, rank-free. Recognized here so the future "why can't I just
+  search my connection?" question has a recorded answer: it is not
+  type-ahead (no rank, no bound, no hit wrapper, different quality
+  contract) and merging it into `@typeahead` or into connections would
+  re-fuse demands the grain round separated. Zero requesters today
+  (#512's requester explicitly serves table pages with ordinary keyset
+  connections), and its contract questions are open: the pinned 0.4
+  threshold is tuned for rank-and-bound and admits noise a rank-free
+  filter would surface, typo tolerance may not belong in a filter at all,
+  and unranked fuzzy filtering may not be honest UX. If a requester
+  appears it is designed as its own surface (plausibly an argument-level
+  directive, since it genuinely is a filter contribution), never by
+  bending `@typeahead` into connections.
 - **BM25-class relevance** (`pg_search`/ParadeDB, `pg_textsearch`/
   TigerData): genuinely better ranking than `ts_rank` on long-text corpora
   (corpus statistics, length normalization); a prose-search concern, so it
@@ -824,7 +853,8 @@ is the mitigation.
 
 - **`orderBy: RELEVANCE` on existing connections**: argument-correlation
   validation GraphQL cannot express, a hardcoded-false `pageInfo` that
-  violates the Relay spec, dual-strategy resolvers. Rejected 2026-07-15.
+  violates the Relay spec, dual-strategy resolvers. Rejected 2026-07-15;
+  re-affirmed with stronger arguments 2026-07-16 (decision 1).
 - **SDL-authored index definitions** (`@searchable` field tags with weights,
   a logical index namespace owned by graphitron): authoring a schema object
   we neither create nor enforce is DDL in spirit; weights are index-time
@@ -855,6 +885,20 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-16 (Spec revision, the split revisit): does the dedicated-field
+  decision still hold after the reshape? Yes, stronger. All three
+  original arguments survive (argument-correlation validation,
+  structural keyset-impossibility of score ordering, two demands behind
+  one field), and three new ones arrived with this week's rounds: the
+  0.4 threshold pin makes match-without-rank defective under our own
+  recipe; the Oracle compiler makes the search string a compiled input
+  rather than a filter value; the hit wrapper's forward bet has no
+  landing zone on connection edges. The honest cost was named and
+  recorded: the admin-table quick-filter case is a distinct third demand
+  (match-only, pagination-preserving), now in Non-goals as recognized
+  and requesterless with its open contract questions listed. Decisions
+  1 and 6 carry the re-affirmation; both how-tos gained the
+  quick-filter distinction.
 - 2026-07-16 (Spec revision, the grain round): are we at the correct
   grain, or mixing use cases? Two mixings found and corrected. (1) The
   `SearchKind` enum spliced mechanism and demand everywhere, not just on

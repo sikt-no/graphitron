@@ -182,7 +182,7 @@ One honest caveat on ranking quality: `SCORE` on short name-like fields is coars
 * The empty stoplist, prefix wordlist and lexer preferences are load-bearing, not tuning: the compiled query *assumes* them (the prefix arm assumes `PREFIX_INDEX`, never-throws assumes the empty stoplist). Recreating the index without them silently degrades behaviour (stopword errors return, prefixes crawl or hit the expansion cap, accents stop folding); the boot report is where drift shows, and in v1 that report plus the internal pipeline are the only enforcers of this alignment.
 * Reserved-word tokens (`and`, `or`, `near`, ...) match exact-only until the user types the next character. Rare, self-healing, and listed here so it is a known edge, not a bug report.
 * Fuzzy expansion works off the indexed token table with the generic spelling matcher; its catch rate on Norwegian tokens, and on very short tokens, is a verification item, not a promise.
-* Top-N only: no cursors, no deep paging, same contract as the trigram arm.
+* Top-N only: no cursors, no deep paging, same contract as the trigram arm. Also not a table quick-filter (match-only, pagination-preserving); that is a third demand recorded on R427, unserved on any platform.
 
 [#verification]
 == What still needs live verification
