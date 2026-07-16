@@ -1334,8 +1334,10 @@ public final class MultiTablePolymorphicEmitter {
      * ANDs each intermediate hop's {@code filter()} (a {@code {key:, condition:}} element's
      * accompanying predicate) onto {@code base}, as {@code filter(<originAlias>, <targetAlias>)}.
      * Only hops {@code i>=1} are considered: a hop-0 filter has no parent alias to bind its first
-     * argument on an FK-correlated route and is rejected at classification. Returns {@code base}
-     * unchanged for a {@link ParticipantCorrelation.KeyTupleWhere} or a filterless chain.
+     * argument on an FK-correlated route, so {@code FieldBuilder.classifyParticipantRoute} rejects a
+     * hop-0 {@code filter()} on an explicit {@code @referenceFor} route structurally (a value-bound
+     * parent side has no alias for the filter's source parameter). Returns {@code base} unchanged for
+     * a {@link ParticipantCorrelation.KeyTupleWhere} or a filterless chain.
      */
     private static CodeBlock appendHopFilters(CodeBlock base, ParticipantRef.TableBound participant,
             ParticipantCorrelation correlation) {

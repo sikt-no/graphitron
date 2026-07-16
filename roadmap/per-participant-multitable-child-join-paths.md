@@ -1,7 +1,7 @@
 ---
 id: R458
 title: "Per-participant explicit join paths on multi-table interface/union child fields"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: interface-union
@@ -140,6 +140,8 @@ Independent review of the slices 2-3 landing (`5968d5364`). The build is green e
 
   Both are silent wrong data, the bug class this item and R452 exist to close. Fix: `FieldBuilder.classifyParticipantRoute` (or `singleHopFkColumnPairs`' caller) rejects a hop-0 `filter()` on an explicit route with a structural message naming the participant and steering to a pure `{condition:}` route or an intermediate-hop filter; pin both shapes at the pipeline tier. The single-table arm's `OnParentJoin` handling in `BuildContext` (the "hop-0 `condition:` filter ... has no parent table" rejection) is the precedent to mirror.
 - **Doc follow-through.** `referenceFor.adoc`'s constraints bullet claims "Every shape the path grammar can state is emittable"; once the rejection lands, carve out the hop-0 filter exclusion in the same bullet (intermediate-hop filters stay emittable via `hopFilterTerms`).
+
+**Rework shipped (2026-07-16).** `FieldBuilder.classifyParticipantRoute` now rejects a hop-0 `filter()` on an explicit `@referenceFor` route structurally before the `KeyTupleWhere` / `JoinedCorrelation` lowering fork: the parent side of the first hop correlates by value (not a joined alias), so the filter's parent-table source parameter has nothing to bind against. The message names the participant and steers to a pure `{condition:}` first hop or an intermediate-hop filter. Both shapes are pinned at the pipeline tier (`MultiTableChildReferenceForPipelineTest.singleHopRoute_withHop0Filter_rejectedNamingParticipant`, `.multiHopRoute_withHop0Filter_rejectedNamingParticipant`). `MultiTablePolymorphicEmitter.hopFilterTerms`'s javadoc (which claimed the rejection already existed) is corrected, and `referenceFor.adoc`'s constraints bullet carves out the hop-0 filter exclusion while keeping intermediate-hop filters emittable. Full pipeline + execution build green.
 
 Not blocking, noted for the record: the condition-correlation execution fixture covers the single and list forms; the connection form shares `batchedBranchCorrelationChain` / `parentInputKeyPredicate` with the batched list, so the gap is acceptable. Intermediate-hop `filter:` emission (`hopFilterTerms`) ships without an execution fixture; worth one if a later item touches that path.
 

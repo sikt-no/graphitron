@@ -315,6 +315,56 @@ class MultiTableChildReferenceForPipelineTest {
             .contains("does not land on that participant's table");
     }
 
+    // ===== Hop-0 filter reject (2026-07-16 review finding) =====
+
+    @Test
+    void singleHopRoute_withHop0Filter_rejectedNamingParticipant() {
+        // A single-hop {key:, condition:} route: the key: gives the FK, the condition: rides as a
+        // hop-0 filter. On a multi-table child field the parent side correlates by value (no parent
+        // alias), so the filter's source parameter has nothing to bind against. It used to lower to
+        // KeyTupleWhere, silently dropping the filter (rows the authored filter should exclude survive).
+        // Now rejected structurally naming the participant.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface LangThing { rowId: Int }
+            type Film implements LangThing @table(name: "film") { rowId: Int @field(name: "film_id") }
+            type Language @table(name: "language") {
+              thing: LangThing @referenceFor(type: "Film", path: [{key: "film_original_language_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            type Query { language: Language }
+            """);
+        var rejection = rejectionOf(schema.field("Language", "thing"));
+        assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(rejection.message())
+            .contains("Film")
+            .contains("filter")
+            .contains("first hop")
+            .contains(SLUG_POINTER);
+    }
+
+    @Test
+    void multiHopRoute_withHop0Filter_rejectedNamingParticipant() {
+        // A two-hop chain film -> film_actor -> actor whose hop-0 element carries a filter. The route
+        // lowers to JoinedCorrelation, but hopFilterTerms reads only intermediate hops (i>=1), so a
+        // hop-0 filter never reaches the emitted SQL. Rejected structurally; an intermediate-hop filter
+        // (on the second hop) stays emittable.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface ActorThing { rowId: Int }
+            type ActorP implements ActorThing @table(name: "actor") { rowId: Int @field(name: "actor_id") }
+            type Inventory implements ActorThing @table(name: "inventory") { rowId: Int @field(name: "inventory_id") }
+            type Film @table(name: "film") {
+              thing: ActorThing @referenceFor(type: "ActorP", path: [{key: "film_actor_film_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var rejection = rejectionOf(schema.field("Film", "thing"));
+        assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(rejection.message())
+            .contains("ActorP")
+            .contains("filter")
+            .contains("first hop")
+            .contains(SLUG_POINTER);
+    }
+
     // ===== Producer-arm coverage: union element type, record-backed parent =====
 
     @Test

@@ -7236,6 +7236,27 @@ class FieldBuilder {
                     fieldLabel + ": @referenceFor route for participant '" + type + "' does not land "
                     + "on that participant's table. " + mismatch.diagnostic()));
             }
+            // Hop-0 filter() reject: a {key:, condition:} (or {table:, condition:}) element heading the
+            // path carries a filter whose source parameter is the parent table, but on a multi-table
+            // child field the parent side never enters the branch as a joined SQL alias — correlation is
+            // value-bound against parentRecord (single) / parentInput (batched). So there is nothing to
+            // bind the filter's first argument against. Neither carrier arm emits it: KeyTupleWhere holds
+            // only the FK column pairs (the filter is dropped entirely), and JoinedCorrelation's
+            // hopFilterTerms reads only intermediate hops (i>=1). Both are silent wrong data — rows the
+            // authored filter should exclude survive. Reject; a pure {condition:} hop-0 route (which
+            // joins the parent alias, slice 3) or an intermediate-hop filter is the emittable surface.
+            // Mirrors the single-table OnParentJoin "hop-0 condition: filter has no parent table" reject.
+            if (!parsed.elements().isEmpty()
+                    && parsed.elements().get(0) instanceof JoinStep.Hop hop0 && hop0.filter() != null) {
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    fieldLabel + ": @referenceFor route for participant '" + type + "' carries a filter "
+                    + "(a condition: alongside a key:/table:) on its first hop. On a multi-table "
+                    + "interface/union child field the parent side of the first hop correlates by value, "
+                    + "not a joined alias, so the filter's parent-table source parameter has nothing to "
+                    + "bind against and would be silently dropped. Express the correlation as a pure "
+                    + "{condition:} first hop, or move the filter onto a later (intermediate) hop. "
+                    + "See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+            }
             // Single-hop FK: correlation is a key-tuple WHERE against the parent's bound key values,
             // no joins. Everything else (a multi-hop FK chain — slice 2 — or a route carrying a
             // condition/predicate hop — slice 3) joins real tables and lowers to JoinedCorrelation.
