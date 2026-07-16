@@ -41,19 +41,20 @@ class UnifiedEmissionPinsTest {
     @Test
     void fetcherEmitter_unifiedDispatch() throws IOException {
         // Every DataFetcher MethodSpec emit site in the generators package routes through
-        // DataLoaderFetcherEmitter.build. Current sites (3): TypeFetcherGenerator's
-        // buildServiceDataFetcher, buildSplitQueryDataFetcher, buildRecordBasedDataFetcher.
+        // DataLoaderFetcherEmitter.build. Current sites (2): TypeFetcherGenerator's
+        // buildServiceDataFetcher and buildBatchedDataFetcher (R314 slice 2 merged the former
+        // buildSplitQueryDataFetcher / buildRecordBasedDataFetcher pair onto the one
+        // source-shape-gated builder; generated output stayed byte-identical).
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bDataLoaderFetcherEmitter\\.build\\b"),
             "DataLoaderFetcherEmitter.java");
         assertThat(unifiedCalls)
             .as("Every R38 DataFetcher emit site outside DataLoaderFetcherEmitter itself routes "
-                + "through DataLoaderFetcherEmitter.build. The three sites — "
-                + "buildServiceDataFetcher, buildSplitQueryDataFetcher, "
-                + "buildRecordBasedDataFetcher — are the post-flip enumeration. A handcrafted "
-                + "bypass replaces one call here with inline DataFetcher MethodSpec construction; "
-                + "the count drop trips this pin.")
-            .isEqualTo(3);
+                + "through DataLoaderFetcherEmitter.build. The two sites — "
+                + "buildServiceDataFetcher and buildBatchedDataFetcher — are the post-R314-slice-2 "
+                + "enumeration. A handcrafted bypass replaces one call here with inline "
+                + "DataFetcher MethodSpec construction; the count drop trips this pin.")
+            .isEqualTo(2);
     }
 
     @Test
