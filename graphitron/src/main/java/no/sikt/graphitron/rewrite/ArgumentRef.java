@@ -27,7 +27,7 @@ import java.util.Optional;
  * can read its {@code inputTable}, {@code fieldBindings}, and {@code fields} directly. This is
  * the only argument-classification type that crosses the model/generator boundary today.
  *
- * <p>See {@code docs/argument-resolution.md} for the design and projection semantics.
+ * <p>See {@code docs/architecture/reference/argument-resolution.adoc} for the design and projection semantics.
  *
  * <h2>Variants</h2>
  * <ul>
@@ -64,7 +64,7 @@ public sealed interface ArgumentRef {
         /**
          * Scalar arg resolved to a jOOQ column. {@code argCondition} and
          * {@code suppressedByFieldOverride} drive the four-state projection table; see
-         * {@code docs/argument-resolution.md#condition-on-field-and-argument-definitions}.
+         * {@code docs/architecture/reference/argument-resolution.adoc}.
          * {@code isLookupKey} reflects the presence of {@code @lookupKey} at classify time
          * so projections (notably {@code projectForLookup}) never re-read the SDL directive.
          *

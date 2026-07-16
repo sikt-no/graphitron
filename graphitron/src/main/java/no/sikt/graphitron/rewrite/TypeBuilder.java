@@ -397,7 +397,7 @@ class TypeBuilder {
      * leaves unclassified (no {@code @table} / {@code @error} / producer-backed result, not a root /
      * interface / union / enum / scalar), is not a multi-producer rejection (those classify as
      * {@link UnclassifiedType}), and is not a producer-bound single-record carrier
-     * ({@link #carrierTableBinding}, which classifies as {@code JooqTableRecordType} instead). This
+     * ({@link #carrierBinding}, which classifies as {@code JooqTableRecordType} instead). This
      * reproduces, structurally, the {@code ctx.types.get(name) == null} signal the field pass read before
      * the fold (an SDL object the type pass left unregistered), minus the registry read.
      */
@@ -412,7 +412,7 @@ class TypeBuilder {
      * Registry-free look-ahead at a field's target type. Returns the verdict the
      * target type name resolves to, computed from SDL + reflection bindings + catalog
      * ({@link #classifyType}) plus the producer-bound single-record carrier fixed point
-     * ({@link #carrierTableBinding}), never read from the in-progress type registry. It reproduces
+     * ({@link #carrierVerdict}), never read from the in-progress type registry. It reproduces
      * exactly what {@code ctx.types.get(name)} returned at field-classification time in the two-pass
      * world (where {@code buildTypes} had fully populated the registry before the field pass ran),
      * so the field pass can resolve an {@link InterfaceType} / {@link UnionType} / {@link ResultType}
@@ -423,7 +423,7 @@ class TypeBuilder {
      * <p>{@code classifyType} covers the {@code @table} / {@code @node} / {@code @error} / interface
      * / union / reflection-bound result / scalar / enum / input verdicts. The carrier fallback covers
      * the one verdict {@code classifyType} leaves {@code null} but the registry holds non-null: the
-     * directiveless single-record carrier, bound at the producing edge from {@link #carrierTableBinding}
+     * directiveless single-record carrier, bound at the producing edge from {@link #carrierVerdict}
      * (a {@link GraphitronType.JooqTableRecordType}), not by a resolved {@code @record} producer. A
      * directiveless nesting target / orphan classifies to {@code null} under both, matching the
      * registry's absent entry; the nesting branch in {@link FieldBuilder} is decided separately by
@@ -732,7 +732,7 @@ class TypeBuilder {
      *   <li>otherwise the type pass's own {@link #classifyType} result, which is {@code null} for a
      *       directiveless object. A directiveless single-record carrier classifies as a
      *       {@code JooqTableRecordType} only at the producing edge in the field pass
-     *       ({@link #carrierTableBinding}), after this enrich-time recompute, so it is {@code null} here
+     *       ({@link #carrierVerdict}), after this enrich-time recompute, so it is {@code null} here
      *       under both the old registry read and this recompute, exactly as before.
      * </ul>
      *
@@ -1059,7 +1059,7 @@ class TypeBuilder {
             // cannot yet know what it is. It becomes a NestingType at the embedding edge if a
             // NestingField references it (so NestingType implies a corresponding
             // NestingField by construction); a producer-backed carrier-shaped payload is bound to a
-            // JooqTableRecordType at its visit in the field pass (carrierTableBinding);
+            // JooqTableRecordType at its visit in the field pass (carrierVerdict);
             // anything else is an orphan, caught at the field edge where the field referencing it
             // classifies as UnclassifiedField.
             return null;

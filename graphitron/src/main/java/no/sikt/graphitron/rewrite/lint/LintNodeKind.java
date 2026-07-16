@@ -9,7 +9,7 @@ package no.sikt.graphitron.rewrite.lint;
  * pattern, so a future node position cannot be silently skipped by a {@code default} arm.
  *
  * <p>The engine names the {@link LintNodeKind} explicitly at each dispatch site as it walks the
- * parsed types (see {@code LintEngine}), rather than deriving it from the node's runtime type; the
+ * parsed types (see {@link LintEngine}), rather than deriving it from the node's runtime type; the
  * coverage test guards the enum against a rule subscribing to, or declaring not-linted, a kind
  * outside this set.
  */

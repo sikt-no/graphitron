@@ -132,7 +132,7 @@ public final class EntityResolutionBuilder {
             boolean isNodeType = gType instanceof NodeType;
             if (keys.isEmpty() && !isNodeType) continue;
 
-            // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
+            // @key on a TableInterfaceType is rejected.
             if (gType instanceof TableInterfaceType) {
                 diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(
                     "@key on TableInterfaceType is not supported; declare @key on the implementing types instead"),

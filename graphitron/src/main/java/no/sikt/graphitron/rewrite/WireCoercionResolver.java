@@ -30,7 +30,7 @@ import no.sikt.graphitron.rewrite.model.WireCoercionError;
  * type or a call site; folding the assignability verdict into it would make it a reader of types
  * it has never held. {@code ScalarTypeResolver} owns only the forward mapping
  * ({@link ScalarTypeResolver#coercionOutputType}); this class owns the verdict, and returns a
- * sealed {@link Result} mirroring the {@code EnumMappingResolver.EnumValidation} shape.
+ * sealed {@link Result} mirroring the {@link EnumMappingResolver.EnumValidation} shape.
  *
  * <p>Enum leaves are <em>not</em> handled here: the enum→{@code String} coercion fact is carried
  * structurally by {@code EnumValueOf}, and enum-constant-name parity (site E) is a distinct axis

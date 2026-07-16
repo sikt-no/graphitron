@@ -8,8 +8,7 @@ import java.util.List;
  *
  * <p>The federation grammar is a strict subset of GraphQL selection-set syntax: a non-empty
  * whitespace-separated list of field names, optionally enclosed in braces, optionally containing
- * nested selections (which graphitron rejects, see Non-goals on the federation-via-federation-jvm
- * plan).
+ * nested selections (which graphitron rejects).
  *
  * <p>Accepts:
  * <ul>

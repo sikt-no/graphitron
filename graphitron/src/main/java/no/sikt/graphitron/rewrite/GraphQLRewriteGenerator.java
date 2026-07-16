@@ -72,10 +72,8 @@ import java.util.stream.Stream;
 /**
  * Entry point for the rewrite code-generation pipeline.
  *
- * <p>This pipeline is independent of the legacy {@code GraphQLGenerator}: it parses the GraphQL
- * schema with its own {@link GraphitronSchemaBuilder}, runs its own list of generators, and
- * writes output to the same configured output directory. Generators added here incrementally
- * replace their legacy counterparts as the rewrite pipeline matures.
+ * <p>Parses the GraphQL schema with {@link GraphitronSchemaBuilder}, runs its list of
+ * generators, and writes output to the configured output directory.
  */
 public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);

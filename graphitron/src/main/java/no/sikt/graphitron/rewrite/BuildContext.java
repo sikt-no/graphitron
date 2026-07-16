@@ -2700,7 +2700,7 @@ class BuildContext {
      * id-reference synthesis shim to map the FK's target table back to a GraphQL type name; the
      * shim then builds an {@link InputField.ColumnReferenceField} or
      * {@link InputField.CompositeColumnReferenceField} carrying the resolved type's
-     * {@link no.sikt.graphitron.rewrite.GraphitronType.NodeType} key columns.
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType} key columns.
      */
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
         var candidates = findGraphQLTypesForTable(sqlTableName);

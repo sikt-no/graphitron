@@ -42,20 +42,11 @@ import java.util.List;
  *   <li>Derive each {@link MappingEntry.FromArg}'s {@link ValueShape} from the
  *       {@link ParamSource.Arg} payload's {@link CallSiteExtraction} arm.
  *   <li>Enforce the cross-round invariants: a method round may carry at most one
- *       {@link MappingEntry.FromDsl}; a constructor round (when supported) may not carry a
+ *       {@link MappingEntry.FromDsl}; a constructor round may not carry a
  *       {@link MappingEntry.FromArg}.
  *   <li>Wrap into {@link ServiceMethodCall.Static} or {@link ServiceMethodCall.Instance}
  *       based on {@link MethodRef.Service#callShape()}.
  * </ol>
- *
- * <h3>Constructor support</h3>
- *
- * Today's {@code ServiceCatalog.checkServiceInstanceHolderShape} restricts instance services
- * to a {@code (DSLContext)} constructor. The walker reflects that constraint structurally:
- * {@link ServiceMethodCall.Instance#ctorArgs()} is always {@code [FromDsl]} on the current
- * trunk. The eventual design calls for first-class multi-arg constructors mixing
- * {@link MappingEntry.FromContext} and {@link MappingEntry.FromDsl}; expanding ctor resolution
- * is a separate change that retires the upstream restriction.
  */
 public final class ServiceMethodCallWalker {
 
