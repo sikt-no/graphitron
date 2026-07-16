@@ -211,7 +211,7 @@ public final class ClassName extends TypeName implements Comparable<ClassName> {
      * method assumes that the input is ASCII and follows typical Java style (lowercase package
      * names, UpperCamelCase class names) and may produce incorrect results or throw
      * {@link IllegalArgumentException} otherwise. For that reason, {@link #get(Class)} and
-     * {@link #get(Class)} should be preferred as they can correctly create {@link ClassName}
+     * {@link #get(TypeElement)} should be preferred as they can correctly create {@link ClassName}
      * instances without such restrictions.
      */
     public static ClassName bestGuess(String classNameString) {
