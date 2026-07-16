@@ -6,7 +6,8 @@ import java.util.List;
  * POM XML binding for the {@code <sessionState>} block. Collapses into a
  * {@link no.sikt.graphitron.rewrite.session.SessionStateConfig} on
  * {@link no.sikt.graphitron.rewrite.RewriteContext}, from which
- * {@code ConnectionRuntimeClassGenerator} emits the concrete {@code SessionHook}.
+ * {@link no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator} emits the
+ * concrete {@code SessionHook}.
  *
  * <p>Two mutually-exclusive forms; configure one, not both:
  *

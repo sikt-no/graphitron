@@ -73,7 +73,7 @@ import java.util.function.Consumer;
  *       without waiting for a recompile.</li>
  * </ul>
  *
- * <p>Stop with Ctrl+C. See {@code getting-started.md}'s "Dev loop" for the
+ * <p>Stop with Ctrl+C. See the "Dev loop" how-to in the user manual for the
  * editor-side recipes.
  */
 // TEST resolution (not COMPILE like the sibling goals): the execute tool's classloader needs

@@ -94,7 +94,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * is mounted on the pinned connection: either consumer-authored database callables
      * ({@code <connect call>} / {@code <disconnect call>}, with an optional OUT {@code handle}) or the
      * Postgres {@code <variables>} sugar ({@code <variable name claim>}) that generates both hook
-     * halves. Threaded through {@link RewriteContext}; {@code ConnectionRuntimeClassGenerator} emits the
+     * halves. Threaded through {@link RewriteContext};
+     * {@link no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator} emits the
      * concrete hook from it. An unpaired or handle-inconsistent block fails the build. Omit to mount no
      * identity ({@code SessionHook.NONE}).
      */
