@@ -31,12 +31,12 @@ import java.util.Map;
  * passes a family tag. As later emit families migrate onto the registry they add their own
  * fact-gated declaration seams; until then their methods are simply outside the covered set.
  *
- * <p>The projected-DML reentry sites do not yet commit commands: their keyed re-query is inlined
- * in the mutation fetcher body with no named unit to claim (no {@code rowsMethodName} fact).
- * They will join the registry when the DML follow-up is composed through the named reentry
- * query unit; until then the covered family is structurally the DataLoader-backed reentry
- * coordinates ({@code emitsKeyedReQuery() && field instanceof BatchKeyField}), which the oracle
- * pins explicitly.
+ * <p>The registry covers the whole reentry family: the DataLoader-backed leaves commit through
+ * {@link #declareReentryRowsMethod}, and the projected / discriminated DML arms — whose keyed
+ * re-query lives in a named {@code rows<Name>} companion — commit through
+ * {@link #declareDmlReentryRowsMethod}. The covered set is structurally
+ * {@code emitsKeyedReQuery()} on a {@code BatchKeyField} or {@code DmlTableField}, which the
+ * oracle pins explicitly.
  */
 public final class MethodCommandRegistry {
 

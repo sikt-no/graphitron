@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: classification-model
-depends-on: [dissolve-reentry-leaves-dimensional-emit]
+depends-on: []
 created: 2026-07-13
 last-updated: 2026-07-13
 ---

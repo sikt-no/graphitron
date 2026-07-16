@@ -927,7 +927,7 @@ public sealed interface ChildField extends OutputField
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
         }
         /**
- * Although the service method returns the typed {@code XRecord} (or
+         * Although the service method returns the typed {@code XRecord} (or
          * {@code List<XRecord>}) per the service-producer-strict-return contract, the typed
          * record IS-A jOOQ {@code Record} and the @table-bound child datafetchers read columns
          * by name through the generic {@code Record} interface. The consumer-level identity is
