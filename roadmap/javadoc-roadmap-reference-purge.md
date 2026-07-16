@@ -1,13 +1,13 @@
 ---
 id: R482
 title: "Purge transient roadmap references from javadoc; guard against reintroduction"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 12
 theme: docs
 depends-on: []
 created: 2026-07-15
-last-updated: 2026-07-15
+last-updated: 2026-07-16
 ---
 
 # Purge transient roadmap references from javadoc; guard against reintroduction
