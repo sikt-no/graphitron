@@ -75,7 +75,7 @@ A bare field-level `@reference` on a multi-table interface/union child field is 
 * `type` must name a table-bound participant of the field's return type, case-sensitively. An unknown, non-member, or unbound name is rejected with the list of valid participant names.
 * Declaring the same `type` on two applications of one field is a build error (applications are independent, not concatenated).
 * The path must terminate on the named participant's table; a terminal-target mismatch is rejected naming the participant.
-* Through the current release the emittable shape is a single-hop foreign key (multi-FK disambiguation and same-table self-FK). A multi-hop key chain or a `{condition:}` correlation is accepted grammar but a deferred capability; the build reports it as deferred and names the pending work.
+* Every shape the path grammar can state is emittable: a single-hop foreign key (multi-FK disambiguation, same-table self-FK), a multi-hop key chain through intermediate join tables, and a `{condition:}` correlation. A route that joins real tables bridges each intermediate hop back toward the parent and, for a `{condition:}` correlation, joins the parent table (aliased, bound to the parent's key) and applies the two-arg condition between the parent and the participant.
 
 == See also
 

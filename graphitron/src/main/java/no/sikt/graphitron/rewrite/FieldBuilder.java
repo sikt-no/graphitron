@@ -7211,9 +7211,16 @@ class FieldBuilder {
     /**
      * Classifies one participant's resolved path (explicit {@code @referenceFor} route or
      * auto-discovered) into a {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation} or a
-     * per-participant rejection. Slice 1 lowers only single-hop FK routes (to
-     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere}); multi-hop and
-     * condition routes are DEFERRED to slices 2 and 3.
+     * per-participant rejection.
+     *
+     * <p>A single-hop foreign key lowers to
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere} (the branch joins
+     * nothing; the parent side is bound values). Every richer shape lowers to
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} (the branch
+     * joins real tables): a multi-hop FK chain through intermediate join tables (R458 slice 2) and any
+     * route carrying a condition ({@link On.Predicate}) hop (R458 slice 3). Both arms are now emittable
+     * by {@code MultiTablePolymorphicEmitter} in all three cardinality forms, so nothing is DEFERRED
+     * here.
      */
     private ParticipantRouteOutcome classifyParticipantRoute(boolean explicit, BuildContext.ParsedPath parsed,
             ParticipantRef.TableBound tb, String fieldLabel, TableRef parentTable) {
@@ -7229,30 +7236,16 @@ class FieldBuilder {
                     fieldLabel + ": @referenceFor route for participant '" + type + "' does not land "
                     + "on that participant's table. " + mismatch.diagnostic()));
             }
-            // Condition (predicate) hop → slice 3; else multi-hop → slice 2; else single-hop FK ships.
-            if (parsed.elements().stream().anyMatch(
-                    e -> e instanceof JoinStep.Hop h && h.on() instanceof On.Predicate)) {
-                return ParticipantRouteOutcome.fail(Rejection.deferred(
-                    fieldLabel + ": @referenceFor route for participant '" + type + "' correlates by a "
-                    + "condition (non-foreign-key predicate). Condition correlation on multi-table "
-                    + "child fields is a deferred capability (slice 3)",
-                    PER_PARTICIPANT_JOIN_PATHS_SLUG));
-            }
-            if (parsed.elements().size() > 1) {
-                return ParticipantRouteOutcome.fail(Rejection.deferred(
-                    fieldLabel + ": @referenceFor route for participant '" + type + "' is a multi-hop "
-                    + "key chain (" + parsed.elements().size() + " hops). Multi-hop chains on "
-                    + "multi-table child fields are a deferred capability (slice 2)",
-                    PER_PARTICIPANT_JOIN_PATHS_SLUG));
-            }
+            // Single-hop FK: correlation is a key-tuple WHERE against the parent's bound key values,
+            // no joins. Everything else (a multi-hop FK chain — slice 2 — or a route carrying a
+            // condition/predicate hop — slice 3) joins real tables and lowers to JoinedCorrelation.
             var pairs = singleHopFkColumnPairs(parsed.elements());
-            if (pairs.isEmpty()) {
-                return ParticipantRouteOutcome.fail(Rejection.structural(
-                    fieldLabel + ": @referenceFor route for participant '" + type + "' did not resolve "
-                    + "to a single-hop foreign key. See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+            if (pairs.isPresent()) {
+                return ParticipantRouteOutcome.ok(
+                    new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get()));
             }
             return ParticipantRouteOutcome.ok(
-                new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get()));
+                new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation(parsed.elements()));
         }
 
         // Auto-discovery arm (no @referenceFor for this participant).

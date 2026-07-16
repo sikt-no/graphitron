@@ -93,7 +93,7 @@ Both `customer.address_id` and `staff.address_id` FK back to `address.address_id
 * *Condition joins.* A participant correlated by a non-FK predicate (`{condition:}`).
 * *Multi-hop key chains.* A participant reached through an intermediate join table (chain multiple elements).
 
-The first two are supported today; the latter two are accepted grammar but a deferred capability (the build reports them as deferred). `@referenceFor` binds one path per participant; participants you do not name keep auto-discovery. For example, `film` has two FKs to `language`, so a polymorphic child of a `Language` parent whose `Film` participant needs the `original_language_id` FK states it:
+All four are supported. `@referenceFor` binds one path per participant; participants you do not name keep auto-discovery. For example, `film` has two FKs to `language`, so a polymorphic child of a `Language` parent whose `Film` participant needs the `original_language_id` FK states it:
 
 [source,graphql]
 ----
@@ -104,6 +104,21 @@ type Language @table(name: "language") {
 ----
 
 Unlike repeated `@reference` (which concatenates into one chain), repeated `@referenceFor` applications are independent, one per participant. A bare field-level `@reference` on a multi-table child field is rejected; `@referenceFor` is the sanctioned per-participant surface.
+
+A participant reached through a junction table chains its hops, and one correlated by a non-FK predicate states a `{condition:}` element. Both bind the same way, one per participant; participants you do not name keep auto-discovery:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    cast: [FilmCastMember!]!
+        # multi-hop: film -> film_actor -> actor
+        @referenceFor(type: "ActorMember", path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        # condition: a two-arg predicate between the parent film and the actor
+        @referenceFor(type: "ActorViaPredicate", path: [{condition: {className: "com.example.FilmConditions", method: "filmActorsViaCondition"}}])
+}
+----
+
+A multi-hop route bridges each intermediate table back toward the parent and value-binds the parent-adjacent hop to the parent's key. A `{condition:}` route joins the parent table (aliased, bound to the parent's key) and applies the two-arg condition method between the parent alias and the participant alias.
 
 *FK chain to a single-table interface.* If the field returns a single-table polymorphic interface reached through one FK chain, use a regular xref:../reference/directives/reference.adoc[`@reference`]:
 
@@ -138,7 +153,7 @@ Single-table layouts hinge on the literal database value matching xref:../refere
 * The single-table layout requires every implementer to share the interface's xref:../reference/directives/table.adoc[`@table`]. Mixing tables breaks the contract.
 * The multi-table layout requires that each implementer be xref:../reference/directives/table.adoc[`@table`]-bound; the interface or union itself is not.
 * Subtype-specific fields on a single-table interface may pull from joined tables via xref:../reference/directives/reference.adoc[`@reference`]; the generator emits a conditional `LEFT JOIN` gated by the discriminator value.
-* Auto-discovery is the default multi-table-child idiom (the `AddressOccupant` shape); xref:../reference/directives/referenceFor.adoc[`@referenceFor`] is the explicit per-participant surface for the four cases it cannot serve: multi-FK disambiguation, same-table self-FK participants (both supported today), and condition joins and multi-hop chains (accepted grammar, deferred). The legacy `@multitableReference` directive is rejected; see xref:../reference/directives/multitableReference.adoc[`@multitableReference`], whose successor for per-route paths is `@referenceFor`.
+* Auto-discovery is the default multi-table-child idiom (the `AddressOccupant` shape); xref:../reference/directives/referenceFor.adoc[`@referenceFor`] is the explicit per-participant surface for the four cases it cannot serve, all supported: multi-FK disambiguation, same-table self-FK participants, condition joins, and multi-hop chains. The legacy `@multitableReference` directive is rejected; see xref:../reference/directives/multitableReference.adoc[`@multitableReference`], whose successor for per-route paths is `@referenceFor`.
 * An explicit *field-level* `@reference` on a multi-table interface/union child field is rejected at build time: a single stated path applies the same hops to every participant, so it cannot express a distinct join per participant. Use `@referenceFor` (one application per participant) instead. A participant backed by the same table as the parent has no auto-discoverable FK; state the self-referencing key with `@referenceFor`.
 * For composite-PK multi-table polymorphism with xref:../reference/directives/asConnection.adoc[`@asConnection`], all participating tables must share the same composite-PK shape; the polymorphic emitter projects a single typed `__sort__` column across the branches.
 

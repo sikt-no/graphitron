@@ -1571,6 +1571,56 @@ type Film implements Node & Searchable @table(name: "film") @node {
         @reference(path: [{key: "film_actor_film_id_fkey"}])
         @reference(path: [{key: "film_actor_actor_id_fkey"}])
         @defaultOrder(primaryKey: true)
+
+    # R458 slice-2 execution fixtures: a multi-table interface (FilmCastMember) reached partly
+    # through a MULTI-HOP FK chain. The ActorMember participant states the two-hop route
+    # film -> film_actor -> actor with @referenceFor, which the classifier lowers to a
+    # JoinedCorrelation; MultiTablePolymorphicEmitter bridges the film_actor junction back toward the
+    # parent film and value-binds hop-0 (film_actor.film_id) to the parent film_id. FilmInventory keeps
+    # the field multi-table by auto-discovering its own single FK (inventory.film_id -> film). All three
+    # cardinality forms are exercised: single (firstMemberViaJunction), list (membersViaJunction),
+    # connection (membersViaJunctionConnection). Film 1 has actors PENELOPE(1)+NICK(2) and inventory 1;
+    # film 4 has only actor NICK(2) and no inventory, giving a deterministic single-branch assertion.
+    firstMemberViaJunction: FilmCastMember
+        @referenceFor(type: "ActorMember", path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    membersViaJunction: [FilmCastMember!]!
+        @referenceFor(type: "ActorMember", path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    membersViaJunctionConnection: [FilmCastMember!]! @asConnection(defaultFirstValue: 5)
+        @referenceFor(type: "ActorMember", path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+
+    # R458 slice-3 execution fixtures: a multi-table interface (FilmCondRef) with one participant
+    # correlated by a non-FK CONDITION predicate. The ActorCondMember participant states a
+    # {condition:} route (JoinedCorrelation, slice 3): the emitter joins the parent film table aliased
+    # and applies the two-arg condition (filmActorsViaCondition, an EXISTS over film_actor) between the
+    # parent film alias and the actor alias, binding the parent film_id. InvCondMember auto-discovers
+    # its single FK. Single (firstByCondition) and list (castByCondition) forms are exercised.
+    firstByCondition: FilmCondRef
+        @referenceFor(type: "ActorCondMember", path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures", method: "filmActorsViaCondition"}}])
+    castByCondition: [FilmCondRef!]!
+        @referenceFor(type: "ActorCondMember", path: [{condition: {className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures", method: "filmActorsViaCondition"}}])
+}
+
+# R458 slice-2 fixture types (see Film.membersViaJunction / firstMemberViaJunction / membersViaJunctionConnection).
+# ActorMember is reached through the film_actor junction (multi-hop @referenceFor route);
+# FilmInventory auto-discovers inventory.film_id -> film. Both carry a 1-column PK (uniform arity).
+interface FilmCastMember { rowId: Int }
+type ActorMember implements FilmCastMember @table(name: "actor") {
+    rowId: Int @field(name: "actor_id")
+    name:  String @field(name: "first_name")
+}
+type FilmInventory implements FilmCastMember @table(name: "inventory") {
+    rowId: Int @field(name: "inventory_id")
+}
+
+# R458 slice-3 fixture types (see Film.castByCondition / firstByCondition). ActorCondMember is
+# correlated by the two-arg condition filmActorsViaCondition; InvCondMember auto-discovers its FK.
+interface FilmCondRef { rowId: Int }
+type ActorCondMember implements FilmCondRef @table(name: "actor") {
+    rowId: Int @field(name: "actor_id")
+    name:  String @field(name: "first_name")
+}
+type InvCondMember implements FilmCondRef @table(name: "inventory") {
+    rowId: Int @field(name: "inventory_id")
 }
 
 type Actor implements Searchable @table(name: "actor") {

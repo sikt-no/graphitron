@@ -15,7 +15,10 @@ import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.KeyLift;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -539,7 +542,7 @@ public final class MultiTablePolymorphicEmitter {
                 participantJoinPaths, parentSourceKey, parentKeyOwnerTable, outputPackage));
         } else {
             methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentKeyLift, isList, outputPackage));
+                participantJoinPaths, parentKeyLift, parentSourceKey, parentKeyOwnerTable, isList, outputPackage));
         }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
@@ -677,7 +680,7 @@ public final class MultiTablePolymorphicEmitter {
         }
 
         stampUncheckedSuppressionIfNeeded(builder, participantFilters);
-        builder.addCode(buildStage1Block(ctx, participants, Map.of(), participantFilters, registry));
+        builder.addCode(buildStage1Block(ctx, participants, Map.of(), participantFilters, registry, null, null));
 
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
@@ -706,7 +709,7 @@ public final class MultiTablePolymorphicEmitter {
      * DataLoader-batched {@link #buildBatchedListFetcher} / {@link #buildBatchedListRowsMethod}
      * path instead.
      *
-     * <p>The per-branch {@code WHERE} (see {@link #branchParentFkWhere}) reads the hub-side FK
+     * <p>The per-branch {@code WHERE} (see {@link #singleBranchCorrelationWhere}) reads the hub-side FK
      * value off a {@code parentRecord} local whose binding depends on the parent's classification:
      *
      * <ul>
@@ -734,6 +737,7 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             KeyLift parentKeyLift,
+            SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             boolean isList, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -762,7 +766,7 @@ public final class MultiTablePolymorphicEmitter {
 
         if (parentKeyLift instanceof KeyLift.Accessor ac) {
             // Record-backed parent: the typed single-cardinality accessor returns the hub
-            // TableRecord whose FK columns branchParentFkWhere reads by name. A null hub means no
+            // TableRecord whose FK columns the parent correlation reads by name. A null hub means no
             // polymorphic child for this parent. Reaching here implies arity ONE: emitMethods
             // routes list-cardinality Accessor parents to the batched buildBatchedListFetcher,
             // so the accessor return is a single TableRecord (not a List), assignable to Record.
@@ -780,7 +784,8 @@ public final class MultiTablePolymorphicEmitter {
 
         // Child polymorphic fields carry no field-level filter surface (R363 is root-only), so no
         // decode registry is threaded here.
-        builder.addCode(buildStage1Block(ctx, participants, participantJoinPaths, Map.of(), null));
+        builder.addCode(buildStage1Block(ctx, participants, participantJoinPaths, Map.of(), null,
+            parentSourceKey, parentKeyOwnerTable));
 
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
@@ -1098,15 +1103,16 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             Map<String, List<WhereFilter>> participantFilters,
-            CompositeDecodeHelperRegistry registry) {
+            CompositeDecodeHelperRegistry registry,
+            SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable) {
         var b = CodeBlock.builder();
 
-        // Declare per-participant table aliases for stage 1. Stage-1 aliases are distinct from
-        // any stage-2 locals (the stage-2 helpers declare their own t inside their method body).
+        // Declare per-participant table aliases for stage 1 — the participant FROM alias plus any
+        // JoinedCorrelation intermediate / parent-table aliases. Distinct from stage-2 locals (the
+        // stage-2 helpers declare their own t inside their method body).
         for (var participant : participants) {
-            var jooqTableClass = participant.table().tableClass();
-            String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
+            declareBranchAliases(b, participant, participantJoinPaths.get(participant.typeName()), parentKeyOwnerTable);
         }
 
         var plumbing = declareFilterPlumbing(b, participants, participantFilters);
@@ -1117,24 +1123,27 @@ public final class MultiTablePolymorphicEmitter {
         for (int p = 0; p < participants.size(); p++) {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
-            // Combine the parent-FK predicate (child fetchers) with the @field filter predicate
-            // (R363, root fields); either may be null, in which case the other stands alone.
+            CodeBlock bridging = branchBridgingJoins(participant, participantJoinPaths.get(participant.typeName()));
+            // Combine the parent correlation predicate (child fetchers) with the @field filter
+            // predicate (R363, root fields); either may be null, in which case the other stands alone.
             CodeBlock branchWhere = andWhere(
-                branchParentFkWhere(participant, participantJoinPaths),
+                singleBranchCorrelationWhere(participant, participantJoinPaths, parentSourceKey),
                 branchFilterWhere(ctx, participant, participantFilters, registry, plumbing));
             if (p == 0) {
                 b.add("dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("    .from($L)\n", alias);
+                b.add("$L", bridging);
                 if (branchWhere != null) {
                     b.add("    .where($L)\n", branchWhere);
                 }
             } else {
                 b.add("    .unionAll(dsl.select($L)\n", branchProjection(participant, alias));
+                b.add("        .from($L)\n", alias);
+                b.add("$L", bridging);
                 if (branchWhere != null) {
-                    b.add("        .from($L)\n", alias);
                     b.add("        .where($L))\n", branchWhere);
                 } else {
-                    b.add("        .from($L))\n", alias);
+                    b.add("    )\n");
                 }
             }
         }
@@ -1143,66 +1152,220 @@ public final class MultiTablePolymorphicEmitter {
         return b.build();
     }
 
+    // ===== Per-participant correlation emission (R458) =====
+    //
+    // A branch's parent correlation is a ParticipantCorrelation, decided once at classification:
+    //   - KeyTupleWhere: the branch joins nothing; the parent side is bound values (single-hop FK).
+    //   - JoinedCorrelation: the branch joins real tables from the participant back toward the
+    //     parent — a multi-hop FK chain (slice 2), and/or a condition (predicate) hop (slice 3).
+    // The three cardinality forms share the alias plan (branchHopAliases / branchParentAlias), the
+    // alias declarations (declareBranchAliases), and the bridging-join chain (branchBridgingJoins);
+    // they diverge only in how hop-0's parent correlation binds (a value-bound WHERE against
+    // parentRecord for the single form, a JOIN parentInput for the batched forms).
+
     /**
-     * The resolved single-hop FK slots for a {@link ParticipantCorrelation.KeyTupleWhere}, the only
-     * arm slice 1 lowers here. Exhaustive dispatch on the {@link ParticipantCorrelation} seal: the
-     * {@link ParticipantCorrelation.JoinedCorrelation} arm cannot reach these key-tuple-WHERE
-     * emitters (the classifier rejects multi-hop and condition routes with a DEFERRED message until
-     * slices 2/3 ship the joining emit), so its arm throws rather than silently mis-lowering.
+     * Per-hop target-table aliases for one branch. A {@link ParticipantCorrelation.KeyTupleWhere}
+     * has a single entry: the participant's FROM alias. A {@link ParticipantCorrelation.JoinedCorrelation}
+     * returns one alias per hop, where {@code aliases.get(i)} is hop {@code i}'s target table; the
+     * last entry is the participant FROM alias ({@code "stage1_<Type>"}, the chain's terminal), and
+     * the earlier entries are intermediate join-table aliases ({@code "stage1_<Type>_h<i>"}).
      */
-    private static java.util.List<no.sikt.graphitron.rewrite.model.JoinSlot.FkSlot> keyTupleWhereSlots(
+    private static List<String> branchHopAliases(ParticipantRef.TableBound participant,
             ParticipantCorrelation correlation) {
-        return switch (correlation) {
-            case ParticipantCorrelation.KeyTupleWhere k -> k.slots();
-            case ParticipantCorrelation.JoinedCorrelation ignored -> throw new IllegalStateException(
-                "JoinedCorrelation is not emittable by the key-tuple-WHERE forms; the classifier "
-                + "rejects multi-hop and condition @referenceFor routes with a DEFERRED message "
-                + "until R458 slices 2/3 ship the joining emit.");
-        };
+        String base = "stage1_" + participant.typeName();
+        if (!(correlation instanceof ParticipantCorrelation.JoinedCorrelation jc)) return List.of(base);
+        int n = jc.hops().size();
+        var out = new ArrayList<String>(n);
+        for (int i = 0; i < n - 1; i++) out.add(base + "_h" + i);
+        out.add(base);
+        return out;
     }
 
     /**
-     * Builds the parent-FK WHERE predicate for one stage-1 branch in the child-fetcher form, or
-     * returns {@code null} when no joinPath applies (root-fetcher form, or the participant is
-     * absent from {@code participantJoinPaths}).
-     *
-     * <p>Consumes the {@link ParticipantCorrelation.KeyTupleWhere}'s resolved FK slots directly (single-hop FK is the
-     * only shape the classifier admits — R452): per-slot AND-chain
-     * {@code <participantTable>.<slot.targetSide()>.eq(parentRecord.get(DSL.name("<slot.sourceSide().sqlName()>"), <Type>.class))}.
-     * Synthesis-time slot orientation means the parent side is always {@code slot.sourceSide()} and
-     * the participant side {@code slot.targetSide()}, regardless of which end of the catalog FK each
-     * maps to; iteration is direction-blind.
-     *
-     * <p>The two-arg {@code parentRecord.get(Name, Class)} form returns the typed value
-     * (rather than {@code Object}) so the typed {@code Field<T>.eq(T)} overload selects
-     * cleanly without an unchecked cast.
+     * The aliased parent-table local a branch needs in SQL scope, or {@code null}. A
+     * {@link ParticipantCorrelation.JoinedCorrelation} whose hop-0 is a condition
+     * ({@link On.Predicate}) is the only shape that needs it: the parent side of the authored
+     * two-arg condition method must be a real table alias, bound to the parent's key values. FK
+     * hop-0 correlations read the parent by value (parentRecord / parentInput) and need no parent
+     * alias.
      */
-    private static CodeBlock branchParentFkWhere(ParticipantRef.TableBound participant,
-            Map<String, ParticipantCorrelation> participantJoinPaths) {
-        var correlation = participantJoinPaths.get(participant.typeName());
-        // null only for the root-fetcher form (empty map) or a participant absent from the map;
-        // both are legitimate "no parent WHERE". A present entry carries non-empty FK slots by
-        // construction, so there is no unsupported-shape arm to guard here.
-        if (correlation == null) return null;
-        var slots = keyTupleWhereSlots(correlation);
+    private static String branchParentAlias(ParticipantRef.TableBound participant,
+            ParticipantCorrelation correlation) {
+        if (correlation instanceof ParticipantCorrelation.JoinedCorrelation jc
+                && ((JoinStep.Hop) jc.hops().get(0)).on() instanceof On.Predicate) {
+            return "stage1_" + participant.typeName() + "_p";
+        }
+        return null;
+    }
 
-        String tableAlias = "stage1_" + participant.typeName();
+    /**
+     * Declares the jOOQ table-alias locals one branch's SQL references: the participant FROM alias
+     * (always, as a plain unaliased table constant — one instance per branch SELECT, whose columns
+     * the projection reads directly) and, for a {@link ParticipantCorrelation.JoinedCorrelation}, the
+     * intermediate join-table aliases plus a condition hop-0's parent-table alias. Shared by all
+     * three cardinality forms so the alias set is identical everywhere the branch is emitted.
+     */
+    private static void declareBranchAliases(CodeBlock.Builder b, ParticipantRef.TableBound participant,
+            ParticipantCorrelation correlation, TableRef parentKeyOwnerTable) {
+        b.addStatement("$T $L = $T.$L", participant.table().tableClass(), "stage1_" + participant.typeName(),
+            participant.table().constantsClass(), participant.table().javaFieldName());
+        if (!(correlation instanceof ParticipantCorrelation.JoinedCorrelation jc)) return;
+        var aliases = branchHopAliases(participant, correlation);
+        var hops = jc.hops();
+        // Intermediate hop tables (hop[i].targetTable() for i < n-1); the terminal hop's target is
+        // the participant, already declared above as the FROM alias.
+        for (int i = 0; i < hops.size() - 1; i++) {
+            TableRef t = ((JoinStep.HasTargetTable) hops.get(i)).targetTable();
+            b.addStatement("$T $L = $T.$L.as($S)", t.tableClass(), aliases.get(i),
+                t.constantsClass(), t.javaFieldName(), aliases.get(i));
+        }
+        String parentAlias = branchParentAlias(participant, correlation);
+        if (parentAlias != null) {
+            b.addStatement("$T $L = $T.$L.as($S)", parentKeyOwnerTable.tableClass(), parentAlias,
+                parentKeyOwnerTable.constantsClass(), parentKeyOwnerTable.javaFieldName(), parentAlias);
+        }
+    }
+
+    /**
+     * The JOIN chain a {@link ParticipantCorrelation.JoinedCorrelation} branch inserts after
+     * {@code .from(<participant>)}: the bridging joins from the participant back through the
+     * intermediate tables (via {@link JoinPathEmitter#emitBackwardBridging}, which dispatches FK
+     * {@code onKey} / name-matched column equality / condition predicate between two intermediate
+     * aliases), and, for a condition hop-0, the parent-table join on the authored two-arg predicate.
+     * Empty for a {@link ParticipantCorrelation.KeyTupleWhere}.
+     */
+    private static CodeBlock branchBridgingJoins(ParticipantRef.TableBound participant,
+            ParticipantCorrelation correlation) {
+        if (!(correlation instanceof ParticipantCorrelation.JoinedCorrelation jc)) return CodeBlock.of("");
+        var aliases = branchHopAliases(participant, correlation);
+        var hops = jc.hops();
+        var b = CodeBlock.builder();
+        // Walk from the terminal (participant, aliases[n-1]) back toward hop 1, joining each hop's
+        // origin alias in. A lateral (routine) hop cannot appear on an @referenceFor path (the
+        // ReferenceElement grammar has no routine node), so emitBackwardBridging's lateral guard
+        // never fires here.
+        for (int i = hops.size() - 1; i >= 1; i--) {
+            b.add("    $L\n", JoinPathEmitter.emitBackwardBridging((JoinStep.Hop) hops.get(i),
+                aliases.get(i - 1), aliases.get(i), "multi-table polymorphic child"));
+        }
+        String parentAlias = branchParentAlias(participant, correlation);
+        if (parentAlias != null) {
+            On.Predicate pred = (On.Predicate) ((JoinStep.Hop) hops.get(0)).on();
+            b.add("    .join($L).on($L)\n", parentAlias,
+                JoinPathEmitter.emitTwoArgMethodCall(pred.condition(), parentAlias, aliases.get(0)));
+        }
+        return b.build();
+    }
+
+    /**
+     * The parent-correlation WHERE for one single-form branch, value-bound against
+     * {@code parentRecord}, or {@code null} for the root-fetcher form (participant absent from the
+     * map). A {@link ParticipantCorrelation.KeyTupleWhere} and a {@link ParticipantCorrelation.JoinedCorrelation}
+     * FK hop-0 compare the first hop's target columns to the parent's bound key values; a
+     * {@link ParticipantCorrelation.JoinedCorrelation} condition hop-0 pins the joined parent alias
+     * to the parent's bound key values (the condition itself is in the JOIN ON — see
+     * {@link #branchBridgingJoins}). Per-hop {@code filter()}s on intermediate hops are ANDed on.
+     */
+    private static CodeBlock singleBranchCorrelationWhere(ParticipantRef.TableBound participant,
+            Map<String, ParticipantCorrelation> participantJoinPaths, SourceKey parentSourceKey) {
+        var correlation = participantJoinPaths.get(participant.typeName());
+        if (correlation == null) return null;
+        String firstAlias = branchHopAliases(participant, correlation).get(0);
+        CodeBlock base = switch (correlation) {
+            case ParticipantCorrelation.KeyTupleWhere k -> valueBoundParentWhere(firstAlias, k.slots());
+            case ParticipantCorrelation.JoinedCorrelation jc -> switch (((JoinStep.Hop) jc.hops().get(0)).on()) {
+                case On.ColumnPairs cp -> valueBoundParentWhere(firstAlias, cp.slots());
+                case On.Predicate ignored -> parentKeyBoundWhere(branchParentAlias(participant, correlation), parentSourceKey);
+                case On.Lateral ignored -> throw new IllegalStateException(
+                    "a lateral hop cannot head a @referenceFor path");
+            };
+        };
+        return appendHopFilters(base, participant, correlation);
+    }
+
+    /**
+     * Per-slot AND-chain {@code <firstAlias>.<slot.targetSide()>.eq(parentRecord.get(DSL.name(
+     * "<slot.sourceSide().sqlName()>"), <Type>.class))}. Synthesis-time slot orientation means the
+     * parent side is always {@code slot.sourceSide()} and the child side {@code slot.targetSide()},
+     * so iteration is direction-blind. The two-arg {@code parentRecord.get(Name, Class)} form
+     * returns the typed value so {@code Field<T>.eq(T)} selects without an unchecked cast.
+     */
+    private static CodeBlock valueBoundParentWhere(String firstAlias, List<JoinSlot.FkSlot> slots) {
         var b = CodeBlock.builder();
         int i = 0;
         for (var slot : slots) {
             ColumnRef parentSide = slot.sourceSide();
-            ColumnRef participantSide = slot.targetSide();
-            TypeName parentColClass = parentSide.columnType();
+            ColumnRef childSide = slot.targetSide();
             if (i == 0) {
                 b.add("$L.$L.eq(parentRecord.get($T.name($S), $T.class))",
-                    tableAlias, participantSide.javaName(), DSL, parentSide.sqlName(), parentColClass);
+                    firstAlias, childSide.javaName(), DSL, parentSide.sqlName(), parentSide.columnType());
             } else {
                 b.add(".and($L.$L.eq(parentRecord.get($T.name($S), $T.class)))",
-                    tableAlias, participantSide.javaName(), DSL, parentSide.sqlName(), parentColClass);
+                    firstAlias, childSide.javaName(), DSL, parentSide.sqlName(), parentSide.columnType());
             }
             i++;
         }
         return b.build();
+    }
+
+    /**
+     * Per-column AND-chain pinning the joined parent alias to the current parent's bound key values:
+     * {@code <parentAlias>.<key>.eq(parentRecord.get(DSL.name("<key.sqlName()>"), <Type>.class))}.
+     * Used by a condition hop-0 branch (single form), whose authored predicate correlates the parent
+     * to the child but does not by itself restrict which parent row.
+     */
+    private static CodeBlock parentKeyBoundWhere(String parentAlias, SourceKey parentSourceKey) {
+        var b = CodeBlock.builder();
+        int i = 0;
+        for (var col : parentSourceKey.columns()) {
+            if (i == 0) {
+                b.add("$L.$L.eq(parentRecord.get($T.name($S), $T.class))",
+                    parentAlias, col.javaName(), DSL, col.sqlName(), col.columnType());
+            } else {
+                b.add(".and($L.$L.eq(parentRecord.get($T.name($S), $T.class)))",
+                    parentAlias, col.javaName(), DSL, col.sqlName(), col.columnType());
+            }
+            i++;
+        }
+        return b.build();
+    }
+
+    /**
+     * ANDs each intermediate hop's {@code filter()} (a {@code {key:, condition:}} element's
+     * accompanying predicate) onto {@code base}, as {@code filter(<originAlias>, <targetAlias>)}.
+     * Only hops {@code i>=1} are considered: a hop-0 filter has no parent alias to bind its first
+     * argument on an FK-correlated route and is rejected at classification. Returns {@code base}
+     * unchanged for a {@link ParticipantCorrelation.KeyTupleWhere} or a filterless chain.
+     */
+    private static CodeBlock appendHopFilters(CodeBlock base, ParticipantRef.TableBound participant,
+            ParticipantCorrelation correlation) {
+        CodeBlock filters = hopFilterTerms(participant, correlation);
+        if (filters == null) return base;
+        return CodeBlock.builder().add("$L", base).add(".and($L)", filters).build();
+    }
+
+    /**
+     * The AND-chain of intermediate hops' {@code filter()} terms, or {@code null} when none. Shared
+     * by the single form ({@link #appendHopFilters}) and the batched forms (which add a
+     * {@code .where(...)} only when this is non-null, since a batched branch has no WHERE otherwise).
+     */
+    private static CodeBlock hopFilterTerms(ParticipantRef.TableBound participant,
+            ParticipantCorrelation correlation) {
+        if (!(correlation instanceof ParticipantCorrelation.JoinedCorrelation jc)) return null;
+        var aliases = branchHopAliases(participant, correlation);
+        var hops = jc.hops();
+        CodeBlock.Builder b = null;
+        for (int i = 1; i < hops.size(); i++) {
+            JoinStep.Hop hop = (JoinStep.Hop) hops.get(i);
+            if (hop.filter() == null) continue;
+            CodeBlock term = JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), aliases.get(i - 1), aliases.get(i));
+            if (b == null) {
+                b = CodeBlock.builder().add("$L", term);
+            } else {
+                b.add(".and($L)", term);
+            }
+        }
+        return b == null ? null : b.build();
     }
 
     /**
@@ -1596,11 +1759,10 @@ public final class MultiTablePolymorphicEmitter {
 
         b.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
-        // Per-participant table aliases for stage 1.
+        // Per-participant table aliases for stage 1 (participant FROM alias plus any
+        // JoinedCorrelation intermediate / parent-table aliases).
         for (var participant : participants) {
-            var jooqTableClass = participant.table().tableClass();
-            String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
+            declareBranchAliases(b, participant, participantJoinPaths.get(participant.typeName()), parentKeyOwnerTable);
         }
 
         b.add(buildParentInputValuesEmitter(parentSourceKey, parentKeyOwnerTable));
@@ -1642,15 +1804,16 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             CodeBlock projection = batchedBranchProjection(participant, alias);
-            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentKeyOwnerTable);
+            CodeBlock correlationChain = batchedBranchCorrelationChain(participant, participantJoinPaths, parentSourceKey, parentKeyOwnerTable);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", projection);
                 b.add("        .from($L)\n", alias);
-                b.add("        .join(parentInput).on($L)\n", joinPredicate);
+                b.add("$L", correlationChain);
             } else {
                 b.add("    .unionAll(dsl.select($L)\n", projection);
                 b.add("        .from($L)\n", alias);
-                b.add("        .join(parentInput).on($L))\n", joinPredicate);
+                b.add("$L", correlationChain);
+                b.add("    )\n");
             }
         }
         b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);
@@ -1761,39 +1924,90 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * B4c-2 per-branch JOIN predicate: per-slot equality AND-chain
-     * {@code <participant>.<slot.targetSide()>.eq(parentInput.field(<slot.sourceSide().sqlName()>, <Type>.class))}
-     * across the {@link ParticipantCorrelation.KeyTupleWhere}'s resolved FK slots. Single-hop FK only — the classifier
- * admits no other shape, so the former {@code (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on()}
-     * blind cast (an accidental {@code ClassCastException} enforcer) is gone: the carrier type makes
-     * an unsupported shape unrepresentable.
+     * The correlation JOIN chain a batched branch inserts after {@code .from(<participant>)}: the
+     * bridging joins ({@link #branchBridgingJoins}, {@link ParticipantCorrelation.JoinedCorrelation}
+     * only), then the {@code .join(parentInput).on(...)} that correlates the branch to the
+     * DataLoader batch, and finally a {@code .where(...)} carrying any intermediate-hop filters.
      *
-     * <p>Slot orientation at synthesis time means the parent side is always
-     * {@code slot.sourceSide()} and the participant side {@code slot.targetSide()}, regardless of
-     * which end of the catalog FK each maps to. Direction-blind iteration over slots produces a
-     * type-correct AND-chain even when a multi-column FK declares its columns in a different
-     * order than the parent's {@code @node(keyColumns: [...])} directive: positional misuse is
-     * structurally impossible because no two parallel lists are paired.
+     * <p>The {@code parentInput} predicate binds the parent side to the {@code VALUES} table:
+     *
+     * <ul>
+     *   <li>{@link ParticipantCorrelation.KeyTupleWhere} / FK hop-0 — the first hop's target columns
+     *       equal {@code parentInput.field(<parent-side sqlName>, <owner DataType>)}, an equality
+     *       AND-chain over the resolved FK slots (direction-blind: parent side is always
+     *       {@code slot.sourceSide()}, child side {@code slot.targetSide()});</li>
+     *   <li>condition hop-0 — the joined parent alias's key columns equal the {@code parentInput}
+     *       cells; the authored condition itself is the parent-table JOIN's ON, emitted by
+     *       {@link #branchBridgingJoins}.</li>
+     * </ul>
      */
-    private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
-            Map<String, ParticipantCorrelation> participantJoinPaths, TableRef parentKeyOwnerTable) {
+    private static CodeBlock batchedBranchCorrelationChain(ParticipantRef.TableBound participant,
+            Map<String, ParticipantCorrelation> participantJoinPaths, SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable) {
         var correlation = participantJoinPaths.get(participant.typeName());
-        var slots = keyTupleWhereSlots(correlation);
-        String tableAlias = "stage1_" + participant.typeName();
+        var b = CodeBlock.builder();
+        b.add("$L", branchBridgingJoins(participant, correlation));
+        String firstAlias = branchHopAliases(participant, correlation).get(0);
+        CodeBlock onPredicate = switch (correlation) {
+            case ParticipantCorrelation.KeyTupleWhere k -> parentInputSlotPredicate(firstAlias, k.slots(), parentKeyOwnerTable);
+            case ParticipantCorrelation.JoinedCorrelation jc -> switch (((JoinStep.Hop) jc.hops().get(0)).on()) {
+                case On.ColumnPairs cp -> parentInputSlotPredicate(firstAlias, cp.slots(), parentKeyOwnerTable);
+                case On.Predicate ignored -> parentInputKeyPredicate(branchParentAlias(participant, correlation), parentSourceKey, parentKeyOwnerTable);
+                case On.Lateral ignored -> throw new IllegalStateException(
+                    "a lateral hop cannot head a @referenceFor path");
+            };
+        };
+        b.add("        .join(parentInput).on($L)\n", onPredicate);
+        // A batched branch has no WHERE by default; add one only when an intermediate hop states a
+        // filter (a {key:, condition:} element's accompanying predicate).
+        CodeBlock filters = hopFilterTerms(participant, correlation);
+        if (filters != null) b.add("        .where($L)\n", filters);
+        return b.build();
+    }
+
+    /**
+     * The {@code parentInput} equality AND-chain over resolved FK slots:
+     * {@code <firstAlias>.<slot.targetSide()>.eq(parentInput.field(<slot.sourceSide().sqlName()>,
+     * <owner DataType>))}. Lookup by sqlName + the owner column's registered DataType so
+     * converter-backed parent keys keep faithful type metadata, matching the VALUES cell binds.
+     */
+    private static CodeBlock parentInputSlotPredicate(String firstAlias, List<JoinSlot.FkSlot> slots,
+            TableRef parentKeyOwnerTable) {
         var b = CodeBlock.builder();
         int i = 0;
         for (var slot : slots) {
             ColumnRef parentCol = slot.sourceSide();
-            ColumnRef participantCol = slot.targetSide();
-            // Lookup by sqlName + the owner column's DataType so converter-backed parent keys
-            // keep faithful type metadata, matching the VALUES cell binds.
+            ColumnRef childCol = slot.targetSide();
             CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
                 parentCol.sqlName(), parentKeyOwnerTable.constantsClass(),
                 parentKeyOwnerTable.javaFieldName(), parentCol.javaName());
             if (i == 0) {
-                b.add("$L.$L.eq($L)", tableAlias, participantCol.javaName(), lookup);
+                b.add("$L.$L.eq($L)", firstAlias, childCol.javaName(), lookup);
             } else {
-                b.add(".and($L.$L.eq($L))", tableAlias, participantCol.javaName(), lookup);
+                b.add(".and($L.$L.eq($L))", firstAlias, childCol.javaName(), lookup);
+            }
+            i++;
+        }
+        return b.build();
+    }
+
+    /**
+     * The {@code parentInput} equality AND-chain pinning a joined parent alias (condition hop-0) to
+     * the batch: {@code <parentAlias>.<key>.eq(parentInput.field(<key.sqlName()>, <owner DataType>))}
+     * over the parent's key columns.
+     */
+    private static CodeBlock parentInputKeyPredicate(String parentAlias, SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable) {
+        var b = CodeBlock.builder();
+        int i = 0;
+        for (var col : parentSourceKey.columns()) {
+            CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
+                col.sqlName(), parentKeyOwnerTable.constantsClass(),
+                parentKeyOwnerTable.javaFieldName(), col.javaName());
+            if (i == 0) {
+                b.add("$L.$L.eq($L)", parentAlias, col.javaName(), lookup);
+            } else {
+                b.add(".and($L.$L.eq($L))", parentAlias, col.javaName(), lookup);
             }
             i++;
         }
@@ -2014,10 +2228,7 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
         for (var participant : participants) {
-            var jooqTableClass = participant.table().tableClass();
-            String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias,
-                participant.table().constantsClass(), participant.table().javaFieldName());
+            declareBranchAliases(b, participant, participantJoinPaths.get(participant.typeName()), parentKeyOwnerTable);
         }
 
         b.add(buildParentInputValuesEmitter(parentSourceKey, parentKeyOwnerTable));
@@ -2030,15 +2241,16 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             CodeBlock projection = batchedListBranchProjection(participant, alias);
-            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentKeyOwnerTable);
+            CodeBlock correlationChain = batchedBranchCorrelationChain(participant, participantJoinPaths, parentSourceKey, parentKeyOwnerTable);
             if (p == 0) {
                 b.add("dsl.select($L)\n", projection);
                 b.add("    .from($L)\n", alias);
-                b.add("    .join(parentInput).on($L)\n", joinPredicate);
+                b.add("$L", correlationChain);
             } else {
                 b.add("    .unionAll(dsl.select($L)\n", projection);
                 b.add("        .from($L)\n", alias);
-                b.add("        .join(parentInput).on($L))\n", joinPredicate);
+                b.add("$L", correlationChain);
+                b.add("    )\n");
             }
         }
         b.add("    .fetch();\n");

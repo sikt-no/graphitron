@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → classified schema pipeline tests for {@code @referenceFor} (R458 slice 1): the explicit
- * per-participant join path on multi-table interface/union child fields. Slice 1 ships multi-FK
- * disambiguation and same-table self-FK participants, both lowering to
- * {@link ParticipantCorrelation.KeyTupleWhere}; multi-hop chains (slice 2) and condition correlation
- * (slice 3) are DEFERRED. Structural rejections cover placement, membership, duplicate {@code type:},
- * and per-route terminal-target mismatch.
+ * SDL → classified schema pipeline tests for {@code @referenceFor} (R458): the explicit
+ * per-participant join path on multi-table interface/union child fields. Single-hop FK routes
+ * (multi-FK disambiguation, same-table self-FK) lower to {@link ParticipantCorrelation.KeyTupleWhere};
+ * multi-hop FK chains (slice 2) and routes carrying a condition/predicate hop (slice 3) lower to
+ * {@link ParticipantCorrelation.JoinedCorrelation}. Structural rejections cover placement, membership,
+ * duplicate {@code type:}, and per-route terminal-target mismatch.
  *
  * <p>Asserted on the classified field record / rejection, not on generated method bodies (per the
  * development principles).
@@ -241,10 +241,12 @@ class MultiTableChildReferenceForPipelineTest {
             .contains("@referenceFor is only valid on a multi-table interface/union child field");
     }
 
-    // ===== Slice-1 deferrals: condition (slice 3) and multi-hop (slice 2) =====
+    // ===== Multi-hop FK chains (slice 2) and condition correlation (slice 3) =====
 
     @Test
-    void conditionRoute_deferredToSlice3() {
+    void conditionRoute_classifiesToJoinedCorrelation() {
+        // A {condition:}-only route correlates the participant by a non-FK predicate. It lowers to
+        // JoinedCorrelation (slice 3): the branch joins the parent table (aliased) on the condition.
         var schema = TestSchemaHelper.buildSchema("""
             interface FilmReferrer { rowId: Int }
             type Inventory implements FilmReferrer @table(name: "inventory") { rowId: Int @field(name: "inventory_id") }
@@ -254,16 +256,22 @@ class MultiTableChildReferenceForPipelineTest {
             }
             type Query { film: Film }
             """);
-        var rejection = rejectionOf(schema.field("Film", "referrer"));
-        assertThat(rejection).isInstanceOf(Rejection.Deferred.class);
-        assertThat(rejection.message())
-            .contains("Inventory")
-            .contains("condition")
-            .contains(SLUG_POINTER);
+        var field = (ChildField.InterfaceField) schema.field("Film", "referrer");
+        var correlation = field.participantJoinPaths().get("Inventory");
+        assertThat(correlation).isInstanceOf(ParticipantCorrelation.JoinedCorrelation.class);
+        var hops = ((ParticipantCorrelation.JoinedCorrelation) correlation).hops();
+        assertThat(hops).hasSize(1);
+        assertThat(((no.sikt.graphitron.rewrite.model.JoinStep.Hop) hops.get(0)).on())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.On.Predicate.class);
+        // The auto-discovered sibling (content.film_id -> film) stays a single-hop KeyTupleWhere.
+        assertThat(field.participantJoinPaths().get("Content"))
+            .isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
     }
 
     @Test
-    void multiHopRoute_deferredToSlice2() {
+    void multiHopRoute_classifiesToJoinedCorrelation() {
+        // A two-hop FK chain film -> film_actor -> actor lands on the actor-backed participant. It
+        // lowers to JoinedCorrelation (slice 2): the branch bridges through the film_actor junction.
         var schema = TestSchemaHelper.buildSchema("""
             interface ActorThing { rowId: Int }
             type ActorP implements ActorThing @table(name: "actor") { rowId: Int @field(name: "actor_id") }
@@ -273,12 +281,38 @@ class MultiTableChildReferenceForPipelineTest {
             }
             type Query { film: Film }
             """);
+        var field = (ChildField.InterfaceField) schema.field("Film", "thing");
+        var correlation = field.participantJoinPaths().get("ActorP");
+        assertThat(correlation).isInstanceOf(ParticipantCorrelation.JoinedCorrelation.class);
+        var hops = ((ParticipantCorrelation.JoinedCorrelation) correlation).hops();
+        // Two FK hops: film -> film_actor, film_actor -> actor. Both column-pair (FK) joins.
+        assertThat(hops).hasSize(2);
+        assertThat(hops).allSatisfy(h ->
+            assertThat(((no.sikt.graphitron.rewrite.model.JoinStep.Hop) h).on())
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.On.ColumnPairs.class));
+        // Override-merge: the auto-discovered inventory sibling stays a single-hop KeyTupleWhere.
+        assertThat(field.participantJoinPaths().get("Inventory"))
+            .isInstanceOf(ParticipantCorrelation.KeyTupleWhere.class);
+    }
+
+    @Test
+    void multiHopRoute_terminalMismatch_rejectedNamingParticipant() {
+        // The two-hop chain film -> film_actor -> actor lands on actor, but the participant is
+        // backed by city. Per-route terminal-target mismatch naming the participant.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface ActorThing { rowId: Int }
+            type CityP implements ActorThing @table(name: "city") { rowId: Int @field(name: "city_id") }
+            type Inventory implements ActorThing @table(name: "inventory") { rowId: Int @field(name: "inventory_id") }
+            type Film @table(name: "film") {
+              thing: ActorThing @referenceFor(type: "CityP", path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
         var rejection = rejectionOf(schema.field("Film", "thing"));
-        assertThat(rejection).isInstanceOf(Rejection.Deferred.class);
+        assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
-            .contains("ActorP")
-            .contains("multi-hop")
-            .contains(SLUG_POINTER);
+            .contains("CityP")
+            .contains("does not land on that participant's table");
     }
 
     // ===== Producer-arm coverage: union element type, record-backed parent =====
