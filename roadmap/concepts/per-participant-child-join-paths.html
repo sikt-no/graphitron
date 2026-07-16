@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Per-participant join paths for polymorphic child fields — explainer</title>
+<style>
+  :root{
+    --ink:#1a2233; --muted:#5a6577; --line:#e2e6ee; --bg:#fbfcfe;
+    --accent:#3b5bdb; --accent-soft:#eef2ff;
+    --good:#2b8a3e; --good-soft:#ebfbee; --bad:#c92a2a; --bad-soft:#fff0f0;
+    --warn:#e8590c; --warn-soft:#fff4e6; --code:#f4f6fa;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  main{max-width:820px; margin:0 auto; padding:48px 24px 96px}
+  h1{font-size:2rem; line-height:1.2; margin:0 0 .2em}
+  h2{font-size:1.4rem; margin:2.4em 0 .5em; padding-top:.4em; border-top:1px solid var(--line)}
+  h3{font-size:1.08rem; margin:1.6em 0 .4em}
+  p{margin:.7em 0}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.9em; background:var(--code); padding:.1em .35em; border-radius:4px}
+  pre{background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow:auto; font-size:.85rem; line-height:1.5}
+  pre code{background:none; padding:0}
+  .lede{font-size:1.15rem; color:var(--muted)}
+  .kicker{text-transform:uppercase; letter-spacing:.08em; font-size:.72rem; font-weight:700; color:var(--accent)}
+  .note{background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:0 8px 8px 0; padding:12px 16px; margin:1.2em 0; font-size:.94rem}
+  .tldr{background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin:1.4em 0; box-shadow:0 1px 3px rgba(20,30,60,.05)}
+  .tldr .kicker{display:block; margin-bottom:.3em}
+
+  /* side-by-side */
+  .sxs{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:1.3em 0}
+  .pane{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff}
+  .pane > .head{padding:8px 14px; font-weight:600; font-size:.85rem; border-bottom:1px solid var(--line)}
+  .pane .body{padding:12px 14px; font-size:.92rem}
+  .pane .body p{margin:.4em 0}
+  .pane.bad > .head{background:var(--bad-soft); color:var(--bad)}
+  .pane.good > .head{background:var(--good-soft); color:var(--good)}
+  .pane pre{border:none; border-radius:0; margin:0}
+  @media(max-width:640px){ .sxs{grid-template-columns:1fr} }
+
+  /* quiz */
+  .quiz{border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:1.6em 0; background:#fff}
+  .quiz .q{font-weight:600; margin:0 0 .8em}
+  .quiz .q .tag{display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); padding:2px 8px; border-radius:999px; margin-right:.5em; vertical-align:middle}
+  .choice{display:block; width:100%; text-align:left; font:inherit; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:6px 0; cursor:pointer; transition:.12s}
+  .choice:hover{border-color:var(--accent); background:var(--accent-soft)}
+  .quiz.answered .choice{cursor:default}
+  .quiz.answered .choice:hover{background:#fff; border-color:var(--line)}
+  .choice.right{border-color:var(--good); background:var(--good-soft)}
+  .choice.right::after{content:"  ✓"; color:var(--good); font-weight:700}
+  .choice.wrong{border-color:var(--bad); background:var(--bad-soft)}
+  .choice.wrong::after{content:"  ✗"; color:var(--bad); font-weight:700}
+  .choice.dim{opacity:.55}
+  .explain{display:none; margin-top:12px; padding:12px 14px; border-radius:8px; background:var(--code); font-size:.92rem; border-left:3px solid var(--accent)}
+  .explain.show{display:block}
+
+  details{margin:1em 0; border:1px solid var(--line); border-radius:8px; padding:0 14px; background:#fff}
+  details > summary{cursor:pointer; padding:12px 0; font-weight:600; font-size:.92rem; color:var(--accent)}
+  details[open]{padding-bottom:12px}
+
+  .status li{margin:.35em 0}
+  .pill{display:inline-block; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:.4em}
+  .pill.done{background:var(--good-soft); color:var(--good)}
+  .pill.pending{background:var(--warn-soft); color:var(--warn)}
+  .pill.spun{background:var(--accent-soft); color:var(--accent)}
+  footer{margin-top:3em; padding-top:1.2em; border-top:1px solid var(--line); font-size:.9rem; color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+
+  <p class="kicker">Concept explainer · theme: interface-union</p>
+  <h1>Per-participant join paths for polymorphic child fields</h1>
+  <p class="lede">Why <code>@referenceFor</code> exists, and the intuition behind it, so the <a href="../per-participant-multitable-child-join-paths.md">R458 plan</a> reads faster afterwards.</p>
+
+  <div class="note">
+    This page builds intuition; the <a href="../per-participant-multitable-child-join-paths.md">plan</a> is the spec (exact call sites, slice boundaries, rejection wording). Read this first, then the plan.
+  </div>
+
+  <div class="tldr">
+    <span class="kicker">The one-sentence version</span>
+    When a GraphQL field returns an interface or union whose members live in different database tables, graphitron must know how to join from the parent to each member's table; <code>@referenceFor</code> lets an author state that join <em>per member</em> for the cases graphitron cannot guess on its own.
+  </div>
+
+  <h2>The problem, concretely</h2>
+  <p>An <code>Address</code> has an occupant, and an occupant is either a <code>Customer</code> or a member of <code>Staff</code>:</p>
+<pre><code>type Address {
+    occupant: AddressOccupant   # union of Customer | Staff
+}</code></pre>
+  <p><code>Customer</code> and <code>Staff</code> are backed by different tables (<code>customer</code>, <code>staff</code>). To resolve <code>occupant</code> for one address, graphitron emits SQL that correlates the <code>address</code> row with the right <code>customer</code> or <code>staff</code> row. That correlation is a <strong>join path</strong>, and it is different for each member.</p>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head">What works today: auto-discovery</div>
+      <div class="body">
+        <p>graphitron looks for <strong>exactly one</strong> foreign key from each member's table back to the parent's table and uses it.</p>
+        <p>One obvious FK per member? You write nothing. It just works.</p>
+      </div>
+    </div>
+    <div class="pane bad">
+      <div class="head">What breaks: everything else</div>
+      <div class="body">
+        <p>Zero, or more than one, candidate FK, and auto-discovery cannot choose. The <em>old</em> code picked an arbitrary FK and emitted <strong>silently wrong rows</strong>.</p>
+        <p>That is the worst failure a generator can have: nothing tells you it happened.</p>
+      </div>
+    </div>
+  </div>
+
+  <p>Four shapes defeat auto-discovery:</p>
+  <ul>
+    <li><strong>Two FKs to the same parent.</strong> Sakila's <code>film</code> has both <code>language_id</code> and <code>original_language_id</code> pointing at <code>language</code>. Auto-discovery finds two and cannot know which one you meant.</li>
+    <li><strong>No FK at all.</strong> The member correlates to the parent by a condition (a predicate), not a foreign key.</li>
+    <li><strong>A table in between.</strong> The member is reachable only by hopping through an intermediate join table.</li>
+    <li><strong>The member is the parent's own table.</strong> A self-reference, with no separate table to discover a path to.</li>
+  </ul>
+
+  <div class="quiz" id="q1">
+    <p class="q"><span class="tag">Quiz</span> Sakila's <code>payment</code> table has a single FK <code>customer_id</code> to <code>customer</code>. A field returns a union where <code>Customer</code> is one member, correlated to the parent by that one FK. Does auto-discovery handle it?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)">Yes; one unambiguous FK is exactly the case auto-discovery is for.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">No; any polymorphic member needs <code>@referenceFor</code>.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">No; unions are rejected outright.</button>
+    <div class="explain">Auto-discovery stays the default. <code>@referenceFor</code> is only for the members it cannot resolve on its own; a single clean FK needs no annotation at all. The whole design is override-only.</div>
+  </div>
+
+  <h2>Why this is two roadmap items, not one</h2>
+  <div class="sxs">
+    <div class="pane">
+      <div class="head">R452 — the defensive half (shipped)</div>
+      <div class="body"><p>Makes graphitron <strong>reject</strong> all four rich shapes at build time instead of guessing. Closes the silent-wrong-data hole. After R452 you get a clear error, but you also cannot express these shapes yet.</p></div>
+    </div>
+    <div class="pane">
+      <div class="head">R458 — the constructive half (this page)</div>
+      <div class="body"><p>Gives you the words to say what you mean, so the shapes R452 rejects become shapes you can build. R452's rejection messages literally point forward at <code>@referenceFor</code>.</p></div>
+    </div>
+  </div>
+  <p>Splitting it this way keeps trunk safe throughout: the hole is closed first, the capability arrives second. See <a href="../changelog.md">R452 in the changelog</a> (its plan file is gone; Done items live in the changelog).</p>
+
+  <h2>The idea: say the path per member</h2>
+  <p><code>@referenceFor</code> is applied once per member. Each application states one fact at its natural grain: <em>for this member, here is the path from the parent.</em></p>
+<pre><code>type Address {
+    occupant: AddressOccupant
+        @referenceFor(type: "Customer", path: [{key: "customer_address_id_fkey"}])
+        @referenceFor(type: "Staff",    path: [{condition: {className: "...", methodName: "..."}}])
+}</code></pre>
+  <p>The <code>path</code> uses the same element grammar as <a href="../../docs/manual/reference/directives/reference.adoc"><code>@reference</code></a> (<code>{table:}</code>, <code>{key:}</code>, <code>{condition:}</code>), so paths are nothing new. What is new is the per-member binding, and that you only annotate the members auto-discovery cannot handle.</p>
+
+  <h2>Why a brand-new directive, and not just <code>@reference</code>?</h2>
+  <p>This is the part worth slowing down on. A field carries a single <code>@reference</code> path, and for a polymorphic child that one path is applied against <em>every</em> member's table in turn, so it can be terminally correct for at most one member. One field, one path, many members: the arithmetic does not work.</p>
+  <p>There is a subtler reason too, and it is a genuine trap. The two directives share the <code>path</code> grammar but mean <strong>opposite things when repeated</strong>:</p>
+
+  <div class="sxs">
+    <div class="pane">
+      <div class="head"><code>@reference</code> repeated → concatenates</div>
+      <div class="body">
+        <p>Applications join end to end into one running chain, in authored order. Think "walk A, <em>then</em> B, <em>then</em> C." (That is <a href="../changelog.md">R435</a>'s rule.)</p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="head"><code>@referenceFor</code> repeated → independent</div>
+      <div class="body">
+        <p>Applications are keyed by <code>type:</code> and stand alone. Each <code>path:</code> is the <em>complete</em> path for one member. No chaining axis; repeating the same <code>type:</code> is a build error.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q2">
+    <p class="q"><span class="tag">Quiz</span> A field carries <code>@referenceFor(type:"Customer", path:[A])</code> and <code>@referenceFor(type:"Customer", path:[B])</code>. What happens?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">The paths concatenate: Customer is reached by walking A then B.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Build error: duplicate <code>type:</code> is rejected, not merged.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">The last application wins and A is ignored.</button>
+    <div class="explain">Concatenation is <code>@reference</code>'s rule, not <code>@referenceFor</code>'s. Because <code>@referenceFor</code> applications are independent and keyed by member, two entries for the same member are contradictory, so they are rejected rather than silently merged or overwritten. This opposite-repetition-semantics-on-a-shared-grammar hazard is exactly why the capability got its own directive instead of an argument on <code>@reference</code>.</div>
+  </div>
+
+  <details>
+    <summary>Alternatives the design rejected, and the principle behind it</summary>
+    <p>Two other shapes were considered and dropped: reviving the old <code>@multitableReference(routes: [...])</code> wrapper, and adding a <code>for:</code> argument to <code>@reference</code>. Both smeared two independent facts (which member, which path) into one construct, or widened <code>@reference</code>'s contract at call sites where the extra argument is meaningless. The through-line is a graphitron principle: <strong>a directive should carry exactly what the author needs to say, at the grain they need to say it.</strong> The correlation is a fact of the (field, member) pair, so <code>@referenceFor</code> binds at that grain.</p>
+  </details>
+
+  <h2>How to picture what gets generated</h2>
+  <p>You do not need emitter internals to hold the shape in your head. Every member's correlation resolves to one of two kinds, decided once when the schema is classified:</p>
+
+  <div class="sxs">
+    <div class="pane">
+      <div class="head"><code>KeyTupleWhere</code> — match, don't join</div>
+      <div class="body"><p>The parent already knows its own key values; the member row is found by matching columns against those values. No new table is joined.</p><p>FK disambiguation and self-FK both land here.</p></div>
+    </div>
+    <div class="pane">
+      <div class="head"><code>JoinedCorrelation</code> — actually join</div>
+      <div class="body"><p>One or more hops, each either an FK bridge or a condition predicate.</p><p>Multi-hop and condition correlation land here.</p></div>
+    </div>
+  </div>
+  <p>That two-way split is a sealed type with two arms. Sealed variants are how graphitron models "one of a fixed set of shapes, handled exhaustively"; see <a href="../../docs/architecture/explanation/dispatch-axes.adoc">Dispatch axes</a> for why the generator leans on this instead of flags and null checks.</p>
+
+  <div class="quiz" id="q3">
+    <p class="q"><span class="tag">Quiz</span> You disambiguate a member that has two FKs to the parent by naming one with <code>@referenceFor(type:"Film", path:[{key:"..."}])</code>. Which arm does it lower to?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)"><code>KeyTupleWhere</code> — nothing new is joined; the chosen FK's columns are matched against the parent's key values.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)"><code>JoinedCorrelation</code> — picking an FK means adding a join hop.</button>
+    <div class="explain">Disambiguation only <em>chooses among</em> FKs auto-discovery already saw; the correlation is still parent-key-values against member columns, so it stays in the no-join arm. A join hop appears only when you reach through an intermediate table (multi-hop) or correlate by a predicate (condition).</div>
+  </div>
+
+  <h2>Why unfinished shapes fail loudly on purpose</h2>
+  <p>R458 ships in slices, and here is the tidy bit: the directive <em>grammar</em> accepts all four shapes from day one, but the <em>emitters</em> learn them one slice at a time. In between, any shape whose emitter has not shipped is <strong>rejected at build time</strong> with a message naming the slice it is waiting on, never silently mis-emitted.</p>
+  <p>This is graphitron's <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed-rejection</a> discipline: a shape the generator cannot yet handle correctly is a first-class rejection with an explanatory message, not a best-effort guess. Same instinct as R452 closing the hole before R458 fills it, applied slice by slice so trunk stays green against any schema.</p>
+
+  <div class="quiz" id="q4">
+    <p class="q"><span class="tag">Quiz</span> During slice 1 (only the no-join cases shipped), you write a <code>@referenceFor</code> with a <code>{condition: ...}</code> path. What happens at build time?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">It emits a best-effort join and warns.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">It is silently ignored and the member falls back to auto-discovery.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">A build rejection, with a message naming the slice (condition correlation) that has not shipped yet.</button>
+    <div class="explain">The grammar accepts the condition path, but slice 1's classifier physically cannot build the joined-correlation arm, so it rejects with a deferred message pointing at the pending slice. Loud and specific beats silent-and-wrong every time; that is the whole typed-rejection stance.</div>
+  </div>
+
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-16)</span></h2>
+  <ul class="status">
+    <li><span class="pill done">landed</span><strong>Slice 1</strong>: the directive, classification, and the two no-join cases (multi-FK disambiguation, self-FK). A slice-1 review caught and fixed an orientation bug where a list-valued self-FK child got the single-valued join direction (silently wrong rows), now pinned by an execution test.</li>
+    <li><span class="pill pending">pending</span><strong>Slice 2</strong>: multi-hop chains through intermediate tables.</li>
+    <li><span class="pill pending">pending</span><strong>Slice 3</strong>: condition-based correlation.</li>
+    <li><span class="pill spun">spun off</span><a href="../single-cardinality-polymorphic-child-parent-fk-projection.md">R481</a>, a latent crash found during slice 1 where a single-cardinality child whose <em>parent</em> holds the FK reads an unprojected column at runtime. Out of scope for R458.</li>
+  </ul>
+
+  <footer>
+    <strong>See also.</strong>
+    <a href="../per-participant-multitable-child-join-paths.md">R458 plan</a> ·
+    <a href="../../docs/manual/reference/directives/reference.adoc"><code>@reference</code></a> ·
+    <a href="../../docs/manual/reference/directives/multitableReference.adoc"><code>@multitableReference</code></a> ·
+    <a href="../../docs/manual/how-to/polymorphic-types.adoc">Polymorphic types how-to</a> ·
+    <a href="../../docs/architecture/reference/code-generation-triggers.adoc">Code generation triggers</a>
+    <p style="margin-top:1em">Sketch for review. Links point at repo source paths; in the built site they would resolve to the rendered <code>.html</code> equivalents.</p>
+  </footer>
+
+</main>
+<script>
+  function choose(btn){
+    var quiz = btn.closest('.quiz');
+    if(quiz.classList.contains('answered')) return;
+    quiz.classList.add('answered');
+    var correct = btn.dataset.correct === 'true';
+    quiz.querySelectorAll('.choice').forEach(function(c){
+      if(c.dataset.correct === 'true') c.classList.add('right');
+      else c.classList.add('dim');
+    });
+    if(!correct) btn.classList.add('wrong');
+    quiz.querySelector('.explain').classList.add('show');
+  }
+</script>
+</body>
+</html>
