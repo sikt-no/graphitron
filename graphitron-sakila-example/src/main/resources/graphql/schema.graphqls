@@ -1070,6 +1070,28 @@ type Store @table(name: "store") {
     # to address (store.address_id → address), so the shared inline `address` TableField infers
     # its joinPath against store independently of customer — the joinPath is genuinely per-parent.
     location: OccupantLocation
+    # R481 execution fixture: a cross-table parent-holds-FK single-cardinality multi-table polymorphic
+    # child field. Both correlations put the FK on the parent (store) side, on a non-key store column:
+    # StoreLocation via store.address_id → address (auto-discovered single FK), StoreManager via
+    # store.manager_staff_id → staff (stated with @referenceFor because store↔staff has two FKs). The
+    # ParentRowDemand capability force-projects store.address_id / store.manager_staff_id onto the parent
+    # SELECT so the single-fetch WHERE can read them. Store 2 seeds manager_staff_id NULL, so only the
+    # StoreLocation branch matches there: a deterministic single-branch assertion. This is the executable
+    # twin of the R281-corpus Customer.address parent-holds-FK shape (classification-only in that corpus).
+    contact:    StoreRef @referenceFor(type: "StoreManager", path: [{key: "store_manager_staff_id_fkey"}])
+}
+
+# R481 execution fixture participants: an address-backed and a staff-backed participant, both reached
+# through a foreign key held on the parent store table (parent-holds-FK). Uniform 1-column PK arity
+# (address.address_id, staff.staff_id) satisfies the polymorphic PK-arity constraint.
+interface StoreRef { rowId: Int }
+type StoreLocation implements StoreRef @table(name: "address") {
+    rowId:   Int    @field(name: "address_id")
+    address: String @field(name: "address")
+}
+type StoreManager implements StoreRef @table(name: "staff") {
+    rowId:     Int    @field(name: "staff_id")
+    firstName: String @field(name: "first_name")
 }
 
 # R23 execution fixture: a plain-object (NestingField) type shared across two @table parents
@@ -1295,12 +1317,14 @@ type Category @table(name: "category") {
     # flipped these slots. Querying category_id 2 (Action) isolates the self-FK branch: no
     # category_label row has category_id 2, so CategoryLabel is empty there.
     #
-    # The single-cardinality counterpart (navigate TO the parent) is deliberately absent: it puts the
-    # FK on the parent side (parent.parent_category_id, a non-key column the parent record does not
-    # project), which crashes at runtime today. That is a broader pre-existing gap in single-cardinality
-    # parent-holds-FK polymorphic child fields (the Customer.address classified-corpus shape shares it),
-    # tracked separately from this R458 orientation fixture.
     childRefs:   [CategoryRef!]! @referenceFor(type: "CategoryNode", path: [{key: "category_parent_category_id_fkey"}])
+    # R481: the single-cardinality counterpart (navigate TO the parent) puts the correlation FK on the
+    # parent side (parent.parent_category_id, a non-key parent column). The ParentRowDemand capability
+    # force-projects that column onto the parent SELECT, so the single-fetch WHERE can read it: Action(2)
+    # resolves its parent Genre node. Multi-table dispatch against CategoryLabel stays correct (the
+    # auto-discovered category_label FK). List-cardinality parent-holds-FK correlation stays deferred
+    # (R487); this single form is what R481 ships.
+    parentRef:   CategoryRef @referenceFor(type: "CategoryNode", path: [{key: "category_parent_category_id_fkey"}])
 }
 
 """

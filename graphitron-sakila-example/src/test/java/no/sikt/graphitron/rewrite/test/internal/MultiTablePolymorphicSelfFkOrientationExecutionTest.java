@@ -86,9 +86,22 @@ class MultiTablePolymorphicSelfFkOrientationExecutionTest {
     private static final String REF_SELECTION =
         "{ __typename ... on CategoryNode { rowId name } ... on CategoryLabel { rowId label } }";
 
-    // NB: the single-cardinality self-FK "navigate to parent" counterpart is not executed here because
-    // it is rejected at build time (parent-side correlation column is not the parent's bound key); see
-    // MultiTableChildReferenceForPipelineTest.singleCardinalitySelfFk_parentSideNotBoundKey_deferred.
+    @SuppressWarnings("unchecked")
+    @Test
+    void singleCardinalitySelfFk_navigatesToParentCategory() {
+        // parentRef is single-cardinality: the SAME self-FK key orients toward the parent, putting the
+        // correlation column on the parent side (parent.parent_category_id, a non-key parent column).
+        // R481's ParentRowDemand capability force-projects that column onto the parent SELECT, so the
+        // single-fetch WHERE reads it. Action(2)'s parent is Genre(1); CategoryLabel is empty for
+        // category 2 (no category_label row), so the single result is deterministically the Genre node.
+        var action = categoryById(2, "parentRef " + REF_SELECTION);
+        var parentRef = (Map<String, Object>) action.get("parentRef");
+        assertThat(parentRef)
+            .as("Action's single parentRef navigates to its parent category via the self-FK")
+            .containsEntry("__typename", "CategoryNode")
+            .containsEntry("rowId", 1)
+            .containsEntry("name", "Genre");
+    }
 
     @SuppressWarnings("unchecked")
     @Test
