@@ -6458,6 +6458,56 @@ class GraphQLQueryTest {
         only.containsEntry("message", "rating must be in [1, 10]; got 11");
     }
 
+    // ===== R201 @field(name:) in setter-shape payload construction end-to-end =====
+    //
+    // submitFieldRenamedSetterShapeFilmReview returns a FieldRenamedSetterShapeFilmReviewPayload
+    // whose Java member names (reviewIdentifier / problems) diverge from the SDL field names
+    // (reviewId / errors). @field(name:) bridges the divergence for construction as well as for the
+    // read side. The error path proves the catch-arm payload-factory binds the errors list through
+    // the remapped setter and defaults the remapped data setter.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFieldRenamedSetterShapeFilmReview_validInput_returnsHappyPathPayload() {
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFieldRenamedSetterShapeFilmReview(filmId: 42, rating: 5) { reviewId errors { __typename } }
+            }
+            """);
+        var payload = assertThat(data)
+            .extractingByKey("submitFieldRenamedSetterShapeFilmReview", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFieldRenamedSetterShapeFilmReview_invalidRating_errorOnErrorsFieldDataDefaulted() {
+        // Catch-arm payload-factory emits (setter form, remapped names):
+        // errors -> { var p = new ...; p.setProblems(errors); p.setReviewIdentifier(null); return p; }
+        // The bad-rating throwable lands on `errors`, and `reviewId` reads the defaulted null.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFieldRenamedSetterShapeFilmReview(filmId: 1, rating: 11) {
+                    reviewId
+                    errors {
+                        __typename
+                        ... on FilmReviewBadRating { path message }
+                        ... on FilmReviewMissingFilm { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data)
+            .extractingByKey("submitFieldRenamedSetterShapeFilmReview", as(MAP));
+        payload.containsEntry("reviewId", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewBadRating");
+        only.containsEntry("message", "rating must be in [1, 10]; got 11");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void submitFilmReviewWithDetails_routesThroughInstantiatedInputBean() {

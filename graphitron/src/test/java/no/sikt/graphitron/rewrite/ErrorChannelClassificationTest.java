@@ -693,6 +693,188 @@ class ErrorChannelClassificationTest {
             .containsExactly(tuple("detail", "localizedMessage"));
     }
 
+    // ===== R201: @field(name:) in @error payload construction shape resolution =====
+    //
+    // Each fixture backs a child @service field's payload with a dummy class from
+    // AccessorPayloads (bean / record) or a JDK type (name-less POJO), reaching
+    // FieldBuilder.resolveErrorChannel's PayloadClass arm. The construction-shape resolution
+    // (ctor vs. bean) is what R201 teaches to honor @field(name:); the read side already did.
+
+    private static final String R201_SIMPLE_ERR = """
+            type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = SimpleErr
+            """;
+
+    /** A child @service Film field returning {@code payloadType}, produced by {@code stubMethod}. */
+    private static String r201Schema(String payloadTypeSdl, String stubMethod) {
+        return R201_SIMPLE_ERR + payloadTypeSdl + """
+            type Film @table(name: "film") {
+                title: String
+                sak: %s @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "%s"})
+            }
+            type Query { films: [Film!] }
+            """.formatted(payloadTypeName(payloadTypeSdl), stubMethod);
+    }
+
+    /** First SDL object type name in {@code payloadTypeSdl} (the payload type declaration). */
+    private static String payloadTypeName(String payloadTypeSdl) {
+        var m = java.util.regex.Pattern.compile("type\\s+(\\w+)").matcher(payloadTypeSdl);
+        if (!m.find()) throw new IllegalArgumentException("no payload type in: " + payloadTypeSdl);
+        return m.group(1);
+    }
+
+    @Test
+    void beanArm_remappedSetters_classifiesWithErrorsSetterBoundToRemappedName() {
+        // The payload class exposes setInfo / setFailures; @field(name:) on the SDL data/errors
+        // fields binds them. The errors-slot setter is the remapped setFailures.
+        var schema = build(r201Schema("""
+            type BeanRemapPayload {
+                data: String @field(name: "info")
+                errors: [SakError] @field(name: "failures")
+            }
+            """, "runDivergentBeanErrors"));
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
+        var ch = (ErrorChannel.PayloadClass) ((WithErrorChannel) f).errorChannel().orElseThrow();
+        assertThat(ch.errorsSlot())
+            .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod.class,
+                sm -> assertThat(sm.boundSetter().getName()).isEqualTo("setFailures"));
+    }
+
+    @Test
+    void beanArm_dataFieldDirectiveParticipatesInExistence_rejectsWhenSetterMissing() {
+        // Contract rule 1's behavior change pinned as an invariant: the payload has setData /
+        // setErrors, but @field(name: "info") on the data field remaps the lookup to setInfo,
+        // which does not exist. The reject names the SDL field, the directive value, and the
+        // parenthetical.
+        var schema = build(r201Schema("""
+            type BeanExistencePayload {
+                data: String @field(name: "info")
+                errors: [SakError]
+            }
+            """, "runSetterErrors"));
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason())
+            .contains("setInfo")
+            .contains("'data'")
+            .contains("(remapped to 'info' by @field)");
+    }
+
+    @Test
+    void ctorArm_reorderedRecordWithFieldOnErrors_classifiesAtNameResolvedIndex() {
+        // The record declares (problems, data); the SDL declares data then errors. @field(name:
+        // "problems") on the errors field name-matches ctor parameter 0, so the errors slot is
+        // index 0 (not the SDL index 1) and the defaulted data slot is computed against it.
+        var schema = build(r201Schema("""
+            type CtorRemapPayload {
+                data: String
+                errors: [SakError] @field(name: "problems")
+            }
+            """, "runReorderedErrors"));
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
+        var ch = (ErrorChannel.PayloadClass) ((WithErrorChannel) f).errorChannel().orElseThrow();
+        assertThat(ch.errorsSlot())
+            .isInstanceOfSatisfying(
+                no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex.class,
+                cpi -> assertThat(cpi.index()).isEqualTo(0));
+        // The single non-errors slot (data) is defaulted, and it is the SDL/ctor index 1, i.e.
+        // the resolved errors index (0) was excluded, not the stale SDL index.
+        assertThat(ch.defaultedSlots()).extracting(
+                no.sikt.graphitron.rewrite.model.DefaultedSlot::index)
+            .containsExactly(1);
+    }
+
+    @Test
+    void ctorArm_unresolvableFieldValue_rejectsNamingDirectiveValueAndCandidates() {
+        // NestedErrorsPayload(data, errors); @field(name: "nonexistent") on the errors field
+        // matches no ctor parameter. The reject names the directive value and the candidates.
+        var schema = build(r201Schema("""
+            type CtorUnresolvedPayload {
+                data: String
+                errors: [SakError] @field(name: "nonexistent")
+            }
+            """, "runNestedErrors"));
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason())
+            .contains("nonexistent")
+            .contains("data")
+            .contains("errors");
+    }
+
+    @Test
+    void ctorArm_directiveOnNameLessPojo_rejectsWithParametersGuidance() {
+        // NamelessErrorsPayload lives in the codereferences.noparams package, compiled without
+        // -parameters, so its ctor exposes no parameter names and it is not a record. The
+        // @field(name:) value here COINCIDES with the SDL field name ("errors"), so a
+        // presence-by-value-divergence shortcut would wrongly admit it via the positional path.
+        // Presence-tracking rejects it with the -parameters guidance. Its service stub also lives
+        // in that package, named here only by class-name string.
+        var schema = build(R201_SIMPLE_ERR + """
+            type NamelessPayload {
+                data: String
+                errors: [SakError] @field(name: "errors")
+            }
+            type Film @table(name: "film") {
+                title: String
+                sak: NamelessPayload @service(service: {
+                    className: "no.sikt.graphitron.codereferences.noparams.NoParamsServiceStub",
+                    method: "runNameless"})
+            }
+            type Query { films: [Film!] }
+            """);
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason())
+            .contains("-parameters")
+            .contains("errors");
+    }
+
+    @Test
+    void anyArm_blankFieldValue_rejectsChannel() {
+        // A present-but-blank @field(name: "") on any payload field rejects the channel
+        // (contract rule 3, R200/R202 precedent).
+        var schema = build(r201Schema("""
+            type BlankPayload {
+                data: String
+                errors: [SakError] @field(name: "")
+            }
+            """, "runNestedErrors"));
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason())
+            .contains("blank")
+            .contains("errors");
+    }
+
+    @Test
+    void regressionFloor_divergentNamesWithoutDirective_rejectsAsToday() {
+        // DivergentBeanErrorsPayload exposes setInfo / setFailures. Without a @field directive the
+        // bean arm still looks up setData / setErrors and rejects, exactly as before R201.
+        var schema = build(r201Schema("""
+            type RegressionPayload {
+                data: String
+                errors: [SakError]
+            }
+            """, "runDivergentBeanErrors"));
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason()).contains("setData");
+    }
+
     private GraphitronSchema build(String schemaText) {
         return TestSchemaHelper.buildSchema(schemaText);
     }

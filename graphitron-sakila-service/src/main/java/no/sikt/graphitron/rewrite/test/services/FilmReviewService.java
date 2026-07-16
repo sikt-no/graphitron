@@ -140,4 +140,27 @@ public final class FilmReviewService {
         out.setErrors(java.util.List.of());
         return out;
     }
+
+    /**
+     * R201 fixture: identical branching to {@link #submitSetterShape} but returns the
+     * {@code @field(name:)}-renamed setter-shape payload. Drives the {@code MutationServiceRecordField}
+     * emit through the mutable-bean construction shape whose setter names are resolved from
+     * {@code @field(name:)} rather than the SDL field names, end-to-end through the execution tier.
+     */
+    public static FieldRenamedSetterShapeFilmReviewPayload submitFieldRenamedSetterShape(
+            Integer filmId, Integer rating) {
+        if (filmId == null || rating == null) {
+            throw new FilmReviewBadRatingException("filmId and rating are required");
+        }
+        if (rating < 1 || rating > 10) {
+            throw new FilmReviewBadRatingException("rating must be in [1, 10]; got " + rating);
+        }
+        if (filmId == 999) {
+            throw new FilmReviewMissingFilmException("film " + filmId + " not found");
+        }
+        var out = new FieldRenamedSetterShapeFilmReviewPayload();
+        out.setReviewIdentifier(rating * 10000 + filmId);
+        out.setProblems(java.util.List.of());
+        return out;
+    }
 }

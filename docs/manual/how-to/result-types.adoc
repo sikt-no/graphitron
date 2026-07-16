@@ -17,6 +17,15 @@ The classification check order is `isRecord` → `TableRecord` → `Record` → 
 
 Input-side class-backed types follow the same shape with parallel permits on `InputType` (`GraphitronType.java:282-340`): `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`. The backing class is reflected from the `@service` / `@condition` / `@tableMethod` method parameter the input flows into. The Maven plugin can scaffold a Java record matching the input's field shape; binding flows through setters or the canonical constructor.
 
+=== Error-channel payload construction and `@field(name:)`
+
+A class-backed payload with an xref:error-channel.adoc[`errors:` field] is built by the generated fetcher in one of two shapes, and both honor xref:../reference/directives/field.adoc[`@field(name:)`] on the payload's SDL fields (the same directive the read side uses to name the accessor):
+
+* *All-fields constructor* (records, and POJOs with a single canonical constructor): the errors list is passed as the constructor parameter named by the errors-shaped field's `@field(name:)` value when present, and by SDL declaration position otherwise. A `@field(name:)` whose value matches no constructor parameter is rejected naming the value and the candidate parameters; a `@field(name:)` on the errors slot of a POJO compiled without `-parameters` (so parameter names are unavailable and the class is not a record) is rejected with guidance rather than silently falling back to position.
+* *Mutable bean* (public no-arg constructor plus a Java-bean setter per SDL field): each setter is `set<UcFirst(base)>` where `base` is the field's `@field(name:)` value when present, the SDL field name otherwise. Because a setter must exist for every SDL field, a data-field `@field(name:)` participates in the shape's existence check: a payload whose setter matches the SDL name while the directive names a different member is rejected.
+
+A present-but-blank `@field(name: "")` on any payload field is rejected on both shapes. When a rejected member resulted from a remap, the diagnostic carries a `(remapped to '<value>' by @field)` note so a failed override reads as an override.
+
 == jOOQ-record parents: catalog drives everything
 
 When the parent is a `JooqTableRecordType`, child `@table` fields traverse via xref:../reference/directives/reference.adoc[`@reference`] paths the catalog already knows about. The example schema's `FilmDetails` is the canonical shape; its producer's return type reflects to the jOOQ `FilmRecord`:

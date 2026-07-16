@@ -2,7 +2,7 @@
 :description: Bind a GraphQL slot to a specific column, argument target, or enum value.
 :!toc:
 
-Names the underlying-binding target for a GraphQL slot. The axis is determined by the directive site: column on a field or input field, column on a filter argument, database string (or Java enum constant) on an enum value, and, on an xref:error.adoc#_extra_fields[`@error` extra field], the source-class accessor matched against each handler's exception (or `GraphQLError`) class.
+Names the underlying-binding target for a GraphQL slot. The axis is determined by the directive site: column on a field or input field, column on a filter argument, database string (or Java enum constant) on an enum value, on an xref:error.adoc#_extra_fields[`@error` extra field] the source-class accessor matched against each handler's exception (or `GraphQLError`) class, and on a field of a class-backed error-channel payload type the Java member (Java-bean setter or constructor parameter) used to construct that payload, mirroring the accessor the read side already resolves.
 
 == SDL signature
 

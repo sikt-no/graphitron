@@ -464,6 +464,27 @@ class FieldBuilder {
     }
 
     /**
+     * One SDL payload field, gathered once by {@link #resolveErrorChannel} and threaded into the
+     * construction-shape resolution. Carries the field's own SDL name, the Java member base name
+     * it binds to ({@code @field(name:)} value when present, the SDL name otherwise, per the house
+     * idiom {@code argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName())}), and whether the
+     * {@code @field} directive is applied at all.
+     *
+     * <p>{@code fieldDirectivePresent} is load-bearing and cannot be reconstructed from the first
+     * two components: {@code javaBaseName.equals(sdlFieldName)} is ambiguous between "no directive"
+     * and "a directive whose value coincides with the SDL field name". The ctor-arm
+     * positional-vs-name-match fork (contract rule 2) and the diagnostics parenthetical (rule 4)
+     * both key on presence, not on whether the resolved base diverged, exactly as the read side
+     * does via {@code hasAppliedDirective} at the scalar/enum arm.
+     *
+     * <p>Deliberately FieldBuilder-internal (not an {@code ErrorChannel}-model type): the sole
+     * consumer is the one classify-time site here, and what lands on the model is the resolved
+     * artifact (the setter {@code Method} on {@code SetterBinding}, the int on
+     * {@code ErrorsSlot.CtorParameterIndex}), never the carrier itself.
+     */
+    record PayloadSdlField(String sdlFieldName, String javaBaseName, boolean fieldDirectivePresent) {}
+
+    /**
      * Resolves the {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape} for a
      * payload class. Predicates run in order:
      *
@@ -474,8 +495,12 @@ class FieldBuilder {
      *       is the canonical one. Returns
      *       {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor}.</li>
      *   <li><b>Mutable-bean predicate</b>. The class declares a public no-arg constructor
-     *       <em>and</em> a Java-bean setter ({@code setX} for SDL field {@code x}) accepting
-     *       one parameter for every SDL field. Returns
+     *       <em>and</em> a Java-bean setter accepting one parameter for every SDL field. The
+     *       setter base is the {@code @field(name:)} value when present, the SDL field name
+     *       otherwise ({@code setX} for base {@code x}); because a setter must <em>exist</em> for
+     *       every SDL field, a data-field directive participates in the shape's existence check
+     *       (a payload whose setter matches the SDL name while the directive names something else
+     *       rejects, in parity with the read side). Returns
      *       {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean}.</li>
      * </ol>
      *
@@ -486,18 +511,22 @@ class FieldBuilder {
      * Consumers who want the setter shape exclusively drop the all-fields ctor from their class.
      * Neither predicate matching is the only rejection mode.
      *
-     * <p>{@code sdlFieldNames} is the SDL payload's field names in declaration order; when the
+     * <p>{@code sdlFields} carries the SDL payload's fields in declaration order (SDL name, the
+     * remapped Java base name from {@code @field(name:)}, and directive presence); when the
      * payload's SDL type isn't an object (e.g. transient classifier callers without a fully
-     * resolved schema fragment), pass {@code null} to skip the setter predicate.
+     * resolved schema fragment), pass {@code null} to skip the setter predicate. Only the
+     * mutable-bean arm reads {@code javaBaseName} (the all-fields-ctor arm is arity-selected and
+     * name-independent; its directive handling happens downstream in
+     * {@link #buildErrorChannelCtorArm}).
      */
     static PayloadConstructionShapeResult resolvePayloadConstructionShape(
-            Class<?> payloadCls, java.util.List<String> sdlFieldNames) {
+            Class<?> payloadCls, java.util.List<PayloadSdlField> sdlFields) {
         var ctors = payloadCls.getDeclaredConstructors();
         if (ctors.length == 0) {
             return new PayloadConstructionShapeResult.Reject(
                 "payload class '" + payloadCls.getName() + "' has no declared constructors");
         }
-        int sdlFieldCount = sdlFieldNames == null ? -1 : sdlFieldNames.size();
+        int sdlFieldCount = sdlFields == null ? -1 : sdlFields.size();
         // Predicate 1: all-fields ctor. A class with a single declared ctor takes the trivial
         // path only when (a) the SDL field count is unknown (legacy callers that pass null),
         // or (b) the ctor's parameter count matches the SDL field count. The arity check
@@ -521,7 +550,7 @@ class FieldBuilder {
                 new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(allFieldsCtor));
         }
         // Predicate 2: mutable-bean shape (no-arg ctor + per-SDL-field setters).
-        var beanResult = tryMutableBean(payloadCls, sdlFieldNames, ctors);
+        var beanResult = tryMutableBean(payloadCls, sdlFields, ctors);
         if (beanResult != null) {
             return beanResult;
         }
@@ -550,16 +579,20 @@ class FieldBuilder {
 
     /**
      * Tries the mutable-bean predicate: a public no-arg constructor plus a Java-bean setter for
-     * every SDL field. Returns {@code Resolved(MutableBean)} on match, a structured
-     * {@code Reject} when a partial match is detected (no-arg ctor exists but one or more
-     * SDL-field setters are missing or mis-typed), or {@code null} when no no-arg ctor exists
-     * (so the caller can fall through to the "neither predicate" reject path).
+     * every SDL field. The setter base is the field's {@code @field(name:)} value when present,
+     * the SDL field name otherwise, so a divergent Java member name binds when the directive names
+     * it and a directive naming a member the class does not expose rejects. Returns
+     * {@code Resolved(MutableBean)} on match, a structured {@code Reject} when a partial match is
+     * detected (no-arg ctor exists but one or more SDL-field setters are missing or mis-typed;
+     * the reject string carries the {@code (remapped to '<base>' by @field)} parenthetical when a
+     * remap was in play), or {@code null} when no no-arg ctor exists (so the caller can fall
+     * through to the "neither predicate" reject path).
      */
     private static PayloadConstructionShapeResult tryMutableBean(
             Class<?> payloadCls,
-            java.util.List<String> sdlFieldNames,
+            java.util.List<PayloadSdlField> sdlFields,
             java.lang.reflect.Constructor<?>[] ctors) {
-        if (sdlFieldNames == null || sdlFieldNames.isEmpty()) {
+        if (sdlFields == null || sdlFields.isEmpty()) {
             return null;
         }
         java.lang.reflect.Constructor<?> noArgCtor = java.util.Arrays.stream(ctors)
@@ -571,9 +604,14 @@ class FieldBuilder {
             return null;
         }
         var bindings = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding>(
-            sdlFieldNames.size());
-        for (String sdlFieldName : sdlFieldNames) {
-            String setterName = javaBeanSetterName(sdlFieldName);
+            sdlFields.size());
+        for (PayloadSdlField field : sdlFields) {
+            String sdlFieldName = field.sdlFieldName();
+            // The setter base is the @field(name:) value when present, the SDL field name
+            // otherwise; a data-field directive thus participates in the shape's existence check.
+            String setterBase = field.javaBaseName();
+            String setterName = javaBeanSetterName(setterBase);
+            String remap = fieldRemapParenthetical(field);
             var candidates = java.util.Arrays.stream(payloadCls.getMethods())
                 .filter(m -> m.getName().equals(setterName) && m.getParameterCount() == 1)
                 .toList();
@@ -581,15 +619,15 @@ class FieldBuilder {
                 return new PayloadConstructionShapeResult.Reject(
                     "payload class '" + payloadCls.getName()
                         + "' has a public no-arg constructor but no setter '" + setterName
-                        + "(...)' for SDL field '" + sdlFieldName + "'; the mutable-bean shape"
-                        + " requires a Java-bean setter for every SDL field");
+                        + "(...)' for SDL field '" + sdlFieldName + "'" + remap + "; the mutable-bean"
+                        + " shape requires a Java-bean setter for every SDL field");
             }
             if (candidates.size() > 1) {
                 return new PayloadConstructionShapeResult.Reject(
                     "payload class '" + payloadCls.getName()
                         + "' has multiple overloads of '" + setterName + "(...)' for SDL field '"
-                        + sdlFieldName + "'; the mutable-bean shape requires a unique single-arg"
-                        + " setter");
+                        + sdlFieldName + "'" + remap + "; the mutable-bean shape requires a unique"
+                        + " single-arg setter");
             }
             var setter = candidates.get(0);
             boolean acceptsOptional = setter.getParameterTypes()[0] == java.util.Optional.class;
@@ -601,10 +639,21 @@ class FieldBuilder {
                 noArgCtor, bindings));
     }
 
-    /** Java-bean setter name: SDL field "rating" maps to "setRating" (first letter upper-cased). */
-    private static String javaBeanSetterName(String sdlFieldName) {
-        return "set" + Character.toUpperCase(sdlFieldName.charAt(0))
-            + sdlFieldName.substring(1);
+    /** Java-bean setter name: base "rating" maps to "setRating" (first letter upper-cased). */
+    private static String javaBeanSetterName(String base) {
+        return "set" + Character.toUpperCase(base.charAt(0)) + base.substring(1);
+    }
+
+    /**
+     * The {@code (remapped to '<base>' by @field)} parenthetical for a reject string, or the empty
+     * string when no remap is in play (R202 precedent). Shown only when the directive is present
+     * <em>and</em> the resolved base diverges from the SDL field name, so a failed override reads
+     * as an override rather than a plain missing member.
+     */
+    private static String fieldRemapParenthetical(PayloadSdlField field) {
+        return field.fieldDirectivePresent() && !field.javaBaseName().equals(field.sdlFieldName())
+            ? " (remapped to '" + field.javaBaseName() + "' by @field)"
+            : "";
     }
 
     private static String formatAsConnectionSameTableWarning(
@@ -2974,10 +3023,31 @@ class FieldBuilder {
         // disambiguates by matching parameter count to the SDL field count, then falls back to
         // the mutable-bean predicate (no-arg ctor + per-SDL-field setters). AllFieldsCtor wins
         // when both shapes match (canonical-over-bridge precedence).
-        var sdlFieldNames = sdlFields.stream()
-            .map(graphql.schema.GraphQLFieldDefinition::getName)
+        //
+        // Gathering stays builder-internal: each SDL field becomes a PayloadSdlField carrying its
+        // SDL name, the @field(name:)-remapped Java base name (house idiom
+        // argString(...).orElse(getName())), and directive presence. Only this one classify-time
+        // site reads the carrier; what lands on the model is the resolved artifact (setter Method /
+        // ctor index), never the carrier.
+        var sdlFieldCarriers = sdlFields.stream()
+            .map(f -> new PayloadSdlField(
+                f.getName(),
+                argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()),
+                f.hasAppliedDirective(DIR_FIELD)))
             .toList();
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldNames);
+        // Contract rule 3: a present-but-blank @field(name: "") on any payload field rejects the
+        // channel (R200/R202 precedent). It can name no Java member, and silently falling back to
+        // the SDL name would ignore a directive the author explicitly wrote.
+        for (var carrier : sdlFieldCarriers) {
+            if (carrier.fieldDirectivePresent() && carrier.javaBaseName().isBlank()) {
+                return new ErrorChannelResult.Reject(
+                    "payload class '" + result.fqClassName() + "' SDL field '"
+                        + carrier.sdlFieldName() + "' carries @field(name:) with a blank value;"
+                        + " give it the Java member name to bind (constructor parameter / Java-bean"
+                        + " setter), or drop the directive to bind by the field's own name");
+            }
+        }
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldCarriers);
         if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
             return new ErrorChannelResult.Reject(r.reason());
         }
@@ -2991,8 +3061,8 @@ class FieldBuilder {
 
         return switch (shape) {
             case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc ->
-                buildErrorChannelCtorArm(result, afc, errorsFieldIndex, mappedErrorTypes,
-                    payloadClassName, mappingsConstantName);
+                buildErrorChannelCtorArm(result, afc, sdlFieldCarriers.get(errorsFieldIndex),
+                    errorsFieldIndex, mappedErrorTypes, payloadClassName, mappingsConstantName);
             case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb ->
                 buildErrorChannelBeanArm(result, mb, errorsFieldIndex, mappedErrorTypes,
                     payloadClassName, mappingsConstantName);
@@ -3002,6 +3072,7 @@ class FieldBuilder {
     private static ErrorChannelResult buildErrorChannelCtorArm(
             ReturnTypeRef.ResultReturnType result,
             no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc,
+            PayloadSdlField errorsSdlField,
             int errorsFieldIndex,
             List<ErrorType> mappedErrorTypes,
             ClassName payloadClassName,
@@ -3009,29 +3080,103 @@ class FieldBuilder {
         var ctor = afc.ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
-        // §2c positional errors-slot rule: the SDL ErrorsField's declaration index maps directly
-        // to the constructor parameter at the same index. The slot's element type is Object;
-        // the only structural check left is that the parameter is a List/Iterable so the catch
-        // arm's synthesized payload-factory lambda compiles.
-        if (errorsFieldIndex >= parameters.length) {
+        // Contract rule 2: ctor selection by arity is name-independent, so the errors slot's
+        // position is the only place the directive is load-bearing. Compute one resolved index
+        // and feed it to BOTH collectDefaultedSlots and ErrorsSlot.CtorParameterIndex — they
+        // agree today only because the SDL index equals the ctor index by convention; if only the
+        // slot switched to the resolved index, the emitter would place errors at the resolved slot
+        // while defaultsByIndex default-fills it and leaves the SDL-index slot unfilled (a
+        // mis-constructed payload that still compiles).
+        //
+        // No directive: the SDL declaration index stands (status quo positional rule). Presence is
+        // by fieldDirectivePresent (not base-vs-SDL divergence), matching the read side: a
+        // @field(name:) whose value coincides with the SDL name still takes the present branch.
+        int resolvedErrorsCtorIndex;
+        if (errorsSdlField.fieldDirectivePresent()) {
+            String base = errorsSdlField.javaBaseName();
+            String[] paramNames = ctorParameterNames(ctor);
+            if (paramNames == null) {
+                // No name info (non-record POJO without -parameters). Falling back to position
+                // here would silently ignore a directive the author put on the very slot being
+                // resolved — the failure mode this item exists to remove.
+                return new ErrorChannelResult.Reject(
+                    "payload class '" + result.fqClassName() + "' errors-shaped SDL field '"
+                        + errorsSdlField.sdlFieldName() + "' carries @field(name: '" + base
+                        + "') but the constructor exposes no parameter names (compiled without"
+                        + " -parameters and not a record), so the named errors slot cannot be"
+                        + " resolved. Compile the payload with -parameters, convert it to a record,"
+                        + " or use the mutable-bean (no-arg ctor + setters) shape");
+            }
+            int match = -1;
+            for (int i = 0; i < paramNames.length; i++) {
+                if (base.equals(paramNames[i])) { match = i; break; }
+            }
+            if (match < 0) {
+                return new ErrorChannelResult.Reject(
+                    "payload class '" + result.fqClassName() + "' errors-shaped SDL field '"
+                        + errorsSdlField.sdlFieldName() + "' (remapped to '" + base
+                        + "' by @field) matches no constructor parameter; candidate parameter"
+                        + " names: " + java.util.Arrays.toString(paramNames));
+            }
+            resolvedErrorsCtorIndex = match;
+        } else {
+            resolvedErrorsCtorIndex = errorsFieldIndex;
+        }
+        // The slot's element type is Object; the only structural check left is that the parameter
+        // is a List/Iterable so the catch arm's synthesized payload-factory lambda compiles. Both
+        // checks run against the resolved index.
+        if (resolvedErrorsCtorIndex >= parameters.length) {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName()
                     + "' has fewer constructor parameters (" + parameters.length
                     + ") than the SDL field declaration order requires; the errors-shaped SDL "
-                    + "field at index " + errorsFieldIndex + " has no matching ctor parameter");
+                    + "field at index " + resolvedErrorsCtorIndex + " has no matching ctor parameter");
         }
-        if (!Iterable.class.isAssignableFrom(parameters[errorsFieldIndex].getType())) {
+        if (!Iterable.class.isAssignableFrom(parameters[resolvedErrorsCtorIndex].getType())) {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName()
-                    + "' parameter at index " + errorsFieldIndex + " is "
-                    + parameters[errorsFieldIndex].getType().getName()
+                    + "' parameter at index " + resolvedErrorsCtorIndex + " is "
+                    + parameters[resolvedErrorsCtorIndex].getType().getName()
                     + "; the errors slot must be a List/Iterable so the catch arm's "
                     + "synthesized payload-factory lambda compiles");
         }
-        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, errorsFieldIndex);
-        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(errorsFieldIndex);
+        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, resolvedErrorsCtorIndex);
+        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(resolvedErrorsCtorIndex);
         return new ErrorChannelResult.Channel(new ErrorChannel.PayloadClass(
             mappedErrorTypes, payloadClassName, errorsSlot, defaultedSlots, mappingsConstantName));
+    }
+
+    /**
+     * Constructor parameter names for {@link #buildErrorChannelCtorArm}'s name-match, or
+     * {@code null} when the names are not reliably available. Records always expose component
+     * names (via {@link Class#getRecordComponents()}) regardless of the {@code -parameters}
+     * compiler flag; the canonical constructor aligns positionally with the components. Non-record
+     * POJOs expose names only when compiled with {@code -parameters}
+     * ({@link java.lang.reflect.Parameter#isNamePresent()} true for every parameter).
+     */
+    private static String[] ctorParameterNames(java.lang.reflect.Constructor<?> ctor) {
+        var declaringClass = ctor.getDeclaringClass();
+        var parameters = ctor.getParameters();
+        if (declaringClass.isRecord()) {
+            var components = declaringClass.getRecordComponents();
+            if (components.length == parameters.length) {
+                String[] names = new String[components.length];
+                for (int i = 0; i < components.length; i++) {
+                    names[i] = components[i].getName();
+                }
+                return names;
+            }
+        }
+        if (parameters.length > 0
+                && java.util.Arrays.stream(parameters).allMatch(
+                    java.lang.reflect.Parameter::isNamePresent)) {
+            String[] names = new String[parameters.length];
+            for (int i = 0; i < parameters.length; i++) {
+                names[i] = parameters[i].getName();
+            }
+            return names;
+        }
+        return null;
     }
 
     private static ErrorChannelResult buildErrorChannelBeanArm(
@@ -3073,20 +3218,6 @@ class FieldBuilder {
                 b.setter(), defaultLiteralFor(b.setter().getParameterTypes()[0])));
         }
         return out;
-    }
-
-    /**
-     * SDL field names for the named GraphQL object type in declaration order, or {@code null}
-     * when the schema doesn't resolve to an object type. Used by
-     * {@link #resolvePayloadConstructionShape} to drive the mutable-bean predicate's
-     * per-SDL-field setter lookup.
-     */
-    private java.util.List<String> sdlFieldNames(String returnTypeName) {
-        return ctx.schema.getType(returnTypeName) instanceof GraphQLObjectType obj
-            ? obj.getFieldDefinitions().stream()
-                .map(graphql.schema.GraphQLFieldDefinition::getName)
-                .toList()
-            : null;
     }
 
     /**

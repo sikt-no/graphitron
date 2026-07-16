@@ -847,6 +847,15 @@ type SetterShapeFilmReviewPayload {
     errors: [FilmReviewError]
 }
 
+# R201 fixture: @field(name:)-renamed sibling of SetterShapeFilmReviewPayload. The backing class
+# exposes setReviewIdentifier / setProblems; @field(name:) on each SDL field names the Java member
+# for construction (mutable-bean arm) as well as for the read side. Proves the errors setter and
+# the defaulted data setter are resolved from the directive value, not the SDL field name.
+type FieldRenamedSetterShapeFilmReviewPayload {
+    reviewId: Int @field(name: "reviewIdentifier")
+    errors: [FilmReviewError] @field(name: "problems")
+}
+
 # R268 fixture (errorchannel-arm-switch-table-data-fields.md): a root @service Outcome payload
 # that pairs a @table-bound DataLoader data field with the errors field — the combination
 # R244's inventory found nowhere in sakila. `film` is the @sourceRow leaf-PK shape proven by
@@ -3160,6 +3169,16 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitSetterShape"
+        })
+
+    # R201 execution-tier fixture: like submitSetterShapeFilmReview but the payload's Java member
+    # names diverge from the SDL field names, bridged by @field(name:). The catch-arm payload-factory
+    # binds the errors list through the remapped setter (setProblems) and defaults the remapped data
+    # setter (setReviewIdentifier(null)); the error surfaces on `errors` and `reviewId` reads null.
+    submitFieldRenamedSetterShapeFilmReview(filmId: Int!, rating: Int!): FieldRenamedSetterShapeFilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitFieldRenamedSetterShape"
         })
 
     # R311 root singular: a jOOQ FilmRecord bound directly as the @service input param. createFilmRecord

@@ -455,6 +455,23 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    // ===== R201 @field(name:) in payload construction fixtures =====
+
+    /** R201: mutable-bean payload with divergently-named setters (info / failures). */
+    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.DivergentBeanErrorsPayload runDivergentBeanErrors() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** R201: mutable-bean payload with SDL-name setters (setData / setErrors). */
+    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.SetterErrorsPayload runSetterErrors() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** R201: record whose components are reordered relative to SDL declaration order. */
+    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.ReorderedErrorsPayload runReorderedErrors() {
+        throw new UnsupportedOperationException();
+    }
+
     /**
      * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used by the
      * validator-pre-step regression test that needs an Input-typed arg (for the R94 fromMap

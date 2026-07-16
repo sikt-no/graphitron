@@ -92,6 +92,36 @@
                     <release>25</release>
                     <parameters>true</parameters>
                 </configuration>
+                <executions>
+                    <!-- The test tree compiles with -parameters (services / conditions resolve
+                         arg names by reflection). The codereferences.noparams package is the one
+                         exception: R201 needs a name-less POJO to pin the ctor-arm reject when a
+                         @field(name:) targets a class compiled without -parameters. Exclude that
+                         package from the default -parameters test compile and compile it in a
+                         dedicated pass with -parameters off. The package is self-contained, so no
+                         other test class references it at compile time. -->
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <testExcludes>
+                                <testExclude>no/sikt/graphitron/codereferences/noparams/**</testExclude>
+                            </testExcludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>test-compile-noparams</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                        <configuration>
+                            <parameters>false</parameters>
+                            <testIncludes>
+                                <testInclude>no/sikt/graphitron/codereferences/noparams/**</testInclude>
+                            </testIncludes>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <!-- Republish compiled tests as a test-jar so other modules
                  (graphitron-sakila-example) can consume the tier-annotation

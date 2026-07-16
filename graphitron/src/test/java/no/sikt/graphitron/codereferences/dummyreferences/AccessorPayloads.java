@@ -85,4 +85,47 @@ public final class AccessorPayloads {
      * directive-driven accessor-name remap on a free-form record-backed parent.
      */
     public record RemappedPayload(FilmRecord filmRecord) {}
+
+    /**
+     * R201 bean-arm remap witness: a mutable-bean payload whose Java member names
+     * ({@code info}, {@code failures}) diverge from the SDL field names ({@code data},
+     * {@code errors}). Only {@code @field(name: "info")} / {@code @field(name: "failures")} on the
+     * SDL fields can bind the setters. Getters are present so the payload's own data field also
+     * resolves cleanly on the read side.
+     */
+    public static final class DivergentBeanErrorsPayload {
+        private String info;
+        private List<Object> failures;
+        public DivergentBeanErrorsPayload() {}
+        public void setInfo(String info) { this.info = info; }
+        public void setFailures(List<Object> failures) { this.failures = failures; }
+        public String getInfo() { return info; }
+        public List<Object> getFailures() { return failures; }
+    }
+
+    /**
+     * R201 bean-arm existence witness: a mutable-bean payload whose setters match the SDL field
+     * names ({@code setData} / {@code setErrors}). A {@code @field(name:)} on the {@code data}
+     * field naming a member the class does not expose (e.g. {@code "info"}) must reject, since the
+     * bean predicate requires a setter to exist under the resolved base. Also serves the
+     * blank-{@code @field} and ctor-reorder-free cases.
+     */
+    public static final class SetterErrorsPayload {
+        private String data;
+        private List<Object> errors;
+        public SetterErrorsPayload() {}
+        public void setData(String data) { this.data = data; }
+        public void setErrors(List<Object> errors) { this.errors = errors; }
+        public String getData() { return data; }
+        public List<Object> getErrors() { return errors; }
+    }
+
+    /**
+     * R201 ctor-arm remap witness: a record whose components are declared in a different order
+     * than the SDL fields. SDL declares {@code data} then {@code errors}; this record declares the
+     * errors slot ({@code problems}) first. Only {@code @field(name: "problems")} on the
+     * errors-shaped SDL field can name the errors constructor parameter; the positional rule alone
+     * would place the errors list at SDL index 1 ({@code data}, a {@code String}) and reject.
+     */
+    public record ReorderedErrorsPayload(List<Object> problems, String data) {}
 }

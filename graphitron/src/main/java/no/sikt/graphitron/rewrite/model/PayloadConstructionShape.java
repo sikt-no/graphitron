@@ -26,6 +26,15 @@ import java.util.List;
  * {@code graphitron-codegen-parent}). Both shapes yield equivalent payload instances; there's
  * no construction drift to surface. Consumers who want the setter shape exclusively drop the
  * all-fields ctor from their class.
+ *
+ * <p><b>{@code @field(name:)} on payload fields.</b> A setter or constructor parameter name
+ * matches the {@code @field(name:)} value when the directive is present, the SDL field name
+ * otherwise, mirroring the read side. The directive is load-bearing at different points on each
+ * arm: on the ctor arm it names the errors-slot parameter only (arity selection is
+ * name-independent, so data-field directives are inert there), while on the bean arm it also
+ * participates in the shape's existence check (a setter must exist for every SDL field under the
+ * resolved base, so a data-field directive naming a member the class does not expose rejects).
+ * A present-but-blank {@code @field(name: "")} on any payload field rejects the channel.
  */
 public sealed interface PayloadConstructionShape
         permits PayloadConstructionShape.AllFieldsCtor, PayloadConstructionShape.MutableBean {
@@ -84,8 +93,12 @@ public sealed interface PayloadConstructionShape
      * setter, and a flag for whether the setter accepts {@code Optional<T>} (lifted verbatim
      * from the legacy {@code ReflectionHelpers.setterAcceptsOptional} rule).
      *
-     * @param sdlFieldName    e.g. {@code "rating"}
-     * @param setter          e.g. {@code setRating(Integer)}; resolved by Java-bean name match
+     * @param sdlFieldName    the wire identity, e.g. {@code "rating"} (kept even when the setter
+     *                        is resolved from a divergent {@code @field(name:)} base, so
+     *                        diagnostics quote the SDL name)
+     * @param setter          e.g. {@code setRating(Integer)}; resolved by Java-bean name match on
+     *                        the {@code @field(name:)} base when present, the SDL field name
+     *                        otherwise
      * @param acceptsOptional true when the setter's parameter erasure is {@code Optional<T>}
      */
     record SetterBinding(

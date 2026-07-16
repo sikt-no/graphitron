@@ -1,9 +1,11 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.FieldBuilder.PayloadSdlField;
 import no.sikt.graphitron.rewrite.model.PayloadConstructionShape;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,10 +14,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pins the {@link FieldBuilder#resolvePayloadConstructionShape} predicate behaviour: predicates
  * run in order, all-fields-ctor short-circuits, mutable-bean is the fallback admission, and
- * neither-matches is the only rejection mode.
+ * neither-matches is the only rejection mode. R201 adds the {@code @field(name:)} remap on the
+ * mutable-bean arm (setter base = directive value when present, SDL name otherwise).
  */
 @UnitTier
 class PayloadConstructionShapeTest {
+
+    /** SDL fields with no {@code @field} directive: Java base name equals the SDL field name. */
+    private static List<PayloadSdlField> sdl(String... names) {
+        return Arrays.stream(names)
+            .map(n -> new PayloadSdlField(n, n, false))
+            .toList();
+    }
+
+    /** A single {@code @field(name: base)} SDL field: base diverges from the SDL name. */
+    private static PayloadSdlField remapped(String sdlFieldName, String base) {
+        return new PayloadSdlField(sdlFieldName, base, true);
+    }
 
     // ===== Fixture payload classes =====
 
@@ -81,7 +96,7 @@ class PayloadConstructionShapeTest {
     @Test
     void recordPayload_resolvesAsAllFieldsCtor() {
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            RecordPayload.class, List.of("data", "errors"));
+            RecordPayload.class, sdl("data", "errors"));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
         var shape = ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
         assertThat(shape).isInstanceOf(PayloadConstructionShape.AllFieldsCtor.class);
@@ -90,7 +105,7 @@ class PayloadConstructionShapeTest {
     @Test
     void beanPayload_resolvesAsMutableBean() {
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            BeanPayload.class, List.of("data", "errors"));
+            BeanPayload.class, sdl("data", "errors"));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
         var shape = ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
         assertThat(shape).isInstanceOf(PayloadConstructionShape.MutableBean.class);
@@ -107,7 +122,7 @@ class PayloadConstructionShapeTest {
         // Predicate 1 short-circuits the walk: AllFieldsCtor wins because it ran first. The
         // setter-shape predicate is unreached.
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            BothShapesPayload.class, List.of("data", "errors"));
+            BothShapesPayload.class, sdl("data", "errors"));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
         var shape = ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
         assertThat(shape).isInstanceOf(PayloadConstructionShape.AllFieldsCtor.class);
@@ -116,7 +131,7 @@ class PayloadConstructionShapeTest {
     @Test
     void missingErrorsSetter_rejectsWithStructuredReason() {
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            MissingErrorsSetter.class, List.of("data", "errors"));
+            MissingErrorsSetter.class, sdl("data", "errors"));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Reject.class);
         var reject = (FieldBuilder.PayloadConstructionShapeResult.Reject) result;
         assertThat(reject.reason()).contains("setErrors");
@@ -126,14 +141,14 @@ class PayloadConstructionShapeTest {
     @Test
     void neitherShape_rejects() {
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            NeitherShape.class, List.of("data", "errors"));
+            NeitherShape.class, sdl("data", "errors"));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Reject.class);
     }
 
     @Test
     void optionalSetter_marksAcceptsOptional() {
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            OptionalSetterPayload.class, List.of("rating", "errors"));
+            OptionalSetterPayload.class, sdl("rating", "errors"));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
         var mb = (PayloadConstructionShape.MutableBean)
             ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
@@ -145,7 +160,64 @@ class PayloadConstructionShapeTest {
     void camelCaseSdlField_resolvesUnderJavaBeanNaming() {
         // SDL "xRating" -> setter "setXRating" under Java-bean first-letter-upper naming.
         var result = FieldBuilder.resolvePayloadConstructionShape(
-            CamelCaseSetterPayload.class, List.of("xRating", "errors"));
+            CamelCaseSetterPayload.class, sdl("xRating", "errors"));
+        assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
+        var mb = (PayloadConstructionShape.MutableBean)
+            ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
+        assertThat(mb.bindings().get(0).setter().getName()).isEqualTo("setXRating");
+    }
+
+    // ===== R201: @field(name:) remap on the mutable-bean arm =====
+
+    /** Setters whose bases diverge from the SDL field names; only @field(name:) can bind them. */
+    public static final class DivergentSetterPayload {
+        public DivergentSetterPayload() {}
+        public void setInfo(String info) {}
+        public void setFailures(List<Object> failures) {}
+    }
+
+    @Test
+    void remappedSetters_resolveViaFieldDirective() {
+        // SDL data @field(name: "info") + errors @field(name: "failures"). The bean arm looks up
+        // setInfo / setFailures (not setData / setErrors), binds them, and keeps the SDL field
+        // name as the wire identity on each SetterBinding.
+        var result = FieldBuilder.resolvePayloadConstructionShape(
+            DivergentSetterPayload.class,
+            List.of(remapped("data", "info"), remapped("errors", "failures")));
+        assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
+        var mb = (PayloadConstructionShape.MutableBean)
+            ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
+        assertThat(mb.bindings()).hasSize(2);
+        assertThat(mb.bindings().get(0).sdlFieldName()).isEqualTo("data");
+        assertThat(mb.bindings().get(0).setter().getName()).isEqualTo("setInfo");
+        assertThat(mb.bindings().get(1).sdlFieldName()).isEqualTo("errors");
+        assertThat(mb.bindings().get(1).setter().getName()).isEqualTo("setFailures");
+    }
+
+    @Test
+    void remappedButMissingSetter_rejectsNamingSdlFieldDirectiveValueAndParenthetical() {
+        // BeanPayload exposes setData / setErrors. A @field(name: "info") on the data field remaps
+        // the lookup to setInfo, which does not exist. The reject names the SDL field ('data'),
+        // the directive value ('info'), and the (remapped to 'info' by @field) parenthetical so a
+        // failed override reads as an override, not a plain missing setter.
+        var result = FieldBuilder.resolvePayloadConstructionShape(
+            BeanPayload.class,
+            List.of(remapped("data", "info"), new PayloadSdlField("errors", "errors", false)));
+        assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Reject.class);
+        var reason = ((FieldBuilder.PayloadConstructionShapeResult.Reject) result).reason();
+        assertThat(reason)
+            .contains("setInfo")
+            .contains("'data'")
+            .contains("(remapped to 'info' by @field)");
+    }
+
+    @Test
+    void remappedDirectiveValue_convertedUnderJavaBeanNaming() {
+        // The directive value is camelCased into the setter name the same way an SDL field name is:
+        // @field(name: "xRating") -> setXRating.
+        var result = FieldBuilder.resolvePayloadConstructionShape(
+            CamelCaseSetterPayload.class,
+            List.of(remapped("data", "xRating"), new PayloadSdlField("errors", "errors", false)));
         assertThat(result).isInstanceOf(FieldBuilder.PayloadConstructionShapeResult.Resolved.class);
         var mb = (PayloadConstructionShape.MutableBean)
             ((FieldBuilder.PayloadConstructionShapeResult.Resolved) result).shape();
