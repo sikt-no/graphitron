@@ -107,7 +107,14 @@ contract.
    demand types; **v1 pins `ORACLE_TEXT` to the type-ahead demand** (the
    compiled query below delivers what `TRIGRAM` delivers), and weighted
    prose relevance on Oracle is recorded future work in Non-goals (revised
-   2026-07-16, Oracle docs-first round). Both Postgres mechanisms are
+   2026-07-16, Oracle docs-first round). **The supported PostgreSQL floor
+   for this feature is 17** (stated by the item owner 2026-07-16); the
+   repo's CI and Testcontainers already pin PostgreSQL 18
+   (`postgres:18` service, `jdbc:tc:postgresql:18`), and the 17/18
+   release notes contain no `pg_trgm` or core-FTS behaviour changes that
+   touch the claims verified during drafting (the drafting sandbox's
+   native Postgres is 16; the execution tier re-pins every claim on the
+   repo's pinned image, see Tests). Both Postgres mechanisms are
    available on Amazon RDS,
    which is the deployment constraint (see *The Postgres extension
    landscape and RDS*). Specialized engines external to the database
@@ -572,7 +579,11 @@ decision recorded above. The tsvector half is authored in its phase.
   authored filter argument ANDs with the match; `defaultFirst` applies;
   `first` over `maxFirst` errors client-visibly; empty search string
   returns `[]`; the DML pinning test (insert/update on `film` never writes
-  the backing columns, which stay consumer-invisible).
+  the backing columns, which stay consumer-invisible). The execution tier
+  runs against the repo's pinned PostgreSQL image (18 today), which is
+  what makes the supported floor (>= 17) enforced rather than asserted:
+  every wire-behaviour claim drafted against the sandbox's PostgreSQL 16
+  gets re-pinned on the supported family the moment phase 2 lands.
 - **Oracle**: emit shape pinned at pipeline tier (the SQL templates render
   without an Oracle connection); execution-tier runs in Sikt's internal
   GitLab pipelines with the licensed jOOQ, or in this repo's CI if the
@@ -826,6 +837,19 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-16 (Spec revision, floor statement): the supported PostgreSQL
+  floor for the feature is **>= 17** (item owner). No design change
+  follows: 17/18 release notes carry no `pg_trgm`/core-FTS behaviour
+  changes touching the verified claims (17.9's `strict_word_similarity`
+  crash fix is in a function we don't use), and the repo's CI and
+  Testcontainers already pin PostgreSQL 18. The drafting-sandbox empirics
+  ran on its native 16 (PGDG is unreachable from the sandbox, so no local
+  17 re-run); the honesty anchor moves to the execution tier, which runs
+  on the repo's pinned image and re-pins every claim on the supported
+  family when phase 2 lands. One version-scoped correction: the collation
+  round's LIKE-rejection side-note holds for <= 17 only (18 supports LIKE
+  on nondeterministic collations), which does not touch the round's
+  conclusion.
 - 2026-07-16 (Spec revision, Oracle docs-first round): drafted the Oracle
   how-to (`relevance-ranked-search-oracle-howto.adoc`) by the same
   docs-first method, against Oracle Text documentation (no live Oracle in
@@ -851,7 +875,8 @@ load-bearing for the fulltext case.
   accent-insensitive search? No: trigram similarity ignores the column's
   collation entirely (verified: identical `word_similarity` on a plain
   column and on an accent-insensitive nondeterministic ICU collation;
-  Postgres additionally rejects LIKE on nondeterministic collations).
+  PostgreSQL 17 and older additionally reject LIKE on nondeterministic
+  collations, 18 lifts that, irrelevant to the conclusion either way).
   Collations govern `=`/`ORDER BY`, never `<%`. The round did surface a
   dividend: at the pinned 0.4 threshold, one accented character behaves as
   a substitution typo, so "flaklypa" finds "Flåklypa" with no unaccent

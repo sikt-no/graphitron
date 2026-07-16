@@ -4,7 +4,7 @@
 
 [NOTE]
 ====
-*Draft riding roadmap item R427 (status: Spec).* The `@search` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the trigram landing (R427 phase 2) ships. Every wire-behaviour claim below was verified against PostgreSQL 16 with `pg_trgm` on 2026-07-16; the examples are the intended acceptance behaviour of phase 2.
+*Draft riding roadmap item R427 (status: Spec).* The `@search` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the trigram landing (R427 phase 2) ships. Every wire-behaviour claim below was verified empirically with `pg_trgm` on 2026-07-16 (on the drafting sandbox's PostgreSQL 16; the supported floor is **PostgreSQL 17**, the 17/18 release notes carry no `pg_trgm` behaviour changes, and phase 2's execution tests re-pin every claim on the repo's pinned PostgreSQL 18 image); the examples are the intended acceptance behaviour of phase 2.
 ====
 
 A combobox needs one thing from the backend: "here are the user's keystrokes, give me the twenty best matches, fast". This recipe builds that field. It costs one database migration (an extension, an index, one setting) and one directive in the SDL. In return the frontend gets partial-word matching from the second keystroke, single-typo tolerance, case-insensitive matching, and a ranked, bounded result list that is `[]` for nonsense input instead of garbage.
