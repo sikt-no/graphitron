@@ -15,7 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.ParentRowDemand;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -411,7 +411,7 @@ public class TypeClassGenerator {
      *   <li>{@code baseColumns} — specific columns (possibly none) that must be projected under
      *       their <em>base</em> names because a {@code Wrap.Row}/{@code Wrap.Record} key read
      *       ({@code get(Tables.X.COL)} / {@code into(Tables.X.COL, …)}) or a
-     *       {@link ChildField.TableMethodField} correlation read
+     *       {@link ParentRowDemand} correlation read
      *       ({@code parentRecord.get(DSL.name("<src>"), …)}) resolves them by base name.</li>
      * </ul>
      *
@@ -419,7 +419,7 @@ public class TypeClassGenerator {
      * on the premise that a base-named {@code table.fields()} full-row append subsumed any
      * base-named column list — "a type fact, not a dedup accident". That premise is now false: the
      * full row is projected under reserved aliases, not base names, so it no longer supplies the
-     * base-named columns the {@code Wrap.Row}/{@code Wrap.Record}/{@code TableMethodField} reads
+     * base-named columns the {@code Wrap.Row}/{@code Wrap.Record}/{@code ParentRowDemand} reads
      * still need. The two facts are genuinely orthogonal axes with no absorbing combine, so this is
      * a product record: both are accumulated and both are emitted. Key columns can then appear twice
      * in the SELECT (once base-named, once reserved); the {@code LinkedHashSet} accumulator dedupes
@@ -445,13 +445,18 @@ public class TypeClassGenerator {
      *       the documented contract of the typed-record source shape is a fully-populated parent
      *       record. Gated on the wrap, not the field variants, so any future {@code BatchKeyField}
      *       acquiring the wrap gets the right projection for free.</li>
-     *   <li>{@link ChildField.TableMethodField} on a table-bound parent — the fetcher built by
-     *       {@code TypeFetcherGenerator.buildChildTableMethodFetcher} correlates the developer's
+     *   <li>{@link ParentRowDemand} implementers on a table-bound parent — their
+     *       {@link ParentRowDemand#parentRowColumns()} columns, read off the parent's
+     *       already-materialized row by base name. {@link ChildField.TableMethodField}'s fetcher
+     *       ({@code TypeFetcherGenerator.buildChildTableMethodFetcher}) correlates the developer's
      *       returned table against the parent via {@code parentRecord.get(DSL.name("<src>"), …)}
-     *       on the resolved FK's source-side columns. Only the single-hop FK-derived
-     *       {@link JoinStep.Hop} shape is projected: multi-hop and condition-join paths surface a runtime
-     *       {@code UnsupportedOperationException} in the emitter, so projecting their first hop
-     *       would synthesise dead columns.</li>
+     *       on the resolved FK's source-side columns (only the single-hop FK-derived
+     *       {@link JoinStep.Hop} shape demands columns; multi-hop and condition-join paths surface
+     *       a runtime {@code UnsupportedOperationException} in the emitter, so the capability
+     *       returns none for them rather than synthesising dead columns). The multi-table
+     *       polymorphic children ({@link ChildField.InterfaceField} / {@link ChildField.UnionField})
+     *       demand the parent-side correlation columns their single-fetch form reads, or the parent
+     *       key their batched key extraction reads at list/connection cardinality.</li>
      * </ul>
      *
      * <p>Recurses into {@link ChildField.NestingField} so nested fields whose fetchers need
@@ -472,15 +477,18 @@ public class TypeClassGenerator {
             // buildRecordParentKeyExtraction instead and may carry target-aligned columns; if one
             // ever leaked into this walk, the blanket arm would silently project wrong columns.
             // Fail at generation time rather than at runtime with a null DataLoader key.
-            // The tripwire is the fact predicate (BatchKeyField capability + Record source
-            // shape), not a leaf list — a deliberate leaf-list-to-fact strengthening that also
-            // covers RecordTableMethodField (already Record-shaped) through the same gate.
-            if (f instanceof BatchKeyField
+            // The tripwire is the fact predicate (a parent-row-reading capability +
+            // Record source shape), not a leaf list — a deliberate leaf-list-to-fact
+            // strengthening that also covers RecordTableMethodField (already Record-shaped)
+            // through the same gate. Extended to the ParentRowDemand capability: a
+            // record-sourced field carrying parent-row demands reads them off the held object,
+            // not the parent SELECT, so reaching this table-parent walk is a generator bug.
+            if ((f instanceof BatchKeyField || f instanceof ParentRowDemand)
                     && f instanceof ChildField cf && cf.sourceShape() == SourceShape.Record)
                 throw new IllegalStateException(
                     "Record-sourced field '" + f.name() + "' (" + f.getClass().getSimpleName()
-                        + ") reached a table-parent $fields projection walk; its SourceKey columns"
-                        + " are not parent-row columns and must not be force-projected");
+                        + ") reached a table-parent $fields projection walk; its key / correlation"
+                        + " columns are not parent-row columns and must not be force-projected");
             // A null sourceKey means the service method takes no Sources param: the field is a
             // plain per-parent service delegation, not DataLoader-backed, and its fetcher reads
             // no key columns off the parent row — nothing to force-project.
@@ -494,13 +502,7 @@ public class TypeClassGenerator {
                         columns.addAll(bk.sourceKey().columns());
                     }
                 }
-                case ChildField.TableMethodField tmf -> {
-                    var path = tmf.joinPath();
-                    if (path.size() == 1 && path.get(0) instanceof JoinStep.Hop hop
-                            && hop.on() instanceof On.ColumnPairs fk) {
-                        columns.addAll(fk.sourceSideColumns());
-                    }
-                }
+                case ParentRowDemand prd -> columns.addAll(prd.parentRowColumns());
                 case ChildField.NestingField nf -> {
                     RequiredProjection nested = collectRequiredProjection(nf.nestedFields());
                     reservedFullRow |= nested.reservedFullRow();

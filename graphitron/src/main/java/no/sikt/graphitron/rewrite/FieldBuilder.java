@@ -7042,6 +7042,15 @@ class FieldBuilder {
     private static final String PER_PARTICIPANT_JOIN_PATHS_SLUG = "per-participant-multitable-child-join-paths";
 
     /**
+     * Roadmap slug for R487: batched parent-holds-FK correlation for multi-table polymorphic child
+     * fields. The gap C deferred rejection in {@link #classifyParticipantRoute} points here: a
+     * list/connection field correlating through a foreign key held on the parent's table is served
+     * at single cardinality; batching it needs the correlation columns carried through the
+     * DataLoader key, which R487 delivers. File basename under {@code roadmap/}, no extension.
+     */
+    private static final String BATCHED_PARENT_HOLDS_FK_SLUG = "batched-polymorphic-parent-holds-fk-correlation";
+
+    /**
      * A one-line {@code @referenceFor} usage sketch, appended to R452's rule 1b / 1c steers so the
      * author sees the sanctioned surface, not just the deferred-capability pointer (R458 slice 1).
      */
@@ -7184,7 +7193,7 @@ class FieldBuilder {
                     tb.table().tableName(), tb.table(), isList)
                 : ctx.parsePath(fieldDef, fieldName, parentTable.tableName(), tb.table().tableName(), tb.table(), isList);
 
-            var outcome = classifyParticipantRoute(explicit, parsed, tb, fieldLabel, parentTable);
+            var outcome = classifyParticipantRoute(explicit, isList, parsed, tb, fieldLabel, parentTable);
             if (outcome.rejection() != null) {
                 errors.add(outcome.rejection());
             } else {
@@ -7219,12 +7228,19 @@ class FieldBuilder {
      * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} (the branch
      * joins real tables): a multi-hop FK chain through intermediate join tables (R458 slice 2) and any
      * route carrying a condition ({@link On.Predicate}) hop (R458 slice 3). Both arms are now emittable
-     * by {@code MultiTablePolymorphicEmitter} in all three cardinality forms, so nothing is DEFERRED
-     * here.
+     * by {@code MultiTablePolymorphicEmitter} in all three cardinality forms.
+     *
+     * <p><b>Gap C (R481).</b> Once the correlation is resolved, a list/connection-cardinality field
+     * whose parent side reads a column off the parent/hub table's own key range gets a DEFERRED
+     * rejection keyed to R487: see {@link #parentHoldsFkListReject}. This is the one shape left
+     * unclosed here (a parent-holds-FK participant batched through the DataLoader key would emit
+     * {@code parentInput.field("<fk-col>")} returning null); every other shape classifies.
      */
-    private ParticipantRouteOutcome classifyParticipantRoute(boolean explicit, BuildContext.ParsedPath parsed,
+    private ParticipantRouteOutcome classifyParticipantRoute(boolean explicit, boolean isList,
+            BuildContext.ParsedPath parsed,
             ParticipantRef.TableBound tb, String fieldLabel, TableRef parentTable) {
         String type = tb.typeName();
+        no.sikt.graphitron.rewrite.model.ParticipantCorrelation correlation;
         if (explicit) {
             if (parsed.hasError()) {
                 return ParticipantRouteOutcome.fail(Rejection.structural(
@@ -7261,47 +7277,93 @@ class FieldBuilder {
             // no joins. Everything else (a multi-hop FK chain — slice 2 — or a route carrying a
             // condition/predicate hop — slice 3) joins real tables and lowers to JoinedCorrelation.
             var pairs = singleHopFkColumnPairs(parsed.elements());
-            if (pairs.isPresent()) {
-                return ParticipantRouteOutcome.ok(
-                    new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get()));
+            correlation = pairs.isPresent()
+                ? new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get())
+                : new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation(parsed.elements());
+        } else {
+            // Auto-discovery arm (no @referenceFor for this participant).
+            if (parsed.hasError()) {
+                // Rule 1c: fkCountMessage's generic "add a @reference directive" steer leads straight into
+                // rule 1a on these fields; steer to @referenceFor (multi-FK disambiguation ships in slice 1).
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    "participant '" + type + "': " + parsed.errorMessage()
+                    + ". Note: an explicit @reference is not supported on multi-table interface/union child "
+                    + "fields; auto-discovery could not derive a single FK for this participant. "
+                    + REFERENCE_FOR_USAGE_SKETCH + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
             }
-            return ParticipantRouteOutcome.ok(
-                new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation(parsed.elements()));
+            if (parsed.elements().isEmpty()) {
+                // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and target
+                // tables match. Now a live structural steer to @referenceFor: a self-FK participant is
+                // author-correctable in slice 1 by stating the self-referencing key.
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    fieldLabel + ": participant '" + type + "' is backed by the same table as the "
+                    + "parent/hub ('" + parentTable.tableName() + "'), so no foreign-key correlation from "
+                    + "parent to participant can be auto-discovered. State the self-referencing key with "
+                    + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}]). See roadmap/"
+                    + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+            }
+            var pairs = singleHopFkColumnPairs(parsed.elements());
+            if (pairs.isEmpty()) {
+                // Unreachable with rule 1a in place: auto-discovery only produces a single-hop FK hop. Kept
+                // so the KeyTupleWhere non-empty-slots invariant is never violated by a future producer
+                // change rather than crashing in the emitter.
+                return ParticipantRouteOutcome.fail(Rejection.structural(
+                    fieldLabel + ": participant '" + type + "' resolved to an unsupported multi-table child "
+                    + "join shape (only a single-hop foreign key is auto-discovered). " + REFERENCE_FOR_USAGE_SKETCH
+                    + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+            }
+            correlation = new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get());
         }
+        Rejection gapC = parentHoldsFkListReject(isList, correlation, tb, fieldLabel, parentTable);
+        if (gapC != null) return ParticipantRouteOutcome.fail(gapC);
+        return ParticipantRouteOutcome.ok(correlation);
+    }
 
-        // Auto-discovery arm (no @referenceFor for this participant).
-        if (parsed.hasError()) {
-            // Rule 1c: fkCountMessage's generic "add a @reference directive" steer leads straight into
-            // rule 1a on these fields; steer to @referenceFor (multi-FK disambiguation ships in slice 1).
-            return ParticipantRouteOutcome.fail(Rejection.structural(
-                "participant '" + type + "': " + parsed.errorMessage()
-                + ". Note: an explicit @reference is not supported on multi-table interface/union child "
-                + "fields; auto-discovery could not derive a single FK for this participant. "
-                + REFERENCE_FOR_USAGE_SKETCH + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
-        }
-        if (parsed.elements().isEmpty()) {
-            // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and target
-            // tables match. Now a live structural steer to @referenceFor: a self-FK participant is
-            // author-correctable in slice 1 by stating the self-referencing key.
-            return ParticipantRouteOutcome.fail(Rejection.structural(
-                fieldLabel + ": participant '" + type + "' is backed by the same table as the "
-                + "parent/hub ('" + parentTable.tableName() + "'), so no foreign-key correlation from "
-                + "parent to participant can be auto-discovered. State the self-referencing key with "
-                + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}]). See roadmap/"
-                + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
-        }
-        var pairs = singleHopFkColumnPairs(parsed.elements());
-        if (pairs.isEmpty()) {
-            // Unreachable with rule 1a in place: auto-discovery only produces a single-hop FK hop. Kept
-            // so the KeyTupleWhere non-empty-slots invariant is never violated by a future producer
-            // change rather than crashing in the emitter.
-            return ParticipantRouteOutcome.fail(Rejection.structural(
-                fieldLabel + ": participant '" + type + "' resolved to an unsupported multi-table child "
-                + "join shape (only a single-hop foreign key is auto-discovered). " + REFERENCE_FOR_USAGE_SKETCH
-                + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
-        }
-        return ParticipantRouteOutcome.ok(
-            new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get()));
+    /**
+     * Gap C guard (R481). A list/connection-cardinality multi-table polymorphic child field whose
+     * resolved correlation reads a parent-side column outside the parent/hub table's primary key
+     * (a {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere} slot or a
+     * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} FK hop-0 slot
+     * with an off-key {@code sourceSide()}) gets a {@link Rejection#deferred} keyed to R487's slug,
+     * naming the participant and the FK column. A condition hop-0 correlates on the parent's bound key
+     * ({@code parentKeyBoundWhere} / {@code parentInputKeyPredicate}) and is exempt; a lateral hop
+     * cannot head a {@code @referenceFor} path, so neither reads an off-key parent column.
+     *
+     * <p>Single cardinality is served by projection (gap A: the parent-side column is force-projected
+     * onto the parent SELECT via the {@code ParentRowDemand} capability), so the guard fires only on
+     * {@code isList}. The batched forms correlate the branch to a {@code parentInput VALUES} table
+     * aliased to the bound-key names only, so a parent-holds-FK participant would emit
+     * {@code parentInput.field("<fk-col>")} returning null; carrying correlation columns through the
+     * DataLoader key is R487's capability work. A parent-holds-FK participant is single-valued (at most
+     * one parent row per child), so the message steers toward single cardinality.
+     *
+     * <p>The invariant (a list-cardinality correlation with a non-key parent side) is representable in
+     * the model, so the enforcer is {@link #resolveChildPolymorphicJoinPaths} remaining the sole
+     * producer of {@code ParticipantCorrelation}; a pipeline test pins the rejection. Returns
+     * {@code null} when the shape is not this deferred case.
+     */
+    private Rejection parentHoldsFkListReject(boolean isList,
+            no.sikt.graphitron.rewrite.model.ParticipantCorrelation correlation,
+            ParticipantRef.TableBound tb, String fieldLabel, TableRef parentTable) {
+        if (!isList) return null;
+        On hop0On = switch (correlation) {
+            case no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere k -> k.on();
+            case no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation jc ->
+                ((JoinStep.Hop) jc.hops().get(0)).on();
+        };
+        if (!(hop0On instanceof On.ColumnPairs cp)) return null;
+        var pkColumns = new java.util.HashSet<>(parentTable.primaryKeyColumns());
+        var offKey = cp.sourceSideColumns().stream().filter(c -> !pkColumns.contains(c)).toList();
+        if (offKey.isEmpty()) return null;
+        String cols = offKey.stream().map(ColumnRef::sqlName).collect(Collectors.joining(", "));
+        return Rejection.deferred(
+            fieldLabel + ": participant '" + tb.typeName() + "' correlates through a foreign key held "
+            + "on the parent/hub table '" + parentTable.tableName() + "' (parent-side column(s) " + cols
+            + " outside its primary key). A parent-holds-FK participant is single-valued (at most one "
+            + "row per parent), so it is served at single cardinality; batching it through the "
+            + "DataLoader key is not yet supported. Make the field single-valued, or await batched "
+            + "parent-holds-FK correlation support.",
+            BATCHED_PARENT_HOLDS_FK_SLUG);
     }
 
     /**

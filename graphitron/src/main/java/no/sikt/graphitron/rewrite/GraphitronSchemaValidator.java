@@ -7,7 +7,6 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -122,9 +121,11 @@ public class GraphitronSchemaValidator {
     /**
      * Accumulates the SQL names of columns a table-backed parent's children read by <em>base</em>
      * name off the parent record: {@code Wrap.Row}/{@code Wrap.Record} {@link BatchKeyField} key
-     * columns and single-hop-FK {@link ChildField.TableMethodField} correlation columns. Recurses
-     * through {@link ChildField.NestingField}, whose nested children share the outer table context.
-     * Mirrors the base-column half of {@code TypeClassGenerator.collectRequiredProjection}.
+     * columns and every {@link no.sikt.graphitron.rewrite.model.ParentRowDemand} correlation /
+     * key-extraction column (single-hop-FK {@code @tableMethod} reads, multi-table polymorphic
+     * parent-side reads). Recurses through {@link ChildField.NestingField}, whose nested children
+     * share the outer table context. Mirrors the base-column half of
+     * {@code TypeClassGenerator.collectRequiredProjection}.
      */
     private static void collectBaseNamedKeyColumns(List<? extends GraphitronField> fields,
             java.util.Map<String, String> out) {
@@ -139,13 +140,9 @@ public class GraphitronSchemaValidator {
                         }
                     }
                 }
-                case ChildField.TableMethodField tmf -> {
-                    var path = tmf.joinPath();
-                    if (path.size() == 1 && path.get(0) instanceof JoinStep.Hop hop
-                            && hop.on() instanceof On.ColumnPairs fk) {
-                        for (var c : fk.sourceSideColumns()) {
-                            out.putIfAbsent(c.sqlName().toLowerCase(java.util.Locale.ROOT), c.sqlName());
-                        }
+                case no.sikt.graphitron.rewrite.model.ParentRowDemand prd -> {
+                    for (var c : prd.parentRowColumns()) {
+                        out.putIfAbsent(c.sqlName().toLowerCase(java.util.Locale.ROOT), c.sqlName());
                     }
                 }
                 case ChildField.NestingField nf -> collectBaseNamedKeyColumns(nf.nestedFields(), out);

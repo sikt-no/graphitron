@@ -731,9 +731,23 @@ public sealed interface ChildField extends OutputField
         List<JoinStep> joinPath,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements ChildField, MethodBackedField, WithErrorChannel {
+    ) implements ChildField, MethodBackedField, WithErrorChannel, ParentRowDemand {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
+        }
+        /**
+         * The single-FK-hop source-side columns the fetcher correlates on
+         * ({@code parentRecord.get(DSL.name("<src>"), …)}). Only the single-hop FK-derived
+         * shape demands parent-row columns: multi-hop and condition-join paths surface a runtime
+         * {@code UnsupportedOperationException} in the emitter, so projecting their first hop would
+         * synthesise dead columns.
+         */
+        @Override public List<ColumnRef> parentRowColumns() {
+            if (joinPath.size() == 1 && joinPath.get(0) instanceof JoinStep.Hop hop
+                    && hop.on() instanceof On.ColumnPairs fk) {
+                return fk.sourceSideColumns();
+            }
+            return List.of();
         }
     }
 
@@ -809,8 +823,8 @@ public sealed interface ChildField extends OutputField
      * classifier decided the shape is supported once, and the emitter cannot represent an
      * unsupported one. Currently every value is a
      * {@link ParticipantCorrelation.KeyTupleWhere} (single-hop FK, auto-discovered or
-     * {@code @referenceFor}-disambiguated); the {@link ParticipantCorrelation.JoinedCorrelation}
-     * arm is not yet minted.
+     * {@code @referenceFor}-disambiguated) or a {@link ParticipantCorrelation.JoinedCorrelation}
+     * (multi-hop FK chain or condition correlation, shipped by R458 slices 2-3).
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
@@ -836,7 +850,7 @@ public sealed interface ChildField extends OutputField
         KeyLift parentKeyLift,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
-    ) implements ChildField {
+    ) implements ChildField, ParentRowDemand {
         public InterfaceField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
@@ -851,6 +865,10 @@ public sealed interface ChildField extends OutputField
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+        @Override public List<ColumnRef> parentRowColumns() {
+            return ParentRowDemand.polymorphicParentRowColumns(
+                returnType.wrapper().isList(), participantJoinPaths, parentSourceKey);
         }
     }
 
@@ -870,7 +888,7 @@ public sealed interface ChildField extends OutputField
         KeyLift parentKeyLift,
         TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
-    ) implements ChildField {
+    ) implements ChildField, ParentRowDemand {
         public UnionField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
@@ -882,6 +900,10 @@ public sealed interface ChildField extends OutputField
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+        @Override public List<ColumnRef> parentRowColumns() {
+            return ParentRowDemand.polymorphicParentRowColumns(
+                returnType.wrapper().isList(), participantJoinPaths, parentSourceKey);
         }
     }
 

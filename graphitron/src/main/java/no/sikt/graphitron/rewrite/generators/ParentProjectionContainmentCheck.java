@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.ParentRowDemand;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 
@@ -30,23 +31,26 @@ import java.util.Set;
  *       {@code TypeClassGenerator.collectRequiredProjection} computed for the anchor type (the
  *       walk under audit).</li>
  *   <li><b>Requirement</b> — this class's own enumeration of every table-sourced
- *       {@link BatchKeyField} coordinate rooted at the anchor: the anchor's own entries from the
- *       classifier's flat field index ({@link GraphitronSchema#fields()}), descending
- *       {@link ChildField.NestingField} sub-trees with a local worklist (nested plain-object
- *       fields are not flat-indexed; they resolve through the embedding {@code NestingField}).
- *       Each such coordinate's {@code sourceKey()} demand must be contained in the guarantee:
- *       base-named columns for the column-tuple wraps, the reserved full parent row for
- * {@link SourceKey.Wrap.TableRecord}.</li>
+ *       {@link BatchKeyField} <em>and</em> {@link ParentRowDemand} coordinate rooted at the anchor:
+ *       the anchor's own entries from the classifier's flat field index
+ *       ({@link GraphitronSchema#fields()}), descending {@link ChildField.NestingField} sub-trees
+ *       with a local worklist (nested plain-object fields are not flat-indexed; they resolve
+ *       through the embedding {@code NestingField}). A {@code BatchKeyField} coordinate's
+ *       {@code sourceKey()} demand must be contained in the guarantee (base-named columns for the
+ *       column-tuple wraps, the reserved full parent row for {@link SourceKey.Wrap.TableRecord});
+ *       a {@code ParentRowDemand} coordinate's {@code parentRowColumns()} demand (a correlation or
+ *       key-extraction read off the parent row) must be contained as base-named columns.</li>
  * </ul>
  *
  * <p><b>Independence is the hard requirement, not a preference.</b> The requirement side must not
  * call {@code collectRequiredProjection} or borrow its {@code NestingField} recursion or
  * {@code fieldsOf} locality: R425's omission was <em>inside</em> that walk, and a requirement
  * side sharing its traversal would reproduce the omission on both sides and pass green over the
- * exact bug family this check exists to catch. It is keyed on the {@link BatchKeyField}
- * capability plus {@link ChildField#sourceShape()}, never on leaf identity, so the R432 leaf
- * merge does not touch it. Record-sourced coordinates stay out: their key rides the held object,
- * not the parent SELECT (the projection walk's hard-throw tripwire owns that exclusion).
+ * exact bug family this check exists to catch. It is keyed on the {@link BatchKeyField} /
+ * {@link ParentRowDemand} capabilities plus {@link ChildField#sourceShape()}, never on leaf
+ * identity, so the R432 leaf merge does not touch it. Record-sourced coordinates stay out: their
+ * key / correlation rides the held object, not the parent SELECT (the projection walk's hard-throw
+ * tripwire owns that exclusion).
  *
  * <p><b>A divergence is a generator invariant violation, not an author-facing rejection.</b> No
  * valid author schema can produce it under a correct generator — the demand and the projection
@@ -79,33 +83,56 @@ final class ParentProjectionContainmentCheck {
                 pending.addAll(nf.nestedFields());
                 continue;
             }
-            if (!(f instanceof BatchKeyField bk) || bk.sourceKey() == null) {
-                continue;
-            }
+            // Both capability enumerations are gated on a table-backed source shape: a
+            // record-sourced coordinate keys / correlates off the held object, not the parent
+            // SELECT (the projection walk's hard-throw tripwire owns that exclusion).
             if (!(f instanceof ChildField cf) || cf.sourceShape() != SourceShape.Table) {
                 continue;
             }
-            if (bk.sourceKey().wrap() instanceof SourceKey.Wrap.TableRecord) {
-                if (!guaranteed.reservedFullRow()) {
-                    throw new IllegalStateException(
-                        "Graphitron generator bug (parent-projection containment, R425 family): field '"
-                            + f.parentTypeName() + "." + f.name() + "' keys its DataLoader batch on the typed"
-                            + " parent record (SourceKey.Wrap.TableRecord), which requires the reserved"
-                            + " full parent row in type '" + anchorTypeName + "'s $fields SELECT, but the"
-                            + " projection walk (TypeClassGenerator.collectRequiredProjection) did not"
-                            + " flip reservedFullRow. The requirement walk (this check, over the"
-                            + " classified field index) found a demand the guarantee walk missed — a"
-                            + " projection-walk omission, not a schema authoring error.");
+            if (f instanceof BatchKeyField bk && bk.sourceKey() != null) {
+                if (bk.sourceKey().wrap() instanceof SourceKey.Wrap.TableRecord) {
+                    if (!guaranteed.reservedFullRow()) {
+                        throw new IllegalStateException(
+                            "Graphitron generator bug (parent-projection containment, R425 family): field '"
+                                + f.parentTypeName() + "." + f.name() + "' keys its DataLoader batch on the typed"
+                                + " parent record (SourceKey.Wrap.TableRecord), which requires the reserved"
+                                + " full parent row in type '" + anchorTypeName + "'s $fields SELECT, but the"
+                                + " projection walk (TypeClassGenerator.collectRequiredProjection) did not"
+                                + " flip reservedFullRow. The requirement walk (this check, over the"
+                                + " classified field index) found a demand the guarantee walk missed — a"
+                                + " projection-walk omission, not a schema authoring error.");
+                    }
+                } else {
+                    for (ColumnRef col : bk.sourceKey().columns()) {
+                        if (!guaranteedColumns.contains(col)) {
+                            throw new IllegalStateException(
+                                "Graphitron generator bug (parent-projection containment, R425 family): field '"
+                                    + f.parentTypeName() + "." + f.name() + "' is DataLoader-backed off a table"
+                                    + " parent and its key extraction reads column '" + col.sqlName() + "' off"
+                                    + " the parent row, but the projection walk"
+                                    + " (TypeClassGenerator.collectRequiredProjection) for type '"
+                                    + anchorTypeName + "' did not include it in the $fields SELECT. The"
+                                    + " requirement walk (this check, over the classified field index) found a"
+                                    + " demand the guarantee walk missed — a projection-walk omission, not a"
+                                    + " schema authoring error.");
+                        }
+                    }
                 }
-            } else {
-                for (ColumnRef col : bk.sourceKey().columns()) {
+            }
+            // The ParentRowDemand capability widens the same containment invariant to correlation
+            // reads: a table-parent child whose fetcher reads parent-row columns by base name
+            // (a @tableMethod correlation, a multi-table polymorphic single-fetch parent-side read,
+            // or a batched polymorphic key extraction) demands every such column be projected. Keyed
+            // on the capability, never on leaf identity, so it closes the R425 family for gaps A and B
+            // in one clause.
+            if (f instanceof ParentRowDemand prd) {
+                for (ColumnRef col : prd.parentRowColumns()) {
                     if (!guaranteedColumns.contains(col)) {
                         throw new IllegalStateException(
                             "Graphitron generator bug (parent-projection containment, R425 family): field '"
-                                + f.parentTypeName() + "." + f.name() + "' is DataLoader-backed off a table"
-                                + " parent and its key extraction reads column '" + col.sqlName() + "' off"
-                                + " the parent row, but the projection walk"
-                                + " (TypeClassGenerator.collectRequiredProjection) for type '"
+                                + f.parentTypeName() + "." + f.name() + "' reads parent-row column '"
+                                + col.sqlName() + "' off the parent record (ParentRowDemand), but the"
+                                + " projection walk (TypeClassGenerator.collectRequiredProjection) for type '"
                                 + anchorTypeName + "' did not include it in the $fields SELECT. The"
                                 + " requirement walk (this check, over the classified field index) found a"
                                 + " demand the guarantee walk missed — a projection-walk omission, not a"
