@@ -154,4 +154,32 @@ final class TypeFetcherEmissionContext {
             String rowsDeclarationName(F field) {
         return methodCommands.declareReentryRowsMethod(field, unitFqcn);
     }
+
+    /**
+     * DML sibling of {@link #rowsDeclarationName} (R314 slice 4): resolves the named reentry
+     * query unit's declaration name for a {@code Projected*} / {@code Discriminated*} mutation
+     * field through the command-mint seam.
+     */
+    <F extends no.sikt.graphitron.rewrite.model.OutputField & no.sikt.graphitron.rewrite.model.MutationField.DmlTableField>
+            String dmlRowsDeclarationName(F field) {
+        return methodCommands.declareDmlReentryRowsMethod(field, unitFqcn);
+    }
+
+    // Companion methods a field-body emitter declares alongside the fetcher method it is
+    // building (the DML reentry rows methods, R314 slice 4). Class assembly drains this list
+    // into the TypeSpec after the field loop, mirroring the HelperKind drain: a companion can
+    // never be silently dropped because the only way to reference one is through the name the
+    // declaring call returned.
+    private final java.util.List<no.sikt.graphitron.javapoet.MethodSpec> companionMethods =
+        new java.util.ArrayList<>();
+
+    void addCompanionMethod(no.sikt.graphitron.javapoet.MethodSpec method) {
+        companionMethods.add(method);
+    }
+
+    java.util.List<no.sikt.graphitron.javapoet.MethodSpec> drainCompanionMethods() {
+        var out = java.util.List.copyOf(companionMethods);
+        companionMethods.clear();
+        return out;
+    }
 }

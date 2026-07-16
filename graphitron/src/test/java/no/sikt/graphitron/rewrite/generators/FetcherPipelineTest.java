@@ -635,12 +635,19 @@ class FetcherPipelineTest {
             }
             type Mutation { createContent(in: ContentInput!): Content @mutation(typeName: INSERT) }
             """;
-        var createContent = method(findSpec("MutationFetchers", sdl), "createContent");
+        var mutationFetchers = findSpec("MutationFetchers", sdl);
+        var createContent = method(mutationFetchers, "createContent");
         var body = createContent.code().toString();
         assertThat(body)
             .as("write half unchanged: PK-only RETURNING inside a transaction")
             .contains("dsl.transactionResult")
             .contains(".returningResult(")
+            .as("the fetcher calls the named reentry rows companion after the write (R314 slice 4)")
+            .contains("rowsCreateContent(keys, env)");
+        // The re-projection moved into the named reentry rows companion (R314 slice 4); the
+        // discriminator machinery is asserted there.
+        var rowsBody = method(mutationFetchers, "rowsCreateContent").code().toString();
+        assertThat(rowsBody)
             .as("re-projection projects the synthetic __discriminator__ alias for the TypeResolver")
             .contains("__discriminator__")
             .as("each implementer's participant field set projected via its $fields")
@@ -664,10 +671,12 @@ class FetcherPipelineTest {
             }
             type Mutation { updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE) }
             """;
-        var updateContent = method(findSpec("MutationFetchers", sdl), "updateContent");
-        var body = updateContent.code().toString();
-        assertThat(body)
+        var mutationFetchers = findSpec("MutationFetchers", sdl);
+        var updateContent = method(mutationFetchers, "updateContent");
+        assertThat(updateContent.code().toString())
             .contains("dsl.transactionResult")
+            .contains("rowsUpdateContent(keys, env)");
+        assertThat(method(mutationFetchers, "rowsUpdateContent").code().toString())
             .contains("__discriminator__")
             .contains("FilmContent.$fields(")
             .contains("ShortContent.$fields(")

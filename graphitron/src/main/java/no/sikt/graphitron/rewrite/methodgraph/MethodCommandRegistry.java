@@ -58,6 +58,24 @@ public final class MethodCommandRegistry {
         return methodName;
     }
 
+    /**
+     * The DML reentry declaration seam (R314 slice 4): the {@code Projected*} /
+     * {@code Discriminated*} mutation arms' follow-up SELECT lives in a named rows method whose
+     * declaration name resolves here, off the model's
+     * {@code MutationField.DmlTableField#reentryRowsMethodName()} fact, committing the command
+     * when the site-level fact holds (always, on the arms that call this — the {@code Encoded*}
+     * arms carry no reentry and never reach it, but the gate reads the fact rather than trusting
+     * the call site).
+     */
+    public <F extends OutputField & no.sikt.graphitron.rewrite.model.MutationField.DmlTableField>
+            String declareDmlReentryRowsMethod(F field, String unitFqcn) {
+        String methodName = field.reentryRowsMethodName();
+        if (field.emitsKeyedReQuery()) {
+            commit(new MethodCommand(field.qualifiedName(), unitFqcn, "", methodName));
+        }
+        return methodName;
+    }
+
     private void commit(MethodCommand command) {
         MethodCommand previous = byMethodKey.putIfAbsent(command.methodKey(), command);
         if (previous != null) {

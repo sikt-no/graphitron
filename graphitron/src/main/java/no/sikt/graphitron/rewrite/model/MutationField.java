@@ -137,6 +137,24 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DialectRequirement dialectRequirement();
 
         SourceLocation location();
+
+        String name();
+
+        /**
+         * The named reentry query unit's method name for a {@code Projected*} /
+         * {@code Discriminated*} return (R314 slice 4): the follow-up SELECT that re-projects
+         * the {@code @table} from the {@code RETURNING}-captured keys lives in a
+         * {@code rows<Name>} method the mutation fetcher calls, minted through the run's
+         * method-command registry exactly like the batched leaves'
+         * {@link BatchKeyField#rowsMethodName()}. The declaration and the fetcher's call site
+         * both read this one fact. Meaningless (and never consulted) on the {@code Encoded*}
+         * arms, which carry no reentry.
+         */
+        default String reentryRowsMethodName() {
+            String n = name();
+            if (n == null || n.isEmpty()) return n;
+            return "rows" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+        }
     }
 
     /**

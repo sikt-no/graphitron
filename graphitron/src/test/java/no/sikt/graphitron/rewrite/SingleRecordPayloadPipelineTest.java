@@ -387,15 +387,30 @@ class SingleRecordPayloadPipelineTest {
         String body = fetcherMethod.code().toString();
         long transactionResultCalls = countMatches(body, Pattern.compile("transactionResult\\("));
         int firstTransactionResult = body.indexOf("transactionResult(");
-        int firstSelectAfterTxn = firstTransactionResult < 0
-            ? -1
-            : body.indexOf(".select(", firstTransactionResult);
         assertThat(transactionResultCalls)
             .as("direct-@table " + kind + " fetcher wraps PK-only RETURNING in exactly one transactionResult(...)")
             .isEqualTo(1);
-        assertThat(firstSelectAfterTxn)
-            .as("direct-@table " + kind + " fetcher runs a follow-up .select(...) after the transactionResult call site")
+        // R314 slice 4: the follow-up SELECT lives in the named reentry rows companion the
+        // fetcher calls after the transaction commits — the durability invariant (write commits
+        // before any read can fail) survives as call ordering: the rows<Name>(keys, env) call
+        // sits after the transactionResult call site, and the companion (not the fetcher) owns
+        // the .select(...).
+        String rowsName = "rows" + Character.toUpperCase(mutationName(kind).charAt(0))
+            + mutationName(kind).substring(1);
+        int rowsCallAfterTxn = body.indexOf(rowsName + "(keys, env)", firstTransactionResult);
+        assertThat(rowsCallAfterTxn)
+            .as("direct-@table " + kind + " fetcher calls the named reentry rows companion after the transactionResult call site")
             .isGreaterThan(firstTransactionResult);
+        assertThat(body)
+            .as("the fetcher body no longer inlines the follow-up SELECT")
+            .doesNotContain(".select(");
+        var rowsMethod = mutationFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals(rowsName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("named reentry rows companion " + rowsName + " not emitted"));
+        assertThat(rowsMethod.code().toString())
+            .as("the companion owns the follow-up .select(...)")
+            .contains(".select(");
     }
 
     private static String directReturnInputBody(DmlKind kind) {

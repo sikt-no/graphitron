@@ -648,6 +648,10 @@ public class TypeFetcherGenerator {
         }
         });
 
+        // Companion methods declared by field-body emitters (the DML reentry rows methods,
+        // R314 slice 4) drain onto the class before the helper drain below.
+        ctx.drainCompanionMethods().forEach(builder::addMethod);
+
         if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.GRAPHITRON_CONTEXT)) {
             builder.addMethod(buildGraphitronContextHelper(outputPackage));
         }
@@ -2511,7 +2515,7 @@ public class TypeFetcherGenerator {
             dmlChain.add(".where(").add(chunk.whereExpr()).add(")\n");
         }
 
-        return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
+        return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain.build(),
             f.dialectRequirement(), postInGuard.build(), inputArg.list());
@@ -2570,7 +2574,7 @@ public class TypeFetcherGenerator {
                 .add(")\n");
         }
 
-        return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
+        return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain.build(),
             f.dialectRequirement(), postInGuard.build(), tia.list());
@@ -3909,7 +3913,7 @@ public class TypeFetcherGenerator {
             .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
 
-        return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
+        return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain, f.dialectRequirement(), postInGuard.build(), inputArg.list());
     }
@@ -4077,7 +4081,7 @@ public class TypeFetcherGenerator {
         // The Postgres-only dialect guard (UPDATE... FROM (VALUES...) is a Postgres
         // extension) is now a typed DialectRequirement.RequiresFamily(POSTGRES) on the model,
         // rendered by emitDialectGuard; the inline postDslGuard CodeBlock is gone.
-        return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
+        return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain, f.dialectRequirement(), postInGuard.build(), inputArg.list());
     }
@@ -4196,7 +4200,7 @@ public class TypeFetcherGenerator {
         // self-contained `dsl.dialect().family().name().equals("ORACLE")` check (jOOQ's family()
         // folds every commercial ORACLE* version to ORACLE, so the guard still gates them all); the
         // inline postDslGuard CodeBlock is gone.
-        return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
+        return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain.build(), f.dialectRequirement(), postInGuard.build(), tia.list());
     }
@@ -4667,7 +4671,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildDmlFetcher(
             TypeFetcherEmissionContext ctx,
-            String fetcherName,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
             Optional<ErrorChannel> errorChannel,
             String inputArgName,
@@ -4678,7 +4682,7 @@ public class TypeFetcherGenerator {
             CodeBlock dmlChain,
             DialectRequirement dialectRequirement,
             boolean listInput) {
-        return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
+        return buildDmlFetcher(ctx, field, rex, errorChannel, inputArgName, tableRef,
             tablesOnly, tableLocal, outputPackage, dmlChain,
             dialectRequirement, /*postInGuard=*/ CodeBlock.of(""), listInput);
     }
@@ -4710,7 +4714,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildDmlFetcher(
             TypeFetcherEmissionContext ctx,
-            String fetcherName,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
             Optional<ErrorChannel> errorChannel,
             String inputArgName,
@@ -4734,7 +4738,7 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
                 ParameterizedTypeName.get(ClassName.get(List.class), RECORD);
         };
-        var builder = MethodSpec.methodBuilder(fetcherName)
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
@@ -4762,7 +4766,7 @@ public class TypeFetcherGenerator {
             tablesOnly.jooqTableClass(), tableLocal,
             tablesOnly.tablesClass(), tableRef.javaFieldName());
 
-        builder.addCode(emitDmlReturnExpression(ctx, rex, valueType, tableRef, tablesOnly,
+        builder.addCode(emitDmlReturnExpression(ctx, field, rex, valueType, tableRef, tablesOnly,
             outputPackage, tableLocal, dmlChain));
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
@@ -4816,6 +4820,7 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock emitDmlReturnExpression(
             TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
             TypeName valueType,
             TableRef tableRef,
@@ -4829,16 +4834,16 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
                 emitEncoded(el.encode(), valueType, tableRef, tablesOnly, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps ->
-                emitProjected(ps.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
+                emitProjected(ctx, field, ps.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
                     tableLocal, dmlChain, /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
-                emitProjected(pl.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
+                emitProjected(ctx, field, pl.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
                     tableLocal, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ds ->
-                emitDiscriminated(ctx, ds.discriminatorColumn(), ds.knownDiscriminatorValues(), ds.participants(),
+                emitDiscriminated(ctx, field, ds.discriminatorColumn(), ds.knownDiscriminatorValues(), ds.participants(),
                     valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
-                emitDiscriminated(ctx, dl.discriminatorColumn(), dl.knownDiscriminatorValues(), dl.participants(),
+                emitDiscriminated(ctx, field, dl.discriminatorColumn(), dl.knownDiscriminatorValues(), dl.participants(),
                     valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ true);
         };
     }
@@ -4891,6 +4896,8 @@ public class TypeFetcherGenerator {
      * key Result to the data field's fetcher and lets it run the SELECT.
      */
     private static CodeBlock emitProjected(
+            TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             String returnTypeName, TypeName valueType,
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
@@ -4910,6 +4917,25 @@ public class TypeFetcherGenerator {
             return body.build();
         }
 
+        // The named reentry query unit (R314 slice 4): the follow-up SELECT lives in a
+        // rows<Name> companion the fetcher calls, minted through the command registry. The
+        // write half (the RETURNING-keyed transaction) and the no-match null guard stay in the
+        // fetcher — the transaction boundary is the fetcher's contract, the re-projection is
+        // the unit's.
+        String rowsName = ctx.dmlRowsDeclarationName(field);
+        var followUp = CodeBlock.builder()
+            .add("$T $L = $T.$L;\n",
+                tablesOnly.jooqTableClass(), tableLocal,
+                tablesOnly.tablesClass(), tableRef.javaFieldName())
+            .add("return dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
+                typeClass, tableLocal)
+            .add("    .from($L)\n", tableLocal)
+            .add("    .where(").add(buildPkKeysCondition(tableRef, tablesOnly, isList)).add(")\n")
+            .add(isList ? "    .fetch(r -> r);\n" : "    .fetchOne(r -> r);\n")
+            .build();
+        ctx.addCompanionMethod(buildDmlReentryRowsMethod(
+            ctx, rowsName, valueType, tableRef, isList, followUp));
+
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
 
@@ -4920,12 +4946,39 @@ public class TypeFetcherGenerator {
                 DATA_FETCHER_RESULT, valueType);
         }
 
-        body.add("$T payload = dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
-            valueType, typeClass, tableLocal)
-            .add("    .from($L)\n", tableLocal)
-            .add("    .where(").add(buildPkKeysCondition(tableRef, tablesOnly, isList)).add(")\n")
-            .add(isList ? "    .fetch(r -> r);\n" : "    .fetchOne(r -> r);\n");
+        body.add("$T payload = $L(keys, env);\n", valueType, rowsName);
         return body.build();
+    }
+
+    /**
+     * Frames the DML reentry rows method (R314 slice 4): the named unit holding a projected /
+     * discriminated mutation's follow-up SELECT, keyed on the {@code RETURNING}-captured
+     * {@code keys}. Same framing family as the batched rows methods — the unit resolves its own
+     * {@code DSLContext} through the per-class {@code graphitronContext} helper, so it stands
+     * alone as a seam (thread K's looser-(c): the re-projection is independently assertable) —
+     * but keyed by the write's key record(s) rather than DataLoader keys, so it does not ride
+     * {@code RowsMethodSkeleton}'s empty-input gate (a null/empty key set is handled by the
+     * fetcher's no-match guard before the call).
+     */
+    private static MethodSpec buildDmlReentryRowsMethod(
+            TypeFetcherEmissionContext ctx,
+            String rowsName, TypeName valueType, TableRef tableRef,
+            boolean isList, CodeBlock body) {
+        var pkCols = tableRef.primaryKeyColumns();
+        var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
+        TypeName keysType = isList
+            ? ParameterizedTypeName.get(RESULT, keyRowType)
+            : keyRowType;
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        return MethodSpec.methodBuilder(rowsName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(valueType)
+            .addParameter(keysType, "keys")
+            .addParameter(ENV, "env")
+            .addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall())
+            .addCode(body)
+            .build();
     }
 
     /**
@@ -5040,12 +5093,29 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock emitDiscriminated(
             TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             String discriminatorColumn, List<String> knownDiscriminatorValues,
             List<ParticipantRef> participants,
             TypeName valueType, TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String outputPackage, String tableLocal,
             CodeBlock dmlChain, boolean isList) {
+        // Named reentry unit, exactly as emitProjected: the discriminated follow-up (base PK-IN
+        // condition + R405's re-projection with the discriminator filter) moves into the
+        // rows<Name> companion; the write half and the no-match guard stay in the fetcher.
+        String rowsName = ctx.dmlRowsDeclarationName(field);
+        var followUp = CodeBlock.builder()
+            .add("$T $L = $T.$L;\n",
+                tablesOnly.jooqTableClass(), tableLocal,
+                tablesOnly.tablesClass(), tableRef.javaFieldName())
+            .addStatement("$T condition = $L", CONDITION, buildPkKeysCondition(tableRef, tablesOnly, isList))
+            .add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
+                knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
+            .addStatement("return step.where(condition)$L", isList ? ".fetch()" : ".fetchOne()")
+            .build();
+        ctx.addCompanionMethod(buildDmlReentryRowsMethod(
+            ctx, rowsName, valueType, tableRef, isList, followUp));
+
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
 
@@ -5056,15 +5126,7 @@ public class TypeFetcherGenerator {
                 DATA_FETCHER_RESULT, valueType);
         }
 
-        // Base condition is the PK-IN over the RETURNING keys; R405's re-projection helper appends
-        // the discriminator IN-filter and assembles the field list + cross-table LEFT JOINs. No
-        // extra always-projected columns: the DML path keys the SELECT by the PK-IN condition above
-        // rather than re-mapping fetched rows to input positions by PK (the service path's need).
-        body.addStatement("$T condition = $L", CONDITION, buildPkKeysCondition(tableRef, tablesOnly, isList));
-        body.add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
-            knownDiscriminatorValues, List.of(), tableLocal, outputPackage));
-        body.addStatement("$T payload = step.where(condition)$L", valueType,
-            isList ? ".fetch()" : ".fetchOne()");
+        body.add("$T payload = $L(keys, env);\n", valueType, rowsName);
         return body.build();
     }
 

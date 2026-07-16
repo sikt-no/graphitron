@@ -42,13 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       time by {@link MethodCommandRegistry}; pinned here at the run level).</li>
  * </ul>
  *
- * <p>The covered family at this slice is the DataLoader-backed reentry coordinates. Two
- * boundary pins keep the migration edges visible rather than silently green: the root
- * {@code @service} passthrough is value-level re-fetch but not site-level reentry (no command,
- * by the fact, not by omission), and the projected-DML write is site-level reentry whose keyed
- * re-query is still inlined in the fetcher body (structurally outside {@code BatchKeyField};
- * it joins the registry when R314 slice 4 composes the DML follow-up through the named reentry
- * unit — the assertion below is the tripwire that fires when that slice forgets the registry).
+ * <p>The covered family spans the whole reentry family: the DataLoader-backed leaves
+ * (rows/load methods, slices 1-3) and the projected / discriminated DML arms (the named rows
+ * companion holding the follow-up SELECT, slice 4). The root {@code @service} passthrough pin
+ * keeps the one deliberate absence visible: value-level re-fetch without a site-level re-query
+ * commits nothing, by the fact, not by omission.
  */
 @PipelineTier
 class ReentryCommandClosureTest {
@@ -108,11 +106,17 @@ class ReentryCommandClosureTest {
         commands = result.methodCommands();
     }
 
-    /** The covered-family boundary, derived from the model's site-level fact — never a tag. */
+    /**
+     * The covered-family boundary, derived from the model's site-level fact — never a tag. The
+     * structural conjunct names the two shapes whose reentry unit is a named method today: the
+     * DataLoader-backed leaves (rows/load methods) and, since slice 4, the projected /
+     * discriminated DML arms (the rows companion holding the follow-up SELECT).
+     */
     private static Set<String> coveredCoordinates() {
         return model.fields().values().stream()
             .filter(f -> f instanceof OutputField of && of.emitsKeyedReQuery())
-            .filter(f -> f instanceof BatchKeyField)
+            .filter(f -> f instanceof BatchKeyField
+                || f instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)
             .map(f -> ((OutputField) f).qualifiedName())
             .collect(Collectors.toCollection(LinkedHashSet::new));
     }
@@ -183,13 +187,17 @@ class ReentryCommandClosureTest {
             .isFalse();
         assertThat(commands).noneMatch(c -> c.coordinate().equals("Query.externalFilm"));
 
-        // Projected DML: site-level reentry whose re-query is still inlined in the fetcher body,
-        // structurally outside the BatchKeyField-backed covered set until R314 slice 4 names its
-        // unit and mints its command. This pin is the tripwire that slice must flip.
+        // Projected DML (slice 4): the follow-up SELECT lives in the named rows companion and
+        // its command is committed through the same registry — the reentry family's registry
+        // coverage is whole.
         OutputField createFilm = (OutputField) model.field("Mutation", "createFilm");
         assertThat(createFilm.emitsKeyedReQuery()).isTrue();
-        assertThat(createFilm).isNotInstanceOf(BatchKeyField.class);
-        assertThat(commands).noneMatch(c -> c.coordinate().equals("Mutation.createFilm"));
+        assertThat(commands)
+            .anySatisfy(c -> {
+                assertThat(c.coordinate()).isEqualTo("Mutation.createFilm");
+                assertThat(c.methodName()).isEqualTo("rowsCreateFilm");
+                assertThat(c.unitFqcn()).isEqualTo(OUTPUT_PACKAGE + ".fetchers.MutationFetchers");
+            });
     }
 
     private Set<String> declaredIn(String unit) {
