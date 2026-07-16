@@ -7,8 +7,8 @@ import java.util.List;
 /**
  * Fixture: root {@code @service} that hand-rolls two {@link CreateFilmsPayload} rows for
  * {@code AccessorDerivedBatchKeyTest}'s {@code Many} case. Each payload exposes a
- * {@code List<FilmRecord>} accessor that the classifier walks reflectively to derive
- * {@code BatchKey.AccessorKeyedMany}.
+ * {@code List<FilmRecord>} accessor that the classifier walks reflectively to derive an
+ * accessor-derived batch key.
  *
  * <p>The service hand-rolls payloads so the only JDBC round-trip in the test is the
  * batched {@code loadMany} lookup of the films listed across all parents. Returned films use

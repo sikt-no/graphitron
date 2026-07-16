@@ -13,10 +13,10 @@ import org.jooq.Field;
  *
  * <p>Both methods use jOOQ's {@code Field.convert(Converter)} to lift a per-row scalar
  * (the parent inventory's {@code film_id}) into a typed {@code FilmRecord} (or a custom
- * record wrapping one). Only the PK is set on the {@code FilmRecord} — the framework
+ * record wrapping one). Only the PK is set on the {@code FilmRecord}; the framework
  * batch-fetches any non-PK columns on demand via the standard {@code @record}-parent paths
- * ({@code RowKeyed} via FK; the {@code @record(JavaRecord)} variant additionally fires
- * the {@code AccessorKeyedSingle} lift via the typed {@code film()} accessor on
+ * ({@code KeyLift.FkColumns} via FK; the {@code @record(JavaRecord)} variant additionally fires
+ * the {@code KeyLift.Accessor} lift via the typed {@code film()} accessor on
  * {@code FilmCardData}).
  */
 public final class InventoryExtensions {
@@ -38,8 +38,8 @@ public final class InventoryExtensions {
     /**
      * Per-inventory {@code Field<FilmCardData>} where {@link FilmCardData} is a Java record
      * carrying a single typed {@code FilmRecord film} component. The classifier picks the
-     * canonical {@code film()} accessor on {@code FilmCardData} and produces an
-     * {@code BatchKey.AccessorKeyedSingle} BatchKey for the
+     * canonical {@code film()} accessor on {@code FilmCardData} and produces a
+     * {@code KeyLift.Accessor} lift for the
      * GraphQL child field {@code film: Film}, lifting the embedded record back into Graphitron
      * scope so the framework can batch-fetch the full Film row by PK at request time.
      */

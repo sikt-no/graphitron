@@ -19,7 +19,7 @@ import java.util.Set;
  * {@code FILM_ID} into every parent SELECT; here the {@code @service} child itself is the only
  * reason {@code CITY_ID} lands in the projection, so a query selecting the service child without
  * any key-mapped field turns red if the {@code BatchKeyField} arm in
- * {@code TypeClassGenerator.collectRequiredProjectionColumns} regresses.
+ * {@code TypeClassGenerator.collectRequiredProjection} regresses.
  *
  * <p>Both methods look the key column up in the database (the opptak reproducer shape,
  * {@code WHERE <keyCol> IN (...)}), so a {@code null} key produces a {@code null} field value

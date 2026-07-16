@@ -14,7 +14,7 @@ import java.util.Map;
  * Composite-PK execution-tier fixture: an {@code @service}-backed mutation that
  * returns {@code List<FilmActorRecord>} verbatim, against a two-PK data table
  * ({@code film_actor}, PK {@code (actor_id, film_id)}). The carrier's data field classifies
- * as {@code ChildField.SingleRecordTableField} with
+ * as a record-sourced {@code ChildField.BatchedTableField} with
  * {@code SourceKey.Wrap.TableRecord(FilmActorRecord)}; the FetcherEmitter's
  * {@code Wrap.TableRecord} MANY arm emits the composite-PK paths
  * ({@code row(actor_id, film_id).in(...)} predicate +

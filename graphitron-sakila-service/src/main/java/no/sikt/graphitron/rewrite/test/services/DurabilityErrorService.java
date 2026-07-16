@@ -20,9 +20,8 @@ import java.util.Set;
  * GraphQL field error keyed on {@code durabilityError}.
  *
  * <p>Method shape matches the existing {@code @service} child-field convention
- * ({@code Set<Record1<Integer>>} keys, {@code DSLContext}, returns {@code Map}) so the
- * classifier routes it through {@code MappedRecordKeyed}. The body never reaches the
- * Map construction — it throws immediately.
+ * ({@code Set<Record1<Integer>>} keys, {@code DSLContext}, returns {@code Map}). The body
+ * never reaches the Map construction; it throws immediately.
  */
 public final class DurabilityErrorService {
 

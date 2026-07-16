@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * Execution-tier fixture: an {@code @service}-backed mutation that returns the
  * payload's data field shape verbatim ({@code List<FilmRecord>} for MANY,
- * {@code FilmRecord} for ONE). The carrier's data field classifies as
- * {@code ChildField.SingleRecordTableField} with
+ * {@code FilmRecord} for ONE). The carrier's data field classifies as a record-sourced
+ * {@code ChildField.BatchedTableField} with
  * {@code SourceKey.Wrap.TableRecord(FilmRecord)}; the FetcherEmitter's
  * {@code Wrap.TableRecord} arm reads the typed records, extracts PKs via
  * {@code record.get(Tables.FILM.FILM_ID)}, and runs the response SELECT outside the
