@@ -1,7 +1,7 @@
 ---
 id: R483
 title: "Audit javadoc for drift against current design and implementation"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 10
 theme: docs
