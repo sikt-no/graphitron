@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 /**
  * lsp4j entry point. Holds a single {@link Workspace} per server instance
  * (one server per editor connection); the workspace owns parsed files plus
- * the catalog. The {@code dev} Mojo (slice 2) constructs the catalog from
+ * the catalog. The {@code dev} Mojo constructs the catalog from
  * the rewrite generator and passes it in here.
  *
  * <p>The {@code onSchemaSaved} listener fires from {@code didSave}; the
@@ -101,7 +101,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
 
     @Override
     public void exit() {
-        // lsp4j drives process lifetime; nothing to clean up in the spike.
+        // lsp4j drives process lifetime; nothing to clean up.
     }
 
     @Override

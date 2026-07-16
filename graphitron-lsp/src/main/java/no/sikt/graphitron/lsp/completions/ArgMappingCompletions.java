@@ -29,7 +29,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
  * <ul>
  *   <li><b>Left</b> (Java parameter): the resolved method's parameter names,
  *       read off the catalog. Suppressed when the names are {@code null} (the
- *       consumer compiled without {@code -parameters}); the existing 5c
+ *       consumer compiled without {@code -parameters}); an existing
  *       diagnostic nudges toward the fix.</li>
  *   <li><b>Right</b> (GraphQL argument): the enclosing field's GraphQL argument
  *       names, read syntactically from the {@code field_definition}. Dot-path

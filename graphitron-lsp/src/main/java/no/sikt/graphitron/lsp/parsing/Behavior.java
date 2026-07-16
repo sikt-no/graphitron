@@ -35,9 +35,8 @@ public sealed interface Behavior {
     record CatalogFkBinding() implements Behavior {}
 
     /**
-     * {@code argMapping} content-syntax binding. The actual
-     * {@code "javaParam: graphqlArg, ..."} parser is deferred to a follow-up;
-     * this arm is a marker that ships now and that the follow-up wires up.
+     * {@code argMapping} content-syntax binding; the
+     * {@code "javaParam: graphqlArg, ..."} content is decomposed by {@link ArgMapping}.
      */
     record ArgMappingBinding() implements Behavior {}
 

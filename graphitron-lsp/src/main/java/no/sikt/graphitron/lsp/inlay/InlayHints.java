@@ -39,7 +39,8 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *       {@code path:} for the third), renders the resolved value as a ghost annotation.</li>
  *   <li><b>Classification arm</b>: at every field declaration and every object / interface /
  *       input / union type declaration, renders a compact label naming the classified
- *       variant (e.g. {@code "joined column"}, {@code "query field"}, {@code "node type"}).</li>
+ *       variant, via {@link LspClassificationLabels#projectionLabel(FieldClassification)} /
+ *       {@link LspClassificationLabels#projectionTypeLabel(TypeClassification)}.</li>
  * </ul>
  *
  * <p>The inferred-directive arm asks the tree-sitter AST whether the canonical argument is

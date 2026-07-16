@@ -87,7 +87,7 @@ public final class FieldCompletions {
         var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         // Prefer the field classification's projected terminal table over the enclosing
         // type's backing for @reference path fields and the other column-bearing permits.
-        // lspColumnDispatch() collapses the 30 permits onto three arms; Resolve and Silent
+        // lspColumnDispatch() collapses the permits onto three arms; Resolve and Silent
         // each return directly through mergeWithSigil, FallThrough drops through to the
         // existing backing-driven dispatch below. Snapshot-uncertainty (empty optional)
         // also falls through.

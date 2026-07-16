@@ -115,7 +115,7 @@ public final class ArgNameCompletions {
     }
 
     /**
-     * Top-level arg-name completion for a user-declared directive. Phase 2
+     * Top-level arg-name completion for a user-declared directive. This arm
      * does not descend into nested object literals (the snapshot does not
      * carry input-object shapes yet); when the cursor sits inside an
      * argument value, return empty. Completion is freshness-agnostic:

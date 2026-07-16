@@ -53,15 +53,6 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
  * for each directive in the document, the {@link LspVocabulary} walks every
  * value-bearing leaf and the validator pattern-matches on the leaf's
  * {@link Behavior} arm.
- *
- * <p>Replaces the per-directive case switch ({@code "table"} / {@code "field"}
- * / {@code "reference"}) plus the {@code DirectiveDefinitions.argsByInputType}
- * walk for {@code ExternalCodeReference} sites. Unification has the side
- * effect of closing the {@code @sourceRow} gap (its flat
- * {@code className:} / {@code method:} args are
- * {@link SchemaCoordinate.DirectiveArg} coordinates with the canonical
- * overlay's bindings) and unifies table-name validation across
- * {@code @table(name:)} and {@code @reference(path: [{table:}])}.
  */
 public final class Diagnostics {
 
@@ -441,7 +432,7 @@ public final class Diagnostics {
     /**
      * Snapshot-driven counterpart to {@link #validateRequiredArgs}. Warns
      * when an arg whose declared type is non-null is missing from the
-     * user's call. {@link TypeShape#nonNull()} lives on the sealed
+     * user's call. {@link no.sikt.graphitron.rewrite.catalog.TypeShape#nonNull()} lives on the sealed
      * interface so the non-null check is one method call regardless of
      * named-vs-list shape.
      */
@@ -617,7 +608,7 @@ public final class Diagnostics {
             return;
         }
         // Prefer the field classification's projected terminal table over the
-        // enclosing type's @table. FieldClassification.lspColumnDispatch() collapses the 30
+        // enclosing type's @table. FieldClassification.lspColumnDispatch() collapses the
         // sealed permits onto three audience-specific arms: Resolve(tableName) carries the
         // projected terminal table for the four column-bearing permits; Silent suppresses the
         // diagnostic for InputUnbound / Unclassified (the validator already emits a precise

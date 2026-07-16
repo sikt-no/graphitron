@@ -14,8 +14,7 @@ import java.util.Set;
 /**
  * A schema file open in the workspace: source bytes + tree-sitter tree, both
  * kept in lockstep through {@link #applyEdit}. Mirrors the Rust LSP's
- * {@code state/file.rs} {@code File} struct, minus the type-extraction layer
- * (which lands when the workspace plumbing does).
+ * {@code state/file.rs} {@code File} struct.
  *
  * <p>Performance contract:
  *
