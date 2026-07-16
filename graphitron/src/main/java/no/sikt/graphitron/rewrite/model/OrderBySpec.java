@@ -96,8 +96,7 @@ public sealed interface OrderBySpec
      * {@code sortFieldName} is the input-type field that selects the sort column.
      * {@code directionFieldName} is the input-type field that selects ASC or DESC.
      * {@code namedOrders} maps each enum value to its column-order expression (populated at
-     * build time from the enum type's {@code @order} directives; may be empty while that
-     * feature is not yet fully implemented).
+     * build time from the enum type's {@code @order} directives).
      * {@code base} is the fallback ordering used when no argument is provided at runtime;
      * {@link None} when the table has no primary key and no {@code @defaultOrder}.
      */

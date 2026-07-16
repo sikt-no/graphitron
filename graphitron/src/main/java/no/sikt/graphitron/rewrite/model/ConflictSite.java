@@ -9,11 +9,7 @@ import no.sikt.graphitron.javapoet.TypeName;
  * <p>The coordinate is a sealed {@link Site}: a {@link Site.Method} wraps a {@link MethodRef}
  * (a {@code @condition} / {@code @tableMethod} / {@code @externalField} param list), and a
  * {@link Site.Carrier} wraps a {@link ServiceMethodCall} (a root sync {@code @service} carrier,
- * whose ctor/method args hold the context slots). This was widened from a bare {@link MethodRef}:
- * the four root sync {@code @service} permits no longer carry a {@link MethodRef}, so the classifier
- * previously fabricated an empty {@code MethodRef.Service} sentinel
- * ({@code ContextArgumentClassifier.syntheticServiceMethodRef}) just to satisfy this field. The
- * sealed widening lets the carrier coordinate be carried honestly.
+ * whose ctor/method args hold the context slots).
  *
  * <p>Captured at the classifier producing {@link Rejection.AuthorError.TypeConflict}; consumed by
  * the message renderer (via {@link Site#className()} / {@link Site#methodName()}) and by any future

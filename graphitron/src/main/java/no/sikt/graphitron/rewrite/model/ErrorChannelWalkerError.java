@@ -66,9 +66,8 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
 
     /**
      * Raised by the {@code OutcomeType} classification: a success-projection (data) field is
-     * non-null, which would bubble null up and drop the errors field on the error arm (see the
-     * arm-switch invariant in {@code errorchannel-walker-carrier.md}). Success-projection fields
-     * must be nullable.
+     * non-null, which would bubble null up and drop the errors field on the error arm.
+     * Success-projection fields must be nullable.
      */
     record NonNullableSuccessProjectionField(
         String outcomeTypeName,

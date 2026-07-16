@@ -138,9 +138,8 @@ public sealed interface Operation {
 
     /**
  * A database-routine write: the routine call is the write verb, committed inside the
-     * per-field transaction before the chain's follow-up re-read runs. This is the anticipated
-     * procedure-write arm — a new operation on the existing
-     * {@link Source.Root.Mutation} source. The arm carries no payload: the call surface and hops
+     * per-field transaction before the chain's follow-up re-read runs. This is the
+     * procedure-write arm, on the {@link Source.Root.Mutation} source. The arm carries no payload: the call surface and hops
      * live on the leaf's {@code RoutineChain} (read via {@code RoutineChainField}), and the
      * response shape (the post-commit terminus projection) is a {@link Target} fact.
      */

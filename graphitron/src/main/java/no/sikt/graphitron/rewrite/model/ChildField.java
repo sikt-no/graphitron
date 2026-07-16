@@ -326,7 +326,7 @@ public sealed interface ChildField extends OutputField
      * {@link #aliasName}; the per-field DataFetcher reads it back from the result
      * {@code Record} by that alias.
      *
-     * <p>Distinct from {@link ColumnReferenceField} (the broader, still-stubbed
+     * <p>Distinct from {@link ColumnReferenceField} (the broader
      * scalar-{@code @reference} story): this variant exists specifically
      * for the {@code TableInterfaceType} cross-table participant-field case where the
      * interface fetcher (not a per-field method) materialises the value.

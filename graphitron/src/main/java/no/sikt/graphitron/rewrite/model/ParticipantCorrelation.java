@@ -22,10 +22,7 @@ import java.util.Objects;
  *   <li>{@link JoinedCorrelation} — the branch joins real tables. Each hop's {@link On} already
  *       distinguishes an FK bridge ({@link On.ColumnPairs}) from an authored predicate
  *       ({@link On.Predicate}); multi-hop is list length greater than one, condition correlation is
- *       a hop carrying {@link On.Predicate}. Non-empty enforced at construction. The classifier
- *       physically cannot construct this arm until slices 2 (multi-hop) and 3 (condition) ship the
- *       matching emitter arms; until then it rejects those route shapes with a DEFERRED
- *       message.</li>
+ *       a hop carrying {@link On.Predicate}. Non-empty enforced at construction.</li>
  * </ul>
  *
  * <p>The classifier ({@code FieldBuilder.resolveChildPolymorphicJoinPaths}) decides the supported

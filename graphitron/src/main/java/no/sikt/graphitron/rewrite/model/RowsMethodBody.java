@@ -24,7 +24,7 @@ import java.util.Objects;
  *       behaviour preserved per the spec's "Out of scope" carve-out).</li>
  * </ul>
  *
- * <p>Permits are intentionally distinct types even though the four SQL framings are identical
+ * <p>Permits are intentionally distinct types even though the SQL framings are identical
  * today: distinct permits make the dispatch axis first-class so the construction site's
  * projection from the field's {@code (variant, LoaderRegistration.container())}
  * pair lands in a single typed slot rather than a runtime branch.

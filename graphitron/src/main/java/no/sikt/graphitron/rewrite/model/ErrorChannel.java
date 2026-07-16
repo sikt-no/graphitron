@@ -8,7 +8,7 @@ import java.util.List;
  * The carrier-side typed-error wiring for one fetcher. Resolved at classify time and attached
  * to fetcher-emitting field variants via {@link WithErrorChannel}; the emitter consumes it to
  * synthesize the per-fetcher try/catch wrapper that routes thrown exceptions into the
- * payload's {@code errors} field. See {@code error-handling-parity.md} for the full contract.
+ * payload's {@code errors} field.
  *
  * <p>Carrier-side counterpart of the payload-side
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField}: where {@code ErrorsField}
@@ -41,13 +41,12 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
      * The name of the {@code Mapping[]} constant on the per-package {@code ErrorMappings} helper
      * that holds this channel's dispatch table (e.g. {@code "FILM_PAYLOAD"}). Distinct channels
      * with identical mappings dedup to the same constant; identical-shape channels with
-     * different mappings get a hash suffix (see {@code error-handling-parity.md} §3).
+     * different mappings get a hash suffix.
      */
     String mappingsConstantName();
 
     /**
- * NEW; replaces the {@link PayloadClass} arm for {@code @service} / {@code @tableMethod}
-     * outcome fields. The classify-time descriptor of which {@code @error} types map and which
+     * The classify-time descriptor of which {@code @error} types map and which
      * {@code ErrorMappings} constant drives them; it drives the {@code Outcome} wrapper emit (the
      * success path wraps the jOOQ record in {@code Success}, the error path returns
      * {@code ErrorList(matchedErrors)}). No developer payload class is constructed or reflected on.

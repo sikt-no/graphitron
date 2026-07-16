@@ -5,7 +5,7 @@ package no.sikt.graphitron.rewrite.model;
  * for the arg surface) populate on an {@code @mutation(typeName: UPDATE)} field that returns its
  * {@code @table} type directly: the slim {@link InputArgRef} and the {@link UpdateRows} carrier.
  *
- * <p>Sibling to the future {@code DeleteRowsField} / {@code InsertRowsField}: each DML walker-carrier
+ * <p>Sibling to the DELETE-verb {@link DeleteRowsField} (and a future {@code InsertRowsField}): each DML walker-carrier
  * slice declares its own narrow interface surfacing the same {@link #inputArg()} accessor alongside
  * its verb-specific carrier, so emit-time helpers reading the arg surface work uniformly across
  * kinds. Both slots are non-Optional: every classified field carrying this interface has a

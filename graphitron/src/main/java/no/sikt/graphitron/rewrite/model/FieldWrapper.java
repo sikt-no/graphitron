@@ -24,9 +24,8 @@ public sealed interface FieldWrapper
 
     /**
      * Fallback page size used when a {@code @asConnection} field omits
-     * {@code defaultFirstValue}. Referenced by {@link FieldWrapper.Connection}'s
-     * structural-detection constructor and by the classifier's default-page-size
-     * resolution, so all four fallback sites agree on the same literal.
+     * {@code defaultFirstValue}. Single source for the fallback literal that every
+     * default-page-size resolution site reads instead of hard-coding its own.
      */
     int DEFAULT_PAGE_SIZE = 100;
 
@@ -67,8 +66,7 @@ public sealed interface FieldWrapper
      * argument (from {@code @asConnection(defaultFirstValue:)}). Defaults to 100. Per-site
      * because two carriers returning the same Connection type may declare different defaults.
      * Invariant: equals the {@code defaultValueProgrammatic} set on the {@code first} argument
-     * of the rebuilt carrier field in the assembled schema; both are sourced from the same
-     * {@code resolveDefaultFirstValue} call in {@code GraphitronSchemaBuilder}.
+     * of the rebuilt carrier field in the assembled schema.
      */
     record Connection(
         boolean connectionNullable,

@@ -21,7 +21,7 @@ import java.util.List;
  * return type; disagreement on the {@link DomainReturnType} sealed arm is recorded on the
  * {@link no.sikt.graphitron.rewrite.GraphitronSchema} as a
  * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement}, which
- * {@code GraphitronSchemaValidator.validateUniformDomainReturnType} surfaces as a build error
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} surfaces as a build error
  * (slice 4 retired the post-pass that previously demoted the producers to
  * {@link GraphitronField.UnclassifiedField}).
  */

@@ -102,8 +102,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
          * Source-side columns, materialised as a {@link List} for readers that need the columns
          * themselves (e.g. constructing a {@code SourceKey} entry-point column tuple) rather
          * than slot-by-slot iteration. The order matches {@link #slots()}; index {@code i} is
-         * {@code slots[i].sourceSide()}. (Formerly on the {@code HasSlots} capability,
-         * which died with {@code JoinStep.LiftedHop} — this is its only implementor.)
+         * {@code slots[i].sourceSide()}.
          */
         public List<ColumnRef> sourceSideColumns() {
             return slots.stream().map(JoinSlot::sourceSide).toList();
