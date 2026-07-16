@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R427` | Free-text search backed by native database search indexes | Spec | 2026-07-15 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
+| `R427` | Free-text search backed by native database search indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R483` | Audit javadoc for drift against current design and implementation <sub>blocked by: [javadoc-roadmap-reference-purge](javadoc-roadmap-reference-purge.md)</sub> | Spec | 2026-07-15 | [plan](javadoc-implementation-drift-audit.md) |
 | `R482` | Purge transient roadmap references from javadoc; guard against reintroduction | Ready | 2026-07-15 | [plan](javadoc-roadmap-reference-purge.md) |
