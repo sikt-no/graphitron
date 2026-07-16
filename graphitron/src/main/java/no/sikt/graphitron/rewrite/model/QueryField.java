@@ -292,6 +292,15 @@ public sealed interface QueryField extends RootField
      * payload includes an {@code errors} field. The success arm is universal passthrough: the
      * service method returns the SDL payload class (or table-bound record) directly, and
      * per-field wiring projects SDL fields off the parent's domain return.
+     *
+     * <p><b>Reentry realization (R314).</b> This leaf is value-level re-fetch
+     * ({@link OutputField#requiresReFetch()} is true — the service-produced record must be
+     * re-projected against the catalog) but <em>not</em> site-level reentry
+     * ({@link OutputField#emitsKeyedReQuery()} is false): the emitted fetcher hands the record
+     * straight through, and the re-projection is realized by the downstream child fetchers'
+     * {@code $fields}. The site-level fact is the single carrier of this distinction — the emit
+     * dispatch, the method-command registry's covered-family boundary, and the reentry validate
+     * guard all read it rather than recomputing the root-service exclusion per site.
      */
     record QueryServiceTableField(
         String parentTypeName,

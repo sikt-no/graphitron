@@ -332,6 +332,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>The success arm is universal passthrough: the service method returns the SDL payload
      * class (or table-bound record) directly, and per-field wiring projects SDL fields off the
      * parent's domain return.
+     *
+     * <p><b>Reentry realization (R314).</b> Value-level re-fetch without a site-level re-query,
+     * exactly as {@link QueryField.QueryServiceTableField}: {@code requiresReFetch()} is true,
+     * {@code emitsKeyedReQuery()} is false, and the re-projection is realized by the downstream
+     * child fetchers' {@code $fields}. See that leaf's javadoc for the fact linkage.
      */
     record MutationServiceTableField(
         String parentTypeName,

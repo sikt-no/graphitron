@@ -188,6 +188,45 @@ class ServiceFieldValidationTest {
             Optional.empty());
     }
 
+    /**
+     * R314 slice 3, the row-15 enforcer's fire case: a reentry {@code @service} field carrying a
+     * present error channel is rejected at validate time. The channel slot is provably empty on
+     * every classifier-built instance today (channel resolution guards on ResultReturnType and
+     * this return is table-bound), so this hand-built instance is the only way to exercise the
+     * guard — which is the point: the single-channel premise behind inlining the fetcher's
+     * channel arms is enforced, not assumed, and the first change that widens channel resolution
+     * to table-bound payloads fails here instead of inheriting an undesigned inlined arm.
+     */
+    @org.junit.jupiter.api.Test
+    void reentryServiceFieldWithPresentChannel_rejected() {
+        var keyCols = FILM_TABLE_SINGLE_PK.primaryKeyColumns();
+        var wrap = new SourceKey.Wrap.Row();
+        var errorType = new GraphitronType.ErrorType("Err", null,
+            List.of(new GraphitronType.ErrorType.ExceptionHandler(
+                "java.sql.SQLException", Optional.empty(), Optional.empty())),
+            List.of());
+        var channel = new no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass(
+            List.of(errorType),
+            ClassName.bestGuess("com.example.Payload"),
+            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
+            List.of(new no.sikt.graphitron.rewrite.model.DefaultedSlot(0, "data",
+                ClassName.get("java.lang", "String"), "null")),
+            "PAYLOAD");
+        var field = new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
+            List.of(), List.of(), new OrderBySpec.None(), null,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
+                List.of(TestFixtures.sourced("filmKeys", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),
+            TestFixtures.serviceSourceKey(wrap, keyCols),
+            TestFixtures.loaderRegistration(FILM_RETURN, false, false),
+            Optional.of(channel));
+
+        assertThat(validate(field))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("reentry @service field")
+                && m.contains("error channel")
+                && m.contains("R314 row-15"));
+    }
+
     private static ServiceTableField multipleSourcesField() {
         var keyCols = FILM_TABLE_SINGLE_PK.primaryKeyColumns();
         var wrap = new SourceKey.Wrap.Row();

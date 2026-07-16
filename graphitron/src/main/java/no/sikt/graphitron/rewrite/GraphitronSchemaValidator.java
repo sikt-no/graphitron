@@ -1178,6 +1178,27 @@ public class GraphitronSchemaValidator {
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
 
+        // R314 slice 3, the row-15 enforcer, scoped to the service reentry path (the path the
+        // spec's verdict names; DML reentry has its own channel transport and its own fetcher
+        // family): the service reentry fetcher inlines the channel catch / early-return arms
+        // into the Fetcher (no independent seam), and that verdict's load-bearing premise is
+        // that reentry @service fields are channel-less — the slot is provably empty today
+        // (resolveErrorChannel guards on ResultReturnType; this return is table-bound), so the
+        // inlined arm shape cannot vary within the family. This check is the premise's enforcer
+        // rather than a prose claim: if channel resolution ever widens to table-bound payloads,
+        // the schema that first exercises it fails here, at the build boundary, instead of
+        // inheriting an inlined arm shape that was never designed for a channel.
+        if (field.emitsKeyedReQuery() && field.errorChannel().isPresent()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': a reentry @service field "
+                    + "carrying an error channel is not supported — the reentry fetcher inlines its "
+                    + "channel arms on the single-channel premise (R314 row-15 verdict); widening "
+                    + "channel resolution to table-bound payloads requires designing that arm first"),
+                field.location()
+            ));
+        }
+
         var smr = field.method();
 
         // A table-bound service field requires at least one Sources parameter for DataLoader batching.
