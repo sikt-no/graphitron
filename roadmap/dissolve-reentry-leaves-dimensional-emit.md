@@ -5,7 +5,7 @@ status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: [coordinate-lowers-to-datafetcher-queryparts, collapse-split-and-record-table-leaves]
+depends-on: [coordinate-lowers-to-datafetcher-queryparts]
 created: 2026-06-15
 last-updated: 2026-07-13
 ---

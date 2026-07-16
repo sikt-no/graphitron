@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: [collapse-split-and-record-table-leaves]
+depends-on: []
 created: 2026-06-17
 last-updated: 2026-07-15
 ---
@@ -27,8 +27,9 @@ should decide whether to land them together or per-variant.
 Re-anchor at pickup (added 2026-07-15): the leaf enumeration above and the `SourceKey` carrier
 this item leans on are being restructured underneath it. R431 (`decompose-sourcekey`, In Progress)
 decomposes `SourceKey` onto facts, and R432 (`collapse-split-and-record-table-leaves`) folds
-`SplitTableField` + `RecordTableField` (and possibly the lookup twins) into one leaf, which is why
-both are now in this item's `depends-on`. Re-derive the variant list and the per-parent reconciliation
+`SplitTableField` + `RecordTableField` (and the lookup twins) into one source-gated leaf, which is
+why this item was gated on both (both now shipped: R431 and R432 are Done). Re-derive the variant
+list and the per-parent reconciliation
 target against the decomposed facts and the collapsed leaf set when this reaches Spec, rather than
 against the pre-R431/R432 shapes named here.
 
