@@ -105,7 +105,7 @@ class CatalogBuilderSnapshotTest {
 
     @Test
     void applicableLocationsRoundTripThroughBuildSnapshot() {
-        // R368: DirectiveShape now carries the directive's applicable locations, projected from
+        // DirectiveShape now carries the directive's applicable locations, projected from
         // DirectiveDefinition.getDirectiveLocations() at this single construction site, so the
         // directives MCP resource can show them uniformly for bundled and user-declared directives.
         var registry = new SchemaParser().parse("""

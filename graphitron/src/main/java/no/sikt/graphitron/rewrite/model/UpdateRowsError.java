@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * R246 — sealed sub-family of {@link Rejection.AuthorError} for {@code UpdateRowsWalker}. Each typed
+ * Sealed sub-family of {@link Rejection.AuthorError} for {@code UpdateRowsWalker}. Each typed
  * arm carries the structural data its diagnostic message and LSP {@code relatedInformation} need;
  * downstream tooling switches on the arm rather than parsing prose. Sibling to R238's
  * {@link ServiceMethodCallError}: per the dimensional-model-pivot principle, each walker slice adds

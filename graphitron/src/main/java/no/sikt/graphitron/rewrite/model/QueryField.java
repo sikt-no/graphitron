@@ -76,7 +76,7 @@ public sealed interface QueryField extends RootField
             // Service-polymorphic returns are interface-only (union/table-interface rejected at
             // classify time) and route through the __typename-column TypeResolver.
             case QueryServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
-            // Single-table service interface return (R405): payload is a raw Record / List<Record>
+            // Single-table service interface return: payload is a raw Record / List<Record>
             // routed by the discriminated TypeResolver, same wiring shape as route (a). Interface
             // (not Table) keeps requiresReFetch() false so the re-fetch mirror agrees with the
             // service fetcher, which does the by-PK re-projection itself.
@@ -302,7 +302,7 @@ public sealed interface QueryField extends RootField
         Optional<ErrorChannel> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         /**
-         * R204: see {@link ChildField.ServiceTableField#domainReturnType()} — the typed
+ * See {@link ChildField.ServiceTableField#domainReturnType()} — the typed
          * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping,
          * and the @table-bound SDL type's child datafetchers read columns by name through
          * the generic {@code Record} interface.
@@ -372,7 +372,7 @@ public sealed interface QueryField extends RootField
     }
 
     /**
-     * R405 — a root {@code @service} field returning a single-table discriminated interface
+ * A root {@code @service} field returning a single-table discriminated interface
      * ({@code @table @discriminate}, implementers pinned by {@code @discriminator(value:)}, all
      * sharing one jOOQ table). The single-table sibling of {@link QueryServicePolymorphicField}
      * (route (a)): both carry a service binding and dispatch a service-returned record set to

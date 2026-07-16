@@ -125,7 +125,7 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     /**
-     * R250: an {@code extend schema @link(...)} declaration on the consumer SDL
+ * An {@code extend schema @link(...)} declaration on the consumer SDL
      * must reach the runtime build via {@code .withSchemaAppliedDirectives(...)}.
      * Without this, the runtime {@code _service.sdl} (and any printer output)
      * lacks the {@code schema @link(...)} block, which makes federation
@@ -314,7 +314,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_typeResolver_routesOffSyntheticDiscriminatorAlias() {
-        // R392: the TypeResolver routes off the synthetic discriminator alias the interface fetcher
+        // The TypeResolver routes off the synthetic discriminator alias the interface fetcher
         // projects (MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN), not the raw discriminator column
         // name. When the interface exposes the discriminator as a queryable field, the real column is
         // also projected by the participant $fields, and a bare read of the column name matches both
@@ -517,7 +517,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath() {
-        // R303: the path read is reified onto <ErrorType>Fetchers. GraphQLError sources route
+        // The path read is reified onto <ErrorType>Fetchers. GraphQLError sources route
         // through GraphQLError.getPath() (preserving per-violation paths recorded by
         // ConstraintViolations.toGraphQLError); Throwable sources fall back to
         // env.getExecutionStepInfo().getPath().toList() so the SDL field's [String!]! non-null
@@ -529,7 +529,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_errorTypeFieldFetchers_wiringIsMethodReferenceIntoReifiedClass() {
-        // R303: the schema build() body wires <ErrorType>Fetchers::path / ::message (method
+        // The schema build() body wires <ErrorType>Fetchers::path /::message (method
         // references, no DataFetcher<Object> cast lambda); the reads themselves are named methods
         // on the reified class that read the source via DataFetchingEnvironment.getSource() (the
         // canonical accessor in graphql-java 25; getObject() exists only on TypeResolutionEnvironment).
@@ -646,7 +646,7 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void scalarRegistration_directiveAliasesConstant_synthesisesScalarUnderSdlName() {
-        // R313: when the SDL name differs from the constant's intrinsic name (here
+        // When the SDL name differs from the constant's intrinsic name (here
         // ExtendedScalars.Date is named "Date" but the scalar is declared as LocalDate), the
         // scalar must register under the SDL name, otherwise typeRef("LocalDate") fails at build.
         // The emitter routes this through the Synthesised arm + scalar_<name>() helper, the same
@@ -699,7 +699,7 @@ class GraphitronSchemaClassGeneratorTest {
         return generate(sdl).toString();
     }
 
-    /** Renders the reified {@code <typeName>Fetchers} class for an @error type (R303). */
+    /** Renders the reified {@code <typeName>Fetchers} class for an @error type.*/
     private static String errorFetcherSource(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator

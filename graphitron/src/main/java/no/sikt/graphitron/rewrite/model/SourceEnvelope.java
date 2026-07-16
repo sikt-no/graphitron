@@ -24,7 +24,7 @@ public enum SourceEnvelope {
     DIRECT,
     /**
      * {@code env.getSource()} is the non-null {@code Outcome} of an error-channel
-     * {@code @service} carrier (R244/R275): the value(s) live in
+ * {@code @service} carrier: the value(s) live in
      * {@code Outcome.Success.value()}, and the {@code Outcome.ErrorList} arm resolves the
      * data field to {@code null}.
      */

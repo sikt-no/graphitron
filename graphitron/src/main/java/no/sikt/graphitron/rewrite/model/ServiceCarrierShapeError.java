@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * R308 — sealed sub-family of {@link Rejection.AuthorError} for the {@code @service} list-payload
+ * Sealed sub-family of {@link Rejection.AuthorError} for the {@code @service} list-payload
  * carrier shape verdict. Sibling to {@link MutationTableArgError} / {@link ServiceMethodCallError}:
  * per the dimensional-model-pivot principle, a new concern adds its own sub-seal of
  * {@link Rejection.AuthorError} (and one row in that interface's {@code permits} clause) with its own

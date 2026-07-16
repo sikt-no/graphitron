@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * R425: SDL → classified schema → generated {@code TypeSpec} pipeline tests pinning that a
+ * SDL → classified schema → generated {@code TypeSpec} pipeline tests pinning that a
  * DataLoader-backed {@code @service} child's {@code SourceKey} columns are force-included in the
  * parent type's {@code $fields} projection.
  *

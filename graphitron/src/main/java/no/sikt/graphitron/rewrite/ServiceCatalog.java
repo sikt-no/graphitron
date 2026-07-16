@@ -80,7 +80,7 @@ class ServiceCatalog {
 
     /**
      * Resolves a column at the terminal of an FK {@code @reference} path. The terminal is carried
-     * as the identity-resolved {@link TableRef} the path's hops already pinned (R444), never
+ * as the identity-resolved {@link TableRef} the path's hops already pinned, never
      * collapsed to a bare SQL name and re-resolved through the catalog — a bare-name lookup is
      * ambiguous when the terminal table name collides across generated schemas.
      */
@@ -288,7 +288,7 @@ class ServiceCatalog {
                         // Non-SOURCES-adjacent parameter that didn't match any argument / context
                         // key: the only plausible diagnosis is a name mismatch (or a missing
                         // context key). Fires at any coordinate — root, DTO-parent child, or
-                        // @table-parent child with a non-container type (R187).
+                        // @table-parent child with a non-container type.
                         if (!looksLikeSourcesShape(p.getParameterizedType())) {
                             String suggestion;
                             if (argByJavaName.isEmpty()) {
@@ -361,7 +361,7 @@ class ServiceCatalog {
 
     /**
      * Resolves the single declared method named {@code methodName} on {@code cls}. Shared by all
-     * three reflect helpers (R256): replaces the silent {@code methods.get(0)} that picked the
+ * three reflect helpers: replaces the silent {@code methods.get(0)} that picked the
      * first JVM-declaration-order match with an explicit fork — zero matches produce the typed
      * {@code unknownServiceMethod} {@link Rejection.AuthorError.UnknownName}; more than one produce
      * {@link ReflectionError.AmbiguousMethod} carrying every candidate's parameter arity.
@@ -642,7 +642,7 @@ class ServiceCatalog {
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
                     // @tableMethod / @condition (sites C/D) keep legacy extraction until Slice 2:
-                    // their dimensional wire-coercion channel (R222) is not yet pinned, so the shared
+                    // their dimensional wire-coercion channel is not yet pinned, so the shared
                     // predicate is not enforced here — only the @service caller (site B) rejects.
                     params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
                         new ParamSource.Arg(legacyArgExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
@@ -790,7 +790,7 @@ class ServiceCatalog {
 
     /**
      * Outcome of {@link #argExtraction}: either the resolved {@link CallSiteExtraction} or a typed
-     * wire-coercion rejection (R261). Widening the return type past a bare {@code CallSiteExtraction}
+ * wire-coercion rejection. Widening the return type past a bare {@code CallSiteExtraction}
      * is the D2 lift: a wire-incompatible arg now <em>rejects</em> instead of silently classifying to
      * a {@code Direct} raw cast that crashes at runtime, and every downstream {@code ParamSource.Arg}
      * consumer can assume the extraction is wire-sound.
@@ -804,7 +804,7 @@ class ServiceCatalog {
      * Legacy extraction (no wire-coercion check): a jOOQ enum gets {@link CallSiteExtraction.EnumValueOf},
      * everything else {@link CallSiteExtraction.Direct}. Retained for the {@code @tableMethod} /
      * {@code @condition} argument path (sites C/D), which R261 Slice 1 does not touch: those sites
-     * consume the same predicate in a later slice once their dimensional channel is pinned (R222), so
+ * consume the same predicate in a later slice once their dimensional channel is pinned, so
      * threading the reject here now would fire ahead of the channel that surfaces it. Slice 1 gates
      * only the {@code @service} path (site B) via {@link #argExtraction}.
      */
@@ -829,7 +829,7 @@ class ServiceCatalog {
      *
      * <p>Text-mapped enums (GraphQL enum bound to a varchar column via {@code @field(name:)})
      * route through {@code Direct}: graphql-java translates the wire form to the runtime form
-     * at the boundary via {@code GraphQLEnumValueDefinition.value(...)} (R229), so resolvers
+ * at the boundary via {@code GraphQLEnumValueDefinition.value(...)}, so resolvers
      * receive the runtime string and no extra extraction step is needed.
      *
      * <p>{@code sdlLeafType} may be {@code null} when the bound path cannot be resolved against the
@@ -883,7 +883,7 @@ class ServiceCatalog {
 
     /**
      * Resolves the SDL leaf type a {@link PathExpr} binds to, walking from the head slot in
-     * {@code slotTypes} through each subsequent dot-path segment's input-object field (R261). Returns
+ * {@code slotTypes} through each subsequent dot-path segment's input-object field. Returns
      * {@code null} when the head slot is absent or the path descends through a non-input-object
      * intermediate (the caller then passes through the wire-coercion check conservatively).
      */
@@ -1299,7 +1299,7 @@ class ServiceCatalog {
             augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
         }
 
-        // R355: name-based depth-1 unpacking, on the residual parameters still unbound after the
+        // Name-based depth-1 unpacking, on the residual parameters still unbound after the
         // arity-unique and type-unique branches. For a parameter whose name matches exactly one
         // direct field — by name AND mapped Java type — of a single unclaimed input-object slot,
         // bind it one level in to that nested field. The synthesised PathExpr is byte-identical to
@@ -1307,7 +1307,7 @@ class ServiceCatalog {
         // = the field, liftsList via ArgBindingMap.isListShaped), so downstream emission is
         // unchanged; the rule only fills in the path the author would otherwise have written. The
         // disambiguator is the parameter name, orthogonal to the type-count axis above, so this is
-        // a distinct name-keyed branch rather than a splice into the count rule (R219). Identity
+        // a distinct name-keyed branch rather than a splice into the count rule. Identity
         // binding is handled earlier in ArgBindingMap.of, so a parameter that matched a slot by its
         // own name is already bound and skipped here. Zero or >1 candidates leave the parameter
         // unbound, so the per-parameter rejection (with its unambiguousReachablePath argMapping

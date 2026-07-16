@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The shape a field <em>projects</em> at its {@link Target} endpoint (R316): the named thing inside
+ * The shape a field <em>projects</em> at its {@link Target} endpoint: the named thing inside
  * the target wrapper, on the same catalog-vs-Java polarity {@link SourceShape} uses for the source
  * endpoint. {@code SourceShape ⊆ TargetShape}: a source is always a row, so it has only the row
  * shapes ({@link Table} / {@link Record}), while the target adds the scalar shapes ({@link Column} /
@@ -18,7 +18,7 @@ package no.sikt.graphitron.rewrite.model;
  *       the fused {@code TableConnection} mapping.</li>
  *   <li>{@link Interface} / {@link Union} — the polymorphic shapes. Both are catalog-bound today (every
  *       participant is a {@code @table} / NodeType), the catalog projection landing on participant rows.
- *       <strong>Modeled-but-unpopulated payload (R316):</strong> the
+ * <strong>Modeled-but-unpopulated payload:</strong> the
  *       participant set, per-participant join paths, and the {@code Interface(Table | Record)} backing
  *       distinction the spec carries on these shapes are not populated this slice (the
  *       {@code mapping()} bridge needs only the shape identity); the corpus coordinate that pins them
@@ -36,8 +36,8 @@ public sealed interface TargetShape {
     record Field() implements TargetShape {}
     /** A Relay connection wrapping its inner element shape. */
     record Connection(TargetShape inner) implements TargetShape {}
-    /** A multi-table polymorphic interface result. Payload modeled-but-unpopulated (R316). */
+    /** A multi-table polymorphic interface result. Payload modeled-but-unpopulated.*/
     record Interface() implements TargetShape {}
-    /** A multi-table polymorphic union result ({@code Table}-backed, target-only). Payload modeled-but-unpopulated (R316). */
+    /** A multi-table polymorphic union result ({@code Table}-backed, target-only). Payload modeled-but-unpopulated.*/
     record Union() implements TargetShape {}
 }

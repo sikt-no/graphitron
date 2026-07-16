@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 /**
  * Instance-method service stub whose only public constructor takes a parameter that is neither a
  * {@code DSLContext} nor a declared context key. Used to pin the rejection path of
- * {@link ServiceCatalog#reflectServiceMethod}'s relaxed holder resolution (R256): a constructor
+ * {@link ServiceCatalog#reflectServiceMethod}'s relaxed holder resolution: a constructor
  * whose parameters are not all bindable cannot be used as a holder.
  */
 public class TestInstanceServiceStubUnbindableCtor {

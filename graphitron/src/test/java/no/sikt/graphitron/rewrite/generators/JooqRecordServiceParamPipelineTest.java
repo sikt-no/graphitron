@@ -203,7 +203,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void foreignTableNodeIdWithNoFk_rejectsWithFkCountMessage() {
-        // R315: the param is a FilmRecord, and @nodeId(typeName: "FilmActor") references a different
+        // The param is a FilmRecord, and @nodeId(typeName: "FilmActor") references a different
         // table (film_actor) → the cross-table FK branch. There is no foreign key whose source is `film`
         // referencing `film_actor` (the FK runs the other way, film_actor → film), so the deduction
         // finds zero directional FKs and rejects with the fk-count message. The old R311 "A NodeId
@@ -601,7 +601,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void nestedGroupingInput_flattensColumnsWithTwoElementPaths() {
-        // R336: the directiveless FilmDetailsInput group flattens onto the film table. Each @field leaf
+        // The directiveless FilmDetailsInput group flattens onto the film table. Each @field leaf
         // binds on the column axis carrying the full access path ["details", "<leaf>"]; the top-level
         // @nodeId identity keeps its single-element path. The flatten is transparent — the nested columns
         // bind exactly as top-level ones would, recorded only on the path.
@@ -788,7 +788,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void twoIdentityDecodesOnOneColumn_admitsTwoKeyDecodes_deferredToRuntimeAgreement() {
-        // R322: two @nodeId(typeName: "Film") identity fields both resolve to film_id. Unlike two plain
+        // Two @nodeId(typeName: "Film") identity fields both resolve to film_id. Unlike two plain
         // @field's (the build-time reject above), an overlap involving a decode is admitted — the runtime
         // value-agreement check (emitted into createFilmRecord) reconciles it. The carrier carries both
         // decodes targeting the one column; the overlap is data-dependent, so it is not a classify-time fail.

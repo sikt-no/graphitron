@@ -656,7 +656,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_tableParamRejected_underForbiddenPolicy() {
-        // R43: under FORBIDDEN policy a Table<?> parameter on a @tableMethod method is rejected
+        // Under FORBIDDEN policy a Table<?> parameter on a @tableMethod method is rejected
         // outright; graphitron derives the target table from the return type and parent-table
         // filtering is @reference's job. The legacy `get(Table<?>)` method exercises this — but
         // the project's TestTableMethodStub no longer declares Table parameters after R43, so
@@ -718,7 +718,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_arityUnique_consumerScalarParam_routesThroughClassifier() {
-        // R214: the arity-unique gate must treat consumer-defined scalars symmetrically with
+        // The arity-unique gate must treat consumer-defined scalars symmetrically with
         // spec built-ins. With a Decimal -> BigDecimal scalar registered in ctx.types, a
         // BigDecimal parameter against a named input object slot defers to the dot-path
         // hint the same way a String parameter does — proving the predicate routes through
@@ -841,7 +841,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_typeUniqueSignature_infersBindingWithoutArgMapping() {
-        // R214: arg-level @condition where the Java parameter name (whatever) does not match
+        // Arg-level @condition where the Java parameter name (whatever) does not match
         // the GraphQL argument name (opptaksNavn), but the signature is type-unambiguous —
         // exactly one Table<?> parameter, exactly one String parameter, and the GraphQL slot
         // is a single String. The inference pairs them by type without requiring argMapping.
@@ -1047,7 +1047,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_instanceMethodNoArgCtor_admittedWithEmptyCtorParams() {
-        // R256: a no-arg public constructor is trivially all-bindable, so an instance @service on
+        // A no-arg public constructor is trivially all-bindable, so an instance @service on
         // such a holder now resolves (it emits `new Service().method(...)`); the call shape carries
         // no ctor parameters.
         var result = newCatalog().reflectServiceMethod(
@@ -1062,7 +1062,7 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_instanceMethodDslAndContextCtor_resolvesCtorParamSources() {
-        // R256: a (DSLContext, tenantId) constructor resolves when tenantId is a declared context
+        // A (DSLContext, tenantId) constructor resolves when tenantId is a declared context
         // key. The holder's ctor parameter sources are carried on the call shape in order: a
         // DSLContext slot then a context binding.
         var result = newCatalog().reflectServiceMethod(

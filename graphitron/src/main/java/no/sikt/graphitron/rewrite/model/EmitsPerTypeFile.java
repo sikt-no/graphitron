@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>The capability is read today by the case-insensitive type-name collision detector in
  * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder#rejectCaseInsensitiveTypeCollisions}
- * (R194) so the check only flags variants that would otherwise clobber each other on
+ * so the check only flags variants that would otherwise clobber each other on
  * case-insensitive filesystems.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronType}) so it can

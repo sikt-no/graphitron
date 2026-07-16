@@ -229,7 +229,7 @@ class SourceWalkerTest {
 
     @Test
     void instancesDoNotShareCache(@TempDir Path root) throws IOException {
-        // R352: the cache is per-instance, not process-wide static. A stale entry
+        // The cache is per-instance, not process-wide static. A stale entry
         // from one walker must never leak into another. Walker A warms its cache,
         // the file content changes while keeping the same mtime, then a fresh
         // walker B parses the file anew and sees the new content, proving B does

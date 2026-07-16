@@ -36,7 +36,7 @@ class ChannelCatchArmEmitterTest {
         var code = ChannelCatchArmEmitter.emit(
             Optional.empty(), OUTCOME_OF_RECORD, OUTPUT_PACKAGE, null).toString();
 
-        // R378: the no-channel disposition surfaces a GraphitronClientException and otherwise redacts.
+        // The no-channel disposition surfaces a GraphitronClientException and otherwise redacts.
         assertThat(code).contains("surfaceClientErrorOrRedact(e, env)");
         assertThat(code).doesNotContain("ErrorList");
     }

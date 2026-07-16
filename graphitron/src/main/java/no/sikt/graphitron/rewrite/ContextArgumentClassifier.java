@@ -111,7 +111,7 @@ public final class ContextArgumentClassifier {
         if (field instanceof MethodBackedField mbf) {
             collectFromMethodRef(mbf.method(), byName);
         }
-        // R238: the four root sync @service permits no longer implement MethodBackedField;
+        // The four root sync @service permits no longer implement MethodBackedField;
         // their context-arg slots live on the carrier. Walk both rounds and project every
         // FromContext entry into the same per-name conflict-site map.
         if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {

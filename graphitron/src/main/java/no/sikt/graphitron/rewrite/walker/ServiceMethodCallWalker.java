@@ -23,7 +23,7 @@ import java.util.List;
  * R238 walker: produces a {@link ServiceMethodCall} carrier from an already-resolved
  * {@link MethodRef.Service}.
  *
- * <h3>Implementation note (R238)</h3>
+ * <h3>Implementation note</h3>
  *
  * The spec describes a producer whose substrate is the field's SDL definition plus the
  * codegen classloader, with no graphitron-internal intermediate model. The current
@@ -113,7 +113,7 @@ public final class ServiceMethodCallWalker {
 
     /**
      * Project the holder constructor's resolved parameter sources onto {@code ctorArgs} entries
-     * (R256). Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} or
+ *. Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} or
      * {@link ParamSource.Context} by construction (the producer's {@code resolveInstanceHolder}
      * only binds those), so the projection is {@link MappingEntry.FromDsl} /
      * {@link MappingEntry.FromContext}; the cross-round invariant forbidding
@@ -184,7 +184,7 @@ public final class ServiceMethodCallWalker {
             if (isLeaf(leaf)) {
                 return new ValueShape.Scalar(javaType, path, leaf);
             }
-            // R238: a non-leaf inside a NestedInputField at @service is not produced by the
+            // A non-leaf inside a NestedInputField at @service is not produced by the
             // existing classifier; record as parameter-unbindable and fall through with a Direct.
             errors.add(new ServiceMethodCallError.ParameterUnbindable(
                 arg.graphqlArgName(),
@@ -201,7 +201,7 @@ public final class ServiceMethodCallWalker {
             return shape;
         }
 
-        // R311: a jOOQ TableRecord param (singular or List<…>). The carrier holds the column / identity
+        // A jOOQ TableRecord param (singular or List<…>). The carrier holds the column / identity
         // bindings; JooqRecordInput is a path-carrying leaf (no per-field children), so it carries its
         // own sdlPath. Cardinality is handled exactly as the InputBean arm above: read list-ness from
         // the Java type alone (sound because InputBeanResolver's :elt.list() != sdl.list() parity check
@@ -246,7 +246,7 @@ public final class ServiceMethodCallWalker {
         if (leaf instanceof CallSiteExtraction.InputBean nestedBean) {
             inner = inputBeanToValueShape(nestedBean, path);
         } else if (leaf instanceof CallSiteExtraction.NodeIdDecodeRecord) {
-            // R195: a jOOQ-record member decoded from @nodeId. Carry the leaf through unchanged so
+            // A jOOQ-record member decoded from @nodeId. Carry the leaf through unchanged so
             // the create<Bean> helper emits the decode<Record> call; never downgrade to Direct (the
             // wire-String → *Record ClassCastException this item exists to eliminate).
             inner = new ValueShape.Scalar(elementType, path, leaf);

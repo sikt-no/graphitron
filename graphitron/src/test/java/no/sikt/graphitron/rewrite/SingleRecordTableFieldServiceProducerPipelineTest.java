@@ -51,7 +51,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         var rtf = (ChildField.BatchedTableField) dataField;
         var sk = rtf.sourceKey();
-        // R305: source=target re-fetch key — ProducedRecordRead reads the PK off the produced
+        // Source=target re-fetch key — ProducedRecordRead reads the PK off the produced
         // record, Wrap.Row carries the PK tuple. The DIRECT/OUTCOME_SUCCESS envelope is no longer
         // on the SourceKey (the generator derives it at the type level).
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
@@ -64,7 +64,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275/R305: the source-record carrier with an error channel. Adding an {@code errors} field to
+ * The source-record carrier with an error channel. Adding an {@code errors} field to
      * the payload routes the {@code @service} producer through the typed {@code Outcome} wrapper; the
      * data field collapses into {@link ChildField.BatchedTableField} (ProducedRecordRead source=target
      * re-fetch) and the sibling errors field is the {@code WrapperArm} transport. The
@@ -378,7 +378,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R308: the coherent <em>list</em> carrier ({@code @service ...: [FilmPayload]}) whose payload has
+ * The coherent <em>list</em> carrier ({@code @service...: [FilmPayload]}) whose payload has
      * a single {@code @table} data field, produced by {@code List<FilmRecord>}. graphql-java iterates
      * the producer list into the {@code [FilmPayload]} list, so each element is one payload whose
      * single {@code film} resolves through a {@code LOAD_ONE} that coalesces into one batched

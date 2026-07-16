@@ -37,7 +37,7 @@ class NestingFieldPipelineTest {
 
     @Test
     void outerFetcherRegistration_wiresNestingFieldAsLightFetcher() {
-        // R303: the source-passthrough NestingField read (return source) is reified onto
+        // The source-passthrough NestingField read (return source) is reified onto
         // FilmFetchers and registered wrapped in LightFetcher (COLUMN_FETCHER kind), not an
         // inline lambda.
         var bodies = fetcherBodies(SCALAR_NESTING_SDL);

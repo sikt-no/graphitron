@@ -57,7 +57,7 @@ public final class JoinPathEmitter {
 
     /**
      * The single synthesized alias for the hop-less {@link
-     * no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots} shape (R431): the same
+ * no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots} shape: the same
      * derivation {@link #generateAliases} applies to a single-hop path — the target table's
      * simple class name, first character lowercased, suffixed with hop index {@code 0}
      * (e.g. {@code "f0"} for {@code Film}). Byte-compatible with the retired
@@ -79,7 +79,7 @@ public final class JoinPathEmitter {
 
     /**
      * Emits the table expression a hop's alias declaration binds — the single materialization
-     * switch on the hop's {@link TableExpr} target (R435). Callers append {@code .as(alias)}.
+ * switch on the hop's {@link TableExpr} target. Callers append {@code.as(alias)}.
      * All alias-declaration loops route through this helper so a new {@link TableExpr} arm
      * forces exactly one emit-side acknowledgment; {@link JoinStep.HasTargetTable#targetTable()}
      * stays the read for alias <em>naming</em> and terminus checks, never for materialization.
@@ -104,7 +104,7 @@ public final class JoinPathEmitter {
 
     /**
      * Emits the join-in of a bridging hop's origin alias with its ON clause — the single
-     * dispatch on {@link On.Keying} (R435). {@link On.Keying.ForeignKey} emits the legible
+ * dispatch on {@link On.Keying}. {@link On.Keying.ForeignKey} emits the legible
      * {@code .join(prev).onKey(Keys.<FK>)}; {@link On.Keying.NameMatchedKey} has no {@code Keys}
      * constant, so it emits the explicit column-equality conjunction over the pairs'
      * {@code slots}: {@code .join(prev).on(prev.<sourceSide>.eq(hop.<targetSide>))...}.

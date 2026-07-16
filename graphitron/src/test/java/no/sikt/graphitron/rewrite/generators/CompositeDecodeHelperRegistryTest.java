@@ -87,7 +87,7 @@ class CompositeDecodeHelperRegistryTest {
         MethodSpec helper = registry.emit().iterator().next();
         String body = helper.code().toString();
         assertThat(body)
-            // R378: throws the generated client-error type, not a bare GraphqlErrorException, and
+            // Throws the generated client-error type, not a bare GraphqlErrorException, and
             // peeks the wire prefix to distinguish malformed input from a wrong-type id.
             .contains("no.sikt.example.schema.GraphitronClientException")
             .contains("NodeIdEncoder.peekTypeId")

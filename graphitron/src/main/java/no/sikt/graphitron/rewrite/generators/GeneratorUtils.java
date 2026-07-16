@@ -50,7 +50,7 @@ class GeneratorUtils {
 
     /**
      * Reserved SQL-alias affixes for the full-parent-row projection that backs a
-     * {@link SourceKey.Wrap.TableRecord} key read (R436). The parent {@code $fields} SELECT
+ * {@link SourceKey.Wrap.TableRecord} key read. The parent {@code $fields} SELECT
      * projects every column re-aliased as {@code __src_<sqlColumnName>__}, and
      * {@link #buildKeyExtraction(SourceKey, TableRef)}'s {@code TableRecord} arm reconstructs the
      * typed record by reading those same aliases back. The {@code __}-lead is deliberate: GraphQL
@@ -234,7 +234,7 @@ class GeneratorUtils {
      * {@link #buildRecordParentKeyExtraction(SourceKey, KeyLift, TableRef, GraphitronType.ResultType)}.
      * {@code sourceExpr} is the Java expression the backing object is read from before the cast:
      * {@code env.getSource()} on the normal path, {@code success.value()} when this fetcher is an
-     * immediate child of a flipped {@code Outcome} payload (R268) and the caller has already narrowed
+ * immediate child of a flipped {@code Outcome} payload and the caller has already narrowed
      * {@code env.getSource()} to {@code Outcome.Success}. The cast and accessor logic are identical
      * either way; only the source binding moves, so the arm-switch reuses the field's own key
      * extraction rather than re-deriving it.
@@ -243,7 +243,7 @@ class GeneratorUtils {
      * {@link KeyLift.Accessor} and single-arity
      * {@link KeyLift.ProducedRecords} arms project the key through — the field's
      * return-type table on the child-field path, the hub table ({@code parentKeyOwnerTable}) on
-     * the polymorphic record-parent path. Read off the carrier at the call site (R431); the
+ * the polymorphic record-parent path. Read off the carrier at the call site; the
      * other lift arms ignore it.
      */
     static CodeBlock buildRecordParentKeyExtraction(
@@ -262,7 +262,7 @@ class GeneratorUtils {
                 ac.arity() == Arity.MANY
                     ? buildAccessorKeyMany(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr)
                     : buildAccessorKeySingle(sourceKey, keyOwnerTable, ac.accessor(), keyType, sourceExpr);
-            // R305 — source=target carrier re-fetch: ONE reads the PK off the single produced
+            // Source=target carrier re-fetch: ONE reads the PK off the single produced
             // record; MANY iterates the produced collection, one PK key per element.
             case KeyLift.ProducedRecords pr ->
                 pr.arity() == Arity.MANY
@@ -314,7 +314,7 @@ class GeneratorUtils {
     }
 
     /**
-     * R305 — {@link KeyLift.ProducedRecords} at {@link Arity#MANY}: the
+ * {@link KeyLift.ProducedRecords} at {@link Arity#MANY}: the
      * source is the producer's held collection of target records (a {@code List<XRecord>} on
      * {@code env.getSource()} or {@code Outcome.Success.value()}). Iterates it and builds one
      * {@code RowN} PK key per element, collected into {@code List<key> keys} for the {@code LOAD_MANY}
@@ -401,7 +401,7 @@ class GeneratorUtils {
         // declarations the parent class may carry. The output is always a List<RecordN<...>>
         // because DataLoader.loadMany takes a List.
         //
-        // Null-guard (R269): a nullable to-many @table relation whose backing was never populated
+        // Null-guard: a nullable to-many @table relation whose backing was never populated
         // hands the accessor a null collection, and the bare for-each would NPE before any
         // .into(...) runs. Hoist the accessor result to a typed local and skip the loop when it is
         // null so `keys` stays empty; the existing loadMany(keys, ...) dispatch then renders the
@@ -513,7 +513,7 @@ class GeneratorUtils {
      *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
      *   <li>{@link SourceKey.Wrap.TableRecord} → a typed record reconstructed per-column from the
      *       reserved full-row aliases: {@code XRecord key = new XRecord();
-     *       key.set(Tables.X.COL, source.get("__src_col__", ColType.class)); …} (R436)</li>
+ * key.set(Tables.X.COL, source.get("__src_col__", ColType.class)); …}</li>
      * </ul>
      *
      * <p>The container axis (positional list vs mapped set) is orthogonal and not consulted
@@ -522,7 +522,7 @@ class GeneratorUtils {
      * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
      * table, so the extraction's projection target is the parent table itself.
      *
-     * <p>R436: the {@code TableRecord} arm no longer does a whole-record {@code into(Tables.X)}.
+ * <p>The {@code TableRecord} arm no longer does a whole-record {@code into(Tables.X)}.
      * That mapped the parent row into the typed record <em>by column name</em>, so a sibling
      * projection aliased to a name colliding with a physical column (multiset object fields are the
      * concrete trigger) poisoned the conversion and threw a {@code MappingException}. Instead the

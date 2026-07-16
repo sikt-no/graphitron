@@ -37,7 +37,7 @@ public enum LintRule {
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
 
-    // Codegen-config advisories (R429): derived from the Mojo <sessionState> config at report assembly,
+    // Codegen-config advisories: derived from the Mojo <sessionState> config at report assembly,
     // not from the AST and not from a per-field classifier verdict, so neither an engine visitor nor a
     // classifier-tagged advisory. Emitted from GraphQLRewriteGenerator via SessionStateWarnings.
     NO_SESSION_STATE("no-session-state", Source.CODEGEN),
@@ -72,7 +72,7 @@ public enum LintRule {
 
     /**
      * Every rule's stable {@link #id()} in enum-declaration order. This is the valid namespace a
-     * consumer's {@code <lint>} config (R408) names a rule by; the suppression config validates each
+ * consumer's {@code <lint>} config names a rule by; the suppression config validates each
      * configured id against this set and lists it back when an id resolves to no rule.
      */
     public static java.util.List<String> ids() {

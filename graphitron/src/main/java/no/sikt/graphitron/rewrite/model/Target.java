@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The {@code target} axis (R316): the field's <em>projection endpoint</em>, a wrapper around a
+ * The {@code target} axis: the field's <em>projection endpoint</em>, a wrapper around a
  * {@link TargetShape} whose arm is the field's own output cardinality. The same {@code wrapper(shape)}
  * form as {@link Source}, at the other end of the field's edge: {@link Single} | {@link List} wrapping
  * the shape the field projects.

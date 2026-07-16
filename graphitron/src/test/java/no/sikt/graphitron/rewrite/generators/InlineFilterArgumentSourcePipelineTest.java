@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * R424: an inline (non-{@code @splitQuery}) {@code @reference} list field reads its filter arguments
+ * An inline (non-{@code @splitQuery}) {@code @reference} list field reads its filter arguments
  * off its own {@code SelectedField}, not the ancestor fetcher's {@code env}. Behaviour is pinned at
  * the execution tier ({@code GraphQLQueryTest}); this pipeline tier pins the structural consequence
  * that keeps the {@code -Werror} consumer compile green: the {@code $fields} host stamps

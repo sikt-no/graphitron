@@ -6,7 +6,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 
 /**
- * Emits the Jakarta-violation early return for a service fetcher's validator pre-step (R244):
+ * Emits the Jakarta-violation early return for a service fetcher's validator pre-step:
  * {@code return DataFetcherResult.<P>newResult().data(new Outcome.ErrorList<>(violations)).build();}.
  * Replaces the legacy {@code TypeFetcherGenerator.declareEarlyPayloadFromErrors}, which built a
  * developer payload class from the violation list.

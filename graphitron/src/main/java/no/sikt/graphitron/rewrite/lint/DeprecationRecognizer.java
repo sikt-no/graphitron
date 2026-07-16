@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 /**
  * Recognises graphitron's two deprecation-marker conventions over a parsed graphql-java
  * {@link TypeDefinitionRegistry}, with no LSP dependency. Extracted down from {@code LspVocabulary}
- * (R398) so a build-side lint visitor (visitor 8, {@code no-deprecated-directive-usage}) can consume
+ * so a build-side lint visitor (visitor 8, {@code no-deprecated-directive-usage}) can consume
  * it: graphitron-lsp depends on graphitron, not the reverse, so the recogniser cannot stay LSP-side
  * and be read build-side. {@code LspVocabulary} now delegates its {@code SchemaCoordinate}-keyed
  * deprecation queries here and keeps only the {@code SchemaCoordinate} adapter LSP-side.

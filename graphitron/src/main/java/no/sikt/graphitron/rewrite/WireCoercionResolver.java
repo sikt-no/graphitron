@@ -11,7 +11,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.WireCoercionError;
 
 /**
- * R261 — the single classify-time home for the wire-coercion judgment: for a scalar SDL leaf bound
+ * The single classify-time home for the wire-coercion judgment: for a scalar SDL leaf bound
  * to a consumer-declared Java type, confirm graphql-java's coercion output for that leaf is
  * assignable to the declared type (a true raw pass-through), or produce a typed
  * {@link WireCoercionError.Assignability} rejection.

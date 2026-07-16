@@ -148,7 +148,7 @@ class AppliedDirectiveEmitterTest {
     }
 
     /**
-     * R250: schema-applied directives (e.g. {@code extend schema @link(...)})
+ * Schema-applied directives (e.g. {@code extend schema @link(...)})
      * round-trip through the schema-class emission so the runtime build can
      * attach them via {@code .withSchemaAppliedDirectives(...)}. Each
      * application reaches the schema body through a {@code private static}

@@ -59,7 +59,7 @@ public class TypeConditionsGenerator {
     }
 
     private static List<GeneratedConditionFilter> extractGeneratedConditionFilters(GraphitronField field) {
-        // R363: multi-table polymorphic root fields are not SqlGeneratingField (their return type is
+        // Multi-table polymorphic root fields are not SqlGeneratingField (their return type is
         // polymorphic, not table-bound); their @field filters live per-participant, each lowered
         // against the participant's own table with a participant-named conditions class. Emit one
         // method per participant's GeneratedConditionFilter.

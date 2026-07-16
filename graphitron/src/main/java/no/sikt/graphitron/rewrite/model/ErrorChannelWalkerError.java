@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Sealed sub-family of {@link Rejection.AuthorError} for the error-channel domain (R244):
+ * Sealed sub-family of {@link Rejection.AuthorError} for the error-channel domain:
  * the {@code ErrorChannelWalker} that resolves an outcome type's errors-field channel onto
  * {@link ErrorChannel.Mapped}, plus the {@code OutcomeType} classification that produces the
  * walker's input. Each typed arm carries the structural data its diagnostic message and LSP
@@ -84,7 +84,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification (R275): the errors field carries a non-null
+ * Raised by the {@code OutcomeType} classification: the errors field carries a non-null
      * list type ({@code [X!]!}). The mirror of {@link NonNullableSuccessProjectionField}: the
      * success arm resolves the errors field to {@code null} (there are no errors), so a non-null
      * errors field would raise {@code NonNullableFieldWasNullError} and drop the sibling data field

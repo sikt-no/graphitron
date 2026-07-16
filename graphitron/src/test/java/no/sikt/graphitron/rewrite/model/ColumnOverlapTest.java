@@ -10,7 +10,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Structural invariant tests for the {@link ColumnOverlap#groupByColumn} primitive (R356), the one
+ * Structural invariant tests for the {@link ColumnOverlap#groupByColumn} primitive, the one
  * grouping the six DML mutation write-path sites read.
  *
  * <p>This is the anti-drift assertion the lift rests on: the <em>same</em> {@link ColumnWriter} list

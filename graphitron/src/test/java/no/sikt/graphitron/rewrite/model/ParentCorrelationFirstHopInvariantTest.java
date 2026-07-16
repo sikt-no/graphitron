@@ -69,7 +69,7 @@ class ParentCorrelationFirstHopInvariantTest {
 
     @Test
     void onParentJoin_hop0FilterHead_landsParentAnchorArm() {
-        // R450: a filter-carrying FK first hop ({key:, condition:}) lands the parent-anchor arm
+        // A filter-carrying FK first hop ({key:, condition:}) lands the parent-anchor arm
         // (OnParentJoin), not OnFkSlots — the hop-0 filter reads the parent row, so both the
         // batch grain and the correlation topology must anchor the parent. The invariant
         // firstHop() === joinPath.get(0) must still hold.

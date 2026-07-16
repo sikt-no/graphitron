@@ -18,7 +18,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R362 — pins the {@link CatalogFacts} fact-capture behaviour where it lives: a real Sakila jOOQ
+ * Pins the {@link CatalogFacts} fact-capture behaviour where it lives: a real Sakila jOOQ
  * catalog reduced through {@link CatalogBuilder#buildCatalogFacts(JooqCatalog)} carries the SQL and
  * Java column names, SQL types, nullability, the PK, unique key(s), index(es), and outgoing /
  * incoming foreign keys with their column pairs for known tables.

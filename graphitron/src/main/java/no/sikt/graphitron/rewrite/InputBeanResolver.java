@@ -195,7 +195,7 @@ final class InputBeanResolver {
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
-            // R311: the param's Java type is a generated jOOQ TableRecord (singular or List<…>). The
+            // The param's Java type is a generated jOOQ TableRecord (singular or List<…>). The
             // type pass already classified the SDL input type as JooqTableRecordInputType, table and
             // all; read that answer rather than re-resolving, and bind on the COLUMN axis (@field(name:)
             // → ColumnRef) plus an optional @nodeId identity decode, not the Java-member axis the bean
@@ -271,7 +271,7 @@ final class InputBeanResolver {
      * record may carry several {@code @nodeId} fields.
      *
      * <p>A field whose SDL type is itself a directiveless nested grouping input flattens transparently
-     * onto the one backing table (R336): {@link #collectJooqBindings} recurses into the nested type's
+ * onto the one backing table: {@link #collectJooqBindings} recurses into the nested type's
      * fields and keeps producing the same column-axis carriers, each carrying the full access path from
      * the record's own {@code Map} down to the leaf (so {@code details.title} carries
      * {@code ["details", "title"]}). This is the column-axis analogue of the {@code @table}-input nesting
@@ -360,7 +360,7 @@ final class InputBeanResolver {
             List<String> path = append(pathPrefix, f.getName());
             SdlElement sdlElt = peelSdlListNonNull(f.getType());
             if (f.hasAppliedDirective(DIR_NODE_ID)) {
-                // R315: multiple @nodeId fields are legal (an FK-reference record carries several FK
+                // Multiple @nodeId fields are legal (an FK-reference record carries several FK
                 // references). Each resolves independently to its target columns on this record; when
                 // two decodes target the same column their runtime value-agreement is a data-dependent
                 // concern deferred to R322 (last-write-wins here). The legacy single-@nodeId gate is gone.
@@ -370,7 +370,7 @@ final class InputBeanResolver {
                 }
                 keyDecodes.add(((KeyDecodeResult.Ok) built).decode());
             } else if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
-                // Nested directiveless grouping input → flatten its fields onto this table (R336).
+                // Nested directiveless grouping input → flatten its fields onto this table.
                 if (sdlElt.list()) {
                     return Rejection.structural(where
                         + ": nested input field '" + dottedPath(path) + "' is list-shaped (a list of '"
@@ -441,12 +441,12 @@ final class InputBeanResolver {
      * <ul>
      *   <li><b>Same table, no {@code @reference}</b> (node table == record table) → the decode loads
      *       the record's own key columns (own-PK identity).</li>
-     *   <li><b>Same table, with {@code @reference}</b> → a self-FK reference (R328): the
+ * <li><b>Same table, with {@code @reference}</b> → a self-FK reference: the
      *       {@code @reference} names a same-table foreign key, and the node-key columns map through
      *       it to the self-FK's child columns on this record (never the record's own PK), via
      *       {@link BuildContext#resolveRecordFkTargetColumns} oriented with
      *       {@code selfRefFkOnSource=true}.</li>
-     *   <li><b>Different table</b> → the cross-table FK-reference case (R315): the node-key columns
+ * <li><b>Different table</b> → the cross-table FK-reference case: the node-key columns
      *       map through the foreign key (deduced when exactly one connects the two tables, else named
      *       by {@code @reference(key:)}) to the FK's child columns on this record, via the same
      *       {@link BuildContext#resolveRecordFkTargetColumns}.</li>
@@ -474,10 +474,10 @@ final class InputBeanResolver {
         List<ColumnRef> targetColumns;
         if (resolved.table().recordClass().equals(table.recordClass())
                 && !f.hasAppliedDirective(DIR_REFERENCE)) {
-            // Same-table identity (R311): the decoded values are the record's own key columns.
+            // Same-table identity: the decoded values are the record's own key columns.
             targetColumns = resolved.keyColumns();
         } else {
-            // Cross-table FK reference (R315), or a same-table self-FK reference (R328): map the
+            // Cross-table FK reference, or a same-table self-FK reference: map the
             // node-key columns through the FK to the record's child columns. A same-table @nodeId
             // *with* @reference names a self-FK — resolveRecordFkTargetColumns orients it through
             // resolveFkSlots(selfRefFkOnSource=true), landing the decoded keys on the self-FK's
@@ -767,7 +767,7 @@ final class InputBeanResolver {
         } else if (sdlElt.elementType() instanceof GraphQLEnumType enumSdl
                 && tryLoad(javaElementTypeName) != null
                 && tryLoad(javaElementTypeName).isEnum()) {
-            // Site E (R261): the declared type IS the enum and assignment succeeds, but
+            // Site E: the declared type IS the enum and assignment succeeds, but
             // Enum.valueOf((String) ...) throws IllegalArgumentException when an SDL enum value name
             // diverges from the Java constant names. Route through the single enum-constant parity
             // home (EnumMappingResolver, D3) — a divergence rejects loudly rather than emitting a
@@ -797,7 +797,7 @@ final class InputBeanResolver {
                 }
                 leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
             } else {
-                // Site A (R261): a scalar SDL field bound to a consumer-declared Java type only
+                // Site A: a scalar SDL field bound to a consumer-declared Java type only
                 // lands on Direct once the wire-coercion predicate confirms graphql-java's coercion
                 // output for the SDL scalar is assignable to that declared type. This widens R195's
                 // narrow jOOQ-record-only rejection to the full wire-incompatible family (numeric
@@ -822,7 +822,7 @@ final class InputBeanResolver {
      * Classification of a jOOQ-{@code Record}-typed input-bean member: either a
      * {@link CallSiteExtraction.NodeIdDecodeRecord} decode leaf or a structural rejection. A record
      * member has exactly these two outcomes; it never falls through to
-     * {@link CallSiteExtraction.Direct} (R195).
+ * {@link CallSiteExtraction.Direct}.
      */
     private sealed interface RecordLeaf {
         record Ok(CallSiteExtraction.NodeIdDecodeRecord leaf) implements RecordLeaf {}

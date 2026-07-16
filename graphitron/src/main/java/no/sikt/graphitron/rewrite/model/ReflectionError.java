@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * R256 — sealed sub-family of {@link Rejection.AuthorError} for the <em>reflection-intrinsic</em>
+ * Sealed sub-family of {@link Rejection.AuthorError} for the <em>reflection-intrinsic</em>
  * failures shared across {@code ServiceCatalog}'s three reflect helpers
  * ({@code reflectServiceMethod}, {@code reflectTableMethod}, {@code reflectExternalField}). These
  * failures are not {@code @service}-specific: a class that cannot be loaded, a method whose return

@@ -11,7 +11,7 @@ package no.sikt.graphitron.rewrite.model;
  * detached slot: per {@link Target}'s wrapper-algebra principle, a free one/many value is
  * ambiguous between the two ends of a field's edge.
  *
- * <p>Distinct from {@link Arrival} (R463), the <em>accumulated</em> ancestor-product arrival
+ * <p>Distinct from {@link Arrival}, the <em>accumulated</em> ancestor-product arrival
  * cardinality with its {@code tensor} monoid, keyed by parent typename: an {@code Arity} is a
  * site-local wrapper fact and never accumulates. (R431: this vocabulary is the surviving half of
  * the retired {@code SourceKey.Cardinality} — the key-side half dissolved into the

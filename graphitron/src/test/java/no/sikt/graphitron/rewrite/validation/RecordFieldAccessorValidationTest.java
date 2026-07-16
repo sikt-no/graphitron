@@ -33,7 +33,7 @@ class RecordFieldAccessorValidationTest {
         "no.sikt.graphitron.codereferences.dummyreferences.DummyService";
 
     private static GraphitronSchema buildWithRecord(String fixtureSimpleName, String typeBody) {
-        // R276: bind TestType through the real reflection path, a @service producer whose method
+        // Bind TestType through the real reflection path, a @service producer whose method
         // returns the R88 fixture class, rather than the removed @record(className) idiom. The
         // backing class (and therefore the inner-field accessor classification under test) is
         // identical; only the binding source changes from directive to reflected return type.

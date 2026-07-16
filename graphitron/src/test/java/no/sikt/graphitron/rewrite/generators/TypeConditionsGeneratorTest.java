@@ -79,14 +79,14 @@ class TypeConditionsGeneratorTest {
             gcf, DEFAULT_OUTPUT_PACKAGE);
         var body = method.code().toString();
         assertThat(body).contains("table.FILM_ID.in(ids)");
-        // R375: empty list narrows by nothing (DSL.noCondition() identity) instead of
+        // Empty list narrows by nothing (DSL.noCondition() identity) instead of
         // emitting IN () = false. The nullable arm folds the empty guard into its null check.
         assertThat(body).contains("ids != null && !ids.isEmpty()");
     }
 
     @Test
     void inFilter_nonNullList_emitsEmptyGuardWithoutNullCheck() {
-        // R375: a non-null list still gets the empty guard, but no null check (the type
+        // A non-null list still gets the empty guard, but no null check (the type
         // guarantees non-null). Pins the non-null In arm, which the nodeId helpers don't reach.
         var ext = new CallSiteExtraction.NestedInputField("filter", List.of("filter", "ids"));
         var nonNullIn = new BodyParam.In("ids", FILM_ID, FILM_ID.columnClass(), true, ext);
@@ -109,7 +109,7 @@ class TypeConditionsGeneratorTest {
         // The typed Field<T> overload of DSL.row(...) returns Row<N><T1, ..., TN>, matching the
         // method parameter exactly — no Field<?>[] erasure trick.
         assertThat(body).contains("DSL.row(table.ID_1, table.ID_2).in(ids)");
-        // R375: composite-key empty list (a [] composite @nodeId filter decodes to an empty
+        // Composite-key empty list (a [] composite @nodeId filter decodes to an empty
         // row list) narrows by nothing rather than rendering IN () = false.
         assertThat(body).contains("ids != null && !ids.isEmpty()");
     }
@@ -123,7 +123,7 @@ class TypeConditionsGeneratorTest {
             gcf, DEFAULT_OUTPUT_PACKAGE);
         var idsParam = method.parameters().stream()
             .filter(p -> p.name().equals("ids")).findFirst().orElseThrow();
-        // R79: the parameter is now List<Row2<Integer, Integer>>, not List<RowN>.
+        // The parameter is now List<Row2<Integer, Integer>>, not List<RowN>.
         assertThat(idsParam.type().toString())
             .isEqualTo("java.util.List<org.jooq.Row2<java.lang.Integer, java.lang.Integer>>");
     }

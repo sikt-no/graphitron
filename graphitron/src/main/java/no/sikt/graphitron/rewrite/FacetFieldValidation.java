@@ -12,7 +12,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 
 /**
- * The single home of the definition-keyed {@code @asFacet} well-formedness predicate (R13). The
+ * The single home of the definition-keyed {@code @asFacet} well-formedness predicate. The
  * synthesis walk ({@code ConnectionPromoter.facetSpecsFor}) includes a field iff
  * {@link #definitionKeyedRejection} returns {@code null}; the misuse reduction
  * ({@code GraphitronSchemaBuilder.facetMisuseReason}) surfaces the same non-null reason as the

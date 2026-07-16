@@ -288,7 +288,7 @@ public class GraphitronSchemaBuilder {
         var synthesisedConnectionTypes = resolveSynthesisedConnectionTypes(ctx, synthesisedConnectionNames);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(
             ctx.schema, synthesisedConnectionTypes, connectionRewrites);
-        // R194: reject case-insensitive type-name collisions. Graphitron emits one Java file per
+        // Reject case-insensitive type-name collisions. Graphitron emits one Java file per
         // type-name stem; on case-insensitive filesystems two case-equivalent names would clobber
         // each other. Runs post-promotion so synth-vs-synth Connection-name clashes (the consumer
         // repro) are visible. R317 slice 5 — registers a build-time diagnostic per colliding member
@@ -296,18 +296,18 @@ public class GraphitronSchemaBuilder {
         // verdict and the assembled schema stays consistent; the validator surfaces the collision by
         // draining the channel.
         rejectCaseInsensitiveTypeCollisions(ctx);
-        // R332: deprecation signal over @table-on-input usages, carving out the encoded-ID /
+        // Deprecation signal over @table-on-input usages, carving out the encoded-ID /
         // scalar-return INSERT/UPSERT case whose only write-target signal is still the input's
         // @table (R97 Phase 2b retires that carve-out). Placed beside the other post-classification
         // cross-cutting passes on the live ctx; reads the classified model (the carve-out set is
         // computed off the field registry's MutationField leaves).
         emitTableOnInputDeprecationWarnings(ctx);
-        // R262: reject every @nodeId application whose coordinate is not of unwrapped type ID. Reads
+        // Reject every @nodeId application whose coordinate is not of unwrapped type ID. Reads
         // ctx.schema applied directives (not the registry) because a dropped @nodeId leaves no trace
         // on the classified field — see rejectNonIdNodeId. Sibling soundness reduction; registers a
         // build-time diagnostic the validator drains, demoting nothing.
         rejectNonIdNodeId(ctx);
-        // R13: reject @asFacet misuse. Sibling soundness reduction to rejectNonIdNodeId, and for
+        // Reject @asFacet misuse. Sibling soundness reduction to rejectNonIdNodeId, and for
         // the same reason a raw-schema pass: the promoter's facet walk skips malformed applications
         // (they produce no FacetSpec, no trace on the classified model), so the misuse is only
         // visible on the SDL directive surface. Registers build-time diagnostics the validator
@@ -321,7 +321,7 @@ public class GraphitronSchemaBuilder {
         Map<String, EntityResolution> entitiesByType =
             EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled,
                 ctx::addWarning, ctx::addDiagnostic);
-        // R463 — the ancestor-product arrival fold, computed once over the assembled (pre-connection-
+        // The ancestor-product arrival fold, computed once over the assembled (pre-connection-
         // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk order,
         // so it is computed here and threaded onto the schema for OutputField.source(Arrival) consumers
         // to read through GraphitronSchema.sourceOf. No generator reads it (emit stays leaf-identity
@@ -496,7 +496,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R276: assign {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to the SDL object
+ * Assign {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to the SDL object
      * type a {@code NestingField} embeds, recursing into nested {@code NestingField}s. The type pass
      * leaves a directiveless object unclassified (it cannot know what it is); a {@code NestingField} built
      * at the embedding edge is the only thing that establishes it as a nesting projection of a table-backed
@@ -570,7 +570,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R275 — model-level soundness backstop: no classified field may reference a type the model
+ * Model-level soundness backstop: no classified field may reference a type the model
      * dropped. A classified {@link OutputField} whose SDL return element is an Object type with
      * no registry entry would emit {@code typeRef("X")} while the type itself is never emitted;
      * graphql-java assembly then fails with {@code AssertException: type X not found in schema}
@@ -612,7 +612,7 @@ public class GraphitronSchemaBuilder {
             // carrier rewrites, not the field registry. The shared ValidationError.forField factory
             // applies the same "Field '<qname>': " prefix the validator's validateUnclassifiedField
             // pass did, so the error stream is byte-identical to the former demotion by construction.
-            // R461: when the binding walk recorded a gated accessor near-miss for this type (a parent
+            // When the binding walk recorded a gated accessor near-miss for this type (a parent
             // accessor name-matched but failed the arity / boolean-is / field-fallback-with-arguments
             // gate), name the gate rather than the generic "did not classify" cascade — the walk is the
             // one place that knows why the accessor did not match.
@@ -711,7 +711,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R194: Rejects every type whose name collides case-insensitively with another emit-producing
+ * Rejects every type whose name collides case-insensitively with another emit-producing
      * type. Graphitron emits one Java file per type-name stem, and GraphQL identifiers are
      * case-sensitive ({@code type Foo} and {@code type foo} parse as distinct types); on
      * case-insensitive filesystems (APFS, NTFS) the two map to the same filename and clobber each
@@ -766,7 +766,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R332: the actionable tier of the {@code @table}-on-input deprecation signal. Walks every
+ * The actionable tier of the {@code @table}-on-input deprecation signal. Walks every
      * {@code INPUT_OBJECT} that <em>explicitly declares</em> {@code @table} (read off
      * {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId} — the consumer-derived
      * table branch of {@link TypeBuilder#buildInputType} carries no author-written directive and is
@@ -807,7 +807,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R332: the SDL input-type names in the encoded-ID / scalar-return INSERT/UPSERT carve-out (D3).
+ * The SDL input-type names in the encoded-ID / scalar-return INSERT/UPSERT carve-out (D3).
      * These are the {@link MutationField.MutationInsertTableField} /
      * {@link MutationField.MutationUpsertTableField} whose {@link MutationField.DmlTableField#returnExpression()}
      * is an {@code Encoded*} arm: their return type carries no {@code @table}, so there is nothing for
@@ -848,7 +848,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R457 — the SDL input-type names consumed by a {@code @mutation(typeName: DELETE)} field. Drives
+ * The SDL input-type names consumed by a {@code @mutation(typeName: DELETE)} field. Drives
      * the DELETE-specific replacement clause on the R332 deprecation warning (name the write target
      * with {@code @mutation(table:)} on the field). In R457 commit 1 this same computation suppressed
      * the warning on DELETE inputs, before the field-relative path existed; the cutover repurposes it
@@ -873,7 +873,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R262: rejects every {@code @nodeId} application whose coordinate does not have an unwrapped
+ * Rejects every {@code @nodeId} application whose coordinate does not have an unwrapped
      * SDL type of {@code ID}. The SDL directive permits {@code @nodeId} on {@code FIELD_DEFINITION |
      * INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION} with no {@code ID} restriction, but every
      * decode/encode arm in the generator is gated on {@code "ID".equals(...)}; on a non-{@code ID}
@@ -949,7 +949,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R13: rejects every misused {@code @asFacet} application. The rejection split follows R333's
+ * Rejects every misused {@code @asFacet} application. The rejection split follows R333's
      * definition-keyed / use-keyed axis: the binding checks (a facet must be a plain
      * {@code @field}-bound scalar/enum column; {@code @reference} / {@code @condition} /
      * {@code @nodeId} bindings and {@code ID} fields are v1-unsupported) are authored-directive
@@ -1069,7 +1069,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R13: why a consuming {@code @asConnection} carrier is outside the v1 facet emitter's scope,
+ * Why a consuming {@code @asConnection} carrier is outside the v1 facet emitter's scope,
      * or {@code null} when it is served. The v1 facet plan is built only by the root Query
      * single-table connection fetcher; child ({@code @splitQuery}) carriers and interface/union
      * elements paginate through emitters that bind no plan, so their facets would silently

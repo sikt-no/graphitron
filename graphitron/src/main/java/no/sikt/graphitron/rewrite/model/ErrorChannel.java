@@ -46,7 +46,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
     String mappingsConstantName();
 
     /**
-     * NEW (R244) ; replaces the {@link PayloadClass} arm for {@code @service} / {@code @tableMethod}
+ * NEW; replaces the {@link PayloadClass} arm for {@code @service} / {@code @tableMethod}
      * outcome fields. The classify-time descriptor of which {@code @error} types map and which
      * {@code ErrorMappings} constant drives them; it drives the {@code Outcome} wrapper emit (the
      * success path wraps the jOOQ record in {@code Success}, the error path returns

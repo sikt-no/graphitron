@@ -165,7 +165,7 @@ class ClasspathScannerTest {
 
     @Test
     void classifiesJooqConditionReturnExactlyByFqn(@TempDir Path classes) throws IOException {
-        // R368: returnsCondition is set only for a method whose un-erased return type is exactly
+        // ReturnsCondition is set only for a method whose un-erased return type is exactly
         // org.jooq.Condition. A consumer's own type named Condition (here com.example.Condition)
         // must NOT be mis-tagged — that is the false positive the FQN lift defends against, which a
         // simple-name match on the erased "Condition" display name would fail.
@@ -262,7 +262,7 @@ class ClasspathScannerTest {
 
     @Test
     void populatesScalarConstantsForPublicStaticGraphQLScalarTypeFields(@TempDir Path classes) throws IOException {
-        // R464: @scalarType completion is fed by the public static GraphQLScalarType fields
+        // @scalarType completion is fed by the public static GraphQLScalarType fields
         // scanned off the classpath. Only fields whose exact type descriptor is
         // graphql.schema.GraphQLScalarType and that are public + static surface; a differently
         // typed static field, a non-static field, and a non-public field are all ignored.

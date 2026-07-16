@@ -21,7 +21,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 @UnitTier
 class ColumnReferenceFieldValidationTest {
 
-    // R232: ColumnReferenceField + condition-join now classifies and emits a real scalar
+    // ColumnReferenceField + condition-join now classifies and emits a real scalar
     // subquery via InlineColumnReferenceFieldEmitter; the validator no longer surfaces a
     // deferred-rejection. The R129 slug (column-reference-on-scalar-field-condition-join)
     // closes alongside R232.

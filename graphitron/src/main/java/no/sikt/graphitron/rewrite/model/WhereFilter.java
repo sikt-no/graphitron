@@ -19,7 +19,7 @@ import java.util.List;
  *   <li>{@link ConditionFilter} — a developer-supplied {@code @condition} method. No generation
  *       is needed; the developer wrote the body.</li>
  *   <li>{@link FkTargetConditionFilter} — a developer-supplied {@code @condition} method on an
- *       FK-target {@code @nodeId} input field (R330). Like {@link ConditionFilter} the developer
+ * FK-target {@code @nodeId} input field. Like {@link ConditionFilter} the developer
  *       wrote the body, but the implicit first parameter is the FK-target table reached through a
  *       join path rather than the field's own table, so the fetcher generator emits a correlated
  *       {@code EXISTS} instead of passing the root {@code table} local.</li>

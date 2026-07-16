@@ -34,7 +34,7 @@ public record DirectiveShape(
     /**
      * Back-compat constructor defaulting {@code locations} to empty. Keeps the
      * LSP / snapshot test fixtures and any caller that does not supply
-     * applicable locations compiling unchanged (R368).
+ * applicable locations compiling unchanged.
      */
     public DirectiveShape(String name, List<InputValueShape> args, Optional<String> description) {
         this(name, args, description, List.of());

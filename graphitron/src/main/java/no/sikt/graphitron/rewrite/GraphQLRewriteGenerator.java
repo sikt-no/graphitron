@@ -99,7 +99,7 @@ public class GraphQLRewriteGenerator {
      * <p>Returns the run's {@link GenerationResult}: every compilation unit emitted and the subset
      * whose on-disk content actually changed. The idempotent writer already computes that delta per
      * file (it writes only on a content mismatch); surfacing it here is what lets the incremental
-     * compile engine (R410) recompile the changed sub-closure instead of the whole tree. Callers that
+ * compile engine recompile the changed sub-closure instead of the whole tree. Callers that
      * only need the write-to-disk side effect may ignore the return value.
      */
     public GenerationResult generate() {
@@ -213,7 +213,7 @@ public class GraphQLRewriteGenerator {
 
     /**
      * Classification-stage products: the LSP {@link CompletionData} catalog, the directive-projection
-     * snapshot, and (R362) the {@link CatalogFacts} catalog-discovery projection the MCP
+ * snapshot, and the {@link CatalogFacts} catalog-discovery projection the MCP
      * {@code catalog.*} tools read. All three are build-derived in one pass and swapped onto the
      * live {@code Workspace} together.
      */
@@ -296,7 +296,7 @@ public class GraphQLRewriteGenerator {
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
         write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
-        // R283: the runtime _Service.sdl helper serves only the federation build arm (the wrapped
+        // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
         // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
         // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to
         // correct (its file arm prints the definition through SchemaPrinter already), so gating on
@@ -391,14 +391,14 @@ public class GraphQLRewriteGenerator {
 
     /**
      * Classification advisories ({@code schema.warnings()}) plus the SDL lint engine's findings over
-     * the same parsed registry (R398). Lint findings ride the {@link BuildWarning} channel here at the
+ * the same parsed registry. Lint findings ride the {@link BuildWarning} channel here at the
      * report-assembly surfaces rather than inside {@link GraphitronSchemaBuilder}, so the per-build
      * classifier model stays advisory-only and only the user-facing report carries the lint surface.
      */
     private List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
         LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
-        // excludedTypes widens the engine's per-type skip; injectedNames (R407) excludes the
+        // excludedTypes widens the engine's per-type skip; injectedNames excludes the
         // federation @link injector's generator-owned definitions at the same boundary.
         all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
             .run(attributed.registry(), attributed.injectedNames()));
@@ -411,7 +411,7 @@ public class GraphQLRewriteGenerator {
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
         // covers both channels, so a classifier advisory is suppressible by rule id like any other
-        // (R408). excludedTypes, in contrast, is applied inside the engine above and reaches only the
+        //. excludedTypes, in contrast, is applied inside the engine above and reaches only the
         // AST walk; a classifier advisory on an excluded type still fires.
         if (!lintConfig.disabledRuleIds().isEmpty()) {
             all.removeIf(w -> w instanceof BuildWarning.LintFinding lf

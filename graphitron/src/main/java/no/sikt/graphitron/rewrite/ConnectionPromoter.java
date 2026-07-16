@@ -168,7 +168,7 @@ final class ConnectionPromoter {
 
     /**
      * Registers the facet container ({@code <ConnName>Facets}) and each distinct
-     * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier (R13). A no-op when
+ * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier. A no-op when
      * the promotion carries no facets. {@code FacetValue} types are reusable across the whole
      * schema (one per (scalar, nullability) pair, named by {@link FacetNaming}); repeat
      * registration from another carrier reconciles in {@code TypeRegistry.register} like every
@@ -381,7 +381,7 @@ final class ConnectionPromoter {
             String connName = resolveConnectionName(parent.getName(), fieldDef);
             String edgeName = connName.replace("Connection", "Edge");
             boolean shareable = fieldDef.hasAppliedDirective("shareable");
-            // Directive arm: the carrier field is the tag source (R295). TagApplier tags fields
+            // Directive arm: the carrier field is the tag source. TagApplier tags fields
             // (never type declarations), so a <schemaInput tag> source surfaces here too.
             var tags = fieldDef.getAppliedDirectives(TAG_DIRECTIVE);
             var facets = facetSpecsFor(fieldDef);
@@ -400,7 +400,7 @@ final class ConnectionPromoter {
             String edgeName = typeName.replace("Connection", "Edge");
             var edgeSchema = (GraphQLObjectType) ctx.schema.getType(edgeName);
             boolean shareable = connSchema.hasAppliedDirective("shareable");
-            // Structural arm: the SDL-declared Connection type is the tag source (R295). Its own
+            // Structural arm: the SDL-declared Connection type is the tag source. Its own
             // @tag applications already ride on connSchema (the referenced SDL type), so they are
             // not re-applied here; they feed the synthesised PageInfo union below.
             var tags = connSchema.getAppliedDirectives(TAG_DIRECTIVE);
@@ -439,7 +439,7 @@ final class ConnectionPromoter {
 
     /**
      * Derives one {@link FacetSpec} per well-formed {@code @asFacet}-marked field on the carrier's
-     * input-object arguments (R13). The value scalar and its nullability mirror the input field's
+ * input-object arguments. The value scalar and its nullability mirror the input field's
      * list-element type exactly, so a client can feed {@code facetValue.value} straight back into
      * the filter; the column comes from {@code @field(name:)}.
      *

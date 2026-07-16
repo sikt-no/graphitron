@@ -15,7 +15,7 @@ import java.util.List;
  * {@code <outputPackage>.util}. The helper corrects the runtime {@code _Service.sdl} value baked
  * by {@code SchemaTransformer.build}, which routes through
  * {@link com.apollographql.federation.graphqljava.printer.ServiceSDLPrinter#generateServiceSDLV2}
- * and therefore drops the {@code @oneOf} directive definition (R283). See
+ * and therefore drops the {@code @oneOf} directive definition. See
  * {@link OneOfDirectiveSdl} for the full diagnosis.
  *
  * <p>This is the runtime mirror of the codegen-side {@link OneOfDirectiveSdl}: the consumer

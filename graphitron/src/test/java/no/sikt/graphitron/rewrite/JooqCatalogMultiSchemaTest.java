@@ -368,7 +368,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownForeignKeyRejection_mirrorsAuthorFkNamespace_inCandidateHint() {
-        // R259: the candidate hint must read in the same FK namespace the author typed, since
+        // The candidate hint must read in the same FK namespace the author typed, since
         // findForeignKey resolves both the SQL constraint name and the jOOQ Java-constant
         // (TABLE__CONSTRAINT) name. The nodeid fixture carries a real FK whose constant name holds
         // the `__` separator and whose SQL name does not, so the two namespaces are distinguishable
@@ -445,7 +445,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void synthesizeFkJoin_fabricatedSourceStillResolvesByClass() {
-        // R440: the fabricated-source UnknownTable case is retired. Both endpoints are resolved by
+        // The fabricated-source UnknownTable case is retired. Both endpoints are resolved by
         // jOOQ class identity off the FK object, so a source SQL name that does not match any
         // catalog table no longer breaks synthesis — the FK pins the exact origin class regardless.
         // (Author-facing source-membership is enforced upstream by the {key:} touches-check, pinned
@@ -479,7 +479,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void fkJoinResolution_unknownTable_projectsToEmpty() {
-        // R440: the defensive UnknownTable arm can no longer be provoked through synthesizeFkJoin
+        // The defensive UnknownTable arm can no longer be provoked through synthesizeFkJoin
         // (both endpoints resolve by class), so the projection is pinned on a directly-constructed
         // instance — the same shape as fkJoinResolution_unknownForeignKey above.
         var resolution = new BuildContext.FkJoinResolution.UnknownTable(

@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * R463 — the ancestor-product arrival fold, materialised as a pure, typename-keyed index over the
+ * The ancestor-product arrival fold, materialised as a pure, typename-keyed index over the
  * assembled SDL. A composite type's {@link Arrival} is how many source objects of it reach a nested
  * field's fetcher in one request; {@link GraphitronSchema#sourceOf} threads the parent type's arrival
  * into {@link no.sikt.graphitron.rewrite.model.OutputField#source(Arrival)} to pick the
@@ -28,7 +28,7 @@ import java.util.Set;
  *
  * <h3>The fold</h3>
  * Arrival is the lattice {@code One < Many} with {@code Many} absorbing (the wrapper-algebra monoid,
- * R316: {@code Root} the empty product, {@code OnlyChild} the identity, {@code Child} the absorber).
+ * {@code Root} the empty product, {@code OnlyChild} the identity, {@code Child} the absorber).
  * For a composite type {@code T}:
  * <ul>
  *   <li><b>Many</b> if {@code T} carries a {@code @node} / {@code @key} seed (node and entity lookups

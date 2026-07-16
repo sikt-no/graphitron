@@ -7,7 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Optional;
 
 /**
- * Channel-level handler rules over a resolved {@code @error}-type list (R244). Absorbed from
+ * Channel-level handler rules over a resolved {@code @error}-type list. Absorbed from
  * {@code FieldBuilder.checkChannelLevelHandlerRules} / {@code checkDuplicateMatchCriteria} so the
  * {@code ErrorChannelWalker} owns the in-scope error-channel rule surface; the two checks are pure
  * functions of {@code mappedErrorTypes}, so they live here as static helpers the walker wraps into

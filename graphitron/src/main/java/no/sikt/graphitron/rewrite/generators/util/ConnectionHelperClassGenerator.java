@@ -66,7 +66,7 @@ public class ConnectionHelperClassGenerator {
         var connectionResultClass = ClassName.get(
             outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         // R378 client-error marker: pageRequest's client-mistake guards throw it so the
-        // no-channel disposition surfaces the real message instead of redacting (R415).
+        // no-channel disposition surfaces the real message instead of redacting.
         var clientException = ClassName.get(outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
 
@@ -136,7 +136,7 @@ public class ConnectionHelperClassGenerator {
         // Collapses every line of pagination boilerplate the fetcher used to inline:
         //   - client-mistake guards: first/last mutual exclusion, negative first/last, and the
         //     derived-limit overflow — all thrown as GraphitronClientException so the real
-        //     message reaches the client instead of a redacted correlation-id 500 (R415)
+        // message reaches the client instead of a redacted correlation-id 500
         //   - backward/pageSize/cursor derivation
         //   - column-driven cursor decode (delegates to decodeCursor)
         //   - reverse ordering for backward pagination (delegates to reverseOrderBy)
@@ -215,9 +215,9 @@ public class ConnectionHelperClassGenerator {
         // Returns DSL.noField(col) per column when cursor is null (seek no-op).
         // Returns DSL.val(DataType.convert(token), DataType) per column when cursor is present.
         // The decode body is wrapped in one try whose multi-catch classifies blame at the wire
-        // boundary (R479): Base64 decode, strict-arity, and convert failures are all pure functions
+        // boundary: Base64 decode, strict-arity, and convert failures are all pure functions
         // of the opaque client cursor, so they collapse to one GraphitronClientException the
-        // no-channel disposition surfaces instead of redacting to a correlation-id 500 (R415). Any
+        // no-channel disposition surfaces instead of redacting to a correlation-id 500. Any
         // other unchecked throw (e.g. an NPE from a buggy custom Converter) is a genuine server
         // fault and keeps propagating. Arity is strict in both directions: encodeCursor emits
         // exactly N NUL-joined tokens and PostgreSQL strings cannot contain NUL, so any other token
@@ -331,7 +331,7 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // --- facets(DataFetchingEnvironment) → Map<String, List<Map<String, Object>>> ---
-        // R13: the facet sibling of totalCount. One UNION ALL of per-facet GROUP BY arms, each
+        // The facet sibling of totalCount. One UNION ALL of per-facet GROUP BY arms, each
         // under the connection filter minus that facet's own predicate (base AND every other
         // facet's predicate), value cast to TEXT to unify the arms and decoded back through the
         // column's DataType. Lazy on selection like totalCount (this resolver only runs when the
@@ -405,7 +405,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("    if (f == null) continue;\n")
             .addCode("    $T col = colByLabel.get(f.label());\n", jooqFieldWildcard)
             // DSL.val(Object, DataType<T>).getValue() is the non-deprecated wire→typed coercion,
-            // the same form decodeCursor's replacement uses (R384): the column's Converter applies,
+            // the same form decodeCursor's replacement uses: the column's Converter applies,
             // null in, null out (a preserved NULL bucket stays null).
             .addCode("    Object typed = row.value2() == null ? null"
                 + " : $T.val((Object) row.value2(), col.getDataType()).getValue();\n", DSL)

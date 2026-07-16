@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * key-container axis (folded onto {@link LoaderRegistration#container()}) and the lambda
  * body invariant.
  *
- * <p><b>Load-bearing beyond this class (R429).</b> The synchronous body asserted below,
+ * <p><b>Load-bearing beyond this class.</b> The synchronous body asserted below,
  * {@code CompletableFuture.completedFuture(rows(keys, dfe))}, is what makes it safe for
  * {@link no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator} to pin exactly
  * one connection per operation: because every batch fetch runs its SQL synchronously on the dispatch

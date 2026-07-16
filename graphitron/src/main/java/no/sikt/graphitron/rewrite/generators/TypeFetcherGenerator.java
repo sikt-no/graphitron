@@ -137,7 +137,7 @@ public class TypeFetcherGenerator {
             Set<String> seen, List<TypeSpec> out, graphql.schema.GraphQLSchema assembled, String outputPackage) {
         var nestedTypeName = nf.returnType().returnTypeName();
         if (seen.add(nestedTypeName)) {
-            // R303: a nested type that owns any fetcher gets a <Type>Fetchers class carrying every
+            // A nested type that owns any fetcher gets a <Type>Fetchers class carrying every
             // field's method (the method-backed ones the switch emits, plus the reads bind()
             // reifies). The gate is shared with FetcherRegistrationsEmitter.nestedBody via
             // FetcherEmitter.nestedTypeOwnsFetchers so the reference site and the emit site agree.
@@ -366,7 +366,7 @@ public class TypeFetcherGenerator {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
-        // R303: the class this type's reified fetcher reads are referenced through (e.g.
+        // The class this type's reified fetcher reads are referenced through (e.g.
         // FilmFetchers::title). Only the reified method is collected below; the registration value
         // FetcherEmitter pairs with it is emitted by FetcherRegistrationsEmitter, not here.
         var reifiedFetchersClass = ClassName.get(outputPackage + ".fetchers", className);
@@ -378,7 +378,7 @@ public class TypeFetcherGenerator {
         // method bodies for the literal "graphitronContext(env)".
         var ctx = new TypeFetcherEmissionContext(assembled, typeName, graphitronSchema);
 
-        // R268: when this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
+        // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
         // (the record-sourced BatchedTableField / BatchedLookupTableField arms /
         // RecordTableMethodField) arm-switch inside
@@ -388,7 +388,7 @@ public class TypeFetcherGenerator {
         // is the single home so the two sites cannot drift.
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
 
-        // R437: build the shape-aware create<Record> helper-name resolver from every jOOQ-record
+        // Build the shape-aware create<Record> helper-name resolver from every jOOQ-record
         // @service carrier on this class (both coordinates) BEFORE any field body emits, then stash it
         // on ctx. The two call-site emitters and the helper-emission drain all read this one resolver,
         // so a call site and its helper agree on the name by construction. Keyed by binding shape, not
@@ -430,7 +430,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    // R285: lift-back projection. The loader value is the projected Record (carrying
+                    // Lift-back projection. The loader value is the projected Record (carrying
                     // the multiset @reference columns), not the developer-returned XRecord; the lift
                     // rows-method calls the service, then re-projects the returned records by identity
                     // through Type.$fields(...). See SplitRowsMethodEmitter.buildServiceTableLift.
@@ -449,7 +449,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildServiceRowsMethod(ctx, srf, srf.method(), srf.returnType(), srf.elementType(), srf.parentTypeName(), outputPackage));
                 }
                 case ChildField.BatchedTableField btf -> {
-                    // R432: the fetcher fork survives inside this one seam, gated on the stored
+                    // The fetcher fork survives inside this one seam, gated on the stored
                     // source shape — key extraction via buildKeyExtraction (jOOQ table-row read)
                     // for the Table arm, via the lift-consuming buildRecordParentKeyExtraction
                     // (plus the Outcome-narrowing prelude and null-source short-circuit) for the
@@ -463,7 +463,7 @@ public class TypeFetcherGenerator {
                     builder.addMethod(SplitRowsMethodEmitter.buildForBatchedTable(ctx, btf, outputPackage, registry));
                 }
                 case ChildField.BatchedLookupTableField blf -> {
-                    // R432: same one-seam fetcher fork as BatchedTableField, gated on the stored
+                    // Same one-seam fetcher fork as BatchedTableField, gated on the stored
                     // source shape.
                     if (blf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table) {
                         builder.addMethod(buildSplitQueryDataFetcher(ctx, blf, blf.returnType(), parentTable, outputPackage));
@@ -575,11 +575,11 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), rtmf.lift(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
                 }
-                // R156 — SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
+                // SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
                 // encode) is reified by FetcherEmitter.bind into a named (DataFetchingEnvironment
                 // env) method, collected below. No-op arm here.
                 case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
-                // R275 — the @service-carrier ID sibling: the Outcome/source narrowing + node-key
+                // The @service-carrier ID sibling: the Outcome/source narrowing + node-key
                 // read + NodeId encode is likewise reified by FetcherEmitter.bind into a named env
                 // method, collected below. No-op arm here.
                 case ChildField.SingleRecordIdField ignored -> { }
@@ -618,7 +618,7 @@ public class TypeFetcherGenerator {
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
                 case ChildField.RecordField ignored             -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
-                // R329 — the @service record-composite carrier's data field: the Outcome/source
+                // The @service record-composite carrier's data field: the Outcome/source
                 // narrowing + verbatim projection of the producer's composite record(s) is reified by
                 // FetcherEmitter.bind into a named (DataFetchingEnvironment env) method, collected below.
                 case ChildField.RecordCompositeField ignored    -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
@@ -631,7 +631,7 @@ public class TypeFetcherGenerator {
                 case GraphitronField.UnclassifiedField ignored ->
                     throw new AssertionError("UnclassifiedField in type dispatch: " + ignored.qualifiedName());
             }
-            // R303: reify the inline / light reads onto this class. bind() returns Reified for
+            // Reify the inline / light reads onto this class. bind() returns Reified for
             // exactly the variants the switch above handles with a no-method arm (column reads,
             // source passthroughs, the errors transports, the single-record carriers); the
             // method-backed variants return Inline, so there is no double-emission.
@@ -661,7 +661,7 @@ public class TypeFetcherGenerator {
             .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
             .map(p -> (CallSiteExtraction.InputBean) p.extraction())
             .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
-        // R238: walk the four service permits' carriers for composite ValueShape arms.
+        // Walk the four service permits' carriers for composite ValueShape arms.
         for (var field : fields) {
             if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
                 collectBeanHelpersFromCarrier(sf.serviceMethodCall(), beanHelpers);
@@ -672,7 +672,7 @@ public class TypeFetcherGenerator {
             builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
                 no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className)));
         }
-        // R437: one create<Record> / create<Record>List pair per distinct binding shape, named through
+        // One create<Record> / create<Record>List pair per distinct binding shape, named through
         // the same resolver every call site consulted (built up front, stashed on ctx). Contended
         // record classes (>1 shape) split into ordinal-suffixed helpers; the common single-shape case
         // stays the bare create<Record> pair.
@@ -682,7 +682,7 @@ public class TypeFetcherGenerator {
             builder.addMethod(JooqRecordInstantiationEmitter.buildPluralHelper(jr, jooqRecordHelperNames));
         }
 
-        // R195: emit one decode<RecordType>Record helper per jOOQ-record-typed @nodeId input-bean
+        // Emit one decode<RecordType>Record helper per jOOQ-record-typed @nodeId input-bean
         // member reached by the collected beans, plus a decode<RecordType>RecordList variant for
         // list-valued members (which delegates to the scalar helper per element). The create<Bean>
         // helper bodies call these by name. Scalar and list variants dedup independently by record
@@ -765,7 +765,7 @@ public class TypeFetcherGenerator {
         }
 
         // parentKeyCellValue is the RowN-key scalar extraction used by the parent-input VALUES
-        // cells (R413): RowN keys expose their cells only as Fields, so the bind Param's value is
+        // cells: RowN keys expose their cells only as Fields, so the bind Param's value is
         // recovered through this per-class helper. Emitted iff any field on this class emits a
         // Row-keyed parent-input rows method; RecordN-keyed fields read k.valueN() directly.
         boolean hasRowKeyedParentInput = fields.stream()
@@ -918,7 +918,7 @@ public class TypeFetcherGenerator {
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        // R405: shared discriminator-filter + projection + join assembly, ending with the
+        // Shared discriminator-filter + projection + join assembly, ending with the
         // `step` local. The service single-table-interface fetcher reuses the same helper with a
         // by-PK condition (see MultiTablePolymorphicEmitter).
         builder.addCode(buildTableInterfaceReprojection(ctx, qtif.participants(), qtif.discriminatorColumn(),
@@ -985,7 +985,7 @@ public class TypeFetcherGenerator {
         // Build join-path condition. Only the single-hop FK-derived shape is supported;
         // multi-hop and condition-join paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
-        // R405: shared discriminator-filter + projection + join assembly (see the query twin).
+        // Shared discriminator-filter + projection + join assembly (see the query twin).
         builder.addCode(buildTableInterfaceReprojection(ctx, tif.participants(), tif.discriminatorColumn(),
             tif.knownDiscriminatorValues(), List.of(), tableLocal, outputPackage));
 
@@ -1029,7 +1029,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R405: the shared read/projection body of {@link #buildQueryTableInterfaceFieldFetcher} and
+ * The shared read/projection body of {@link #buildQueryTableInterfaceFieldFetcher} and
      * {@link #buildTableInterfaceFieldFetcher}, extracted so the service single-table-interface fetcher
      * ({@link MultiTablePolymorphicEmitter}) can reuse the exact projection + join assembly with a
      * caller-supplied {@code Condition}.
@@ -1120,7 +1120,7 @@ public class TypeFetcherGenerator {
         // named-schema table), so the reference matches FROM by construction. The earlier two-part
         // DSL.name(@table-directive, col) instead built the qualifier from the verbatim @table(name:)
         // string, which diverges from the rendered FROM token whenever the directive name differs in
-        // case or schema (R395). (2) De-duplication: when the interface also exposes the discriminator
+        // case or schema. (2) De-duplication: when the interface also exposes the discriminator
         // as a queryable field, the participant $fields below projects the real catalog column too
         // (rendered three-part, "schema"."base"."col"); a TypeResolver reading the bare column name would
         // match both projections ambiguously. Aliasing the routing copy to a synthetic name distinct from
@@ -1395,7 +1395,7 @@ public class TypeFetcherGenerator {
     /**
      * Projects a multi-table polymorphic field's per-participant filter carriers into the
      * typename-keyed map the {@link MultiTablePolymorphicEmitter} branch loops consume, mirroring the
-     * typename-keyed {@code participantJoinPaths} the same loops already take (R363).
+ * typename-keyed {@code participantJoinPaths} the same loops already take.
      */
     private static Map<String, List<WhereFilter>> participantFiltersByTypename(
             List<ParticipantFilters> participantFilters) {
@@ -1507,7 +1507,7 @@ public class TypeFetcherGenerator {
      * }
      * }</pre>
      *
-     * <p>Routine-then-hops variant (R435):
+ * <p>Routine-then-hops variant:
      * <pre>{@code
      *     FilmsForActor source = Routines.filmsForActor(env.<Integer>getArgument("actorId"), ...);
      *     Film films_0 = Tables.FILM.as("films_0");
@@ -1598,7 +1598,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R451: the fetcher for a {@link MutationField.MutationRoutineWriteField} — the routine call
+ * The fetcher for a {@link MutationField.MutationRoutineWriteField} — the routine call
      * is the write, and it commits before the follow-up query runs. The DML two-step
      * ({@link #emitKeysTransaction} / {@link #emitProjected}) transposed onto the R435 chain:
      * step 1 executes the routine inside {@code dsl.transactionResult(tx -> ...)} (the R429
@@ -1947,7 +1947,7 @@ public class TypeFetcherGenerator {
         //     type (isList ? List<payload> : payload), so this is the specific validated class.
         //   - PojoResultType (null fqClassName) or ScalarReturnType: the developer's declared
         //     return is the source of truth and graphql-java coerces.
-        // R370: the class-backed arm previously rebuilt the type via ClassName.bestGuess over the
+        // The class-backed arm previously rebuilt the type via ClassName.bestGuess over the
         // binary fqClassName, which carries a nested backing class through as the non-compiling
         // Outer$Nested (bestGuess never splits on '$'). javaReturnType resolves it structurally to
         // Outer.Nested, the JLS-legal form, while leaving top-level classes unchanged.
@@ -2002,7 +2002,7 @@ public class TypeFetcherGenerator {
      *   reflected return is the source of truth and graphql-java coerces.</li>
      * </ul>
      *
-     * <p>R370: the class-backed arm previously rebuilt the type via {@code ClassName.bestGuess} over the
+ * <p>The class-backed arm previously rebuilt the type via {@code ClassName.bestGuess} over the
      * binary {@code fqClassName}, which carries a nested backing class through as the non-compiling
      * {@code Outer$Nested} ({@code bestGuess} never splits on {@code '$'}). {@code javaReturnType} resolves
      * it structurally to {@code Outer.Nested}, the JLS-legal form, while leaving top-level classes
@@ -2045,7 +2045,7 @@ public class TypeFetcherGenerator {
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
                                                         String outputPackage) {
-        // R244: an @service outcome field (Mapped channel) hands graphql-java a typed Outcome<X>
+        // An @service outcome field (Mapped channel) hands graphql-java a typed Outcome<X>
         // source. The DataFetcherResult payload type becomes Outcome<X>; the inner method result
         // local stays X (the service's return), wrapped in Success on the happy path and replaced by
         // ErrorList on the mapped-error path. A channel-less @service field (no errors field) keeps
@@ -2089,13 +2089,13 @@ public class TypeFetcherGenerator {
         return builder.build();
     }
 
-    /** {@code Outcome<X>} in the run's schema-support package (R244), boxing primitive {@code X}. */
+    /** {@code Outcome<X>} in the run's schema-support package, boxing primitive {@code X}.*/
     private static TypeName outcomeOf(TypeName valueType, String outputPackage) {
         return ParameterizedTypeName.get(
             ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME), boxed(valueType));
     }
 
-    /** Success-path return wrapping the method result in {@code Outcome.Success} (R244). */
+    /** Success-path return wrapping the method result in {@code Outcome.Success}.*/
     private static CodeBlock returnSyncSuccessWrapped(TypeName outcomeType, String outputPackage, String resultLocal) {
         var success = ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
             .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
@@ -2124,7 +2124,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Renders the holder constructor's actual-argument list (R256). A {@link ParamSource.DslContext}
+ * Renders the holder constructor's actual-argument list. A {@link ParamSource.DslContext}
      * ctor parameter reads the surrounding {@code dsl} local; a {@link ParamSource.Context}
      * parameter extracts inline via the {@code graphitronContext(env)} helper, mirroring
      * {@code ServiceMethodCallEmitter}'s {@code FromContext} emit. The legacy single-{@code DSLContext}
@@ -2179,7 +2179,7 @@ public class TypeFetcherGenerator {
      * short-circuits with the payload's errors-arm filled by the violations list when the
      * accumulator is non-empty.
      *
-     * <p>R94: input-typed SDL args materialise through the graphitron-emitted class's
+ * <p>Input-typed SDL args materialise through the graphitron-emitted class's
      * {@code fromMap(Map<String,Object>)} factory before the validator walks them. The
      * fetcher boundary feeds the typed instance into
      * {@code validator.validate(<typed>)}; the empty walk produces zero violations until R98
@@ -2188,7 +2188,7 @@ public class TypeFetcherGenerator {
      * build the model only), the pre-step falls back to validating against the raw value for
      * every arg, mirroring pre-R94 behaviour.
      *
-     * <p>R238: walks {@link ServiceMethodCall#methodArgs()} for {@link MappingEntry.FromArg}
+ * <p>Walks {@link ServiceMethodCall#methodArgs()} for {@link MappingEntry.FromArg}
      * entries. The {@link no.sikt.graphitron.rewrite.model.ValueShape} carries each top-level
      * arg's outer arg name on its data-bearing leaves; {@link #outerArgOfValueShape} descends
      * to the first available leaf to extract it. Ctor args are not walked (the walker forbids
@@ -2282,8 +2282,8 @@ public class TypeFetcherGenerator {
                 registerBeanHelper(rec.javaClass(), CallSiteExtraction.InputBean.Target.RECORD, rec.fields(), out);
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
                 registerBeanHelper(jb.javaClass(), CallSiteExtraction.InputBean.Target.JAVA_BEAN, jb.fields(), out);
-            // R311: a jOOQ TableRecord input param. Its create<Record> helper is collected up front by
-            // collectJooqRecordCarriers (R437), not here — this walk is the bean-only leg of the dual walk.
+            // A jOOQ TableRecord input param. Its create<Record> helper is collected up front by
+            // collectJooqRecordCarriers, not here — this walk is the bean-only leg of the dual walk.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput ignored -> { /* jooq handled up front */ }
         }
     }
@@ -2314,7 +2314,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R437: collect every jOOQ-record {@code @service} carrier on this {@code <Type>Fetchers} class,
+ * Collect every jOOQ-record {@code @service} carrier on this {@code <Type>Fetchers} class,
      * across both coordinates, into a flat list (dedup by shape happens in
      * {@link JooqRecordHelperNames#of}). The child / root-permit coordinate is the
      * {@link MethodBackedField#method() callParams} walk (the same walk that fed the pre-R437 helper
@@ -2386,7 +2386,7 @@ public class TypeFetcherGenerator {
                 new CallSiteExtraction.InputBean(jb.javaClass(),
                     CallSiteExtraction.InputBean.Target.JAVA_BEAN,
                     convertNestedFieldBindings(jb.fields()));
-            // R311: forced by the sealed addition, unreachable here — a JooqRecordInput is never an
+            // Forced by the sealed addition, unreachable here — a JooqRecordInput is never an
             // InputBean field shape, so this leaf-for-field-binding walk never meets one.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr ->
                 throw new IllegalStateException(
@@ -2415,7 +2415,7 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> innerElementTypeNameOf(l.elementShape());
             case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput r -> r.javaClass().toString();
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb -> jb.javaClass().toString();
-            // R311: forced by the sealed addition; a JooqRecordInput is never an InputBean field shape,
+            // Forced by the sealed addition; a JooqRecordInput is never an InputBean field shape,
             // but the record class is the trivially-correct inner element type if ever reached.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> jr.carrier().table().recordClass().toString();
         };
@@ -2436,7 +2436,7 @@ public class TypeFetcherGenerator {
                 r.fields().isEmpty() ? "" : outerArgOfValueShape(r.fields().getFirst().shape());
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
                 jb.fields().isEmpty() ? "" : outerArgOfValueShape(jb.fields().getFirst().shape());
-            // R311: a JooqRecordInput carries its own path; defensive read for the forced arm.
+            // A JooqRecordInput carries its own path; defensive read for the forced arm.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> jr.sdlPath().outerArgName();
         };
     }
@@ -2489,7 +2489,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
                                                           String outputPackage) {
-        // R266: the WHERE columns come off the DeleteRows carrier (deleteRows().whereColumns()) and
+        // The WHERE columns come off the DeleteRows carrier (deleteRows().whereColumns()) and
         // the slim arg surface (inputArg) instead of a TableInputArg. The emitted SQL is structurally
         // identical to the legacy shape; only the source of the WHERE columns changed. The carrier's
         // KeyColumn list projects back into the InputColumnBindingGroup shape the shared lookup-WHERE
@@ -2584,7 +2584,7 @@ public class TypeFetcherGenerator {
      * lambda shape choice (single-expression vs block-with-decode-locals).
      */
     private static boolean anyNodeIdCarrier(List<InputField> fields) {
-        // R186: descend nested grouping inputs; a NodeId leaf anywhere drives the block-lambda shape.
+        // Descend nested grouping inputs; a NodeId leaf anywhere drives the block-lambda shape.
         for (var leaf : flattenInsertLeaves(fields, List.of())) {
             var f = leaf.field();
             if (f instanceof InputField.ColumnField cf
@@ -2604,7 +2604,7 @@ public class TypeFetcherGenerator {
      * (including explicit null) → {@code DSL.val(map.get("name"), dataType)} (typed bind).
      * Comma-separated, newline-terminated per cell so the formatted output is readable.
      *
-     * <p>Dispatches on carrier identity (R130):
+ * <p>Dispatches on carrier identity:
      * <ul>
      *   <li>{@link InputField.ColumnField} with {@link CallSiteExtraction.Direct} (or non-NodeId
      *       extraction) — one cell, value read directly from {@code mapLocal.get(name)}.</li>
@@ -2621,7 +2621,7 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
             String mapLocal,
             String localPrefix) {
-        // R322: an INSERT with a column written by more than one carrier dedups to one cell per column,
+        // An INSERT with a column written by more than one carrier dedups to one cell per column,
         // coalescing over the present writers via the per-column cell local emitted in the decode-locals
         // prep. A non-overlapping INSERT keeps the one-leaf-one-cell walk below (byte-identical).
         if (hasInsertOverlap(fields)) {
@@ -2629,7 +2629,7 @@ public class TypeFetcherGenerator {
         }
         var b = CodeBlock.builder();
         boolean first = true;
-        // R186: descend nested grouping inputs to a flat leaf list; each leaf carries its wire access
+        // Descend nested grouping inputs to a flat leaf list; each leaf carries its wire access
         // path (a single name for a top-level field, byte-identical to before R186). The presence
         // test and value read use the path, honoring the absent-vs-null contract: an absent leaf (or
         // an absent / non-Map outer level) resolves to DEFAULT; a present leaf (including explicit
@@ -2675,7 +2675,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case InputField.ColumnReferenceField crf -> {
-                    // R189: FK-target arity-1 reference; same single-cell shape as a NodeId-
+                    // FK-target arity-1 reference; same single-cell shape as a NodeId-
                     // decoded ColumnField, but writes the lifted FK column on the input's own
                     // table from the decoded record's value1() accessor.
                     if (!first) b.add(",\n");
@@ -2690,7 +2690,7 @@ public class TypeFetcherGenerator {
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 }
                 case InputField.CompositeColumnReferenceField ccrf -> {
-                    // R189: FK-target arity >= 2 reference; same per-slot shape as
+                    // FK-target arity >= 2 reference; same per-slot shape as
                     // CompositeColumnField, but walks liftedSourceColumns() (input's own
                     // FK columns, permuted into NodeType key order) instead of columns().
                     String recLocal = localPrefix + "_" + fi;
@@ -2722,7 +2722,7 @@ public class TypeFetcherGenerator {
     private static CodeBlock buildInsertColumnList(
             List<InputField> fields,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        // R322: an INSERT with an overlapping column emits that column once (the dedup that turns the
+        // An INSERT with an overlapping column emits that column once (the dedup that turns the
         // Postgres "column specified more than once" crash into one column + one coalesced cell). A
         // non-overlapping INSERT keeps the one-leaf-one-column walk below (byte-identical).
         if (hasInsertOverlap(fields)) {
@@ -2730,7 +2730,7 @@ public class TypeFetcherGenerator {
         }
         var b = CodeBlock.builder();
         boolean first = true;
-        // R186: nested grouping inputs flatten in place; the column order matches the flattened
+        // Nested grouping inputs flatten in place; the column order matches the flattened
         // VALUES cell order in buildPerCellValueList by construction (both walk flattenInsertLeaves).
         for (var leaf : flattenInsertLeaves(fields, List.of())) {
             var f = leaf.field();
@@ -2772,7 +2772,7 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
-    /** R322: the INSERT column list driven off {@link #insertColumnPlan}, one entry per distinct column
+    /** The INSERT column list driven off {@link #insertColumnPlan}, one entry per distinct column
      *  (a shared column appears once). Used only when {@link #hasInsertOverlap}. */
     private static CodeBlock buildInsertColumnListDeduped(List<InputField> fields,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
@@ -2786,7 +2786,7 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
-    /** R322: the VALUES cell list driven off {@link #insertColumnPlan}, one cell per distinct column. A
+    /** The VALUES cell list driven off {@link #insertColumnPlan}, one cell per distinct column. A
      *  shared column emits its pre-built coalesce local ({@code <prefix>Cell<ci>}, declared by
      *  {@link #emitInsertAgreementPrep}); a disjoint column keeps the existing one-leaf-one-cell shape. */
     private static CodeBlock buildPerCellValueListDeduped(List<InputField> fields,
@@ -2807,7 +2807,7 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
-    /** R322: emits one disjoint-column VALUES cell, reproducing the per-carrier shape of
+    /** Emits one disjoint-column VALUES cell, reproducing the per-carrier shape of
      *  {@link #buildPerCellValueList}: a decode reads {@code <prefix>_<fi>.value<slot+1>()}, a plain field
      *  reads the (possibly nested) map value; absent → {@code DSL.defaultValue}, present → typed bind. */
     private static void emitInsertCell(CodeBlock.Builder b, ColumnOverlap.Contributor c, String mapLocal,
@@ -2845,7 +2845,7 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         var locals = CodeBlock.builder();
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
-        // R186: flat leaf order matches buildPerCellValueList so the decode-local index lines up; a
+        // Flat leaf order matches buildPerCellValueList so the decode-local index lines up; a
         // nested NodeId leaf reads its wire value via the null-safe descent over its access path.
         var leaves = flattenInsertLeaves(fields, List.of());
         for (int fi = 0; fi < leaves.size(); fi++) {
@@ -2873,7 +2873,7 @@ public class TypeFetcherGenerator {
                     "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
                 .endControlFlow();
         }
-        // R322: for any column written by more than one carrier, emit the value-agreement prep here (in
+        // For any column written by more than one carrier, emit the value-agreement prep here (in
         // the same scope as the decode locals, before the VALUES cells read them). Empty when there is no
         // overlap, so a non-overlapping INSERT's prep is byte-identical to the decode-locals-only form.
         emitInsertAgreementPrep(locals, fields, mapLocal, localPrefix, tablesOnly, tableRef);
@@ -2908,7 +2908,7 @@ public class TypeFetcherGenerator {
         return ColumnOverlap.groupByColumn(insertSetGroupWriters(fields));
     }
 
-    /** True when some backing column on the INSERT plan is written by more than one carrier (R322). */
+    /** True when some backing column on the INSERT plan is written by more than one carrier.*/
     private static boolean hasInsertOverlap(List<InputField> fields) {
         return insertColumnPlan(fields).stream().anyMatch(OverlapColumn::shared);
     }
@@ -2948,7 +2948,7 @@ public class TypeFetcherGenerator {
             locals.addStatement("$T<$T> $L = new $T<>()",
                 ClassName.get(List.class), Object.class, listName, ClassName.get(ArrayList.class));
             int wi = 0;
-            // R356: the present-writer gather flows through the shared value-read seam
+            // The present-writer gather flows through the shared value-read seam
             // (appendAgreementValue); the INSERT decode local <prefix>_<fi> is non-null whenever present
             // (buildInsertDecodeLocals throws on a present-but-mismatched id before this prep runs), so the
             // seam's extra `&& decodeLocal != null` guard is always-true here.
@@ -2978,7 +2978,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189: target columns a {@code SetField} carrier writes to on the input's own table. The
+ * Target columns a {@code SetField} carrier writes to on the input's own table. The
      * walk is uniform across all four admissible SetField shapes: value carriers source from
      * {@code column() / columns()}, reference carriers from {@code liftedSourceColumns()}.
      */
@@ -2992,7 +2992,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189: NodeId decode extraction for a {@code SetField} carrier, or {@code null} when the
+ * NodeId decode extraction for a {@code SetField} carrier, or {@code null} when the
      * value is read raw from the input map. Drives whether the SET-emitter site declares a
      * per-field decode local and reads {@code .value<i+1>()} for each slot, or reads
      * {@code map.get(name)} verbatim.
@@ -3010,7 +3010,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R246: a SET-side input field reduced to what the SET emitter needs — the SDL field name (the
+ * A SET-side input field reduced to what the SET emitter needs — the SDL field name (the
      * leaf Map key), its target columns on the input's own table, the NodeId decode extraction (or
      * {@code null} for a raw map read), and the R186 wire access path. This is the carrier-driven
      * analogue of an {@code InputField.SetField}; the UPDATE walker carrier names the partition
@@ -3026,7 +3026,7 @@ public class TypeFetcherGenerator {
                             CallSiteExtraction.NodeIdDecodeKeys nidk, List<String> accessPath) {}
 
     /**
-     * R356: adapts a {@link SetGroup} (with its stable {@code index}, used to name the per-group decode
+ * Adapts a {@link SetGroup} (with its stable {@code index}, used to name the per-group decode
      * local) into the shared {@link ColumnOverlap.ColumnWriter} view. The INSERT plan (site 2) and the two
      * UPDATE-SET plan sites (sites 4 and 6), and the cross-partition site 5, build these and feed them to
      * {@link ColumnOverlap#groupByColumn} / the value-read seam. The emission downcasts
@@ -3041,7 +3041,7 @@ public class TypeFetcherGenerator {
         @Override public String label() { return String.join(".", group.accessPath()); }
     }
 
-    /** R356: the {@link SetGroupWriter} views for an UPDATE-SET plan, one per {@link SetGroup}, the view's
+    /** The {@link SetGroupWriter} views for an UPDATE-SET plan, one per {@link SetGroup}, the view's
      *  {@code index} being its position in {@code setGroups} (the decode-local suffix sites 4 / 5 / 6 use). */
     private static List<SetGroupWriter> setGroupWriters(List<SetGroup> setGroups) {
         var out = new ArrayList<SetGroupWriter>();
@@ -3052,7 +3052,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R246: adapt a legacy {@code List<InputField.SetField>} (the payload-returning DML record
+ * Adapt a legacy {@code List<InputField.SetField>} (the payload-returning DML record
      * fetchers, which still carry a {@code TableInputArg}) into the {@link SetGroup} shape the SET
      * emitters now consume. The carrier-driven UPDATE path uses {@link #setGroupsOf} instead.
      * {@code tia.setFields()} is always empty post-R266, so this never sees nested input.
@@ -3150,14 +3150,14 @@ public class TypeFetcherGenerator {
         block.endControlFlow();
     }
 
-    /** R186: a leaf carrier flattened out of (possibly) a {@link InputField.NestingField}, paired
+    /** A leaf carrier flattened out of (possibly) a {@link InputField.NestingField}, paired
      *  with its wire access path. Produced by {@link #flattenInsertLeaves} so the INSERT emitters
      *  walk a flat leaf list (never a {@code NestingField}) with a per-leaf descent path. */
     private record InsertLeaf(InputField field, List<String> path) {}
 
     /**
      * Flatten {@code fields} into leaf carriers in declaration order, descending into any
-     * {@link InputField.NestingField} grouping input (R186) and accumulating the SDL access path.
+ * {@link InputField.NestingField} grouping input and accumulating the SDL access path.
      * A top-level leaf gets path {@code [name]}; a nested leaf gets the full key chain. The INSERT
      * column-list / VALUES / decode-local emitters all walk this one flat list so a leaf's index
      * (used to name its decode local) is consistent across them.
@@ -3179,12 +3179,12 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R246: project the UPDATE carrier's flat {@link SetColumn} list back into per-field
+ * Project the UPDATE carrier's flat {@link SetColumn} list back into per-field
      * {@link SetGroup}s, grouping by wire access path in encounter order. A composite-NodeId field
      * contributes several {@code SetColumn}s sharing one path; they regroup into one
      * {@code SetGroup} whose columns line up positionally with the decode {@code Record<N>} slots.
      *
-     * <p>R186: grouping is by access path (the leaf's {@code NestedInputField.path()} or
+ * <p>Grouping is by access path (the leaf's {@code NestedInputField.path()} or
      * {@code [sdlFieldName]} for a top-level leaf) rather than by SDL field name, so two leaves with
      * the same local name under different nested groups stay distinct; the leaf extraction is peeled
      * out of the {@code NestedInputField} envelope before the NodeId check. For top-level leaves the
@@ -3208,7 +3208,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R246: project the UPDATE carrier's flat {@link KeyColumn} list into the
+ * Project the UPDATE carrier's flat {@link KeyColumn} list into the
      * {@link InputColumnBindingGroup}s the lookup-WHERE emitters consume, grouping by wire access
      * path in encounter order. A single-column field becomes a {@code MapGroup} (carrying its
      * extraction so an arity-1 NodeId still routes through the decode local); a multi-column field
@@ -3216,7 +3216,7 @@ public class TypeFetcherGenerator {
      * {@code Record<N>} slots. This reconstructs exactly the {@code fieldBindings()} shape the legacy
      * {@code TableInputArg} produced for the WHERE half.
      *
-     * <p>R186: grouping is by access path (same rationale as {@link #setGroupsOf}). A
+ * <p>Grouping is by access path (same rationale as {@link #setGroupsOf}). A
      * {@code MapGroup}'s binding keeps the full extraction (the value-read emitter peels the path);
      * a {@code DecodedRecordGroup} peels the leaf {@code NodeIdDecodeKeys} for the decode call and
      * carries the access path explicitly so the decode-local read descends a nested composite key.
@@ -3249,7 +3249,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189: emits {@code Map<Field<?>, Object>} {@code .put(t.col, DSL.val(value, t.col.getDataType()))}
+ * Emits {@code Map<Field<?>, Object>} {@code.put(t.col, DSL.val(value, t.col.getDataType()))}
      * statements for each {@code SetField} on {@code setFields}, guarded by a presence check on
      * the SDL field name. The walk is uniform across the four admissible SetField shapes:
      *
@@ -3334,7 +3334,7 @@ public class TypeFetcherGenerator {
     private static void emitSetAgreementPreamble(
             CodeBlock.Builder block, List<SetGroup> setGroups, String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        // R356: the per-column grouping is the shared ColumnOverlap.groupByColumn; this site forks on
+        // The per-column grouping is the shared ColumnOverlap.groupByColumn; this site forks on
         // shared() && !allPlain() (a decode-involving overlap; the all-plain overlap is the upstream
         // UpdateRowsWalker reject) and routes its re-decode / present-value read through the value-read
         // seam (emitAgreementDecodeLocal / appendAgreementValue).
@@ -3385,7 +3385,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R354: cross-partition (WHERE∩SET) value-agreement preamble for the single-row UPDATE. A
+ * Cross-partition (WHERE∩SET) value-agreement preamble for the single-row UPDATE. A
      * self-FK {@code @reference} routes its lifted columns wholly to SET ({@code UpdateRowsWalker})
      * while the row identity comes from the WHERE (matched-key) partition, so a column the self-FK
      * shares with the identity field (e.g. {@code email.mailbox_id}: the FK
@@ -3413,7 +3413,7 @@ public class TypeFetcherGenerator {
             CodeBlock.Builder block, List<SetGroup> keyGroups, List<SetGroup> setGroups,
             String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        // R356: both partitions adapt into the shared SetGroupWriter leaf view; the bespoke intersection
+        // Both partitions adapt into the shared SetGroupWriter leaf view; the bespoke intersection
         // then reads each view's wrapped group / index. The first key contributor per column.
         record KeyHit(SetGroupWriter writer, int slot) {}
         var keyWriters = setGroupWriters(keyGroups);
@@ -3478,7 +3478,7 @@ public class TypeFetcherGenerator {
         }
     }
 
-    /** R354: re-decode a key/set group's {@code @nodeId} wire value into a preamble-local record,
+    /** Re-decode a key/set group's {@code @nodeId} wire value into a preamble-local record,
      *  {@code null} on a present-but-mismatched id (the WHERE/SET decode local surfaces the throw).
      *  Mirrors {@link #emitSetAgreementPreamble}'s per-group re-decode. */
     private static void emitAgreementDecodeLocal(
@@ -3490,7 +3490,7 @@ public class TypeFetcherGenerator {
             nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), salt);
     }
 
-    /** R354: append one side's present value for the shared column to the agreement list. A decode
+    /** Append one side's present value for the shared column to the agreement list. A decode
      *  group reads its record slot ({@code value<slot+1>()}) guarded on presence + a non-null decode;
      *  a plain field reads the (possibly nested) wire value guarded on presence. */
     private static void appendAgreementValue(
@@ -3509,7 +3509,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189: emits the UPSERT DO-UPDATE {@code setsUpdate.put(t.col, DSL.excluded(t.col))} statements
+ * Emits the UPSERT DO-UPDATE {@code setsUpdate.put(t.col, DSL.excluded(t.col))} statements
      * for each {@code SetField}, guarded by a presence check on the SDL field name. Walks
      * {@link #setFieldColumns} so composite and reference carriers emit one entry per target
      * column.
@@ -3538,7 +3538,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R342 / R356: the per-column plan for the bulk UPDATE SET clause, the SET analogue of
+ * The per-column plan for the bulk UPDATE SET clause, the SET analogue of
      * {@link #insertColumnPlan}, now the shared {@link ColumnOverlap#groupByColumn} over {@link SetGroupWriter}
      * views (each carrying its source {@link SetGroup} index, the decode-local suffix). The three bulk SET
      * emitters ({@link #emitSetVColNameAdds}, {@link #emitSetBulkCellAdds}, {@link #emitSetVFieldPuts}) all
@@ -3551,7 +3551,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R342: the first-row presence gate for a bulk-SET plan column. A disjoint column keeps its single
+ * The first-row presence gate for a bulk-SET plan column. A disjoint column keeps its single
      * writer's gate ({@link #firstRowSetPresenceExpr}, byte-identical to the pre-dedup per-group gate); a
      * shared column's gate is the <em>disjunction</em> of its contributing writers' first-row presence, so
      * the v-column-name list, the per-row cell, and the SET-map entry all appear together iff any writer
@@ -3574,7 +3574,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189 / R342: appends {@code vColNames.add(t.col.getName())} for each distinct bulk-SET plan column,
+ * Appends {@code vColNames.add(t.col.getName())} for each distinct bulk-SET plan column,
      * gated on the column's first-row presence ({@link #setColumnPresenceGate}). One entry per distinct
      * column (was: one per group-column). A column already supplied by the WHERE side
      * ({@code lookupSqlNames}, the self-FK cross-partition case) is skipped here — the lookup-key v-column
@@ -3601,7 +3601,7 @@ public class TypeFetcherGenerator {
 
     /**
      * The bulk-UPDATE uniform-shape gate for one SET group: is the leaf present in the first input
-     * row? Single segment → {@code firstKeys.contains(name)} (byte-identical). Nested (R186) →
+ * row? Single segment → {@code firstKeys.contains(name)} (byte-identical). Nested →
      * a null-safe descent of {@code in.get(0)} ending in {@code containsKey} on the leaf's parent.
      * The {@link #buildUniformShapeGuard} keySet checks ensure every row agrees with the first row's
      * shape (top-level and nested), so gating the column list on the first row is safe.
@@ -3614,7 +3614,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189 / R342: emits the bulk-UPDATE per-row {@code cells.add(...)} list off the {@link #setColumnPlan}
+ * Emits the bulk-UPDATE per-row {@code cells.add(...)} list off the {@link #setColumnPlan}
      * (one cell per distinct column), guarded by the first-row presence gate
      * ({@link #setColumnPresenceGate}). Two phases share one per-row decode:
      *
@@ -3703,7 +3703,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R342: emits the per-row decode locals for the bulk SET clause — one {@code Record<N>} per
+ * Emits the per-row decode locals for the bulk SET clause — one {@code Record<N>} per
      * {@link SetGroup} carrying a {@code @nodeId}, declared once per row. Mirrors
      * {@link #buildInsertDecodeLocals}: the local is declared unconditionally with an {@code instanceof
      * String} guard (absent / non-string wire value → {@code null}) and a presence-gated null-check throw
@@ -3734,7 +3734,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189 / R342: emits {@code sets.put(t.col, v.field(t.col))} off the {@link #setColumnPlan} (one put
+ * Emits {@code sets.put(t.col, v.field(t.col))} off the {@link #setColumnPlan} (one put
      * per distinct column), guarded by {@link #setColumnPresenceGate}. Unlike the two v-populating
      * emitters, this one does <em>not</em> skip a cross-partition column (one shared with the WHERE key,
      * the self-FK case): {@code v.field(t.col)} resolves to the lookup-key v-column the WHERE side added,
@@ -3760,7 +3760,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R342: the bulk-path WHERE∩SET value-agreement, the per-row analogue of the single-row
+ * The bulk-path WHERE∩SET value-agreement, the per-row analogue of the single-row
      * {@link #emitKeySetAgreementPreamble}. A self-FK {@code @reference} routes its lifted columns wholly
      * to SET while the row identity comes from the WHERE key, so a column the self-FK shares with the
      * identity field (e.g. {@code email.mailbox_id}) sits in both partitions. The shared column reaches
@@ -3850,7 +3850,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
-        // R246: SET / WHERE partition and the matched-key identity come off the UpdateRows carrier
+        // SET / WHERE partition and the matched-key identity come off the UpdateRows carrier
         // (updateRows.setColumns() / keyColumns()) and the slim arg surface (inputArg) instead of
         // a TableInputArg. The emitted SQL is structurally identical to the legacy shape; only the
         // source of the partition changed. Carrier slots project back into the SetGroup /
@@ -3879,7 +3879,7 @@ public class TypeFetcherGenerator {
         // @nodeId decode among them; the silent last-write-wins the Map.put below would otherwise allow.
         // No-op (byte-identical) when there is no such overlap.
         emitSetAgreementPreamble(postInGuard, setGroups, "in", "setKey", tablesOnly, tableRef);
-        // R354: cross-partition (WHERE∩SET) value-agreement preamble. A self-FK @reference routes its
+        // Cross-partition (WHERE∩SET) value-agreement preamble. A self-FK @reference routes its
         // lifted columns wholly to SET while the row identity comes from the WHERE key, so a column the
         // self-FK shares with the identity field (e.g. email.mailbox_id) sits in both partitions; the FK
         // forces them equal, this checks it before the DML. Key-side groups are projected into the
@@ -3954,7 +3954,7 @@ public class TypeFetcherGenerator {
         // every column appears once at slot index i in vColNames / cells / WHERE.
         var lookupTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
         for (var g : groups) lookupTargetColumns.addAll(g.targetColumns());
-        // R342: SET columns whose backing column is already a WHERE/lookup-key v-column (the self-FK
+        // SET columns whose backing column is already a WHERE/lookup-key v-column (the self-FK
         // cross-partition overlap). The two v-populating SET emitters skip these so the column appears in
         // v once; emitBulkKeySetAgreement checks the WHERE and SET writers agreed.
         var lookupSqlNames = new LinkedHashSet<String>();
@@ -3963,7 +3963,7 @@ public class TypeFetcherGenerator {
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<?> firstKeys = in.get(0).keySet()", SET);
         postInGuard.add(buildUniformShapeGuard("UPDATE"));
-        // R186: a nested SET leaf is in the column list iff present in the first row; every row must
+        // A nested SET leaf is in the column list iff present in the first row; every row must
         // then agree with the first row's nested shape (the top-level keySet guard above only checks
         // the outer keys), else per-row cells would misalign with the column list.
         postInGuard.add(buildNestedShapeGuards(setGroups));
@@ -3997,7 +3997,7 @@ public class TypeFetcherGenerator {
             emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
         emitSetBulkCellAdds(postInGuard, setGroups, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
-        // R342: WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
+        // WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
         // decode locals declared above this in the loop body. No-op when there is no cross-partition overlap.
         emitBulkKeySetAgreement(postInGuard, groups, setGroups, "bulkKey", "bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
@@ -4073,7 +4073,7 @@ public class TypeFetcherGenerator {
             .add(".where(").add(whereExpr.build()).add(")\n")
             .build();
 
-        // R63: the Postgres-only dialect guard (UPDATE ... FROM (VALUES ...) is a Postgres
+        // The Postgres-only dialect guard (UPDATE... FROM (VALUES...) is a Postgres
         // extension) is now a typed DialectRequirement.RequiresFamily(POSTGRES) on the model,
         // rendered by emitDialectGuard; the inline postDslGuard CodeBlock is gone.
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
@@ -4187,7 +4187,7 @@ public class TypeFetcherGenerator {
             dmlChain.add(".doNothing()\n");
         }
 
-        // R63: jOOQ silently translates `.onConflict(...).doUpdate()` (and `.doNothing()`) to an
+        // JOOQ silently translates `.onConflict(...).doUpdate()` (and `.doNothing()`) to an
         // Oracle `MERGE INTO ...` statement whose concurrency, conflict-key matching, and
         // `RETURNING` semantics differ from PostgreSQL `ON CONFLICT`, and it exposes no setting to
         // disable the emulation. The Oracle rejection is now a typed
@@ -4220,7 +4220,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R186: per-nesting-node shape guards for bulk UPDATE. For each distinct nesting prefix that a
+ * Per-nesting-node shape guards for bulk UPDATE. For each distinct nesting prefix that a
      * SET leaf descends through (e.g. {@code [lokalisering]} for a leaf at
      * {@code [lokalisering, landkode]}), assert every input row's map at that prefix has the same
      * keySet as the first row's — comparing {@code null} (prefix absent or not a {@code Map}) for
@@ -4325,7 +4325,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R246: the lookup-WHERE chunk built from already-projected {@link InputColumnBindingGroup}s
+ * The lookup-WHERE chunk built from already-projected {@link InputColumnBindingGroup}s
      * rather than a {@code TableInputArg}. The UPDATE walker carrier projects its
      * {@code keyColumns()} into these groups ({@link #keyGroupsOf}) and calls this overload; the
      * legacy {@code TableInputArg} overloads above delegate here with {@code tia.fieldBindings()}.
@@ -4527,7 +4527,7 @@ public class TypeFetcherGenerator {
      * lambda (one decode call per arg per row). One shape regardless of key arity (PostgreSQL
      * renders 1-key {@code (col) IN ((v))} identically to {@code col IN (v)}).
      *
-     * <p>R266: the direct-return bulk DELETE projects its {@link DeleteRows} carrier's
+ * <p>The direct-return bulk DELETE projects its {@link DeleteRows} carrier's
      * {@code whereColumns()} into these groups via {@link #keyGroupsOf} and calls this directly,
      * so there is no longer a {@code TableInputArg}-taking overload.
      */
@@ -4771,7 +4771,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R63: renders the request-time dialect guard from the model's typed
+ * Renders the request-time dialect guard from the model's typed
      * {@link DialectRequirement}, replacing the two hand-built {@code postDslGuard}
      * {@link CodeBlock}s (UPSERT's Oracle gate, bulk UPDATE's Postgres gate) with a single helper
      * keyed on the typed arm. Both the {@code RequiresFamily} and {@code RejectsFamily} arms compare
@@ -5026,7 +5026,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R406: single-table discriminated interface DML return. The write half is identical to
+ * Single-table discriminated interface DML return. The write half is identical to
      * {@link #emitProjected} (a plain single-{@code @table} write, its {@code RETURNING} PK captured
      * by {@link #emitKeysTransaction}); only the follow-up SELECT differs. Rather than the
      * concrete-type {@code Type.$fields(...)} projection, it re-projects through R405's shared
@@ -5139,7 +5139,7 @@ public class TypeFetcherGenerator {
         // SELECT count(*) using the same source and predicate as the page query. Lazy-on-selection:
         // the totalCount resolver only runs when the client selects the field.
         //
-        // R13: a faceted carrier additionally binds the facet plan (the generated base and per-facet
+        // A faceted carrier additionally binds the facet plan (the generated base and per-facet
         // condition fragments, plus the decode specs) via the facet-carrying constructor, so
         // ConnectionHelper.facets can issue its UNION ALL with filter-minus-self predicates. The
         // fetcher only calls the generated QueryConditions fragments and collects the results; all
@@ -5190,7 +5190,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R13: the resolved facet view for a Query connection carrier, or empty. Resolves the
+ * The resolved facet view for a Query connection carrier, or empty. Resolves the
      * carrier's {@link no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType} through the
      * derived {@link no.sikt.graphitron.rewrite.model.ConnectionNaming#defaultConnectionName};
      * {@code rejectFacetMisuse} rejects faceted carriers using the deprecated
@@ -5559,7 +5559,7 @@ public class TypeFetcherGenerator {
         // entries. For pure-@lookupKey fields (the common case) filters() is empty and this is a
         // no-op that jOOQ elides.
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
-        // R330: declare an aliased FK-target table local per join hop for every FK-target @nodeId
+        // Declare an aliased FK-target table local per join hop for every FK-target @nodeId
         // override @condition, so each is emitted as a correlated EXISTS rather than mis-passing the
         // lookup's own table. Top-level (non-recursive) method, so static SQL aliases suffice.
         var fkDeclarations = CodeBlock.builder();
@@ -5665,7 +5665,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R258: the two-step single-record DML emit skeleton shared by
+ * The two-step single-record DML emit skeleton shared by
      * {@link #buildMutationDmlRecordFetcher} (record-carrier INSERT/UPSERT/DELETE, SET/WHERE off the
      * {@code TableInputArg}) and {@link #buildMutationUpdatePayloadFetcher} (payload-returning
      * UPDATE, SET/WHERE off the {@link UpdateRows} carrier). The shape is invariant across both: a
@@ -5726,7 +5726,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R258: emits the fetcher for a {@link MutationField.MutationUpdatePayloadField} — the
+ * Emits the fetcher for a {@link MutationField.MutationUpdatePayloadField} — the
      * payload-returning single UPDATE. Reuses {@link #buildSingleRecordTwoStepFetcher}'s skeleton;
      * the SET / WHERE partition is sourced from the {@link UpdateRows} carrier via the shared
      * {@link #setGroupsOf} / {@link #keyGroupsOf} projections (the same source R246's direct-return
@@ -5746,7 +5746,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R266: emits the fetcher for a {@link MutationField.MutationDeletePayloadField} — the
+ * Emits the fetcher for a {@link MutationField.MutationDeletePayloadField} — the
      * payload-returning single DELETE. Reuses {@link #buildSingleRecordTwoStepFetcher}'s skeleton;
      * the WHERE columns are sourced from the {@link DeleteRows} carrier via {@link #keyGroupsOf}
      * (never from {@code tia.fieldBindings()}) and fed to the carrier-driven
@@ -5765,7 +5765,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R258: the carrier-driven single-row UPDATE chain for the payload-returning UPDATE fetcher.
+ * The carrier-driven single-row UPDATE chain for the payload-returning UPDATE fetcher.
      * Mirrors {@link #buildMutationUpdateFetcher}'s single-row body (the direct-return path): a
      * dynamic SET map built from the carrier's {@code setColumns()} so absent fields drop out
      * (PATCH semantics), a runtime empty-SET guard, and the lookup-WHERE built from the carrier's
@@ -5852,7 +5852,7 @@ public class TypeFetcherGenerator {
             case INSERT -> buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal);
             case UPDATE -> buildRecordUpdateChain(tia, tableRef, tablesOnly, tableLocal);
             case UPSERT -> buildRecordUpsertChain(tia, tableRef, tablesOnly, tableLocal);
-            // R266: DELETE is carved off onto MutationDeletePayloadField (its own fetcher calls
+            // DELETE is carved off onto MutationDeletePayloadField (its own fetcher calls
             // buildRecordDeleteChain with the carrier's WHERE groups); the compact-constructor on
             // MutationDmlRecordField rejects DELETE, so this arm is unreachable.
             case DELETE -> throw new IllegalStateException(
@@ -5862,7 +5862,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R266 — single-row DELETE chain for the payload-returning {@link MutationField.MutationDeletePayloadField}
+ * Single-row DELETE chain for the payload-returning {@link MutationField.MutationDeletePayloadField}
      * carrier. Mirrors the direct-return DELETE chain ({@link #buildMutationDeleteFetcher}): same
      * WHERE shape, no SET clause. The WHERE columns are sourced from the {@link DeleteRows} carrier's
      * {@code whereColumns()} (projected to {@link InputColumnBindingGroup}s via {@link #keyGroupsOf}),
@@ -5996,7 +5996,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R141: emits the fetcher for a {@link MutationField.MutationBulkDmlRecordField} — a record-
+ * Emits the fetcher for a {@link MutationField.MutationBulkDmlRecordField} — a record-
      * returning DML mutation with bulk {@code @table} input and a list-shaped data field on the
      * carrier. The fetcher loops the input list, runs one DML per row inside
      * {@code dsl.transactionResult(...)}, collects the PK records into a typed
@@ -6045,7 +6045,7 @@ public class TypeFetcherGenerator {
             outputPackage);
     }
 
-    /** R258: the seam for {@link #buildBulkRecordTwoStepFetcher}'s per-row DML body. */
+    /** The seam for {@link #buildBulkRecordTwoStepFetcher}'s per-row DML body.*/
     @FunctionalInterface
     private interface BulkPerRowBodyFn {
         CodeBlock build(GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
@@ -6053,7 +6053,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R258: the bulk two-step DML emit skeleton shared by {@link #buildMutationBulkDmlRecordFetcher}
+ * The bulk two-step DML emit skeleton shared by {@link #buildMutationBulkDmlRecordFetcher}
      * (record-carrier INSERT/DELETE) and {@link #buildMutationBulkUpdatePayloadFetcher}
      * (payload-returning bulk UPDATE). The shape is invariant: an empty-list short-circuit, then a
      * per-row N+1 accumulator collecting PK echoes into a {@code Result<RecordN<PK>>} in input order
@@ -6127,7 +6127,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R258: emits the fetcher for a {@link MutationField.MutationBulkUpdatePayloadField} — the
+ * Emits the fetcher for a {@link MutationField.MutationBulkUpdatePayloadField} — the
      * payload-returning bulk UPDATE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
      * per-row SET / WHERE partition is sourced from the {@link UpdateRows} carrier (not
      * {@code tia.setFields()} / {@code tia.fieldBindings()}), so the bulk payload UPDATE no longer
@@ -6148,7 +6148,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R266: emits the fetcher for a {@link MutationField.MutationBulkDeletePayloadField} — the
+ * Emits the fetcher for a {@link MutationField.MutationBulkDeletePayloadField} — the
      * payload-returning bulk DELETE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
      * per-row WHERE columns are sourced from the {@link DeleteRows} carrier ({@link #keyGroupsOf}),
      * not {@code tia.fieldBindings()}, and fed to the carrier-driven
@@ -6167,7 +6167,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R258: the carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE. Mirrors
+ * The carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE. Mirrors
      * {@link #buildBulkRecordPerRowUpdateBody} but sources the SET map from the carrier's
      * {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from the carrier's {@code keyColumns()}
      * ({@link #keyGroupsOf}) rather than the {@code @value}-derived {@code tia.setFields()} /
@@ -6241,7 +6241,7 @@ public class TypeFetcherGenerator {
                 "MutationBulkDmlRecordField with DmlKind.UPSERT — compact-constructor should "
                 + "have rejected this; UPSERT is deferred to R145 under R144's cardinality-"
                 + "safety regime");
-            // R266: DELETE is carved off onto MutationBulkDeletePayloadField (its own fetcher calls
+            // DELETE is carved off onto MutationBulkDeletePayloadField (its own fetcher calls
             // buildBulkRecordPerRowDeleteBody with the carrier's WHERE groups); the compact-
             // constructor on MutationBulkDmlRecordField rejects DELETE, so this arm is unreachable.
             case DELETE -> throw new IllegalStateException(
@@ -6251,7 +6251,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R266 — per-row DELETE body for the payload-returning {@link MutationField.MutationBulkDeletePayloadField}
+ * Per-row DELETE body for the payload-returning {@link MutationField.MutationBulkDeletePayloadField}
      * (driven from {@link #buildMutationBulkDeletePayloadFetcher}). Each input row builds a
      * {@code deleteFrom(table).where(<lookup>).returningResult(PK).fetchOne()} statement; the
      * returned PK-only {@code RecordN} is appended to the bulk accumulator in input order. A row that
@@ -6626,7 +6626,7 @@ public class TypeFetcherGenerator {
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
                 sourceKey, lift, returnType.table(), resultType, CodeBlock.of("success.value()"));
         } else {
-            // R305: short-circuit on a null source. The LocalContext errors transport fires the
+            // Short-circuit on a null source. The LocalContext errors transport fires the
             // data-channel fetcher with a null source (data(null).localContext(errors)); the former
             // SingleRecordTableField carrier guarded this explicitly, and the record-sourced
             // BatchedTableField arm (its
@@ -6654,7 +6654,7 @@ public class TypeFetcherGenerator {
     }
 
     private static String bkfFieldName(BatchKeyField bkf) {
-        // Fact-gated (R432): only the Table-sourced batched arm and the split lookup twin route
+        // Fact-gated: only the Table-sourced batched arm and the split lookup twin route
         // through buildSplitQueryDataFetcher; a record-sourced instance reaching it is a
         // dispatch bug, not an author error.
         if (bkf instanceof ChildField.BatchedTableField btf
@@ -6696,7 +6696,7 @@ public class TypeFetcherGenerator {
     //   - present  -> ErrorRouter.dispatch(e, ErrorMappings.<CONST>, env, factory)
     //   - empty    -> ErrorRouter.surfaceClientErrorOrRedact(e, env)
     // The no-channel disposition is uniform across sync catch arms and async
-    // .exceptionally arms (R415); its one definition lives on
+    //.exceptionally arms; its one definition lives on
     // ErrorRouterClassGenerator.noChannelRouterCall. Async paths today are all
     // DataLoader-based child fields (BatchKeyField); none implement WithErrorChannel,
     // so they take the no-channel branch. When the mutation-service builders (today
@@ -6800,7 +6800,7 @@ public class TypeFetcherGenerator {
      * the throw through {@code ErrorRouter.surfaceClientErrorOrRedact} (emitted at
      * {@code <outputPackage>.schema.ErrorRouter}). A {@code GraphitronClientException} (e.g. a
      * malformed/wrong-type {@code @nodeId} filter id) surfaces its real message; every other
-     * throwable still redacts to a correlation id (R378). Behaviour changes only for the
+ * throwable still redacts to a correlation id. Behaviour changes only for the
      * client-error marker type, so the blast radius is bounded to those throws.
      */
     private static CodeBlock noChannelCatchArm(String outputPackage) {

@@ -34,7 +34,7 @@ class LookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    // R232: the inline LookupTableField + condition-join shape now classifies and emits a real
+    // The inline LookupTableField + condition-join shape now classifies and emits a real
     // correlated subquery via InlineLookupTableFieldEmitter; the validator no longer
     // surfaces a deferred-rejection for it.
 

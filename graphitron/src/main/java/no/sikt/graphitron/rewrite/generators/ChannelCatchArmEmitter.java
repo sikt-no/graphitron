@@ -13,7 +13,7 @@ import java.util.Optional;
 
 /**
  * Emits the body of a synchronous fetcher's {@code catch (Throwable e)} arm for an
- * {@link no.sikt.graphitron.rewrite.model.WithErrorChannel} field (R244). One seam serves all three
+ * {@link no.sikt.graphitron.rewrite.model.WithErrorChannel} field. One seam serves all three
  * transports so consumers dispatch on the optional carrier rather than branching across parallel
  * {@code catchArm} overloads:
  *
@@ -47,9 +47,9 @@ public final class ChannelCatchArmEmitter {
             String outputPackage,
             CodeBlock localContextSentinel) {
         if (channel.isEmpty()) {
-            // No-channel disposition routes through surfaceClientErrorOrRedact (R378): a
+            // No-channel disposition routes through surfaceClientErrorOrRedact: a
             // GraphitronClientException surfaces its real message; everything else still redacts.
-            // One definition for all no-channel emit sites (R415).
+            // One definition for all no-channel emit sites.
             return CodeBlock.of("return $L;\n",
                 ErrorRouterClassGenerator.noChannelRouterCall(outputPackage, "e"));
         }

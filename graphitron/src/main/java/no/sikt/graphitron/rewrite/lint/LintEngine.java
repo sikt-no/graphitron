@@ -29,7 +29,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * The SDL lint engine (R398): one shared traversal over the parsed graphql-java AST that dispatches
+ * The SDL lint engine: one shared traversal over the parsed graphql-java AST that dispatches
  * each node to the {@link LintVisitor}s subscribed to its {@link LintNodeKind}. ESLint /
  * graphql-schema-linter idiom, build-side: graphitron already parses with graphql-java, and the
  * findings ride the existing {@link BuildWarning} channel into {@code ValidationReport}, so the LSP
@@ -47,7 +47,7 @@ public final class LintEngine {
 
     private final List<LintVisitor> visitors;
     private final Map<LintNodeKind, List<LintVisitor>> byKind;
-    /** Author-owned type names matching one of these globs are skipped alongside the bundled surface (R408). */
+    /** Author-owned type names matching one of these globs are skipped alongside the bundled surface.*/
     private final List<Pattern> excludedTypeMatchers;
 
     public LintEngine(List<LintVisitor> visitors) {
@@ -74,7 +74,7 @@ public final class LintEngine {
     /**
      * The built-in engine that additionally skips author-owned types whose name matches one of
      * {@code excludedTypePatterns} (glob syntax; {@code *} any run, {@code ?} one char). This is the
-     * {@code <lint>} block's {@code excludedTypes} axis (R408): it widens the same skip boundary the
+ * {@code <lint>} block's {@code excludedTypes} axis: it widens the same skip boundary the
      * bundled-type exclusion uses, so the exclusion covers only the engine's AST walk.
      */
     public static LintEngine builtIn(List<String> excludedTypePatterns) {
@@ -96,7 +96,7 @@ public final class LintEngine {
      * injector's definitions ({@code injectedNames}, from
      * {@link no.sikt.graphitron.rewrite.AttributedRegistry#injectedNames()}). Both {@code injectedNames}
      * and {@code BUNDLED_TYPE_NAMES} are generator-owned surface the author never wrote and cannot
-     * rename or document, so linting them is pure noise (R407); the exclusion widens the existing
+ * rename or document, so linting them is pure noise; the exclusion widens the existing
      * name-set skip to a second contributor rather than adding a new skip mechanism.
      */
     public List<BuildWarning> run(TypeDefinitionRegistry registry, Set<String> injectedNames) {
@@ -119,7 +119,7 @@ public final class LintEngine {
     }
 
     /**
-     * Whether a type name matches a configured {@code excludedTypes} glob (R408). This widens the same
+ * Whether a type name matches a configured {@code excludedTypes} glob. This widens the same
      * per-type skip boundary the bundled ({@code BUNDLED_TYPE_NAMES}) and federation-injected
      * ({@code injectedNames}, R407) name-set exclusions use, and stays scoped to the engine's AST walk;
      * a classifier advisory on an excluded type still fires.

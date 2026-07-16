@@ -18,7 +18,7 @@ import java.util.Objects;
  * {@link no.sikt.graphitron.rewrite.model.ChildField} variant can carry
  * {@link OnParentJoin} regardless of which intermediate hops appear in the joinPath.
  *
- * <p><b>Grain and topology are one decision (R450).</b> A hop-0 {@code filter()} reads the parent
+ * <p><b>Grain and topology are one decision.</b> A hop-0 {@code filter()} reads the parent
  * row, so it makes the parent's identity part of the fetch's inputs: the batch must be keyed on
  * the parent PK, and the query must anchor the parent table so the filter's source parameter has
  * an alias to bind. Both follow from landing the {@link OnParentJoin} arm, so the classifier lands
@@ -41,7 +41,7 @@ public sealed interface ParentCorrelation
      * The table that owns the DataLoader key columns ({@code SourceKey.columns()}) this
      * correlation pairs the parent-input {@code VALUES} table against. The rows-method emitters
      * read {@code Tables.<OWNER>.<COL>.getDataType()} off this table so each {@code VALUES} cell
-     * binds through the column's registered jOOQ {@code Converter} (R413); which table owns the
+ * binds through the column's registered jOOQ {@code Converter}; which table owns the
      * key columns was decided by the classifier when it chose them, so the fork is folded here
      * rather than re-derived per emit site:
      *
@@ -67,7 +67,7 @@ public sealed interface ParentCorrelation
     /**
      * The parent-side columns the {@code @splitQuery} batch keys on: the {@code VALUES}
      * {@code parentInput} table carries one cell per column, and the DataLoader key tuple IS this
-     * column tuple. This is the batch <em>grain</em>, and (R450) it is a pure projection off the
+ * column tuple. This is the batch <em>grain</em>, and it is a pure projection off the
      * arm so grain and correlation topology cannot drift apart:
      *
      * <ul>
@@ -177,8 +177,8 @@ public sealed interface ParentCorrelation
      * {@code JoinStep.LiftedHop}): the DataLoader key tuple <em>is</em> the target-column tuple —
      * no foreign key, no traversal, no source side distinct from the target side. Carried by the
      * {@code @sourceRows} lifter-leaf, the class-backed-parent accessor arm, and the
-     * source=target carrier re-fetch (R305), whose correlation is PK self-identity — the
-     * degenerate case of the FK pairing (R333). The rows-method JOIN predicate is
+ * source=target carrier re-fetch, whose correlation is PK self-identity — the
+ * degenerate case of the FK pairing. The rows-method JOIN predicate is
      * {@code target.<col> = parentInput.field(col)} per column, identical in shape to the FK
      * case with both sides the same column.
      *
@@ -260,13 +260,13 @@ public sealed interface ParentCorrelation
     }
 
     /**
-     * First hop is a lateral routine node (R435): correlation rides the routine call's
+ * First hop is a lateral routine node: correlation rides the routine call's
      * arguments ({@link ParamSource.SourceColumn} bindings on the hop's
      * {@link TableExpr.RoutineCall} target), so the step-0 WHERE contributes nothing
      * ({@code noCondition()}) and the emitters render the correlated columns inside the call
      * expression itself. This arm is the one-to-one mirror of {@link On.Lateral}; the other two
      * On occupants ({@link On.ColumnPairs}, {@link On.Predicate}) are split across {@link OnFkSlots}
-     * and {@link OnParentJoin} by whether hop 0 carries a parent-reading {@code filter()} (R450).
+ * and {@link OnParentJoin} by whether hop 0 carries a parent-reading {@code filter()}.
      *
      * <p>No payload beyond {@code firstHop}: the correlated columns live on the target's
      * {@link RoutineRef.ArgBinding}s, keeping this carrier a pure step-0 dispatch fact.

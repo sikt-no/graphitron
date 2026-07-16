@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
- * R63: pipeline-tier coverage that the classifier populates {@link MutationField.DmlTableField}'s
+ * Pipeline-tier coverage that the classifier populates {@link MutationField.DmlTableField}'s
  * typed {@link DialectRequirement} at construction. INSERT, DELETE, and single-row UPDATE carry
  * {@link DialectRequirement.None}; the bulk-UPDATE arm carries
  * {@link DialectRequirement.RequiresFamily}({@code POSTGRES}) because {@code UPDATE ... FROM (VALUES

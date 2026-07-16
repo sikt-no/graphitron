@@ -11,7 +11,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R262: {@code @nodeId} is silently conditional. The SDL directive permits {@code @nodeId} on
+ * {@code @nodeId} is silently conditional. The SDL directive permits {@code @nodeId} on
  * {@code FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION} with no restriction to
  * {@code ID}, but every decode/encode arm in the generator is gated on {@code "ID".equals(...)}.
  * On a non-{@code ID} coordinate the directive is dropped, the base64 wire String is bound raw, and

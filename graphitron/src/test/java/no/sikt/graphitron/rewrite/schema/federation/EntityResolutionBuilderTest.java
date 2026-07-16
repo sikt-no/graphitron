@@ -277,7 +277,7 @@ class EntityResolutionBuilderTest {
 
     @Test
     void keyOnTypeWithUnresolvableTable_preservesUnknownTableRejection() {
-        // R176: when a type is already UnclassifiedType from upstream (here: TypeBuilder's
+        // When a type is already UnclassifiedType from upstream (here: TypeBuilder's
         // unknownTableRejection), EntityResolutionBuilder must pass it through unchanged
         // rather than overwriting it with a misleading "no @table directive" message.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
@@ -295,7 +295,7 @@ class EntityResolutionBuilderTest {
 
     @Test
     void keyOnNodeTypeWithUnresolvableKeyColumn_preservesUnresolvedColumnRejection() {
-        // R176: a @node(keyColumns: [...]) referencing an unknown column makes TypeBuilder
+        // A @node(keyColumns: [...]) referencing an unknown column makes TypeBuilder
         // produce an UnclassifiedType carrying the key-column-error message. The downstream
         // EntityResolutionBuilder must not overwrite that with its own guess.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
@@ -313,7 +313,7 @@ class EntityResolutionBuilderTest {
 
     @Test
     void keyOnRecordType_namesRecordKindInMessage() {
-        // R176: Case B's record-backed arm — the "missing @table" hint is wrong-by-coincidence
+        // Case B's record-backed arm — the "missing @table" hint is wrong-by-coincidence
         // because record-backed types intentionally have no @table. Name the kind explicitly so
         // the author sees that @key on a record-backed type is the misuse, not a forgotten @table.
         // R317 slice 5 — FooRec keeps its record-backed verdict; the diagnostic carries the message.
@@ -334,7 +334,7 @@ class EntityResolutionBuilderTest {
 
     @Test
     void resolvableFalseKeyOnRecordType_isAcceptedAsReferenceOnlyStub() {
-        // R286: a @key(resolvable: false) declares a reference-only entity stub — this subgraph
+        // A @key(resolvable: false) declares a reference-only entity stub — this subgraph
         // does not own its resolution and emits no _entities handler, so it needs no backing
         // table. The record-backed type must survive classification (not demote to UnclassifiedType)
         // and produce no EntityResolution (the dispatcher never sees it).
@@ -356,7 +356,7 @@ class EntityResolutionBuilderTest {
 
     @Test
     void mixedResolvableAndNonResolvableKeysOnRecordType_stillRejects() {
-        // R286: the relaxation only applies when ALL keys are resolvable: false. A type with at
+        // The relaxation only applies when ALL keys are resolvable: false. A type with at
         // least one resolvable @key still needs a backing table for the SELECT path, so the
         // R176 diagnostic stays.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """

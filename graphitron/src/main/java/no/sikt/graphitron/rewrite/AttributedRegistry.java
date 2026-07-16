@@ -19,7 +19,7 @@ import java.util.Set;
  * {@link #federationLink()} flag is derived from it ("injected anything"), so the two facts live in
  * one component rather than a parallel boolean. The lint engine excludes these names because they
  * are the generator-owned federation surface, not author input, and carry the federation spec's own
- * names with a {@code null} source (R407). Tests that construct a registry ad-hoc (without running
+ * names with a {@code null} source. Tests that construct a registry ad-hoc (without running
  * the full attribution pipeline) use {@link #from(TypeDefinitionRegistry)} to derive the set from
  * the registry's contents.
  */

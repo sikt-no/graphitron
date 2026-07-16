@@ -87,7 +87,7 @@ public record RewriteContext(
         // back to file-level / UNKNOWN locations.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
         // Lint suppression is null-tolerant: only the build mojos populate it from the <lint> block;
-        // every other caller (unit tier, LSP/MCP dev-loop) defaults to no suppression (R408).
+        // every other caller (unit tier, LSP/MCP dev-loop) defaults to no suppression.
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
         // Session-state config is null-tolerant: only the build mojos populate it from the
         // <sessionState> block; every other caller defaults to no configured hook (SessionHook.NONE).

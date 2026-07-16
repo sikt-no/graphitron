@@ -133,7 +133,7 @@ class SchemaSdlEmitterTest {
     }
 
     /**
-     * R291: generator-only directive definitions and applications never print; consumer-declared
+ * Generator-only directive definitions and applications never print; consumer-declared
      * survivor directives keep printing with their applications. Asserted on both arms.
      */
     @Test
@@ -164,7 +164,7 @@ class SchemaSdlEmitterTest {
     }
 
     /**
-     * R291: strictly internal support types never print; the published support type prints
+ * Strictly internal support types never print; the published support type prints
      * iff classification retained it, with its description. Asserted on both arms.
      */
     @Test
@@ -193,7 +193,7 @@ class SchemaSdlEmitterTest {
     }
 
     /**
-     * R283: {@code generateServiceSDLV2}'s spec-built-in filter (now mirrored in the emitter's
+ * {@code generateServiceSDLV2}'s spec-built-in filter (now mirrored in the emitter's
      * own printer) strips the {@code @oneOf} definition while keeping the application; the
      * federation arm reinstates the definition.
      */

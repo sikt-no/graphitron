@@ -10,7 +10,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R332: the actionable tier of the {@code @table}-on-input deprecation signal. Pins the per-usage
+ * The actionable tier of the {@code @table}-on-input deprecation signal. Pins the per-usage
  * build warning and its one carve-out at the classifier, so the load-bearing behavior (the
  * encoded-ID / scalar-return INSERT/UPSERT suppression) is verified without a compilation /
  * execution fixture.

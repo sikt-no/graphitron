@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * Generates the per-connection {@code <Conn>Fetchers} and per-edge {@code <Edge>Fetchers} classes
- * (R303). Each carries one {@code public static} delegate per field
+ *. Each carries one {@code public static} delegate per field
  * ({@code edges} / {@code nodes} / {@code pageInfo} / {@code totalCount}; {@code node} /
  * {@code cursor}) that forwards to the shared {@link ConnectionHelperClassGenerator ConnectionHelper}.
  *
@@ -45,7 +45,7 @@ public final class ConnectionFetcherClassGenerator {
                 if (ct.schemaType().getFieldDefinition("totalCount") != null) {
                     conn.addMethod(delegate("totalCount", helper, "totalCount"));
                 }
-                // R13: facets delegate under the same has-facets gate as the registration emitter,
+                // Facets delegate under the same has-facets gate as the registration emitter,
                 // so the code-registry reference and the method can never drift.
                 if (!ct.facets().isEmpty()) {
                     conn.addMethod(facetsDelegate(helper, outputPackage));

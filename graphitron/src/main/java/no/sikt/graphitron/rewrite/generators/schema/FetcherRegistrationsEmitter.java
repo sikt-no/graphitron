@@ -24,7 +24,7 @@ import java.util.TreeMap;
  * through {@link graphql.schema.FieldCoordinates}.
  *
  * <p>Covers the categories inherited from the deleted {@code WiringClassGenerator}; every field
- * is now wired through its owning {@code <Type>Fetchers} class (R303):
+ * is now wired through its owning {@code <Type>Fetchers} class:
  * <ol>
  *   <li>Regular object types. {@code codeRegistry.dataFetcher(FieldCoordinates.coordinates("Film", "title"), FilmFetchers::title)}.</li>
  *   <li>Nested object types that own any fetcher — every field references into the type's own
@@ -114,7 +114,7 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage) {
-        // R303: every nested object type that owns a fetcher gets its own <Type>Fetchers class, and
+        // Every nested object type that owns a fetcher gets its own <Type>Fetchers class, and
         // each field's read (reified or method-backed) references into it. The gate is shared with
         // TypeFetcherGenerator.collectNestedFetcherClasses (which emits the class) via
         // FetcherEmitter.nestedTypeOwnsFetchers so the two sites cannot drift.
@@ -151,7 +151,7 @@ public final class FetcherRegistrationsEmitter {
         if (totalCount != null) {
             body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)", FIELD_COORDS, connName, "totalCount", fetchers);
         }
-        // R13: the facets resolver rides the same shape behind a has-facets gate. The gate is the
+        // The facets resolver rides the same shape behind a has-facets gate. The gate is the
         // model's facets() view (not SDL presence: the facets field only exists when the promoter
         // synthesised it from that same list), and it drives ConnectionFetcherClassGenerator too so
         // the reference and the method agree. The *FacetValue / <Conn>Facets types need no wiring;

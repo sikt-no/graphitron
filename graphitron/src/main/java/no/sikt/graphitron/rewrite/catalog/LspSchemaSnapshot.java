@@ -59,7 +59,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         Map<String, TypeBackingShape> typesByName();
 
         /**
-         * R159 — per-carrier projection of the payload data field's name. Keyed by the
+ * Per-carrier projection of the payload data field's name. Keyed by the
          * carrier's SDL type name; value is the SDL field name of the carrier's single
          * data field. Populated only for types whose classifier-side structural DML-payload
          * scan ({@code BuildContext.scanStructuralDmlPayload}) admits; absent for everything
@@ -71,7 +71,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         Map<String, String> payloadDataFieldByType();
 
         /**
-         * R160 — per-field LSP classification projection. Keyed by
+ * Per-field LSP classification projection. Keyed by
          * {@code "ParentType.fieldName"}; value is the {@link FieldClassification} variant
          * the LSP's inlay-hint and hover arms render. Absent entries mean the classifier
          * produced no field for that coordinate (e.g., the buffer is mid-edit and
@@ -80,14 +80,14 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         Map<String, FieldClassification> fieldClassificationsByCoord();
 
         /**
-         * R160 — per-type LSP classification projection. Keyed by the SDL type name; value
+ * Per-type LSP classification projection. Keyed by the SDL type name; value
          * is the {@link TypeClassification} variant the LSP's inlay-hint and hover arms
          * render. Absent entries mean the classifier produced no type for that name.
          */
         Map<String, TypeClassification> typeClassificationsByName();
 
         /**
-         * R350 — per-named-type declaration location, keyed by the SDL type name; value is
+ * Per-named-type declaration location, keyed by the SDL type name; value is
          * the canonical {@code type}/{@code scalar} declaration's source position
          * (0-based LSP coordinates, matching every other goto-definition consumer of
          * {@link CompletionData.SourceLocation}). Lets the LSP's intra-schema
@@ -129,7 +129,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         /**
-         * R350 — convenience lookup; returns {@link Optional#empty()} when no declaration
+ * Convenience lookup; returns {@link Optional#empty()} when no declaration
          * location is on file for {@code name} (built-in scalar, bundled-directive type,
          * or a name the schema does not declare).
          */
@@ -138,7 +138,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         /**
-         * R159 — site-context classifier at LSP-time. Returns the
+ * Site-context classifier at LSP-time. Returns the
          * {@link FieldSourceSigil.SiteContext} arm that
          * {@link FieldSourceSigil#sourceSigilDefinedAt} dispatches on for the
          * {@code (typeName, fieldName)} coordinate. The snapshot is the single source of truth

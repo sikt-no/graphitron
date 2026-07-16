@@ -13,7 +13,7 @@ class GraphitronContextInterfaceGeneratorTest {
 
     @Test
     void generate_returnsExactlyOneTopLevelType() {
-        // R190: the impl is nested inside the interface (same-compilation-unit permits), so
+        // The impl is nested inside the interface (same-compilation-unit permits), so
         // only one top-level TypeSpec is emitted.
         assertThat(GraphitronContextInterfaceGenerator.generate()).hasSize(1);
     }
@@ -29,7 +29,7 @@ class GraphitronContextInterfaceGeneratorTest {
     @Test
     void generatedInterface_hasThreeMethods() {
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
-        // R190: getTenantId is gone (R45 reintroduces it on top of the sealed surface).
+        // GetTenantId is gone (R45 reintroduces it on top of the sealed surface).
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
             .containsExactlyInAnyOrder("getDslContext", "getContextArgument", "getValidator");
     }
@@ -49,7 +49,7 @@ class GraphitronContextInterfaceGeneratorTest {
         assertThat(method.parameters()).hasSize(1);
         assertThat(method.parameters().get(0).type().toString())
             .isEqualTo("graphql.schema.DataFetchingEnvironment");
-        // R190: getDslContext is a default method now; the impl reads off the GraphQLContext.
+        // GetDslContext is a default method now; the impl reads off the GraphQLContext.
         assertThat(method.modifiers()).contains(Modifier.DEFAULT);
         assertThat(method.code().toString())
             .contains("env.getGraphQlContext().get(org.jooq.DSLContext.class)");
@@ -83,7 +83,7 @@ class GraphitronContextInterfaceGeneratorTest {
 
     @Test
     void generatedInterface_hasNoAbstractMethods() {
-        // R190: every method on the sealed interface is default; the sealed-interface + singleton
+        // Every method on the sealed interface is default; the sealed-interface + singleton
         // impl shape replaces the legacy "one abstract method for the lambda overload" invariant.
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
         var abstractMethods = spec.methodSpecs().stream()

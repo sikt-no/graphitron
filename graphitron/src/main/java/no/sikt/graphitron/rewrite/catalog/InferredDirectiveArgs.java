@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * R160 — canonical-argument-per-directive map for the three current inference targets.
+ * Canonical-argument-per-directive map for the three current inference targets.
  * Single source of truth for "which directive arguments does Graphitron's inference layer
  * fill in when the author omits them?".
  *

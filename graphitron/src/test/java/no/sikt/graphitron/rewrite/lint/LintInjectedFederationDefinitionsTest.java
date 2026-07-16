@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R407: the federation {@code @link} injector's definitions (federation/link namespaced types and
+ * The federation {@code @link} injector's definitions (federation/link namespaced types and
  * scalars such as {@code federation__FieldSet}, {@code link__Import}) are generator-owned surface
  * the author never wrote and cannot rename or document, so the lint engine must not flag them.
  *

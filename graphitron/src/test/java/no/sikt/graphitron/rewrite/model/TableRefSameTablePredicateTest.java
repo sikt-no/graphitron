@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code Table.getName()} casing on another; the predicate must match across that divergence and
  * stay null-safe.
  *
- * <p>R441: {@link TableRef#denotesSameTableAs(TableRef)} now routes through the reified jOOQ
+ * <p>{@link TableRef#denotesSameTableAs(TableRef)} now routes through the reified jOOQ
  * {@code tableClass} identity when both refs carry one, so a schema-qualified {@code @table} echo
  * matches jOOQ's unqualified canonical name across colliding schemas, and two same-bare-name refs
  * from different schemas are correctly distinct. The name-compare fallback survives only for

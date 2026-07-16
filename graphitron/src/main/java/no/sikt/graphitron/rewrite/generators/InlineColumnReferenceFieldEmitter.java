@@ -74,7 +74,7 @@ public final class InlineColumnReferenceFieldEmitter {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
             ClassName jooqTableClass = ht.targetTable().tableClass();
-            // Materialization routes through the shared TableExpr switch (R435). Routine hops
+            // Materialization routes through the shared TableExpr switch. Routine hops
             // never reach the column-reference path today (typed Deferred at classify); the
             // OnLateralArgs / On.Lateral arms below throw if that guard slips. Column
             // references carry no runtime-argument surface, so the Env source is a placeholder

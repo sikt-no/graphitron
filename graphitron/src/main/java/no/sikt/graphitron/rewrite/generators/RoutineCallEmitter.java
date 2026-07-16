@@ -8,7 +8,7 @@ import no.sikt.graphitron.rewrite.model.TableExpr;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 
 /**
- * Emits the table expression for a {@link TableExpr.RoutineCall} node (R435): the schema's
+ * Emits the table expression for a {@link TableExpr.RoutineCall} node: the schema's
  * generated {@code Routines} convenience method invoked with the bound IN parameters,
  * {@code Routines.<method>(<args>)}. Callers append {@code .as(alias)} like any table.
  *

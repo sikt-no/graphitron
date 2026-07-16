@@ -36,7 +36,7 @@ import java.util.Set;
  *       fields are not flat-indexed; they resolve through the embedding {@code NestingField}).
  *       Each such coordinate's {@code sourceKey()} demand must be contained in the guarantee:
  *       base-named columns for the column-tuple wraps, the reserved full parent row for
- *       {@link SourceKey.Wrap.TableRecord} (R436).</li>
+ * {@link SourceKey.Wrap.TableRecord}.</li>
  * </ul>
  *
  * <p><b>Independence is the hard requirement, not a preference.</b> The requirement side must not

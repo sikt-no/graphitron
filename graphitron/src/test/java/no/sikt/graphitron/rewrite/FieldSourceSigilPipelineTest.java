@@ -62,7 +62,7 @@ class FieldSourceSigilPipelineTest {
         var mutField = schema.field("Mutation", "runFilms");
         assertThat(mutField).isInstanceOf(MutationField.MutationServiceRecordField.class);
 
-        // R276: the carrier binds to its element's JooqTableRecordType; the data
+        // The carrier binds to its element's JooqTableRecordType; the data
         // field classifies as SingleRecordTableField (the @field(name: "$source") directive is a
         // no-op confirmation of that binding).
         assertThat(schema.type("FilmListPayload"))

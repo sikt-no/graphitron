@@ -7,7 +7,7 @@ import no.sikt.graphitron.rewrite.model.Target;
 import no.sikt.graphitron.rewrite.model.TargetShape;
 
 /**
- * The three-axis classification verdict the R281 corpus asserts (R316): a {@link Source} (the arrival
+ * The three-axis classification verdict the R281 corpus asserts: a {@link Source} (the arrival
  * endpoint), an {@link Operation} arm (the verb), and a {@link Target} (the projection endpoint). This is
  * the dimensional fingerprint the {@code @classified} directive carries and the field model exposes
  * directly through {@code GraphitronSchema.sourceOf} (R463: the arrival fold) / {@link OutputField#operation()} /
@@ -50,7 +50,7 @@ public record DimensionTuple(Source source, Class<? extends Operation> operation
 
     /**
      * The verdict the field model produces for {@code field}, the {@code actual} side of a corpus
-     * assertion. The {@code source} arm (R463) is the ancestor-product fold, which is a parent-grain
+ * assertion. The {@code source} arm is the ancestor-product fold, which is a parent-grain
      * fact the leaf cannot compute alone, so the caller supplies it (via {@code GraphitronSchema.sourceOf});
      * the {@code operation} / {@code target} arms are leaf-derived.
      */

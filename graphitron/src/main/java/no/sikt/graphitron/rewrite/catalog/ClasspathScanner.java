@@ -51,7 +51,7 @@ public final class ClasspathScanner {
     /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for R368's condition fact. */
     private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
 
-    /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion (R464). */
+    /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion.*/
     private static final String GRAPHQL_SCALAR_TYPE_DESCRIPTOR = "Lgraphql/schema/GraphQLScalarType;";
 
     private ClasspathScanner() {}
@@ -134,7 +134,7 @@ public final class ClasspathScanner {
      * {@code Lgraphql/schema/GraphQLScalarType;} so the LSP can complete
      * {@code @scalarType(scalar:)} from the {@code GraphQLScalarType} constants
      * actually present on the consumer's codegen classpath (their own and any
-     * library's), rather than a hardcoded convention list (R464).
+ * library's), rather than a hardcoded convention list.
      *
      * <p>Exact descriptor compare, not assignability, mirroring
      * {@link #JOOQ_CONDITION_DESCRIPTOR}: the parse-only scan resolves no type
@@ -194,7 +194,7 @@ public final class ClasspathScanner {
             // parse boundary, from the un-erased descriptor — before displayName()
             // drops the package below and a simple-name match could no longer
             // tell org.jooq.Condition from a consumer's own type named Condition
-            // (R368). Exact descriptor compare, not assignability: the parse-only
+            //. Exact descriptor compare, not assignability: the parse-only
             // scan resolves no type hierarchy, and the jOOQ idiom returns
             // Condition directly, so exact match is both sufficient and all the
             // scanner can do.

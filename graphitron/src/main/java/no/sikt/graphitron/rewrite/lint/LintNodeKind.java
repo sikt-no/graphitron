@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.lint;
 
 /**
  * The graphql-java SDL node kinds the lint engine's single traversal can encounter, as an explicit
- * enum. Completeness is asserted over this declared partition (R398): every constant is either
+ * enum. Completeness is asserted over this declared partition: every constant is either
  * subscribed by a rule ({@link LintRules#subscribedKinds()}) or in the deliberately-not-linted set
  * ({@link LintRules#NOT_LINTED}), and the two are disjoint. {@code LintRuleRegistryCoverageTest}
  * pins that, mirroring the {@code VariantCoverageTest} / {@code EdgeCoverageTest} no-silent-default

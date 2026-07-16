@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * R408: config-identity validation for {@link LintConfig}. A configured rule id is typed against the
+ * Config-identity validation for {@link LintConfig}. A configured rule id is typed against the
  * rule enum, so a typo is a build error rather than a silently-ignored line. Asserts the failure and
  * that the message carries the valid namespace, not the exact wording (per the design principles'
  * code-string-assertion discipline).

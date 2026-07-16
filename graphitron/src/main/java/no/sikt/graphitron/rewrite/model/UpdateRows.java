@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.List;
 
 /**
- * R246 — the UPDATE-shape walker carrier. Holds the matched key identity plus the SET and WHERE
+ * The UPDATE-shape walker carrier. Holds the matched key identity plus the SET and WHERE
  * column partitions {@code UpdateRowsWalker} derived from the {@code @table} input and the jOOQ
  * catalog. Lands on {@link UpdateRowsField} alongside the slim {@link InputArgRef} arg surface.
  *

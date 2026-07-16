@@ -15,10 +15,10 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * <ul>
  *   <li>{@code @classified(source: SourceWrapper!, operation: Operation!, target: TargetWrapper!,
  *       targetShape: TargetShape!, sourceShape: SourceShape)} on output {@code FIELD_DEFINITION}s
- *       asserts the three-axis {@link DimensionTuple} the field classifies to (R316). Each endpoint is a
+ * asserts the three-axis {@link DimensionTuple} the field classifies to. Each endpoint is a
  *       {@code wrapper(shape)} pair: {@code source:} is the arrival wrapper plus a {@code sourceShape:}
  *       for the nested arms, {@code target:} the output wrapper plus a {@code targetShape:}. The enums
- *       mirror the field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} (R463) /
+ * mirror the field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} /
  *       {@code OutputField.operation()} / {@code OutputField.target()}).</li>
  *   <li>{@code @classifiedType(as: TypeVerdict!)} asserts the {@code GraphitronType} sealed leaf a
  *       type classifies to. {@code TypeVerdict} enumerates those leaves minus the failure leaf

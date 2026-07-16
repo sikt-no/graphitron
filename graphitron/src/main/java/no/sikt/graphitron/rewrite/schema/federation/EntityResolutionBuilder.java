@@ -101,7 +101,7 @@ public final class EntityResolutionBuilder {
         Consumer<ValidationError> diagnosticSink
     ) {
         var out = new LinkedHashMap<String, EntityResolution>();
-        // R276: a @key object type the type pass left unclassified (a directiveless object — a
+        // A @key object type the type pass left unclassified (a directiveless object — a
         // federation entity needs a @table) is absent from the registry, so the entity loop below
         // never sees it. Reject it here with the federation diagnostic rather than letting it slip
         // through as a generic unclassified field. R317 slice 5 — registers the rejection on the

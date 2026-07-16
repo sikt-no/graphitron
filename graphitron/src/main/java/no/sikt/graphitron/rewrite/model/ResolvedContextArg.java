@@ -19,7 +19,7 @@ import java.util.List;
  * useful for downstream tooling (LSP fix-its) that wants to navigate to a declaring method or
  * carrier. Each entry is a {@link ConflictSite.Site} (a {@link MethodRef}-backed or
  * {@link ServiceMethodCall}-carrier coordinate), the same sealed identifier {@link ConflictSite}
- * carries (R256).
+ * carries.
  */
 public record ResolvedContextArg(String name, TypeName javaType, List<ConflictSite.Site> sites) {
     public ResolvedContextArg {

@@ -156,7 +156,7 @@ final class MutationInputResolver {
     }
 
     /**
-     * R457 — reads {@code @mutation(table:)} off the field's directive application. Returns the SQL
+ * Reads {@code @mutation(table:)} off the field's directive application. Returns the SQL
      * table name the consuming field names as its write target, or empty when the argument is absent
      * or set to {@code null}. The write-target-relevant verb (DELETE) resolves this against the jOOQ
      * catalog; other verbs reject its presence (see {@code FieldBuilder}'s unsupported-verb guard).
@@ -203,7 +203,7 @@ final class MutationInputResolver {
                             + s.returnTypeName() + "': " + scanReject.reason()
                             + "; or back the carrier with a producing @service return type or a @table type";
                     }
-                    // R310: a payload that would classify as a DML carrier but for a forbidden
+                    // A payload that would classify as a DML carrier but for a forbidden
                     // directive on its data field surfaces a targeted message naming the offending
                     // field and directive, instead of the generic "use ID or a @table type"
                     // misdirection, which points at the return type (which is fine) rather than the
@@ -262,7 +262,7 @@ final class MutationInputResolver {
         if (perArm != null) {
             return perArm;
         }
-        // R141: cardinality dispatch on the carrier's data-channel wrapper. A single-record carrier
+        // Cardinality dispatch on the carrier's data-channel wrapper. A single-record carrier
         // (Payload type, not list-wrapped) whose data field is list-shaped pairs with bulk input
         // (admitted as MutationBulkDmlRecordField) and rejects single input (new Invariant #16).
         // The singleton-data-field case (data field is single-shaped) still rejects bulk input via
@@ -340,12 +340,12 @@ final class MutationInputResolver {
      *   <li>UPSERT is refused outright (deferred to R145).</li>
      *   <li>{@code multiRow: true} is rejected on INSERT (no WHERE clause to multiply over).</li>
      *   <li>Per-input-field structural checks: value carriers ({@link InputField.ColumnField} /
-     *       {@link InputField.CompositeColumnField}) and FK-target reference carriers (R189) are
+ * {@link InputField.CompositeColumnField}) and FK-target reference carriers are
      *       admitted. A non-{@code @table} {@link InputField.NestingField} grouping is admitted by
-     *       recursing on its leaves under the same rules (R186); a list-typed nesting and a nested
+ * recursing on its leaves under the same rules; a list-typed nesting and a nested
      *       {@code @table} input (R122's compound-entity territory) are not. {@code @lookupKey} on
-     *       input fields rejects via the classifier's retirement diagnostic (R144).
-     *       {@code @condition} without {@code override: true} rejects (R215), at every nesting
+ * input fields rejects via the classifier's retirement diagnostic.
+ * {@code @condition} without {@code override: true} rejects, at every nesting
      *       depth.</li>
      * </ul>
      *
@@ -404,8 +404,8 @@ final class MutationInputResolver {
             }
 
             // Validate directive presence per input field. @lookupKey on any input field rejects
-            // with the retirement diagnostic (R144); @condition without override(true) is filter-
-            // shape that competes with the verb's WHERE shape and rejects (R215). R266 retired
+            // with the retirement diagnostic; @condition without override(true) is filter-
+            // shape that competes with the verb's WHERE shape and rejects. R266 retired
             // @value (UPDATE and DELETE both classify through their walkers now; INSERT is the lone
             // verb reaching here and never partitioned its input fields), so there is no @value
             // marker to accumulate or reject.
@@ -469,14 +469,14 @@ final class MutationInputResolver {
         }
 
         if (kind == DmlKind.UPDATE || kind == DmlKind.DELETE) {
-            // R246 / R258 / R266: every UPDATE and DELETE is intercepted in FieldBuilder before this
+            // Every UPDATE and DELETE is intercepted in FieldBuilder before this
             // call — UPDATE by classifyUpdateTableField / classifyUpdatePayloadField, DELETE by
             // classifyDeleteTableField / classifyDeletePayloadField — and identified by the
             // UpdateRowsWalker / DeleteRowsWalker's PK-or-UK matched-key membership, never by @value
             // or a resolveInput PK-coverage check. Reaching here means a future regression routed one
             // back onto resolveInput; fail the build loudly. With both intercepted, INSERT is the
             // lone verb that completes resolveInput, so the legacy PK-coverage block (which only ever
-            // fired for UPDATE / DELETE) is gone and @value is fully retired (R188).
+            // fired for UPDATE / DELETE) is gone and @value is fully retired.
             throw new IllegalStateException(
                 "MutationInputResolver.resolveInput reached with DmlKind." + kind + " — UPDATE and "
                 + "DELETE are intercepted in FieldBuilder by their walker classifiers before "
@@ -515,7 +515,7 @@ final class MutationInputResolver {
                         + "(mutations write values; only @condition(override: true) is admitted)"));
                 }
             }
-            // R186: recurse into nested non-@table grouping inputs so a nested-leaf @lookupKey /
+            // Recurse into nested non-@table grouping inputs so a nested-leaf @lookupKey /
             // @condition is rejected with the same diagnostic as a top-level field. A nested @table
             // input is R122's territory and is not descended here.
             var base = GraphQLTypeUtil.unwrapAll(sdlField.getType());
@@ -533,7 +533,7 @@ final class MutationInputResolver {
     /**
      * Per-field admission for the INSERT path (UPDATE / DELETE are intercepted upstream by their
      * walkers; UPSERT is refused at the top of {@link #resolveInput}). Recurses into
-     * {@link InputField.NestingField} grouping inputs (R186): a nested leaf is admitted under the
+ * {@link InputField.NestingField} grouping inputs: a nested leaf is admitted under the
      * same rules as a root leaf, so a buried {@link InputField.CompositeColumnField} still trips the
      * R130 INSERT carve-out. A list-typed nesting or a nested group carrying {@code @condition}
      * rejects naming R186. Returns the first inadmissible field's rejection, or {@code null}.
@@ -542,7 +542,7 @@ final class MutationInputResolver {
         for (var f : fields) {
             // ColumnField admission rule:
             //   Direct extraction  → always admitted (canonical mutation-input shape).
-            //   NodeIdDecodeKeys   → admitted (R130): single-PK NodeId-decoded column write.
+            // NodeIdDecodeKeys → admitted: single-PK NodeId-decoded column write.
             if (f instanceof InputField.ColumnField) {
                 continue;
             }
@@ -562,7 +562,7 @@ final class MutationInputResolver {
                 }
                 continue;
             }
-            // R189: FK-target reference carriers ({@code @nodeId(typeName: T)} pointing at
+            // FK-target reference carriers ({@code @nodeId(typeName: T)} pointing at
             // another @table's NodeType, classified to DirectFk) admit on INSERT, UPDATE and
             // DELETE. The carrier's liftedSourceColumns live on the input's own table — no JOIN
             // at the emit site — and the extraction is narrowed to NodeIdDecodeKeys, so the
@@ -573,7 +573,7 @@ final class MutationInputResolver {
                 || f instanceof InputField.CompositeColumnReferenceField) {
                 continue;
             }
-            // R215: UnboundField with @condition(override: true) admits on UPDATE / DELETE; the
+            // UnboundField with @condition(override: true) admits on UPDATE / DELETE; the
             // developer takes over the WHERE half via the explicit condition method. INSERT has
             // no WHERE clause for the override to bind into, so the carrier rejects there.
             // UnboundField with condition.isEmpty() or @condition(override:false) is never a
@@ -594,9 +594,9 @@ final class MutationInputResolver {
                     + "': field has no column binding and no @condition(override: true); "
                     + "mutation input fields must bind a column or carry an override condition"));
             }
-            // R186: a non-@table nested grouping input flattens onto the outer table's columns.
+            // A non-@table nested grouping input flattens onto the outer table's columns.
             // Admit it by recursing on its leaves under the same rules; reject a list-typed nesting
-            // (no meaning when flattening onto one outer row) and a group-level @condition (R245).
+            // (no meaning when flattening onto one outer row) and a group-level @condition.
             if (f instanceof InputField.NestingField nf) {
                 if (nf.list()) {
                     return new Resolved.Rejected(Rejection.structural(
@@ -647,15 +647,15 @@ final class MutationInputResolver {
         return null;
     }
 
-    /** R356: one SET-side carrier as a {@link ColumnOverlap.ColumnWriter}; the dotted access path is the
-     *  reject-message label. The same shared grouping the emitters trigger value-agreement on (R322/R342)
+    /** One SET-side carrier as a {@link ColumnOverlap.ColumnWriter}; the dotted access path is the
+ * reject-message label. The same shared grouping the emitters trigger value-agreement on
      *  yields the all-plain collision the validator rejects on, so reject and agreement read one fold. */
     private record InputFieldWriter(List<ColumnRef> targetColumns, boolean decode, String label)
             implements ColumnOverlap.ColumnWriter {}
 
     /**
      * Accumulates the SET-side carriers writing the input's own columns as {@link ColumnOverlap.ColumnWriter}s,
-     * recursing into {@link InputField.NestingField} grouping inputs (R186) and threading the access-path
+ * recursing into {@link InputField.NestingField} grouping inputs and threading the access-path
      * prefix. Value carriers source columns from {@code column() / columns()}, FK-reference carriers from
      * {@code liftedSourceColumns()}; composite and reference carriers carry a decode by construction, a
      * {@link InputField.ColumnField} only when its extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.

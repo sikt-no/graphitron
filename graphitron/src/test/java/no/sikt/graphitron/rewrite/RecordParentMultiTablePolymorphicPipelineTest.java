@@ -134,7 +134,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_accessorKeyedSingle() {
-        // R367: Pojo parent (AccessorPayloads.SinglePayload) exposes `FilmRecord film()`. The
+        // Pojo parent (AccessorPayloads.SinglePayload) exposes `FilmRecord film()`. The
         // single-cardinality polymorphic child named `film` resolves to AccessorKeyedSingle on
         // the hub `film`; the scalar per-parent fetcher binds parentRecord to the accessor's
         // returned hub record (rather than casting env.getSource() to a jOOQ Record) and reads
@@ -186,7 +186,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_accessorKeyedMany_fieldNameRemapsAccessor() {
-        // R191: @field(name:) on a free-form record-backed parent remaps the accessor base name. The
+        // @field(name:) on a free-form record-backed parent remaps the accessor base name. The
         // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`; the SDL
         // field is named `referrers` and uses @field(name: "films") to bridge the divergence.
         // Without the directive-honored remap, the matcher would search for an accessor named
@@ -233,7 +233,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childUnionField_recordParent_accessorKeyedSingle() {
-        // R367: same single-cardinality accessor resolution as the InterfaceField sibling.
+        // Same single-cardinality accessor resolution as the InterfaceField sibling.
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
             type SinglePayloadType {
               film: FilmReferrer

@@ -219,8 +219,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType t           -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType t       -> {} // structural validation is a downstream concern
             case no.sikt.graphitron.rewrite.model.GraphitronType.NestingType t    -> {} // no domain directives, nothing to validate structurally
-            case no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType t     -> {} // synthesised (R13); shape is promoter-owned, nothing to validate structurally
-            case no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType t -> {} // synthesised (R13); shape is promoter-owned, nothing to validate structurally
+            case no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType t     -> {} // synthesised; shape is promoter-owned, nothing to validate structurally
+            case no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType t -> {} // synthesised; shape is promoter-owned, nothing to validate structurally
             case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType t           -> {} // enums validate at the schema level; no domain concerns
             case no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType t         -> {} // resolver-validated at classification time; nothing extra here
             case no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType t   -> validateUnclassifiedType(t, errors);
@@ -240,7 +240,7 @@ public class GraphitronSchemaValidator {
      * into which the former {@code SingleRecordTableField} carriers collapsed via
      * the record-sourced {@code BatchedLookupTableField} arm /
      * {@code RecordTableMethodField})
-     * re-projects the {@code @table} from keys read off a received record (R305). The
+ * re-projects the {@code @table} from keys read off a received record. The
      * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
      * re-fetch. The strict {@link no.sikt.graphitron.rewrite.model.TargetShape.Table} guard matches
      * {@code requiresReFetch}, which fires only on a bare (non-connection) {@code Table} target shape; a
@@ -255,7 +255,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField ignored -> true;
-            // R305 — the Record-source family re-projects the @table from keys held at the source
+            // The Record-source family re-projects the @table from keys held at the source
             // (the former SingleRecordTableField carriers collapsed into the record-sourced arm of
             // the merged BatchedTableField, R432). The Table-sourced arm reads the parent's own
             // catalog row and does not re-fetch, mirroring requiresReFetch's sourceShape read.
@@ -265,7 +265,7 @@ public class GraphitronSchemaValidator {
                 f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
-                // R406: the discriminated-interface arms re-project the shared @table (a follow-up
+                // The discriminated-interface arms re-project the shared @table (a follow-up
                 // SELECT keyed by the RETURNING PK) exactly as the projected @table arms do.
                 dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle
                 || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList
@@ -276,7 +276,7 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateField(GraphitronField field, GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        // R290 / R305 — re-fetch derivation mirror. The @table re-projecting SELECT is derived once
+        // Re-fetch derivation mirror. The @table re-projecting SELECT is derived once
         // from Table mapping x holds-records on the field (OutputField.requiresReFetch); the
         // generator's per-leaf fetcher arms emit it. This mirror pins the single-homed derivation
         // against what the generator actually dispatches, so a future leaf or reclassification that
@@ -294,7 +294,7 @@ public class GraphitronSchemaValidator {
                     + "holds-records derivation and the re-projecting SELECT have drifted"),
                 out.location()));
         }
-        // R446 — an array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key
+        // An array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key
         // element) would key the RowN / Set<K> tuple by array reference identity, so equal-content
         // keys dedupe and match by reference and the batch mis-groups on a live request. The emitted
         // code compiles but is silently wrong, so reject at validate time instead.
@@ -315,7 +315,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField f        -> validateQueryLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField f         -> validateQueryTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableMethodTableField f   -> validateQueryTableMethodTableField(f, errors);
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryRoutineTableField f       -> {} // R300 — RoutineDirectiveResolver pins the routine resolution + arg-binding invariants at classify time
+            case no.sikt.graphitron.rewrite.model.QueryField.QueryRoutineTableField f       -> {} // RoutineDirectiveResolver pins the routine resolution + arg-binding invariants at classify time
 
             case no.sikt.graphitron.rewrite.model.QueryField.QueryNodeField f          -> validateQueryNodeField(f, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryNodesField f         -> {} // no extra validation
@@ -330,17 +330,17 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField f     -> validateMutationUpdateTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField f     -> validateMutationDeleteTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField f     -> validateMutationUpsertTableField(f, errors);
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField f    -> {} // R451 — RoutineDirectiveResolver pins routine resolution + arg binding at classify time; RoutineChain's compact constructor and the leaf's own pins (hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict) carry the structural shape
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationRoutineWriteField f    -> {} // RoutineDirectiveResolver pins routine resolution + arg binding at classify time; RoutineChain's compact constructor and the leaf's own pins (hops non-empty, terminus rule, ColumnPairs hop 0 via the classifier's re-read-anchor verdict) carry the structural shape
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField f -> validateMutationServicePolymorphicField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField f -> validateMutationServiceTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField f       -> {} // R75 Phase 1 — narrow ResultReturnType + DELETE-rejecting compact ctor pin the structural shape; admission-time checks (table-equality, etc.) live in the mutation-field classifier and the trigger function
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // R141 — same structural pinning as MutationDmlRecordField plus list-input + list-data-field invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the trigger function
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdatePayloadField f   -> {} // R258 — narrow ResultReturnType + non-Optional InputArgRef / UpdateRows slots pin the structural shape; admission-time checks (PK-or-UK partition, table-equality) live in the @mutation classifier (classifyUpdatePayloadField) and the UpdateRowsWalker
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkUpdatePayloadField f -> {} // R258 — bulk sibling of MutationUpdatePayloadField; same structural pinning, same classifier + walker admission-time checks
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField f   -> {} // R266 — narrow ResultReturnType + non-Optional InputArgRef / DeleteRows slots pin the structural shape; admission-time checks (PK-or-UK coverage, table-equality, DELETE-specific reclassify) live in the @mutation classifier (classifyDeletePayloadField) and the DeleteRowsWalker
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField f -> {} // R266 — bulk sibling of MutationDeletePayloadField; same structural pinning, same classifier + walker admission-time checks
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // Same structural pinning as MutationDmlRecordField plus list-input + list-data-field invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the trigger function
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdatePayloadField f   -> {} // Narrow ResultReturnType + non-Optional InputArgRef / UpdateRows slots pin the structural shape; admission-time checks (PK-or-UK partition, table-equality) live in the @mutation classifier (classifyUpdatePayloadField) and the UpdateRowsWalker
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkUpdatePayloadField f -> {} // Bulk sibling of MutationUpdatePayloadField; same structural pinning, same classifier + walker admission-time checks
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField f   -> {} // Narrow ResultReturnType + non-Optional InputArgRef / DeleteRows slots pin the structural shape; admission-time checks (PK-or-UK coverage, table-equality, DELETE-specific reclassify) live in the @mutation classifier (classifyDeletePayloadField) and the DeleteRowsWalker
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField f -> {} // Bulk sibling of MutationDeletePayloadField; same structural pinning, same classifier + walker admission-time checks
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnField f             -> validateColumnField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's LEFT JOIN materialises and aliases the value
@@ -358,9 +358,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // R275 — narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField f    -> {} // R329 — narrow ResultReturnType + non-null fqClassName / envelope compact-constructor invariants pin the structural shape; the near-miss rejections (mismatched producer, a @field child neither @table-backed nor a resolvable composite accessor, the re-leveled cardinality mismatch) fire at classify time as UnclassifiedField (RecordBindingMultiProducer / accessor-mismatch / the composite-carrier cardinality reject), surfaced via validateUnclassifiedField
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // Narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // Narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
+            case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField f    -> {} // Narrow ResultReturnType + non-null fqClassName / envelope compact-constructor invariants pin the structural shape; the near-miss rejections (mismatched producer, a @field child neither @table-backed nor a resolvable composite accessor, the re-leveled cardinality mismatch) fire at classify time as UnclassifiedField (RecordBindingMultiProducer / accessor-mismatch / the composite-carrier cardinality reject), surfaced via validateUnclassifiedField
             case no.sikt.graphitron.rewrite.model.ChildField.RecordField f             -> validateRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
@@ -406,7 +406,7 @@ public class GraphitronSchemaValidator {
      * <p>Gated on {@link FieldWrapper.List} (not {@link FieldWrapper#isList()}, which also covers
      * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering}
      * — connections always carry pagination and are caught there. Exempts
-     * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} fields (R305): a
+ * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} fields: a
      * re-fetch field's visible order is locked to the source/target key correspondence (the
      * {@code ORDER BY idx} scatter re-keys the re-projected rows to the upstream source order), so
      * the "list-shaped + {@code None}" signal does not imply non-determinism for them, regardless of
@@ -465,7 +465,7 @@ public class GraphitronSchemaValidator {
     }
     private void validateNodeType(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType type, List<ValidationError> errors) {
         // Unresolved tables and unresolved @node key columns are caught by the builder (UnclassifiedType).
-        // R446 — an array-typed column used as a NodeId key column would be encoded/decoded and
+        // An array-typed column used as a NodeId key column would be encoded/decoded and
         // compared by array reference identity, so distinct rows with equal element content mis-match.
         // Reject at validate time rather than emitting a NodeId encoder that mis-identifies at runtime.
         for (var col : type.nodeKeyColumns()) {
@@ -532,7 +532,7 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateTableInputType(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType type, List<ValidationError> errors) {
-        // R215: input fields are stored embedded in their parent type rather than in the schema's
+        // Input fields are stored embedded in their parent type rather than in the schema's
         // flat field map, so the validateField walk doesn't reach them; iterate the type's input
         // fields here to surface UnboundField + @condition(override:false) shapes the classifier
         // admits structurally but the validator rejects.
@@ -540,7 +540,7 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * R457 — the input-field validator-side rejections ({@link #validateInputFieldRecursive}) as a
+ * The input-field validator-side rejections ({@link #validateInputFieldRecursive}) as a
      * standalone list, so a call site that resolves input fields against a table <em>outside</em> the
      * registry {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType} walk (the
      * field-derived DELETE write-target path in {@code FieldBuilder}) can enforce the identical rule.
@@ -653,7 +653,7 @@ public class GraphitronSchemaValidator {
             }
         }
 
-        // Same-table discriminability floor (R365): same-table polymorphism must be modeled as a
+        // Same-table discriminability floor: same-table polymorphism must be modeled as a
         // single-table discriminated interface (TableInterfaceType: @table @discriminate). Two
         // participants of a *plain* multitable interface/union backed by the same table share a
         // recordClass, so record-class dispatch (route (a)) and the stage-1 __typename UNION-ALL
@@ -802,7 +802,7 @@ public class GraphitronSchemaValidator {
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
     private void validateQueryServiceTableInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableInterfaceField field, List<ValidationError> errors) {
-        // R405: mirror the read-side single-table floor (validateQueryTableInterfaceField), NOT the
+        // Mirror the read-side single-table floor (validateQueryTableInterfaceField), NOT the
         // multi-table one. validateMultiTableParticipants enforces distinct-table PK presence + uniform
         // arity + the same-table *rejection* floor route (a) needs; single-table is precisely the shape
         // that floor steers authors toward, so applying it here would reject the valid case. The
@@ -813,7 +813,7 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateMutationServiceTableInterfaceField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField field, List<ValidationError> errors) {
-        // R405: mutation twin of validateQueryServiceTableInterfaceField; same single-table floor.
+        // Mutation twin of validateQueryServiceTableInterfaceField; same single-table floor.
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField field, List<ValidationError> errors) {}
@@ -1264,7 +1264,7 @@ public class GraphitronSchemaValidator {
     }
     private static void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).
-        // R330: an FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
+        // An FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
         // join path (QueryConditionsGenerator.emitFkTargetExists), which requires every hop to be a
         // resolved FK-derived hop. Mirror that emitter precondition here so a non-FK / unresolved hop fails
         // at validate time with a directed message rather than as an emitter IllegalStateException.
@@ -1278,7 +1278,7 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        // R380: a plain @reference (Direct extraction) implicit-predicate field whose terminal
+        // A plain @reference (Direct extraction) implicit-predicate field whose terminal
         // column lives on a joined table emits a correlated EXISTS over the path
         // (TypeConditionsGenerator.emitRemoteExists), which requires every hop to be a resolved
         // FK-derived. Mirror that emitter precondition so a non-FK / condition-join hop fails at validate
@@ -1302,7 +1302,7 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * R330: a composite-key FK-target {@code @nodeId} field carrying a {@code @condition} emits a
+ * A composite-key FK-target {@code @nodeId} field carrying a {@code @condition} emits a
      * correlated EXISTS whose correlation ANDs every composite-FK slot (the same
      * {@code QueryConditionsGenerator}/{@code FkTargetConditionEmitter} path as the single-column
      * case, since {@link no.sikt.graphitron.rewrite.generators.JoinPathEmitter#emitCorrelationWhere}
@@ -1326,7 +1326,7 @@ public class GraphitronSchemaValidator {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
     }
     /**
-     * R215: an {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
+ * An {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
      * {@code @condition(override: false)} present is a structural bug — the field has no column
      * to bind and the explicit condition method does not own the predicate (override: false
      * means the implicit column predicate is required to compose with the condition). The
@@ -1370,7 +1370,7 @@ public class GraphitronSchemaValidator {
      * <p>Path <em>shape</em> is likewise gated at classification time, not here: the single-table
      * {@code TableInterfaceField} arm through {@code FieldBuilder.validateSingleHopFkJoin} and the
      * multi-table interface/union child arm through {@code FieldBuilder.resolveChildPolymorphicJoinPaths}
-     * (R452, R458), the latter carrying its resolved correlation as a
+ *, the latter carrying its resolved correlation as a
      * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation} so an unsupported join shape is
      * unrepresentable downstream. There is no reference-path shape rule left for the validator to
      * enforce.
@@ -1440,7 +1440,7 @@ public class GraphitronSchemaValidator {
      *
      * <p>The lookup leaf ({@code BatchedLookupTableField}, either arm) is not admitted — it was absent from the
      * pre-merge allow-list and its fetcher's guard has not been audited; preserve the asymmetry
-     * rather than silently widening (R432).
+ * rather than silently widening.
      *
      * <p>Admitting a variant here requires the matching emitter site to honor the guard;
      * removing the guard from an existing emitter arm must remove the variant here.

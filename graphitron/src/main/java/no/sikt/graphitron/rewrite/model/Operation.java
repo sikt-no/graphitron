@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import java.util.List;
 
 /**
- * The {@code operation} axis (R316): the verb a field <em>performs</em>, spanning the edge from its
+ * The {@code operation} axis: the verb a field <em>performs</em>, spanning the edge from its
  * {@link Source} arrival to its {@link Target} projection. A sealed interface with {@code record}
  * arms, replacing the retired flat {@code intent} enum: every arm carries the slots its kind needs,
  * which an enum constant cannot hold without a kitchen-sink of optionals (the cross-product disease
@@ -137,7 +137,7 @@ public sealed interface Operation {
     record DeleteMatching() implements Operation {}
 
     /**
-     * A database-routine write (R451): the routine call is the write verb, committed inside the
+ * A database-routine write: the routine call is the write verb, committed inside the
      * per-field transaction before the chain's follow-up re-read runs. This is the procedure-write
      * arm R300's retirement anticipated — a new operation on the existing
      * {@link Source.Root.Mutation} source. The arm carries no payload: the call surface and hops

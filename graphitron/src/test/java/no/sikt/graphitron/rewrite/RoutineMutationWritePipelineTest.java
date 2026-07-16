@@ -11,7 +11,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R451: pipeline-tier pin of the routine-write fetcher's two-step shape — the routine call
+ * Pipeline-tier pin of the routine-write fetcher's two-step shape — the routine call
  * inside {@code dsl.transactionResult(...)} (the commit boundary), the chain's follow-up SELECT
  * outside it. Without this pin, a regression to a single-statement emission (the routine joined
  * into the response SELECT, as the R435 read chain renders) would compile clean and even pass a

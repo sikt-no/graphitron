@@ -99,7 +99,7 @@ import java.util.stream.Collectors;
  * authored field that produces them prints instead. The Spec scopes this to "cheap insurance, not a hard
  * gate."
  *
- * <p><strong>Descriptions (R309).</strong> The projection query is the per-example place to say <em>why</em>
+ * <p><strong>Descriptions.</strong> The projection query is the per-example place to say <em>why</em>
  * a coordinate exists, which the shared description-free corpus fixture cannot. A {@code # ...} line comment
  * above a selected coordinate renders as that coordinate's SDL {@code Description}: above a field it
  * describes the field, above {@code ... on T} or a top-level {@code fragment f on T} it describes type

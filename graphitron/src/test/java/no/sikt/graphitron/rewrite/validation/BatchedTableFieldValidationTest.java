@@ -51,7 +51,7 @@ class BatchedTableFieldValidationTest {
     private static final LoaderRegistration T_LR_SINGLE = TestFixtures.loaderRegistration(T_RT_SINGLE, false, false);
     private static final LoaderRegistration T_LR_CONN = TestFixtures.loaderRegistration(T_RT_CONN, false, false);
 
-    // R232: the @splitQuery + condition-join shape now classifies and emits a real
+    // The @splitQuery + condition-join shape now classifies and emits a real
     // correlated SELECT via SplitRowsMethodEmitter; the validator no longer surfaces a
     // deferred-rejection for it.
 
@@ -74,7 +74,7 @@ class BatchedTableFieldValidationTest {
     private static final LoaderRegistration R_LR_SINGLE = TestFixtures.loaderRegistration(R_RT_SINGLE, false, false);
     private static final LoaderRegistration R_LR_LIST = TestFixtures.loaderRegistration(R_RT_LIST, false, false);
 
-    // R232: record-sourced + condition-join first hop classifies straight to AuthorError
+    // Record-sourced + condition-join first hop classifies straight to AuthorError
     // upstream (the record-backed parent has no @table binding to anchor the condition method's
     // source argument). The cases below construct the model directly, bypassing the parser
     // gate, to confirm the validator does not double-fire on the constructed shape.

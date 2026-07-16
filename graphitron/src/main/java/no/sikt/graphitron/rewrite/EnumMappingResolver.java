@@ -321,7 +321,7 @@ final class EnumMappingResolver {
                         sdlField.getName(), ccf.extraction(), recordBindings));
                 }
                 case InputField.ColumnReferenceField crf -> {
-                    // R189: FK-target @nodeId reference carrier, arity-1. The target column is
+                    // FK-target @nodeId reference carrier, arity-1. The target column is
                     // the lifted source column on the input's own table (i.e. the FK column),
                     // not the joined-table column carried by crf.column(). The extraction is
                     // narrowed to NodeIdDecodeKeys at the DirectFk arm; the resulting binding
@@ -337,7 +337,7 @@ final class EnumMappingResolver {
                             crf.liftedSourceColumns().get(0), crf.extraction()))));
                 }
                 case InputField.CompositeColumnReferenceField ccrf -> {
-                    // R189: FK-target @nodeId reference carrier, arity >= 2. Target columns are
+                    // FK-target @nodeId reference carrier, arity >= 2. Target columns are
                     // the lifted source columns on the input's own table (permuted into
                     // NodeType key order by the DirectFk classifier); pairs slot-for-slot with
                     // the decoded record's value<i+1>() accessors. Same DecodedRecordGroup
@@ -361,7 +361,7 @@ final class EnumMappingResolver {
                     // structural walk surfaces them as rejections.
                 }
                 case InputField.UnboundField ignored -> {
-                    // R215: unbound carrier has no column binding; not enum-mappable.
+                    // Unbound carrier has no column binding; not enum-mappable.
                 }
                 case null -> {
                     // SDL field declared but the input type didn't classify it (Unresolved

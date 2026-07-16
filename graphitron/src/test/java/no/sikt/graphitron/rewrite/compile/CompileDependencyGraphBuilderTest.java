@@ -248,7 +248,7 @@ class CompileDependencyGraphBuilderTest {
 
     @Test
     void fetcherOwningNestingTypeRegistersFetcherNodeAndWiringEdges() {
-        // R459: Film { meta: FilmMeta { language: Language @reference } } — FilmMeta is a plain-object
+        // Film { meta: FilmMeta { language: Language @reference } } — FilmMeta is a plain-object
         // nesting type owning a classified field, so it emits a FilmMetaFetchers class its FilmMetaType
         // schema-shape wires (FilmMetaType -> FilmMetaFetchers). The nested type is absent from
         // schema.types() and its fields from schema.fieldsOf(...), so the node must be registered by the

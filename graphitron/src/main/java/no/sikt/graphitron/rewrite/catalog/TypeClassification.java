@@ -26,7 +26,7 @@ import java.util.List;
  * kind of type</em> the SDL author declared. Both projections live next to each other on
  * the snapshot so the LSP arms can read either or both without re-running the classifier.
  *
- * <p><b>R217: projection-record simple names are also user-visible.</b> {@code
+ * <p><b>Projection-record simple names are also user-visible.</b> {@code
  * LspClassificationLabels.projectionTypeLabel} returns each permit's simple name
  * verbatim, {@code DeclarationHovers} prints {@code TypeClassification.<name>} in hover
  * headers, and {@code InlayHints}'s absent-{@code @table} arm anchors its synthetic

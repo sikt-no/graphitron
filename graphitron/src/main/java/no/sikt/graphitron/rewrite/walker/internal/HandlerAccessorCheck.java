@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Per-({@code @error} type, handler, SDL field) source-class accessor-coverage check (R244).
+ * Per-({@code @error} type, handler, SDL field) source-class accessor-coverage check.
  * Absorbed from {@code FieldBuilder.checkErrorTypeSourceAccessors}; produces typed
  * {@link ErrorChannelWalkerError.HandlerSourceAccessorMissing} arms instead of the legacy reject
  * string so the {@code ErrorChannelWalker} surfaces them through {@code WalkerResult.Err}.

@@ -8,7 +8,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R290 / R316 — the re-fetch derivation ({@link OutputField#requiresReFetch()}) is the single home of
+ * The re-fetch derivation ({@link OutputField#requiresReFetch()}) is the single home of
  * the service/DML -&gt; {@code @table} follow-up SELECT predicate, derived from the {@code (source,
  * operation, target)} coordinate rather than re-decided per leaf. This test pins that the derivation
  * forks on a bare {@code TargetShape.Table} target combined with holds-records (a {@code @service}-table
@@ -95,7 +95,7 @@ class ReFetchDerivationTest {
 
     @Test
     void recordSourceCarrier_reFetches() {
-        // R305: the @service payload carrier's @table data field collapsed into BatchedTableField —
+        // The @service payload carrier's @table data field collapsed into BatchedTableField —
         // a Source.Child(Record) field projecting a Table target, so holds-records x Table target ->
         // re-fetch. Both the single and the list (bulk) carrier re-fetch (the source=target re-projection).
         GraphitronSchema single = TestSchemaHelper.buildSchema(RECORD_SOURCE_SINGLE);

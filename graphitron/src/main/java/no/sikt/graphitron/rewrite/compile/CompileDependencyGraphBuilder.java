@@ -261,7 +261,7 @@ public final class CompileDependencyGraphBuilder {
                 addNodeIdEncoderEdge(fetcher);
                 addDmlProjectionEdges(fetcher, f.returnExpression());
             }
-            // R451: the routine-write fetcher projects the terminus type inline in step 2's
+            // The routine-write fetcher projects the terminus type inline in step 2's
             // post-commit SELECT (Type.$fields(...)), exactly like the query routine fetcher.
             case MutationField.MutationRoutineWriteField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceTableField f -> addTypeClassEdge(fetcher, f.returnType());
@@ -495,7 +495,7 @@ public final class CompileDependencyGraphBuilder {
     // ------------------------------------------------------------------------------------------------
 
     /**
-     * Registers the {@code <Type>Fetchers} node a fetcher-owning nesting type contributes (R459). A
+ * Registers the {@code <Type>Fetchers} node a fetcher-owning nesting type contributes. A
      * plain-object nesting type that owns a fetcher (any nested field that is not
      * {@link GraphitronField.UnclassifiedField}, per R303) emits a {@code <Type>Fetchers} class, and
      * its schema-shape wiring class references it ({@code FilmMetaType → FilmMetaFetchers}). Those
@@ -652,7 +652,7 @@ public final class CompileDependencyGraphBuilder {
         String sessionHookImpl = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook");
         acc.addEdge(graphitronRuntime, sessionHookImpl);
         acc.addEdge(sessionHookImpl, sessionHook);
-        // R428: the dev-loop query executor drives the facade's schema build and owned-input factory
+        // The dev-loop query executor drives the facade's schema build and owned-input factory
         // through the R429 runtime with an explicit ROLLBACK_ONLY commit policy. Conditionally emitted
         // (non-federation schemas only), so the edges are inert (render-skipped) in federation builds.
         String devExecutor = units.rootUnit("GraphitronDevExecutor");
@@ -698,7 +698,7 @@ public final class CompileDependencyGraphBuilder {
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_FETCHERS, "QueryNodeFetcher"));
         acc.addNode(units.rootUnit("Graphitron"));
-        // R429: the always-emitted connection-lifecycle runtime substrate.
+        // The always-emitted connection-lifecycle runtime substrate.
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionHook"));
@@ -712,7 +712,7 @@ public final class CompileDependencyGraphBuilder {
         // builds; modelling it unconditionally is superset-safe (the render skips units never emitted) and
         // pre-covers the sakila migration in slice 5, which turns the block on.
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
-        // R428: the dev-loop query executor beside the facade. Conditionally emitted (non-federation
+        // The dev-loop query executor beside the facade. Conditionally emitted (non-federation
         // schemas only); modelling it unconditionally is superset-safe, same as GraphitronSessionHook.
         acc.addNode(units.rootUnit("GraphitronDevExecutor"));
     }

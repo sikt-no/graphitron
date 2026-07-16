@@ -100,7 +100,7 @@ class OutcomeTypeValidationTest {
 
     @Test
     void outcomePayloadWithTableDataField_isNotRejected() {
-        // R268: a @table-bound DataLoader data field (BatchedTableField) sibling to a WrapperArm
+        // A @table-bound DataLoader data field (BatchedTableField) sibling to a WrapperArm
         // errors field under a root @service payload must validate. The retired allow-list rejected
         // it (BatchedTableField was not on OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS) even
         // though the field arm-switches correctly inside its generated DataLoader fetcher; a

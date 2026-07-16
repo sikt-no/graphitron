@@ -33,7 +33,7 @@ public sealed interface InputField extends GraphitronField
      * {@link CompositeColumnReferenceField#liftedSourceColumns()}.
      *
      * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
-     * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate (R186), each
+ * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate, each
      * leaf rewrapped with a {@link CallSiteExtraction.NestedInputField} access path; a nested
      * {@code @table} input that introduces a second DML target remains R122's compound-entity-
      * mutations territory.
@@ -97,7 +97,7 @@ public sealed interface InputField extends GraphitronField
      *     {@link CompositeColumnReferenceField}.
      * @param selfReference {@code true} when this carrier is a <em>self-FK</em> reference — a
      *     same-table {@code @nodeId @reference} whose {@code @reference} names a foreign key back to
-     *     the carrier's own table (R328). The decoded keys land on the self-FK's child columns, a
+ * the carrier's own table. The decoded keys land on the self-FK's child columns, a
      *     pointer to a sibling row, never the row's own identity. R354 reads this to route a self-FK's
      *     lifted columns wholly to the UPDATE SET partition (a self-FK is a write of "who this row
      *     points at", never identity), in contrast to a cross-table FK reference whose lifted column
@@ -226,7 +226,7 @@ public sealed interface InputField extends GraphitronField
 
     /**
      * Input field that does not bind to a SQL column. The defining property is the absence of a
-     * column binding, regardless of whether an explicit {@code @condition} is present (R215).
+ * column binding, regardless of whether an explicit {@code @condition} is present.
      *
      * <p>{@code condition} folds two cases the classifier used to distinguish:
      * <ul>

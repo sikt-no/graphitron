@@ -326,7 +326,7 @@ class BatchedTableFieldPipelineTest {
         assertThat(methodNames).as("plain-list scatterByIdx not emitted when no plain-list-cardinality Split* field")
             .doesNotContain("scatterByIdx");
 
-        // R414: the scatter carries the shared count-source derived table so each per-parent
+        // The scatter carries the shared count-source derived table so each per-parent
         // ConnectionResult can bind (countSource, __idx__ = i) for a real totalCount.
         var scatter = filmFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("scatterConnectionByIdx"))
@@ -424,7 +424,7 @@ class BatchedTableFieldPipelineTest {
 
     @Test
     void hop0Filter_tableBackedParent_keysOnParentPkAndAnchorsParent() {
-        // R450: a single-cardinality @splitQuery whose hop-0 {key:, condition:} element folds a
+        // A single-cardinality @splitQuery whose hop-0 {key:, condition:} element folds a
         // filter into Hop.filter. The filter reads the parent row, so the batch must key on the
         // parent PK (not the FK slot, which for parent-holds-FK is address_id) and the correlation
         // must anchor the parent table — the OnParentJoin arm. This is the coverage whose absence

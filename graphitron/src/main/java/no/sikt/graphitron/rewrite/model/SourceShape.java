@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 /**
  * The shape of what arrives at {@code env.getSource()} for a nested-source field (a {@link Source.OnlyChild}
  * / {@link Source.Child} arm): the source-side endpoint of the field's edge, on the same mirror/reflect
- * vocabulary the {@link TargetShape} base shapes use for the output (R305).
+ * vocabulary the {@link TargetShape} base shapes use for the output.
  *
  * <ul>
  *   <li>{@link #Table} — the source is a catalog table row: the parent producer put a jOOQ

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * R266 — sealed sub-family of {@link Rejection.AuthorError} for {@code DeleteRowsWalker}. Each typed
+ * Sealed sub-family of {@link Rejection.AuthorError} for {@code DeleteRowsWalker}. Each typed
  * arm carries the structural data its diagnostic message and LSP {@code relatedInformation} need;
  * downstream tooling switches on the arm rather than parsing prose. Sibling to R246's
  * {@link UpdateRowsError}: per the dimensional-model-pivot principle, each walker slice adds its own
@@ -101,7 +101,7 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
      * An input field carries {@code @condition(override: true)}. R215's classifier admits this
      * shape today, but its emit-side wiring never landed, so the author's filter would silently
      * never run. R266 makes the deferral honest by rejecting with the field's name and the
-     * directive's source location; re-admit when override-condition emit support lands (R245).
+ * directive's source location; re-admit when override-condition emit support lands.
      */
     record OverrideConditionNotSupported(
         String fieldName,

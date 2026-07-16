@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The built-in lint rule registry (R398): every {@link LintRule.Source#ENGINE} rule paired with its
+ * The built-in lint rule registry: every {@link LintRule.Source#ENGINE} rule paired with its
  * visitor, plus the explicit set of node kinds the engine deliberately does not lint. The engine
  * dispatches each node to the visitors subscribed to its kind. Adding a rule is appending to
  * {@link #builtIn()} and adding its enum constant, not editing a central switch.

@@ -180,7 +180,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
-        // R246: the composite-NodeId key covers the PK exactly, leaving nothing to SET; the walker
+        // The composite-NodeId key covers the PK exactly, leaving nothing to SET; the walker
         // rejects with UpdateRowsError.NoSetFields (the @value marker concept is retired).
         assertThat(f.rejection()).isInstanceOf(
             no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class);
@@ -267,7 +267,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
-        // R246: the composite-NodeId key field projects to two KeyColumn entries sharing the SDL
+        // The composite-NodeId key field projects to two KeyColumn entries sharing the SDL
         // field name "id"; name partitions to SET as a non-key column (PK-or-UK membership, R266
         // retired the @value marker).
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
@@ -345,7 +345,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBaz");
-        // R266: the arity-1 NodeId-decoded carrier projects to one whereColumn on baz.id (the PK),
+        // The arity-1 NodeId-decoded carrier projects to one whereColumn on baz.id (the PK),
         // so the walker yields Identified; keyGroupsOf later regroups it into a MapGroup at emit.
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
         assertThat(deleteRows.whereColumns()).hasSize(1);
@@ -374,7 +374,7 @@ class MutationDmlNodeIdClassificationTest {
 
     // ===== R156 DELETE-payload-carrier admission matrix (cardinality × element) =====
     //
-    // The four admission cells of §Tests L4 (R156). The composite-PK cells use Bar
+    // The four admission cells of §Tests L4. The composite-PK cells use Bar
     // (id_1, id_2); the R130 reproducer fixture the spec named as the motivating shape for
     // the ID-typed PK-echo carrier shape. The single-PK cells use Baz (id) to round out the
     // cardinality axis without composite-PK noise. Each cell asserts the parent mutation
@@ -426,7 +426,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void bulkDeleteIdCarrier_explicitNodeId_caseMismatchedTable_admits() {
-        // R358: the @nodeId(typeName: "Bar") carrier resolves the Bar NodeType by name; Bar's
+        // The @nodeId(typeName: "Bar") carrier resolves the Bar NodeType by name; Bar's
         // verbatim @table is the Oracle-style UPPERCASE "BAR" while the carrier (the input @table)
         // is the lowercase jOOQ name "bar". resolveCarrierIdEncoder must compare the two
         // case-insensitively — a case-sensitive .equals reads this as an @nodeId pinned to a
@@ -491,7 +491,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void bulkDeleteIdCarrier_explicitNodeIdToWrongTable_rejects() {
-        // R156: @nodeId(typeName: "Baz") on a deleteBars carrier whose input @table is "bar"
+        // @nodeId(typeName: "Baz") on a deleteBars carrier whose input @table is "bar"
         // must reject: returning IDs of a different entity than the DML acted on would be a
         // silent contract break.
         var schema = TestSchemaHelper.buildSchema("""
@@ -520,7 +520,7 @@ class MutationDmlNodeIdClassificationTest {
     //       ...
     //   }
     // is admitted across INSERT, UPDATE, DELETE. UPSERT remains gated by R144's outright
-    // refusal (R145). The classifier produces:
+    // refusal. The classifier produces:
     //   arity-1 NodeType key → InputField.ColumnReferenceField (liftedSourceColumns.size() == 1)
     //   arity ≥ 2 NodeType key → InputField.CompositeColumnReferenceField (.size() == N)
     // Validator-side walker (EnumMappingResolver.buildLookupBindings) emits MapGroup / DecodedRecordGroup
@@ -581,7 +581,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
-        // R266: every admitted column is a WHERE filter. bazRef lifts id_1 and id2 contributes id_2;
+        // Every admitted column is a WHERE filter. bazRef lifts id_1 and id2 contributes id_2;
         // together they cover the PK (id_1, id_2) → Identified. (Pre-R189 the validator dropped the
         // reference contribution and this exact shape hit a false "missing PK column id_1".)
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
@@ -620,7 +620,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
-        // R246: bazRef (FK-target NodeId ref, lifts id_1) and id2 both partition to the matched PK
+        // BazRef (FK-target NodeId ref, lifts id_1) and id2 both partition to the matched PK
         // (id_1, id_2); name partitions to SET (PK-or-UK membership, R266 retired @value).
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
@@ -654,7 +654,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteReorderedChild");
-        // R266: every admitted input column is a WHERE filter (DELETE has no SET partition). childId
+        // Every admitted input column is a WHERE filter (DELETE has no SET partition). childId
         // covers the single-column PK (child_id) → Identified; parentRef (composite FK-target NodeId
         // ref) contributes its 3 lifted source columns fk_a/fk_b/fk_c as extra ANDed predicates,
         // sharing the SDL field name "parentRef".
@@ -838,7 +838,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void selfFkNodeIdReference_update_routesSelfFkToSet_sharedColumnInBothPartitions() {
-        // R354: the UPDATE sibling of the INSERT self-FK case. `id` (own @nodeId, own-PK
+        // The UPDATE sibling of the INSERT self-FK case. `id` (own @nodeId, own-PK
         // short-circuit) identifies the row → WHERE (mailbox_id, message_no). `inReplyTo` is the
         // self-FK @nodeId @reference; its lifted child columns (mailbox_id, in_reply_to_no) route
         // WHOLLY to SET — a self-FK is a write of "who this row points at", never identity, so the
@@ -882,7 +882,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void deleteIdCarrier_inputTableNotNodeBacked_rejects() {
-        // R156: implicit Id recognition needs the input @table to be @node-backed. Qux has no
+        // Implicit Id recognition needs the input @table to be @node-backed. Qux has no
         // @node SDL declaration in this fixture, so the encoder lookup fails and the carrier
         // rejects with the same diagnostic family as today's bare-ID DELETE return path.
         var schema = TestSchemaHelper.buildSchema("""

@@ -86,7 +86,7 @@ public final class GraphitronFacadeGenerator {
         String claimsKeyField =
             no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator.CLAIMS_KEY_FIELD;
 
-        // The escape-hatch factory (R190): the caller brings a DSLContext and owns transactions and
+        // The escape-hatch factory: the caller brings a DSLContext and owns transactions and
         // identity. Additive-by-construction keeps its name and shape frozen.
         var newExecutionInput = buildExecutionInputFactory(
             "newExecutionInput", dslContext, "defaultDsl",
@@ -94,7 +94,7 @@ public final class GraphitronFacadeGenerator {
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, escapeHatchJavadoc(contextArgs));
 
-        // The owned-connection factory (R429): the caller brings only the opaque claims; the execution
+        // The owned-connection factory: the caller brings only the opaque claims; the execution
         // instrumentation pins the connection, mounts identity, and produces the DSLContext. Distinct
         // name (not an overload of newExecutionInput) so a caller cannot silently opt out of graphitron's
         // guarantees by passing a DSLContext to what they think is the owned path. Writes the claims under

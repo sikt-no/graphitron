@@ -60,7 +60,7 @@ public sealed interface InputColumnBindingGroup permits InputColumnBindingGroup.
      * (e.g. {@code "id"}); the emitter reads the wire value once per row and passes the result
      * through {@code decodeMethod} to obtain the typed record.
      *
-     * <p>{@code accessPath} (R186) is the SDL key chain from the argument-value root map to the
+ * <p>{@code accessPath} is the SDL key chain from the argument-value root map to the
      * source field: {@code [sourceFieldName]} for a top-level composite key (the emit reads
      * {@code map.get(sourceFieldName)}, byte-identical to before R186), or a multi-segment path
      * for a composite key buried in a nested grouping input (the emit descends the wire map). The

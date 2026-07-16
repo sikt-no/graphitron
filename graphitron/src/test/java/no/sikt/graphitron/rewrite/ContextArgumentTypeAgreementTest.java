@@ -61,7 +61,7 @@ class ContextArgumentTypeAgreementTest {
     }
 
     /**
-     * R238: the ContextArgumentClassifier grows a sibling harvest arm walking
+ * The ContextArgumentClassifier grows a sibling harvest arm walking
      * {@link no.sikt.graphitron.rewrite.model.ServiceField#serviceMethodCall()} for
      * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromContext} entries. Two root
      * {@code @service} sites declaring the same context key with the same Java type fold into
@@ -90,7 +90,7 @@ class ContextArgumentTypeAgreementTest {
     }
 
     /**
-     * R238: two root {@code @service} sites declaring the same context key with disagreeing
+ * Two root {@code @service} sites declaring the same context key with disagreeing
      * Java types surface a {@link Rejection.AuthorError.TypeConflict} carrying both sites'
      * declared types. Pairs with {@link #agreement_acceptsServiceFieldHarvestSameType}; the
      * harvest arm contributes the {@code FromContext.javaType()} as the site-local declaration.

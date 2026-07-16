@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
- * The shared per-column overlap analysis for the DML mutation write paths (R356).
+ * The shared per-column overlap analysis for the DML mutation write paths.
  *
  * <p>"Group the writers of a record / SET clause by backing column; a column with two or more
  * writers is an overlap; an all-plain overlap is a build-time reject and a decode-involving one

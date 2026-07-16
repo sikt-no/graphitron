@@ -14,7 +14,7 @@ public enum DmlKind {
     INSERT, UPDATE, DELETE, UPSERT;
 
     // R266 retired both the @value partition (acceptsValueMarker) and the resolveInput PK-coverage
-    // check (requiresPkCoverage): UPDATE (R246/R258) and DELETE (R266) now identify rows through the
+    // check (requiresPkCoverage): UPDATE and DELETE now identify rows through the
     // UpdateRowsWalker / DeleteRowsWalker's catalog-derived PK-or-UK match, so neither predicate has
     // a caller. INSERT (the lone verb still completing resolveInput) has no WHERE clause to cover.
 }

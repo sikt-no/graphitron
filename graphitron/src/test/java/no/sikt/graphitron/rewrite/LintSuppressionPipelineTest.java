@@ -20,7 +20,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R408: primary (pipeline-tier) coverage for lint-finding suppression. Drives the real
+ * Primary (pipeline-tier) coverage for lint-finding suppression. Drives the real
  * {@link GraphQLRewriteGenerator#buildOutput()} against the test jOOQ catalog and asserts on the
  * {@link ValidationReport} it produces, the same object the LSP replays and the MCP {@code diagnostics}
  * tool projects, so suppression is verified where it is applied (the single build evaluator) rather
@@ -148,7 +148,7 @@ class LintSuppressionPipelineTest {
         // FilmDetails trips both an engine rule (types-and-fields-have-descriptions on the type) and a
         // classifier advisory (splitquery-redundant on FilmDetails.language). Excluding the type must
         // silence the engine finding while leaving the classifier advisory, pinning that excludedTypes
-        // reaches only the engine's AST walk (R408). A future refactor extending it to the classifier
+        // reaches only the engine's AST walk. A future refactor extending it to the classifier
         // channel would need the fragile owning-type reverse-map option C rejects.
         String sdl = """
             type Language @table(name: "language") { name: String }

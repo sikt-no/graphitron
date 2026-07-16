@@ -11,8 +11,8 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * R266 — the shared PK-or-UK matcher both {@link UpdateRowsWalker} (R246) and
- * {@link DeleteRowsWalker} (R266) call. Extracts UpdateRowsWalker's original Stages 4-5 (candidate-
+ * The shared PK-or-UK matcher both {@link UpdateRowsWalker} and
+ * {@link DeleteRowsWalker} call. Extracts UpdateRowsWalker's original Stages 4-5 (candidate-
  * key enumeration + PK-first subset match + {@link MatchedKey} lift) so the row-identification logic
  * lives once. The match itself is verb-neutral: it asks "which catalog key does this input cover?",
  * which is the one concern UPDATE and DELETE genuinely share. What differs (UPDATE partitions into

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R291: classification-time retention of the support types declared in
+ * Classification-time retention of the support types declared in
  * {@code directives.graphqls}. The retention decision materialises as
  * {@link GraphitronSchema#types()} membership, the single decision both the runtime
  * registration ({@code GraphitronSchemaClassGenerator.planFor}) and the print seam

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rather than prose (per the R246/R256 precedent).
  *
  * <p>Sites C ({@code @condition}) and D ({@code @externalField}) are out of scope for Slice 1 — their
- * dimensional wire-coercion channel (R222) is not yet pinned — so the {@code @tableMethod} /
+ * dimensional wire-coercion channel is not yet pinned — so the {@code @tableMethod} /
  * {@code @condition} argument path keeps its legacy extraction; see the carved-out follow-up
  * {@code reject-wire-coercion-nonservice-sites}.
  */

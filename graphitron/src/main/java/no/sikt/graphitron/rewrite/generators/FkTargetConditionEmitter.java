@@ -17,7 +17,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 /**
  * Shared emission for {@code @condition} filter terms, factored out so every WHERE-emitting site
  * (the {@link QueryConditionsGenerator} shim plus the inline fetcher emitters) treats an FK-target
- * {@code @nodeId} override condition identically (R330).
+ * {@code @nodeId} override condition identically.
  *
  * <p>A plain {@link WhereFilter} hands the developer method the caller's own table local. An
  * {@link FkTargetConditionFilter} cannot: its method expects the FK-<em>target</em> table {@code X}
@@ -94,7 +94,7 @@ public final class FkTargetConditionEmitter {
      * the FK-target arm emits the correlated {@code EXISTS} against the alias declared by
      * {@link #declareAliases} (read from {@code fkTargetAliases}).
      *
-     * <p>{@code source} (R424) routes the runtime argument-value reads inside the composed call:
+ * <p>{@code source} routes the runtime argument-value reads inside the composed call:
      * root/{@code @splitQuery} sites pass {@link ArgumentValueSource.Env} (byte-identical output);
      * the two inline emitters pass {@link ArgumentValueSource.FromSelectedField} so the arguments
      * are read off the inline field's own {@code SelectedField}, not the ancestor fetcher's env.

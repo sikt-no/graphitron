@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * R330: a filter input field carrying both {@code @nodeId(typeName: "X")} and
+ * A filter input field carrying both {@code @nodeId(typeName: "X")} and
  * {@code @condition(override: true)} must route the developer condition method against the
  * FK-target table {@code X}, not the parent's own root table.
  *

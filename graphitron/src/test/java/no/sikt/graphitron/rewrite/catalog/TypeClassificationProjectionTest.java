@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R160 — pipeline-tier coverage that
+ * Pipeline-tier coverage that
  * {@link CatalogBuilder#buildSnapshot(TypeDefinitionRegistry,
  *     no.sikt.graphitron.rewrite.GraphitronSchema, CompletionData)} populates
  * {@link LspSchemaSnapshot.Built#typeClassificationsByName()} with the expected

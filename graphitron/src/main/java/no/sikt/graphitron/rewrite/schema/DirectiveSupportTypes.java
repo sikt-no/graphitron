@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * The Graphitron-declared support types: every type definition in the bundled
  * {@code directives.graphqls}. These exist so Graphitron's build-time directive arguments
- * type-check during classification; they are fully consumed at generate time (R291).
+ * type-check during classification; they are fully consumed at generate time.
  *
  * <p>The set is <em>derived</em> from {@link RewriteSchemaLoader#directivesSdl()}, not
  * hand-maintained: a type belongs here iff it is declared in {@code directives.graphqls}.

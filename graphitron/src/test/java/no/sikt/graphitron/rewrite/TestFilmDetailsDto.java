@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 /**
- * R275 — reflection backing for the {@code FilmDetails @record { title: String }} fixture
+ * Reflection backing for the {@code FilmDetails @record { title: String }} fixture
  * payload used by the arg-mapping rows in {@code GraphitronSchemaBuilderTest}. Those rows
  * historically paired {@code String}-returning stub methods with the unbacked payload to test
  * argument mapping in isolation; the dangling-type-reference soundness pass

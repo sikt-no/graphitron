@@ -16,7 +16,7 @@ import java.util.List;
  *       joined to the base by the author-declared child&rarr;parent {@code @reference} (PK=FK).
  *       Carries that resolved hop; field residence is declared by the per-field {@code @reference}
  *       and read off the field variant, not stored here. Only ever appears in a
- *       {@link GraphitronType.TableInterfaceType} participant list (R389).</li>
+ * {@link GraphitronType.TableInterfaceType} participant list.</li>
  *   <li>{@link Unbound} — the participant is not table-backed (e.g. {@code @error} types,
  *       structural interfaces, value types). Generator code must skip SQL generation for
  *       unbound participants.</li>
@@ -113,7 +113,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
     }
 
     /**
-     * A joined-table (class-table) inheritance participant (R389).
+ * A joined-table (class-table) inheritance participant.
      *
      * <p>The participant shares a discriminated base table with its sibling participants (one PK
      * space, one discriminator column) and declares its own detail table via {@code @table}. Its

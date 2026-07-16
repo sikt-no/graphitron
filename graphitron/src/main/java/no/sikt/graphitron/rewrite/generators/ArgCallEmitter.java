@@ -74,7 +74,7 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Source-aware variant (R424): {@code source} routes the runtime argument-value read to either
+ * Source-aware variant: {@code source} routes the runtime argument-value read to either
      * {@code env.getArgument(name)} ({@link ArgumentValueSource.Env}, the byte-identical status quo
      * at root/{@code @splitQuery} sites) or {@code <sf>.getArguments().get(name)}
      * ({@link ArgumentValueSource.FromSelectedField}, the two inline emitters, whose {@code env} is
@@ -297,7 +297,7 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Source-aware variant (R424); see
+ * Source-aware variant; see
      * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry, Map, ArgumentValueSource)}.
      * Each arm's {@link ArgumentValueSource.Env} branch is byte-identical to the pre-R424 output, so
      * every root/{@code @splitQuery} site (which passes {@code Env}) is unchanged.
@@ -335,7 +335,7 @@ public final class ArgCallEmitter {
                 };
             }
             // GraphQL context is request-scoped, so the ancestor env is legitimately correct at the
-            // inline sites too: this arm stays env-based under BOTH sources (R424).
+            // inline sites too: this arm stays env-based under BOTH sources.
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
                     rawTypeOfCallParam(param), ctx.graphitronContextCall(), param.name());
@@ -362,7 +362,7 @@ public final class ArgCallEmitter {
                 buildNodeIdDecodeExtraction(
                     argValueRead(source, param.name()),
                     nidk, param.list(), registry);
-            // R311: a jOOQ TableRecord / input-bean @service param — never an inline @reference filter,
+            // A jOOQ TableRecord / input-bean @service param — never an inline @reference filter,
             // so FromSelectedField must never reach here. Guard defensively (matching the guard
             // discipline in buildMethodBackedCallArgs) so a mis-wired future caller fails loudly rather
             // than silently emitting the wrong read form; both arms keep the implicit Env read.
@@ -527,7 +527,7 @@ public final class ArgCallEmitter {
         // and key projection as readable statement-form code, so the call site collapses to
         // <name>(wireExpr). This replaces the former inline nested-ternary form (underscore
         // pattern locals plus a Supplier-lambda-throw trick to stay an expression) with a body a
-        // developer can breakpoint and read a meaningful stack frame from (R260).
+        // developer can breakpoint and read a meaningful stack frame from.
         if (registry == null) {
             // Every NodeId-decoded condition argument is emitted through a generator that owns a
             // CompositeDecodeHelperRegistry and drains it onto the class hosting the call site:
@@ -550,7 +550,7 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * R186: a null-safe nested-Map value descent reading from a local that already holds a
+ * A null-safe nested-Map value descent reading from a local that already holds a
      * {@code Map<?, ?>} (the mutation emitters' {@code in} / {@code row} argument-value maps). For a
      * single-segment {@code path} the result is the byte-identical {@code mapLocal.get(key)}; for a
      * deeper path it is the {@code instanceof Map<?, ?>} ternary chain {@link #buildMapChain}
@@ -603,7 +603,7 @@ public final class ArgCallEmitter {
         // inline `env.getArgument(outer) instanceof Map<?, ?> map1` rebind.
         // liftedOuters is populated only by the Env sites (QueryConditionsGenerator /
         // MultiTablePolymorphicEmitter); the two inline sites pass null, so under FromSelectedField
-        // topBinding is always null and the depth-0 read routes through the source (R424).
+        // topBinding is always null and the depth-0 read routes through the source.
         String topBinding = liftedOuters != null ? liftedOuters.get(outerArgName) : null;
         CodeBlock root = topBinding != null
             ? CodeBlock.of("$L", topBinding)

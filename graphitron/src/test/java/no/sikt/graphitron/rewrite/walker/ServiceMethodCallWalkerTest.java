@@ -63,7 +63,7 @@ class ServiceMethodCallWalkerTest {
 
     @Test
     void walk_instanceWithMultiArgCtor_translatesCtorParamSourcesInOrder() {
-        // R256: the holder ctor carries (DSLContext, tenantId) sources; the walker projects them
+        // The holder ctor carries (DSLContext, tenantId) sources; the walker projects them
         // onto ctorArgs in order — FromDsl then FromContext — rather than the hard-coded [FromDsl].
         var dslType = ClassName.get("org.jooq", "DSLContext");
         var stringType = ClassName.get(String.class);
@@ -84,7 +84,7 @@ class ServiceMethodCallWalkerTest {
 
     @Test
     void walk_instanceCtorTwoDslSlots_raisesCtorRoundError() {
-        // R256: a holder ctor with two DSLContext slots raises MultipleDslContextSlots under the
+        // A holder ctor with two DSLContext slots raises MultipleDslContextSlots under the
         // CTOR round — the constructor mirror of the method-round guard.
         var dslType = ClassName.get("org.jooq", "DSLContext");
         var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(

@@ -64,7 +64,7 @@ class BatchedLookupTableFieldValidationTest {
     // FieldBuilder; the emitter-level validator no longer carries a fallback check
     // for it. Classifier-level coverage lives in GraphitronSchemaBuilderTest.
 
-    // R232: record-sourced + condition-join first hop classifies straight to
+    // Record-sourced + condition-join first hop classifies straight to
     // AuthorError upstream; the validator does not surface a deferred-rejection for it.
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(

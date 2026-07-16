@@ -14,7 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R363/R383/R384: a filter input on a root multitable interface / union query field is lowered
+ * A filter input on a root multitable interface / union query field is lowered
  * <em>per participant</em>, each against the participant's own table, and the model carries the
  * resolved filters in a field-local {@link ParticipantFilters} list. Column filters (plain, enum,
  * jOOQ-converted, {@code @nodeId}-decoded; top-level or nested-input) and developer
@@ -94,7 +94,7 @@ class MultiTableFilterLoweringTest {
 
     @Test
     void nestedInputFieldFilter_lowersPerParticipantWithNestedExtraction() {
-        // R383: the same first_name filter delivered through an input object (`filter`) rather than
+        // The same first_name filter delivered through an input object (`filter`) rather than
         // as a top-level argument. The implicit column-equality predicate carries a
         // NestedInputField(filter -> firstNames) call-site extraction whose leaf is Direct, which the
         // polymorphic branch emitter handles registry-free; only the call site differs from the

@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Classification for an object type that forks at request time: a record-backed type that
- * additionally carries a single {@link ChildField.ErrorsField} (R244). This is the named model
+ * additionally carries a single {@link ChildField.ErrorsField}. This is the named model
  * concept for "outcome type" in the error-channel vocabulary; its <em>success projection</em> is
  * its non-errors (data) fields, its <em>error projection</em> is the single errors field.
  *

@@ -14,7 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Per-rule behaviour for the built-in syntactic lint visitors (R398): for each rule a positive case
+ * Per-rule behaviour for the built-in syntactic lint visitors: for each rule a positive case
  * (non-compliant SDL yields exactly one finding naming the rule), a negative case (compliant SDL
  * yields none), and, where the offending node has an unambiguous position, a range case (the
  * finding's {@code SourceLocation} points at the offending node). Findings are asserted on the typed

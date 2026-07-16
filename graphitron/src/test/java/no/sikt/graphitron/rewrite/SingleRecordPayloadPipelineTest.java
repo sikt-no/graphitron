@@ -93,7 +93,7 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
-        // R305: the former SingleRecordTableField carrier collapsed into BatchedTableField — a
+        // The former SingleRecordTableField carrier collapsed into BatchedTableField — a
         // source=target re-fetch keyed on the PK read off the produced record(s).
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         var rtf = (ChildField.BatchedTableField) dataField;
@@ -117,8 +117,8 @@ class SingleRecordPayloadPipelineTest {
     void payload_singleDataField_dataFieldClassifiesWithCardinalityOne(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
-        // R258: UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
-        // R305: the data field classifies as BatchedTableField (per-key cardinality ONE) for both.
+        // UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
+        // The data field classifies as BatchedTableField (per-key cardinality ONE) for both.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
         var dataField = schema.field("FilmPayload", "film");
@@ -128,16 +128,16 @@ class SingleRecordPayloadPipelineTest {
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
-    // R307: payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
+    // Payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
     // a bare @record on a single-record DML payload does not change classification; @record is
     // deprecated and ignored, so this is the same fixture as the no-@record single-payload case
     // above, which already pins the SingleRecordTableField (cardinality ONE) leaf.
 
-    // ===== DELETE-with-carrier admission (R156 / R266 / R287) =====
+    // ===== DELETE-with-carrier admission =====
 
     @Test
     void payload_withDeleteAndTableElement_returnsRejected() {
-        // R287: a payload-returning DELETE whose data field is a @table-element is rejected. The
+        // A payload-returning DELETE whose data field is a @table-element is rejected. The
         // row is gone after the statement and RETURNING carries only the primary key, so a full
         // @table projection is impossible; the classifier rejects DELETE -> @table at authoring
         // time and points the author at the ID-typed carrier shape (which echoes the deleted PKs).
@@ -153,7 +153,7 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_withMultipleDataFields_returnsRejected() {
-        // R141: two @table-element list-shaped data fields is two data channels — the scan
+        // Two @table-element list-shaped data fields is two data channels — the scan
         // rejects with "declares N data-channel-shaped fields; require exactly one".
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] alsoFilms: [Film!] }"));
@@ -166,7 +166,7 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_withScalarField_returnsRejected() {
-        // R141: a scalar (String) on the carrier is not a recognized DML payload data-field
+        // A scalar (String) on the carrier is not a recognized DML payload data-field
         // shape; the scan rejects naming the offending field and pointing at the extension
         // point.
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
@@ -180,7 +180,7 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_withInterfaceField_returnsRejected() {
-        // R141: an interface-typed field on the carrier is not a recognized DML payload
+        // An interface-typed field on the carrier is not a recognized DML payload
         // data-field shape (the SDL polymorphic union/interface shape is reserved for the
         // errors channel and requires @error members; an arbitrary interface doesn't match).
         // The scan names the offending field.
@@ -258,7 +258,7 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_dataFieldCarriesAtDeprecated_admits() {
-        // R141: bulk-input + list-data-field admits as MutationBulkDmlRecordField; @deprecated
+        // Bulk-input + list-data-field admits as MutationBulkDmlRecordField; @deprecated
         // on the data field is pure SDL metadata, not on the carrier's forbidden-directive list.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
@@ -281,7 +281,7 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] }"));
         var carrierType = schema.type("FilmPayload");
-        // R276: a DML carrier binds to its RETURNING table's record.
+        // A DML carrier binds to its RETURNING table's record.
         assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
     }
 
@@ -297,7 +297,7 @@ class SingleRecordPayloadPipelineTest {
             }
             """);
         var carrierType = schema.type("FilmCarrier");
-        // R276: a producer-backed carrier (DummyRecord via @service reflection) routes to a
+        // A producer-backed carrier (DummyRecord via @service reflection) routes to a
         // record-backed ResultType (JavaRecordType / PojoResultType.Backed), confirming the
         // carrier-promotion path bound it to a concrete backing.
         assertThat(carrierType).isInstanceOf(GraphitronType.ResultType.class);
@@ -456,7 +456,7 @@ class SingleRecordPayloadPipelineTest {
             }
             """);
 
-        // R276: a carrier-shaped payload that no producer returns (orphan) has no record to bind to
+        // A carrier-shaped payload that no producer returns (orphan) has no record to bind to
         // and is not nested under a table-backed parent, so the type pass leaves it unclassified
         // (absent from schema.types()); its data field stays unregistered. The field that returns it
         // (Query.x) classifies as UnclassifiedField, surfacing the orphan at the field edge.
@@ -523,7 +523,7 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }"));
 
-        // R258: UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
+        // UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
@@ -556,7 +556,7 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { films: [Film!] errors: [CarrierError!] }"));
 
-        // R258: UPDATE routes onto MutationBulkUpdatePayloadField; INSERT stays on MutationBulkDmlRecordField.
+        // UPDATE routes onto MutationBulkUpdatePayloadField; INSERT stays on MutationBulkDmlRecordField.
         // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedBulkLeaf(kind));
@@ -607,7 +607,7 @@ class SingleRecordPayloadPipelineTest {
             .contains("SQLDialect.DEFAULT")
             .contains("newRecord");
 
-        // R303: the payload's ErrorsField with Transport.LocalContext is now reified onto
+        // The payload's ErrorsField with Transport.LocalContext is now reified onto
         // FilmPayloadFetchers as an env-dependent method (return env.getLocalContext()); the
         // schema-level wiring registers a method reference into it rather than an inline lambda.
         var wirings = no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter.emit(
@@ -637,7 +637,7 @@ class SingleRecordPayloadPipelineTest {
     }
 
     private static String inputBody(DmlKind kind) {
-        // R258 / R266: UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker (PK-or-UK
+        // UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker (PK-or-UK
         // matched-key membership) — filmId (PK) into WHERE, title into SET — not from @value, which
         // R266 retired entirely. UPSERT is refused upstream before any partition runs.
         return switch (kind) {
@@ -648,14 +648,14 @@ class SingleRecordPayloadPipelineTest {
         };
     }
 
-    /** R258: the single-input payload leaf the classifier lands on for {@code kind}. */
+    /** The single-input payload leaf the classifier lands on for {@code kind}.*/
     private static Class<? extends MutationField> expectedSingleLeaf(DmlKind kind) {
         return kind == DmlKind.UPDATE
             ? MutationField.MutationUpdatePayloadField.class
             : MutationField.MutationDmlRecordField.class;
     }
 
-    /** R258: the bulk-input payload leaf the classifier lands on for {@code kind}. */
+    /** The bulk-input payload leaf the classifier lands on for {@code kind}.*/
     private static Class<? extends MutationField> expectedBulkLeaf(DmlKind kind) {
         return kind == DmlKind.UPDATE
             ? MutationField.MutationBulkUpdatePayloadField.class

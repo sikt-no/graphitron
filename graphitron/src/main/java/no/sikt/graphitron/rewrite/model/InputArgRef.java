@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * R246 — the slim per-argument surface a DML walker-carrier field needs to read its {@code @table}
+ * The slim per-argument surface a DML walker-carrier field needs to read its {@code @table}
  * input off {@code env} and reference the jOOQ table at emit time. Carries the SDL argument name,
  * the SDL input type name, the resolved jOOQ {@link TableRef}, and the single-row-vs-bulk
  * dispatch flag (the argument's outer {@code GraphQLList} wrapper).

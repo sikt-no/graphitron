@@ -31,7 +31,7 @@ import java.util.List;
  * Label strings are not on the projection record; rendering lives in the LSP module as
  * a sibling switch.
  *
- * <p><b>R217: projection-record simple names are also user-visible.</b> {@code
+ * <p><b>Projection-record simple names are also user-visible.</b> {@code
  * LspClassificationLabels.projectionLabel} returns each permit's simple name verbatim,
  * and {@code DeclarationHovers} prints {@code FieldClassification.<name>} in hover
  * headers. Renaming a permit (say, {@code TableTarget} to {@code JoinedColumnTarget})
@@ -85,7 +85,7 @@ public sealed interface FieldClassification
      *
      * <p>{@link Resolve} carries the table whose columns to use for completion / hover /
      * validation: the {@code @reference} terminal table for the four column-bearing
-     * permits, and (R343) the navigated child/element table for {@code TableTarget} /
+ * permits, and the navigated child/element table for {@code TableTarget} /
      * {@code RecordTableTarget}, where {@code @defaultOrder(fields: [{name: ...}])} names a
      * column on that element table rather than the enclosing type's {@code @table}. {@link
      * Silent} signals "the LSP should not surface a candidate or
@@ -130,7 +130,7 @@ public sealed interface FieldClassification
             case CompositeColumn c              -> new LspColumnDispatch.Resolve(c.tableName());
             case CompositeColumnReference c     -> new LspColumnDispatch.Resolve(c.tableName());
             case ParticipantCrossTable c        -> new LspColumnDispatch.Resolve(c.targetTableName());
-            // R343: a list/connection field navigating to a child table carries that child
+            // A list/connection field navigating to a child table carries that child
             // (element) table in its tableName. @defaultOrder(fields: [{name: ...}]) at such a
             // field names a column on the element table, not the enclosing type's @table, so
             // these resolve their own target table the same way the @reference permits above do.
@@ -325,7 +325,7 @@ public sealed interface FieldClassification
     record Computed(String methodClassName, String methodName) implements FieldClassification {}
 
     /**
-     * An input field that does not bind to a SQL column (R215). Covers {@code InputField.UnboundField}.
+ * An input field that does not bind to a SQL column. Covers {@code InputField.UnboundField}.
      * {@code methodClassName} / {@code methodName} are populated when the carrier has an explicit
      * {@code @condition}; {@code override} reflects the directive flag. All three are {@code null}/
      * {@code false} when the carrier has no condition at all (the cascade-admitted bare-field case).
@@ -343,7 +343,7 @@ public sealed interface FieldClassification
         }
     }
 
-    // ===== Single-record carrier data fields (R75 / R156) =====
+    // ===== Single-record carrier data fields =====
 
     /**
      * The single data field on a payload-returning DELETE carrier where the data field

@@ -11,9 +11,9 @@ import java.util.Optional;
 /**
  * Shared callables for the {@code @field(name:)} root-value sigils.
  *
- * <p>Two sigil literals are admitted: {@code $source} (R159), binding the upstream Java
+ * <p>Two sigil literals are admitted: {@code $source}, binding the upstream Java
  * value at the payload data field site to the SDL field; and {@code $errors}
- * (R178), binding the SDL field to {@code env.getLocalContext()} for errors-shaped fields
+ *, binding the SDL field to {@code env.getLocalContext()} for errors-shaped fields
  * on payload-returning mutation types. The helper owns the canonical rejection messages
  * (unknown sigil, not-defined-here, type mismatch); the classifier, the LSP completions
  * arm, and the LSP diagnostics arm all route through these methods so a message tweak in
@@ -43,8 +43,8 @@ public final class FieldSourceSigil {
     /**
      * Parsed form of a {@code @field(name:)} argument value. Three arms:
      * {@link BareName} carries the literal column / accessor name (current single-segment
-     * shape); {@link UpstreamRoot} represents the {@code $source} sigil (R159);
-     * {@link LocalContext} represents the {@code $errors} sigil (R178).
+ * shape); {@link UpstreamRoot} represents the {@code $source} sigil;
+ * {@link LocalContext} represents the {@code $errors} sigil.
      */
     public sealed interface FieldNameRef
             permits FieldNameRef.BareName, FieldNameRef.UpstreamRoot, FieldNameRef.LocalContext {

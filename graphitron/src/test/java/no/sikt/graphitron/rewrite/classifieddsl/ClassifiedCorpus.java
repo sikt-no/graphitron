@@ -231,7 +231,7 @@ public final class ClassifiedCorpus {
 
         /*
          * Result-type backing (a type-verdict cluster). A non-@table result type acquires its backing
-         * class by reflection on the @service producer's return type (R276), never from a directive, and
+ * class by reflection on the @service producer's return type, never from a directive, and
          * the GraphitronType leaf reflects what that class is: a plain Java class is PojoResultType.Backed
          * (`as: Backed`), a Java record is JavaRecordType, a jOOQ TableRecord is JooqTableRecordType.
          * Corpus-only: the @classifiedType axis is asserted directly; there is no field-side dimensional
@@ -393,7 +393,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * R405: a root @service field returning a single-table discriminated interface
+ * A root @service field returning a single-table discriminated interface
          * (QueryServiceTableInterfaceField, single cardinality). Unlike route (a) above, all
          * implementers share one @table @discriminate table, so the service hands back records of that
          * one table; the emitted fetcher collects their PKs and re-fetches by PK, routing each row off
@@ -412,7 +412,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * R405: mutation analogue (MutationServiceTableInterfaceField), list cardinality. Same
+ * Mutation analogue (MutationServiceTableInterfaceField), list cardinality. Same
          * single-table by-PK re-fetch as the query arm. Verdict: source Mutation, operation
          * ServiceCall, target List, target shape Interface. Corpus-only: adds the
          * MutationServiceTableInterfaceField leaf.
@@ -542,7 +542,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * @routine (R300): a table-valued read function backing a root list field. jOOQ models the
+ * @routine: a table-valued read function backing a root list field. jOOQ models the
          * function as a catalog Table<R>, so the verdict is the same shape as a plain catalog read
          * (QueryRoutineTableField, Query / Fetch / List(Table)); only the FROM source differs (the
          * generated Routines convenience method, with IN params bound from GraphQL arguments). The
@@ -561,7 +561,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * @routine on Mutation (R451): the routine call IS the write and commits before the
+ * @routine on Mutation: the routine call IS the write and commits before the
          * follow-up query. The chain form (@routine plus at least one @reference hop) lands
          * MutationRoutineWriteField (Mutation / RoutineWrite / List(Table)): step 1 runs the
          * VOLATILE set-returning function inside the per-field transaction and captures hop 0's
@@ -720,7 +720,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * R329 — the @service record-composite carrier: a mutation whose @service producer returns a
+ * The @service record-composite carrier: a mutation whose @service producer returns a
          * list of a consumer-authored composite (one FilmRecord plus a List<ActorRecord>). The payload
          * is a two-level carrier: a data field that is a list of an intermediate result type
          * (CreateFilmsResult, reflection-bound to the composite class → JavaRecordType), whose
@@ -819,7 +819,7 @@ public final class ClassifiedCorpus {
         /*
          * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE is a DML write
          * that projects the affected @table row back, so it is Mutation / Update / Table
-         * (MutationUpdateTableField; the projection re-fetch is derived). DELETE (R287) cannot project a
+ * (MutationUpdateTableField; the projection re-fetch is derived). DELETE cannot project a
          * @table (the row is gone; RETURNING carries only the PK), so it tops out at an encoded-ID return:
          * Mutation / Delete / Column (MutationDeleteTableField with an Encoded* return-expression arm).
          * DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`) or an

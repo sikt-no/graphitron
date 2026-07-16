@@ -338,7 +338,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("no GraphQL arguments are in scope");
             }),
 
-        // R232: condition-only @reference on a scalar return type (no @table to anchor the
+        // Condition-only @reference on a scalar return type (no @table to anchor the
         // terminal hop) AUTHOR_ERRORs at parse time. BuildContext.resolveConditionJoinTarget
         // returns AuthorError for the terminal hop because terminalTargetSqlName is null.
         CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED(
@@ -373,7 +373,7 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // R259: an unresolvable @reference(key:) candidate hint must land in the author's frame.
+    // An unresolvable @reference(key:) candidate hint must land in the author's frame.
     // The author wrote the jOOQ Java-constant form (the TABLE__CONSTRAINT name, detected by the
     // `__` separator), so the suggestions must be rendered in that namespace, not as the bare SQL
     // constraint names findForeignKey also accepts.
@@ -410,7 +410,7 @@ class GraphitronSchemaBuilderTest {
             .doesNotContainIgnoringCase("customer_address_id_fkey");
     }
 
-    // R259: at a multi-hop path position the candidate set must be scoped to the FKs touching the
+    // At a multi-hop path position the candidate set must be scoped to the FKs touching the
     // current source table, not ranked against every FK in the catalog. Here the failing key sits
     // on the `film_actor` join table, so only its two FKs are relevant; `film`'s own FKs (which a
     // global Levenshtein sweep would surface) must not appear.
@@ -1121,13 +1121,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                // R339: primaryKey-mode honours the directive-level direction:, so DESC is stamped
+                // PrimaryKey-mode honours the directive-level direction:, so DESC is stamped
                 // onto each synthesised PK entry and uniformAsc reflects it.
                 assertThat(order.uniformAsc()).isFalse();
                 assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
             }),
 
-        // R243: per-field direction in @defaultOrder(fields: [...]).
+        // Per-field direction in @defaultOrder(fields: [...]).
         PER_FIELD_DIRECTION_DEFAULT_ORDER(
             "R243: @defaultOrder(fields: [...]) with mixed per-field direction → "
             + "ColumnOrderEntry carries per-entry SortDirection; uniformAsc reflects the mix",
@@ -1152,7 +1152,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(order.uniformAsc()).isFalse();
             }),
 
-        // R243: directive-level direction on @defaultOrder pushes down per-entry as the fallback.
+        // Directive-level direction on @defaultOrder pushes down per-entry as the fallback.
         DIRECTIVE_LEVEL_DIRECTION_PUSHES_DOWN(
             "R243: @defaultOrder(direction: DESC, fields: [...]) pushes DESC down onto entries "
             + "that omit per-field direction; per-field ASC overrides",
@@ -1174,7 +1174,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(order.uniformAsc()).isFalse();
             }),
 
-        // R243: per-field direction in @order enum-value directives.
+        // Per-field direction in @order enum-value directives.
         PER_FIELD_DIRECTION_ORDER_ENUM_VALUE(
             "R243: enum value's @order(fields: [...]) with per-field direction → "
             + "NamedOrder's Fixed carries the per-entry directions and uniformAsc = false",
@@ -1251,7 +1251,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.None.class);
             }),
 
-        // R232: condition-only @reference path resolves its target table from the carrier
+        // Condition-only @reference path resolves its target table from the carrier
         // field's return-type @table binding (terminal-hop arm of
         // BuildContext.resolveConditionJoinTarget).
         CONDITION_ONLY_TERMINAL_RESOLVES_TARGET_FROM_RETURN_TYPE(
@@ -1274,7 +1274,7 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOf(ParentCorrelation.OnParentJoin.class);
             }),
 
-        // R232: a condition-only path with @table on both sides preserves the legacy
+        // A condition-only path with @table on both sides preserves the legacy
         // {table:, condition:} combination semantics — the FK hop is derived from endpoints
         // and {condition:} folds into the hop filter, no condition join produced.
         TABLE_WITH_CONDITION_PRESERVES_WHERE_FILTER(
@@ -1297,7 +1297,7 @@ class GraphitronSchemaBuilderTest {
                     .isNotNull();
             }),
 
-        // R232: a condition-only path with @key on both sides preserves the legacy
+        // A condition-only path with @key on both sides preserves the legacy
         // {key:, condition:} combination semantics — same as above for key-form.
         KEY_WITH_CONDITION_PRESERVES_WHERE_FILTER(
             "{key:, condition:} combination preserves whereFilter semantics — regression guard",
@@ -1319,7 +1319,7 @@ class GraphitronSchemaBuilderTest {
                     .isNotNull();
             }),
 
-        // R232: intermediate-hop condition step with concrete jOOQ table parameters —
+        // Intermediate-hop condition step with concrete jOOQ table parameters —
         // BuildContext.resolveConditionJoinTarget reflects on the method's second parameter
         // (no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor) and resolves the target
         // table via JooqCatalog.findTableByClass.
@@ -1348,7 +1348,7 @@ class GraphitronSchemaBuilderTest {
                     .isEqualToIgnoringCase("film_actor");
             }),
 
-        // R232: intermediate-hop condition step with Table<?> wildcard parameter — the parser
+        // Intermediate-hop condition step with Table<?> wildcard parameter — the parser
         // cannot infer the target from a wildcard, so it AUTHOR_ERRORs at parse time with the
         // wildcard-specific message.
         CONDITION_INTERMEDIATE_TABLE_WILDCARD_REJECTED(
@@ -1556,7 +1556,7 @@ class GraphitronSchemaBuilderTest {
                 var field = (TableMethodField) schema.field("Film", "actor");
                 assertThat(field.joinPath()).hasSize(1);
                 assertThat(field.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
-                // R232: the condition-join hop's targetTable() resolves at parse time from the field's
+                // The condition-join hop's targetTable() resolves at parse time from the field's
                 // return-type @table binding (terminal-hop arm of resolveConditionJoinTarget).
                 var cj = TestFixtures.conditionHop(field.joinPath().get(0));
                 assertThat(cj.targetTable()).isNotNull();
@@ -1749,7 +1749,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(stf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 
-    // R23: a plain-object nested type shared across two @table parents whose shared field
+    // A plain-object nested type shared across two @table parents whose shared field
     // classifies as an inline TableField. Customer and Staff both FK to address; the nested
     // LocationInfo type exposes `address` as a TableField. The classifier resolves the FK
     // joinPath against each outer parent's table independently, and the multi-parent shape
@@ -1952,7 +1952,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor({QueryField.QueryServiceTableInterfaceField.class, MutationField.MutationServiceTableInterfaceField.class})
     void serviceReturningTableInterface_classifiesAsServiceTableInterfaceField() {
-        // R405: a @service returning a single-table discriminated interface (TableInterfaceType) is no
+        // A @service returning a single-table discriminated interface (TableInterfaceType) is no
         // longer deferred. It resolves through the table-bound service arm to the single-table
         // service-interface variant, carrying the service method plus the read-side discrimination data
         // (participant set, discriminator column, known discriminator values). Query arm is single
@@ -2462,11 +2462,11 @@ class GraphitronSchemaBuilderTest {
         // corpus and by the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the @reference
         // origin-defaulting cases).
 
-        // R290: the `@table parent + record-backed child type` shape that used to classify as ConstructorField
+        // The `@table parent + record-backed child type` shape that used to classify as ConstructorField
         // is now a build-time rejection (the leaf was dissolved as wrong-by-design). Its coverage lives at
         // the validator tier in ConstructorFieldValidationTest, not as a clean classification here.
 
-        // R3: @splitQuery on a record-backed parent field is a structural no-op (the record handoff
+        // @splitQuery on a record-backed parent field is a structural no-op (the record handoff
         // already opens a new DataLoader-backed scope) and should surface as a build warning so
         // the developer who added it learns the directive changes nothing. Two fixtures cover
         // the regular record-backed parent classification arms; the @sourceRow seam is covered in
@@ -2521,7 +2521,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
-        // R3: holistic-surfacing rule. An unrelated rejection on the same field (here, an
+        // Holistic-surfacing rule. An unrelated rejection on the same field (here, an
         // unresolvable @reference) must not suppress the @splitQuery redundancy advisory ; the
         // developer needs both diagnostics, not just whichever fires first. Locks the warning
         // emission to the table-bound-return seam, before any rejection guard.
@@ -2548,7 +2548,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        // R450: a hop-0 {key:, condition:} filter on a record-backed parent's @splitQuery
+        // A hop-0 {key:, condition:} filter on a record-backed parent's @splitQuery
         // @reference. The filter reads the parent row, but a record parent has no @table to anchor
         // the filter's source parameter, so buildParentCorrelation routes it to AuthorError rather
         // than fabricating a parent anchor. Pre-R450 the shape classified unverified (Check 2 skips
@@ -2678,7 +2678,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor(ChildField.RecordCompositeField.class)
     void serviceRecordCompositeCarrierDataFieldProjectsAsRecordOrProperty() {
-        // R329 — the @service record-composite carrier's data field (a source-passthrough projection
+        // The @service record-composite carrier's data field (a source-passthrough projection
         // of the producer's in-memory composite list) classifies as RecordCompositeField; its LSP
         // projection is the record-backed RecordOrProperty label (no column, no accessor — the field
         // name stands in as the label).
@@ -2708,7 +2708,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(rc.accessorName()).isNull();
     }
 
-    // ===== @sourceRow classifier matrix (R110) =====
+    // ===== @sourceRow classifier matrix =====
 
     /**
      * Classifier-level coverage for the {@code @sourceRow} directive — the lifter path
@@ -2778,7 +2778,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
-        // R276: NULL_FQ_CLASS_NAME deleted. It pinned "a record-backed parent with no backing class +
+        // NULL_FQ_CLASS_NAME deleted. It pinned "a record-backed parent with no backing class +
         // @sourceRow → Invariant #1 rejection". Under reflection-only binding a no-backing record-backed type
         // is a NestingType whose fields don't classify, so that exact scenario no longer
         // exists. UnclassifiedField coverage for SourceRow is retained by the other reject cases.
@@ -3178,7 +3178,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
                 assertThat(sk.columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("inventory_id");
-                // Leaf-PK variant (R431): hop-less — empty joinPath plus the pre-keyed
+                // Leaf-PK variant: hop-less — empty joinPath plus the pre-keyed
                 // OnLiftedSlots correlation pointing at the leaf target.
                 assertThat(f.joinPath()).isEmpty();
                 assertThat(f.parentCorrelation()).isInstanceOf(ParentCorrelation.OnLiftedSlots.class);
@@ -3212,7 +3212,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        // R3: @splitQuery on a @sourceRow record-backed parent field is just as silently no-op as on
+        // @splitQuery on a @sourceRow record-backed parent field is just as silently no-op as on
         // the regular record-backed parent path — the lifter-keyed DataLoader already opens a new
         // scope. One fixture is enough since both arms (BatchedTableField, BatchedLookupTableField)
         // share the same emit-warning seam.
@@ -3242,7 +3242,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
-        // R3: holistic-surfacing rule. The @sourceRow seam mirrors the regular record-backed parent
+        // Holistic-surfacing rule. The @sourceRow seam mirrors the regular record-backed parent
         // path: an unrelated lifter-signature rejection (Inv #3 in SourceRowDirectiveResolver)
         // must not suppress the @splitQuery redundancy advisory.
         SPLIT_QUERY_WARNS_ALONGSIDE_SOURCE_ROW_REJECTION(
@@ -3288,7 +3288,7 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Accessor-derived SourceKey classifier matrix (R60) =====
+    // ===== Accessor-derived SourceKey classifier matrix =====
 
     /**
      * Classifier-level coverage for the auto-derivation that runs on record-backed parents
@@ -3626,7 +3626,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== ResultType backing-class classification (reflection-only) =====
-    // R276: a result type's backing comes from the producing @service field's reflected return
+    // A result type's backing comes from the producing @service field's reflected return
     // type, or, for a DML carrier, a DML RETURNING payload, never the @record directive.
     // One case per ResultType sealed leaf so VariantCoverageTest sees each classified.
     // R281 slice 2: the three pure result-type backing verdicts (PojoResultType.Backed, JavaRecordType,
@@ -3644,7 +3644,7 @@ class GraphitronSchemaBuilderTest {
         JavaRecordType.class, JooqTableRecordType.class
     })
     void resultTypeBackingProjectionsCarryClassNameAndTablePayloads() {
-        // R276: a DML carrier binds to its RETURNING table's record (JooqTableRecordType), so its
+        // A DML carrier binds to its RETURNING table's record (JooqTableRecordType), so its
         // catalog projection is a JooqTableRecord.
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
@@ -4051,7 +4051,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                // R144: @lookupKey on INPUT_FIELD_DEFINITION is retired across mutation and query
+                // @lookupKey on INPUT_FIELD_DEFINITION is retired across mutation and query
                 // surfaces. The diagnostic mentions the migration target (filter-by-default on
                 // mutation inputs; the UPDATE SET/WHERE partition is catalog-derived by the walker).
                 // For Query, the @lookupKey moves to the arg if lookup behavior is intended;
@@ -4439,7 +4439,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R453 — a sort enum bound to {@code @orderBy} with one value carrying {@code @order} and one
+ * A sort enum bound to {@code @orderBy} with one value carrying {@code @order} and one
      * carrying no ordering directive rejects with a build error naming the unannotated value. The
      * unannotated value would otherwise be silently skipped by {@code OrderByResolver}, generating
      * an empty ORDER BY (nondeterministic keyset pagination); the docs already promise this
@@ -4467,7 +4467,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R453 — two or more unannotated values accumulate into a single rejection listing every
+ * Two or more unannotated values accumulate into a single rejection listing every
      * missing value, rather than failing fast on the first. Pins the accumulate-all behaviour.
      */
     @Test
@@ -4566,7 +4566,7 @@ class GraphitronSchemaBuilderTest {
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordInputType.class); }
         };
-        // R307: the @table + @record input warning case moved to
+        // The @table + @record input warning case moved to
         // RecordDirectiveIgnoredWarningTest (the directive-ignored warning is exercised there at
         // the classifier level; this enum now carries no applied @record).
 
@@ -4727,7 +4727,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R210/R215: {@code @condition(override: true)} on a plain-input field whose name does not
+ * {@code @condition(override: true)} on a plain-input field whose name does not
      * match any column on the resolving table classifies as {@link InputField.UnboundField} —
      * the column is unused by construction (override suppresses the implicit predicate), so
      * requiring it to resolve would reject schemas where the condition method owns the
@@ -4764,7 +4764,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R210/R215: same shape on a {@code @table} input — the {@code classifyInputFieldInternal}
+ * Same shape on a {@code @table} input — the {@code classifyInputFieldInternal}
      * path is shared between plain and {@code @table} inputs, so the symmetry holds at the
      * @table call site too. Under R215 the carrier folds into {@link InputField.UnboundField}
      * with {@code condition} present and {@code override = true}.
@@ -4818,7 +4818,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R210: {@code @condition(override: true)} with a broken condition method still rejects;
+ * {@code @condition(override: true)} with a broken condition method still rejects;
      * the override flag only relaxes the column-resolution requirement, not the condition
      * reflection requirement.
      *
@@ -4982,7 +4982,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { x: String }
             """);
-        // R246: the title column carries a @condition the walker cannot emit, so it rejects with
+        // The title column carries a @condition the walker cannot emit, so it rejects with
         // UpdateRowsError.UnsupportedInputFieldShape naming the field.
         var uf = (UnclassifiedField) schema.field("Mutation", "updateFilm");
         assertThat(uf.reason()).contains("title");
@@ -5019,8 +5019,8 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R258 — the {@code @condition(override: true)} deferral on a non-key input field falls out for
-     * the payload-returning UPDATE shape exactly as it does for the direct-return shape (R246): both
+ * The {@code @condition(override: true)} deferral on a non-key input field falls out for
+ * the payload-returning UPDATE shape exactly as it does for the direct-return shape: both
      * forks run the same {@code UpdateRowsWalker}, so {@code classifyUpdatePayloadField} surfaces the
      * same typed {@code UpdateRowsError.OverrideConditionNotSupported}. This test pins that the
      * shared walker rejection is reached on the payload path, not silently dropped.
@@ -6221,7 +6221,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("Throwable");
             }),
 
-        // R202: @field(name:) parse rejections on the @error surface.
+        // @field(name:) parse rejections on the @error surface.
         REJECT_BLANK_FIELD_DIRECTIVE_ON_EXTRA_FIELD(
             "extra field with @field(name: \"\") (blank) → UnclassifiedType",
             """
@@ -6368,7 +6368,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(ef.errorTypes())
                     .extracting(et -> et.name())
                     .containsExactly("ValidationErr", "DbErr");
-                // R276/R244: BehandleSakPayload is now produced by a root @service field, so its
+                // BehandleSakPayload is now produced by a root @service field, so its
                 // errors field rides the Outcome wrapper transport (WrapperArm), not the legacy
                 // developer-errors-slot PayloadAccessor passthrough.
                 assertThat(ef.transport())
@@ -6433,7 +6433,7 @@ class GraphitronSchemaBuilderTest {
                     .containsExactly("DbErr");
             }),
 
-        // R276/R275: MIXED_ERROR_AND_NON_ERROR_UNION_REJECTS deleted. Under reflection-only
+        // MIXED_ERROR_AND_NON_ERROR_UNION_REJECTS deleted. Under reflection-only
         // binding the payload is produced by a @service field, so a mixed (not-all-@error) union
         // errors field is simply "not an errors field" and routes to accessor resolution rather
         // than the @record-orphan-era "every member declared @error" errors-lift rejection. The
@@ -6467,7 +6467,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("must be nullable");
                 assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             });
-        // R276/R105: NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_DEFERRED_REJECTION deleted; the
+        // NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_DEFERRED_REJECTION deleted; the
         // non-error-polymorphic-on-record-parent deferral is covered by
         // RecordParentMultiTablePolymorphicPipelineTest (childUnionField_recordParent_accessorKeyedSingle_deferred).
 
@@ -6528,7 +6528,7 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     void build_rejectsRetiredFieldJavaNameArg_withGraphqlJavaParseError() {
-        // R41: @field(javaName:) was retired together with the @field(name:) override on @service
+        // @field(javaName:) was retired together with the @field(name:) override on @service
         // method args. graphql-java's standard directive validation surfaces the rejection with
         // an "unknown argument 'javaName'" message at schema-build time — sufficient migration
         // signal; no custom message is bundled.
@@ -6978,7 +6978,7 @@ class GraphitronSchemaBuilderTest {
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
                 assertThat(schema.field("Mutation", "createFilms"))
                     .isInstanceOf(MutationField.MutationServiceRecordField.class);
-                // R305: the data field collapsed into BatchedTableField — a source=target re-fetch.
+                // The data field collapsed into BatchedTableField — a source=target re-fetch.
                 // MANY (list) per-key cardinality, ProducedRecordRead reading the records off the
                 // source (the OUTCOME_SUCCESS envelope is now applied by the generator at the type
                 // level, not carried on the SourceKey).
@@ -7201,7 +7201,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(entry.javaName()).isEqualTo("mode");
                 var scalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) entry.shape();
                 assertThat(scalar.sdlPath().outerArgName()).isEqualTo("direction");
-                // R229: the schema emit registers .value("asc") / .value("desc") on the
+                // The schema emit registers.value("asc") /.value("desc") on the
                 // GraphQLEnumValueDefinition, so graphql-java hands the runtime form directly to
                 // env.getArgument(...). The Java method receives the DB string already; no map
                 // lookup needed. Pre-R229 this arm asserted TextMapLookup with mapping
@@ -7471,7 +7471,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor(QueryField.QueryRoutineTableField.class)
     void queryRoutineProjectionCarriesRoutineCoordinates() {
-        // R300 — a @routine read projects onto the method-backed QueryTableMethod classification,
+        // A @routine read projects onto the method-backed QueryTableMethod classification,
         // with className = the generated Routines class. The routine resolves against the sakila-db
         // fixture catalog (public.tilganger_for_feidebruker_med_fs_fiktivt_fnr).
         var snapshot = buildSnapshot("""
@@ -7493,7 +7493,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor(MutationField.MutationRoutineWriteField.class)
     void mutationRoutineWriteProjectionCarriesRoutineCoordinates() {
-        // R451 — like the R300 read above, the routine write projects onto the method-backed
+        // Like the R300 read above, the routine write projects onto the method-backed
         // QueryTableMethod classification (className = the generated Routines class; the
         // tableName is the terminus the response re-reads). A dedicated routine classification
         // is a follow-up once the LSP label/hover surface is wired.
@@ -7541,7 +7541,7 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     void rootRoutineThenHopsChainClassifiesWithNameMatchedHop() {
-        // The routine-then-hops chain (R435): @routine supplies the FROM source, the @reference
+        // The routine-then-hops chain: @routine supplies the FROM source, the @reference
         // hop lands the terminus. The hop out of the FK-less routine result keys by the
         // name-matched target PK: films_for_actor exposes film_id, film's PK column.
         var schema = build("""
@@ -9650,7 +9650,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(bulk.bulk()).isTrue();
         assertThat(bulk.kind()).isEqualTo(DmlKind.INSERT);
 
-        // R258: the payload-returning UPDATE leaves project to DmlRecord with kind UPDATE off the
+        // The payload-returning UPDATE leaves project to DmlRecord with kind UPDATE off the
         // slim InputArgRef (single → bulk = false, bulk → bulk = true), so the LSP catalog surfaces
         // the same hover shape as the INSERT record carriers above.
         var s3 = buildSnapshot("""
@@ -9681,7 +9681,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(updBulk.bulk()).isTrue();
         assertThat(updBulk.kind()).isEqualTo(DmlKind.UPDATE);
 
-        // R287: the payload-returning DELETE leaves (MutationDeletePayloadField /
+        // The payload-returning DELETE leaves (MutationDeletePayloadField /
         // MutationBulkDeletePayloadField) project to DmlRecord with kind DELETE off the slim
         // InputArgRef, the same hover shape as the UPDATE payload carriers above. Their only
         // admissible data field is now an ID-element (the @table-element projection is rejected by
@@ -9721,7 +9721,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(rec.tableName()).isNull();
     }
 
-    // ===== MutationDeletePayloadCase (R156) =====
+    // ===== MutationDeletePayloadCase =====
 
     /**
      * R156 admission / rejection matrix for {@code @mutation(typeName: DELETE)} carriers. The
@@ -9883,7 +9883,7 @@ class GraphitronSchemaBuilderTest {
         ChildField.SingleRecordIdField.class
     })
     void singleRecordCarrierProjectionsCarryTablePayload() {
-        // R305: the single-record DML carrier data field collapsed into BatchedTableField, which
+        // The single-record DML carrier data field collapsed into BatchedTableField, which
         // projects as RecordTableTarget (R75 / R141 INSERT shape; former SingleRecordTable).
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
@@ -10439,7 +10439,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("FilmRecord");
             }),
 
-        // R307: the @service "Disagrees" directive-ignored warning case moved to
+        // The @service "Disagrees" directive-ignored warning case moved to
         // RecordDirectiveIgnoredWarningTest; reflection-wins-over-the-directive binding is covered
         // by R96RecordBindingPipelineTest without any applied @record.
 
@@ -11275,7 +11275,7 @@ class GraphitronSchemaBuilderTest {
     @ProjectionFor({no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType.class,
         no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType.class})
     void facetTypeProjectionsArePlainObjects() {
-        // R13: the synthesised facet container and value types project as PlainObject (like
+        // The synthesised facet container and value types project as PlainObject (like
         // NestingType) so they stay describable through the CatalogBuilder seam; a facet-specific
         // classification leaf is R314's to mint when the connection unit lowers onto the fact model.
         var snapshot = buildSnapshot("""
@@ -11428,7 +11428,7 @@ class GraphitronSchemaBuilderTest {
                         tuple(RejectionKind.INVALID_SCHEMA,
                             "Type 'fooConnection': synthesised connection type collides case-insensitively with 'FooConnection', 'fooConnection'"
                                 + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding"));
-                // R206: synthesised Connection's SourceLocation pins at the @asConnection carrier
+                // Synthesised Connection's SourceLocation pins at the @asConnection carrier
                 // field. preludeLineCount accounts for directives.graphqls + the Node-interface
                 // line the test helper prepends; line 3 of the user SDL is the `foo` carrier and
                 // line 4 is `bar`. Column 5 is "    foo:" (4-space indent + 1-indexed column).
@@ -11472,7 +11472,7 @@ class GraphitronSchemaBuilderTest {
                     .anyMatch(m -> m.startsWith("Type 'fooConnection':")
                         && m.contains("collides case-insensitively")
                         && m.contains("'FooConnection'") && m.contains("'fooConnection'"));
-                // R206: synth-Connection side now carries the @asConnection carrier-field location;
+                // Synth-Connection side now carries the @asConnection carrier-field location;
                 // SDL side already carried its own parse location and is unchanged.
                 var synthErr = errors.stream()
                     .filter(e -> e.coordinate().equals("FooConnection") && e.message().contains("case-insensitively"))
@@ -11510,7 +11510,7 @@ class GraphitronSchemaBuilderTest {
                     .anyMatch(m -> m.startsWith("Type 'fooEdge':")
                         && m.contains("collides case-insensitively")
                         && m.contains("'FooEdge'") && m.contains("'fooEdge'"));
-                // R206: synth-Edge side now carries the @asConnection carrier-field location;
+                // Synth-Edge side now carries the @asConnection carrier-field location;
                 // SDL side already carried its own parse location and is unchanged.
                 var synthErr = errors.stream()
                     .filter(e -> e.coordinate().equals("FooEdge") && e.message().contains("case-insensitively"))
@@ -11548,7 +11548,7 @@ class GraphitronSchemaBuilderTest {
                     .anyMatch(m -> m.startsWith("Type 'pageInfo':")
                         && m.contains("collides case-insensitively")
                         && m.contains("'PageInfo'") && m.contains("'pageInfo'"));
-                // R206: synth-PageInfo deliberately has null location. A single PageInfo serves
+                // Synth-PageInfo deliberately has null location. A single PageInfo serves
                 // every connection in the schema, so no carrier site is the actionable one — the
                 // SDL member's parse location anchors the diagnostic. Locks in the Plan §2 choice.
                 var synthErr = errors.stream()
@@ -11625,7 +11625,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R160 — builds an {@link LspSchemaSnapshot.Built} for the per-block sibling
+ * Builds an {@link LspSchemaSnapshot.Built} for the per-block sibling
      * projection assertions. Mirrors {@link #build(String)} but routes through
      * {@link CatalogBuilder#buildSnapshot} so the snapshot carries the same
      * {@link FieldClassification} / {@link TypeClassification} projections the LSP

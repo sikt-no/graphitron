@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R362 — the frozen, SQL-name-centric catalog-data projection the {@code catalog.tables} /
+ * The frozen, SQL-name-centric catalog-data projection the {@code catalog.tables} /
  * {@code catalog.describe} MCP tools read. Built once per catalog rebuild in
  * {@link CatalogBuilder#buildCatalogFacts(JooqCatalog)} while the codegen loader is still open
  * (R361 D1, build-time enrichment), carried alongside {@link CompletionData} on the build

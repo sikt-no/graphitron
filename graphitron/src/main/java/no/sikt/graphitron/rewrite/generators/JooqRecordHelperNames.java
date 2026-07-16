@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 /**
  * Resolves the {@code create<Record>} / {@code create<Record>List} helper names for the jOOQ
  * {@code TableRecord} {@code @service} params on one {@code <Type>Fetchers} class, keyed by the full
- * binding <em>shape</em> rather than the record class (R437). This is the single home for the dedup,
+ * binding <em>shape</em> rather than the record class. This is the single home for the dedup,
  * naming, and contention decisions the three sites that name a jOOQ-record helper must agree on: the
  * helper-emission drain in {@link TypeFetcherGenerator}, the child-coordinate call site in
  * {@link ArgCallEmitter}, and the root-coordinate call site in {@link ServiceMethodCallEmitter}.

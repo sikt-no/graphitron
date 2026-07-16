@@ -109,7 +109,7 @@ public class TypeClassGenerator {
         //     values off env.getSource(). When the key wrap is SourceKey.Wrap.TableRecord, the
         //     extraction (into(Tables.X)) hands the service body a typed record whose documented
         //     contract is "every column on the parent table", so the requirement widens from the
-        //     key columns to the full parent row (R426).
+        // key columns to the full parent row.
         //   - TableMethodField on a table-bound parent — buildChildTableMethodFetcher correlates
         //     via parentRecord.get(DSL.name("<sourceSqlName>"), …) on the FK's source-side
         //     columns; without this injection, the read throws IllegalArgumentException when the
@@ -241,7 +241,7 @@ public class TypeClassGenerator {
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
         flat.addAll(computedFields);
-        // R424: stamp @SuppressWarnings("unchecked") on $fields — the narrowest enclosing member —
+        // Stamp @SuppressWarnings("unchecked") on $fields — the narrowest enclosing member —
         // when any inline field's filter param emits an unchecked cast under the FromSelectedField
         // argument source (a list-typed Direct / JooqConvert / non-JooqConvert-leaf NestedInputField).
         // The predicate is source-aware (CallParam.emitsUncheckedCastFromSelectedField): the casts
@@ -261,7 +261,7 @@ public class TypeClassGenerator {
         // source-side columns for child @tableMethod fields (both base-named), and/or the whole
         // parent row under reserved __src_<col>__ aliases when a child's key wrap is
         // SourceKey.Wrap.TableRecord (R436; see collectRequiredProjection for the full taxonomy).
-        // The two axes are independent and both emitted (R436): the reserved full row no longer
+        // The two axes are independent and both emitted: the reserved full row no longer
         // supplies base-named columns, so a base-named Wrap.Row/Wrap.Record/TableMethodField read
         // still needs its columns projected under their base names even when the full row is also
         // present. The LinkedHashSet accumulator dedupes on add by jOOQ Field identity, so plain
@@ -299,7 +299,7 @@ public class TypeClassGenerator {
      * depth's {@code sf.getSelectionSet()}. The nested type shares the parent's table context, so
      * {@code tableArg} is threaded through unchanged.
      *
-     * <p>R424: the per-depth {@code sfN} local is the {@code SelectedField} the inline table /
+ * <p>The per-depth {@code sfN} local is the {@code SelectedField} the inline table /
      * lookup-field arms read their own runtime <em>arguments</em> from (via
      * {@code ArgumentValueSource.FromSelectedField}). The {@code $fields} method's {@code env}
      * parameter stays the ancestor fetcher's environment at every depth and is used only for
@@ -372,7 +372,7 @@ public class TypeClassGenerator {
     private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
 
     /**
-     * R424: true when any inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}
+ * True when any inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}
      * filter among {@code fields} (recursing into {@link ChildField.NestingField} sub-trees, which
      * emit their inline arms into the same {@code $fields} method) carries a call param that emits an
      * unchecked cast under the {@code FromSelectedField} argument source. The model owns the
@@ -400,11 +400,11 @@ public class TypeClassGenerator {
 
     /**
      * The projection a table-parent's {@code $fields} SELECT must include regardless of the
-     * user's SDL selection. Two independent axes, co-present (R436):
+ * user's SDL selection. Two independent axes, co-present:
      *
      * <ul>
      *   <li>{@code reservedFullRow} — some child's DataLoader key wrap is
-     *       {@link SourceKey.Wrap.TableRecord} (R426), whose key read now rebuilds the typed record
+ * {@link SourceKey.Wrap.TableRecord}, whose key read now rebuilds the typed record
      *       from the whole parent row projected under reserved {@code __src_<col>__} aliases (see
      *       {@code GeneratorUtils.buildKeyExtraction}). When set, {@code $fields} appends every
      *       parent column re-aliased to its reserved name.</li>
@@ -439,7 +439,7 @@ public class TypeClassGenerator {
      *       parent {@code $fields()} SELECT runs (via {@code GeneratorUtils.buildKeyExtraction}),
      *       so every {@code sourceKey().columns()} column must be in that SELECT (the
      *       {@code baseColumns} axis). When the key wrap is {@link SourceKey.Wrap.TableRecord} the
-     *       requirement instead flips the {@code reservedFullRow} axis (R436):
+ * requirement instead flips the {@code reservedFullRow} axis:
      *       {@code buildKeyExtraction}'s wrap-forked read for that arm rebuilds the typed record
      *       from the whole parent row projected under reserved {@code __src_<col>__} aliases, and
      *       the documented contract of the typed-record source shape is a fully-populated parent
@@ -472,7 +472,7 @@ public class TypeClassGenerator {
             // buildRecordParentKeyExtraction instead and may carry target-aligned columns; if one
             // ever leaked into this walk, the blanket arm would silently project wrong columns.
             // Fail at generation time rather than at runtime with a null DataLoader key.
-            // R432: the tripwire is the fact predicate (BatchKeyField capability + Record source
+            // The tripwire is the fact predicate (BatchKeyField capability + Record source
             // shape), not a leaf list — a deliberate leaf-list-to-fact strengthening that also
             // covers RecordTableMethodField (already Record-shaped) through the same gate.
             if (f instanceof BatchKeyField

@@ -17,7 +17,7 @@ import java.util.TreeSet;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R305 — source-shape mirror. {@link ChildField#sourceShape()} is a leaf-exhaustive switch the
+ * Source-shape mirror. {@link ChildField#sourceShape()} is a leaf-exhaustive switch the
  * model documents as "a projection of the parent's backing": a {@code @table}-backed (catalog)
  * parent puts a table row at {@code env.getSource()}; a {@code @service} / DML payload or DTO parent
  * hands back a domain record. Since R305 makes

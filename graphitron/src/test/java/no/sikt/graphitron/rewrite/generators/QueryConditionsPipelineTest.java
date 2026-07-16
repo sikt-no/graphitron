@@ -130,7 +130,7 @@ class QueryConditionsPipelineTest {
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 
-        // R378: both authored input-field @nodeId filters classify to ThrowOnMismatch, so both
+        // Both authored input-field @nodeId filters classify to ThrowOnMismatch, so both
         // helpers are the throwing form (scalar `Row`, list `Rows`).
         var helperNames = queryConditions.methodSpecs().stream()
             .map(MethodSpec::name)

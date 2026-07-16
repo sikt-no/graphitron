@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.List;
 
 /**
- * The {@code (start, hops)} shape of a root routine chain (R435 / R451): {@code start} is the
+ * The {@code (start, hops)} shape of a root routine chain: {@code start} is the
  * routine node (the schema's global {@code Routines} convenience-method call with IN parameters
  * bound from GraphQL arguments), {@code hops} the {@code @reference}-contributed steps that follow
  * it in authored directive order. The R300 single-node shape is {@code hops = []}, where the
@@ -26,7 +26,7 @@ import java.util.List;
  *       {@link ParamSource.SourceColumn} read.</li>
  *   <li>Every hop is an {@code @reference}-contributed {@link JoinStep.Hop} over a
  *       {@link TableExpr.Catalog} target, never {@link On.Lateral}: the chain's one routine node
- *       is the start — a second routine node classifies as typed {@code Deferred} (R435) and must
+ * is the start — a second routine node classifies as typed {@code Deferred} and must
  *       not reach this carrier.</li>
  * </ul>
  */

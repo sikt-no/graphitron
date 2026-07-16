@@ -2,14 +2,14 @@ package no.sikt.graphitron.rewrite.model;
 
 /**
  * The table node a {@link JoinStep.Hop} joins to — the <em>target</em> axis of the two-axis
- * step model (R333): a step is a target node materialized by a table expression, plus an
+ * step model: a step is a target node materialized by a table expression, plus an
  * {@link On} describing how the step joins to it. The two facts are orthogonal; this seal
  * carries only the node.
  *
  * <ul>
  *   <li>{@link Catalog} — the static generated table reference from the jOOQ catalog, aliased
  *       per hop by the emitters ({@code Tables.<T>.as(alias)}).</li>
- *   <li>{@link RoutineCall} — a table-valued function call (R435): the node's rows are produced
+ * <li>{@link RoutineCall} — a table-valued function call: the node's rows are produced
  *       by invoking the schema's generated {@code Routines} convenience method with the bound
  *       IN parameters, then aliased like any table.</li>
  * </ul>
@@ -32,7 +32,7 @@ public sealed interface TableExpr permits TableExpr.Catalog, TableExpr.RoutineCa
     }
 
     /**
-     * A jOOQ table-valued function call (R435): the routine node of an order-significant
+ * A jOOQ table-valued function call: the routine node of an order-significant
      * {@code @routine} / {@code @reference} chain. jOOQ generates the function as a first-class
      * catalog {@code Table<R>}, so the node has a real {@link TableRef} identity
      * ({@code resultTable}) that answers {@link JoinStep.Hop#targetTable()} — alias generation,

@@ -21,7 +21,7 @@ import static java.util.stream.Collectors.toSet;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R160 — drift-prevention meta-test that pairs with
+ * Drift-prevention meta-test that pairs with
  * {@link CatalogBuilder#projectFieldClassification}'s compile-time exhaustive switch. The
  * switch enforces "every leaf has a projection arm"; this meta-test enforces "every leaf
  * has a payload-asserting test under {@link GraphitronSchemaBuilderTest}", so a future

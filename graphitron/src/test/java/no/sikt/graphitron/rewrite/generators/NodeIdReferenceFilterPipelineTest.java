@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * R312: a filter input used as the {@code filter:} argument of a reference/list child field that
+ * A filter input used as the {@code filter:} argument of a reference/list child field that
  * mixes {@code @nodeId}-decoded fields with {@code @condition} fields must generate without
  * throwing. The {@code @nodeId} decode is lifted into a per-class private static helper drained
  * onto the class hosting the filter call site ({@code <Type>} for inline {@code @reference}

@@ -114,7 +114,7 @@ class TypeBuilder {
     private final ServiceCatalog svc;
     private final Map<String, Class<?>> recordBackingClasses = new LinkedHashMap<>();
     /**
-     * R96: the reflection-driven SDL → backing-class binding resolver. Constructed and
+ * The reflection-driven SDL → backing-class binding resolver. Constructed and
      * populated by {@link #prepareForWalk()} before per-type classification; consulted by
      * {@link #buildResultType} and {@link #buildNonTableInputType} to decide the backed
      * variant. The directive's {@code className} no longer participates.
@@ -164,7 +164,7 @@ class TypeBuilder {
     }
 
     /**
-     * R308: the {@code @service} producer's arrival cardinality for a payload SDL type, decided once
+ * The {@code @service} producer's arrival cardinality for a payload SDL type, decided once
      * at the reflection boundary and read by the classify-time shape verdict at the {@code @service}
      * carrier seat. Mirrors {@link #serviceEmittedBinding}.
      */
@@ -173,7 +173,7 @@ class TypeBuilder {
     }
 
     /**
-     * R461: the gated accessor near-miss (if any) the binding walk recorded while failing to ground a
+ * The gated accessor near-miss (if any) the binding walk recorded while failing to ground a
      * child SDL type through a parent accessor. Consumed by the dangling-type-reference backstop
      * ({@code GraphitronSchemaBuilder.rejectDanglingTypeReferences}) so a sole-producer type whose only
      * near-grounding was a gated accessor surfaces the accessor gate rather than the generic
@@ -189,7 +189,7 @@ class TypeBuilder {
      * R317 slice 4 — the pre-walk preparation, shared by the production single walk
      * ({@link GraphitronSchemaBuilder#buildSchema}) and the types-only test seam
      * ({@link GraphitronSchemaBuilder#buildContextForTests}). Resolves the reflection-driven
-     * SDL → backing-class bindings (R96), builds the fixed-point classification indices, and
+ * SDL → backing-class bindings, builds the fixed-point classification indices, and
      * classifies every SDL kind the output walk never reaches: input types, scalars, and enums (they
      * sit only on argument / input-field coordinates the walk does not descend). These leaf kinds are
      * classified <em>before</em> the walk, not after, because field classification reads input / scalar
@@ -205,7 +205,7 @@ class TypeBuilder {
      * ({@link #finishTypeClassification}).
      */
     void prepareForWalk() {
-        // R96: derive SDL → backing-class bindings from reflection before per-type classification
+        // Derive SDL → backing-class bindings from reflection before per-type classification
         // runs. The directive-driven path inside buildResultType / buildNonTableInputType is gone;
         // both consult the resolver for the variant decision.
         bindings = new RecordBindingResolver(ctx, svc);
@@ -237,7 +237,7 @@ class TypeBuilder {
             }
             classifyAndRegister(namedType);
         }
-        // R307: the directive-ignored warning is a classification output. Emit it in a dedicated pass
+        // The directive-ignored warning is a classification output. Emit it in a dedicated pass
         // over getAllTypesAsList so the warning order is stable (SDL order) and independent of walk
         // order. It reads only the reflection-binding fixed point (resolveAll) and SDL directives,
         // never the registry, so it is order-independent of classification.
@@ -245,7 +245,7 @@ class TypeBuilder {
             if (namedType.getName().startsWith("__")) continue;
             emitDirectiveIgnoredWarning(namedType);
         }
-        // R96: surface multi-producer rejections as UnclassifiedType. Runs before the walk so a
+        // Surface multi-producer rejections as UnclassifiedType. Runs before the walk so a
         // rejected input reads as its demotion during field classification (the only composite this
         // demotes is a directiveless object, whose classifyType verdict is null, so the walk does not
         // overwrite the demotion).
@@ -309,7 +309,7 @@ class TypeBuilder {
      * {@link CarrierBinding.NotACarrier}; it stays a {@link NestingType} and is rejected by the
      * soundness pass.
      *
-     * <p>R329 — the recognizer is sealed over the two backing shapes a producer-backed carrier can
+ * <p>The recognizer is sealed over the two backing shapes a producer-backed carrier can
      * have: a {@link CarrierBinding.TableBacked} table record (the DML {@code RETURNING} / single-level
      * {@code @service} {@code @table}-data-field carrier, classified {@link GraphitronType.JooqTableRecordType})
      * and a {@link CarrierBinding.ClassBacked} record-composite element class (the two-level
@@ -338,7 +338,7 @@ class TypeBuilder {
         if (ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit admit) {
             var table = serviceEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
             if (table != null) return new CarrierBinding.TableBacked(table);
-            // R329: the composite carrier — a RecordElement data field whose element type bound to a
+            // The composite carrier — a RecordElement data field whose element type bound to a
             // consumer composite on the result axis. The payload's backing is that element class
             // (the element-naming convention: the per-element class, with the arrival cardinality on
             // the data field), mirroring how a bulk @table carrier above names the element table.
@@ -362,7 +362,7 @@ class TypeBuilder {
     }
 
     /**
-     * R329 — the {@link GraphitronType} verdict a producer-backed carrier payload classifies as, or
+ * The {@link GraphitronType} verdict a producer-backed carrier payload classifies as, or
      * {@code null} when {@code name} is not such a carrier ({@link CarrierBinding.NotACarrier}). The
      * single projection of {@link #carrierBinding} into a registered type, shared by
      * {@link #lookAheadVerdict} (the registry-free look-ahead) and
@@ -575,7 +575,7 @@ class TypeBuilder {
     }
 
     /**
-     * R96: emit the directive-ignored warning for a reachable SDL type carrying
+ * Emit the directive-ignored warning for a reachable SDL type carrying
      * {@code @record}. R307 folds this into the classification pass: the method is called once
      * per type as the classifier visits it (no separate post-classification re-walk), so the
      * warning is a classification output. The reflection bindings it reads are a fixed point by
@@ -621,7 +621,7 @@ class TypeBuilder {
                 : null;
 
         // Safe deletion fix for the ignored directive: offered only for the bare @record form, since
-        // graphql-java gives no end location to span @record(record: {...}) (R398).
+        // graphql-java gives no end location to span @record(record: {...}).
         var recordFix = LintFix.deleteBareAppliedDirective(
             container.getAppliedDirective(DIR_RECORD), "Remove the redundant @record");
 
@@ -688,7 +688,7 @@ class TypeBuilder {
     }
 
     /**
-     * R96: for every multi-producer disagreement the resolver reported, demote the SDL type to
+ * For every multi-producer disagreement the resolver reported, demote the SDL type to
      * {@link UnclassifiedType} carrying the typed
      * {@link Rejection.AuthorError.RecordBindingMultiProducer} payload. The validator
      * picks the demotion up through its standard {@link UnclassifiedType} pass.
@@ -1047,7 +1047,7 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
-            // R96/R276: reflection-derived binding from the resolver is the only signal. A
+            // Reflection-derived binding from the resolver is the only signal. A
             // reachable type with a resolved producer binding classifies into the appropriate
             // backed variant; the @record directive is deprecated and ignored (it never drives
             // classification).
@@ -1448,7 +1448,7 @@ class TypeBuilder {
 
     /**
      * Constructs the appropriate {@link ResultType} sub-type from the resolved backing class.
-     * R96/R276: {@link RecordBindingResolver} reflection is the only source. This is reached only
+ * {@link RecordBindingResolver} reflection is the only source. This is reached only
      * for a type with a resolved producer binding (gated in {@link #classifyType}); the
      * {@code @record} directive is deprecated and ignored, surfaced by the directive-ignored
      * warning at {@link #emitDirectiveIgnoredWarning} rather than consulted here.
@@ -1602,7 +1602,7 @@ class TypeBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
-        // R96: @table wins on the (@table + @record) combination on input types. The legacy
+        // @table wins on the (@table + @record) combination on input types. The legacy
         // emission that surfaced the redundancy as a standalone warning here is removed; the
         // signal is now carried by the "Shadowed by @table" variant of the directive-ignored
         // warning, emitted per-type during the classification pass in emitDirectiveIgnoredWarning.
@@ -1628,7 +1628,7 @@ class TypeBuilder {
     }
 
     /**
-     * R457 — the narrow field-resolution fact a table-relative input-field resolution produces:
+ * The narrow field-resolution fact a table-relative input-field resolution produces:
      * either the resolved {@link InputField} list or the accumulated-failure prose. Deliberately
      * <em>not</em> a synthesized {@link TableInputType} (which additionally carries
      * {@code name}/{@code location}/{@code inputType}/{@code InputRecordShape}, all type-registry
@@ -1645,7 +1645,7 @@ class TypeBuilder {
      * Resolves a list of raw input fields against a {@link TableRef} into fully-classified
      * {@link InputField}s (or the accumulated-failure prose). The single home of the input-field
      * classification loop, shared by {@link #buildTableInputType} (the {@code @table}-on-input path)
-     * and the field-derived DELETE write-target path in {@code FieldBuilder} (R457), so both routes
+ * and the field-derived DELETE write-target path in {@code FieldBuilder}, so both routes
      * classify identical schema defects identically.
      */
     InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields, TableRef tableRef) {
@@ -1704,7 +1704,7 @@ class TypeBuilder {
 
     /**
      * Constructs the appropriate {@link InputType} sub-type from the resolved backing class.
-     * R96/R276: symmetric with {@link #buildResultType}, {@link RecordBindingResolver} reflection
+ * Symmetric with {@link #buildResultType}, {@link RecordBindingResolver} reflection
      * is the only source. An input type with no reflected producer binding is a backing-less
      * {@link GraphitronType.PojoInputType}; the {@code @record} directive is deprecated and
      * ignored (it never supplies a fallback className).
@@ -2046,7 +2046,7 @@ class TypeBuilder {
      * the matched throwable itself; there is no developer-supplied data class for an {@code @error}
      * type).
      *
-     * <p>R276: {@code @record} is deprecated and ignored, so its mere presence is not a conflict.
+ * <p>{@code @record} is deprecated and ignored, so its mere presence is not a conflict.
      * A {@code @table} + {@code @record} or {@code @error} + {@code @record} combination is allowed
      * to classify ({@code @table}/{@code @error} wins) and surfaces the directive-ignored warning
      * in {@link #emitDirectiveIgnoredWarning} rather than a hard rejection.

@@ -13,7 +13,7 @@ import java.util.Optional;
  * A warning never fails the build; it flags schema shapes accepted for compatibility but discouraged.
  *
  * <p>Sealed into two arms so a finding's rule is a type and its fix lives only on the arm where it
- * is meaningful, rather than behind a nullable field (R398):
+ * is meaningful, rather than behind a nullable field:
  *
  * <ul>
  *   <li>{@link NoRule}: an untagged advisory not attributable to a lint rule (for example the

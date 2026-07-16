@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R281 / R316: the spec-by-example corpus. Each fixture is an annotated schema; the harness classifies
+ * The spec-by-example corpus. Each fixture is an annotated schema; the harness classifies
  * it with today's classifier and checks every {@code @classified} / {@code @classifiedType} coordinate
  * against its declared dimensional verdict (read off the field model's {@code source()} /
  * {@code operation()} / {@code target()} accessors).
@@ -76,7 +76,7 @@ class ClassifiedDslTest {
 
     /**
      * Source wrapper arms the model declares but no fixture reaches, each with the reason. Empty since
-     * R463: the ancestor-product arrival fold makes {@link Source.OnlyChild} ({@code One} arrival)
+ * The ancestor-product arrival fold makes {@link Source.OnlyChild} ({@code One} arrival)
      * reachable, so every source wrapper arm ({@code Query} / {@code Mutation} / {@code OnlyChild} /
      * {@code Child}) is now exercised by a corpus fixture. An arm that later becomes unreachable rejoins
      * this list with its reason; an entry a fixture exercises must be removed (asserted below).

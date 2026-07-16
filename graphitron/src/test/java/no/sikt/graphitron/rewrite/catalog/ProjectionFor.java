@@ -6,7 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * R160 — marks a pipeline-tier test method that asserts the projection's payload for one or
+ * Marks a pipeline-tier test method that asserts the projection's payload for one or
  * more generator-side sealed leaves of
  * {@link no.sikt.graphitron.rewrite.model.GraphitronField} or
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType}. Discovered by

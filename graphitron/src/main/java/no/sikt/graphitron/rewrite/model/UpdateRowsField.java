@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * R246 — narrow interface declaring the two slots {@code UpdateRowsWalker} (and {@code FieldBuilder},
+ * Narrow interface declaring the two slots {@code UpdateRowsWalker} (and {@code FieldBuilder},
  * for the arg surface) populate on an {@code @mutation(typeName: UPDATE)} field that returns its
  * {@code @table} type directly: the slim {@link InputArgRef} and the {@link UpdateRows} carrier.
  *

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * R246 — one column contribution on the SET side of an UPDATE. Carries the GraphQL input field
+ * One column contribution on the SET side of an UPDATE. Carries the GraphQL input field
  * name it came from, the jOOQ column it writes, and how to read the input value at the call-site
  * root.
  *

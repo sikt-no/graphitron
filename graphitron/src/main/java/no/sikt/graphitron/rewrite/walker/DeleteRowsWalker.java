@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * R266 — produces the {@link DeleteRows} carrier for an {@code @mutation(typeName: DELETE)} field.
+ * Produces the {@link DeleteRows} carrier for an {@code @mutation(typeName: DELETE)} field.
  * The DELETE analogue of R246's {@code UpdateRowsWalker}, but where that walker partitions the input
  * into a matched-key WHERE half and an everything-else SET half, this walker has no SET destination:
  * <em>every</em> admitted input column is a WHERE filter ({@link DeleteRows#whereColumns()}), and the
@@ -47,7 +47,7 @@ import java.util.Optional;
  * reserved for that future substrate; the current translator does not read it. Errors are collected
  * across stages without short-circuiting so the LSP surfaces every per-field issue at once.
  *
- * <p><b>Nested grouping inputs (R186).</b> Mirrors {@code UpdateRowsWalker}: a plain
+ * <p><b>Nested grouping inputs.</b> Mirrors {@code UpdateRowsWalker}: a plain
  * (non-{@code @table}) {@link InputField.NestingField} grouping columns of the outer table is
  * flattened in place ({@link #classifyInto}) into its leaf carriers, each nested leaf's
  * {@code extraction} rewrapped as a {@link CallSiteExtraction.NestedInputField} that records the SDL
@@ -71,7 +71,7 @@ public final class DeleteRowsWalker {
         var errors = new ArrayList<Rejection.AuthorError>();
 
         // Stage 2: classify each input field into a walker-local column contribution, flattening
-        // any nested (non-@table) grouping input into its leaf carriers in place (R186); collect
+        // any nested (non-@table) grouping input into its leaf carriers in place; collect
         // per-field admissibility rejections across the loop (no short-circuit).
         var contributions = new ArrayList<Contribution>();
         classifyInto(inputFields, List.of(), outerArgName, errors, contributions);
@@ -114,7 +114,7 @@ public final class DeleteRowsWalker {
 
     /**
      * Flatten {@code fields} into {@link Contribution}s, descending into any
-     * {@link InputField.NestingField} grouping input (R186), the DELETE analogue of
+ * {@link InputField.NestingField} grouping input, the DELETE analogue of
      * {@code UpdateRowsWalker.classifyInto}. A nested leaf's {@code extraction} is rewrapped as a
      * {@link CallSiteExtraction.NestedInputField} carrying the full SDL access path; a top-level
      * leaf keeps its extraction unchanged (byte-identical emit). Every flattened leaf's column

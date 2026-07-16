@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 /**
  * Emits the {@code create<Record>} / {@code create<Record>List} helper methods that construct a
  * generated jOOQ {@code TableRecord} from a GraphQL input-object {@code Map} at a {@code @service}
- * parameter position (R311). Sibling to {@link InputBeanInstantiationEmitter}: same "instantiate the
+ * parameter position. Sibling to {@link InputBeanInstantiationEmitter}: same "instantiate the
  * consumer's typed parameter at the fetcher boundary" goal, but on the column / identity axis rather
  * than the Java-member axis.
  *
@@ -61,7 +61,7 @@ final class JooqRecordInstantiationEmitter {
      * is honored per field (the jOOQ {@code changed}-flag contract: an omitted nullable field stays
      * {@code changed=false} and is excluded from the INSERT/UPDATE the {@code @service} runs). Null
      * semantics split on the field's nullability (R315, D4); see {@link #emitKeyDecode}. A binding whose
-     * path descends through a nested grouping input (R336) wraps its load in a parent-{@code Map} descent,
+ * path descends through a nested grouping input wraps its load in a parent-{@code Map} descent,
      * so a nested field and a top-level field backing the same column behave identically. {@code fromArray}
      * is the supported, non-deprecated coercion path (no {@code DataType.convert(Object)}), so the helper
      * needs no {@code @SuppressWarnings}; the {@code Tables.<T>.<col>} references keep the real
@@ -78,7 +78,7 @@ final class JooqRecordInstantiationEmitter {
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
             .addParameter(mapStringObject, "raw");
-        // R437: a contended helper (one of several shapes for one record class) carries a one-line
+        // A contended helper (one of several shapes for one record class) carries a one-line
         // javadoc naming the columns it binds, so a reader maps helper → mutation without decoding the
         // ordinal. Uncontended helpers stay javadoc-free, byte-identical to pre-R437.
         String javadoc = names.javadocFor(jr);
@@ -88,7 +88,7 @@ final class JooqRecordInstantiationEmitter {
         b.addStatement("if (raw == null) return null")
             .addStatement("$T rec = new $T()", recordType, recordType);
 
-        // D1 (R322): per-column overlap analysis. When two or more writers (plain @field columns or
+        // D1: per-column overlap analysis. When two or more writers (plain @field columns or
         // @nodeId decodes) land on one column, agreeing writers are harmless (the sequential loads
         // last-write-wins to the same value) but disagreeing ones would silently drop a caller value.
         // Detect the overlap once and, when present, route through the agreement-checked emission.
@@ -146,7 +146,7 @@ final class JooqRecordInstantiationEmitter {
 
     /**
      * Emits one {@link CallSiteExtraction.RecordKeyDecode} (R315, D4). A non-null ({@code ID!}) decode
-     * always loads and throws on a null / wrong-arity decode (R195). A nullable ({@code ID}) decode is
+ * always loads and throws on a null / wrong-arity decode. A nullable ({@code ID}) decode is
      * guarded on the wire key being present: omitted → target columns left unwritten (changed=false),
      * present-{@code null} → columns set to {@code NULL}, present-value → decoded and loaded (a
      * wrong-type decode still throws). The split is on {@code nonNull} alone, not on whether the decode
@@ -211,7 +211,7 @@ final class JooqRecordInstantiationEmitter {
         List<String> path() { return plain != null ? plain.path() : decode.path(); }
     }
 
-    /** R356: adapts a {@link Writer} into the shared {@link ColumnOverlap.ColumnWriter} view so the
+    /** Adapts a {@link Writer} into the shared {@link ColumnOverlap.ColumnWriter} view so the
      *  per-column overlap grouping is the one {@link ColumnOverlap#groupByColumn} the six DML write-path
      *  sites share. A plain field's single column or a decode's target columns (already in decode-record
      *  slot order); the label is the dotted access path. The emission downcasts {@code Contributor.writer()}
@@ -329,7 +329,7 @@ final class JooqRecordInstantiationEmitter {
     }
 
     /** The {@code if (keys == null || keys.length != arity) throw …} arity guard shared by the decode
-     *  prepare arms (R195), reading the {@code <base>Keys} local. */
+ * prepare arms, reading the {@code <base>Keys} local.*/
     private static void emitArityThrow(MethodSpec.Builder b, String base, int arity) {
         b.beginControlFlow("if ($LKeys == null || $LKeys.length != $L)", base, base, arity)
             .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
@@ -521,7 +521,7 @@ final class JooqRecordInstantiationEmitter {
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfRecord)
             .addParameter(Object.class, "raw");
-        // R437: mirror the singular helper's contended javadoc so both helpers of a contended pair are
+        // Mirror the singular helper's contended javadoc so both helpers of a contended pair are
         // self-describing; uncontended helpers stay javadoc-free.
         String javadoc = names.javadocFor(jr);
         if (javadoc != null) {

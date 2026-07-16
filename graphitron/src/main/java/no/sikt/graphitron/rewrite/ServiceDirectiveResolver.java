@@ -66,7 +66,7 @@ final class ServiceDirectiveResolver {
      *       {@code ErrorsField} (or a structural rejection of the lift). The carried
      *       {@link GraphitronField} is the caller's terminal value for this arm.</li>
      *   <li>{@link Polymorphic} — a multitable interface/union return resolved to route (a)'s
-     *       record-class-dispatch fetcher (R365). Carries the {@link MethodRef} and the typed
+ * record-class-dispatch fetcher. Carries the {@link MethodRef} and the typed
      *       {@link ReturnTypeRef.PolymorphicReturnType}; the classify site attaches participants.</li>
      *   <li>{@link Rejected} — every error path: directive-parse failure, method-reflection
      *       failure, root-invariants failure. Carries the
@@ -231,7 +231,7 @@ final class ServiceDirectiveResolver {
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 GraphitronField lifted = fb.liftToErrorsField(fieldDef, parentTypeName, p);
                 // The all-@error nullable-list "errors channel" still lifts as before; route (a)
-                // (R365) widens the non-errors arm so a multitable interface/union return resolves
+                // widens the non-errors arm so a multitable interface/union return resolves
                 // to a polymorphic-return arm instead of the old "not yet supported" rejection.
                 yield lifted != null
                     ? new Resolved.ErrorsLifted(lifted)

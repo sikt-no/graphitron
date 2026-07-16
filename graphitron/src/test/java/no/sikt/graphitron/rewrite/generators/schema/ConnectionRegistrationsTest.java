@@ -30,9 +30,9 @@ class ConnectionRegistrationsTest {
         assertThat(body).contains("\"nodes\"");
         assertThat(body).contains("\"pageInfo\"");
         assertThat(body).contains("\"totalCount\"");
-        // R303: wiring references the per-connection delegate class, which forwards to ConnectionHelper.
+        // Wiring references the per-connection delegate class, which forwards to ConnectionHelper.
         assertThat(body).contains("QueryFilmsConnectionFetchers::totalCount");
-        // R13: no facets registration without @asFacet.
+        // No facets registration without @asFacet.
         assertThat(body).doesNotContain("facets");
     }
 

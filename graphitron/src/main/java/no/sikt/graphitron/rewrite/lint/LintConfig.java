@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Consumer lint-suppression configuration (R408): rule ids to silence everywhere and type-name glob
+ * Consumer lint-suppression configuration: rule ids to silence everywhere and type-name glob
  * patterns to exclude from the SDL lint engine's walk. Built once from the Maven {@code <lint>} block
  * and threaded through {@link no.sikt.graphitron.rewrite.RewriteContext} so suppression is applied at
  * the one build evaluator; because the LSP replays that {@code ValidationReport} and the MCP

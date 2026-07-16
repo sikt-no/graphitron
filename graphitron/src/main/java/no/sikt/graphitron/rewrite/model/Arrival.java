@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * A composite type's <em>arrival cardinality</em> (R463): how many source objects of a parent type
+ * A composite type's <em>arrival cardinality</em>: how many source objects of a parent type
  * reach a nested field's fetcher in one request. The lattice is {@code One < Many} with {@code Many}
- * absorbing; it is the arrival half of the wrapper algebra (R316), whose monoid has {@code Root} as
+ * absorbing; it is the arrival half of the wrapper algebra, whose monoid has {@code Root} as
  * the empty product, {@link #ONE} the identity, and {@link #MANY} the absorber.
  *
  * <p>This is the input to {@link OutputField#source(Arrival)}: a nested field on a parent whose

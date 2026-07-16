@@ -466,7 +466,7 @@ public class JooqCatalog {
     }
 
     /**
-     * Scoped, sealed foreign-key lookup by name (R440). Replaces the {@code Optional}-returning
+ * Scoped, sealed foreign-key lookup by name. Replaces the {@code Optional}-returning
      * {@code findForeignKey(String)}: an {@code Optional} could only collapse a cross-schema
      * constraint-name collision into "not found", erasing exactly the wrong-join hazard this
      * surfaces. The result is a {@link ForeignKeyLookup} so the {@link ForeignKeyLookup.Ambiguous}
@@ -535,7 +535,7 @@ public class JooqCatalog {
     /**
      * Resolves a jOOQ {@link ForeignKey} instance into a typed {@link ForeignKeyRef} carrying the
      * schema-correct {@code Keys} {@link ClassName} together with the Java constant name, by
-     * <em>reference identity</em> (R440). Scans only the {@code Keys} class of the FK-holder schema
+ * <em>reference identity</em>. Scans only the {@code Keys} class of the FK-holder schema
      * (the schema of {@code fk.getTable()}, which structurally pins the owning schema) and matches
      * the constant whose value {@code == fk}. jOOQ's generated {@link ForeignKey#getReferences()}
      * returns the same {@code Keys.FK_*} singletons, so identity holds for every FK that flows out
@@ -662,7 +662,7 @@ public class JooqCatalog {
     /**
      * Returns the FK object when exactly one outgoing FK from {@code sourceTableSqlName} references
      * {@code targetTableSqlName}; empty otherwise (zero or many). Returns the resolved jOOQ
-     * {@link ForeignKey} (R440) rather than its bare constraint name, so the caller can hand it
+ * {@link ForeignKey} rather than its bare constraint name, so the caller can hand it
      * straight to {@link BuildContext#synthesizeFkJoin} by class identity instead of round-tripping
      * through a name re-lookup that would reintroduce cross-schema collision.
      *
@@ -727,7 +727,7 @@ public class JooqCatalog {
      * Empty when the FK is not found or does not originate from {@code sourceTableSqlName}.
      */
     public Optional<String> qualifierForFk(String sourceTableSqlName, String fkName) {
-        // R440: scope the lookup by the source table so a constraint name colliding across schemas
+        // Scope the lookup by the source table so a constraint name colliding across schemas
         // resolves to this table's FK instead of the first-hit wrong schema. Keeps the Optional
         // contract (non-author-facing): NotInCatalog / Ambiguous both map to empty; scoping makes
         // the collision resolve, so callers' "unreachable" guards stay genuine can't-happens.
@@ -780,7 +780,7 @@ public class JooqCatalog {
     }
 
     /**
-     * R246 — a candidate row-identifying key on a table: the primary key or a unique key, with its
+ * A candidate row-identifying key on a table: the primary key or a unique key, with its
      * columns resolved in key-declaration order. {@code primary} distinguishes the PK from a unique
      * key (the walker prefers the PK when both are covered). {@code keyName} echoes jOOQ's
      * {@code Key.getName()} for diagnostics.
@@ -1023,7 +1023,7 @@ public class JooqCatalog {
     }
 
     /**
-     * R362 — full column facts for the catalog-discovery projection: adds the SQL data-type name
+ * Full column facts for the catalog-discovery projection: adds the SQL data-type name
      * ({@code DataType.getTypeName()}) and the column comment ({@code Field.getComment()}) to the
      * {@link ColumnEntry} shape. Reads the same reflective field set {@link #allColumnsOf(String)}
      * does, so column order matches. The comment is empty when jOOQ codegen captured none. All
@@ -1046,7 +1046,7 @@ public class JooqCatalog {
     }
 
     /**
-     * R362 — every index on a table as a resolved-immutable (name, SQL-column-names) pair, in index
+ * Every index on a table as a resolved-immutable (name, SQL-column-names) pair, in index
      * declaration order with columns in index-field order. Each index column is resolved through
      * {@link #findColumn(Table, String)} so the SQL name is canonical, falling back to the raw
      * sort-field name when (degenerately) unresolvable.
@@ -1062,7 +1062,7 @@ public class JooqCatalog {
     }
 
     /**
-     * R362 — the outgoing foreign keys of a table reduced to resolved-immutable facts: the SQL
+ * The outgoing foreign keys of a table reduced to resolved-immutable facts: the SQL
      * constraint name, the schema-qualified source and target table IDs, and the source / target
      * column SQL-name lists. Unlike {@link ForeignKeyRef} (constraint name + {@code Keys}
      * {@link ClassName} + constant, no column pairs), this carries the column pairs the
@@ -1087,21 +1087,21 @@ public class JooqCatalog {
     }
 
     /**
-     * R362 — a column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name,
+ * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name,
      * nullability, and comment (empty when codegen captured none). The resolved-immutable superset
      * of {@link ColumnEntry} the {@code CatalogFacts} projection needs; see {@link #columnFactsOf}.
      */
     public record ColumnFacts(String sqlName, String javaName, String sqlType, boolean nullable, String comment) {}
 
     /**
-     * R362 — an index's name and its SQL column names in index order. See {@link #indexFactsOf}.
+ * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.
      */
     public record IndexFacts(String name, java.util.List<String> columns) {
         public IndexFacts { columns = java.util.List.copyOf(columns); }
     }
 
     /**
-     * R362 — a foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified
+ * A foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified
      * source / target table IDs, and the source / target column SQL-name lists. See
      * {@link #foreignKeyFactsOf}.
      */
@@ -1386,7 +1386,7 @@ public class JooqCatalog {
      * {@code nullable} reflects the column's nullability as declared in the jOOQ data type.
      * {@code columnType} is the same live {@code Class} decided once via {@code TypeName.get(...)}
      * for codegen, so array columns emit a real {@code ArrayTypeName} rather than crashing
-     * {@code ClassName.bestGuess} (R446).
+ * {@code ClassName.bestGuess}.
      */
     public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable, TypeName columnType) {
         /**
@@ -1458,7 +1458,7 @@ public class JooqCatalog {
         record NotATableValuedFunction() implements RoutineResolution {}
         record NoConvenienceMethod(String detail) implements RoutineResolution {}
         /**
-         * R451: the name resolves to a generated database routine that is not table-valued (a
+ * The name resolves to a generated database routine that is not table-valued (a
          * procedure or a scalar / void function). jOOQ does not place these in {@code getTables()},
          * but it does generate a per-routine class in the schema's {@code routines} sub-package;
          * probing that package is what distinguishes "exists but is not table-valued" (this arm,
@@ -1489,7 +1489,7 @@ public class JooqCatalog {
     }
 
     /**
-     * Sealed outcome of the scoped name lookup {@link #findForeignKey(String, String)} (R440).
+ * Sealed outcome of the scoped name lookup {@link #findForeignKey(String, String)}.
      * A {@code JooqCatalog}-local result type in the same family as {@link TableResolution},
      * {@link ForeignKeyResolution}, and {@link RoutineResolution}. Unlike the retired
      * {@code Optional<ForeignKey>} form, it keeps the raw jOOQ {@link ForeignKey} (a permitted

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R390 — a {@code @table} type reachable only through a directive-driven {@code @asConnection}
+ * A {@code @table} type reachable only through a directive-driven {@code @asConnection}
  * carrier must survive the connection rebuild. After
  * {@link ConnectionPromoter#rebuildAssembledForConnections} retypes a bare-list carrier to name its
  * synthesised Connection, the element type is referenced only through the Connection's {@code nodes}

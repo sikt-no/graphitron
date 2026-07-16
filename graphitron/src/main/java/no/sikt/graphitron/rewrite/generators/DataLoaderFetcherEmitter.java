@@ -103,7 +103,7 @@ public final class DataLoaderFetcherEmitter {
     }
 
     /**
-     * Pre-registration-prelude overload (R268). {@code preRegistrationPrelude} is emitted before
+ * Pre-registration-prelude overload. {@code preRegistrationPrelude} is emitted before
      * the path-name and {@code computeIfAbsent} loader registration, so a fetcher that is an
      * immediate child of a flipped {@code Outcome} payload can narrow {@code env.getSource()} to
      * {@code Outcome.Success} and {@code return CompletableFuture.completedFuture(null)} on the

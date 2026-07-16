@@ -61,7 +61,7 @@ class ErrorChannelClassificationTest {
 
         var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "behandleSak");
         assertThat(f.errorChannel()).isPresent();
-        // R244: @service outcome fields classify to ErrorChannel.Mapped (the Outcome wrapper
+        // @service outcome fields classify to ErrorChannel.Mapped (the Outcome wrapper
         // transport), not PayloadClass; no developer payload class is constructed on the error path.
         var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped) f.errorChannel().get();
         assertThat(ch.mappedErrorTypes())
@@ -83,7 +83,7 @@ class ErrorChannelClassificationTest {
             .containsExactly("ValidationErr", "DbErr");
     }
 
-    // R244: payloadConstructor_recordsErrorsSlotAndDefaultLiterals deleted. The ctor errors-slot /
+    // PayloadConstructor_recordsErrorsSlotAndDefaultLiterals deleted. The ctor errors-slot /
     // defaulted-slot resolution it pinned is PayloadClass-construction internals, which @service
     // fields no longer use (they classify to ErrorChannel.Mapped). The construction-shape machinery
     // is exercised directly by PayloadConstructionShapeTest and retires in slice-1 commit 4.
@@ -101,7 +101,7 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel()).isEmpty();
     }
 
-    // R307: unTypedRecordPayload_producesChannelFromReflectedProducer and
+    // UnTypedRecordPayload_producesChannelFromReflectedProducer and
     // payloadHasErrorsFieldButPayloadClassMissing_rejectsCarrier deleted. Both pinned behaviour of
     // the @record directive's className (bare @record still grounds via the producer; a missing
     // @record className rejects). @record is deprecated and ignored — it never drives binding — so
@@ -141,7 +141,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void nonNullableSuccessProjectionField_rejectsCarrier() {
-        // R244: a success-projection (data) field declared non-null resolves null on the ErrorList
+        // A success-projection (data) field declared non-null resolves null on the ErrorList
         // arm, which raises NonNullableFieldWasNullError and bubbles the null up to the outcome
         // field, dropping the sibling errors field (the silent errors-drop the wrapper transport
         // exists to prevent). The classifier rejects such an outcome type at classify time, before
@@ -434,7 +434,7 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel()).isEqualTo(Optional.<ErrorChannel>empty());
     }
 
-    // R244: payloadWithMultipleConstructors_canonicalCtorIsSelectedByArity deleted. Canonical-ctor
+    // PayloadWithMultipleConstructors_canonicalCtorIsSelectedByArity deleted. Canonical-ctor
     // selection by arity is PayloadClass-construction internals that @service fields no longer reach
     // (they classify to ErrorChannel.Mapped). Covered directly by PayloadConstructionShapeTest;
     // retires in slice-1 commit 4.
@@ -497,7 +497,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void extraField_fieldDirectiveRemapsAccessor_classifiesWithOverride() {
-        // R202: @field(name:) on an extra field names the source-class accessor when it diverges
+        // @field(name:) on an extra field names the source-class accessor when it diverges
         // from the SDL field name. `detail` has no getDetail() on RuntimeException, but
         // @field(name: "localizedMessage") remaps to Throwable.getLocalizedMessage(), so the
         // carrier classifies cleanly and the classified ErrorType carries the override.
@@ -527,7 +527,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void extraField_fieldDirectiveRemapStillMissing_rejectsCarrierNamingFieldAndDirective() {
-        // R202: a remap to an accessor the source class still does not expose rejects, and the
+        // A remap to an accessor the source class still does not expose rejects, and the
         // diagnostic names both the SDL field and the directive value so the failed remap is
         // diagnosable. RuntimeException has no getNope() / nope() / public nope field.
         var schema = build("""
@@ -609,7 +609,7 @@ class ErrorChannelClassificationTest {
         assertThat(reason).contains("errors-shaped carrier field 'errors'", "more than one", "VALIDATION");
     }
 
-    // R370: the two @service-path in-hand bestGuess swaps (resolveErrorChannel and
+    // The two @service-path in-hand bestGuess swaps (resolveErrorChannel and
     // computeMutationServiceRecordReturnType) are pinned end-to-end by a nested-payload compilation
     // fixture in graphitron-sakila-example. This unit-tier case additionally pins resolveErrorChannel's
     // boundary directly: @service outcome fields classify to ErrorChannel.Mapped (no payload class is
@@ -658,7 +658,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void extraField_legacyPayloadClassPath_fieldDirectiveRemapsAccessor() {
-        // R202: the class-backed payload path runs FieldBuilder.checkErrorTypeSourceAccessors, a
+        // The class-backed payload path runs FieldBuilder.checkErrorTypeSourceAccessors, a
         // distinct check site from the @service HandlerAccessorCheck. A child @service field
         // returning a nested backed payload reaches resolveErrorChannel's PayloadClass arm;
         // @field(name: "localizedMessage") on an extra field remaps to Throwable.getLocalizedMessage()

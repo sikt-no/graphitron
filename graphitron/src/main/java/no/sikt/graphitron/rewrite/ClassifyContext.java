@@ -12,7 +12,7 @@ import java.util.Set;
  *
  * <p>The classifier itself does not read {@link #enclosingOverride} to decide a variant
  * (column-miss always lifts to {@link InputField.UnboundField} regardless of cascade); the
- * record carries it for the future-growth axes the spec calls out (R215) so adding the
+ * record carries it for the future-growth axes the spec calls out so adding the
  * mutation-context lift or a nested-input cascade walker arm does not touch every call site.
  *
  * <p>Use {@link #root()} for the top-level entry and {@link #expanding(String)} for the

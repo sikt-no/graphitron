@@ -41,7 +41,7 @@ import java.util.Map;
  * verdict read after the walk equals the verdict classification produced. Empty for every
  * test-constructed schema and every error-free build.
  *
- * <p>{@link #arrivals} (R463) is the ancestor-product arrival fold, a typename-keyed index computed
+ * <p>{@link #arrivals} is the ancestor-product arrival fold, a typename-keyed index computed
  * once over the assembled SDL ({@code ArrivalIndex}). It is the ancestor fact {@link #sourceOf} threads
  * into {@link OutputField#source(Arrival)} to pick the {@code OnlyChild} / {@code Child} arm; arrival is
  * a parent-typename-grain fact, so it lives here rather than as a per-leaf component. Empty for
@@ -73,7 +73,7 @@ public record GraphitronSchema(
     /**
      * Convenience constructor used by {@link GraphitronSchemaBuilder}: same field-grouping as the
      * two-arg form but preserves the {@code warnings} list, the build-time {@code diagnostics} the
-     * immutable validate phase accumulated, and the {@code arrivals} arrival index (R463).
+ * immutable validate phase accumulated, and the {@code arrivals} arrival index.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -135,7 +135,7 @@ public record GraphitronSchema(
     }
 
     /**
-     * R463 — the field's {@code source} arrival endpoint, folding the parent type's ancestor-product
+ * The field's {@code source} arrival endpoint, folding the parent type's ancestor-product
      * {@link Arrival} into {@link OutputField#source(Arrival)}. The single seam consumers read the
      * arrival arm through: a nested field on a {@link Arrival#ONE} parent yields {@link Source.OnlyChild},
      * else {@link Source.Child}; a root field yields {@link Source.Root} (the empty product ignores the

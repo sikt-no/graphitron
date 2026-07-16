@@ -74,7 +74,7 @@ class EnumTypeGeneratorTest {
 
     @Test
     void typeMethod_routesFieldNameDirectiveIntoRuntimeValue() {
-        // R229: @field(name:) on an enum value is the runtime / DB / upstream string, not an
+        // @field(name:) on an enum value is the runtime / DB / upstream string, not an
         // alternate SDL name. The SDL identifier still drives .name(...) (it has to — the
         // directive string may not satisfy the GraphQL Name lex rule); the directive string
         // drives .value(...), the only argument graphql-java's Coercing layer compares

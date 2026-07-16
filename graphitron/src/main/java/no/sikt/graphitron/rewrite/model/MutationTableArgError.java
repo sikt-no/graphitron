@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.List;
 
 /**
- * R457 — sealed sub-family of {@link Rejection.AuthorError} for the {@code @mutation(table:)}
+ * Sealed sub-family of {@link Rejection.AuthorError} for the {@code @mutation(table:)}
  * argument. Sibling to {@link DeleteRowsError} / {@link UpdateRowsError}: per the
  * dimensional-model-pivot principle, a new concern adds its own sub-seal of
  * {@link Rejection.AuthorError} (and one row in that interface's {@code permits} clause) with its own

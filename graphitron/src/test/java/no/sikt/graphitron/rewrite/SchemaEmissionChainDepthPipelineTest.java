@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SchemaEmissionChainDepthPipelineTest {
 
     /**
-     * Per-statement chain-depth cap. Statement-flattened emission (R254) holds every
+ * Per-statement chain-depth cap. Statement-flattened emission holds every
      * generated expression-statement well below this; the bound is a tripwire for a
      * regression that re-introduces fluent emission.
      */

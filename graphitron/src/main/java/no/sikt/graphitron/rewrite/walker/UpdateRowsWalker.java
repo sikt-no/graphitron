@@ -23,7 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * R246 — produces the {@link UpdateRows} carrier for an {@code @mutation(typeName: UPDATE)} field
+ * Produces the {@link UpdateRows} carrier for an {@code @mutation(typeName: UPDATE)} field
  * that returns its {@code @table} type directly. The walker's load-bearing claim is PK-or-UK
  * identification: it queries jOOQ's {@code Table.getPrimaryKey()} / {@code Table.getKeys()} (via
  * {@link JooqCatalog#candidateKeys(String)}) and picks the first candidate (PK preferred) whose
@@ -49,7 +49,7 @@ import java.util.Set;
  * Errors are collected across stages without short-circuiting so the LSP surfaces every per-field
  * issue at once.
  *
- * <p><b>Nested grouping inputs (R186).</b> A plain (non-{@code @table}) input object grouping
+ * <p><b>Nested grouping inputs.</b> A plain (non-{@code @table}) input object grouping
  * columns of the outer table classifies as an {@link InputField.NestingField}; the walker flattens
  * it in place ({@link #classifyInto}) into the same flat leaf carriers it would admit at the input
  * root, rewrapping each nested leaf's {@code extraction} as a
@@ -62,7 +62,7 @@ public final class UpdateRowsWalker {
 
     /** A reshaped, column-bearing input field: the SDL field name, its target columns on the
      * input's own table, the extraction shape the emitter reuses, and whether the carrier is a
-     * self-FK reference (R354). A self-FK carrier's columns route wholly to the SET partition and
+ * self-FK reference. A self-FK carrier's columns route wholly to the SET partition and
      * never count toward WHERE-key coverage; every other carrier partitions by key membership. */
     private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
                                 boolean selfReference) {}
@@ -85,7 +85,7 @@ public final class UpdateRowsWalker {
         var errors = new ArrayList<Rejection.AuthorError>();
 
         // Stage 2: classify each input field into a walker-local column contribution, flattening
-        // any nested (non-@table) grouping input into its leaf carriers in place (R186); collect
+        // any nested (non-@table) grouping input into its leaf carriers in place; collect
         // per-field admissibility rejections across the loop (no short-circuit).
         var contributions = new ArrayList<Contribution>();
         classifyInto(inputFields, List.of(), outerArgName, errors, contributions);
@@ -95,7 +95,7 @@ public final class UpdateRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // R342: the bulk self-FK reject that used to live here (Stage 2b) is gone. A self-FK
+        // The bulk self-FK reject that used to live here (Stage 2b) is gone. A self-FK
         // @reference on a bulk (list-input) UPDATE routes exactly as the single-row form does — its
         // shared column lands in the UPDATE … SET c = v.c FROM (VALUES …) derived table, which the
         // bulk SET dedup now collapses to one v-column with a per-row WHERE∩SET agreement check.
@@ -118,7 +118,7 @@ public final class UpdateRowsWalker {
 
         // Stage 4-5: PK-or-UK identification via the shared matcher (R266 extraction). Find the
         // first candidate key (PK preferred) whose column set the input covers — over the identity
-        // (non-self-FK) columns only (R354). A self-FK points at a sibling row, so it can never
+        // (non-self-FK) columns only. A self-FK points at a sibling row, so it can never
         // pin the row it lives on; a PK column reachable only through a self-FK fails coverage
         // (NoUniqueKeyCoverage), matching the semantic "your identity fields do not pin a key".
         MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, identityColumnSqlNames).orElse(null);
@@ -129,7 +129,7 @@ public final class UpdateRowsWalker {
         }
 
         // Stage 6: partition each admitted field into the WHERE (matched-key) or SET (everything
-        // else) half. A self-FK reference carrier (R354) routes wholly to SET regardless of key
+        // else) half. A self-FK reference carrier routes wholly to SET regardless of key
         // membership — its columns are a pointer to a sibling row, never this row's identity, so a
         // shared key column it writes is an ordinary SET write (the FK forces it equal to the WHERE
         // value, agreement-checked at emit). Every other carrier partitions by membership; a
@@ -200,7 +200,7 @@ public final class UpdateRowsWalker {
 
     /**
      * Flatten {@code fields} into {@link Contribution}s, descending into any
-     * {@link InputField.NestingField} grouping input (R186) so a plain non-{@code @table} input that
+ * {@link InputField.NestingField} grouping input so a plain non-{@code @table} input that
      * groups columns of the outer table contributes the same flat leaf carriers it would at the
      * input root. A nested leaf's {@code extraction} is rewrapped as a
      * {@link CallSiteExtraction.NestedInputField} carrying the full SDL access path from the

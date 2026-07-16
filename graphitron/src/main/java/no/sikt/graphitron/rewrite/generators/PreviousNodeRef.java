@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
 
 /**
  * Where a correlated routine call's {@link ParamSource.SourceColumn} bindings read the previous
- * chain node's columns (R435) — the column-reference sibling of {@link ArgumentValueSource},
+ * chain node's columns — the column-reference sibling of {@link ArgumentValueSource},
  * which answers the same question for {@link ParamSource.Arg} bindings.
  *
  * <ul>
@@ -16,7 +16,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  *       the batched keyed re-query, where the head is not materialised — its bound columns ride
  *       the {@code parentInput} VALUES table (they ARE the DataLoader key). The binding reads
  *       {@code parentInput.field("<sqlName>", Tables.<OWNER>.<COL>.getDataType())}, the same
- *       sqlName + owner-{@code DataType} lookup the split correlation JOIN uses (R413), so the
+ * sqlName + owner-{@code DataType} lookup the split correlation JOIN uses, so the
  *       {@code Field}'s type metadata matches the VALUES cell binds and javac still selects the
  *       routine's {@code Field} overload.</li>
  *   <li>{@link None}: the routine node is the chain's head with no previous node (R449 D5 — the

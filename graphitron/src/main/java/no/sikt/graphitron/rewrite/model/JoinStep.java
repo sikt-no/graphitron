@@ -9,7 +9,7 @@ import java.util.List;
  * All steps are fully resolved at build time; an unresolvable step causes the containing field to
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
  *
- * <p>{@link Hop} is the sole permit — the two-axis step (R333): a <b>target</b> node materialized
+ * <p>{@link Hop} is the sole permit — the two-axis step: a <b>target</b> node materialized
  * by a {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
  * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
  * predicate}). Every {@code @reference}-parsed step is a {@code Hop}, and {@code @reference}
@@ -73,11 +73,11 @@ public sealed interface JoinStep permits JoinStep.Hop {
     }
 
     /**
-     * One join step as two orthogonal facts (R333): a <b>target</b> node materialized by a
+ * One join step as two orthogonal facts: a <b>target</b> node materialized by a
      * {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
      * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
      * predicate}). Replaced the flat {@code FkJoin} / {@code ConditionJoin} variants, which
-     * spliced the two facts into the permit name (R438).
+ * spliced the two facts into the permit name.
      *
      * <p>{@code target} is the table node this step joins to; day one always a
      * {@link TableExpr.Catalog}. {@link #targetTable()} folds it back to the {@link TableRef}
@@ -124,7 +124,7 @@ public sealed interface JoinStep permits JoinStep.Hop {
             if (alias == null) {
                 throw new NullPointerException("JoinStep.Hop.alias must not be null");
             }
-            // R435: lateralness and routine-ness are one fact, pinned on the hop itself. A
+            // Lateralness and routine-ness are one fact, pinned on the hop itself. A
             // routine node carries no key metadata to join on (its correlation rides the call
             // arguments), and a catalog table never joins laterally — so On.Lateral appears
             // exactly on TableExpr.RoutineCall targets. Enforced here rather than per consumer

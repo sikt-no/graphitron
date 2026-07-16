@@ -187,7 +187,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
 
     /**
      * True when {@code t} (after stripping a single layer of non-null) is a list. Package-visible
-     * so {@link ServiceCatalog#inferBindingsByType} (R355) computes a depth-1 step's
+ * so {@link ServiceCatalog#inferBindingsByType} computes a depth-1 step's
      * {@code liftsList} flag through the identical predicate {@link #of} uses for an explicit
      * {@code argMapping} step, keeping an inferred {@link PathExpr.Step} byte-identical to the
      * hand-written one.

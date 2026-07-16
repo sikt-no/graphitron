@@ -98,7 +98,7 @@ public final class InlineLookupTableFieldEmitter {
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
                 ClassName jooqTableClass = ht.targetTable().tableClass();
-                // Materialization routes through the shared TableExpr switch (R435). Routine
+                // Materialization routes through the shared TableExpr switch. Routine
                 // hops never reach the lookup path today (the classifier lands typed Deferred);
                 // the OnLateralArgs / On.Lateral arms below throw if that guard slips.
                 code.addStatement("$T $L = $L.as($L.getName() + $S)",
@@ -163,14 +163,14 @@ public final class InlineLookupTableFieldEmitter {
             if (i > 0) onCondition.add(")");
         }
 
-        // R330: declare an aliased FK-target table local per join hop for every FK-target @nodeId
+        // Declare an aliased FK-target table local per join hop for every FK-target @nodeId
         // override @condition among the user filters, so buildInnerSelect emits each as a correlated
         // EXISTS rather than mis-passing the lookup's own table. Runtime-prefixed SQL alias (this
         // arm recurses), matching the hop aliases above.
         Map<WhereFilter, List<String>> fkTargetAliases =
             FkTargetConditionEmitter.declareAliases(code, lf.filters(), terminalAlias, true);
 
-        // R424: pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
+        // Pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
         // JooqConvert list arm), routed through the field's own SelectedField — same parity fix as
         // InlineTableFieldEmitter. Declared inside the non-empty (else) branch alongside the aliases,
         // since only the inner SELECT here references it.
@@ -194,7 +194,7 @@ public final class InlineLookupTableFieldEmitter {
             String parentAlias, CodeBlock onCondition, String sfName, CompositeDecodeHelperRegistry registry,
             Map<WhereFilter, List<String>> fkTargetAliases) {
         var sel = CodeBlock.builder();
-        // Invariant (R424): `env` threaded onward into the nested $fields call is correct — each
+        // Invariant: `env` threaded onward into the nested $fields call is correct — each
         // nested level re-derives its own SelectedField and env is only needed there for
         // request-scoped context reads. Only this arm's own runtime argument reads route through the
         // SelectedField (ArgumentValueSource.FromSelectedField). Do not "fix" env to the SelectedField.

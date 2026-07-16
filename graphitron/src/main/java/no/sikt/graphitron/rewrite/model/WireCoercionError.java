@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * R261 — sealed sub-family of {@link Rejection.AuthorError} for the <em>wire-coercion</em>
+ * Sealed sub-family of {@link Rejection.AuthorError} for the <em>wire-coercion</em>
  * failures a scalar/enum SDL leaf hits when its consumer-declared Java type does not match what
  * graphql-java actually delivers on the wire. The generator would otherwise emit a raw
  * {@code (DeclaredType) wireValue} cast that compiles cleanly and {@code ClassCastException}s (or,

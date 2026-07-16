@@ -106,7 +106,7 @@ public final class TestFixtures {
     }
 
     /**
-     * R238: stub a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the
+ * Stub a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the
      * production walker. Used by tests building the four root sync {@code @service} permits,
      * which now carry both legacy {@code method} and the new {@code serviceMethodCall} slots
      * during the additive cutover. When the walker rejects (multi-DSL invariant violation, etc.),
@@ -316,7 +316,7 @@ public final class TestFixtures {
             ClassName.get(TEST_JOOQ_ROOT, "Tables"),
             pkColumns,
             // allColumns: fixtures that build a TableRef by hand don't enumerate the whole row; the
-            // reserved-alias full-row emit / TableRecord key reconstruction (R436) that read this
+            // reserved-alias full-row emit / TableRecord key reconstruction that read this
             // are exercised through the real-catalog pipeline tests, not these hand-built refs.
             List.of());
     }
@@ -501,7 +501,7 @@ public final class TestFixtures {
     }
 
     /**
-     * R452 / R458: builds the resolved single-hop FK correlation carrier
+ * Builds the resolved single-hop FK correlation carrier
      * ({@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere}) a multi-table
      * polymorphic interface/union child field holds per participant, from parent-side /
      * participant-side column lists ({@code parentColumns[i]} → {@code slot.sourceSide()},
@@ -602,7 +602,7 @@ public final class TestFixtures {
      * Synthesises a {@link ParentCorrelation} mirroring
      * {@code BuildContext.buildParentCorrelation}: the parent-anchor arm
      * {@link ParentCorrelation.OnParentJoin} when the first hop joins on a condition method
-     * <em>or</em> carries a hop-0 {@code filter()} (R450), {@link ParentCorrelation.OnFkSlots}
+ * <em>or</em> carries a hop-0 {@code filter()}, {@link ParentCorrelation.OnFkSlots}
      * for a filter-less FK head, and {@code null} when the joinPath is empty
      * (standalone-lookup shape; the pre-keyed lifted shape constructs
      * {@link ParentCorrelation.OnLiftedSlots} directly, R431). Test fixtures use this to satisfy

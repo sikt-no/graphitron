@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier pin on the {@link OrderBySpec.SortDirection} algebra (R243). The enum carries the
+ * Unit-tier pin on the {@link OrderBySpec.SortDirection} algebra. The enum carries the
  * jOOQ method-name mapping and a flip helper that emitters and the runtime-flip path rely on;
  * the type system can't constrain either, so this test pins both directly.
  */

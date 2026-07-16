@@ -198,7 +198,7 @@ class InterfaceFieldValidationTest {
 
     @Test
     void rejects_listArm_onAccessorKeyedManyHubArityOver21() {
-        // R105: validator reads parentSourceKey.columns().size() uniformly across all record-
+        // Validator reads parentSourceKey.columns().size() uniformly across all record-
         // parent SourceKey shapes. The accessor-call arm publishes the hub PK as the key
         // columns; a 22-column hub PK trips the same Row22 cap as the table-backed
         // ColumnRead case. The error message names the parent type and the column count.

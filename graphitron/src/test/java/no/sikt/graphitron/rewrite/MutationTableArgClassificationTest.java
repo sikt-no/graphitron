@@ -9,7 +9,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R457 — the {@code @mutation(table:)} field-relative DELETE write target. Pins the override rung
+ * The {@code @mutation(table:)} field-relative DELETE write target. Pins the override rung
  * (rung 2) and the migration bridge (rung 3): a DELETE names its write target on the consuming field
  * rather than on the input type's deprecated {@code @table}. There is deliberately no return-derived
  * rung (a DELETE cannot return the deleted row's {@code @table} type; R287), so every DELETE without
@@ -83,7 +83,7 @@ class MutationTableArgClassificationTest {
     @Test
     void noWriteTarget_rejectionLeadsWithMutationTableArg() {
         // No @table on the input and no @mutation(table:): the rejection must steer the author to the
-        // preferred replacement first, and explain that the return cannot supply the table (R287).
+        // preferred replacement first, and explain that the return cannot supply the table.
         var schema = TestSchemaHelper.buildSchema("""
             input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
             type Query { x: String }

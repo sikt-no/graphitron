@@ -38,7 +38,7 @@ class MutationDeleteTableFieldValidationTest {
                         "encodeFilm",
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
                 DialectRequirement.None.INSTANCE,
-                // R266: DELETE carries the slim InputArgRef + the DeleteRows walker carrier (no
+                // DELETE carries the slim InputArgRef + the DeleteRows walker carrier (no
                 // TableInputArg). filmId covers the PK, so this is an Identified single-row delete.
                 new InputArgRef("in", "FilmKey",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
@@ -75,7 +75,7 @@ class MutationDeleteTableFieldValidationTest {
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
 
-    // R287 — author-facing contract: DELETE -> @table is rejected at classify time (producing an
+    // Author-facing contract: DELETE -> @table is rejected at classify time (producing an
     // UnclassifiedField), so the validator surfaces a build-time ValidationError with the new
     // message. The model can no longer represent the wrong shape (MutationDeleteTableField's compact
     // constructor rejects a Projected* arm), so these contracts are pinned SDL-driven rather than by

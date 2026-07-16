@@ -20,7 +20,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R405: mirrors the {@link QueryTableInterfaceFieldValidationTest} shape for the single-table
+ * Mirrors the {@link QueryTableInterfaceFieldValidationTest} shape for the single-table
  * service-interface variants. A well-formed field passes with no {@link ValidationError} (the mirror
  * runs {@code validateCardinality} only — the multi-table participant floor route (a) needs would
  * wrongly reject the valid single-table shape, so it is deliberately not applied). This pins that the

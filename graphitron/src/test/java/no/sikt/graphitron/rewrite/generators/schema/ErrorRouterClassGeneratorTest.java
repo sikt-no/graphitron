@@ -164,7 +164,7 @@ class ErrorRouterClassGeneratorTest {
 
     @Test
     void surfaceClientErrorOrRedact_surfacesClientErrorElseFallsThroughToRedact() {
-        // R378: the no-channel disposition surfaces a GraphitronClientException's real message and
+        // The no-channel disposition surfaces a GraphitronClientException's real message and
         // otherwise reuses redact unchanged (the privacy contract for internal faults).
         var router = generate();
         var surface = method(router, "surfaceClientErrorOrRedact");
@@ -178,7 +178,7 @@ class ErrorRouterClassGeneratorTest {
 
     @Test
     void noChannelRouterCall_emitsSurfaceClientErrorOrRedact() {
-        // R415: the one definition of the no-channel disposition every emit site consults —
+        // The one definition of the no-channel disposition every emit site consults —
         // sync catch arms and async .exceptionally arms alike route through
         // surfaceClientErrorOrRedact, parameterised on the local throwable's name.
         assertThat(ErrorRouterClassGenerator.noChannelRouterCall("com.example", "e").toString())

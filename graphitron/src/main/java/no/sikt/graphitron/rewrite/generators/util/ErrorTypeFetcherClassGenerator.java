@@ -12,7 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Generates the per-{@code @error}-type {@code <ErrorType>Fetchers} class (R303), carrying the
+ * Generates the per-{@code @error}-type {@code <ErrorType>Fetchers} class, carrying the
  * {@code path} and {@code message} reads as named {@code public static} methods. The schema's
  * {@code registerFetchers} wiring references {@code <ErrorType>Fetchers::path} /
  * {@code ::message} in place of the inline lambdas previously emitted by

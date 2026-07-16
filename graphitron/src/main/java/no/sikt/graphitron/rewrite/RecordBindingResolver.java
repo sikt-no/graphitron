@@ -52,7 +52,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 
 /**
- * R96: derives SDL → backing-class bindings from reflection alone. Replaces the directive-driven
+ * Derives SDL → backing-class bindings from reflection alone. Replaces the directive-driven
  * binding population that {@link TypeBuilder} used to perform inside {@code buildResultType} and
  * {@code buildNonTableInputType}.
  *
@@ -112,7 +112,7 @@ final class RecordBindingResolver {
     private final Map<String, ProducerBinding.ServiceEmitted> serviceEmittedMemo = new LinkedHashMap<>();
 
     /**
-     * R308: the {@code @service} producer's arrival cardinality per carrier field, keyed by the
+ * The {@code @service} producer's arrival cardinality per carrier field, keyed by the
      * field's {@code parentType.fieldName} coordinate, decided once at this reflection boundary
      * (from {@link #isMultiCardinalityReturn}) and read by the classify-time shape verdict. Keyed by
      * the field coordinate rather than the payload SDL type because producer arrival is a property of
@@ -183,7 +183,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R308: the {@code @service} producer's arrival cardinality for a carrier field, keyed by its
+ * The {@code @service} producer's arrival cardinality for a carrier field, keyed by its
      * {@code parentType.fieldName} coordinate (see {@link #carrierFieldKey}), or empty when the
      * coordinate is not an {@code @service} field. Consumed by the classify-time shape verdict at the
      * {@code @service} carrier seat ({@code FieldBuilder.scanServiceCarrierShape}).
@@ -192,7 +192,7 @@ final class RecordBindingResolver {
         return Optional.ofNullable(serviceCarrierProducerArrivalMemo.get(carrierFieldKey(parentType, fieldName)));
     }
 
-    /** R308: the {@code parentType.fieldName} key under which producer arrival is memoised. */
+    /** The {@code parentType.fieldName} key under which producer arrival is memoised.*/
     private static String carrierFieldKey(String parentType, String fieldName) {
         return parentType + "." + fieldName;
     }
@@ -212,7 +212,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R461: the gated accessor near-miss recorded for an SDL type the walk could not ground through a
+ * The gated accessor near-miss recorded for an SDL type the walk could not ground through a
      * parent accessor (a member name-matched but failed a walk tightening's gate). Empty when the walk
      * hit no gated near-miss for the type. Consulted only for a type that ends the walk with no
      * producer, so the accessor gate is named instead of a generic no-producer cascade.
@@ -284,7 +284,7 @@ final class RecordBindingResolver {
 
         SourceLocation loc = locationOf(field);
 
-        // R276: ground the result-axis binding from the method's reflected return-element type.
+        // Ground the result-axis binding from the method's reflected return-element type.
         // Binding is reflection-only; the @service signature is the single source of truth for the
         // SDL return type's backing class. The grounding rules (cardinality-match, the
         // @table-backed-SDL guard, shouldBind) live in groundProducerResult, shared with
@@ -297,7 +297,7 @@ final class RecordBindingResolver {
 
         String resultSdl = unwrappedTypeName(field.getType());
 
-        // R308: the @service producer's arrival cardinality, decided once here at the reflection
+        // The @service producer's arrival cardinality, decided once here at the reflection
         // boundary from the same isMultiCardinalityReturn peel producerBindLevel already consumes,
         // and carried as a typed fact. The classify-time shape verdict
         // (FieldBuilder.scanServiceCarrierShape / BuildContext.ServiceCarrierShape) reads this rather
@@ -377,7 +377,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R329 — which SDL level a reflected producer return binds to, computed once and projected by
+ * Which SDL level a reflected producer return binds to, computed once and projected by
      * the result-axis observation. The cardinality decision lives here as one verdict rather than as
      * two complementary comparisons (the old {@code sdlIsList != reflectedIsMulti} reject and the
      * carrier-recognition admit) that would desynchronise into a dangle or a double-bind.
@@ -438,7 +438,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R329 — the single data field of a candidate two-level carrier payload: a payload SDL field
+ * The single data field of a candidate two-level carrier payload: a payload SDL field
      * whose unwrapped type is a GraphQL Object that does not carry {@code @table}. Returns null when
      * there is not exactly one such field. Errors-shaped fields (a union of / interface implemented by
      * {@code @error} types) are naturally excluded by the {@link GraphQLObjectType} check, mirroring
@@ -545,7 +545,7 @@ final class RecordBindingResolver {
             dataFieldTableName = argString(fieldObj, DIR_TABLE, ARG_NAME)
                 .orElse(unwrappedFieldType.toLowerCase());
         }
-        // R275: ID-element carrier (the opptak fjernSakTagg/fjernSakTagger shape). With no
+        // ID-element carrier (the opptak fjernSakTagg/fjernSakTagger shape). With no
         // @table-typed data field, recognize exactly one ID-scalar field carrying
         // @nodeId(typeName: T); the SDL-side table comes from T's own @table directive. R96
         // runs before per-type classification, so T's @node-ness cannot be checked here; the
@@ -631,7 +631,7 @@ final class RecordBindingResolver {
     }
 
     /**
-     * R178: grounds a {@link ProducerBinding.DmlEmitted} result-axis observation for the payload
+ * Grounds a {@link ProducerBinding.DmlEmitted} result-axis observation for the payload
      * SDL type of every DML {@code @mutation} field whose payload is a non-{@code @table} SDL
      * Object. Reads the {@code @mutation(typeName:)} arg to derive {@link DmlKind}, locates the
      * single {@code @table}-bearing input argument, resolves the table via the catalog, and
@@ -776,7 +776,7 @@ final class RecordBindingResolver {
             // its @table classification). The field classifier handles such a mismatch as an
             // author-error rejection on the TableRecord path; the cascade must not pre-empt it.
             if (resultMemo.get(childSdl) != null) continue;
-            // R461: one probe call grounds the child class and names the accessor. The base name is
+            // One probe call grounds the child class and names the accessor. The base name is
             // the @field(name:)-resolved accessor name and the argument shape is the SDL field's real
             // shape (both emission-side values), so walk and emission agree on which member reads the
             // field.
@@ -808,7 +808,7 @@ final class RecordBindingResolver {
         for (GraphQLInputObjectField field : obj.getFieldDefinitions()) {
             String childSdl = unwrappedTypeName(field.getType());
             if (childSdl == null) continue;
-            // R461: input fields take no arguments, so the probe's shape is always zero-argument; the
+            // Input fields take no arguments, so the probe's shape is always zero-argument; the
             // base name still honours @field(name:) for symmetry with the result axis.
             AccessorProbe probe = ClassAccessorResolver.probe(parentClass,
                 accessorBaseName(field.getName(), field),

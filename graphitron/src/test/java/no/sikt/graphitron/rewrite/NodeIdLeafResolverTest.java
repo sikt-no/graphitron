@@ -161,7 +161,7 @@ class NodeIdLeafResolverTest {
 
     @Test
     void multiHopIdentityCarryingLift_succeeds() {
-        // R114: level_c → level_b → level_a chain. Both adjacent hops satisfy the lift predicate
+        // Level_c → level_b → level_a chain. Both adjacent hops satisfy the lift predicate
         // (each step's source-side columns are a positional subset of the previous hop's
         // target-side columns by SQL name), so the terminal hop's source-side tuple lifts back
         // through the chain to a sub-tuple of the first hop's source-side columns on level_c.
@@ -208,7 +208,7 @@ class NodeIdLeafResolverTest {
 
     @Test
     void multiHopLiftTranslationRejected() {
-        // R114: lift_fail_c -> lift_fail_b -> lift_fail_a chain. hop[0] uses fk_b -> b_id (so
+        // Lift_fail_c -> lift_fail_b -> lift_fail_a chain. hop[0] uses fk_b -> b_id (so
         // lift_fail_b's source-side columns from c are (b_id) only); hop[1] uses (a_k1, a_k2)
         // -> (k1, k2). Lift predicate at i=1 requires hop[1].sourceSide ⊂ hop[0].targetSide
         // by SQL name; (a_k1, a_k2) is NOT a subset of (b_id), so the lift fails. The resolver
@@ -249,7 +249,7 @@ class NodeIdLeafResolverTest {
 
     @Test
     void multiHopConditionStepRejected() {
-        // R114: a condition step inside a multi-hop @reference path is rejected. Every step
+        // A condition step inside a multi-hop @reference path is rejected. Every step
         // must be FK-derived; the resolver routes condition-join steps to a Rejected with the
         // CONDITION_STEP_MARKER text. The first hop is a real FK; the second is a condition
         // method on TestConditionStub.

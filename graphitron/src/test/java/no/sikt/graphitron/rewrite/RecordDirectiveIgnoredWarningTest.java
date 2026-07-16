@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R307: dedicated classifier-level coverage for the {@code @record}-ignored deprecation warning.
+ * Dedicated classifier-level coverage for the {@code @record}-ignored deprecation warning.
  *
  * <p>{@code @record} is a deprecated, legal-but-ignored directive: it drives no binding (reflection
  * does), and a reachable type still carrying it earns a build warning telling the author to remove

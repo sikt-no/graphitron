@@ -34,10 +34,10 @@ import java.util.Map;
  *
  * <p>Skip and throw modes get separate helpers (different bodies). The throw arm raises the
  * generated {@code GraphitronClientException} on a {@code null} decode rather than filtering it
- * out (R378), carrying a two-branch message that distinguishes structurally-malformed input from a
+ * out, carrying a two-branch message that distinguishes structurally-malformed input from a
  * well-formed wrong-type id (it peeks the wire prefix via {@code NodeIdEncoder.peekTypeId}). The
  * statement-form throw replaces the expression-only {@code Supplier}-lambda-throw trick the inline
- * emission used to need to stay an expression (R260); a developer can now breakpoint the decode
+ * emission used to need to stay an expression; a developer can now breakpoint the decode
  * and read a meaningful stack frame.
  */
 final class CompositeDecodeHelperRegistry {
@@ -52,7 +52,7 @@ final class CompositeDecodeHelperRegistry {
     /**
      * Output package of the generated code, used to reach the generated client-error type
      * {@code <outputPackage>.schema.GraphitronClientException} that a {@link Mode#THROW} helper
-     * raises on a decode failure (R378). Empty package is tolerated for the SKIP-only paths that
+ * raises on a decode failure. Empty package is tolerated for the SKIP-only paths that
      * never reach the client-error reference.
      */
     private final String outputPackage;
@@ -180,7 +180,7 @@ final class CompositeDecodeHelperRegistry {
     }
 
     /**
-     * Emits the {@link Mode#THROW} failure path for a {@code null} decode return (R378): peek the
+ * Emits the {@link Mode#THROW} failure path for a {@code null} decode return: peek the
      * wire value's type prefix, then throw the generated {@code GraphitronClientException} carrying
      * a two-branch message that distinguishes structurally-malformed input from a well-formed
      * wrong-type id. {@code peekArg} is the wire expression fed to {@code peekTypeId} (cast to

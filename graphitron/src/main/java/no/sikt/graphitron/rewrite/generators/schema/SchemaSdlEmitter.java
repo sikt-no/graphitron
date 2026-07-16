@@ -111,7 +111,7 @@ public final class SchemaSdlEmitter {
             .includeSchemaElement(element -> includeSchemaElement(element, true, droppedSupportTypes));
         String sdl = new SchemaPrinter(options).print(federated).trim();
         // The spec-built-in filter above strips the @oneOf definition but keeps the application
-        // (R283). Reinstate the definition so Apollo composition does not reject the subgraph
+        //. Reinstate the definition so Apollo composition does not reject the subgraph
         // with "Unknown directive @oneOf"; no-op (byte-identical) when the schema has no @oneOf.
         return OneOfDirectiveSdl.augment(assembled, sdl);
     }

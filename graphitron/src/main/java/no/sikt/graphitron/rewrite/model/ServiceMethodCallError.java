@@ -5,7 +5,7 @@ import java.util.stream.Collectors;
 
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for {@code ServiceMethodCallWalker}
- * (R238). Each typed arm carries the structural data its diagnostic message and LSP
+ *. Each typed arm carries the structural data its diagnostic message and LSP
  * {@code relatedInformation} need; downstream tooling switches on the arm rather than parsing
  * prose.
  *

@@ -33,13 +33,13 @@ class TestServiceStub {
     public static String get() { throw new UnsupportedOperationException(); }
 
     /**
-     * R275 — no-arg query-side producer for the {@code FilmDetails @record} fixture payload,
+ * No-arg query-side producer for the {@code FilmDetails @record} fixture payload,
      * returning the {@link TestFilmDetailsDto} backing so the payload grounds via R96 reflection
      * (the dangling-type-reference soundness pass rejects unbacked payload returns).
      */
     public static TestFilmDetailsDto getDetails() { throw new UnsupportedOperationException(); }
 
-    /** R275 — mutation-side sibling of {@link #getDetails}. */
+    /** Mutation-side sibling of {@link #getDetails}.*/
     public static TestFilmDetailsDto runDetails() { throw new UnsupportedOperationException(); }
 
     /**
@@ -111,7 +111,7 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilms() { throw new UnsupportedOperationException(); }
 
     /**
-     * R405: returns a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord} — used
+ * Returns a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord} — used
      * by {@code @service} on a single-table discriminated interface ({@code Content}) return, whose
      * shared {@code content} table's record class is {@code ContentRecord}.
      */
@@ -119,7 +119,7 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    /** R405: list form of {@link #getContent()} for a {@code [Content!]!} single-table interface return. */
+    /** List form of {@link #getContent()} for a {@code [Content!]!} single-table interface return.*/
     public static Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord> getContents() {
         throw new UnsupportedOperationException();
     }
@@ -253,7 +253,7 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== argMapping override on @service / @tableMethod directive (R53) =====
+    // ===== argMapping override on @service / @tableMethod directive =====
 
     /**
      * Takes parameters {@code inputs} (plural) and {@code dryRun}. Used by override tests where
@@ -811,7 +811,7 @@ class TestServiceStub {
     }
 
     /**
-     * R256: two declarations sharing the name {@code getOverloaded} (arity 0 and 1). The reflect
+ * Two declarations sharing the name {@code getOverloaded} (arity 0 and 1). The reflect
      * helpers must reject the name as ambiguous rather than silently picking the first
      * declaration-order match.
      */

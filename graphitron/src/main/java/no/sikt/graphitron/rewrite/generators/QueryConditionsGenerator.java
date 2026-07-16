@@ -369,7 +369,7 @@ public class QueryConditionsGenerator {
         // ctx here records into a context nothing drains.
         var ctx = new TypeFetcherEmissionContext();
 
-        // R330: pre-declare one aliased jOOQ table local per FK-target join hop, shared with the
+        // Pre-declare one aliased jOOQ table local per FK-target join hop, shared with the
         // inline fetcher emitters via FkTargetConditionEmitter. The correlated EXISTS each
         // FkTargetConditionFilter emits references its target alias by name, but filter terms
         // compose as expressions and cannot introduce locals themselves, so they are declared up

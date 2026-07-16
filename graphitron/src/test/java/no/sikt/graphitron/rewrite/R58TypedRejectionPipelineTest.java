@@ -116,12 +116,12 @@ class R58TypedRejectionPipelineTest {
         assertThat(conflict.directives()).containsExactly("service", "mutation");
     }
 
-    // R307: tableRecordCombination_recordIgnored_noLongerRejects moved to
+    // TableRecordCombination_recordIgnored_noLongerRejects moved to
     // RecordDirectiveIgnoredWarningTest (the one place applied @record remains), which pins that
     // @table + @record classifies table-backed rather than demoting to UnclassifiedType. Only
     // @table vs @error remains mutually exclusive here.
 
-    // R232: the ConditionJoinReportable capability and its three sibling tests
+    // The ConditionJoinReportable capability and its three sibling tests
     // (conditionJoinReportable_implementedByExpectedSixVariants,
     //  inlineTableField_conditionJoinStep_rejectedAtBuildTime,
     //  inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime) all delete with the capability

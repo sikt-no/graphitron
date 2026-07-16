@@ -541,7 +541,7 @@ public sealed interface GraphitronType
      * builds it programmatically; for structural connections the classifier references the
      * already-built value from the assembled schema.
      *
-     * <p>{@code facets} is the resolved {@code @asFacet} view for this connection (R13): one
+ * <p>{@code facets} is the resolved {@code @asFacet} view for this connection: one
      * {@link FacetSpec} per marked field on the carrier's filter input, empty when none are marked
      * (and always empty on the structural path — facet synthesis applies only to directive-driven
      * carriers whose Connection shape Graphitron owns). This entry is a contained denormalized view
@@ -595,7 +595,7 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
-     * The synthesised per-connection facets container (R13), e.g.
+ * The synthesised per-connection facets container, e.g.
      * {@code QueryFilmerConnectionFacets}: one nullable {@code [<Scalar>FacetValue!]} field per
      * {@code @asFacet}-marked filter-input field on the owning connection's carrier. Synthesised by
      * {@code ConnectionPromoter} alongside the Connection / Edge forms whenever the carrier's
@@ -617,7 +617,7 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
-     * A synthesised, cross-schema-reusable facet value type (R13), e.g.
+ * A synthesised, cross-schema-reusable facet value type, e.g.
      * {@code MpaaRatingFacetValue { value: MpaaRating! count: Int! }}. One entry per distinct
      * (value scalar, element nullability) pair encountered across the whole schema, named by
      * {@link FacetNaming#facetValueTypeName(String, boolean)}; never SDL-declared.

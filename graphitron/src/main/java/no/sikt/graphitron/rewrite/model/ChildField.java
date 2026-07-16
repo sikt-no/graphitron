@@ -44,7 +44,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * The shape of what arrives at {@code env.getSource()} for this field (R305). A projection of
+ * The shape of what arrives at {@code env.getSource()} for this field. A projection of
      * the parent type's backing: a {@code @table}-backed (catalog) parent puts a table row
      * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a domain
      * record ({@link SourceShape#Record}). The classifier already projected the parent's backing into
@@ -78,7 +78,7 @@ public sealed interface ChildField extends OutputField
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
-            // The merged batched re-query leaf (R432): the parent backing is a stored component,
+            // The merged batched re-query leaf: the parent backing is a stored component,
             // not a leaf identity — read it. SourceShapeProjectionTest's cross-check against the
             // independently-classified parent backing keeps holding and gets stronger here (a
             // stored fact checked against a walk, not a tautology of leaf identity).
@@ -122,7 +122,7 @@ public sealed interface ChildField extends OutputField
             case ServiceRecordField f -> OutputField.serviceCall(f.method());
             // Record / passthrough scalar reads.
             case RecordField ignored -> OutputField.bareFetch();
-            // R329 — the @service record-composite carrier's data field: a bare source-passthrough
+            // The @service record-composite carrier's data field: a bare source-passthrough
             // projection of the producer's in-memory composite record(s), no filter surface.
             case RecordCompositeField ignored -> OutputField.bareFetch();
             case PropertyField ignored -> OutputField.bareFetch();
@@ -157,7 +157,7 @@ public sealed interface ChildField extends OutputField
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
             case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case RecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
-            // R329 — the composite carrier's data field projects the producer's record composite(s):
+            // The composite carrier's data field projects the producer's record composite(s):
             // a Record-shaped, list-or-single target (the element is a record-backed result type,
             // not a scalar Field and not a @table), distinguishing this leaf from RecordField.
             case RecordCompositeField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
@@ -177,7 +177,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * R156 — the single data field on a payload-returning DELETE carrier whose data field is an
+ * The single data field on a payload-returning DELETE carrier whose data field is an
      * ID-typed scalar encoding the deleted row's primary key. The parent classifies as
      * {@code MutationField.MutationDmlRecordField} (single DELETE) or
      * {@code MutationField.MutationBulkDmlRecordField} (bulk DELETE) returning the PK-only
@@ -211,7 +211,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * R275 — the single data field on an {@code @service} source-record carrier whose data
+ * The single data field on an {@code @service} source-record carrier whose data
      * field is an ID-typed scalar encoding the producer record's node-key column(s). The
      * parent classifies as {@code MutationField.MutationServiceRecordField}; the {@code @service}
      * method returns the typed jOOQ {@code XRecord} (single) or {@code List<XRecord>} (bulk)
@@ -461,7 +461,7 @@ public sealed interface ChildField extends OutputField
     ) implements TableTargetField {
         public TableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
-            // R435: TableField is an implemented leaf, so no validator gate re-checks its
+            // TableField is an implemented leaf, so no validator gate re-checks its
             // shape — the emittable routine-chain set is pinned mechanically here rather than
             // by classifier prose. A routine-bearing path carries exactly one routine node
             // (chains with more land as typed Deferred, never on this leaf; the emitter's
@@ -570,7 +570,7 @@ public sealed interface ChildField extends OutputField
                 // empty (the classifier rejects the uncorrelated combination as
                 // DirectiveConflict). Table-gated: whether these should hold universally is an
                 // in-flight refinement question, not assumed — widening to Record would add
-                // unaudited checks (R432).
+                // unaudited checks.
                 long routineNodes = joinPath.stream()
                     .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
                     .count();
@@ -647,7 +647,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * The {@code @lookupKey} twin of {@link BatchedTableField} (R432): a DataLoader-batched keyed
+ * The {@code @lookupKey} twin of {@link BatchedTableField}: a DataLoader-batched keyed
      * re-query anchor whose SELECT is additionally narrowed by a {@code @lookupKey} VALUES join.
      * One leaf for both parent backings, gated on the stored {@link SourceShape}; the divergence
      * between the pre-merge twins was a strict subset of the non-lookup pair's (same mint/fetcher
@@ -721,7 +721,7 @@ public sealed interface ChildField extends OutputField
      * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the directive
      * exists to bind a developer-authored jOOQ table method, which by construction returns a
      * generated jOOQ table class. {@link TableMethodDirectiveResolver} rejects any other return
-     * shape as a schema error (R43).
+ * shape as a schema error.
      */
     record TableMethodField(
         String parentTypeName,
@@ -823,7 +823,7 @@ public sealed interface ChildField extends OutputField
      * the accessor-discovered hub on the record-backed arm — resolved at the same classification
      * site as the key. The batched rows methods read
      * {@code Tables.<OWNER>.<COL>.getDataType()} off it so converter-backed parent keys bind
-     * through the column's registered jOOQ Converter at the DB type (R413).
+ * through the column's registered jOOQ Converter at the DB type.
      */
     record InterfaceField(
         String parentTypeName,
@@ -949,7 +949,7 @@ public sealed interface ChildField extends OutputField
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
         }
         /**
-         * R204: although the service method returns the typed {@code XRecord} (or
+ * Although the service method returns the typed {@code XRecord} (or
          * {@code List<XRecord>}) per the service-producer-strict-return contract, the typed
          * record IS-A jOOQ {@code Record} and the @table-bound child datafetchers read columns
          * by name through the generic {@code Record} interface. The consumer-level identity is
@@ -1008,7 +1008,7 @@ public sealed interface ChildField extends OutputField
          * the per-key {@code V} is peeled off the reflected outer return type on
          * {@link MethodRef#returnType()} via {@link RowsMethodShape#perKeyFromOuter}, so the
          * rows method's declared type is the flat {@code Map<K, V>} matching the service contract
-         * rather than a doubly-nested {@code Map<K, Map<K, V>>} (R364). Falls back to the whole
+ * rather than a doubly-nested {@code Map<K, Map<K, V>>}. Falls back to the whole
          * reflected type only when the shape isn't peelable, which
          * {@code ServiceDirectiveResolver.validateChildServiceReturnType} rejects at classify time.
          */
@@ -1019,7 +1019,7 @@ public sealed interface ChildField extends OutputField
             // can't name V from the schema, but the service method already declares the outer
             // Map<K, V> / List<V>, so peel V off it. Handing back the whole map instead let
             // outerRowsReturnType wrap it once more, emitting Map<K, Map<K, V>> that doesn't compile
-            // (R364). Falls back to the reflected outer type only when the shape isn't peelable, which
+            //. Falls back to the reflected outer type only when the shape isn't peelable, which
             // the resolver's validateChildServiceReturnType now rejects at classify time. Other
             // null-perKey returns (a backing-less ResultReturnType) keep the legacy whole-type fallback.
             if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
@@ -1073,7 +1073,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * R329 — the single data field on an {@code @service} record-composite carrier payload. The
+ * The single data field on an {@code @service} record-composite carrier payload. The
      * {@code @service} method returns a consumer-authored composite (a POJO bundling several jOOQ
      * records, e.g. one {@code FilmRecord} plus a {@code List<ActorRecord>}) as
      * {@code List<Composite>} (list arrival) or one {@code Composite} (single arrival), optionally

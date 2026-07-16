@@ -171,7 +171,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         }
 
         /**
-         * R204: two or more {@link OutputField} producers reach the same SDL return type with
+ * Two or more {@link OutputField} producers reach the same SDL return type with
          * disagreeing {@link DomainReturnType} arms. Each producer's emitted resolver puts a
          * different Java value at {@code env.getSource()} for that SDL type's child datafetchers;
          * the generator commits to one Java type per child-field coord at emit time, so whichever
@@ -227,7 +227,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         }
 
         /**
-         * R453: a sort enum bound to an {@code @orderBy} argument carries one or more values that
+ * A sort enum bound to an {@code @orderBy} argument carries one or more values that
          * declare neither {@code @order} nor {@code @index}. Each such value would be silently
          * skipped by {@link no.sikt.graphitron.rewrite.OrderByResolver}, producing no
          * {@link OrderBySpec.NamedOrder}; a request selecting only unannotated values then generates

@@ -110,7 +110,7 @@ public final class FetcherEmitter {
      *
      * <p>Single home for the predicate so the two consumers that fork on it — the registration-site
      * routing in {@code FetcherRegistrationsEmitter} and the DataLoader-method emission in
-     * {@code TypeFetcherGenerator} — cannot drift (R268).
+ * {@code TypeFetcherGenerator} — cannot drift.
      */
     public static boolean hasWrapperArmErrors(List<? extends GraphitronField> fields) {
         return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField ef
@@ -121,7 +121,7 @@ public final class FetcherEmitter {
      * Whether a nested object type owns any fetcher, i.e. any classified field. Every classified
      * field {@link #bind}s to a fetcher (a reified read or a method-backed reference), so a nested
      * type owning one gets its own {@code <Type>Fetchers} class and the registration references
-     * into it (R303). Single home for the gate so {@code FetcherRegistrationsEmitter.nestedBody}
+ * into it. Single home for the gate so {@code FetcherRegistrationsEmitter.nestedBody}
      * (which references the class) and {@code TypeFetcherGenerator.collectNestedFetcherClasses}
      * (which emits it) cannot drift.
      */
@@ -133,7 +133,7 @@ public final class FetcherEmitter {
      * Whether {@code field} would resolve to graphql-java's {@code PropertyDataFetcher} (a property
      * read off the source object) rather than a graphitron-emitted fetcher. Under an
      * {@code Outcome} wrapper this is a silent runtime hole: the read would land on the
-     * {@code Outcome} object itself rather than arm-switching. The emit-time source (R268) is
+ * {@code Outcome} object itself rather than arm-switching. The emit-time source is
      * an {@code ErrorsField} on the {@code PayloadAccessor} transport, which emits
      * {@code PropertyDataFetcher.fetching} in {@link #bindRaw}. The validator consults
      * this predicate so it keys on the emitter's own dispositions rather than re-deriving them.
@@ -169,7 +169,7 @@ public final class FetcherEmitter {
      * @param resultType    the parent type's class backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
      * @param sourceIsOutcome {@code true} when this field is an immediate child of an outcome type
-     *                        that has flipped to the {@code Outcome} wrapper transport (R244): its
+ * that has flipped to the {@code Outcome} wrapper transport: its
      *                        fetcher receives an {@code Outcome} as {@code env.getSource()}, so a
      *                        data-channel field's read must unwrap {@code Success} first and resolve
      *                        null on the {@code ErrorList} arm. The errors field itself is exempt
@@ -181,7 +181,7 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, boolean sourceIsOutcome) {
-        // R268: an immediate child of a flipped Outcome payload receives a non-null Outcome as
+        // An immediate child of a flipped Outcome payload receives a non-null Outcome as
         // env.getSource(). Three structural roles, only one of which is an inline arm-switch here:
         //   - the errors field reads ErrorList.errors via its WrapperArm transport (the raw emitter
         //     already handles it, so it falls through);
@@ -221,7 +221,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * R244/R268: an inline-resolved data-channel child of a flipped outcome type reads off
+ * An inline-resolved data-channel child of a flipped outcome type reads off
      * {@code Success.value()} of the non-null {@code Outcome} source and resolves null on the
      * {@code ErrorList} arm. The success-arm read is the field's <em>own</em> read, source-bound to
      * {@code success.value()} instead of {@code env.getSource()} — for record-backed accessors via
@@ -231,7 +231,7 @@ public final class FetcherEmitter {
     private static FetcherBinding armSwitchedInlineDataFetcher(
             GraphitronField field, ClassName fetchersClass,
             GraphitronType.ResultType resultType, String outputPackage) {
-        // Statement form (R303): narrow Success up front, then return the field's own read off
+        // Statement form: narrow Success up front, then return the field's own read off
         // success.value(); resolve null on the ErrorList arm. Source-only unless the field reads a
         // class-backed accessor that injects the environment.
         boolean envDependent = isEnvDependentAccessorRead(field, resultType);
@@ -366,7 +366,7 @@ public final class FetcherEmitter {
             return sourceOnly(field.name(), fetchersClass, outputPackage, CodeBlock.of("return source;\n"));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
-            // R156: data field on a payload-returning DELETE carrier with an ID-typed data field.
+            // Data field on a payload-returning DELETE carrier with an ID-typed data field.
             // The mutation fetcher produced a Record (single) or Result<Record> (bulk) from the
             // PK-only RETURNING; this fetcher reads PK column(s) off each row and runs them
             // through the resolved NodeId encoder. No follow-up SELECT — the row is gone.
@@ -374,7 +374,7 @@ public final class FetcherEmitter {
                 buildSingleRecordIdFromReturningFetcherValue(idCarrier));
         }
         if (field instanceof ChildField.SingleRecordIdField serviceIdCarrier) {
-            // R275: ID-element data field on an @service source-record carrier. The producer
+            // ID-element data field on an @service source-record carrier. The producer
             // returned the typed XRecord (ONE) or List<XRecord> (MANY) verbatim, optionally
             // wrapped in Outcome (errors-bearing payload); this fetcher reads the node-key
             // column(s) off each in-memory record and runs them through the resolved NodeId
@@ -383,7 +383,7 @@ public final class FetcherEmitter {
                 buildSingleRecordIdFetcherValue(serviceIdCarrier, outputPackage));
         }
         if (field instanceof ChildField.RecordCompositeField composite) {
-            // R329: the @service record-composite carrier's data field. The producer returned the
+            // The @service record-composite carrier's data field. The producer returned the
             // consumer composite(s) (one Composite for single arrival, List<Composite> for list
             // arrival) verbatim, optionally wrapped in Outcome (errors-bearing payload); this fetcher
             // narrows Outcome.Success then returns the composite(s) straight off env.getSource() — no
@@ -411,7 +411,7 @@ public final class FetcherEmitter {
                 case ChildField.Transport.LocalContext ignored ->
                     envDependent(field.name(), fetchersClass,
                         CodeBlock.of("return env.getLocalContext();\n"));
-                // R244/R275: the errors list rides on the Outcome.ErrorList arm of the non-null
+                // The errors list rides on the Outcome.ErrorList arm of the non-null
                 // Outcome source. On the Success arm there are no errors, so resolve null (not
                 // List.of()) to honour the errors field's SDL nullability on the wire (admissio
                 // parity). The NonNullableErrorsField classify-time rule guarantees the field is
@@ -527,7 +527,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * R275 — data-fetcher value for a {@link ChildField.SingleRecordIdField}, the ID-element
+ * Data-fetcher value for a {@link ChildField.SingleRecordIdField}, the ID-element
      * data field on an {@code @service} source-record carrier. Mirrors
      * the {@link #emitRecordSourceLocal} source handling — the same
      * {@code SourceEnvelope} fork (narrow {@code Outcome.Success} under {@code OUTCOME_SUCCESS},
@@ -587,7 +587,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * R329 — data-fetcher value for a {@link ChildField.RecordCompositeField}: the source-passthrough
+ * Data-fetcher value for a {@link ChildField.RecordCompositeField}: the source-passthrough
      * projection of an {@code @service} carrier's composite record(s). Mirrors
      * {@link #emitRecordSourceLocal}'s envelope fork (narrow {@code Outcome.Success} under
      * {@code OUTCOME_SUCCESS}, read {@code env.getSource()} verbatim under {@code DIRECT}), binding the
@@ -614,7 +614,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * R156 — data-fetcher value for a {@link ChildField.SingleRecordIdFieldFromReturning}.
+ * Data-fetcher value for a {@link ChildField.SingleRecordIdFieldFromReturning}.
      * Reads the resolved PK column(s) off {@code env.getSource()} and runs them through the
      * pre-resolved {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} encoder helper.
      * Single-shaped wrapper emits {@code (env) -> encode<Type>(record.get(pkCol1), ...)};

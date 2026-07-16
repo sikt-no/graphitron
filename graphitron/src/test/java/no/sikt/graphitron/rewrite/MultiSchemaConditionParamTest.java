@@ -12,7 +12,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R442: the R379 Check-2 concrete-condition-param check must match by jOOQ class identity, not by a
+ * The R379 Check-2 concrete-condition-param check must match by jOOQ class identity, not by a
  * bare-vs-qualified name string compare. Over the multi-schema fixture whose {@code event} table
  * collides across {@code multischema_a} / {@code multischema_b}, a concrete condition-method table
  * parameter typed with the <em>correct</em> generated jOOQ class must classify green even when the

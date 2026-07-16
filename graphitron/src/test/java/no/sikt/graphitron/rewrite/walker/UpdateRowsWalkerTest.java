@@ -137,7 +137,7 @@ class UpdateRowsWalkerTest {
 
     @Test
     void selfFkReference_routesAllColumnsToSet_sharedKeyColumnInBothPartitions() {
-        // R354: email's PK is (mailbox_id, message_no). `id` (own composite NodeId) covers the PK
+        // Email's PK is (mailbox_id, message_no). `id` (own composite NodeId) covers the PK
         // → WHERE; `inReplyTo` is a self-FK reference lifting (mailbox_id, in_reply_to_no) — it
         // routes WHOLLY to SET even though mailbox_id is a PK member, because a self-FK points at a
         // sibling row, never this row's identity. mailbox_id then appears in BOTH partitions (the
@@ -173,7 +173,7 @@ class UpdateRowsWalkerTest {
 
     @Test
     void selfFkReference_keyColumnReachableOnlyViaSelfFk_rejectsNoUniqueKeyCoverage() {
-        // R354: coverage is computed over the non-self-FK columns only. Here messageNo covers half
+        // Coverage is computed over the non-self-FK columns only. Here messageNo covers half
         // the PK; mailbox_id is reachable ONLY through the self-FK `inReplyTo`, so the identity
         // columns {message_no, subject} do not cover (mailbox_id, message_no). A self-FK cannot pin
         // the row it lives on, so coverage correctly fails.
@@ -192,7 +192,7 @@ class UpdateRowsWalkerTest {
 
     @Test
     void selfFkReference_formerlyBulkRejected_nowAdmitsAndRoutesAllSet() {
-        // R342: the bulk self-FK reject (R354's Stage 2b) is gone. The walker is cardinality-independent —
+        // The bulk self-FK reject (R354's Stage 2b) is gone. The walker is cardinality-independent —
         // a self-FK @reference routes its lifted columns wholly to SET regardless of the @table arg's list
         // shape (the bulk vs single-row split is the emitter's). This is the same email shape the bulk
         // reject used to fence off; it now admits, with the shared mailbox_id in both partitions for the
@@ -221,7 +221,7 @@ class UpdateRowsWalkerTest {
 
     @Test
     void decodeInvolvingSetOverlap_admitsWithoutPlainCollision() {
-        // R342: two SET writers on one column where at least one is a @nodeId decode (the
+        // Two SET writers on one column where at least one is a @nodeId decode (the
         // endorsement-style overlap) is admitted — NOT a PlainColumnCollision — and deferred to the
         // emit-time value agreement the bulk SET dedup runs. (Two plain writers on one SET column is the
         // Stage 6b collision reject; a decode among them lifts it to the runtime agreement instead.)
@@ -375,7 +375,7 @@ class UpdateRowsWalkerTest {
     }
 
     private static InputField.CompositeColumnReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {
-        // Self-FK reference (selfReference = true): routes all lifted columns to SET (R354).
+        // Self-FK reference (selfReference = true): routes all lifted columns to SET.
         return new InputField.CompositeColumnReferenceField("In", name, loc(), "ID", true, false,
             lifted, List.of(), lifted, true, Optional.empty(), dummyDecode(lifted));
     }

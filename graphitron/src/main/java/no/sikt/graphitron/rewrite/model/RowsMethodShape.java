@@ -112,7 +112,7 @@ public final class RowsMethodShape {
      * it (rather than handing back the whole map) keeps {@code ServiceRecordField.elementType()}'s
      * value out of {@code outerRowsReturnType}'s wrapping path, so the rows method's declared type is the flat
      * {@code Map<K, V>} that matches the service contract instead of a doubly-nested
-     * {@code Map<K, Map<K, V>>} (R364).
+ * {@code Map<K, Map<K, V>>}.
      *
      * <p>Returns {@code null} when {@code outer} isn't the parameterized container the
      * {@code (isMapped, isList)} pair expects (a {@code List} where a {@code Map} is required, a

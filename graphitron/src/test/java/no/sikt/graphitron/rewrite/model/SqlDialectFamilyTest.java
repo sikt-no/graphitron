@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
- * R63: unit coverage of {@link SqlDialectFamily#fromDialectName(String)}, the boundary mapping the
+ * Unit coverage of {@link SqlDialectFamily#fromDialectName(String)}, the boundary mapping the
  * generated dialect guard consults at request time. The critical rows mirror jOOQ 3.20.11's
  * {@code SQLDialect.family()} collapse for the two families graphitron gates DML on: {@code POSTGRES}
  * (bulk UPDATE requires it) and {@code ORACLE} (UPSERT rejects it). The name-prefix approach covers

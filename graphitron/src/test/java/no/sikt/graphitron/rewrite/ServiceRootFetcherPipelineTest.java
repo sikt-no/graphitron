@@ -61,7 +61,7 @@ class ServiceRootFetcherPipelineTest {
             }
             """);
 
-        // R256: the wider-return failure surfaces the shared ReflectionError.ReturnTypeMismatch arm
+        // The wider-return failure surfaces the shared ReflectionError.ReturnTypeMismatch arm
         // (TABLE_METHOD context) end-to-end through the validator, carrying its stable lspCode.
         var typed = errors.stream()
             .map(ValidationError::rejection)
@@ -85,7 +85,7 @@ class ServiceRootFetcherPipelineTest {
             }
             """);
 
-        // R256: the strict-return failure surfaces the shared ReflectionError.ReturnTypeMismatch
+        // The strict-return failure surfaces the shared ReflectionError.ReturnTypeMismatch
         // arm (SERVICE context) end-to-end through the validator, carrying its stable lspCode.
         var typed = errors.stream()
             .map(ValidationError::rejection)
@@ -100,7 +100,7 @@ class ServiceRootFetcherPipelineTest {
     }
 
     /**
-     * R127: a root {@code @service} field with a {@code [Film!]!} return type accepts a
+ * A root {@code @service} field with a {@code [Film!]!} return type accepts a
      * developer method that returns {@code java.util.List<FilmRecord>} as well as the
      * historical {@code org.jooq.Result<FilmRecord>}. Pipeline-tier positive witness for
      * the looser pair check in
@@ -121,7 +121,7 @@ class ServiceRootFetcherPipelineTest {
     }
 
     /**
-     * R127: a root {@code @service} on a {@code [Film!]!} return whose method returns
+ * A root {@code @service} on a {@code [Film!]!} return whose method returns
      * neither {@code Result<FilmRecord>} nor {@code List<FilmRecord>} rejects with both
      * accepted shapes named, the actual mismatched shape named, and the same
      * {@code "service method could not be resolved — "} prefix the Single-arm rejection
@@ -148,7 +148,7 @@ class ServiceRootFetcherPipelineTest {
     }
 
     /**
-     * R238: a {@code @service} method with two {@code DSLContext} params in the same round
+ * A {@code @service} method with two {@code DSLContext} params in the same round
      * surfaces the walker's typed {@code ServiceMethodCallError.MultipleDslContextSlots} arm
      * end-to-end through the validator. The {@link ValidationError#rejection} preserves the
      * typed arm (rather than collapsing to {@code Rejection.AuthorError.Structural}) so the
@@ -177,7 +177,7 @@ class ServiceRootFetcherPipelineTest {
 
     @Test
     void serviceOnOverloadedMethod_surfacesAsTypedAmbiguousMethod() {
-        // R256: a @service pointing at an overloaded method name surfaces the shared
+        // A @service pointing at an overloaded method name surfaces the shared
         // ReflectionError.AmbiguousMethod arm instead of silently binding the first declaration.
         var errors = validate("""
             type Film @table(name: "film") { title: String }
@@ -200,7 +200,7 @@ class ServiceRootFetcherPipelineTest {
 
     @Test
     void serviceOnMultiArgCtorHolder_resolvesWithoutHolderRejection() {
-        // R256: an instance @service whose holder takes (DSLContext, tenantId) resolves when
+        // An instance @service whose holder takes (DSLContext, tenantId) resolves when
         // tenantId is a declared context argument — no InstanceHolderUnconstructible rejection.
         var errors = validate("""
             type Film @table(name: "film") { title: String }

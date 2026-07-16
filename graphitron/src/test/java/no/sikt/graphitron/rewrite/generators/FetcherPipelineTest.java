@@ -103,13 +103,13 @@ class FetcherPipelineTest {
                 c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
             }
             """);
-        // R303: the PropertyField read is reified as a named source-only method on the class.
+        // The PropertyField read is reified as a named source-only method on the class.
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("value");
     }
 
     @Test
     void propertyField_onBackedRecord_wrapsAccessorReadInLightFetcher() {
-        // R276: a standalone untyped @record no longer yields an unbacked PropertyDataFetcher (it
+        // A standalone untyped @record no longer yields an unbacked PropertyDataFetcher (it
         // is a NestingType now). R303: a reflection-backed record type reads its scalar field
         // through the (zero-arg) record accessor, reified as a named source-only method and
         // registered wrapped in LightFetcher (COLUMN_FETCHER kind), not an inline lambda.
@@ -153,7 +153,7 @@ class FetcherPipelineTest {
                 fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
             }
             """);
-        // R303: the RecordField read is reified as a named source-only method on the class.
+        // The RecordField read is reified as a named source-only method on the class.
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("stats");
     }
 
@@ -238,7 +238,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }
 
-    // R276: the legacy "record-backed payload with a developer-owned errors slot read via
+    // The legacy "record-backed payload with a developer-owned errors slot read via
     // PropertyDataFetcher" tests were deleted. That passthrough required a backed payload with no
     // producer (the removed @record-className idiom); a @service-produced errors payload now rides
     // the R244 Outcome WrapperArm transport, covered by SAK_DISPATCH_SDL / the OUTCOME_*_SDL tests
@@ -360,7 +360,7 @@ class FetcherPipelineTest {
 
     @Test
     void outcomePayload_columnDataField_armSwitchesInlineReadOnSuccessValue() {
-        // R303: the arm-switch read is reified onto FilmRecordPayloadFetchers as a named source-only
+        // The arm-switch read is reified onto FilmRecordPayloadFetchers as a named source-only
         // method (narrow Success, return the column off success.value(); null on the ErrorList arm)
         // and registered wrapped in LightFetcher (COLUMN_FETCHER kind) — not a bare column read off
         // the Outcome object and not an IllegalStateException at generation. Building the spec proves
@@ -388,7 +388,7 @@ class FetcherPipelineTest {
 
     // ===== R154 §2: mutable-bean payload shape admission =====
     //
-    // R244: serviceMutation_setterShapePayload_emitsSetterFactory,
+    // ServiceMutation_setterShapePayload_emitsSetterFactory,
     // serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged, and
     // serviceMutation_bothShapesPresent_prefersCtorFactory deleted. They pinned the catch-arm
     // payload-factory lambda (ctor / setter construction shapes), which @service fields no longer
@@ -398,7 +398,7 @@ class FetcherPipelineTest {
     // the ChannelCatchArmEmitter unit test plus the execution-tier round-trip; the construction-shape
     // admission itself stays covered by PayloadConstructionShapeTest and retires in commit 4.
 
-    // R287: the @table-return DELETE path is removed (the row is gone after the statement; RETURNING
+    // The @table-return DELETE path is removed (the row is gone after the statement; RETURNING
     // carries only the PK, so a full @table projection is impossible). The former
     // dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts pipeline proof of that path
     // retires with it; the ID-return DELETE emission is covered by the encoded-arm pipeline/execution
@@ -475,7 +475,7 @@ class FetcherPipelineTest {
 
     @Test
     void dmlDeleteField_bulkInput_emitsRowTupleInWithStreamMap() {
-        // R287: a bulk DELETE returns [ID!]! (the encoded-PK arm); the @table-return ([Film!]!) path
+        // A bulk DELETE returns [ID!]! (the encoded-PK arm); the @table-return ([Film!]!) path
         // is removed. Film is @node so the encoder resolves. The bulk DELETE SQL chain (row-tuple IN
         // over the stream-mapped input) is the structural subject here, independent of the terminator.
         var sdl = """
@@ -774,7 +774,7 @@ class FetcherPipelineTest {
 
     @Test
     void serviceField_dataFetcherReturnsCompletableFutureListProjectedRecord() {
-        // R285: ServiceTableField lifts the service result back through a $fields re-projection,
+        // ServiceTableField lifts the service result back through a $fields re-projection,
         // so the loader value is the projected org.jooq.Record, not the developer-returned XRecord.
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
@@ -797,7 +797,7 @@ class FetcherPipelineTest {
 
     @Test
     void serviceField_mappedContainer_rowsMethodReturnsMapOfProjectedRecord() {
-        // R285: mapped-container sibling of the positional case above. Set keys + Map return
+        // Mapped-container sibling of the positional case above. Set keys + Map return
         // classify the loader as MAPPED_SET; the lifted rows method returns
         // Map<Row1<Integer>, List<Record>> — the projected Record (lift routing), keyed back to
         // each parent. Together the two tests cover both loader containers through the lift.
@@ -835,7 +835,7 @@ class FetcherPipelineTest {
 
     @Test
     void serviceField_enumLeaf_mapped_rowsMethodReturnsFlatMapNotDoublyNested() {
-        // R364: a non-built-in scalar leaf (enum, or an unregistered custom scalar) used to fall
+        // A non-built-in scalar leaf (enum, or an unregistered custom scalar) used to fall
         // the per-key element type back to the service method's whole Map<KeyRecord, V>, which
         // outerRowsReturnType then wrapped once more — emitting Map<Row1<Integer>,
         // Map<Row1<Integer>, String>> and failing to compile. The enum leaf is the DB text

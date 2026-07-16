@@ -98,7 +98,7 @@ class TypeFetcherGeneratorTest {
             .hasMessageContaining("classifier invariant violated");
     }
 
-    // ===== ColumnField with parentTable → reified into a named source-only read method (R303) =====
+    // ===== ColumnField with parentTable → reified into a named source-only read method =====
 
     @Test
     void columnFetcher_withParentTable_reifiesPerFieldMethod() {
@@ -110,7 +110,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void columnFetcher_withParentTable_reifiesExactlyTheReadMethod() {
-        // R303: the column read is the only method on the class; the registration wraps the
+        // The column read is the only method on the class; the registration wraps the
         // reference in LightFetcher (asserted at the pipeline tier).
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
@@ -338,7 +338,7 @@ class TypeFetcherGeneratorTest {
     }
 
     // ===== @service field with TableBoundReturnType =====
-    // R285: ChildField.ServiceTableField lifts the service result back through a $fields-projecting
+    // ChildField.ServiceTableField lifts the service result back through a $fields-projecting
     // identity re-projection, so the DataLoader value (and rows-method per-key value) is the
     // projected org.jooq.Record carrying the multiset columns, not the developer-returned XRecord.
 
@@ -1100,7 +1100,7 @@ class TypeFetcherGeneratorTest {
             null,
             List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler(Optional.empty())),
             List.of());
-        // R244: @service outcome fields carry ErrorChannel.Mapped; the validator pre-step is gated
+        // @service outcome fields carry ErrorChannel.Mapped; the validator pre-step is gated
         // on Mapped and emits the Outcome.ErrorList early return.
         var channel = new ErrorChannel.Mapped(List.of(validationErr), "SAK_PAYLOAD");
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
@@ -2174,7 +2174,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void childInterfaceField_listForm_emitsOneDataLoaderRegistrationAndOneRowsMethod() {
-        // R102: list-arm child fetcher registers a DataLoader keyed on the parent table's PK
+        // List-arm child fetcher registers a DataLoader keyed on the parent table's PK
         // (Row1<Timestamp> here) and delegates to a rows<Field>(keys, env) batch loader. The
         // main fetcher contains no per-parent env.getSource() read against participant tables;
         // all parent-side reads happen inside the key-extraction helper exactly once.
@@ -2663,7 +2663,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void inputBeanInstantiationEmitter_recordSingularHelper_boxedPrimitiveFieldEmitsWrapperCast() {
-        // R155: post-fix, a record component typed `int` reaches the emitter as
+        // Post-fix, a record component typed `int` reaches the emitter as
         // javaElementTypeName = "java.lang.Integer". The emitter must succeed (ClassName.bestGuess
         // accepts the wrapper FQN), declare an Integer-typed local, cast raw.get(...) to Integer,
         // and pass the local positionally to the canonical record constructor (which autoboxes).
@@ -2679,7 +2679,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void inputBeanInstantiationEmitter_javaBeanSingularHelper_boxedPrimitiveFieldEmitsWrapperCast() {
-        // R155: post-fix mirror of the record case for the JavaBean path. A `void setActive(boolean)`
+        // Post-fix mirror of the record case for the JavaBean path. A `void setActive(boolean)`
         // setter reaches the emitter as javaElementTypeName = "java.lang.Boolean". The emitter must
         // declare a Boolean local, cast raw.get(...) to Boolean, and pass the local to setActive
         // (which auto-unboxes to the primitive boolean parameter).

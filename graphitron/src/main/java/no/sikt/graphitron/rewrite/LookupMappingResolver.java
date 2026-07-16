@@ -76,7 +76,7 @@ final class LookupMappingResolver {
                         cca.name(), cca.list(), nodeIdExtraction, bindings));
                 }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // R130: the TIA's groups may be a mix of MapGroup (scalar @lookupKey on
+                    // The TIA's groups may be a mix of MapGroup (scalar @lookupKey on
                     // ColumnField, possibly NodeIdDecodeKeys-extracted) and DecodedRecordGroup
                     // (composite-PK @lookupKey on CompositeColumnField). MapGroups flatten into
                     // one MapInput rooted at the outer arg name (slot order = group order, then

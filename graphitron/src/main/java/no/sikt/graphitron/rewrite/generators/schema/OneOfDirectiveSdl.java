@@ -5,7 +5,7 @@ import graphql.schema.GraphQLSchema;
 
 /**
  * Codegen-side source of truth for reinstating the GraphQL {@code @oneOf} directive
- * <em>definition</em> in the federation SDL outputs (R283).
+ * <em>definition</em> in the federation SDL outputs.
  *
  * <p>When a consumer schema applies the built-in {@code @oneOf} directive on an input type,
  * graphitron's federation outputs print the <em>application</em> (<code>input Foo @oneOf</code>)

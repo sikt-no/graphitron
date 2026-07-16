@@ -13,7 +13,7 @@ import java.util.List;
  * {@code <outputPackage>.schema.GraphitronClientException}, once per code-generation run.
  *
  * <p>The stably-named marker for a <em>client</em> mistake surfaced from a generated fetcher: a
- * malformed or wrong-type {@code @nodeId} filter value (R378) throws it carrying a human-readable
+ * malformed or wrong-type {@code @nodeId} filter value throws it carrying a human-readable
  * message. Two roles, both load-bearing:
  *
  * <ul>
@@ -23,7 +23,7 @@ import java.util.List;
  *       instead of redacting it to a correlation id. Genuine internal faults, which are not
  *       instances of this type, still redact.</li>
  *   <li><b>Stable {@code @error} anchor.</b> When bare-entity query fields gain a payload object
- *       that can host {@code @error} handlers (R397), a {@code GENERIC} handler matching this
+ * that can host {@code @error} handlers, a {@code GENERIC} handler matching this
  *       class routes the same throw through the channel with zero change at the throw site
  *       ({@code ExceptionMapping.match} is {@code instanceof}). Future client-error producers
  *       subtype it.</li>

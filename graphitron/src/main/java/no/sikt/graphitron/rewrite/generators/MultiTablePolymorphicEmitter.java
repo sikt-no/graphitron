@@ -152,7 +152,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Route (a) entry point (R365): a root {@code @service} field returning a multitable
+ * Route (a) entry point: a root {@code @service} field returning a multitable
      * interface/union. Unlike {@link #emitMethods}, there is no stage-1 discovery UNION ALL — the
      * service hands back the concrete PK-populated {@code TableRecord}s directly, so the Java type
      * of each returned record <em>is</em> the discriminator. The main fetcher calls the service,
@@ -181,7 +181,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Route (a) main fetcher (R365). Emits the service call, normalises its return into a flat
+ * Route (a) main fetcher. Emits the service call, normalises its return into a flat
      * {@code List<Record>} in input order, dispatches each record on its runtime class against the
      * participant set into {@code (idx, pks)} buckets, then dispatches per typename to the shared
      * stage-2 {@link #buildPerTypenameSelect} helper. The record-class dispatch is the discriminator
@@ -256,7 +256,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Builds the route (a) record-class dispatch (R365): groups the service-returned
+ * Builds the route (a) record-class dispatch: groups the service-returned
      * {@code records} into {@code byType} {@code (idx, pks)} buckets by matching each record's
      * runtime class against each participant's {@code recordClass}, then dispatches per typename to
      * the shared stage-2 {@link #buildPerTypenameSelect} helper (scattering into {@code dispatched}).
@@ -306,7 +306,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Extracted service-call normalise snippet (R405): declares {@code List<Record> records} holding
+ * Extracted service-call normalise snippet: declares {@code List<Record> records} holding
      * the service return flattened into input order. Shared by {@link #buildServiceMainFetcher}
      * (route (a)) and {@link #buildServiceTableInterfaceFetcher} (R405 single-table interface) so the
      * "call the service, flatten to {@code List<Record>} in input order" logic lives in one place.
@@ -417,7 +417,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R405: emits the by-PK row-value IN condition off the normalised {@code records} list. Builds a
+ * Emits the by-PK row-value IN condition off the normalised {@code records} list. Builds a
      * {@code List<RowN>} of the shared table's PK values per service record (input order) and
      * {@code DSL.row(pkCols).in(pkRows)}. Row-value IN keeps single-column and composite PKs uniform.
      */
@@ -445,7 +445,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R405: re-maps the fetched rows back to input positions by PK. Builds a {@code Map<List<Object>,
+ * Re-maps the fetched rows back to input positions by PK. Builds a {@code Map<List<Object>,
      * Record>} keyed on the shared table's PK values, then walks the service {@code records} in order,
      * placing each matched fetched row into the payload at its input position (dropping unmatched PKs
      * per the drop contract). The by-PK re-map is an internal round-trip detail and does not put null
@@ -502,7 +502,7 @@ public final class MultiTablePolymorphicEmitter {
      * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} (resolved single-hop FK
      *                              column pairs) from the parent table to each
      *                              {@link ParticipantRef.TableBound} participant. The classifier
-     *                              admits only the auto-discovered single-hop FK shape (R452).
+ * admits only the auto-discovered single-hop FK shape.
      * @param parentSourceKey       parent-object source-side key, projected from the field's
      *                              parent classification. Through R102 the classifier produces
      *                              only catalog-FK / {@code ColumnRead}-reader parent keys
@@ -511,7 +511,7 @@ public final class MultiTablePolymorphicEmitter {
      * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()},
      *                              threaded from the field's classification site so the batched
      *                              rows method's VALUES cells and JOIN lookups can bind through
-     *                              the key columns' registered Converter DataTypes (R413).
+ * the key columns' registered Converter DataTypes.
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
      *                              threaded into {@link GeneratorUtils#buildRecordParentKeyExtraction}
      *                              so {@code env.getSource()} is cast and read against the right
@@ -1030,7 +1030,7 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             // Root connection has no parent-FK restriction, so the branch WHERE is the @field filter
-            // predicate alone (R363). buildStage1ConnectionBlock previously emitted no per-branch WHERE.
+            // predicate alone. buildStage1ConnectionBlock previously emitted no per-branch WHERE.
             CodeBlock branchWhere = branchFilterWhere(ctx, participant, participantFilters, registry, plumbing);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", branchProjection(participant, alias));
@@ -1182,7 +1182,7 @@ public final class MultiTablePolymorphicEmitter {
         var correlation = participantJoinPaths.get(participant.typeName());
         // null only for the root-fetcher form (empty map) or a participant absent from the map;
         // both are legitimate "no parent WHERE". A present entry carries non-empty FK slots by
-        // construction (R452), so there is no unsupported-shape arm to guard here.
+        // construction, so there is no unsupported-shape arm to guard here.
         if (correlation == null) return null;
         var slots = keyTupleWhereSlots(correlation);
 
@@ -1275,7 +1275,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Builds the {@code @field} filter predicate for one stage-1 branch by ANDing each lowered
-     * {@link WhereFilter} as a condition term bound to the branch alias {@code stage1_<Type>} (R363),
+ * {@link WhereFilter} as a condition term bound to the branch alias {@code stage1_<Type>},
      * or {@code null} when the participant has no filters. Reuses
      * {@link FkTargetConditionEmitter#emitTerm} so a participant's filters bind to its own table
      * exactly as the single-table fetcher path does — each participant's filters were lowered against
@@ -1313,7 +1313,7 @@ public final class MultiTablePolymorphicEmitter {
      * filter carries a call param whose extraction emits an unchecked cast
      * ({@link CallParam#emitsUncheckedCast()} — the model owns that fact). Today that is a list-typed
      * {@link CallSiteExtraction.NestedInputField} extracting as {@code (List<X>) map.get(key)} at the
-     * branch call site (R383). The single-table {@code QueryConditionsGenerator} folds over the same
+ * branch call site. The single-table {@code QueryConditionsGenerator} folds over the same
      * model predicate for its {@code <field>Condition} method, so the two paths cannot drift. Stamped
      * only when such a param is present, at the narrowest enclosing member.
      */
@@ -1446,7 +1446,7 @@ public final class MultiTablePolymorphicEmitter {
      * and dispatch {@code loader.loadMany(keys, …)}, then concat the one-bucket-per-element
      * {@code List<List<Record>>} into the field's single flat {@code List<Record>}. Without this
      * fork the MANY arm emitted {@code loader.load(key, env)} against an out-of-scope loop-local
-     * {@code key} and failed javac (R366).
+ * {@code key} and failed javac.
      */
     private static MethodSpec buildBatchedListFetcher(
             TypeFetcherEmissionContext ctx,
@@ -1764,7 +1764,7 @@ public final class MultiTablePolymorphicEmitter {
      * B4c-2 per-branch JOIN predicate: per-slot equality AND-chain
      * {@code <participant>.<slot.targetSide()>.eq(parentInput.field(<slot.sourceSide().sqlName()>, <Type>.class))}
      * across the {@link ParticipantCorrelation.KeyTupleWhere}'s resolved FK slots. Single-hop FK only — the classifier
-     * admits no other shape (R452), so the former {@code (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on()}
+ * admits no other shape, so the former {@code (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on()}
      * blind cast (an accidental {@code ClassCastException} enforcer) is gone: the carrier type makes
      * an unsupported shape unrepresentable.
      *
@@ -1786,7 +1786,7 @@ public final class MultiTablePolymorphicEmitter {
             ColumnRef parentCol = slot.sourceSide();
             ColumnRef participantCol = slot.targetSide();
             // Lookup by sqlName + the owner column's DataType so converter-backed parent keys
-            // keep faithful type metadata, matching the VALUES cell binds (R413).
+            // keep faithful type metadata, matching the VALUES cell binds.
             CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
                 parentCol.sqlName(), parentKeyOwnerTable.constantsClass(),
                 parentKeyOwnerTable.javaFieldName(), parentCol.javaName());
@@ -1845,7 +1845,7 @@ public final class MultiTablePolymorphicEmitter {
         // The parent's flattened DataFetchingFieldSelectionSet is restricted to this
         // participant's SelectedFields via PolymorphicSelectionSet.restrictTo, so the per-typename
         // SELECT projects only columns actually requested for this variant. Unfiltered selection
-        // set would over-select shared-name fields from inactive branches (R108).
+        // set would over-select shared-name fields from inactive branches.
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
         var polymorphicSelectionSet = ClassName.get(
@@ -1920,7 +1920,7 @@ public final class MultiTablePolymorphicEmitter {
      * <p>Cells are delegated to {@link ValuesJoinRowBuilder#cellsCode} (the single VALUES-cell
      * authority) so each cell binds as
      * {@code DSL.val(<scalar>, Tables.<OWNER>.<COL>.getDataType())} through the parent-key
-     * column's registered Converter (R413). The scalar extraction forks on the key's
+ * column's registered Converter. The scalar extraction forks on the key's
      * {@link SourceKey.Wrap}: {@code RecordN} keys expose {@code k.valueN()}; {@code RowN} keys
      * have no value accessors, so the value is recovered from the bind {@code Param} via the
      * per-fetcher-class {@code parentKeyCellValue} helper (emission gated in
@@ -2146,7 +2146,7 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock noChannelCatchArm(String outputPackage) {
         // Route through surfaceClientErrorOrRedact so a GraphitronClientException (e.g. a
         // malformed/wrong-type @nodeId filter id) surfaces its real message while internal faults
-        // still redact (R378); uniform with TypeFetcherGenerator's no-channel arm via the shared
+        // still redact; uniform with TypeFetcherGenerator's no-channel arm via the shared
         // ErrorRouterClassGenerator.noChannelRouterCall definition.
         return CodeBlock.of("return $L;\n",
             no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator

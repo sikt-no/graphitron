@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R233 / R343 — pipeline-tier coverage of the producer-side
+ * Pipeline-tier coverage of the producer-side
  * {@link FieldClassification#lspColumnDispatch()} switch. Drives the full classifier on a small
  * synthetic schema covering the three audience-specific arms (Resolve / Silent / FallThrough)
  * across representative permits. R343 adds the {@code TableTarget} element-table cases, where a
@@ -74,7 +74,7 @@ class LspColumnDispatchProjectionTest {
 
     @Test
     void tableTargetListFieldDispatchesResolveOnElementTable() {
-        // R343: a plain list field navigating to a child table classifies as TableTarget; its
+        // A plain list field navigating to a child table classifies as TableTarget; its
         // @defaultOrder(fields: [{name: ...}]) names a column on the element table ("actor"),
         // not the enclosing type's @table ("film_actor"). The dispatch resolves the element table.
         var snapshot = snapshotOf("""

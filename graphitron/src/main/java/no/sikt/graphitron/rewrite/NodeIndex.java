@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * R317 — pure, fixed-point reverse index over the schema's {@code @node} types. Built once by
+ * Pure, fixed-point reverse index over the schema's {@code @node} types. Built once by
  * {@link TypeBuilder#buildClassificationIndices} by directive-scanning every SDL type (a superset of
  * the reachable set, unpruned) for {@code @node}+{@code @table} objects through the same producer
  * classification uses ({@code buildTableType}) plus the catalog (the inputs {@link NodeType} itself

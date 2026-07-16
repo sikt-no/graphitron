@@ -94,7 +94,7 @@ public final class InlineTableFieldEmitter {
             // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
             // giving globally unique aliases at every depth. Every Hop (and the
             // steps) exposes targetTable() through HasTargetTable.
-            // Invariant (R379): the terminal hop's targetTable equals the field return type's
+            // Invariant: the terminal hop's targetTable equals the field return type's
             // @table, and every condition method's concretely-typed parameters match the aliases
             // passed here — both asserted at build time in BuildContext.parsePath (Check 1 / 2),
             // so terminalAlias feeds a $fields overload typed for the right table and
@@ -102,7 +102,7 @@ public final class InlineTableFieldEmitter {
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
                 ClassName jooqTableClass = ht.targetTable().tableClass();
-                // Materialization routes through the shared TableExpr switch (R435): a catalog
+                // Materialization routes through the shared TableExpr switch: a catalog
                 // hop declares Tables.X, a routine hop declares Routines.m(<bound args>) — the
                 // correlated call reads the previous node's alias (the parent at hop 0).
                 String previousAlias = i == 0 ? parentAlias : aliases.get(i - 1);
@@ -115,7 +115,7 @@ public final class InlineTableFieldEmitter {
             }
         }
 
-        // R330: declare an aliased FK-target table local per join hop for every FK-target
+        // Declare an aliased FK-target table local per join hop for every FK-target
         // @nodeId override @condition among the user filters, so buildInnerSelect can emit each as
         // a correlated EXISTS against that alias instead of mis-passing the field's own table. This
         // arm recurses (self-referential nested projections), so the SQL alias is runtime-prefixed
@@ -123,7 +123,7 @@ public final class InlineTableFieldEmitter {
         Map<WhereFilter, List<String>> fkTargetAliases =
             FkTargetConditionEmitter.declareAliases(code, tf.filters(), terminalAlias, true);
 
-        // R424: pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
+        // Pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
         // JooqConvert list arm), routed through the field's own SelectedField. Without this the arm
         // would reference an undeclared local; the (List<String>) cast is why the $fields host stamps
         // @SuppressWarnings (see TypeClassGenerator).
@@ -154,7 +154,7 @@ public final class InlineTableFieldEmitter {
 
         var sel = CodeBlock.builder();
         // SELECT projection: always unwrapped $fields(...) fed into DSL.multiset at the outer wrap.
-        // Invariant (R424): `env` is threaded onward into the nested $fields call unchanged — that is
+        // Invariant: `env` is threaded onward into the nested $fields call unchanged — that is
         // correct. Each nested level re-derives its own SelectedField (the switch loop's `sfN` local),
         // and env is needed there only for request-scoped context reads (ContextArg), which
         // legitimately read the ancestor env. Do NOT "fix" this env to the SelectedField: only the
@@ -164,7 +164,7 @@ public final class InlineTableFieldEmitter {
             DSL, typeClass, sfName, terminalAlias);
 
         // FROM: step 0's aliased table, with the JOIN chain walking forward towards the
-        // terminal (R435): a lateral routine hop's call arguments reference the previous
+        // terminal: a lateral routine hop's call arguments reference the previous
         // node's alias, and SQL LATERAL scoping only sees FROM entries to its left, so the
         // chain renders start-first — the same order the root chain fetcher emits. Bridging
         // steps dispatch on the hop's join identity: FK / name-matched hops through the
@@ -206,7 +206,7 @@ public final class InlineTableFieldEmitter {
                         case On.Lateral ignored -> throw new IllegalStateException(
                             "ParentCorrelation.OnParentJoin cannot wrap a lateral hop");
                     });
-                // R435: the lateral routine call is correlated through its arguments (the
+                // The lateral routine call is correlated through its arguments (the
                 // alias-declaration loop rendered the parent columns into the call), so the
                 // step-0 WHERE contributes nothing.
                 case ParentCorrelation.OnLateralArgs ignored ->
@@ -248,7 +248,7 @@ public final class InlineTableFieldEmitter {
         if (singleCardinality) {
             sel.add("\n        .limit(1)");
         } else if (tf.pagination() != null && tf.pagination().first() != null) {
-            // R424: read `first` off the inline field's own SelectedField, not the ancestor env
+            // Read `first` off the inline field's own SelectedField, not the ancestor env
             // (which has no such argument, so the old env.getArgument read silently dropped the
             // pagination limit). The (Integer) cast is checked — no unchecked warning.
             sel.add("\n        .limit($L.getArguments().get($S) == null ? $T.MAX_VALUE : ($T) $L.getArguments().get($S))",

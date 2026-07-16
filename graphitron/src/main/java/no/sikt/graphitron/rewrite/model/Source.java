@@ -3,12 +3,12 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.Objects;
 
 /**
- * The {@code source} dimension (R316): the field's <em>arrival endpoint</em>, modeled as a wrapper
+ * The {@code source} dimension: the field's <em>arrival endpoint</em>, modeled as a wrapper
  * around a {@link SourceShape}. The wrapper is the field's <em>arrival cardinality</em> (how many
  * source objects reach its fetcher), and it is the emit-strategy dispatch: {@link Child} batches
  * through a DataLoader, {@link Root} and {@link OnlyChild} run their SQL directly (single invocation).
  *
- * <p>This folds the retired {@code carrier} axis (R299) and the retired stand-alone source-cardinality
+ * <p>This folds the retired {@code carrier} axis and the retired stand-alone source-cardinality
  * enum into one sealed hierarchy: the {@code One} / {@code Many} cardinality becomes the
  * {@link OnlyChild} / {@link Child} arm identity, and {@code Zero} (no source) is {@link Root}'s
  * shape-absence. Naming the arms for the arrival (not a bare {@code One} / {@code Many})
@@ -54,7 +54,7 @@ public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Chi
 
     /**
      * Exactly one source object arrives (arrival {@code One}): the field's SQL runs directly, single
-     * invocation, no DataLoader. Reached (R463) when the parent type's ancestor-product arrival folds
+ * invocation, no DataLoader. Reached when the parent type's ancestor-product arrival folds
      * to {@link Arrival#ONE} (a single non-list chain down from an operation root, no {@code @node} /
      * {@code @key} seed and no fan-in).
      *
@@ -78,7 +78,7 @@ public sealed interface Source permits Source.Root, Source.OnlyChild, Source.Chi
      * Many source objects arrive (arrival {@code Many}): the field batches through a DataLoader or it is
      * an N+1. The absorbing element of the arrival monoid: a {@link ChildField} folds to this arm
      * whenever the parent type carries a {@code @node} / {@code @key} seed, is reached by more than one
-     * field edge (fan-in or recursion), or sits below a list ancestor (R463).
+ * field edge (fan-in or recursion), or sits below a list ancestor.
      */
     record Child(SourceShape shape) implements Source {
         public Child {

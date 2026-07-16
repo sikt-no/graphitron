@@ -36,7 +36,7 @@ final class TypeFetcherEmissionContext {
     private final String parentTypeName;
     private final no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema;
 
-    // R437: the shape-aware create<Record> helper-name resolver for this <Type>Fetchers class. Defaults
+    // The shape-aware create<Record> helper-name resolver for this <Type>Fetchers class. Defaults
     // to the bare resolver so schema-free / unit / out-of-band contexts (which carry at most one shape
     // per record class) behave exactly as before; TypeFetcherGenerator installs a populated one up front.
     private JooqRecordHelperNames jooqRecordHelperNames = JooqRecordHelperNames.bare();
@@ -102,7 +102,7 @@ final class TypeFetcherEmissionContext {
     }
 
     /**
-     * The shape-aware {@code create<Record>} helper-name resolver for this class (R437). Consulted by
+ * The shape-aware {@code create<Record>} helper-name resolver for this class. Consulted by
      * the two call-site emitters ({@link ArgCallEmitter}, {@link ServiceMethodCallEmitter}) and by the
      * helper-emission drain in {@link TypeFetcherGenerator}, so a call site and its helper always agree
      * on the name. Defaults to the bare resolver until {@link #setJooqRecordHelperNames} installs a

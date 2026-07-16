@@ -63,7 +63,7 @@ class GraphitronFacadeGeneratorPipelineTest {
 
     @Test
     void ownedFactory_leadsWithStringClaimsThenTheSameContextArguments() {
-        // The owned-connection factory (R429) carries the opaque claims first, then the identical
+        // The owned-connection factory carries the opaque claims first, then the identical
         // alphabetical contextArgument list. Distinct name from the escape-hatch newExecutionInput, so a
         // caller passing a DSLContext cannot silently reach the owned path.
         String sdl = """

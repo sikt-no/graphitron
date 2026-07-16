@@ -127,7 +127,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
     }
 
     /**
-     * R308 — the class-backed list-carrier arrival mismatch (formerly a misleading rejection): a
+ * The class-backed list-carrier arrival mismatch (formerly a misleading rejection): a
      * <em>list</em> carrier ({@code [CreateFilmsPayload]}) over a class-backed composite payload,
      * produced by a <em>single</em> composite ({@code createFilmWithActors}). Before R308 the
      * {@code NoBind}-silent-drop left the payload unbacked and only the generic dangling-type-reference
@@ -159,7 +159,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
     }
 
     /**
-     * R308 — the coherent class-backed list carrier (the working sub-shape the rework pins). A
+ * The coherent class-backed list carrier (the working sub-shape the rework pins). A
      * <em>list</em> carrier ({@code [CreateFilmsPayload]}) whose payload has a <em>single</em>
      * composite data field ({@code result: CreateFilmsResult}), produced by a <em>collection</em>
      * ({@code createFilmsWithActors} returning {@code List<TestFilmWithActorsDto>}): carrier arrival
@@ -229,7 +229,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
     }
 
     /**
-     * R308 — the class-backed sibling of the {@code @table} a2 reject
+ * The class-backed sibling of the {@code @table} a2 reject
      * ({@code SingleRecordTableFieldServiceProducerPipelineTest#serviceProducer_listCarrier_listDataField_rejectsDataFieldArrivalConflict}):
      * a <em>list</em> carrier ({@code [CreateFilmsPayload]}) whose class-backed composite data field is
      * <em>itself</em> a list ({@code results: [CreateFilmsResult]}), produced by a flat
@@ -291,7 +291,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
     }
 
     /**
-     * R357 — the casing-mismatch sibling of {@link #listArrival_classifiesPayloadResultAndDataField}. The
+ * The casing-mismatch sibling of {@link #listArrival_classifiesPayloadResultAndDataField}. The
      * driving utdanningsregisteret schema writes every {@code @table(name:)} in legacy Oracle-style
      * UPPERCASE while the Postgres jOOQ catalog is lowercase. The same record-composite carrier, with the
      * result type's {@code @table} children declared {@code @table(name: "FILM")} / {@code @table(name:

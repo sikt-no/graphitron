@@ -61,7 +61,7 @@ public final class ServiceMethodCallEmitter {
     }
 
     /**
-     * Resolver-aware variant (R437): routes any {@link ValueShape.JooqRecordInput} arg's
+ * Resolver-aware variant: routes any {@link ValueShape.JooqRecordInput} arg's
      * {@code create<Record>} call through the class-level {@link JooqRecordHelperNames}, so the root
      * coordinate names its helper by binding shape exactly as the helper-emission drain and the child
      * coordinate do. Used by the polymorphic-service emitter, which passes the enclosing class's resolver.
@@ -174,7 +174,7 @@ public final class ServiceMethodCallEmitter {
     }
 
     /**
-     * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param (R311). A
+ * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param. A
      * {@link ValueShape.JooqRecordInput} carries its own {@code sdlPath}, so it reads the arg name
      * directly rather than recovering it from a {@code fields} list (the reason it does not reuse
      * {@link #compositeHelperCall}). R437 resolves the helper name through the class-level
@@ -336,7 +336,7 @@ public final class ServiceMethodCallEmitter {
                 CodeBlock.of("$L(env.getArgument($S))",
                     pluralHelperName(bean.javaClass()), outerArg);
             case ValueShape.JooqRecordInput jr ->
-                // R311: List<Record> param — the plural create<Record>List helper maps the singular
+                // List<Record> param — the plural create<Record>List helper maps the singular
                 // create<Record> over each element; the wire value for a [Input!] arg is a
                 // List<Map<String, Object>>. R437 resolves the plural name by the element carrier's shape.
                 CodeBlock.of("$L(env.getArgument($S))",
@@ -394,7 +394,7 @@ public final class ServiceMethodCallEmitter {
             case ValueShape.ListOf l -> l.sdlPath().outerArgName();
             case ValueShape.RecordInput r -> outerArgOf(r.fields());
             case ValueShape.JavaBeanInput b -> outerArgOf(b.fields());
-            // R311: forced by the sealed addition but unreachable by construction — a JooqRecordInput is
+            // Forced by the sealed addition but unreachable by construction — a JooqRecordInput is
             // only ever a top-level param shape or a ListOf element, never an InputBean field shape, so
             // outerArgOf is never called with one. Defensive read off its own path.
             case ValueShape.JooqRecordInput jr -> jr.sdlPath().outerArgName();

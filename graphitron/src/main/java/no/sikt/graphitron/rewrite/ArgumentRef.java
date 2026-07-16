@@ -68,7 +68,7 @@ public sealed interface ArgumentRef {
          * {@code isLookupKey} reflects the presence of {@code @lookupKey} at classify time
          * so projections (notably {@code projectForLookup}) never re-read the SDL directive.
          *
-         * <p>{@code joinPath} (R380) is empty for the common local-column case (today's behavior).
+ * <p>{@code joinPath} is empty for the common local-column case (today's behavior).
          * When the arg carries {@code @reference(path:)} reaching a column on a <em>joined</em>
          * table, it holds the resolved FK join path from the field's own table to the terminal
          * table that holds {@code column}; {@code projectFilters} then wraps the predicate in a
@@ -276,7 +276,7 @@ public sealed interface ArgumentRef {
              * {@code setFields} is correct. R266 retired the {@code @value} marker (the old
              * UPDATE-only SET partition source), so there is no per-verb branch left.
              *
-             * <p>R186: a nested non-{@code @table} grouping input ({@link InputField.NestingField})
+ * <p>A nested non-{@code @table} grouping input ({@link InputField.NestingField})
              * is admitted by flattening onto the outer table, but {@code lookupKeyFields} is left as
              * the top-level carrier filter (a {@code NestingField} is not a {@code LookupKeyField}, so
              * it does not appear here). The flat leaf partition that carries the nested wire access

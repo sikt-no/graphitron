@@ -40,7 +40,7 @@ class BuildOutputReportPipelineTest {
         //  - Film.languageName: @reference to a non-existent FK -> UnclassifiedField -> validator error.
         //  - FilmDetails.language: @splitQuery on a record-backed parent (FilmDetails binds to the
         //    @service producer's reflected return) -> "@splitQuery is redundant" build warning.
-        // R307: the warning half no longer leans on a redundant @record (the directive is ignored and
+        // The warning half no longer leans on a redundant @record (the directive is ignored and
         // its warning coverage lives in RecordDirectiveIgnoredWarningTest); any model BuildWarning
         // exercises the same wiring, so this uses the @splitQuery-redundant warning instead.
         // The two are independent so each half of the report is exercised in the same run.
@@ -94,7 +94,7 @@ class BuildOutputReportPipelineTest {
 
     @Test
     void buildOutput_reportCarriesEngineLintFindingsWithTheirFix(@TempDir Path tmp) throws IOException {
-        // R398: the SDL lint engine's syntactic findings ride the same warning channel and must reach
+        // The SDL lint engine's syntactic findings ride the same warning channel and must reach
         // the ValidationReport through buildOutput(), so the LSP and MCP project them for free. The
         // snake_case SDL field name trips field-names-camel-case; it maps to the real snake_case column
         // (the SDL name is what the rule flags, decoupled from the column), so the type still classifies.

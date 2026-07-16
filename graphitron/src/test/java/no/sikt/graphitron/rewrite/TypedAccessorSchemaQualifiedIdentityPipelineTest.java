@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R441: the typed-accessor match on a free-form DTO payload parent must compare jOOQ table
+ * The typed-accessor match on a free-form DTO payload parent must compare jOOQ table
  * identity, not the bare {@code @table} name. Driven over the existing multischema fixture, whose
  * two {@code event} tables ({@code multischema_a.event} / {@code multischema_b.event}) share the
  * bare SQL name {@code event}, so the payload element type's {@code @table} is <em>forced</em> to

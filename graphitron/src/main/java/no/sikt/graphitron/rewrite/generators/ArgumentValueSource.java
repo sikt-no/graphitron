@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 /**
  * Names where a condition/ordering call's <em>runtime argument values</em> are read from at a
- * given emission site (R424). The generated condition and decode logic are identical either way;
+ * given emission site. The generated condition and decode logic are identical either way;
  * only the {@code getArgument}-shaped read expression forks.
  *
  * <p>{@link Env} reads {@code env.getArgument(name)} off the enclosing {@code DataFetchingEnvironment}.

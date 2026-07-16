@@ -294,7 +294,7 @@ public final class GraphitronSchemaClassGenerator {
                     .unindent();
             }
             twoArgBody.addStatement("federationCustomizer.accept(fb)");
-            // R283: SchemaTransformer.build bakes the _Service.sdl value via
+            // SchemaTransformer.build bakes the _Service.sdl value via
             // ServiceSDLPrinter.generateServiceSDLV2, which strips the spec-built-in @oneOf
             // definition. When the schema uses @oneOf, route the returned schema through the
             // generated OneOfDirectiveSdl helper to reinstate the definition on the served SDL;
@@ -477,7 +477,7 @@ public final class GraphitronSchemaClassGenerator {
      *       paths recorded by {@code ConstraintViolations.toGraphQLError} survive intact.</li>
      * </ul>
      *
-     * <p>R303: the read bodies are reified onto {@code <ErrorType>Fetchers} by
+ * <p>The read bodies are reified onto {@code <ErrorType>Fetchers} by
      * {@link no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator}; this site
      * only wires the {@code <ErrorType>Fetchers::path} / {@code ::message} references.
      */

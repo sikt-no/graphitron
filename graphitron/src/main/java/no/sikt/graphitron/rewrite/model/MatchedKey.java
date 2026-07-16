@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.List;
 
 /**
- * R246 — the key identity {@code UpdateRowsWalker} matched against the UPDATE input's covered
+ * The key identity {@code UpdateRowsWalker} matched against the UPDATE input's covered
  * columns. The walker queries jOOQ's {@code Table.getPrimaryKey()} / {@code Table.getKeys()} and
  * picks the first candidate (PK preferred) whose column set is a subset of the input-covered
  * columns; the winner is lifted into one of these arms.

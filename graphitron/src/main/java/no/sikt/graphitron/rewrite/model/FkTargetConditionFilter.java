@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * A developer-supplied {@code @condition} method on an FK-target {@code @nodeId} filter input
- * field (R330): the field carries both {@code @nodeId(typeName: "X")} and {@code @condition},
+ * field: the field carries both {@code @nodeId(typeName: "X")} and {@code @condition},
  * where {@code X} is reached from the input's own table through a foreign-key {@code joinPath}.
  *
  * <p>This is the FK-target sibling of {@link ConditionFilter}. The two diverge at exactly one

@@ -115,7 +115,7 @@ public final class ClassifiedHarness {
                 + "); the corpus asserts successful classification only.");
         }
         DimensionTuple expected = new DimensionTuple(sourceArg(d), operationArg(d), targetArg(d));
-        // R463 — the arrival arm is the parent-type ancestor-product fold, read through the schema's
+        // The arrival arm is the parent-type ancestor-product fold, read through the schema's
         // sourceOf seam (a leaf cannot compute its own arm). operation / target stay leaf-derived.
         DimensionTuple actual = DimensionTuple.of(out, schema.sourceOf(parentType, fieldName));
         return new FieldCase(parentType, fieldName, expected, actual, out.getClass());
@@ -128,7 +128,7 @@ public final class ClassifiedHarness {
     }
 
     /**
-     * The {@code source:} arrival wrapper (R316), reconstructed in full from the directive: the flat
+ * The {@code source:} arrival wrapper, reconstructed in full from the directive: the flat
      * {@code SourceWrapper} enum names the wrapper arm ({@link Source.Root.Query} / {@link Source.Root.Mutation}
      * / {@link Source.OnlyChild} / {@link Source.Child}), and the nested arms take their {@link SourceShape}
      * from {@code sourceShape:}. {@link Source} carries no heavy payload, so the whole value is asserted by
@@ -146,7 +146,7 @@ public final class ClassifiedHarness {
     }
 
     /**
-     * The nested-arm source-shape (R305 / R316). Defaults to {@link SourceShape#Table} (the common
+ * The nested-arm source-shape. Defaults to {@link SourceShape#Table} (the common
      * catalog-backed case) when the arg is absent, so only the record-source rows declare
      * {@code sourceShape: Record} explicitly. A row that should be {@code Record} but omits the arg
      * fails loudly: the expected {@code Child(Table)} mismatches the actual {@code Child(Record)}.
@@ -157,7 +157,7 @@ public final class ClassifiedHarness {
     }
 
     /**
-     * The {@code operation:} verb (R316), as the {@link Operation} arm type token. The arm carries a
+ * The {@code operation:} verb, as the {@link Operation} arm type token. The arm carries a
      * payload the directive cannot express, so the corpus asserts arm identity only; the token is
      * resolved from the seal's leaf set by simple name, so a directive value that names no arm fails.
      */
@@ -171,7 +171,7 @@ public final class ClassifiedHarness {
     }
 
     /**
-     * The {@code target:} / {@code targetShape:} projection coordinate (R316): the {@link Target} wrapper
+ * The {@code target:} / {@code targetShape:} projection coordinate: the {@link Target} wrapper
      * arm token and the outer {@link TargetShape} arm token, both resolved from their seals' leaf sets by
      * simple name.
      */

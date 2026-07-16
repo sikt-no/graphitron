@@ -60,7 +60,7 @@ class MethodRefCallShapeTest {
 
     @Test
     void serviceCallTarget_multiArgHolderCtor_rendersDslAndContextArgs() {
-        // R256: a (DSLContext, tenantId) holder ctor renders both args — `dsl` for the DSLContext
+        // A (DSLContext, tenantId) holder ctor renders both args — `dsl` for the DSLContext
         // slot and an inline getContextArgument extraction for the context slot.
         var serviceClass = ClassName.get("com.example", "Service");
         var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
@@ -81,7 +81,7 @@ class MethodRefCallShapeTest {
 
     @Test
     void needsDsl_contextOnlyHolderCtor_isFalse() {
-        // R256: a holder ctor with no DSLContext slot (context-only) needs no dsl local.
+        // A holder ctor with no DSLContext slot (context-only) needs no dsl local.
         var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
             new MethodRef.Param.Typed("tenantId", "java.lang.String",
                 ClassName.get(String.class),

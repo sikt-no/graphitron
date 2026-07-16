@@ -74,7 +74,7 @@ class SettKvotesporsmalShapeRegressionTest {
 
         var df = schema.field("Payload", "film");
         assertThat(df).isInstanceOf(ChildField.BatchedTableField.class);
-        // R305: the standard record-parent path (not the carrier re-fetch); its lift is
+        // The standard record-parent path (not the carrier re-fetch); its lift is
         // the catalog-FK/accessor read, not the source=target ProducedRecords carrier lift.
         assertThat(((ChildField.BatchedTableField) df).lift())
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
@@ -108,7 +108,7 @@ class SettKvotesporsmalShapeRegressionTest {
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
 
-    // R276: classBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord was deleted. It
+    // ClassBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord was deleted. It
     // pinned the diagnostic for a mismatch between a @record(className)-declared backing and the
     // @service method's reflected return type. Under reflection-only binding the payload's backing
     // *is* the method's reflected return, so that mismatch is structurally impossible and the test

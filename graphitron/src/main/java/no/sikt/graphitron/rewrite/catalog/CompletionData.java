@@ -89,7 +89,7 @@ public record CompletionData(
     /**
      * Column on a table. Holds no source position: goto-definition joins the
      * {@code (owning-table classFqn, name)} key against the LSP-owned
-     * {@link SourceWalker.Index} at request time (R352).
+ * {@link SourceWalker.Index} at request time.
      *
      * @param name        jOOQ Java field name (e.g. {@code "FILM_ID"}), not the SQL column name
      *                    (e.g. {@code "film_id"}). LSP completions suggest this form; diagnostics
@@ -112,7 +112,7 @@ public record CompletionData(
     /**
      * FK relation between tables. Holds no source position: goto-definition
      * joins the {@code (keysClassFqn, keyName)} field key against the LSP-owned
-     * {@link SourceWalker.Index} at request time (R352).
+ * {@link SourceWalker.Index} at request time.
      *
      * @param targetTable  other table name
      * @param keyName      jOOQ Java field name of the FK ({@code <TABLE>__<FK>}),
@@ -155,7 +155,7 @@ public record CompletionData(
      * record.
      *
      * <p>{@code scalarConstants} lists this class's {@code public static}
-     * {@code GraphQLScalarType} fields (R464); it backs {@code @scalarType(scalar:)}
+ * {@code GraphQLScalarType} fields; it backs {@code @scalarType(scalar:)}
      * completion, which composes {@code className + "." + fieldName} for each.
      */
     public record ExternalReference(
@@ -204,7 +204,7 @@ public record CompletionData(
      * completion composes {@code className + "." + fieldName} (matching the
      * {@link RecordComponent} / {@link Method} shape). Source: the JVM field
      * table read by {@link ClasspathScanner}, matching on the exact
-     * {@code GraphQLScalarType} field descriptor (R464).
+ * {@code GraphQLScalarType} field descriptor.
      */
     public record ScalarConstant(String fieldName) {}
 
@@ -220,7 +220,7 @@ public record CompletionData(
      *
      * <p>{@code returnsCondition} is the parse-boundary classification of
      * whether this method's return type is jOOQ's {@code org.jooq.Condition}
-     * (R368). {@link ClasspathScanner} computes it from the <em>un-erased</em>
+ *. {@link ClasspathScanner} computes it from the <em>un-erased</em>
      * return descriptor before {@code returnType} loses its package, so the
      * fact is exact (a consumer's own type named {@code Condition} does not
      * match). The MCP {@code conditions} tool and any future LSP

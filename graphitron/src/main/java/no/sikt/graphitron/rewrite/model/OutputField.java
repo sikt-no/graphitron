@@ -37,7 +37,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     DomainReturnType domainReturnType();
 
     /**
-     * The {@code source} dimension (R316): the field's <em>arrival endpoint</em>, a wrapper around a
+ * The {@code source} dimension: the field's <em>arrival endpoint</em>, a wrapper around a
      * {@link SourceShape} whose arm is the arrival cardinality. A <em>storage-free, derived</em> view of
      * the field's identity plus the {@code parentArrival} the caller supplies ({@link QueryField} →
      * {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, both ignoring the
@@ -48,7 +48,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * The arm is the emit-strategy dispatch ({@link Source.Child} → DataLoader,
      * {@link Source.Root} / {@link Source.OnlyChild} → direct).
      *
-     * <p>Arrival is a parent-typename-grain fact (R463): every field on one parent folds the same arm,
+ * <p>Arrival is a parent-typename-grain fact: every field on one parent folds the same arm,
      * so it is passed in rather than stored per-leaf (a parent-grain fact copied to child grain is the
      * derived-fact drift smell). Consumers read the fold through {@link GraphitronSchema#sourceOf}, which
      * threads the pre-computed {@code ArrivalIndex}; a leaf holding no ancestor fact cannot compute its
@@ -57,7 +57,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     Source source(Arrival parentArrival);
 
     /**
-     * The {@code operation} dimension (R316): the verb this field <em>performs</em>, a sealed
+ * The {@code operation} dimension: the verb this field <em>performs</em>, a sealed
      * {@link Operation} arm carrying its own payload. Built by the leaf producers from the slots they
      * already carry ({@code QueryField} / {@code MutationField} / {@code ChildField} switch on leaf
      * identity); the verb-axis primitive (R316 retired the leaf-to-{@code intent} verdict).
@@ -98,7 +98,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
-     * The {@code target} dimension (R316): the field's <em>projection endpoint</em>, a
+ * The {@code target} dimension: the field's <em>projection endpoint</em>, a
      * {@link Target} wrapper ({@link Target.Single} / {@link Target.List}) around the
      * {@link TargetShape} it projects. Built by the leaf producers from the return wrapper plus the
      * leaf's shape slot; the projection-axis primitive (R316 retired the leaf-to-{@code mapping}
@@ -118,11 +118,11 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx, key...)} join
      * with {@code ORDER BY idx}).
      *
-     * <p>Re-fetch is orthogonal to the {@link #operation()} verb (R305): a field that re-fetches keeps
+ * <p>Re-fetch is orthogonal to the {@link #operation()} verb: a field that re-fetches keeps
      * its own operation. A record-sourced {@code BatchedTableField} carrier (the former
      * {@code SingleRecordTableField}) keys off a producer record while its operation stays
      * {@link Operation.Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher
-     * arms used to each re-decide from their own leaf type (R290). {@code GraphitronSchemaValidator}
+ * arms used to each re-decide from their own leaf type. {@code GraphitronSchemaValidator}
      * mirrors it against the generator's actual re-fetch dispatch so the derivation and the emitter
      * cannot drift.
      *
@@ -138,7 +138,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         if (!(target().shape() instanceof TargetShape.Table)) {
             return false;
         }
-        // R463 — read the received-record fact off the leaf's own source shape rather than off
+        // Read the received-record fact off the leaf's own source shape rather than off
         // source(): arrival (OnlyChild vs Child) is arrival-agnostic here (the retired switch treated
         // both nested arms identically), so requiresReFetch does not need the ancestor arrival the
         // arm now depends on. A RootField has no source shape and never received a record.
@@ -202,7 +202,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
             case DmlReturnExpression.EncodedList ignored -> new Target.List(new TargetShape.Column());
             case DmlReturnExpression.ProjectedSingle ignored -> new Target.Single(new TargetShape.Table());
             case DmlReturnExpression.ProjectedList ignored -> new Target.List(new TargetShape.Table());
-            // R406: a discriminated-interface return re-projects the shared table just like a
+            // A discriminated-interface return re-projects the shared table just like a
             // projected @table return (Record / List<Record>); only the follow-up SELECT differs.
             case DmlReturnExpression.DiscriminatedSingle ignored -> new Target.Single(new TargetShape.Table());
             case DmlReturnExpression.DiscriminatedList ignored -> new Target.List(new TargetShape.Table());

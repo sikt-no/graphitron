@@ -25,7 +25,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 /**
  * Resolves {@code @routine} on a field into a sealed {@link Resolved} the caller switches on, the
  * database-routine sibling of {@link TableMethodDirectiveResolver}. Day-one resolves the
- * table-valued read function (R300):
+ * table-valued read function:
  *
  * <ul>
  *   <li>Shape invariant: the return type must be {@code @table}-annotated (a
@@ -69,7 +69,7 @@ final class RoutineDirectiveResolver {
     }
 
     /**
-     * Resolves the {@code @routine} application contributing a chain's routine node (R435):
+ * Resolves the {@code @routine} application contributing a chain's routine node:
      * call-surface resolution, argument binding, and {@code columnMapping} binding against the
      * previous node. Position-agnostic by design — whether the node is the chain's head,
      * mid-chain, or terminus is a fact about the <em>landed</em> chain, so the terminus rule and
@@ -83,7 +83,7 @@ final class RoutineDirectiveResolver {
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot,
             String previousNodeTableSqlName) {
-        // Composition verdict (R435): @orderBy / @condition key on the resolved table and are
+        // Composition verdict: @orderBy / @condition key on the resolved table and are
         // meaningful for catalog-terminus chains, but no filter/order surface ships for
         // routine-backed fields yet — a capability gap, not a schema contradiction. @orderBy is
         // argument-positioned; @condition appears on the field or its arguments.
@@ -152,7 +152,7 @@ final class RoutineDirectiveResolver {
                 "@routine could not be resolved — no table-valued function named '" + routineName
                 + "' in the jOOQ catalog",
                 routineName, ctx.catalog.allTableSqlNames()));
-            // R451 — the name exists as a database routine but is not table-valued (a procedure or
+            // The name exists as a database routine but is not table-valued (a procedure or
             // scalar / void function): a capability gap, not a typo, so it signposts the
             // non-table-valued call surface's follow-up item rather than the unknown-name rejection.
             case JooqCatalog.RoutineResolution.NonTableValuedRoutine ntv -> new Resolved.Rejected(Rejection.deferred(

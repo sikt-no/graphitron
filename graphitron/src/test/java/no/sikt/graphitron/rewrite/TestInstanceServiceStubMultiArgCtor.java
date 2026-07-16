@@ -6,7 +6,7 @@ import org.jooq.DSLContext;
 /**
  * Instance-method service stub whose holder constructor takes a {@code DSLContext} plus a context
  * argument ({@code tenantId}). Used to pin {@link ServiceCatalog#reflectServiceMethod}'s relaxed
- * holder resolution (R256): a {@code (DSLContext, ctxArg)} constructor resolves, with each ctor
+ * holder resolution: a {@code (DSLContext, ctxArg)} constructor resolves, with each ctor
  * parameter bound to a {@code DSLContext} slot or a declared context key.
  */
 public class TestInstanceServiceStubMultiArgCtor {

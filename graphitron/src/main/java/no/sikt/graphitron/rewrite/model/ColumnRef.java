@@ -19,7 +19,7 @@ import no.sikt.graphitron.javapoet.TypeName;
  * {@code TypeName.get(col.getType())}: a {@link no.sikt.graphitron.javapoet.ClassName} for a scalar
  * column, an {@link no.sikt.graphitron.javapoet.ArrayTypeName} for an array column. Codegen sites
  * emit this directly rather than re-parsing {@code columnClass} with {@code ClassName.bestGuess},
- * which rejects array descriptors (R446). It is a denormalised view of {@code columnClass} (both
+ * which rejects array descriptors. It is a denormalised view of {@code columnClass} (both
  * derive from the same live {@code Class}), carried because that {@code Class} is only available at
  * the boundary.
  *

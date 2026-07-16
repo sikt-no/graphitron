@@ -41,7 +41,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  *       supplies encoded ids of a related table; the predicate is "row's FK column ∈ decoded
  *       keys". This is a <em>filter</em>. A <em>self-FK</em> — {@code T.table()} equals the
  *       containing table but an explicit {@code @reference} names a same-table foreign key — is a
- *       FK-target too (R328): the decoded keys land on the self-FK's child columns, never the
+ * FK-target too: the decoded keys land on the self-FK's child columns, never the
  *       row's own identity. The {@code @reference} is what disambiguates own-identity from
  *       self-reference; absent it, the same-table case is own-PK identity above.</li>
  * </ul>
@@ -176,7 +176,7 @@ final class NodeIdLeafResolver {
              * @param joinPath             FK path from the containing table to {@code T.table()};
              *                             length-1 single-hop or length-&ge;2 identity-carrying chain
              * @param selfReference        {@code true} when {@code T.table()} equals the containing
-             *                             table — a self-FK (R328): the {@code @reference} names a
+ * table — a self-FK: the {@code @reference} names a
              *                             foreign key back to the row's own table, so the lifted
              *                             columns point at a sibling row, never the row's own
              *                             identity. R354 routes such a carrier wholly to the UPDATE
@@ -282,7 +282,7 @@ final class NodeIdLeafResolver {
 
         // Same-table short-circuit (own-PK identity) only when @reference is absent. An explicit
         // @reference on a same-table @nodeId names a self-FK: "this field points at a *different*
-        // row of the same table" (R328). Falling through to resolveFkJoinPath resolves that self-FK
+        // row of the same table". Falling through to resolveFkJoinPath resolves that self-FK
         // — parsePath orients it with selfRefFkOnSource=true, so liftedSourceColumns become the
         // self-FK's child columns on the row's own table, the same DirectFk data shape a cross-table
         // FK carries. This single gate is shared by every resolve() caller (the write-side
@@ -294,7 +294,7 @@ final class NodeIdLeafResolver {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
 
-        // R422: resolve the target TableRef before resolveFkJoinPath so its parsePath call can pass
+        // Resolve the target TableRef before resolveFkJoinPath so its parsePath call can pass
         // ref and name together, letting the terminal-target verdict compare jOOQ table-class
         // identity rather than the schema-qualified @table echo. In reachable inputs the return
         // @table already resolved to a TableRef upstream (an unresolvable one is UnclassifiedType and
@@ -412,7 +412,7 @@ final class NodeIdLeafResolver {
     /**
      * Resolves the FK join path from {@code containingTable} to {@code targetTableName}.
      * {@code targetTable} is the already-resolved {@link TableRef} for {@code targetTableName},
-     * threaded (R422) into the explicit-{@code @reference} {@link BuildContext#parsePath} call so its
+ * threaded into the explicit-{@code @reference} {@link BuildContext#parsePath} call so its
      * terminal-target verdict compares jOOQ table-class identity rather than the {@code @table} echo.
      *
      * <p>Two intake shapes:
@@ -469,7 +469,7 @@ final class NodeIdLeafResolver {
                 "no unique FK from '" + containingTable.tableName() + "' to '" + targetTableName
                 + "'; declare @reference(path: [{key: ...}]) to disambiguate");
         }
-        // R440: findUniqueFkToTable resolved endpoints by class and returns the FK object itself;
+        // FindUniqueFkToTable resolved endpoints by class and returns the FK object itself;
         // hand it straight to synthesizeFkJoin rather than round-tripping through a bare-name
         // re-lookup that would reintroduce cross-schema constraint-name collision.
         // NodeId leafs are single-cardinality decoded keys against the parent's own table; the

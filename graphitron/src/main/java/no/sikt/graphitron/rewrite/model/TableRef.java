@@ -70,7 +70,7 @@ public record TableRef(
      * either convention; trying Java name first handles custom jOOQ naming strategies where
      * {@code javaName} is not a simple {@code toUpperCase(sqlName)}.
      *
-     * <p>This is the model-side matcher home (R444): a consumer that already holds an
+ * <p>This is the model-side matcher home: a consumer that already holds an
      * identity-resolved ref resolves columns here instead of collapsing to a bare SQL name and
      * re-resolving through the catalog, which is ambiguous when the table name collides across
      * schemas. Returns empty on an unknown column, and always on refs constructed outside the
@@ -103,7 +103,7 @@ public record TableRef(
      * {@code other} is not this table.
      *
      * <p>This is the model-side identity home for the same-table question. It agrees by
-     * construction with {@code JooqCatalog}'s parse-boundary primitives (R396), which compare raw
+ * construction with {@code JooqCatalog}'s parse-boundary primitives, which compare raw
      * jOOQ {@code Table<?>} classes ({@code endpoint.getClass() == resolvedSource.getClass()})
      * while the raw objects are still in scope: both derive from the same generated jOOQ class at
      * parse time. A consumer should pick by where it stands — at the parse boundary with raw jOOQ

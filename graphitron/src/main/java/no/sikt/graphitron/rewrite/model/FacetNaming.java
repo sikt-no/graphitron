@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * Single source of truth for the names of the synthesised facet object types (R13). Shared by the
+ * Single source of truth for the names of the synthesised facet object types. Shared by the
  * synthesis pass ({@code ConnectionPromoter}) and every classifier/validator site that must refer
  * to a facet type by name, so the two can never drift.
  */

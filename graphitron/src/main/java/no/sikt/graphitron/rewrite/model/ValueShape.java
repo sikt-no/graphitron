@@ -46,7 +46,7 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
 
     /**
      * Construction of a generated jOOQ {@link org.jooq.TableRecord} param via the
-     * {@code create<Record>} helper (R311). A <em>path-carrying leaf</em>, not a pathless composite
+ * {@code create<Record>} helper. A <em>path-carrying leaf</em>, not a pathless composite
      * like {@link RecordInput} / {@link JavaBeanInput}: a jOOQ record binds on the column / identity
      * axes rather than per-SDL-field {@link FieldBinding}s, so there are no per-field {@code ValueShape}
      * children to hang paths on, and {@code JooqRecordInput} carries its own {@code sdlPath} exactly as

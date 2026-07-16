@@ -72,7 +72,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             // Interface-only service-polymorphic return (union/table-interface rejected at classify).
             case MutationServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
-            // Single-table service interface return (R405): raw Record / List<Record> routed by the
+            // Single-table service interface return: raw Record / List<Record> routed by the
             // discriminated TypeResolver; Interface (not Table) keeps requiresReFetch() false so the
             // re-fetch mirror agrees with the service fetcher's own by-PK re-projection.
             case MutationServiceTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
@@ -112,7 +112,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * <p>The input surface varies by verb. INSERT / UPSERT carry the {@code @table}
      * {@link ArgumentRef.InputTypeArg.TableInputArg} that drives the statement directly. UPDATE
-     * (R246) and DELETE (R266) instead carry the slim {@link InputArgRef} arg surface plus their
+ * and DELETE instead carry the slim {@link InputArgRef} arg surface plus their
      * walker-produced carrier ({@link UpdateRows} / {@link DeleteRows}) and implement
      * {@link UpdateRowsField} / {@link DeleteRowsField}: per R222, input fields have no semantics
      * independent of the consuming field, so the SET/WHERE partition lives on the carrier, not a
@@ -128,7 +128,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression();
 
         /**
-         * R63: the verb's typed dialect constraint, set at construction. Never null. UPSERT carries
+ * The verb's typed dialect constraint, set at construction. Never null. UPSERT carries
          * {@link DialectRequirement.RejectsFamily}({@code ORACLE}); bulk UPDATE carries
          * {@link DialectRequirement.RequiresFamily}({@code POSTGRES}); INSERT, DELETE, and single-row
          * UPDATE carry {@link DialectRequirement.None#INSTANCE}. The emitter renders the request-time
@@ -140,7 +140,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R204: the DML mutation's emit shape is {@link DmlReturnExpression}-keyed. {@code Encoded*}
+ * The DML mutation's emit shape is {@link DmlReturnExpression}-keyed. {@code Encoded*}
      * arms (ID-return) emit an encoded {@code String} at {@code env.getSource()}; {@code Projected*}
      * arms (@table-return) emit a sparse {@code RecordN<...>} projection on the table's PK
      * columns. Picked at the validator's group-by step so DML siblings reaching the same SDL ID
@@ -154,7 +154,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case DmlReturnExpression.EncodedList ignored   -> new DomainReturnType.Plain(OutputField.STRING_CLASS);
             case DmlReturnExpression.ProjectedSingle ignored -> new DomainReturnType.Record(table);
             case DmlReturnExpression.ProjectedList ignored   -> new DomainReturnType.Record(table);
-            // R406: discriminated-interface return re-projects the shared table into a jOOQ Record
+            // Discriminated-interface return re-projects the shared table into a jOOQ Record
             // (carrying __discriminator__) exactly like the projected @table return.
             case DmlReturnExpression.DiscriminatedSingle ignored -> new DomainReturnType.Record(table);
             case DmlReturnExpression.DiscriminatedList ignored   -> new DomainReturnType.Record(table);
@@ -176,7 +176,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R246: the {@code @mutation(typeName: UPDATE)} field that returns its {@code @table} type
+ * The {@code @mutation(typeName: UPDATE)} field that returns its {@code @table} type
      * directly. Unlike its INSERT / DELETE / UPSERT siblings it carries no {@code TableInputArg};
      * its input semantics are dissolved into the walker-produced {@link UpdateRows} carrier plus
      * the slim {@link InputArgRef} arg surface (per R222: input fields have no semantics
@@ -199,11 +199,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R266 / R287: the {@code @mutation(typeName: DELETE)} field that returns an encoded ID. Unlike
+ * The {@code @mutation(typeName: DELETE)} field that returns an encoded ID. Unlike
      * its INSERT / UPDATE / UPSERT siblings, DELETE cannot return a projected {@code @table}: the row
      * is gone after the statement, and RETURNING carries only the primary key, so a full {@code @table}
      * projection is impossible. The {@code @mutation} classifier rejects DELETE -> {@code @table} at
-     * authoring time (R287), so {@link #returnExpression} only ever holds an {@code Encoded*} arm; the
+ * authoring time, so {@link #returnExpression} only ever holds an {@code Encoded*} arm; the
      * compact constructor backstops that invariant by rejecting a {@code Projected*} arm.
      *
      * <p>Like its UPDATE sibling {@link MutationUpdateTableField} (and unlike INSERT / UPSERT) it
@@ -261,10 +261,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * A mutation field whose table chain starts with a database routine (R451): the routine call
+ * A mutation field whose table chain starts with a database routine: the routine call
      * <em>is</em> the write, and it commits before the follow-up query runs. The emitted fetcher
      * is the DML two-step transposed onto the chain — step 1 executes the routine inside the
-     * per-field {@code dsl.transactionResult(...)} boundary (R429) and captures only the columns
+ * per-field {@code dsl.transactionResult(...)} boundary and captures only the columns
      * hop 0's key needs from the routine's result rows (the analog of DML's PK-only
      * {@code RETURNING}); step 2 runs after the commit, a read-only SELECT anchored on hop 0's
      * table with the captured keys, remaining hops joined as in R435, projecting the terminus
@@ -342,7 +342,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel
     ) implements MutationField, ServiceField {
         /**
-         * R204: see {@link ChildField.ServiceTableField#domainReturnType()} — the typed
+ * See {@link ChildField.ServiceTableField#domainReturnType()} — the typed
          * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping.
          */
         @Override public DomainReturnType domainReturnType() {
@@ -369,7 +369,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel
     ) implements MutationField, ServiceField {
         /**
-         * R204: the carrier-shape case ({@code @service} mutation returning {@code XRecord} or
+ * The carrier-shape case ({@code @service} mutation returning {@code XRecord} or
          * {@code List<XRecord>} for an SDL payload whose single {@code @table}-typed data field's
          * record class equals the reflected return-element) puts a typed {@code XRecord} verbatim
          * at {@code env.getSource()}. The arm answer is {@link DomainReturnType.TableRecord}; the
@@ -414,7 +414,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R405 — the mutation analogue of {@link QueryField.QueryServiceTableInterfaceField}: a root
+ * The mutation analogue of {@link QueryField.QueryServiceTableInterfaceField}: a root
      * {@code @service} mutation returning a single-table discriminated interface
      * ({@code @table @discriminate}). Single-table sibling of {@link MutationServicePolymorphicField}
      * (route (a)); the service hands back records of the one shared table, and the emitted fetcher
@@ -458,8 +458,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT and UPSERT
      * have distinct SQL shapes); the model is one permit because the components are
      * identical across those kinds. {@code kind == UPDATE} is carved off onto
-     * {@link MutationUpdatePayloadField} (R258) and {@code kind == DELETE} onto
-     * {@link MutationDeletePayloadField} (R266), each sourcing its SET/WHERE partition from a
+ * {@link MutationUpdatePayloadField} and {@code kind == DELETE} onto
+ * {@link MutationDeletePayloadField}, each sourcing its SET/WHERE partition from a
      * walker carrier ({@link UpdateRows} / {@link DeleteRows}) rather than {@code @value} /
      * {@code @lookupKey}; the compact-constructor invariant rejects both here. The live range is
      * {@code {INSERT, UPSERT}}.
@@ -481,10 +481,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     ) implements MutationField {
 
         public MutationDmlRecordField {
-            // R258: UPDATE is carved off onto MutationUpdatePayloadField — the payload-returning
+            // UPDATE is carved off onto MutationUpdatePayloadField — the payload-returning
             // UPDATE sources its SET/WHERE partition from the UpdateRows walker carrier (PK-or-UK
             // matched-key membership), not @value, so it no longer flows through this leaf.
-            // R266: DELETE is carved off onto MutationDeletePayloadField — the payload-returning
+            // DELETE is carved off onto MutationDeletePayloadField — the payload-returning
             // DELETE sources its WHERE columns from the DeleteRows walker carrier, not @lookupKey /
             // PK-coverage on a TableInputArg. With both carved off, the live DmlKind range here is
             // {INSERT, UPSERT}; each carve-out monotonically shrinks the range the eventual
@@ -508,7 +508,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R141 — a record-returning DML mutation with bulk {@code @table} input and a list-shaped
+ * A record-returning DML mutation with bulk {@code @table} input and a list-shaped
      * {@code @table}-element data field on the carrier. The carrier itself is single
      * ({@code FilmsPayload}, not {@code [FilmsPayload!]!}); the list lives on the data field
      * ({@code films: [Film!]}). Sibling to {@link MutationDmlRecordField}: the latter covers
@@ -558,7 +558,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * Until that lift lands, the {@link DmlKind} enum field encodes the per-emit-shape dispatch and
      * the parameterised emitter switches on it.
      *
-     * <p><b>DELETE carved off (R266).</b> The payload-returning bulk DELETE now lands on
+ * <p><b>DELETE carved off.</b> The payload-returning bulk DELETE now lands on
      * {@link MutationBulkDeletePayloadField}, sourcing its per-row WHERE columns from the
      * {@link DeleteRows} walker carrier rather than the {@code TableInputArg}'s
      * {@code @lookupKey} / PK-coverage bindings. The data-field carrier is
@@ -586,7 +586,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + "MutationInputResolver and lifts via R145 "
                     + "(mutation-cardinality-safety-upsert).");
             }
-            // R258: UPDATE is carved off onto MutationBulkUpdatePayloadField — the payload-returning
+            // UPDATE is carved off onto MutationBulkUpdatePayloadField — the payload-returning
             // bulk UPDATE sources its per-row SET/WHERE partition from the UpdateRows walker carrier
             // (PK-or-UK matched-key membership), not @value.
             if (kind == DmlKind.UPDATE) {
@@ -595,7 +595,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + "payload-returning bulk UPDATE onto MutationBulkUpdatePayloadField via the "
                     + "UpdateRows walker carrier; this leaf carries {INSERT}.");
             }
-            // R266: DELETE is carved off onto MutationBulkDeletePayloadField — the payload-returning
+            // DELETE is carved off onto MutationBulkDeletePayloadField — the payload-returning
             // bulk DELETE sources its per-row WHERE columns from the DeleteRows walker carrier, not
             // a TableInputArg's @lookupKey / PK-coverage bindings. The live DmlKind range here is
             // {INSERT}.
@@ -618,7 +618,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R258 — the payload-returning {@code @mutation(typeName: UPDATE)} field with single
+ * The payload-returning {@code @mutation(typeName: UPDATE)} field with single
      * {@code @table} input (e.g. {@code updateFilmPayload(in: FilmUpdateInput!): FilmPayload}).
      * Sibling on two axes: of {@link MutationUpdateTableField} (the direct-{@code @table}/ID-return
      * UPDATE leaf) it shares the walker-driven input semantics — the slim {@link InputArgRef} arg
@@ -651,7 +651,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R258 — the payload-returning {@code @mutation(typeName: UPDATE)} field with bulk
+ * The payload-returning {@code @mutation(typeName: UPDATE)} field with bulk
      * {@code @table} input and a list-shaped {@code @table}-element data field on the carrier
      * (e.g. {@code updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload}). Bulk sibling of
      * {@link MutationUpdatePayloadField}, exactly as {@link MutationBulkDmlRecordField} is the bulk
@@ -683,7 +683,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R266 — the payload-returning {@code @mutation(typeName: DELETE)} field with single
+ * The payload-returning {@code @mutation(typeName: DELETE)} field with single
      * {@code @table} input (e.g. {@code deleteFilmPayload(in: FilmDeleteInput!): FilmPayload}).
      * The DELETE analogue of {@link MutationUpdatePayloadField}: of {@link MutationDeleteTableField}
      * (the direct-{@code @table}/ID-return DELETE leaf) it shares the walker-driven input semantics
@@ -716,7 +716,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R266 — the payload-returning {@code @mutation(typeName: DELETE)} field with bulk
+ * The payload-returning {@code @mutation(typeName: DELETE)} field with bulk
      * {@code @table} input and a list-shaped data field on the carrier
      * (e.g. {@code deleteFilmsPayload(in: [FilmDeleteInput!]!): FilmsPayload}). Bulk sibling of
      * {@link MutationDeletePayloadField}, exactly as {@link MutationBulkUpdatePayloadField} is the

@@ -101,7 +101,7 @@ public sealed interface ParamSource
 
     /**
      * A single column of the previous table node in the field's chain — the column-granularity
-     * sibling of {@link SourceTable}, authored via {@code @routine(columnMapping:)} (R435). A
+ * sibling of {@link SourceTable}, authored via {@code @routine(columnMapping:)}. A
      * column-bound routine parameter makes the call correlated: the emitter renders the routine
      * as {@code CROSS JOIN LATERAL} with this column of the previous node as the argument
      * expression. {@code column} is the resolved column on the previous node's table.

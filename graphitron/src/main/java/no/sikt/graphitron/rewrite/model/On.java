@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * How a {@link JoinStep.Hop} joins to its target — the <em>on</em> axis of the two-axis step
- * model (R333). Orthogonal to the target node itself ({@link TableExpr}): any target can in
+ * model. Orthogonal to the target node itself ({@link TableExpr}): any target can in
  * principle be joined by either arm.
  *
  * <p>Non-null on every shipped hop, and it stays that way: R333 models {@code on} as absent
@@ -132,7 +132,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
     }
 
     /**
-     * The step joins laterally (R435): the target is a {@link TableExpr.RoutineCall} whose
+ * The step joins laterally: the target is a {@link TableExpr.RoutineCall} whose
      * arguments reference the previous node's columns ({@link ParamSource.SourceColumn}
      * bindings), so the correlation rides the call arguments rather than an ON predicate or
      * column pairs. Lateralness is a positive fact on this axis — never an overloaded

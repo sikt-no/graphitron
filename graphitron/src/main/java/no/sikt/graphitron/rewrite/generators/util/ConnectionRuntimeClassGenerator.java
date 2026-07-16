@@ -682,7 +682,7 @@ public final class ConnectionRuntimeClassGenerator {
      * many per-field routing sites consume {@code dslFor(key)} as a drop-in for {@code getDslContext(env)}
      * and never re-emit the binding (only <em>which key</em> and <em>where it routes</em> are schema-shaped).
      *
-     * <p>Forward note (R45): this carrier subsumes slice 2's single-{@code pinned} instrumentation state
+ * <p>Forward note: this carrier subsumes slice 2's single-{@code pinned} instrumentation state
      * as the one-entry case; when R45 wires tenant routing in, the untenanted path becomes a default-key
      * entry here rather than a second parallel carrier, collapsing the two release-on-completion sites into
      * one. Slice 4 lands and proves the carrier directly (test-supplied keys, fake tenant map); it does not

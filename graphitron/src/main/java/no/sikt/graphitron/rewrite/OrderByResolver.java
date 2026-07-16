@@ -311,7 +311,7 @@ final class OrderByResolver {
         var missingOrder = new ArrayList<String>();
         for (var value : sortEnum.getValues()) {
             if (!value.hasAppliedDirective("order") && !value.hasAppliedDirective("index")) {
-                // R453: a value with no ordering directive would be silently skipped, generating an
+                // A value with no ordering directive would be silently skipped, generating an
                 // empty ORDER BY when a request selects only such values (nondeterministic keyset
                 // pagination). Accumulate every missing value and reject after the loop; the docs
                 // already promise this per-value build failure.

@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Generates the {@code Outcome<T>} runtime wrapper emitted at
- * {@code <outputPackage>.schema.Outcome}, once per code-generation run (R244).
+ * {@code <outputPackage>.schema.Outcome}, once per code-generation run.
  *
  * <p>{@code Outcome} is the request-time GraphQL source object an outcome field's fetcher returns:
  * {@code Success(value)} on the success projection, {@code ErrorList(errors)} on the error

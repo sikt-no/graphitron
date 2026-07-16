@@ -40,7 +40,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *
  * <p>Root vs child is signalled by {@code isRoot}: root sites pass {@code true} so the
  * Connection-wrapper rejection fires. The non-table-bound return rejection fires at both sites
- * since {@code @tableMethod} returning a scalar / enum is never a valid shape (R43): the
+ * since {@code @tableMethod} returning a scalar / enum is never a valid shape: the
  * directive exists precisely to bind a developer-authored jOOQ table method, which by
  * construction returns a generated jOOQ table class.
  *
@@ -58,7 +58,7 @@ final class TableMethodDirectiveResolver {
      *   <li>{@link TableBound} — successful resolution to a {@code @table}-annotated return type.
      *       Carries the typed {@link ReturnTypeRef.TableBoundReturnType} and the resolved
      *       {@link MethodRef}. The only success shape: {@code @tableMethod} returning a
-     *       non-table type is rejected here (R43).</li>
+ * non-table type is rejected here.</li>
      *   <li>{@link Rejected} — every error path: directive-parse failure, method-reflection
      *       failure, return-type rejection (non-table-bound or Connection at root).</li>
      * </ul>
@@ -87,7 +87,7 @@ final class TableMethodDirectiveResolver {
      * {@code @table}-typed parent. The non-table-bound return rejection fires at both sites:
      * {@code @tableMethod} is, by construction, a binding to a developer-authored jOOQ table
      * method, and those return generated jOOQ table classes. A schema declaring a scalar / enum
-     * return on {@code @tableMethod} is malformed (R43).
+ * return on {@code @tableMethod} is malformed.
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot) {
         String rawTypeName = baseTypeName(fieldDef);

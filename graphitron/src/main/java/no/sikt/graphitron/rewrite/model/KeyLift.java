@@ -75,7 +75,7 @@ public sealed interface KeyLift {
     }
 
     /**
-     * R305 — the source <em>is</em> the produced target record(s): a DML or {@code @service}
+ * The source <em>is</em> the produced target record(s): a DML or {@code @service}
      * producer handed back the target table's record(s) on {@code env.getSource()} (or
      * {@code Outcome.Success.value()}), and the field reads the identifying PK off them to
      * re-project the {@code @table} (source=target re-fetch). {@link #arity()} is the produced
