@@ -1,7 +1,7 @@
 ---
 id: R427
 title: "Type-ahead search backed by native database indexes"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 8
 theme: search
