@@ -10,7 +10,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `UnclassifiedField`
 | A field that could not be classified. A schema containing unclassified fields is invalid —
-| 1034
+| 1035
 | pipeline
 | no
 | 4
@@ -24,7 +24,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 |===
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `MutationBulkDeletePayloadField`
-| R266 — the payload-returning `@mutation(typeName: DELETE)` field with bulk
+| The payload-returning `@mutation(typeName: DELETE)` field with bulk
 | 9
 | pipeline
 | yes
@@ -32,7 +32,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | MutationDmlNodeIdClassificationTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | -
 | `MutationBulkDmlRecordField`
-| R141 — a record-returning DML mutation with bulk `@table` input and a list-shaped
+| A record-returning DML mutation with bulk `@table` input and a list-shaped
 | 13
 | pipeline
 | yes
@@ -40,7 +40,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R145
 | `MutationBulkUpdatePayloadField`
-| R258 — the payload-returning `@mutation(typeName: UPDATE)` field with bulk
+| The payload-returning `@mutation(typeName: UPDATE)` field with bulk
 | 19
 | pipeline
 | yes
@@ -48,7 +48,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | -
 | `MutationDeletePayloadField`
-| R266 — the payload-returning `@mutation(typeName: DELETE)` field with single
+| The payload-returning `@mutation(typeName: DELETE)` field with single
 | 2
 | pipeline
 | no
@@ -56,7 +56,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | MutationDmlNodeIdClassificationTest
 | -
 | `MutationDeleteTableField`
-| R266 / R287: the `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike
+| The `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike
 | 56
 | pipeline
 | yes
@@ -64,7 +64,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R245
 | `MutationDmlRecordField`
-| R75 / Phase 1 — a record-returning DML mutation: the schema field carries
+| A record-returning DML mutation: the schema field carries
 | 18
 | pipeline
 | yes
@@ -80,7 +80,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, SourceShapeProjectionTest, TableOnInputDeprecationWarningTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | -
 | `MutationRoutineWriteField`
-| A mutation field whose table chain starts with a database routine (R451): the routine call
+| A mutation field whose table chain starts with a database routine: the routine call
 | 12
 | pipeline
 | yes
@@ -97,7 +97,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | -
 | `MutationServiceRecordField`
 | A mutation field backed by a developer-provided service method, returning a non-table type
-| 200
+| 206
 | pipeline
 | yes
 | 1
@@ -112,7 +112,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
 | R314
 | `MutationServiceTableInterfaceField`
-| R405 — the mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
+| The mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
 | 14
 | pipeline
 | yes
@@ -120,7 +120,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.ServiceTableInterfaceReturnPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | -
 | `MutationUpdatePayloadField`
-| R258 — the payload-returning `@mutation(typeName: UPDATE)` field with single
+| The payload-returning `@mutation(typeName: UPDATE)` field with single
 | 18
 | pipeline
 | yes
@@ -128,7 +128,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | -
 | `MutationUpdateTableField`
-| R246: the `@mutation(typeName: UPDATE)` field that returns its `@table` type
+| The `@mutation(typeName: UPDATE)` field that returns its `@table` type
 | 74
 | pipeline
 | yes
@@ -201,14 +201,14 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R222, R397
 | `QueryServiceTableField`
 | A root query field backed by a developer-provided service method, returning a table-mapped type
-| 39
+| 40
 | pipeline
 | yes
 | 1
 | GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R314, R397
 | `QueryServiceTableInterfaceField`
-| R405 — a root `@service` field returning a single-table discriminated interface
+| A root `@service` field returning a single-table discriminated interface
 | 20
 | pipeline
 | yes
@@ -217,7 +217,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | -
 | `QueryTableField`
 | _(no javadoc)_
-| 879
+| 883
 | pipeline
 | yes
 | 16
@@ -255,24 +255,24 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 |===
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `BatchedLookupTableField`
-| The `@lookupKey` twin of `BatchedTableField` (R432): a DataLoader-batched keyed
+| The `@lookupKey` twin of `BatchedTableField`: a DataLoader-batched keyed
 | 31
 | pipeline
 | yes
 | 1
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R432
+| R333
 | `BatchedTableField`
 | A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
-| 314
+| 321
 | pipeline
 | yes
 | 4
 | ClassifierAdvisoryFixPipelineTest, GraphitronSchemaBuilderTest, LintSuppressionPipelineTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.FetcherPipelineTest, generators.NodeIdReferenceFilterPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R432
+| R333
 | `ColumnField`
 | A single-column output carrier on a table-backed parent. The column's value reaches the
-| 1665
+| 1731
 | pipeline
 | yes
 | 17
@@ -312,7 +312,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R109, R333, R54
 | `ErrorsField`
 | The `errors` field on a payload type. Lift target for the payload-side of a
-| 96
+| 102
 | pipeline
 | yes
 | 1
@@ -320,12 +320,12 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R304, R333
 | `InterfaceField`
 | A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
-| 29
+| 73
 | pipeline
 | yes
 | 1
 | DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, MultiTableChildReferencePathRejectionPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R447, R458
+| R222, R447
 | `LookupTableField`
 | _(no javadoc)_
 | 15
@@ -333,7 +333,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R288, R323, R432, R462, R472, R97
+| R222, R288, R323, R462, R472, R97
 | `NestingField`
 | A nesting child field whose value is a fragment of the parent's table-bound projection
 | 66
@@ -341,7 +341,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, NestingFieldPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R122, R221, R222, R302, R323, R333, R419, R432, R462, R472
+| R122, R221, R222, R302, R323, R333, R419, R462, R472
 | `ParticipantColumnReferenceField`
 | A scalar field on a `GraphitronType.TableInterfaceType` participant that
 | 18
@@ -352,14 +352,14 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R109
 | `PropertyField`
 | _(no javadoc)_
-| 367
+| 373
 | pipeline
 | yes
 | 1
 | ClassifierAdvisoryFixPipelineTest, DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R222, R304, R333, R51
 | `RecordCompositeField`
-| R329 — the single data field on an `@service` record-composite carrier payload. The
+| The single data field on an `@service` record-composite carrier payload. The
 | 11
 | pipeline
 | yes
@@ -374,17 +374,9 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | 1
 | SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R304, R333, R51
-| `RecordTableMethodField`
-| DTO-parent sibling of `TableMethodField`: a child field on a class-backed (non-table)
-| 7
-| pipeline
-| no
-| 0
-| GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest
-| R222, R314, R403, R432
 | `ServiceRecordField`
 | A child field backed by a developer-provided service method (`@service`), where the
-| 56
+| 57
 | pipeline
 | yes
 | 1
@@ -392,14 +384,14 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | -
 | `ServiceTableField`
 | A child field backed by a developer-provided service method (`@service`), where the
-| 33
+| 34
 | pipeline
 | yes
 | 1
 | GraphitronSchemaBuilderTest, ReFetchDerivationTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.JooqRecordServiceParamPipelineTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R222, R314, R462
 | `SingleRecordIdField`
-| R275 — the single data field on an `@service` source-record carrier whose data
+| The single data field on an `@service` source-record carrier whose data
 | 18
 | pipeline
 | yes
@@ -407,7 +399,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | -
 | `SingleRecordIdFieldFromReturning`
-| R156 — the single data field on a payload-returning DELETE carrier whose data field is an
+| The single data field on a payload-returning DELETE carrier whose data field is an
 | 11
 | pipeline
 | yes
@@ -421,7 +413,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, MultiSchemaPipelineTest, ReferencePathTerminalTargetTest, SourceShapeProjectionTest, VariantCoverageTest, catalog.LspColumnDispatchProjectionTest, generators.InlineFilterArgumentSourcePipelineTest, generators.NodeIdReferenceFilterPipelineTest, model.ParentCorrelationFirstHopInvariantTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R288, R302, R323, R333, R427, R432, R462, R472
+| R222, R288, R302, R323, R333, R427, R462, R472
 | `TableInterfaceField`
 | _(no javadoc)_
 | 11
@@ -445,7 +437,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, MultiTableChildReferenceForPipelineTest, PolymorphicNestingFilterTest, RecordParentMultiTablePolymorphicPipelineTest, SourceShapeProjectionTest, VariantCoverageTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R222, R458
+| R222
 |===
 
 == InputField
@@ -492,7 +484,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
-| R122, R221, R222, R302, R323, R333, R419, R432, R462, R472
+| R122, R221, R222, R302, R323, R333, R419, R462, R472
 | `UnboundField`
 | Input field that does not bind to a SQL column. The defining property is the absence of a
 | 153
@@ -510,7 +502,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `Backed`
 | R75 Phase 1: a payload carrier whose backing class was reflected from its
-| 63
+| 69
 | pipeline
 | yes
 | 4
@@ -518,7 +510,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R180, R427
 | `ConnectionType`
 | A Relay connection object type — the outer wrapper whose fields are
-| 156
+| 162
 | pipeline
 | yes
 | 3
@@ -526,7 +518,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R208, R222, R297, R333, R427
 | `EdgeType`
 | A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
-| 156
+| 162
 | pipeline
 | yes
 | 3
@@ -549,7 +541,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | DunderFreeEmissionPipelineTest, GraphitronSchemaBuilderTest, SourceShapeProjectionTest, VariantCoverageTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R278
 | `FacetValueType`
-| A synthesised, cross-schema-reusable facet value type (R13), e.g
+| A synthesised, cross-schema-reusable facet value type, e.g
 | 30
 | pipeline
 | yes
@@ -557,7 +549,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | ConnectionPromoterTest, GraphitronSchemaBuilderTest, generators.FacetEmitterTest, generators.schema.ConnectionRegistrationsTest, test.internal.GeneratorDeterminismTest, test.querydb.FixtureWarningsGateTest
 | R427
 | `FacetsType`
-| The synthesised per-connection facets container (R13), e.g
+| The synthesised per-connection facets container, e.g
 | 13
 | pipeline
 | yes
@@ -566,7 +558,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R427
 | `InterfaceType`
 | An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
-| 250
+| 271
 | pipeline
 | yes
 | 1
@@ -654,7 +646,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R221, R222, R337, R97
 | `RootType`
 | A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
-| 1449
+| 1453
 | pipeline
 | yes
 | 21
@@ -662,7 +654,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R85
 | `ScalarType`
 | A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
-| 4916
+| 4932
 | pipeline
 | yes
 | 1
@@ -686,7 +678,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R278, R447, R97
 | `TableType`
 | A GraphQL object type annotated with `@table`, without `@node`
-| 1307
+| 1353
 | pipeline
 | yes
 | 19

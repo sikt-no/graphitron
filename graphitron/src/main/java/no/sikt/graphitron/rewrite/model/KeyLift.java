@@ -22,8 +22,11 @@ import java.util.Objects;
  * {@code GeneratorUtils.buildRecordParentKeyExtraction} on the record-sourced paths; the
  * Table-sourced emit path stays wrap-driven ({@code GeneratorUtils.buildKeyExtraction} against
  * the parent's own table row), so the Table arm's stored {@link FkColumns} is consumed only by
- * the constructor's {@link #checkResidueAgreement} today — deliberate provisioning for R314's
- * unified fetcher. {@code @service}-backed fields never carry a lift: their key extraction is
+ * the constructor's {@link #checkResidueAgreement}: R314's unified fetcher
+ * ({@code TypeFetcherGenerator.buildBatchedDataFetcher}) landed and deliberately kept the Table
+ * arm's key read wrap-driven (one switch on the stored source shape; re-deriving the read
+ * through the lift would have been a second spelling of the same projection), so the stored arm
+ * remains a constructor-checked totality fact rather than an emit input. {@code @service}-backed fields never carry a lift: their key extraction is
  * authored by the {@code Sources} signature.
  *
  * <p>The emitted key-row shape is a total derivation of the arm ({@link #wrap()}): the two

@@ -1784,6 +1784,16 @@ contribution.
   onto this model's vocabulary; it does not widen into an umbrella. The run-up is R431
   (`decompose-sourcekey`, eager, first) then R432 (`collapse-split-and-record-table-leaves`, the
   beachhead), then R314 emits the reentry family off the model and retires `dispatchPerformsReFetch`.
+
+  > **Shipped (R314, 2026-07-16).** The reentry slice landed across five implementation commits
+  > (`d1f13a2` site-level fact + command registry + bidirectional oracle; `7137d1e` the one
+  > source-shape-gated batched fetcher; `4abde9e` `RecordTableMethodField` dissolved via
+  > `TableExpr.MethodCall`; `4e04345` the row-15 verdict pinned + root service leaves documented;
+  > `11122a4` the named DML reentry rows companions; `1158c14` `dispatchPerformsReFetch` retired
+  > for the reentry implementedness guard). Thread I's level-2 command/name registry exists in
+  > main source (`no.sikt.graphitron.rewrite.methodgraph`), populated for the whole reentry
+  > family and joined bidirectionally by `ReentryCommandClosureTest`. The DML correlation
+  > rendering (keys-IN vs the VALUES-join primitive) is recorded residue owned by R489.
   Acceptance across the run-up is **execution-tier equivalence** (same rows, same order, error paths
   intact), not byte-for-byte generated-output equality: the goal is gradual improvement toward this
   model, and slices may normalize generated-code shape as they go.

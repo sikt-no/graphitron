@@ -9,20 +9,20 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === RootField
 
-* *MutationBulkDeletePayloadField*: R266 — the payload-returning `@mutation(typeName: DELETE)` field with bulk
-* *MutationBulkDmlRecordField*: R141 — a record-returning DML mutation with bulk `@table` input and a list-shaped
-* *MutationBulkUpdatePayloadField*: R258 — the payload-returning `@mutation(typeName: UPDATE)` field with bulk
-* *MutationDeletePayloadField*: R266 — the payload-returning `@mutation(typeName: DELETE)` field with single
-* *MutationDeleteTableField*: R266 / R287: the `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike
-* *MutationDmlRecordField*: R75 / Phase 1 — a record-returning DML mutation: the schema field carries
+* *MutationBulkDeletePayloadField*: The payload-returning `@mutation(typeName: DELETE)` field with bulk
+* *MutationBulkDmlRecordField*: A record-returning DML mutation with bulk `@table` input and a list-shaped
+* *MutationBulkUpdatePayloadField*: The payload-returning `@mutation(typeName: UPDATE)` field with bulk
+* *MutationDeletePayloadField*: The payload-returning `@mutation(typeName: DELETE)` field with single
+* *MutationDeleteTableField*: The `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike
+* *MutationDmlRecordField*: A record-returning DML mutation: the schema field carries
 * *MutationInsertTableField*
-* *MutationRoutineWriteField*: A mutation field whose table chain starts with a database routine (R451): the routine call
+* *MutationRoutineWriteField*: A mutation field whose table chain starts with a database routine: the routine call
 * *MutationServicePolymorphicField*: A mutation field backed by a developer-provided service method that returns a multitable
 * *MutationServiceRecordField*: A mutation field backed by a developer-provided service method, returning a non-table type
 * *MutationServiceTableField*: A mutation field backed by a developer-provided service method, returning a table-mapped type
-* *MutationServiceTableInterfaceField*: R405 — the mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
-* *MutationUpdatePayloadField*: R258 — the payload-returning `@mutation(typeName: UPDATE)` field with single
-* *MutationUpdateTableField*: R246: the `@mutation(typeName: UPDATE)` field that returns its `@table` type
+* *MutationServiceTableInterfaceField*: The mutation analogue of `QueryField.QueryServiceTableInterfaceField`: a root
+* *MutationUpdatePayloadField*: The payload-returning `@mutation(typeName: UPDATE)` field with single
+* *MutationUpdateTableField*: The `@mutation(typeName: UPDATE)` field that returns its `@table` type
 * _(not yet supported)_ *MutationUpsertTableField*
 * *QueryInterfaceField*: A root query field returning a multi-table `GraphitronType.InterfaceType`
 * *QueryLookupTableField*
@@ -32,7 +32,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *QueryServicePolymorphicField*: A root query field backed by a developer-provided service method that returns a multitable
 * *QueryServiceRecordField*: A root query field backed by a developer-provided service method, returning a non-table type
 * *QueryServiceTableField*: A root query field backed by a developer-provided service method, returning a table-mapped type
-* *QueryServiceTableInterfaceField*: R405 — a root `@service` field returning a single-table discriminated interface
+* *QueryServiceTableInterfaceField*: A root `@service` field returning a single-table discriminated interface
 * *QueryTableField*
 * *QueryTableInterfaceField*
 * *QueryTableMethodTableField*: A root query field using `@tableMethod`. The developer provides a pre-filtered
@@ -40,7 +40,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === ChildField
 
-* *BatchedLookupTableField*: The `@lookupKey` twin of `BatchedTableField` (R432): a DataLoader-batched keyed
+* *BatchedLookupTableField*: The `@lookupKey` twin of `BatchedTableField`: a DataLoader-batched keyed
 * *BatchedTableField*: A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
 * *ColumnField*: A single-column output carrier on a table-backed parent. The column's value reaches the
 * *ColumnReferenceField*: A single-column output carrier on a table-backed parent reached through a `@reference`
@@ -53,13 +53,12 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *NestingField*: A nesting child field whose value is a fragment of the parent's table-bound projection
 * *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
 * *PropertyField*
-* *RecordCompositeField*: R329 — the single data field on an `@service` record-composite carrier payload. The
+* *RecordCompositeField*: The single data field on an `@service` record-composite carrier payload. The
 * *RecordField*
-* *RecordTableMethodField*: DTO-parent sibling of `TableMethodField`: a child field on a class-backed (non-table)
 * *ServiceRecordField*: A child field backed by a developer-provided service method (`@service`), where the
 * *ServiceTableField*: A child field backed by a developer-provided service method (`@service`), where the
-* *SingleRecordIdField*: R275 — the single data field on an `@service` source-record carrier whose data
-* *SingleRecordIdFieldFromReturning*: R156 — the single data field on a payload-returning DELETE carrier whose data field is an
+* *SingleRecordIdField*: The single data field on an `@service` source-record carrier whose data
+* *SingleRecordIdFieldFromReturning*: The single data field on a payload-returning DELETE carrier whose data field is an
 * *TableField*
 * *TableInterfaceField*
 * *TableMethodField*: A child field using `@tableMethod` — the developer provides a pre-filtered
@@ -81,8 +80,8 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *EdgeType*: A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
 * *EnumType*: A GraphQL enum type. Classifier records it so `schema.types()` is complete for
 * *ErrorType*: An object type annotated with `@error`. Maps Java exceptions to GraphQL error responses
-* *FacetValueType*: A synthesised, cross-schema-reusable facet value type (R13), e.g
-* *FacetsType*: The synthesised per-connection facets container (R13), e.g
+* *FacetValueType*: A synthesised, cross-schema-reusable facet value type, e.g
+* *FacetsType*: The synthesised per-connection facets container, e.g
 * *InterfaceType*: An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
 * *JavaRecordInputType*: A non-table input type backed by a Java `record` class
 * *JavaRecordType*: A result type whose producer's reflected return is a Java `record` class

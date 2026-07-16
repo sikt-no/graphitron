@@ -1,7 +1,7 @@
 ---
 id: R314
 title: "Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: classification-model
@@ -125,42 +125,47 @@ predicate next to `requiresReFetch()` (absent exactly on the root service arm), 
 consumer (emit dispatch, registry family boundary, the slice-5 validate guard) reads it rather than
 recomputing `requiresReFetch() && !rootService` per site.
 
-1. **Site-level reentry fact + command registry + bidirectional oracle.** The derived fact above;
-   a main-source command/name registry surfaced on the generation result alongside
-   `emittedUnits()`; the bidirectional oracle (every covered emitted method is exactly one
-   committed command's output; every callee edge into covered methods resolves to a committed
-   command). Two hard conditions from the consultation: the registry is the **name authority** —
-   the reentry family's current name derivations (`rowsMethodName`, the service-lift `load<X>`,
-   the DML follow-up sites) route *through* command minting so the emitter reads the name off the
-   command (regime-1), never registers a parallel description beside its own formula (the R268
-   drift); and the covered-family boundary **derives from the site-level fact**, never a
-   hand-attached tag. Green before any re-platforming; slices 2-4 run under it.
-2. **Child record-sourced reentry onto the model-composed unit.** The `Batched*` Record arms and
-   `RecordTableMethodField` compose the keyed re-query from `(sourceKey/lift, operation, target)`;
-   `RecordTableMethodField` dissolves (or thins) once its distinguishing data lives on the facts;
-   the `SqlRecordTableMethod` permit retires if residue-free.
-3. **Service reentry.** `ServiceTableField`'s lift onto the same unit. Row-15 verdict (stated):
-   the channel catch / early-return arms **stay folded into the Fetcher** — no independent seam —
-   with the load-bearing premise ("reentry service fields are single-channel / the arms are
-   strategy-invariant across the family") pinned by an enforcer (validate-time rejection or
-   pipeline-tier assertion), not left as prose. Root service leaves thin to records whose absent
-   site-level fact carries the passthrough distinction; where their reentry is realized
-   (downstream `$fields`) gets documented, not re-implemented.
-4. **DML projected reentry.** `emitProjected` / `emitDiscriminated`'s follow-up SELECT composes
-   through the same unit: **one rendering** — the VALUES-join with PK self-identity as the
-   degenerate correlation (per R333's re-query unification resolution) — with scatter gated on the
-   arrival/wrapper axis (absent for the single-anchor DML case), never a PK-IN "second rendering"
-   forked on an emit-site self-identity predicate. Transaction boundary (follow-up outside the
-   write transaction) stays pinned by `SingleRecordPayloadDmlTest`. If normalization turns out to
-   change observable query shape or SELECT counts beyond execution-tier equivalence, PK-IN stays as
-   recorded residue with a named successor Backlog item (the `OnlyChild` precedent), not as a
-   permanent second rendering.
-5. **Retire `dispatchPerformsReFetch`.** The generator consults the model facts directly; the
-   validator mirror error retires **in the same slice** as a replacement validate-time guard
-   sourced from the slice-1 site-level fact (an unsupported reentry classification still fails in
-   `ValidateMojo`, not at runtime); `ReFetchDerivationTest`'s derivation assertions stay,
-   mirror-agreement assertions repoint.
-6. **Docs sweep + spec shipped-notes → In Review.**
+1. **Site-level reentry fact + command registry + bidirectional oracle.**
+   > Shipped at `d1f13a2`. `OutputField.emitsKeyedReQuery()` next to `requiresReFetch()` (false
+   > exactly on the root service passthrough); main-source `methodgraph` package
+   > (`MethodCommand` + `MethodCommandRegistry`), the reentry rows/load declaration names routed
+   > through the command-mint seam (`TypeFetcherEmissionContext.rowsDeclarationName`), registry
+   > surfaced on `GenerationResult.methodCommands()`; `ReentryCommandClosureTest` (bidirectional:
+   > model→command, command→emit, exactly-one) with the family boundary derived from the fact.
+2. **Child record-sourced reentry onto the model-composed unit.**
+   > Shipped at `7137d1e` (2a) + `4abde9e` (2b). 2a: `buildSplitQueryDataFetcher` +
+   > `buildRecordBasedDataFetcher` merged into the one source-shape-gated
+   > `buildBatchedDataFetcher` (byte-identical sakila output). 2b: `TableExpr.MethodCall` landed
+   > as its javadoc reserved; `RecordTableMethodField` dissolved fully onto the record-sourced
+   > `BatchedTableField` (the developer's method is the terminal hop's materialization fact,
+   > rendered by the shared table-expression switch); `SqlRecordTableMethod` permit retired;
+   > the previously runtime-stubbed shapes (empty path, multi-hop) upgraded to
+   > classification-time rejections; catalog keeps the `TableMethod(recordParent=true)` surface
+   > by reading the hop fact.
+3. **Service reentry.**
+   > Shipped at `4e04345`. Row-15 verdict stated: the channel catch / early-return arms stay
+   > folded into the Fetcher on the service reentry path, with the single-channel premise
+   > enforced (`validateServiceTableField` rejects a reentry service field carrying a present
+   > channel; fire case pinned). The service-call unit stays a named seam by design (R333 row
+   > 11). Root service leaves documented as value-level-re-fetch-without-site-level-re-query,
+   > the fact linkage in their javadoc.
+4. **DML projected reentry.**
+   > Shipped at `11122a4`. The projected / discriminated follow-up SELECT moved into named
+   > `rows<Name>` companions (model-carried name `DmlTableField.reentryRowsMethodName()`, minted
+   > through the registry; transaction boundary and no-match guard stay in the fetcher; SQL
+   > byte-equivalent). Registry now covers the whole reentry family. **Deviation from the plan's
+   > one-rendering goal, recorded rather than forced:** the correlation stays keys-IN; the
+   > VALUES-join normalization is a bulk-arm row-order behavior change this item's
+   > execution-tier-equivalence acceptance cannot carry, so it is residue with a named successor
+   > — **R489** (`dml-reentry-values-join-rendering`), which also records the RoutineWrite
+   > conditional (outside `requiresReFetch`'s produced-record set today, hence outside this
+   > family).
+5. **Retire `dispatchPerformsReFetch`.**
+   > Shipped at `1158c14`. The mirror and its derivation-agreement error retired; the reentry
+   > implementedness guard (site-level fact on a leaf outside `BatchKeyField` /
+   > `DmlTableField` → ValidateMojo error) landed in the same commit, so no window opened.
+   > `ReFetchDerivationTest` repointed.
+6. **Docs sweep + spec shipped-notes → In Review.** (this commit)
 
 ## Lineage
 
