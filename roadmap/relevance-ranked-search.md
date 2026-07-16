@@ -103,7 +103,12 @@ contract.
    default: partial words, typos, index-ordered KNN top-N) and core
    `tsvector` full text (weighted document relevance, stemming, phrases),
    plus Oracle Text (`CONTAINS()` + `SCORE()` over a `CTXSYS.CONTEXT`
-   domain index). Both Postgres mechanisms are available on Amazon RDS,
+   domain index). Oracle Text is a single mechanism that could serve both
+   demand types; **v1 pins `ORACLE_TEXT` to the type-ahead demand** (the
+   compiled query below delivers what `TRIGRAM` delivers), and weighted
+   prose relevance on Oracle is recorded future work in Non-goals (revised
+   2026-07-16, Oracle docs-first round). Both Postgres mechanisms are
+   available on Amazon RDS,
    which is the deployment constraint (see *The Postgres extension
    landscape and RDS*). Specialized engines external to the database
    (Elasticsearch, OpenSearch, etc.) are **out of scope** unless real
@@ -144,8 +149,11 @@ The facts that flow in, and what each gates:
 - **Entity multiplicity**: single-entity backing (a tsvector column on one
   table) versus multi-entity backing (a search table with a discriminator).
 - **Freshness**: trigger-fed or materialized backings lag their sources, and
-  Oracle Text `CONTEXT` indexes are stale-by-default between `SYNC` runs.
-  Consequence: hits may reference dead rows, so the hit-to-entity join-back
+  Oracle Text `CONTEXT` indexes are stale-by-default between `SYNC` runs
+  (the canonical Oracle migration pins `SYNC (ON COMMIT)`, approximating
+  the Postgres transactional story; consumers who choose `SYNC (EVERY ...)`
+  accept the window). Consequence: hits may reference dead rows, so the
+  hit-to-entity join-back
   is an inner join that drops them, and "asked for 20, got 18" is documented
   behaviour, not a bug.
 
@@ -328,7 +336,7 @@ selected at build time by the `SearchBacking` arm:
 
 | Part | `TRIGRAM` | `TSVECTOR` | `ORACLE_TEXT` |
 |---|---|---|---|
-| match predicate | `{q} <% {column}` (word-similarity threshold) | `{vector} @@ websearch_to_tsquery({config}, {q})` | `CONTAINS({column}, {escapedQ}, 1) > 0` |
+| match predicate | `{q} <% {column}` (word-similarity threshold) | `{vector} @@ websearch_to_tsquery({config}, {q})` | `CONTAINS({column}, {compiledQ}, 1) > 0` |
 | rank ordering | `{q} <<-> {column} ASC` (distance, KNN off the GiST index) | `ts_rank({vector}, websearch_to_tsquery({config}, {q})) DESC` | `SCORE(1) DESC` |
 | tiebreak + bound | `, {pk...} ASC LIMIT {first}` appended in every kind (jOOQ renders the Oracle fetch form) | | |
 
@@ -361,10 +369,28 @@ opinionated picks:
 - `ts_rank` over `ts_rank_cd` in v1: honors the `setweight` labels baked
   into the vector, no cover-density surprises; revisiting is a one-line
   template change that does not touch the contract.
-- Oracle `CONTAINS` query syntax *does* throw on raw operators (`AND`, `&`,
-  trailing `-`), so the emitted runtime includes a conservative escaper
-  (each whitespace-separated token wrapped in `{ }`), keeping the two
-  platforms behaviorally aligned: user input never causes a syntax error.
+- **Oracle needs a query compiler, not an escaper** (revised 2026-07-16,
+  Oracle docs-first round; the earlier "conservative escaper" was
+  falsified). In the `CONTEXT` grammar whitespace between words means
+  *phrase*, not conjunction, and a brace-escaped literal token gets no
+  prefix expansion and no fuzzy matching, so wrap-everything-in-braces
+  compiles the combobox demand away: typing "mat" would match nothing
+  until "matrix" is complete, with no typo tolerance. The emitted runtime
+  therefore owns `{compiledQ}`, a compiler over raw keystrokes: tokenize
+  to maximal letter/digit runs (all operator characters become
+  separators), completed tokens compile to fuzzy terms (`?tok`), the last
+  token compiles to prefix-or-fuzzy (`(tok% | ?tok)`), terms join with
+  `&`, grammar reserved words (`and`, `or`, `near`, ...) compile to
+  brace-escaped exact terms, and tokenless input short-circuits to `[]`
+  without querying. Compiler and canonical migration are **mutually
+  load-bearing**: the prefix arm assumes a `PREFIX_INDEX` wordlist
+  preference, the fuzzy-and-stopword behaviour assumes
+  `STOPLIST CTXSYS.EMPTY_STOPLIST` (the default stoplist makes a
+  stopword-only query a `DRG-50901` parse error, where
+  `websearch_to_tsquery` never throws), and accent folding is the
+  migration's `BASE_LETTER` lexer attribute. The alignment's enforcers
+  are named in the Tests section (the compiler's syntactic half is
+  unit-pinned; the semantic half is owed to the internal pipeline).
 - The PK tiebreak makes the top-N deterministic within a snapshot; a
   `@search` carrier whose entity table lacks a primary key is a build-time
   rejection.
@@ -379,16 +405,26 @@ Runtime semantics:
   matches nothing: the field returns `[]`. Documented behaviour; combobox
   clients gate on input length anyway.
 - Freshness follows the backing: a stored generated column is
-  transactionally fresh on Postgres; Oracle Text CONTEXT indexes are stale
-  between `SYNC` runs, which the how-to documents as an operational
-  property, not a bug.
+  transactionally fresh on Postgres; on Oracle the canonical migration pins
+  `SYNC (ON COMMIT)` (plus `OPTIMIZE (AUTO_DAILY)` against the
+  fragmentation per-commit syncing causes), which the how-to documents
+  together with the staleness window consumers accept if they choose
+  `SYNC (EVERY ...)` instead.
 - **Boot-time supply probe**: the generated runtime validates each search
   binding once at startup, extension presence (`pg_extension` for
   `TRIGRAM`) plus one dummy-term execution of the ranked query, and fails
   fast with a named error; for `TRIGRAM` it also reports the effective
   `pg_trgm.word_similarity_threshold` in the startup log (report, not
   hard-fail: the pinned 0.4 is the recipe's recommendation, not a contract
-  the consumer cannot deviate from). This is the runtime's answer to the facts the
+  the consumer cannot deviate from). The `ORACLE_TEXT` arm probes the
+  domain index's existence on the bound column, executes one dummy
+  compiled query, and reports the index's sync policy and the load-bearing
+  preference attributes (`PREFIX_INDEX`, stoplist, `BASE_LETTER`) read
+  from `CTX_USER_INDEX_VALUES`, the Oracle analog of the threshold report;
+  the probe code ships in the consumer's generated runtime and runs
+  against their Oracle at their deploy time, so it exists even though this
+  repo cannot execute it (its own verification is owed to the internal
+  pipeline). This is the runtime's answer to the facts the
   catalog cannot carry: a wrong `kind:` assertion (extension never
   installed, index dropped, trigger dead) surfaces at deploy time with a
   cause, not as redacted per-request errors when the first user types.
@@ -449,8 +485,18 @@ it carries a draft banner and moves to `docs/manual/how-to/` (gaining real
 xrefs) when phase 2 lands. Its wire-behaviour tables are empirically
 verified and double as phase 2's acceptance behaviour. Writing it forced
 two spec revisions recorded in this document: the threshold pin (Generated
-query section) and the two-shape fixture (below). The tsvector and Oracle
-halves are authored in their phases.
+query section) and the two-shape fixture (below).
+
+**The Oracle how-to is also drafted**, as
+`roadmap/relevance-ranked-search-oracle-howto.adoc` (2026-07-16, same
+docs-first method), moving to `docs/manual/how-to/` when phase 4 lands.
+One honesty difference from the trigram sibling: its claims are pinned
+against Oracle Text documentation, not a live instance, and it says so in
+its banner; its closing "What still needs live verification" checklist
+doubles as the internal pipeline's execution-tier test plan (Tests
+section). Writing it falsified the escaper design and forced the compiled
+query, the canonical-migration preferences, and the demand-pinning
+decision recorded above. The tsvector half is authored in its phase.
 
 ## Implementation sites
 
@@ -469,8 +515,8 @@ halves are authored in their phases.
 - Emitters: the ranked query parts in the root rows-method path
   (`TypeFetcherGenerator` + the query-part emitters), per-kind templates;
   hit `node` passthrough registration in `FetcherRegistrationsEmitter`;
-  the Oracle escaper in the emitted runtime (beside `ConnectionHelper`'s
-  generator).
+  the Oracle query compiler in the emitted runtime (beside
+  `ConnectionHelper`'s generator).
 - `graphitron-sakila-db/init.sql` (phase 2): `CREATE EXTENSION pg_trgm`;
   the threshold pin (`ALTER DATABASE ... SET
   pg_trgm.word_similarity_threshold = 0.4`, via a `format(...,
@@ -495,8 +541,14 @@ halves are authored in their phases.
 ## Tests
 
 - **Unit-tier** (invariants the type system can't pin): `SearchSpec` /
-  `SearchBacking` compact-constructor rules; the Oracle escaper (token
-  wrapping, embedded braces, blank input).
+  `SearchBacking` compact-constructor rules; the Oracle query compiler's
+  *syntactic* invariants, pinned as exact input-to-compiled-string cases
+  (a pure `String → String` runtime helper, so this is legitimate
+  unit-tier I/O pinning, not a code-string assertion on emitted
+  generator output): tokenization drops every operator character,
+  reserved words compile brace-escaped, the last token gets the
+  prefix-or-fuzzy arm, tokenless input compiles to no query, and no
+  input can produce a `DRG-` parse error by construction.
 - **Pipeline-tier** (primary behavioural tier): classification test
   (`SearchSpec` populated with the expected backing arm, hit type
   synthesized and registered, arguments appended); the rejection matrix,
@@ -524,12 +576,18 @@ halves are authored in their phases.
 - **Oracle**: emit shape pinned at pipeline tier (the SQL templates render
   without an Oracle connection); execution-tier runs in Sikt's internal
   GitLab pipelines with the licensed jOOQ, or in this repo's CI if the
-  license question resolves that way. Stated plainly for the reviewer: the
-  `OracleText` arm's behavioural floor *in this repo* is pipeline-tier
-  shape plus the unit-pinned escaper (the one runtime invariant with no
-  public-CI execution backstop is the one with its own unit enforcer);
-  execution parity is owed to the internal pipeline and the arm ships
-  without the Postgres-grade execution proof until then.
+  license question resolves that way. Stated plainly for the reviewer,
+  per invariant (the compiler makes a wider behavioural claim than the
+  escaper it replaced, so the honesty note is enumerated, not singular):
+  *never-throws on user input* is unit-pinned in this repo (the one
+  invariant that lives without an Oracle); *prefix matching from two
+  characters, fuzzy typo rescue, conjunctive narrowing, empty-input `[]`,
+  the compiler-to-`PREFIX_INDEX`/empty-stoplist migration alignment, and
+  the boot probe's attribute report* have **no public-CI enforcer** and
+  are owed to the internal pipeline as the named execution list in the
+  Oracle how-to's "What still needs live verification" section, which
+  mirrors the Postgres trigram execution list item for item. The arm
+  ships without the Postgres-grade execution proof until then.
 
 ## Phasing
 
@@ -559,11 +617,15 @@ Four landings, each through the canonical flow:
    migration, the weighted-ranking execution tests, the how-to's full-text
    half. Acceptance: weighted relevance (title beats description)
    demonstrated end to end.
-4. **Oracle emit + docs.** The `ORACLE_TEXT` templates, escaper,
-   pipeline-tier shape pinning, the Oracle how-to with the sync-policy
-   note; execution deferred to licensed infrastructure. Acceptance: emitted
-   Oracle SQL shape pinned; the internal-pipeline execution plan written
-   down.
+4. **Oracle emit + docs.** The `ORACLE_TEXT` templates, the query
+   compiler with its unit-pinned syntactic invariants, pipeline-tier
+   shape pinning, the boot probe's Oracle arm, the Oracle how-to
+   promoted from its draft (`relevance-ranked-search-oracle-howto.adoc`)
+   into `docs/manual/how-to/`; execution deferred to licensed
+   infrastructure. Acceptance: emitted Oracle SQL shape pinned; the
+   compiler unit-pinned; the how-to's "What still needs live
+   verification" checklist adopted as the internal-pipeline execution
+   plan.
 
 ## Non-goals (v1)
 
@@ -577,6 +639,18 @@ Four landings, each through the canonical flow:
   discriminator): a recognized backing shape, deferred until demanded; the
   sealed `SearchBacking` grows a `SearchTable` arm and reuses the row-domain
   discrimination and node-key machinery.
+- **Weighted prose relevance on Oracle** (section weighting, `ABOUT`
+  queries, query-relaxation templates): Oracle Text is one mechanism
+  serving two demand types, and v1 pins `ORACLE_TEXT` to type-ahead. If
+  the prose demand ever appears, it arrives as a *separate demand-axis
+  argument on the directive* (defaulting to type-ahead, required only
+  where a mechanism serves multiple demands, the same conditional
+  pattern `config:` already uses for `TSVECTOR`), **not** a new
+  `SearchKind` value (that would splice mechanism and demand into one
+  enum, hand-maintaining the cross-product) and **not** a `config:`
+  overload (whose meaning would then differ per kind). `kind` names the
+  mechanism, the fact the catalog cannot see and the author must assert;
+  demand stays its own axis (principles-architect consult, 2026-07-16).
 - **Child-field search**, relevance **score exposure**, **highlighting**
   (`ts_headline`), deep **ranked paging**, and **external engines**
   (Elasticsearch and kin): all recorded in the decisions and dead-ends
@@ -752,6 +826,27 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-16 (Spec revision, Oracle docs-first round): drafted the Oracle
+  how-to (`relevance-ranked-search-oracle-howto.adoc`) by the same
+  docs-first method, against Oracle Text documentation (no live Oracle in
+  this environment; the how-to's banner says so and its closing
+  verification checklist becomes the internal pipeline's execution plan).
+  Writing it falsified the "conservative escaper" design: in the
+  `CONTEXT` grammar whitespace means phrase and brace-escaped literals
+  get no prefix or fuzzy expansion, so the escaper as specced compiled
+  the combobox demand away entirely. Replaced by a query compiler
+  (tokenize, fuzzy completed tokens, prefix-or-fuzzy last token, `&`
+  conjunction, braces only for reserved words) that is mutually
+  load-bearing with a canonical migration pinning `PREFIX_INDEX`,
+  `STOPLIST CTXSYS.EMPTY_STOPLIST` (a stopword-only query is otherwise a
+  `DRG-50901` error, breaking never-throws parity), `BASE_LETTER` accent
+  folding (full accent insensitivity, stronger than the Postgres arm's
+  threshold dividend), `SYNC (ON COMMIT)` and `OPTIMIZE (AUTO_DAILY)`.
+  Principles-architect consult resolved the one-mechanism-two-demands
+  fork: `kind` names the mechanism, v1 pins `ORACLE_TEXT` to type-ahead,
+  future Oracle prose relevance is a demand-axis directive argument (see
+  Non-goals), not a new kind and not a `config:` overload. The Tests
+  section's Oracle honesty note is now enumerated per invariant.
 - 2026-07-16 (Spec revision, collation question): can collations serve
   accent-insensitive search? No: trigram similarity ignores the column's
   collation entirely (verified: identical `word_similarity` on a plain

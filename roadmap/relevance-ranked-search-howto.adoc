@@ -87,7 +87,7 @@ The hit wrapper is intentional future-proofing: hit-level metadata (an opt-in sc
 | Longer prose: descriptions, articles, where "title match beats body match" matters
 |===
 
-If users pick a known entity by typing its name, use `TRIGRAM`. If they search prose and expect field weighting, use `TSVECTOR` (its half of this guide ships with R427 phase 3). `ORACLE_TEXT` is the Oracle arm (phase 4).
+If users pick a known entity by typing its name, use `TRIGRAM`. If they search prose and expect field weighting, use `TSVECTOR` (its half of this guide ships with R427 phase 3). On Oracle, the type-ahead demand is `ORACLE_TEXT` (phase 4); see the sibling how-to below.
 
 == Step 1: pick the text users type against
 
@@ -214,5 +214,6 @@ On the client, the usual combobox hygiene applies and is enough: debounce keystr
 == See also
 
 * R427 (`roadmap/relevance-ranked-search.md`): the full design, including the `TSVECTOR` weighted full-text arm (phase 3) and Oracle Text (phase 4).
+* How-to: Autocomplete search on Oracle (`roadmap/relevance-ranked-search-oracle-howto.adoc`): the same combobox contract over an Oracle Text CONTEXT index; same schema surface, different migration and a generator-owned query compiler.
 * How-to: Sort results, for ordinary column ordering on list fields; ordering on a `@search` field is fixed by the ranking and not authorable.
 * How-to: Cursor-paginated connections, for browsable lists with stable cursors; a search field deliberately is not one.

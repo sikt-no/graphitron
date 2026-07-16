@@ -1,0 +1,204 @@
+= How-to: Autocomplete search on Oracle (Oracle Text type-ahead)
+:description: Give a combobox a bounded, ranked, typo-tolerant type-ahead field backed by an Oracle Text CONTEXT index.
+:!toc:
+
+[NOTE]
+====
+*Draft riding roadmap item R427 (status: Spec).* The `@search` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the Oracle landing (R427 phase 4) ships. Unlike the trigram sibling page, whose behaviour tables were verified against a live PostgreSQL, the claims here are pinned against Oracle Text documentation (19c/21c/23ai) only; no live Oracle ran during drafting. Everything that needs a live instance is collected in <<verification,What still needs live verification>> and is owed to the licensed internal pipeline before phase 4 is accepted.
+====
+
+Same promise as the trigram recipe: the frontend sends the user's keystrokes, the backend returns the twenty best matches, fast, from the second keystroke, tolerant of a typo, `[]` for nonsense. On Oracle the mechanism is Oracle Text: `CONTAINS()` over a `CTXSYS.CONTEXT` domain index, ranked by `SCORE()`. Oracle Text ships with every edition (including Free and RDS for Oracle) at no extra cost; the price of the recipe is one migration with two preference calls and an index.
+
+One thing is deliberately different from Postgres. Oracle Text has a query *language*: whitespace between words means phrase, `AND`/`&`/`OR`/`?`/`%` are operators, and a query of only stopwords is a parse error. Raw keystrokes are not a valid query, so graphitron owns a compiler that turns the `search` string into a safe, opinionated `CONTAINS` query. You never write that query; this page shows you what it compiles to so the behaviour is predictable.
+
+== What you end up with
+
+Identical to the trigram recipe; the platform choice is invisible in the schema. You write:
+
+[source,graphql]
+----
+type Query {
+    filmSearch: [Film!]! @search(column: "TITLE", kind: ORACLE_TEXT)
+}
+----
+
+and the frontend sees the same synthesized surface:
+
+[source,graphql]
+----
+type Query {
+    filmSearch(search: String!, first: Int): [QueryFilmSearchHit!]!
+}
+
+type QueryFilmSearchHit {
+    node: Film!
+}
+----
+
+The combobox query, the response shape, the bounding contract (`defaultFirst` 20, `maxFirst` 100, error past the cap) and the hit wrapper's future-proofing are all as on the trigram page; this page covers only what Oracle changes.
+
+== One mechanism, one kind, one query shape
+
+Postgres offers two mechanisms and `@search` maps each to a kind: `TRIGRAM` for type-ahead over names and codes, `TSVECTOR` for weighted relevance over prose. Oracle Text is a single mechanism that could serve both demands, so the kind alone does not determine the query shape; the generator's compiled query does. **In v1, `ORACLE_TEXT` is pinned to the type-ahead demand**, matching what `TRIGRAM` delivers: word-prefix matching, typo tolerance, conjunctive multi-word refinement. `kind` names the *mechanism* (the fact the catalog cannot see, which you assert); the demand is a separate axis, and today it has one value. Weighted prose relevance on Oracle (section weighting, `ABOUT` queries, progressive relaxation) is recorded future work on R427, shaped as a demand argument on the directive that defaults to type-ahead; it will be an additive surface, not a change to this one.
+
+If your text is long prose and your users expect "title match beats body match", that demand has no Oracle arm yet; say so on the roadmap item rather than bending this field into it.
+
+== What the generator sends
+
+The compiled query is the load-bearing design decision on Oracle, so it is documented as contract. The compiler:
+
+1. Splits the `search` string into tokens: maximal runs of letters and digits (Unicode-aware). Everything else, including all `CONTAINS` operator characters, is token-separating whitespace. No user character ever reaches the query as syntax.
+2. Compiles every completed token (all but the last) as a fuzzy term: `?tok`. Typos anywhere in the input stay rescueable.
+3. Compiles the last token, the one mid-typing, as prefix-or-fuzzy: `(tok% | ?tok)`. Prefix matching makes type-ahead work from the second character; the fuzzy alternative rescues a typo in a word the user believes is complete.
+4. Joins the compiled terms with `&` (AND): every typed word must match, so adding a word always narrows.
+5. Wraps a token in `{ }` instead when it collides with a `CONTEXT` grammar reserved word (`and`, `or`, `not`, `near`, `about`, ...): reserved words compile to exact escaped terms. This is the only place braces appear.
+6. Compiles a tokenless input (empty, or all separators) to no query at all: the field returns `[]` without touching the database.
+
+What that produces, typing toward "The Matrix":
+
+[cols="1,2"]
+|===
+| Typed | Compiled `CONTAINS` query
+
+| `ma`
+| `(ma% \| ?ma)`
+
+| `matr`
+| `(matr% \| ?matr)`
+
+| `matirx` (typo)
+| `(matirx% \| ?matirx)`; the prefix arm finds nothing, the fuzzy arm expands to "matrix"
+
+| `matrix relo`
+| `?matrix & (relo% \| ?relo)`
+
+| `the matrix`
+| `?the & (matrix% \| ?matrix)`; works because the recipe indexes with an empty stoplist, see below
+
+| `near`
+| `{near}`; reserved word, exact match only until the next keystroke disambiguates
+
+| `x&y=z!`
+| `(x% \| ?x) & (y% \| ?y) & (z% \| ?z)`; operator characters never survive tokenization
+
+| `xyzzy`
+| `(xyzzy% \| ?xyzzy)`; expands to nothing, returns `[]`
+|===
+
+The compiled string is bound as a plain SQL parameter into `CONTAINS({column}, ?, 1) > 0`; ranking is `ORDER BY SCORE(1) DESC, {pk} ASC` with the top-N fetch. SQL injection is off the table by construction (bind variable); query-language injection is off the table by tokenization.
+
+== Step 1: pick the text users type against
+
+*A single existing column* is the primary shape, exactly as on Postgres: bind a title, a name, a code directly.
+
+*A combination of columns* diverges from the Postgres recipe. Oracle has no stored generated columns (its virtual columns are never stored, and a `CONTEXT` index on one is not a supported shape), so the blessed Postgres move of a generated concatenation column does not port. The Oracle-native equivalent is a `MULTI_COLUMN_DATASTORE` preference: the index is created on one carrier column but ingests several.
+
+[source,sql]
+----
+BEGIN
+    ctx_ddl.create_preference('actor_name_ds', 'MULTI_COLUMN_DATASTORE');
+    ctx_ddl.set_attribute('actor_name_ds', 'COLUMNS', 'first_name, last_name');
+END;
+/
+----
+
+The known operational catch: the index only reindexes a row when the *carrier* column is touched by DML. Updates that change only the other ingested columns need the standard companion trigger that touches the carrier (`SET first_name = :new.first_name, last_name = :new.last_name, last_name = last_name` style, or a dedicated timestamp carrier). This page keeps the single-column shape as its running example; the multi-column shape and its trigger land in the fixture plan when phase 4 is implemented, and both are on the <<verification,verification list>>.
+
+Keep the ingested text name-like, same rule as the trigram page: no long prose in a type-ahead backing.
+
+== Step 2: the migration
+
+The full canonical migration, single-column shape. Requires the `CTXAPP` role (granted to the master user on RDS for Oracle; grant it explicitly elsewhere).
+
+[source,sql]
+----
+BEGIN
+    -- Prefix support: type-ahead's "mat%" rides precomputed prefix
+    -- tokens instead of expanding against the whole token table, which
+    -- also keeps it clear of the WILDCARD_MAXTERMS expansion cap.
+    ctx_ddl.create_preference('film_title_wl', 'BASIC_WORDLIST');
+    ctx_ddl.set_attribute('film_title_wl', 'PREFIX_INDEX', 'YES');
+    ctx_ddl.set_attribute('film_title_wl', 'PREFIX_MIN_LENGTH', '2');
+    ctx_ddl.set_attribute('film_title_wl', 'PREFIX_MAX_LENGTH', '10');
+
+    -- Accent folding at index and query time: "flaklypa" finds
+    -- "Flåklypa" exactly, not as a lucky near-miss.
+    ctx_ddl.create_preference('film_title_lx', 'BASIC_LEXER');
+    ctx_ddl.set_attribute('film_title_lx', 'BASE_LETTER', 'YES');
+END;
+/
+
+CREATE INDEX film_title_ctx ON film (title)
+    INDEXTYPE IS CTXSYS.CONTEXT
+    PARAMETERS ('
+        WORDLIST film_title_wl
+        LEXER    film_title_lx
+        STOPLIST CTXSYS.EMPTY_STOPLIST
+        SYNC     (ON COMMIT)
+        OPTIMIZE (AUTO_DAILY)
+    ');
+----
+
+Why each line is part of the recipe, not tuning:
+
+* *`PREFIX_INDEX`* is what makes the compiled `tok%` arm fast and safe. Without it, short prefixes on large token tables either crawl or die with `DRG-51030` (wildcard expansion cap). `PREFIX_MIN_LENGTH 2` matches the client-side two-character gate.
+* *`STOPLIST CTXSYS.EMPTY_STOPLIST`*: the default stoplist makes common words unsearchable and makes a stopword-only query a hard parse error (`DRG-50901`). A user typing "the" toward "The Matrix" expects matches. For name-like text the index-size cost of keeping every word is trivial; an empty stoplist removes the entire error class and makes every typed word count.
+* *`BASE_LETTER`*: full accent insensitivity as a supply fact. This is a genuine advantage over the Postgres trigram arm, where accent tolerance only rides the typo threshold one accent at a time.
+* *`SYNC (ON COMMIT)`*: `CONTEXT` indexes are stale-by-default between syncs; this pins freshness to commit, approximating the transactional freshness the Postgres arms get for free. It runs serially inside commit, which is the right trade for name-like columns with modest write rates; see the operational notes.
+* *`OPTIMIZE (AUTO_DAILY)`*: per-commit syncing fragments the index over time; the built-in background optimize job is the standing repair.
+
+== Step 3: regenerate the jOOQ catalog
+
+Run your jOOQ codegen (the commercial jOOQ distribution, since the dialect is Oracle) so the bound column is in the catalog. The build validates `column:` against the catalog; the `CONTEXT` index itself is a domain index and invisible to the catalog, which is why `kind: ORACLE_TEXT` is an assertion you make and the boot-time probe is the runtime check behind it.
+
+== Step 4: bind the field
+
+[source,graphql]
+----
+type Query {
+    filmSearch: [Film!]! @search(column: "TITLE", kind: ORACLE_TEXT)
+}
+----
+
+The rejection matrix is the trigram page's, with the Oracle specifics: `config:` on an `ORACLE_TEXT` binding rejects (it belongs to `TSVECTOR` only; Oracle analyzer choices live in the lexer preference, in the migration, where they belong), and the column check is membership-only (the domain index and its preferences are invisible to the generated catalog).
+
+== Bounding and the client contract
+
+Identical to the trigram page: `defaultFirst` 20, `maxFirst` 100, both tunable on the directive, out-of-range `first` is a client-visible error, ordering is `SCORE` descending with the primary key as deterministic tiebreak.
+
+One honest caveat on ranking quality: `SCORE` on short name-like fields is coarse (term frequency in a three-word title carries little signal), so ties are common and the PK tiebreak does more work than trigram distance does on Postgres. Whether the ranked feel matches the trigram arm, or needs the query-relaxation upgrade recorded as future work, is a <<verification,verification item>>.
+
+== Operational notes
+
+* *Startup, not first-keystroke, is when a broken binding surfaces.* The boot-time probe checks the domain index exists on the bound column, executes one dummy compiled query, and reports the index's sync policy plus the load-bearing preference attributes (`PREFIX_INDEX`, stoplist, `BASE_LETTER`) read from `CTX_USER_INDEX_VALUES`; this is the Oracle analog of the trigram arm's threshold report. A missing index, a `SYNC (MANUAL)` leftover from a restore, or a rebuilt index that lost its wordlist is visible at deploy time. The probe ships in your generated runtime and runs against your Oracle; what it cannot get in graphitron's own public CI is execution proof, which is why it also appears on the <<verification,verification list>>.
+* *Commit latency is the freshness price.* `SYNC (ON COMMIT)` runs serially in the committing transaction. On name-like columns with modest write rates this is negligible; on write-heavy tables consider `SYNC (EVERY ...)` and accept the staleness window; the "asked for 20, got 18" join-back behaviour documented on R427 covers the lag.
+* *Fragmentation is managed, not absent.* Per-commit syncs fragment the `$I` token table; `OPTIMIZE (AUTO_DAILY)` is the standing repair. If queries degrade over months, check `CTX_REPORT.INDEX_STATS` before suspecting the feature.
+* *Writes never touch the backing.* The index is database-maintained; graphitron's mutation paths never see it. The multi-column datastore's carrier-touch trigger is the one exception, and it is consumer-owned supply.
+
+== Constraints and pitfalls
+
+* No zero-migration mode, same law as Postgres: `@search` without the index runs into the boot probe, by design.
+* The compiled query is the contract; there is no raw-query escape hatch. A consumer who needs `NEAR`, `ABOUT`, section searches or theme queries is outside the type-ahead demand and should say so on R427.
+* The empty stoplist, prefix wordlist and lexer preferences are load-bearing, not tuning: the compiled query *assumes* them (the prefix arm assumes `PREFIX_INDEX`, never-throws assumes the empty stoplist). Recreating the index without them silently degrades behaviour (stopword errors return, prefixes crawl or hit the expansion cap, accents stop folding); the boot report is where drift shows, and in v1 that report plus the internal pipeline are the only enforcers of this alignment.
+* Reserved-word tokens (`and`, `or`, `near`, ...) match exact-only until the user types the next character. Rare, self-healing, and listed here so it is a known edge, not a bug report.
+* Fuzzy expansion works off the indexed token table with the generic spelling matcher; its catch rate on Norwegian tokens, and on very short tokens, is a verification item, not a promise.
+* Top-N only: no cursors, no deep paging, same contract as the trigram arm.
+
+[#verification]
+== What still needs live verification
+
+The licensed internal pipeline owns these before phase 4 acceptance; each becomes an execution-tier assertion there:
+
+1. The compiled-query table above behaves as stated end to end (prefix from two characters, fuzzy rescue of "matirx", conjunctive narrowing, `[]` for nonsense and for empty input).
+2. `?tok` fuzzy catches a transposition on short name-like tokens at the default fuzzy score threshold, and its interaction with `BASE_LETTER` folding.
+3. `SCORE(1)` ordering on short fields: tie density, whether the ranked feel matches the trigram arm, and whether the `weight` variant of `fuzzy()` or a query-relaxation template is needed (both are recorded future work if so).
+4. The reserved-word edge: whether `{near}%` composes legally (if it does, the compiler drops the exact-only special case).
+5. `BASE_LETTER` folding coverage for å, ø, æ specifically (å folds as a diacritic; ø and æ are independent letters and may need `ALTERNATE_SPELLING` or fold not at all).
+6. The multi-column datastore shape: carrier-touch trigger requirement, and jOOQ catalog visibility of the carrier column.
+7. A wildcard arm that expands to zero terms contributes "matches nothing" and never errors.
+8. The boot probe end to end: index-existence detection, the dummy compiled query, and the attribute report (`PREFIX_INDEX`, stoplist, `BASE_LETTER`, sync policy from `CTX_USER_INDEX_VALUES`) resolving as expected on 19c and 23ai.
+
+== See also
+
+* R427 (`roadmap/relevance-ranked-search.md`): the full design; the Oracle arm's weaker in-repo enforcement floor (pipeline-tier emit shape plus unit-pinned compiler, execution owed to the internal pipeline) is stated there.
+* How-to: Autocomplete search (trigram type-ahead), `roadmap/relevance-ranked-search-howto.adoc`: the Postgres sibling; same schema surface, same client contract.
