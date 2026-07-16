@@ -130,6 +130,17 @@ class LinkTargetRoundTripTest {
     }
 
     @Test
+    void conceptPage_becomesLinkMacroNotXref() {
+        // R486 forward direction: an item body linking a concept explainer. link:,
+        // not xref:, because the target is not an adoc page; this also keeps the
+        // WARN-fail asciidoctor log handler quiet.
+        assertThat(plan("[explainer](concepts/some-concept.html)"))
+            .contains("link:../concepts/some-concept.html[explainer]");
+        assertThat(standalone("[explainer](concepts/some-concept.html)"))
+            .contains("link:concepts/some-concept.html[explainer]");
+    }
+
+    @Test
     void unknownTarget_passesThroughAsLinkMacro() {
         assertThat(plan("[misc](../notes/thing.txt)"))
             .contains("link:../notes/thing.txt[misc]");

@@ -335,6 +335,15 @@
                                             <directory>${project.build.directory}/staging/_includes</directory>
                                             <targetPath>_includes</targetPath>
                                         </resource>
+                                        <!-- Concept explainer pages (R486) are raw HTML staged by
+                                             render-roadmap-adoc with hrefs already rewritten to the
+                                             site layout. Asciidoctor renders only .adoc sources and
+                                             an explicit resources list copies nothing else
+                                             automatically, so carry them over here. -->
+                                        <resource>
+                                            <directory>${project.build.directory}/staging/roadmap/concepts</directory>
+                                            <targetPath>roadmap/concepts</targetPath>
+                                        </resource>
                                         <!-- Asciidoctor copies the configured stylesheet (css/site.css)
                                              alongside each rendered page, but not the SDS CSS files
                                              that site.css @imports. Carry those into every subdir's

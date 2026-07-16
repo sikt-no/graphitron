@@ -146,7 +146,7 @@ public final class Main {
         List<Item> items = readItems(dir);
         validate(items);
         Path readme = dir.resolve("README.md");
-        Files.writeString(readme, render(items));
+        Files.writeString(readme, render(items, ConceptPages.readTitles(dir.resolve("concepts"))));
         System.out.println("wrote " + readme);
     }
 
@@ -154,7 +154,7 @@ public final class Main {
         List<Item> items = readItems(dir);
         validate(items);
         Path readme = dir.resolve("README.md");
-        String rendered = render(items);
+        String rendered = render(items, ConceptPages.readTitles(dir.resolve("concepts")));
         String existing = Files.exists(readme) ? Files.readString(readme) : "";
         if (!existing.equals(rendered)) {
             System.err.println("roadmap README.md is out of date. Regenerate with:");
@@ -447,8 +447,9 @@ public final class Main {
 
         List<Item> items = readItems(roadmapDir);
         validate(items);
+        Map<String, String> concepts = ConceptPages.readTitles(roadmapDir.resolve("concepts"));
 
-        Files.writeString(outDir.resolve("index.adoc"), renderAdocStatusBoard(items));
+        Files.writeString(outDir.resolve("index.adoc"), renderAdocStatusBoard(items, concepts));
         Files.writeString(outDir.resolve("by-theme.adoc"), renderAdocByTheme(items));
 
         Path changelog = roadmapDir.resolve("changelog.md");
@@ -471,11 +472,22 @@ public final class Main {
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
 
+        // Stage concept explainer pages (R486). Unlike the .adoc copy above, raw
+        // HTML gets no downstream asciidoctor pass, so href values are rewritten
+        // from the repo layout to the site layout at this point; page content is
+        // otherwise untouched, and the shared assets are copied byte-for-byte.
+        ConceptPages.stage(roadmapDir, outDir.resolve("concepts"));
+
         System.out.println("rendered " + items.size() + " plans + roadmap/by-theme/changelog into " + outDir);
     }
 
     /** Status board: Active by status, Backlog by bucket. */
     static String renderAdocStatusBoard(List<Item> items) {
+        return renderAdocStatusBoard(items, Map.of());
+    }
+
+    /** Status board with a Concept explainers section derived from {@code concepts} (slug → title). */
+    static String renderAdocStatusBoard(List<Item> items, Map<String, String> concepts) {
         StringBuilder sb = new StringBuilder();
         sb.append("= Rewrite Roadmap\n");
         sb.append(":description: Active and Backlog work on the Graphitron rewrite generator.\n\n");
@@ -570,6 +582,17 @@ public final class Main {
                     });
                 sb.append("\n");
             }
+        }
+
+        if (!concepts.isEmpty()) {
+            sb.append("== Concept explainers\n\n");
+            sb.append("Intuition-first background pages for dense or recurring roadmap concepts, ");
+            sb.append("rendered as interactive HTML. Authored with the `explainer` skill; ");
+            sb.append("this listing derives from `roadmap/concepts/*.html`, never by hand.\n\n");
+            new TreeMap<>(concepts).forEach((slug, title) ->
+                sb.append("* link:concepts/").append(slug).append(".html[")
+                  .append(escapeAdocCell(title)).append("]\n"));
+            sb.append("\n");
         }
 
         sb.append("== Done\n\n");
@@ -903,24 +926,6 @@ public final class Main {
 
     private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
     private static final String GH_BASE = "https://github.com/sikt-no/graphitron";
-
-    // Diataxis quadrant for each authored architecture page (R182). Drives the
-    // ../docs/<slug>.adoc → ../architecture/<quadrant>/<slug>.adoc mapping in
-    // mapAdocTarget. A slug absent from this map (e.g. index) renders flat under
-    // architecture/; workflow.adoc is handled separately (it left the site).
-    private static final Map<String, String> ARCH_QUADRANT = Map.ofEntries(
-        Map.entry("development-principles", "explanation"),
-        Map.entry("emitter-conventions", "reference"),
-        Map.entry("dispatch-axes", "explanation"),
-        Map.entry("typed-rejection", "explanation"),
-        Map.entry("pipeline-overview", "explanation"),
-        Map.entry("code-generation-triggers", "reference"),
-        Map.entry("argument-resolution", "reference"),
-        Map.entry("runtime-extension-points", "reference"),
-        Map.entry("modules", "reference"),
-        Map.entry("testing", "how-to"),
-        Map.entry("release-natives", "how-to"),
-        Map.entry("dev-loop-internals", "how-to"));
     private static final String GH_REWRITE_BRANCH = "claude/graphitron-rewrite";
 
     /**
@@ -945,66 +950,50 @@ public final class Main {
         });
     }
 
-    private static String mapAdocTarget(String target, String anchor, ChangelogContext ctx) {
-        // External http(s)
-        if (target.startsWith("http://") || target.startsWith("https://")) {
-            return target + anchor + "[$$TEXT$$]";
-        }
-        // Same-page anchor only
-        if (target.isEmpty() && !anchor.isEmpty()) {
-            return "<<" + anchor.substring(1) + ",$$TEXT$$>>";
-        }
-        // Sibling plan: <slug>.md
-        var simple = Pattern.compile("([\\w-]+)\\.md").matcher(target);
-        if (simple.matches()) {
-            String slug = simple.group(1);
-            if ("README".equals(slug)) {
-                String prefix = ctx == ChangelogContext.PLAN ? "../" : "";
-                return "xref:" + prefix + "index.adoc" + anchor + "[$$TEXT$$]";
+    /**
+     * The AsciiDoc side of the two-emitter link model: formats a
+     * {@link LinkTarget} classification into the staged-tree {@code xref:} /
+     * {@code link:} grammar. The concepts-page href direction is
+     * {@link ConceptPages#mapHref}; both read the one classifier so the target
+     * taxonomy cannot drift between them.
+     */
+    static String mapAdocTarget(String target, String anchor, ChangelogContext ctx) {
+        String rootPrefix = ctx == ChangelogContext.PLAN ? "../" : "";
+        return switch (LinkTarget.classify(target)) {
+            case LinkTarget.External(String url) -> url + anchor + "[$$TEXT$$]";
+            case LinkTarget.SamePageAnchor() when !anchor.isEmpty() ->
+                "<<" + anchor.substring(1) + ",$$TEXT$$>>";
+            case LinkTarget.SiblingItem(String slug) -> {
+                String prefix = ctx == ChangelogContext.PLAN ? "" : "plans/";
+                yield "xref:" + prefix + slug + ".adoc" + anchor + "[$$TEXT$$]";
             }
-            if ("changelog".equals(slug)) {
-                String prefix = ctx == ChangelogContext.PLAN ? "../" : "";
-                return "xref:" + prefix + "changelog.adoc" + anchor + "[$$TEXT$$]";
+            case LinkTarget.Readme() -> "xref:" + rootPrefix + "index.adoc" + anchor + "[$$TEXT$$]";
+            case LinkTarget.Changelog() -> "xref:" + rootPrefix + "changelog.adoc" + anchor + "[$$TEXT$$]";
+            // workflow.adoc left the site entirely and co-locates with the roadmap
+            // items, so it maps to a roadmap sibling, not an /architecture/ page.
+            case LinkTarget.Workflow() -> "xref:" + rootPrefix + "workflow.adoc" + anchor + "[$$TEXT$$]";
+            // Concept pages are raw HTML, not adoc: link:, not xref:, so the
+            // WARN-fail asciidoctor log handler stays quiet.
+            case LinkTarget.ConceptPage(String slug) ->
+                "link:" + rootPrefix + "concepts/" + slug + ".html" + anchor + "[$$TEXT$$]";
+            case LinkTarget.ArchitectureDoc(String slug, String quadrant) -> {
+                String archPrefix = ctx == ChangelogContext.PLAN ? "../../architecture/" : "../architecture/";
+                String path = quadrant != null ? quadrant + "/" + slug : slug;
+                yield "xref:" + archPrefix + path + ".adoc" + anchor + "[$$TEXT$$]";
             }
-            String prefix = ctx == ChangelogContext.PLAN ? "" : "plans/";
-            return "xref:" + prefix + slug + ".adoc" + anchor + "[$$TEXT$$]";
-        }
-        // ../docs/<file>.{md,adoc} → architecture under staging/, quadrant-aware
-        // after the R182 Diataxis move. The mapper accepts both extensions so any
-        // stragglers also resolve. workflow.adoc left the site entirely and now
-        // co-locates with the roadmap items, so it maps to a roadmap sibling, not
-        // an /architecture/ page.
-        var docs = Pattern.compile("\\.\\./docs/([\\w-]+)\\.(?:md|adoc)").matcher(target);
-        if (docs.matches()) {
-            String slug = docs.group(1);
-            if ("workflow".equals(slug)) {
-                String prefix = ctx == ChangelogContext.PLAN ? "../" : "";
-                return "xref:" + prefix + "workflow.adoc" + anchor + "[$$TEXT$$]";
+            case LinkTarget.TopLevelDoc(String slug) -> {
+                String prefix = ctx == ChangelogContext.PLAN ? "../../" : "../";
+                yield "xref:" + prefix + slug + ".adoc" + anchor + "[$$TEXT$$]";
             }
-            String archPrefix = ctx == ChangelogContext.PLAN ? "../../architecture/" : "../architecture/";
-            String quadrant = ARCH_QUADRANT.get(slug);
-            String path = quadrant != null ? quadrant + "/" + slug : slug;
-            return "xref:" + archPrefix + path + ".adoc" + anchor + "[$$TEXT$$]";
-        }
-        // ../../docs/<file>.{md,adoc} → top-level
-        var topdocs = Pattern.compile("\\.\\./\\.\\./docs/([\\w-]+)\\.(?:md|adoc)").matcher(target);
-        if (topdocs.matches()) {
-            String prefix = ctx == ChangelogContext.PLAN ? "../../" : "../";
-            return "xref:" + prefix + topdocs.group(1) + ".adoc" + anchor + "[$$TEXT$$]";
-        }
-        // Legacy module paths → GitHub URL on main
-        var legacy = Pattern.compile("\\.\\./\\.\\./(graphitron-(?:codegen-parent|common|example|maven-plugin|schema-transform|servlet-parent)/.*)").matcher(target);
-        if (legacy.matches()) {
-            return GH_BASE + "/tree/main/" + legacy.group(1) + anchor + "[$$TEXT$$]";
-        }
-        // claude-code-web-environment.md → moved to .claude/web-environment.md
-        if (target.endsWith("claude-code-web-environment.md")) {
-            return GH_BASE + "/blob/" + GH_REWRITE_BRANCH + "/.claude/web-environment.md" + anchor + "[$$TEXT$$]";
-        }
-        // Anything else: leave the original as a markdown link form (asciidoctor
-        // will accept link:<target>[<text>] for relative paths even if they don't
-        // resolve to a staged file, without producing a WARN).
-        return "link:" + target + anchor + "[$$TEXT$$]";
+            case LinkTarget.LegacyModulePath(String path) ->
+                GH_BASE + "/tree/main/" + path + anchor + "[$$TEXT$$]";
+            case LinkTarget.WebEnvironmentRedirect() ->
+                GH_BASE + "/blob/" + GH_REWRITE_BRANCH + "/.claude/web-environment.md" + anchor + "[$$TEXT$$]";
+            // Deep docs paths and anything unrecognised: leave the original as a
+            // link: macro (asciidoctor accepts relative link: targets that don't
+            // resolve to a staged file, without producing a WARN).
+            default -> "link:" + target + anchor + "[$$TEXT$$]";
+        };
     }
 
     /** Escape characters that confuse AsciiDoc table cells. */
@@ -1235,6 +1224,11 @@ public final class Main {
     }
 
     static String render(List<Item> items) {
+        return render(items, Map.of());
+    }
+
+    /** README roll-up with a Concept explainers section derived from {@code concepts} (slug → title). */
+    static String render(List<Item> items, Map<String, String> concepts) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Rewrite Roadmap\n\n");
         sb.append("_Generated by `graphitron-roadmap-tool`. ");
@@ -1275,6 +1269,7 @@ public final class Main {
         sb.append("\n---\n\n");
         renderByTheme(sb, items);
         sb.append("\n---\n\n");
+        renderConceptExplainers(sb, concepts);
         sb.append("## Done\n\n");
         sb.append("See [`changelog.md`](changelog.md) for the historical record of shipped rewrite work. ");
         sb.append("Plan files are deleted on Done; git history preserves them.\n");
@@ -1434,6 +1429,27 @@ public final class Main {
                     .append(i.slug()).append(".md)\n"));
             sb.append("\n");
         }
+    }
+
+    /**
+     * Concept explainers listing (R486): every {@code concepts/<slug>.html} by
+     * its {@code data-concept-title}, sorted by slug. Derived by scanning the
+     * directory, never hand-maintained, so there is no second source of truth;
+     * verify-mode README comparison catches listing drift, and the title
+     * contract in {@link ConceptPages#extractTitle} covers unextractable pages.
+     * Emits nothing when there are no pages.
+     */
+    private static void renderConceptExplainers(StringBuilder sb, Map<String, String> concepts) {
+        if (concepts.isEmpty()) {
+            return;
+        }
+        sb.append("## Concept explainers\n\n");
+        sb.append("_Intuition-first background pages for dense or recurring roadmap concepts, ");
+        sb.append("rendered as interactive HTML. Authored with the `explainer` skill; ");
+        sb.append("this listing derives from `concepts/*.html`, never by hand._\n\n");
+        new TreeMap<>(concepts).forEach((slug, title) ->
+            sb.append("- [").append(title).append("](concepts/").append(slug).append(".html)\n"));
+        sb.append("\n---\n\n");
     }
 
     private static String linkSlugs(List<String> slugs) {

@@ -1,0 +1,71 @@
+/* Shared stylesheet for roadmap concept explainer pages (R486).
+   Pages reference this relatively (href="concepts.css"); the render-adoc
+   staging step copies it byte-for-byte next to the staged pages. The class
+   vocabulary: tldr, note, sxs/pane (side-by-side), quiz/choice/explain,
+   status/pill, kicker, crumb, plus the shared footer. */
+:root{
+  --ink:#1a2233; --muted:#5a6577; --line:#e2e6ee; --bg:#fbfcfe;
+  --accent:#3b5bdb; --accent-soft:#eef2ff;
+  --good:#2b8a3e; --good-soft:#ebfbee; --bad:#c92a2a; --bad-soft:#fff0f0;
+  --warn:#e8590c; --warn-soft:#fff4e6; --code:#f4f6fa;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+main{max-width:820px; margin:0 auto; padding:48px 24px 96px}
+h1{font-size:2rem; line-height:1.2; margin:0 0 .2em}
+h2{font-size:1.4rem; margin:2.4em 0 .5em; padding-top:.4em; border-top:1px solid var(--line)}
+h3{font-size:1.08rem; margin:1.6em 0 .4em}
+p{margin:.7em 0}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.9em; background:var(--code); padding:.1em .35em; border-radius:4px}
+pre{background:var(--code); border:1px solid var(--line); border-radius:8px; padding:14px 16px; overflow:auto; font-size:.85rem; line-height:1.5}
+pre code{background:none; padding:0}
+.lede{font-size:1.15rem; color:var(--muted)}
+.kicker{text-transform:uppercase; letter-spacing:.08em; font-size:.72rem; font-weight:700; color:var(--accent)}
+.crumb{font-size:.85rem; color:var(--muted); margin:0 0 1.6em}
+.crumb a{color:var(--muted)}
+.note{background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:0 8px 8px 0; padding:12px 16px; margin:1.2em 0; font-size:.94rem}
+.tldr{background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin:1.4em 0; box-shadow:0 1px 3px rgba(20,30,60,.05)}
+.tldr .kicker{display:block; margin-bottom:.3em}
+
+/* side-by-side */
+.sxs{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:1.3em 0}
+.pane{border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff}
+.pane > .head{padding:8px 14px; font-weight:600; font-size:.85rem; border-bottom:1px solid var(--line)}
+.pane .body{padding:12px 14px; font-size:.92rem}
+.pane .body p{margin:.4em 0}
+.pane.bad > .head{background:var(--bad-soft); color:var(--bad)}
+.pane.good > .head{background:var(--good-soft); color:var(--good)}
+.pane pre{border:none; border-radius:0; margin:0}
+@media(max-width:640px){ .sxs{grid-template-columns:1fr} }
+
+/* quiz */
+.quiz{border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:1.6em 0; background:#fff}
+.quiz .q{font-weight:600; margin:0 0 .8em}
+.quiz .q .tag{display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); padding:2px 8px; border-radius:999px; margin-right:.5em; vertical-align:middle}
+.choice{display:block; width:100%; text-align:left; font:inherit; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin:6px 0; cursor:pointer; transition:.12s}
+.choice:hover{border-color:var(--accent); background:var(--accent-soft)}
+.quiz.answered .choice{cursor:default}
+.quiz.answered .choice:hover{background:#fff; border-color:var(--line)}
+.choice.right{border-color:var(--good); background:var(--good-soft)}
+.choice.right::after{content:"  ✓"; color:var(--good); font-weight:700}
+.choice.wrong{border-color:var(--bad); background:var(--bad-soft)}
+.choice.wrong::after{content:"  ✗"; color:var(--bad); font-weight:700}
+.choice.dim{opacity:.55}
+.explain{display:none; margin-top:12px; padding:12px 14px; border-radius:8px; background:var(--code); font-size:.92rem; border-left:3px solid var(--accent)}
+.explain.show{display:block}
+
+details{margin:1em 0; border:1px solid var(--line); border-radius:8px; padding:0 14px; background:#fff}
+details > summary{cursor:pointer; padding:12px 0; font-weight:600; font-size:.92rem; color:var(--accent)}
+details[open]{padding-bottom:12px}
+
+.status li{margin:.35em 0}
+.pill{display:inline-block; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:.4em}
+.pill.done{background:var(--good-soft); color:var(--good)}
+.pill.pending{background:var(--warn-soft); color:var(--warn)}
+.pill.spun{background:var(--accent-soft); color:var(--accent)}
+footer{margin-top:3em; padding-top:1.2em; border-top:1px solid var(--line); font-size:.9rem; color:var(--muted)}
