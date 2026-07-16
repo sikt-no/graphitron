@@ -16,9 +16,7 @@ import java.util.List;
 /**
  * Emitter that turns a {@link ServiceMethodCall} carrier into the ordered statement list for
  * a service fetcher's lambda body. The caller (today's
- * {@link TypeFetcherGenerator#buildServiceFetcherCommon(TypeFetcherEmissionContext, String,
- * no.sikt.graphitron.rewrite.model.MethodRef, String, TypeName,
- * java.util.Optional, String)}, post-cutover) appends the returned statements verbatim and
+ * {@code buildServiceFetcherCommon}, post-cutover) appends the returned statements verbatim and
  * wraps them in the existing try/catch + ErrorRouter discipline.
  *
  * <h3>Returned statements</h3>

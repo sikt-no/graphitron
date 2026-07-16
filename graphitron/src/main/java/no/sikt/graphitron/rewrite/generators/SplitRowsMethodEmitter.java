@@ -68,7 +68,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  * cardinality and condition-join paths emit runtime-throwing stubs with reasons
  * that name the required followup.
  *
- * <p>{@link ChildField.SplitLookupTableField} lands in C2; C1 throws at codegen time for that
+ * <p>{@code ChildField.SplitLookupTableField} lands in C2; C1 throws at codegen time for that
  * branch so the missing step is visible.
  */
 public final class SplitRowsMethodEmitter {
@@ -1162,7 +1162,7 @@ public final class SplitRowsMethodEmitter {
     /**
      * Connection-cardinality sibling of {@link #buildScatterByIdxHelper}. Buckets the flat
      * windowed result by {@code __idx__}, wrapping each per-parent sublist in a
-     * {@link no.sikt.graphitron.rewrite.ConnectionResult} that shares the batch's
+     * {@code ConnectionResult} that shares the batch's
      * {@code PageRequest} (page size, cursors, backward flag, orderByColumns). Emitted once
      * per fetcher class that has any connection-returning Split* field.
      *

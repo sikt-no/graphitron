@@ -5,7 +5,7 @@ import org.jooq.Field;
 import org.jooq.impl.DSL;
 
 /**
- * {@code @externalField} extension methods used by the {@link no.sikt.graphitron.rewrite.model.ChildField.ComputedField} execution-tier fixture.
+ * {@code @externalField} extension methods used by the {@code ChildField.ComputedField} execution-tier fixture.
  *
  * <p>Each method follows the {@code @externalField} contract:
  * <pre>

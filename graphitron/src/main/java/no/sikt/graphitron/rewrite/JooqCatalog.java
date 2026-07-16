@@ -537,7 +537,7 @@ public class JooqCatalog {
      * schema-correct {@code Keys} {@link ClassName} together with the Java constant name, by
  * <em>reference identity</em>. Scans only the {@code Keys} class of the FK-holder schema
      * (the schema of {@code fk.getTable()}, which structurally pins the owning schema) and matches
-     * the constant whose value {@code == fk}. jOOQ's generated {@link ForeignKey#getReferences()}
+     * the constant whose value {@code == fk}. jOOQ's generated {@link Table#getReferences()}
      * returns the same {@code Keys.FK_*} singletons, so identity holds for every FK that flows out
      * of the catalog; that singleton assumption is an invariant whose named enforcer is
      * {@code JooqCatalogMultiSchemaTest.findForeignKeyRef_*}. No name matching anywhere, so a

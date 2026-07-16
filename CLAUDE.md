@@ -53,6 +53,8 @@ The `mvn install -Plocal-db` command above runs the full pipeline (build-fixture
 
 **Sub-module gotcha (handled for standard layouts): `graphitron:dev` sibling scan.** Running `mvn graphitron:dev` from inside one module of a multi-module reactor used to see only that module's classes, so services / conditions / records in sibling modules silently produced empty completions. The dev goal now walks the parent pom's `<modules>` and folds siblings' `target/classes` and sources into the scan automatically (standard layout only; a sibling must have been compiled once). See R99 (`lsp-submodule-sibling-classpath`) and the "Multi-module projects" note in `docs/architecture/how-to/dev-loop-internals.adoc`.
 
+**Javadoc `{@link}` reference gate.** The `verify` phase runs a doclint reference check (maven-javadoc-plugin, `reference` group only) across the in-scope modules and fails the build on a dangling `{@link}`/`{@see}`, so a link that names a live symbol is build-enforced. It forks javadoc per module and costs real wall-clock; for a fast inner loop skip it with `-Pquick` (which sets `maven.javadoc.skip`, and also skips tests). When the gate fires, repoint the link to the current symbol; only downgrade to `{@code}` when the target genuinely is not a resolvable symbol (generated-only, or another module's non-dependency internals), never merely to silence the tool.
+
 ## Writing style
 
 Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or restructure the sentence instead.

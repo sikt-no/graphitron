@@ -14,7 +14,7 @@ import java.util.Set;
  * {@link GraphitronSchemaValidator#validate} plus
  * {@link GraphitronSchema#warnings}, alongside a precomputed canonical-URI set
  * for the short-circuit path in
- * {@link no.sikt.graphitron.lsp.diagnostics.Diagnostics#compute}.
+ * {@code Diagnostics.compute}.
  *
  * <p>{@code sourceUris} is built once at construction by mapping every
  * {@link SourceLocation#getSourceName()} through {@link #canonicalUri(String)};
@@ -41,7 +41,7 @@ public record ValidationReport(
      * Factory: bundles validator errors and schema warnings, computing the canonical-URI set once
      * from every error/warning location. Skips locations with no usable {@code sourceName} or that
      * fail {@link Path#of} parsing (defensive: production source names are file paths from
-     * {@link MultiSourceReader#trackData(boolean) trackData(true)} but unit-test fixtures may
+     * {@code trackData(true)} but unit-test fixtures may
      * carry placeholder strings).
      */
     public static ValidationReport from(List<ValidationError> errors, List<BuildWarning> warnings) {

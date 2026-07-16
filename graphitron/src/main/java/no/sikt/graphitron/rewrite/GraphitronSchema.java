@@ -36,7 +36,7 @@ import java.util.Map;
  * {@code UnclassifiedType} / {@code UnclassifiedField}: the multi-producer {@code DomainReturnType}
  * disagreements, node-typeId collisions, case-fold collisions, the dangling-reference backstop, and
  * the federation {@code @key} checks. Each is a fully-formed {@link ValidationError} (coordinate,
- * typed {@link Rejection}, source location); the validator drains them into the same
+ * typed {@link no.sikt.graphitron.rewrite.model.Rejection Rejection}, source location); the validator drains them into the same
  * {@link ValidationError} stream it emits today, so which schemas pass or fail is unchanged while a
  * verdict read after the walk equals the verdict classification produced. Empty for every
  * test-constructed schema and every error-free build.

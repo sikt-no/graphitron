@@ -50,7 +50,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      *
  * <p>Arrival is a parent-typename-grain fact: every field on one parent folds the same arm,
      * so it is passed in rather than stored per-leaf (a parent-grain fact copied to child grain is the
-     * derived-fact drift smell). Consumers read the fold through {@link GraphitronSchema#sourceOf}, which
+     * derived-fact drift smell). Consumers read the fold through {@link no.sikt.graphitron.rewrite.GraphitronSchema#sourceOf sourceOf}, which
      * threads the pre-computed {@code ArrivalIndex}; a leaf holding no ancestor fact cannot compute its
      * own arm.
      */

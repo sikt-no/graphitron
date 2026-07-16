@@ -354,6 +354,48 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <!--
+                    {@link}/{@see} reference validity gate. javac ignores javadoc and the
+                    release profile's javadoc jar is the only other place references get
+                    resolved, so without this a dangling {@link} would compile clean and ship.
+                    This binds javadoc's own resolver (doclint's `reference` group only, not the
+                    missing-@param firehose) to `verify`, so a link that names a live symbol is
+                    a build-enforced pin. Bound in the main build rather than an activeByDefault
+                    profile on purpose: activeByDefault is silently dropped whenever any other
+                    profile is named (see the `leaf-coverage` profile), and this repo always runs
+                    -Plocal-db, so a profile gate would never fire. The fast-local escape is the
+                    existing `maven.javadoc.skip` lever, which the `quick` profile already sets.
+                    Modules outside RoadmapReferenceGuardTest's in-scope set (roadmap-tool) opt out
+                    with maven.javadoc.skip in their own pom; docs is pom-packaged and has no goal.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>check-link-references</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>javadoc</goal>
+                        </goals>
+                        <configuration>
+                            <!--
+                                doclint `reference` issues are emitted as errors, so failOnError
+                                (the plugin default) fails the build on a dangling link. We do NOT
+                                set failOnWarnings: that would also fail on incidental javadoc
+                                warnings unrelated to references (e.g. reactor cross-module apidoc
+                                link probes), which is out of this gate's scope.
+                                detectOfflineLinks is off so those cross-module probes are not even
+                                attempted.
+                            -->
+                            <doclint>reference</doclint>
+                            <quiet>true</quiet>
+                            <notimestamp>true</notimestamp>
+                            <detectOfflineLinks>false</detectOfflineLinks>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

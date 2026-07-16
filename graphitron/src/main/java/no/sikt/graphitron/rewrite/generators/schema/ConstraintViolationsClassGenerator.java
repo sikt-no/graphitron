@@ -13,7 +13,7 @@ import java.util.List;
  * Generates the {@code ConstraintViolations} helper class emitted at
  * {@code <outputPackage>.schema.ConstraintViolations}, once per code-generation run.
  *
- * <p>Translates a single {@link jakarta.validation.ConstraintViolation} into a
+ * <p>Translates a single {@code jakarta.validation.ConstraintViolation} into a
  * {@link graphql.GraphQLError} for the wrapper's pre-execution validator step.
  * The translation walks the violation's bean property path and concatenates it with the
  * field's response path and the bound input argument name to produce a GraphQL error

@@ -17,6 +17,12 @@
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
+        <!--
+          Opt out of the parent's {@link}-reference javadoc gate: roadmap-tool sits outside
+          RoadmapReferenceGuardTest's in-scope module set (its domain is roadmap tooling, not
+          the generator/runtime surface the gate audits), so its javadoc is not gated.
+        -->
+        <maven.javadoc.skip>true</maven.javadoc.skip>
         <version.snakeyaml>2.5</version.snakeyaml>
         <!--
           Embedded analytical SQL engine for the leaf-coverage post-processor (R104).

@@ -22,7 +22,7 @@ import java.util.List;
  * <h2>Why custom rather than jOOQ's {@code DefaultTransactionProvider}</h2>
  * {@code DefaultTransactionProvider.begin/commit/rollback} are {@code public final}, so a subclass
  * cannot suppress a commit. The commit-policy axis needs exactly that: under
- * {@link CommitPolicy#ROLLBACK_ONLY} (the rollback-everything dev tool, consumed by name) the
+ * {@code CommitPolicy.ROLLBACK_ONLY} (the rollback-everything dev tool, consumed by name) the
  * top-level {@code commit()} must roll back instead. A {@code TransactionListener} cannot fill the
  * role either: listeners observe boundaries but cannot change the outcome. So the provider is
  * reimplemented from scratch over the pinned connection.
@@ -31,7 +31,7 @@ import java.util.List;
  * The provider governs only mutation transactions: each mutation field's shipped
  * {@code dsl.transactionResult(...)} opens a writable transaction through this provider. Query
  * operations run in autocommit and never reach it (blanket read-only enforcement is dropped; a
- * targeted successor is planned). {@link CommitPolicy} is global provider configuration, never
+ * targeted successor is planned). {@code CommitPolicy} is global provider configuration, never
  * site-declared: {@code COMMIT} persists a successful top-level transaction; {@code ROLLBACK_ONLY}
  * (the dev-execution mode) defers one operation transaction across field settles, savepoint-scoping each
  * field, so the generated DML two-step's post-settle payload read-back observes the uncommitted

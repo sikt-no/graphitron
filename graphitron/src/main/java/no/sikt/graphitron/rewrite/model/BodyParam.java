@@ -25,7 +25,7 @@ import java.util.List;
  *       to assume non-null when the flag is {@code true} and emits an unguarded
  *       {@code condition.and(...)}; when {@code false} the condition is wrapped in a null
  *       check. The flag is NOT the binding's own SDL-declared nullability — for that, read
- *       {@link InputField#nonNull()} directly.</li>
+ *       {@code nonNull} directly.</li>
  *   <li>{@link #list()} — whether the parameter is a list. Derived from the predicate-arm
  *       identity for {@link ColumnPredicate}: {@code Eq} / {@code RowEq} are scalar,
  *       {@code In} / {@code RowIn} are list. The slot does not exist as a record component on

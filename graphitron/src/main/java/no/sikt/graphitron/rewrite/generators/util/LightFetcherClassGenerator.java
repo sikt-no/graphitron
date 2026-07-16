@@ -21,7 +21,7 @@ import java.util.List;
  * .dataFetcher("title", new LightFetcher<>(FilmFetchers::title))
  * }</pre>
  *
- * <p>It holds a {@link Read} function (a source-only read) rather than a jOOQ column, so any
+ * <p>It holds a {@code Read} function (a source-only read) rather than a jOOQ column, so any
  * per-field read — a column projection, an aliased subquery read, a NodeId encode, a class-backed
  * accessor — can ride the light path by being lifted into a named {@code <Type>Fetchers} method
  * that this class wraps.

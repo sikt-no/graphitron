@@ -238,7 +238,7 @@ public sealed interface InputField extends GraphitronField
      *   <li>{@code condition.isPresent() && !condition.get().override()} — the field carries
      *       {@code @condition(override: false)} but has no matching column. Validator-side
      *       rejection (the classifier admits to keep call-site cascade resolution honest, but
-     *       this shape is a schema author bug and {@link GraphitronSchemaValidator} catches it
+     *       this shape is a schema author bug and {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator GraphitronSchemaValidator} catches it
      *       at the directive's location).</li>
      *   <li>{@code condition.isEmpty()} — the field has no {@code @condition} of its own and no
      *       column resolves on the {@code @table} input's table. Admitted at consumption when the

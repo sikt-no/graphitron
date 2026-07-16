@@ -7,7 +7,7 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
  * {@link FilmRecord}. Used as the backing class for a {@code @record(record: {...})}
  * GraphQL type whose child field {@code film: Film} traverses through the canonical
  * {@code film()} accessor — the classifier auto-derives a
- * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorKeyedSingle} BatchKey from
+ * {@code BatchKey.AccessorKeyedSingle} BatchKey from
  * the typed accessor return ({@code FilmRecord} → {@code film} table) and the framework
  * batch-fetches the full Film row by PK at request time.
  *

@@ -133,7 +133,7 @@ public sealed interface QueryField extends RootField
      * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the
      * directive's whole purpose is to bind a developer-authored jOOQ table method, which by
      * construction returns a generated jOOQ table class.
-     * {@link TableMethodDirectiveResolver} rejects any other return shape as a schema error.
+     * {@code TableMethodDirectiveResolver} rejects any other return shape as a schema error.
      */
     record QueryTableMethodTableField(
         String parentTypeName,

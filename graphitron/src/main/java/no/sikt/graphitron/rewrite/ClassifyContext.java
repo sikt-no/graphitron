@@ -11,7 +11,7 @@ import java.util.Set;
  * cascade.
  *
  * <p>The classifier itself does not read {@link #enclosingOverride} to decide a variant
- * (column-miss always lifts to {@link InputField.UnboundField} regardless of cascade); the
+ * (column-miss always lifts to {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} regardless of cascade); the
  * record carries it for the future-growth axes the spec calls out so adding the
  * mutation-context lift or a nested-input cascade walker arm does not touch every call site.
  *

@@ -72,7 +72,7 @@ import java.util.stream.Stream;
 /**
  * Entry point for the rewrite code-generation pipeline.
  *
- * <p>This pipeline is independent of the legacy {@link no.sikt.graphitron.generate.GraphQLGenerator}: it parses the GraphQL
+ * <p>This pipeline is independent of the legacy {@code GraphQLGenerator}: it parses the GraphQL
  * schema with its own {@link GraphitronSchemaBuilder}, runs its own list of generators, and
  * writes output to the same configured output directory. Generators added here incrementally
  * replace their legacy counterparts as the rewrite pipeline matures.

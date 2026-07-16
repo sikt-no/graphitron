@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.model;
  * inherits its parent's table context ({@code NestingField}). {@code table} is always a fully
  * resolved {@link no.sikt.graphitron.rewrite.model.TableRef}; when the table name in
  * {@code @table} cannot be found in the jOOQ catalog the builder classifies the containing
- * field as {@link UnclassifiedField} instead of emitting a {@link TableBoundReturnType}.
+ * field as {@link GraphitronField.UnclassifiedField} instead of emitting a {@link TableBoundReturnType}.
  *
  * <p>{@link ResultReturnType} — the return type is a result-mapped, class-backed type whose backing comes from its producer's reflected return. No SQL is
  * generated; the generator accesses properties on the parent result object. The specific backing

@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.model;
  * empty product needs no ancestor fact). Arrival is a function of the <em>parent typename alone</em>
  * (every field on one parent folds the same way), computed once as a typename-keyed index over the
  * assembled SDL, so it is not stored per-leaf; see {@code ArrivalIndex} and
- * {@link GraphitronSchema#sourceOf}.
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchema#sourceOf sourceOf}.
  *
  * <p>Distinct from {@link Arity}, the <em>local</em> delivery arity of one endpoint (a producer's
  * return, a carrier field's wrapper): {@code Arrival} is the accumulated ancestor product with the

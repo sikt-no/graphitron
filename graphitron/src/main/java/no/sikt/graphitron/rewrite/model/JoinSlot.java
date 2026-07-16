@@ -12,7 +12,7 @@ package no.sikt.graphitron.rewrite.model;
  * <p>{@link FkSlot} pairs an FK column on the source side against the corresponding
  * referenced/referencing column on the target side, oriented at synthesis time. The
  * FK-direction question (which end of the FK lives on the source table, which on the
- * target table) is answered once in {@link BuildContext#synthesizeFkJoin} and baked
+ * target table) is answered once in {@code BuildContext.synthesizeFkJoin} and baked
  * into the slot pair; downstream readers are direction-blind.
  *
  * <p>Source and target name the <b>field's</b> endpoint tables: source is the table the parent

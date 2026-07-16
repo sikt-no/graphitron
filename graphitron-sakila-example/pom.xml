@@ -15,6 +15,15 @@
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
+        <!--
+          Opt out of the parent's {@link}-reference javadoc gate. This module's single
+          hand-authored source imports generated types (the outputPackage below) that are not on
+          the gate's src/main/java sourcepath, so javadoc cannot resolve the import and fails for a
+          reason unrelated to link validity. Pulling generated sources into the gate would contradict
+          its hand-authored-only scope, so the module is exempt (like graphitron-sakila-db, which has
+          no hand-authored sources). JavadocReferenceGateTest pins this exemption.
+        -->
+        <maven.javadoc.skip>true</maven.javadoc.skip>
         <outputPackage>no.sikt.graphitron.generated</outputPackage>
         <quarkus.platform.version>3.34.5</quarkus.platform.version>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>

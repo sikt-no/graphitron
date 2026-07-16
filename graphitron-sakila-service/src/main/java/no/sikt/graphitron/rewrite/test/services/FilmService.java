@@ -25,7 +25,7 @@ import java.util.Set;
  * {@code Row1<Integer>} so the body can call {@link Record1#value1()} to extract each
  * key's column value. {@code Row1} is jOOQ's structural row-of-fields type and exposes no
  * value accessor; {@code Record1} extends {@code Row1} and adds value accessors. This
- * classifies the field's {@code BatchKey} as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRecordKeyed},
+ * classifies the field's {@code BatchKey} as {@code BatchKey.MappedRecordKeyed},
  * so the framework's emitted lambda passes a {@code Set<Record1<Integer>>} into this method.
  *
  * <p>The Phase B generated rows-method calls this; Phase A's emitter shipped a stub body
@@ -92,7 +92,7 @@ public final class FilmService {
     }
 
     /**
-     * Fixture: child {@code @service} with a {@link no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType}
+     * Fixture: child {@code @service} with a {@code ReturnTypeRef.TableBoundReturnType}
      * return ({@code Language}). The rows-method's {@code V} is
      * {@code tb.table().recordClass()} (here {@link LanguageRecord}), so the structurally-
      * required signature is {@code Map<Record1<Integer>, LanguageRecord>}. Were {@code V}
@@ -128,7 +128,7 @@ public final class FilmService {
     /**
      * Sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
      * developer signs {@code Set<FilmRecord>} on the parameter and {@code Map<FilmRecord, String>}
-     * on the return, which classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
+     * on the return, which classifies as {@code BatchKey.MappedTableRecordKeyed}
      * (the variant carries the typed record class). The framework's emitted lambda extracts the
      * parent's {@code FilmRecord} via {@code env.getSource().into(Tables.FILM)} and calls this
      * method directly with the typed-record set.

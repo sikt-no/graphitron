@@ -42,6 +42,14 @@ Settled from a post-R482 surface measurement: roughly 3,500 javadoc blocks acros
 
 Launching the fan-out is token-heavy and is authorized explicitly at In Progress; this Spec fixes the shape, not the spend.
 
+## Seeded findings from R492
+
+R492's gate-greening surfaced concrete drift it deliberately left for this audit (it converted the dangling links to `{@code}` to enable the gate rather than guess the current symbol). Feed these into the relevant module's pass:
+
+- **Retired `BatchKey` classification vocabulary.** `BatchKey` and its arms (`MappedRecordKeyed`, `MappedTableRecordKeyed`, `AccessorKeyedSingle`) no longer exist; comments in `graphitron-sakila-service` fixtures (`FilmService`, `FilmCardData`, `FilmReviewDetails`, `InventoryExtensions`, `RecordExampleType`) and a few `graphitron` sites still name them. Repoint to the current classification vocabulary. Note the sakila-service fixtures do not depend on `graphitron`, so the fix there is prose accuracy, not a `{@link}`.
+- **`ChildField.SplitLookupTableField`** (`SplitRowsMethodEmitter`) is retired; the current variants are `LookupTableField` / `BatchedLookupTableField`. Repoint once the correct one is established.
+- **Legacy `GraphQLGenerator` clause** (`GraphQLRewriteGenerator`): the `no.sikt.graphitron.generate.GraphQLGenerator` it contrasts against is deleted, so the whole "independent of the legacy generator" clause is likely stale narration to re-evaluate.
+
 ## Progress ledger
 
 Each slice records its pass here: check the row and note the landing SHA(s) once the reader-plus-verify pass has landed and left the slice more pinned than it found it (link-conversions done, substantive pins filed as follow-ons per the pin-scope boundary). There is no cross-slice barrier; slices land independently. The item reaches In Review when every row is checked.

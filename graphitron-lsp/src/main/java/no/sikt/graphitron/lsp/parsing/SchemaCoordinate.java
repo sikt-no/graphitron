@@ -7,7 +7,7 @@ package no.sikt.graphitron.lsp.parsing;
  * ({@link DirectiveArg}), an input type referenced from such an argument
  * ({@link InputType}), and a field on such an input type ({@link InputField}).
  *
- * <p>String forms in {@link #toString()} follow the GraphQL spec's
+ * <p>String forms in {@code toString()} follow the GraphQL spec's
  * schema-coordinate syntax, suitable for log and error messages:
  * <ul>
  *   <li>{@code @service}</li>

@@ -39,7 +39,7 @@ public final class InventoryExtensions {
      * Per-inventory {@code Field<FilmCardData>} where {@link FilmCardData} is a Java record
      * carrying a single typed {@code FilmRecord film} component. The classifier picks the
      * canonical {@code film()} accessor on {@code FilmCardData} and produces an
-     * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorKeyedSingle} BatchKey for the
+     * {@code BatchKey.AccessorKeyedSingle} BatchKey for the
      * GraphQL child field {@code film: Film}, lifting the embedded record back into Graphitron
      * scope so the framework can batch-fetch the full Film row by PK at request time.
      */

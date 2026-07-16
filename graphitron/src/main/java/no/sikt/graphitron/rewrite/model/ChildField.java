@@ -34,7 +34,7 @@ public sealed interface ChildField extends OutputField
      * {@link Source.Child} absorbing arm (arrival {@code Many}, DataLoader-batched, always correct as a
      * one-element batch). The arm is a derived view of a parent-grain fact the caller supplies (every
      * field on one parent folds the same way), not a stored per-leaf component; see
-     * {@link OutputField#source(Arrival)} and {@link GraphitronSchema#sourceOf}.
+     * {@link OutputField#source(Arrival)} and {@link no.sikt.graphitron.rewrite.GraphitronSchema#sourceOf sourceOf}.
      */
     @Override default Source source(Arrival parentArrival) {
         return parentArrival == Arrival.ONE
@@ -716,7 +716,7 @@ public sealed interface ChildField extends OutputField
      *
      * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the directive
      * exists to bind a developer-authored jOOQ table method, which by construction returns a
-     * generated jOOQ table class. {@link TableMethodDirectiveResolver} rejects any other return
+     * generated jOOQ table class. {@code TableMethodDirectiveResolver} rejects any other return
  * shape as a schema error.
      */
     record TableMethodField(
@@ -1114,7 +1114,7 @@ public sealed interface ChildField extends OutputField
      *     Field&lt;X&gt; methodName(&lt;ParentTable&gt; table)
      * </pre>
      * where the table parameter has {@link ParamSource.Table} as its source. Captured by
-     * {@link ServiceCatalog#reflectExternalField}.
+     * {@code ServiceCatalog.reflectExternalField}.
      */
     record ComputedField(
         String parentTypeName,

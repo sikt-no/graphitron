@@ -40,7 +40,7 @@ import java.util.Set;
  *                       generated-sources) the LSP catalog parses to recover Java
  *                       declaration positions and Javadoc for goto-definition and
  *                       hover. Populated from every reactor project's
- *                       {@link org.apache.maven.project.MavenProject#getCompileSourceRoots()}
+ *                       {@code MavenProject.getCompileSourceRoots()}
  *                       when the mojo runs inside Maven; empty for unit-tier callers and
  *                       for any goal that builds a catalog without a real project, in
  *                       which case source positions stay

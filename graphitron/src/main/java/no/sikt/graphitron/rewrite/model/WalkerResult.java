@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * Sealed result wrapper returned by directive walkers. {@link Ok} carries the populated carrier
  * and any non-Error diagnostics (Warning / Information / Hint); {@link Err} carries the typed
- * {@link AuthorError} list plus diagnostics, signalling that the orchestrator must exclude the
+ * {@link Rejection.AuthorError} list plus diagnostics, signalling that the orchestrator must exclude the
  * field from classification.
  *
  * <p>The wrapper landed alongside {@link ServiceMethodCall}; every subsequent walker-carrier

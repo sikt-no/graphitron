@@ -251,12 +251,12 @@ cross-module backstop. A defensive runtime cast or a `var`-typed local abandons 
 it fails on a real request, days after the build passed. Candidate type-system lifts that would
 carry current prose contracts structurally are R240 (`@tableMethod` type-token threading) and
 R239 (`ColumnField.parentTable`). To record a producer-consumer linkage the type system can't
-carry, use a javadoc `{@link}` from consumer to producer ; IDE-refactor-tracked, no audit
-infrastructure. Rule: if you relax a producer's check body, audit every emitter site that
+carry, use a javadoc `{@link}` from consumer to producer ; build-checked by the javadoc
+reference gate. Rule: if you relax a producer's check body, audit every emitter site that
 consumes the corresponding shape, in the same commit.
 
-*Enforced by:* the type system where the contract is lifted; the pipeline tier and the
-`graphitron-sakila-example` compile otherwise.
+*Enforced by:* the type system where the contract is lifted; the javadoc reference gate for
+the `{@link}` itself; the pipeline tier and the `graphitron-sakila-example` compile otherwise.
 
 === Behaviour is pinned at the pipeline tier and above
 

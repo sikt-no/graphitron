@@ -20,7 +20,7 @@ public sealed interface HasInputRecordShape
 
     /**
      * Pre-resolved shape for the emitted class: target class name plus one
-     * {@link InputComponent} per SDL field. Never {@code null}; an input type that fails to
+     * {@link InputRecordShape.InputComponent} per SDL field. Never {@code null}; an input type that fails to
      * construct a shape surfaces as {@link GraphitronType.UnclassifiedType} via the existing
      * classifier fail-mode. The method name retains "record" pending the javapoet upgrade,
      * after which the emitted artifact becomes a Java {@code record} verbatim.

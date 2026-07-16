@@ -26,9 +26,9 @@ import java.util.List;
  * it under the very same key. Every consumer of the key ({@code getDslContext(env)}, every generated
  * fetcher) is untouched.
  *
- * <h2>Per-operation sequence ({@link #beginExecuteOperation})</h2>
+ * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
- *   <li>Read the opaque claims payload from the {@code graphQLContext} under {@link #CLAIMS_KEY} (the
+ *   <li>Read the opaque claims payload from the {@code graphQLContext} under {@code CLAIMS_KEY} (the
  *       one key slice 5's {@code Graphitron.newOwnedExecutionInput(claims, ...)} factory writes; shared as a
  *       named constant so read and write cannot drift).</li>
  *   <li>{@code runtime.acquire(claims)} pins one connection and runs the connect hook; a throwing

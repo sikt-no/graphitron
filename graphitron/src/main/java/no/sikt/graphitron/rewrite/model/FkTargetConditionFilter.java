@@ -13,7 +13,7 @@ import java.util.List;
  * local), but for an FK-target field the developer method's first parameter is the FK-<em>target</em>
  * table {@code X}, not the input's own table. Handing the own-table local to such a method is the
  * bug this filter exists to fix (a {@code Soknadsmangeltype} passed where {@code Regelverksamling}
- * is expected, failing at consumer compile). {@link QueryConditionsGenerator} forks on this type and emits a correlated
+ * is expected, failing at consumer compile). {@link no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator QueryConditionsGenerator} forks on this type and emits a correlated
  * {@code EXISTS} over {@code joinPath} so the developer method receives an alias for {@code X}
  * rather than the root {@code table}.
  *

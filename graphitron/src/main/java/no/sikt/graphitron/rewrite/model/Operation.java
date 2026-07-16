@@ -62,7 +62,7 @@ public sealed interface Operation {
      * A developer {@code @service} invocation. The former {@code QueryService} /
      * {@code MutationService} verb pair is collapsed here: read-vs-write is the {@link Source.Root.Query} /
      * {@link Source.Root.Mutation} legality gate now, not an operation fact, so this arm carries no
-     * read/write bit (the position is read off {@link OutputField#source()}).
+     * read/write bit (the position is read off {@link OutputField#source(Arrival)}).
      *
      * <p><strong>Transitional payload.</strong> The call still arrives in the two carrier shapes the
      * shipped code has not unified: root {@code @service} leaves carry the
