@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | In Review | 2026-07-16 <sub>created 2026-07-09</sub> | [plan](per-participant-multitable-child-join-paths.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
-| `R201` | Honor @field(name:) in @error payload construction shape resolution | Spec | 2026-07-16 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-payload-construction-shape.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
+| `R201` | Honor @field(name:) in @error payload construction shape resolution | Ready | 2026-07-16 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-payload-construction-shape.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R427` | Free-text search backed by native database search indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
@@ -269,7 +269,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
-- `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Spec, bug
+- `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Ready, bug
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md) — Backlog, structural
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md) — Backlog, architecture
 
