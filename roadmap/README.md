@@ -25,8 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | In Review | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R483` | Audit javadoc for drift against current design and implementation <sub>blocked by: [javadoc-roadmap-reference-purge](javadoc-roadmap-reference-purge.md)</sub> | Spec | 2026-07-15 | [plan](javadoc-implementation-drift-audit.md) |
-| `R482` | Purge transient roadmap references from javadoc; guard against reintroduction | In Review | 2026-07-16 <sub>created 2026-07-15</sub> | [plan](javadoc-roadmap-reference-purge.md) |
+| `R483` | Audit javadoc for drift against current design and implementation | Spec | 2026-07-15 | [plan](javadoc-implementation-drift-audit.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
@@ -338,8 +337,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
-- `R483` [**Audit javadoc for drift against current design and implementation**](javadoc-implementation-drift-audit.md) — Spec, cleanup, blocked by [javadoc-roadmap-reference-purge](javadoc-roadmap-reference-purge.md)
-- `R482` [**Purge transient roadmap references from javadoc; guard against reintroduction**](javadoc-roadmap-reference-purge.md) — In Review, cleanup
+- `R483` [**Audit javadoc for drift against current design and implementation**](javadoc-implementation-drift-audit.md) — Spec, cleanup
 - `R491` [**Purge roadmap citations from documentation-emitting generator string literals**](generated-javadoc-roadmap-slug-purge.md) — Backlog, cleanup
 - `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md) — Backlog, architecture
