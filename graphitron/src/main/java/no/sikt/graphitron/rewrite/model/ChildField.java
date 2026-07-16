@@ -29,7 +29,7 @@ public sealed interface ChildField extends OutputField
 
     /**
      * Every {@code ChildField} leaf is on a non-root parent type, so the source arrives wrapping this
-     * field's {@link #sourceShape()}. R463 folds the true ancestor-product arrival: when the parent
+     * field's {@link #sourceShape()}. The true ancestor-product arrival is folded in here: when the parent
      * type's {@code parentArrival} is {@link Arrival#ONE} exactly one source object reaches this field's
      * fetcher, so the arm is {@link Source.OnlyChild} (single arrival, direct SQL); otherwise it is the
      * {@link Source.Child} absorbing arm (arrival {@code Many}, DataLoader-batched, always correct as a
@@ -54,7 +54,7 @@ public sealed interface ChildField extends OutputField
      * way {@link #operation()} / {@link #target()} do.
      *
      * <p>The invariant is pinned by {@code SourceShapeProjectionTest}: for every classified
-     * {@code ChildField} the R281 corpus demonstrates, this leaf-derived value is cross-checked
+     * {@code ChildField} in the classification corpus, this leaf-derived value is cross-checked
      * against the parent GraphQL type's independently-classified backing (a {@code TableBackedType}
      * yields {@link SourceShape#Table}, any other backing {@link SourceShape#Record}), so a leaf
      * wired to the wrong arm cannot silently diverge from the projection it claims to be.
@@ -231,7 +231,7 @@ public sealed interface ChildField extends OutputField
      * cardinality is a {@code List<XRecord>}, not a jOOQ {@code Result}.
      *
      * <p>{@link #table()} is the producer's table, whose typed {@code Tables.X.COL} constants
-     * the encode reads (R431: first-class on the leaf, no longer a {@code SourceKey} slot).
+     * the encode reads (first-class on the leaf, no longer a {@code SourceKey} slot).
      * The {@link #sourceKey()} carries the node-key columns the encode reads and
      * {@link SourceKey.Wrap.TableRecord} (the producer's typed record subclass — required by
      * the compact constructor, which is the named join site for the retired
@@ -496,8 +496,8 @@ public sealed interface ChildField extends OutputField
 
     /**
      * A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
-     * tuple lifted off the parent's held object, one leaf for both parent backings (R432, the
-     * R333 "full merge, laundered key" resolution). The keyed re-query is one primitive
+     * tuple lifted off the parent's held object, one leaf for both parent backings (a full merge,
+     * with the key laundered across both backings). The keyed re-query is one primitive
      * {@code f(keys, correlation)}; the source endpoint contributes only how the key tuple is
      * lifted, never visible to the query unit.
      *
@@ -518,7 +518,7 @@ public sealed interface ChildField extends OutputField
      *     Record arm carries whichever mechanism the parent's backing admits. The Table arm's
      *     lift is consumed only by {@link KeyLift#checkResidueAgreement} today (the Table emit
      *     path stays wrap-driven); storing it consistent-by-construction is deliberate
-     *     provisioning for R314's unified fetcher.
+     *     provisioning for the eventual unified fetcher.
      */
     record BatchedTableField(
         String parentTypeName,
@@ -546,7 +546,7 @@ public sealed interface ChildField extends OutputField
                 // (3) a table row is lifted only by column projection; the member-read lifts
                 // (Lifter / Accessor / ProducedRecords) are class-backed-parent mechanisms.
                 // Checked, not structural: the sealed-gate alternative would mint a second
-                // representation of the source-shape axis alongside SourceShape (see R432).
+                // representation of the source-shape axis alongside SourceShape.
                 if (!(lift instanceof KeyLift.FkColumns)) {
                     throw new IllegalArgumentException(
                         "BatchedTableField with sourceShape=Table must lift by column projection "
@@ -563,7 +563,7 @@ public sealed interface ChildField extends OutputField
                         "BatchedTableField with sourceShape=Table must dispatch LOAD_ONE; the "
                         + "loadMany contract is an accessor-arity (record-parent) shape");
                 }
-                // (5) R435 leaf-specific surface pins, mirroring TableField's: a routine-bearing
+                // (5) leaf-specific surface pins, mirroring TableField's: a routine-bearing
                 // path carries exactly one routine node and none of the surfaces the batched emit
                 // does not render for routine chains. Additionally, a lateral-headed split keys
                 // the batch on the routine's column-bound inputs, so its sourceKey can never be
@@ -805,18 +805,18 @@ public sealed interface ChildField extends OutputField
      * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
      * are absent from the map; they contribute no SQL branch. Each value is a
-     * {@link ParticipantCorrelation} carrying the resolved parent→participant correlation (R452,
-     * generalized R458): the classifier decided the shape is supported once, and the emitter cannot
-     * represent an unsupported one. Through R458 slice 1 every value is a
+     * {@link ParticipantCorrelation} carrying the resolved parent→participant correlation: the
+     * classifier decided the shape is supported once, and the emitter cannot represent an
+     * unsupported one. Currently every value is a
      * {@link ParticipantCorrelation.KeyTupleWhere} (single-hop FK, auto-discovered or
      * {@code @referenceFor}-disambiguated); the {@link ParticipantCorrelation.JoinedCorrelation}
-     * arm arrives with slices 2/3.
+     * arm is not yet minted.
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
-     * Through R102 the classifier produces only catalog-FK / {@code ColumnRead}-reader parent
-     * source-keys (table-backed parents); R105 wires the class-backed-parent classifier arm
-     * to reach the lifter and accessor reader permits.
+     * Today the classifier produces only catalog-FK / {@code ColumnRead}-reader parent
+     * source-keys (table-backed parents); wiring the class-backed-parent classifier arm
+     * to reach the lifter and accessor reader permits is follow-up work.
      *
      * <p>{@code parentKeyOwnerTable} is the parent/hub table owning
      * {@code parentSourceKey.columns()} — the parent's {@code @table} on the table-backed arm,
@@ -840,7 +840,7 @@ public sealed interface ChildField extends OutputField
         public InterfaceField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
-            // R105 follow-up: validator and emitter both read parentSourceKey / parentResultType
+            // Validator and emitter both read parentSourceKey / parentResultType
             // unconditionally; carry the non-null contract in the type system rather than
             // by reviewer-tracked correspondence.
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
@@ -1253,7 +1253,7 @@ public sealed interface ChildField extends OutputField
         record LocalContext() implements Transport {}
 
         /**
-         * R244 ; the errors list rides on an {@code Outcome.ErrorList} arm carried as the
+         * The errors list rides on an {@code Outcome.ErrorList} arm carried as the
          * {@code env.getSource()} of an in-scope ({@code @service} / {@code @tableMethod}) outcome
          * type. The errors-field fetcher reads {@code ErrorList.errors} off the non-null
          * {@code Outcome} source; sibling data fields project {@code Success.value} (rendering null
