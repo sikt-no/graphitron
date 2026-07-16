@@ -54,18 +54,24 @@ R492's gate-greening surfaced concrete drift it deliberately left for this audit
 
 Each slice records its pass here: check the row and note the landing SHA(s) once the reader-plus-verify pass has landed and left the slice more pinned than it found it (link-conversions done, substantive pins filed as follow-ons per the pin-scope boundary). There is no cross-slice barrier; slices land independently. The item reaches In Review when every row is checked.
 
-- [ ] `graphitron` / `rewrite/model`
-- [ ] `graphitron` / `rewrite/generators`
-- [ ] `graphitron` / `rewrite/catalog`
-- [ ] `graphitron` / `rewrite` core + small subpackages (`selection`, `walker`, `session`, `schema`, `methodgraph`, `lint`, `compile`)
-- [ ] `graphitron-javapoet`
-- [ ] `graphitron-jakarta-rest`
-- [ ] `graphitron-mcp`
-- [ ] `graphitron-lsp`
-- [ ] `graphitron-maven-plugin`
-- [ ] `graphitron-fixtures-codegen`
-- [ ] `graphitron-sakila-service`
-- [ ] `graphitron-sakila-example`
+- [x] `graphitron` / `rewrite/model` (`2f2dcb8`)
+- [x] `graphitron` / `rewrite/generators` (`a40a2e4`)
+- [x] `graphitron` / `rewrite/catalog` (`da2a248`)
+- [x] `graphitron` / `rewrite` core + small subpackages (`selection`, `walker`, `session`, `schema`, `methodgraph`, `lint`, `compile`) (`5fe681d`)
+- [x] `graphitron-javapoet` (`e7a4a25`)
+- [x] `graphitron-jakarta-rest` (no drift found; pass recorded)
+- [x] `graphitron-mcp` (`434dc90`)
+- [x] `graphitron-lsp` (`44a9931`)
+- [x] `graphitron-maven-plugin` (`557f332`)
+- [x] `graphitron-fixtures-codegen` (`2f55024`)
+- [x] `graphitron-sakila-service` (`19f4481`)
+- [x] `graphitron-sakila-example` (no drift found; pass recorded)
+
+### Audit outcome
+
+Ran as a 34-batch reader-plus-verify fan-out (module rows sub-batched at ~18 files so every one of the 517 main-source files was assigned to exactly one reader; `FieldBuilder` at 7,648 lines was comment-surface-grepped for drift markers rather than full-read). 90 edits applied, 1 reverted by the adversarial verify stage (it restored a live `GeneratedSourcesLintTest.FORBIDDEN_IMPORTS`-backed rationale a reader wrongly took for dead narration), net 89 edits, net -53 lines. The seeded R492 findings were resolved: `SplitLookupTableField` repointed to `BatchedLookupTableField`, the retired `BatchKey` vocabulary corrected, and the stale legacy-`GraphQLGenerator` clause deleted. Every relink was validated by the R492 reference gate in a full green `-Plocal-db` build.
+
+Load-bearing unpinned claims that could not be cleanly deleted or relinked were routed to follow-on items rather than rewritten into fresh prose (the central hazard): R493 (transient roadmap ids in generated-output javadoc), R494 (`SchemaDirectiveRegistry` out of sync with `BuildContext` `DIR_*`, possible correctness bug), R495 (`InputRecordGenerator` generated service-audit javadoc contradiction), R496 (`MappingsConstantNameDedup` two-vs-three `ErrorChannel` arms), R497 (`FederationSpec.URL` caller census drift), R498 (RAG dev-warm hint pointing at a nonexistent doc section).
 
 ## Scope
 
