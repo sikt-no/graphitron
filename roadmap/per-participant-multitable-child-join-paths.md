@@ -1,7 +1,7 @@
 ---
 id: R458
 title: "Per-participant explicit join paths on multi-table interface/union child fields"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 3
 theme: interface-union
@@ -129,6 +129,19 @@ Independent review of the slice-1 landing (`cbb6eb1`) plus follow-up:
 
 - **Orientation bug fixed.** `resolveChildPolymorphicJoinPaths` resolved every `@referenceFor` route with a hardcoded `isList=false` orientation hint, so a list/connection child field with a same-table self-FK route got the single-valued slot orientation (`selfRefFkOnSource = !isList` decides a self-referential FK's direction; `JooqCatalog.foreignKeyOnSource` returns it verbatim for same-table FKs), silently returning the wrong rows. The field's cardinality is now threaded into both `parseExplicitPath` and the auto-discovery `parsePath`. Pinned at the pipeline tier (single vs list orientation flip) and, for the list direction, at the execution tier: a new `category`-hierarchy fixture (`Category.childRefs`, sibling `category_label` table added to `init.sql` for a uniform-1-PK multi-table pairing) with `MultiTablePolymorphicSelfFkOrientationExecutionTest` asserting children-vs-parent rows and multi-table dispatch.
 - **Discovered latent crash (out of scope here; filed as R481).** A *single-cardinality* multi-table polymorphic child field whose **parent** table holds the FK to the participant correlates on a non-key parent column (parent side = the FK column, not the parent PK). `KeyTupleWhere` binds the parent's key values and the parent record projects only its key columns, so the emitted `parentRecord.get("<fk-col>")` reads an unprojected column and throws at runtime. This is not self-FK-specific: the `Customer.address: Named` shape in the R281 classified corpus is the same pattern (parent `customer` holds `address_id`), classification-only so never executed. A classification-time guard is the wrong fix (it cannot know the runtime projection, and over-rejects the corpus case); the correct fix is projecting the parent-side correlation column onto the parent record. The self-FK single "navigate to parent" case (`Category.parentRef`) is the same gap, which is why the slice-1 execution fixture covers only the list direction.
+
+## Slices 2-3 review (2026-07-16): rework required
+
+Independent review of the slices 2-3 landing (`5968d5364`). The build is green end to end (pipeline, compilation, execution tiers), the four shipped route shapes classify and emit correctly, the execution fixtures pin real correlated rows in all exercised forms, and the docs read clean. One finding blocks Done:
+
+- **Hop-0 `filter:` is silently dropped, not rejected.** The spec pins a hop-0 filter as out of the emittable set (a `{key:, condition:}` element heading the path has no parent alias to bind the filter's source parameter against), and `MultiTablePolymorphicEmitter.hopFilterTerms`'s javadoc claims it "is rejected at classification"; no such rejection exists. Verified empirically at the pipeline tier:
+  - A single-hop `{key:, condition:}` route classifies to `KeyTupleWhere`, which carries only the FK column pairs; the resolved `JoinConditionRef` is absent from the carrier entirely, so the generated fetcher returns rows the authored filter should exclude.
+  - A multi-hop route whose hop-0 element carries a filter classifies to `JoinedCorrelation` with the filter present on hop 0, but `hopFilterTerms` reads only hops `i >= 1`, so the filter never reaches the emitted SQL.
+
+  Both are silent wrong data, the bug class this item and R452 exist to close. Fix: `FieldBuilder.classifyParticipantRoute` (or `singleHopFkColumnPairs`' caller) rejects a hop-0 `filter()` on an explicit route with a structural message naming the participant and steering to a pure `{condition:}` route or an intermediate-hop filter; pin both shapes at the pipeline tier. The single-table arm's `OnParentJoin` handling in `BuildContext` (the "hop-0 `condition:` filter ... has no parent table" rejection) is the precedent to mirror.
+- **Doc follow-through.** `referenceFor.adoc`'s constraints bullet claims "Every shape the path grammar can state is emittable"; once the rejection lands, carve out the hop-0 filter exclusion in the same bullet (intermediate-hop filters stay emittable via `hopFilterTerms`).
+
+Not blocking, noted for the record: the condition-correlation execution fixture covers the single and list forms; the connection form shares `batchedBranchCorrelationChain` / `parentInputKeyPredicate` with the batched list, so the gap is acceptable. Intermediate-hop `filter:` emission (`hopFilterTerms`) ships without an execution fixture; worth one if a later item touches that path.
 
 ## Out of scope
 
