@@ -20,7 +20,7 @@ import java.util.Locale;
  * fixture away from the generator contract.
  *
  * <p>This class is loaded by the {@code jooq-codegen-maven} plugin in
- * {@code graphitron-fixtures} and must therefore live in its own module (the plugin
+ * {@code graphitron-sakila-db} and must therefore live in its own module (the plugin
  * runs in {@code generate-sources}, before the consuming module's own classes are compiled).
  */
 public class NodeIdFixtureGenerator extends JavaGenerator {
