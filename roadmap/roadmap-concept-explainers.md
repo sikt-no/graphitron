@@ -1,7 +1,7 @@
 ---
 id: R486
 title: "Roadmap concept explainers: an interactive developer-facing explanation space under roadmap/concepts/, plus a skill to author the pages"
-status: Spec
+status: Ready
 bucket: architecture
 theme: docs
 depends-on: []
@@ -41,9 +41,9 @@ Resolution: authors write **repo-relative** hrefs (natural for the authoring LLM
 
 ### Link model: one classification, two emitters
 
-Extract the target-kind knowledge currently inline in `Main.mapAdocTarget` into a single classifier (working name `LinkTarget.classify(String target)`) returning a small sealed taxonomy: sibling item (slug), README, changelog, workflow, architecture doc (quadrant-mapped via `ARCH_QUADRANT`), top-level doc, concept page (slug), legacy module path, external URL, unknown. Two thin formatters consume it:
+Extract the target-kind knowledge currently inline in `Main.mapAdocTarget` into a single classifier (working name `LinkTarget.classify(String target)`) returning a small sealed taxonomy: sibling item (slug), README, changelog, workflow, architecture doc (quadrant-mapped via `ARCH_QUADRANT`), top-level doc, concept page (slug), deep docs path (a full `docs/manual/**` or `docs/architecture/**` path, which the flat legacy patterns do not match; the adoc emitter passes it through unchanged exactly as the unknown case does today, while the href emitter maps it per point 2 below), legacy module path, external URL, unknown. Two thin formatters consume it:
 
-1. The existing adoc emitter (`mapAdocTarget`'s output grammar, `ChangelogContext`-aware) is refactored to format from the classification; behavior on all existing cases must be unchanged. Note the existing tests pin only the sibling-plan branch (`AdocLinkPrefixTest`, `MdTableToAdocTest`, `RoadmapDateColumnTest`); the other branches (external URL, same-page anchor, changelog, arch quadrant-mapped and non-quadrant, top-level docs, legacy module, web-environment redirect, unknown passthrough) are currently uncovered, so characterization assertions for them are written against the current output *before* the refactor, so the round-trip table pins pre-refactor behavior rather than ratifying whatever the refactor emits.
+1. The existing adoc emitter (`mapAdocTarget`'s output grammar, `ChangelogContext`-aware) is refactored to format from the classification; behavior on all existing cases must be unchanged. Note the existing tests pin only the sibling-plan branch (`AdocLinkPrefixTest`, `MdTableToAdocTest`, `RoadmapDateColumnTest`); the other branches (external URL, same-page anchor, README, changelog, workflow redirect, arch quadrant-mapped and non-quadrant, top-level docs, legacy module, web-environment redirect, unknown passthrough) are currently uncovered, so characterization assertions for them are written against the current output *before* the refactor, so the round-trip table pins pre-refactor behavior rather than ratifying whatever the refactor emits.
 2. A new HTML href emitter, used when staging concept pages, formats the same classification for the concepts-page context: sibling item to `../plans/<slug>.html`, README to `../index.html`, changelog to `../changelog.html`, `../../docs/manual/**.adoc` and `../../docs/architecture/**.adoc` to `../../manual/**.html` / `../../architecture/**.html`, sibling concept pages and the shared assets untouched, unknown targets passed through untouched.
 
 New classification case for the forward direction: an item body linking `concepts/<slug>.html` renders as `link:../concepts/<slug>.html[...]` in PLAN context and `link:concepts/<slug>.html[...]` in STANDALONE context (`link:`, not `xref:`, because the target is not an adoc page; this also keeps the WARN-fail asciidoctor log handler quiet).
@@ -87,7 +87,7 @@ Ordering inside the single landing: plumbing with its enforcers first, then the 
 
 All in `roadmap-tool`'s unit tier (same shape as `AdocLinkPrefixTest` / `MdTableToAdocTest`), plus the reactor docs build as the integration check:
 
-- Classifier round-trip: a table asserted through both emitters, proving the two directions read one classification (the architect-flagged drift risk). The table covers *every* existing `mapAdocTarget` branch, not a representative sample: external URL, same-page anchor, sibling-plan slug, README, changelog, arch quadrant-mapped, arch non-quadrant (slug absent from `ARCH_QUADRANT`), top-level docs, legacy module path, web-environment redirect, and unknown passthrough. These assertions are written against the current output before the emitter is refactored, so they pin pre-refactor behavior rather than the refactor's own output.
+- Classifier round-trip: a table asserted through both emitters, proving the two directions read one classification (the architect-flagged drift risk). The table covers *every* existing `mapAdocTarget` branch, not a representative sample: external URL, same-page anchor, sibling-plan slug, README, changelog, workflow redirect (`../docs/workflow.adoc` mapping to the roadmap sibling), arch quadrant-mapped, arch non-quadrant (slug absent from `ARCH_QUADRANT`), top-level docs, legacy module path, web-environment redirect, and unknown passthrough. These assertions are written against the current output before the emitter is refactored, so they pin pre-refactor behavior rather than the refactor's own output.
 - `mapAdocTarget` concepts case in both `ChangelogContext`s.
 - Href rewriting: live-item target, shipped-item target (changelog fallback), manual/architecture targets, external URL, unknown passthrough, asset references untouched.
 - Title contract: extraction from a well-formed page; build failure with the file-naming message on a missing or blank `data-concept-title`.
