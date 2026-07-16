@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-14 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R481` | Single-cardinality parent-holds-FK polymorphic child fields crash on non-key parent correlation column | In Progress | 2026-07-16 <sub>created 2026-07-15</sub> | [plan](single-cardinality-polymorphic-child-parent-fk-projection.md) |
 | `R458` | Per-participant explicit join paths on multi-table interface/union child fields | In Review | 2026-07-16 <sub>created 2026-07-09</sub> | [plan](per-participant-multitable-child-join-paths.md) |
+| `R481` | Single-cardinality parent-holds-FK polymorphic child fields crash on non-key parent correlation column | In Review | 2026-07-16 <sub>created 2026-07-15</sub> | [plan](single-cardinality-polymorphic-child-parent-fk-projection.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R314` | Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | Ready | 2026-07-13 <sub>created 2026-06-15</sub> | [plan](dissolve-reentry-leaves-dimensional-emit.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -234,7 +234,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R487` [**Batched multi-table polymorphic child fields: support parent-holds-FK correlation**](batched-polymorphic-parent-holds-fk-correlation.md) — Backlog, architecture
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R458` [**Per-participant explicit join paths on multi-table interface/union child fields**](per-participant-multitable-child-join-paths.md) — In Review, architecture
-- `R481` [**Single-cardinality parent-holds-FK polymorphic child fields crash on non-key parent correlation column**](single-cardinality-polymorphic-child-parent-fk-projection.md) — In Progress, architecture
+- `R481` [**Single-cardinality parent-holds-FK polymorphic child fields crash on non-key parent correlation column**](single-cardinality-polymorphic-child-parent-fk-projection.md) — In Review, architecture
 - `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
