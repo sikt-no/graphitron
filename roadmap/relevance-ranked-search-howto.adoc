@@ -1,0 +1,218 @@
+= How-to: Autocomplete search (trigram type-ahead)
+:description: Give a combobox a bounded, ranked, typo-tolerant type-ahead field backed by a pg_trgm index.
+:!toc:
+
+[NOTE]
+====
+*Draft riding roadmap item R427 (status: Spec).* The `@search` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the trigram landing (R427 phase 2) ships. Every wire-behaviour claim below was verified against PostgreSQL 16 with `pg_trgm` on 2026-07-16; the examples are the intended acceptance behaviour of phase 2.
+====
+
+A combobox needs one thing from the backend: "here are the user's keystrokes, give me the twenty best matches, fast". This recipe builds that field. It costs one database migration (an extension, an index, one setting) and one directive in the SDL. In return the frontend gets partial-word matching from the second keystroke, single-typo tolerance, case-insensitive matching, and a ranked, bounded result list that is `[]` for nonsense input instead of garbage.
+
+Graphitron is deliberately opinionated here: there is no zero-migration fallback (no `ILIKE` shim), because a search surface that only works on small tables is an enticing dead end. The migration below is the whole price, and it scales.
+
+== What you end up with
+
+You write one field and one directive:
+
+[source,graphql]
+----
+type Query {
+    filmSearch: [Film!]! @search(column: "title", kind: TRIGRAM)
+}
+----
+
+Graphitron synthesizes the arguments and the hit wrapper, so the schema your frontend sees is:
+
+[source,graphql]
+----
+type Query {
+    filmSearch(search: String!, first: Int): [QueryFilmSearchHit!]!
+}
+
+type QueryFilmSearchHit {
+    node: Film!
+}
+----
+
+The combobox fires this on each (debounced) keystroke:
+
+[source,graphql]
+----
+query Typeahead($q: String!) {
+    filmSearch(search: $q) {
+        node { id title }
+    }
+}
+----
+
+and gets back the top hits, best match first:
+
+[source,json]
+----
+{
+  "data": {
+    "filmSearch": [
+      { "node": { "id": "RmlsbTox", "title": "The Matrix" } },
+      { "node": { "id": "RmlsbToy", "title": "The Matrix Reloaded" } }
+    ]
+  }
+}
+----
+
+The hit wrapper is intentional future-proofing: hit-level metadata (an opt-in score, highlighting) can land as new sibling fields of `node` without a breaking change. In v1 it carries only `node`.
+
+== Is TRIGRAM the right kind?
+
+`@search` has three kinds; this page covers `TRIGRAM`, which is the combobox default. Pick by what users type and what they type against:
+
+[cols="1,2,2"]
+|===
+| | `TRIGRAM` | `TSVECTOR`
+
+| Ranks by
+| String similarity to the typed text
+| Weighted document relevance (`ts_rank` with `setweight` labels)
+
+| Partial words ("mat" while typing "matrix")
+| Yes, from the second character
+| No (core FTS has no prefix matching)
+
+| Typo tolerance
+| Yes (single-typo, with the threshold setting below)
+| No (stemming only)
+
+| Right for
+| Short name/code text: titles, person names, product codes
+| Longer prose: descriptions, articles, where "title match beats body match" matters
+|===
+
+If users pick a known entity by typing its name, use `TRIGRAM`. If they search prose and expect field weighting, use `TSVECTOR` (its half of this guide ships with R427 phase 3). `ORACLE_TEXT` is the Oracle arm (phase 4).
+
+== Step 1: pick the text users type against
+
+`column:` names one text column on the entity's table. Two shapes:
+
+*A single existing column.* If users type against one column (a title, a code), bind it directly. No new column needed; the migration is just the extension, the index, and the threshold.
+
+*A stored generated concatenation.* If users type against a combination (first plus last name, name plus alias), add one generated column so there is a single indexed text to match against:
+
+[source,sql]
+----
+ALTER TABLE actor
+    ADD COLUMN search_name text
+    GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED;
+----
+
+Stored generated columns are the blessed shape: trigger-free, transactionally fresh (a committed row is immediately findable), and visible to the jOOQ catalog so the build can type-check the binding. Do not use an expression index instead; it is invisible to the generated catalog and the build cannot validate the binding at all.
+
+Keep the concatenation to name-like text. Trigram similarity is a per-word measure with no field weighting; folding a long description into the column invites matches on incidental words with no way to rank them down. Long prose is the `TSVECTOR` kind's job.
+
+== Step 2: the migration
+
+The full canonical migration, using the direct-column shape:
+
+[source,sql]
+----
+-- pg_trgm is a trusted extension: no superuser needed, available on RDS.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- GiST, not GIN: the ranked top-N runs as an index-ordered KNN scan,
+-- so the database walks best-first and stops at the limit.
+CREATE INDEX film_title_trgm
+    ON film USING gist (title gist_trgm_ops);
+
+-- Typo tolerance. The pg_trgm default (0.6) is too strict: a single
+-- transposition ("matirx" for "matrix") scores ~0.43 and is dropped.
+-- 0.4 recovers single-typo matches; the noise it admits ranks below
+-- better matches and is cut by the top-N bound.
+DO $$
+BEGIN
+    EXECUTE format(
+        'ALTER DATABASE %I SET pg_trgm.word_similarity_threshold = 0.4',
+        current_database());
+END $$;
+----
+
+The threshold is a database-level setting and applies from the next connection. It is part of the recipe, not optional tuning: without it, typo tolerance silently does not work. The generated runtime's boot-time probe reports the effective threshold at startup so a restored or rebuilt environment that forgot the setting is visible on day one, not when a user reports "search feels broken".
+
+== Step 3: regenerate the jOOQ catalog
+
+Run your jOOQ codegen so the backing column (and, for the generated-column shape, the new column) is in the catalog. The build validates `column:` against the catalog: an unknown column or a non-text column is a build error. The index itself is invisible to jOOQ's model (access methods and operator classes do not survive codegen), which is exactly why `kind: TRIGRAM` is an assertion you make; the boot-time probe is the runtime check behind it.
+
+== Step 4: bind the field
+
+[source,graphql]
+----
+type Query {
+    filmSearch: [Film!]! @search(column: "title", kind: TRIGRAM)
+    actorSearch: [Actor!]! @search(column: "search_name", kind: TRIGRAM)
+}
+----
+
+The build rejects, with a per-field diagnostic: a `column:` that does not resolve on the entity's table or is not a text type; `config:` on a `TRIGRAM` binding (it belongs to `TSVECTOR` only); `@search` anywhere but a root `Query` field returning a bare non-null list of a `@table`-backed type; co-occurrence with `@asConnection`, `@orderBy` arguments, or `@defaultOrder` (ranking is the search's contract; there is nothing to re-order); an authored argument named `search` or `first` on the field; and an entity table without a primary key (the PK is the deterministic tie-break).
+
+Authored filter arguments still compose: a `rating: MpaaRating @field(name: "RATING")` argument on the search field ANDs with the match exactly as on any list field, so "search within a category" needs no extra machinery.
+
+== What typing feels like
+
+Verified behaviour against a film-title dataset, with the migration above (threshold 0.4), typing toward "The Matrix":
+
+[cols="1,3"]
+|===
+| Typed | Result
+
+| `m`
+| Titles with a word starting in "m", tied; usable but broad. Combobox clients normally gate until 2 characters.
+
+| `ma`
+| "The Matrix", "The Matrix Reloaded", "Matilda", "Match Point". Word-start anchored: "Amadeus" does not match on its interior "ma".
+
+| `matr`
+| The two Matrix films rank first, "Matilda"/"Match Point" fall behind.
+
+| `matirx` (typo)
+| The Matrix films are in the top hits. Typo ranking is approximate: a same-prefix title can edge ahead, but the intended row is on the first screen.
+
+| `matrix relo`
+| "The Matrix Reloaded" first: multi-word input refines across words, and word order does not matter ("star wars" and "wars star" match the same).
+
+| `MATRIX`
+| Same as lowercase; trigram extraction lowercases, so matching is case-insensitive by construction.
+
+| `xyzzy`
+| `[]`. The similarity threshold filters non-matches; nonsense never returns a garbage top-N.
+|===
+
+An empty `search` string also returns `[]`. Accents are significant: "fla" does not find "Flåklypa" (typing "flå" does). If your users type unaccented, plan an unaccented generated column; that recipe is not in v1 (`unaccent()` is not `IMMUTABLE`, so it needs a wrapper function to sit in a generated column).
+
+== Bounding and the client contract
+
+* `first` omitted: you get `defaultFirst` hits (20 unless the directive says otherwise).
+* `first` above `maxFirst` (100 by default) or below 1: a client-visible error, not a silent clamp.
+* Tune both on the directive when the default does not fit: `@search(column: "title", kind: TRIGRAM, defaultFirst: 10, maxFirst: 25)`.
+* Results are deterministically ordered: by match distance, then primary key. Two identical requests against the same data return the same list in the same order.
+
+On the client, the usual combobox hygiene applies and is enough: debounce keystrokes (150 to 300 ms), gate firing until 2 typed characters, and render hits in the order received; the ranking is the server's contract.
+
+== Operational notes
+
+* *Startup, not first-keystroke, is when a broken binding surfaces.* The generated runtime probes each search binding at boot: extension present, ranked query executes, effective threshold reported. A database missing `pg_trgm` fails deployment with a named error instead of redacted per-request errors in production.
+* *Freshness is transactional.* The GiST index and any stored generated column update in the writing transaction; a committed row is immediately findable. There is no sync job to operate.
+* *The threshold travels with the database, not the code.* Restoring into a fresh instance re-runs migrations; if your restore path skips `ALTER DATABASE` settings, the boot report is where you notice.
+* *Writes never touch the backing.* Generated columns are database-maintained and never SDL-mapped, so graphitron's mutation paths do not see them.
+
+== Constraints and pitfalls
+
+* No zero-migration mode. `@search` without the extension and index runs into the boot probe, by design.
+* `TRIGRAM` is for name-like text. No per-field weighting exists inside one concatenated column; long prose belongs to `TSVECTOR`.
+* The threshold setting is load-bearing for typo tolerance and easy to lose in environment moves; watch the boot report.
+* Accent-sensitive by default; unaccented matching needs a preprocessed column (future recipe).
+* Ranking is string similarity, not popularity or recency. Equal-similarity ties order by primary key. If product wants "best seller first among equal matches", that is a different feature (score exposure and custom tiebreak are recorded as future work on R427).
+* Top-N only: no cursors, no `pageInfo`, no deep paging. The field answers "the best twenty", not "page 7 of matches". Use a connection field for browsing.
+
+== See also
+
+* R427 (`roadmap/relevance-ranked-search.md`): the full design, including the `TSVECTOR` weighted full-text arm (phase 3) and Oracle Text (phase 4).
+* How-to: Sort results, for ordinary column ordering on list fields; ordering on a `@search` field is fixed by the ranking and not authorable.
+* How-to: Cursor-paginated connections, for browsable lists with stable cursors; a search field deliberately is not one.

@@ -340,10 +340,21 @@ opinionated picks:
 
 - The trigram template combines the `<%` threshold filter with the KNN
   ordering deliberately: KNN alone would fill the top-N with garbage matches
-  on a nonsense query ("xyzzy"), where threshold + KNN returns `[]`. The
-  similarity threshold stays at the `pg_trgm` default in v1. Exact-word
-  matches produce frequent distance ties (verified empirically), which is
-  what the PK tiebreak is for.
+  on a nonsense query ("xyzzy"), where threshold + KNN returns `[]`.
+  **The `pg_trgm` default threshold (0.6) is too strict and is not the v1
+  recommendation** (revised 2026-07-16 while writing the how-to): a single
+  transposition ("matirx" for "matrix") scores ~0.43 `word_similarity` and
+  is dropped at 0.6, killing the typo-tolerance story out of the box. The
+  canonical migration therefore pins
+  `ALTER DATABASE ... SET pg_trgm.word_similarity_threshold = 0.4`
+  (verified: recovers single-typo matches; the extra noise it admits stays
+  rank-sorted below better matches and is cut by the top-N bound; word-start
+  anchoring still keeps interior matches like "Amadeus"-for-"ma" out). The
+  setting is consumer-owned supply, same law as the index itself; the
+  boot-time probe reports the effective threshold so environment drift is
+  visible at deploy time. No threshold surface on the directive in v1.
+  Exact-word matches produce frequent distance ties (verified empirically),
+  which is what the PK tiebreak is for.
 - `websearch_to_tsquery` over `to_tsquery` / `plainto_tsquery`: it never
   throws on user input and supports quoted phrases and `-`negation, which is
   the right default for a combobox fed raw keystrokes.
@@ -374,7 +385,10 @@ Runtime semantics:
 - **Boot-time supply probe**: the generated runtime validates each search
   binding once at startup, extension presence (`pg_extension` for
   `TRIGRAM`) plus one dummy-term execution of the ranked query, and fails
-  fast with a named error. This is the runtime's answer to the facts the
+  fast with a named error; for `TRIGRAM` it also reports the effective
+  `pg_trgm.word_similarity_threshold` in the startup log (report, not
+  hard-fail: the pinned 0.4 is the recipe's recommendation, not a contract
+  the consumer cannot deviate from). This is the runtime's answer to the facts the
   catalog cannot carry: a wrong `kind:` assertion (extension never
   installed, index dropped, trigger dead) surfaces at deploy time with a
   cause, not as redacted per-request errors when the first user types.
@@ -421,15 +435,22 @@ matrix:
 
 ### Documentation (first-class deliverable)
 
-A how-to per platform under `docs/`, each carrying: the canonical migration
-(Postgres: stored generated tsvector column with `setweight` labels + GIN
-index, the same migration the sakila fixture ships; Oracle: `CTXSYS.CONTEXT`
-index + sync policy), the SDL binding, the query semantics
-(`websearch_to_tsquery` syntax; escaping on Oracle), and the operational
-notes (freshness, the asked-for-20-got-18 join-back property when a backing
-lags). Being opinionated only works if the blessed path is excellently
-documented; the fixture migration doubles as the Postgres recipe and is
-exercised by our own suite.
+A how-to per platform under `docs/manual/how-to/`, each carrying: the
+canonical migration, the SDL binding, the query semantics, and the
+operational notes (freshness, the asked-for-20-got-18 join-back property
+when a backing lags). Being opinionated only works if the blessed path is
+excellently documented; the fixture migration doubles as the Postgres
+recipe and is exercised by our own suite.
+
+**The trigram (combobox) how-to is already drafted** as
+`roadmap/relevance-ranked-search-howto.adoc`, written docs-first
+(2026-07-16) to force the user-experience decisions before implementation;
+it carries a draft banner and moves to `docs/manual/how-to/` (gaining real
+xrefs) when phase 2 lands. Its wire-behaviour tables are empirically
+verified and double as phase 2's acceptance behaviour. Writing it forced
+two spec revisions recorded in this document: the threshold pin (Generated
+query section) and the two-shape fixture (below). The tsvector and Oracle
+halves are authored in their phases.
 
 ## Implementation sites
 
@@ -450,11 +471,20 @@ exercised by our own suite.
   hit `node` passthrough registration in `FetcherRegistrationsEmitter`;
   the Oracle escaper in the emitted runtime (beside `ConnectionHelper`'s
   generator).
-- `graphitron-sakila-db/init.sql`: `CREATE EXTENSION pg_trgm`;
-  `film.search_text` stored generated text column (`title || ' ' ||
-  description`) + GiST trigram index (phase 2); `film.fulltext` stored
-  generated tsvector column (`setweight` A/B, config `english`) + GIN
-  index (phase 3); bump `<jooq.codegen.schema.version>` per landing.
+- `graphitron-sakila-db/init.sql` (phase 2): `CREATE EXTENSION pg_trgm`;
+  the threshold pin (`ALTER DATABASE ... SET
+  pg_trgm.word_similarity_threshold = 0.4`, via a `format(...,
+  current_database())` DO block); **both authored binding shapes**, so the
+  fixtures exercise what the how-to teaches: `film.title` bound directly
+  with a GiST trigram index (the zero-new-column simple case), and an
+  `actor.search_name` stored generated column (`first_name || ' ' ||
+  last_name`) + GiST index (the concatenation case). The earlier
+  `film.search_text (title || description)` sketch is dropped: folding long
+  description text into a trigram column is exactly what the how-to warns
+  against, and the fixture must not model the anti-pattern. Phase 3 adds
+  `film.fulltext` stored generated tsvector column (`setweight` A/B, config
+  `english`) + GIN index (description text belongs in this arm); bump
+  `<jooq.codegen.schema.version>` per landing.
 - The boot-time supply probe in the emitted runtime (beside the
   `ConnectionHelper` generator), with its `GraphitronContext` opt-out
   seam.
@@ -477,10 +507,13 @@ exercised by our own suite.
 - **Compilation-tier**: the sakila example compiles with the search field
   (consumer javac covers the generated hit type, fetcher, and escaper).
 - **Execution-tier** (the proof, Postgres). Trigram: a partial word
-  matches (`mat` finds "Matrix"), a typo still ranks the intended row
-  first, a nonsense query returns `[]` (the threshold), distance ties
-  order deterministically by PK, and the boot probe fails fast with a
-  named error against a database missing `pg_trgm`. Tsvector: ranking
+  matches (`mat` finds "Matrix"), a typo surfaces the intended row in the
+  top hits (not necessarily first: "matirx" can rank a same-prefix title
+  ahead, verified 2026-07-16, so the assertion is membership-in-top-N, not
+  rank-1), a nonsense query returns `[]` (the threshold), a word-interior
+  match stays out (`ma` does not find "Amadeus"), distance ties order
+  deterministically by PK, and the boot probe fails fast with a named
+  error against a database missing `pg_trgm`. Tsvector: ranking
   honors weights (a title match outranks a description match). Shared:
   authored filter argument ANDs with the match; `defaultFirst` applies;
   `first` over `maxFirst` errors client-visibly; empty search string
@@ -717,6 +750,21 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-16 (Spec revision, later the same day): the docs-first round.
+  Drafted the trigram combobox how-to
+  (`relevance-ranked-search-howto.adoc`) ahead of implementation to force
+  the user-experience decisions; its typing-behaviour tables are
+  empirically verified (PostgreSQL 16 + pg_trgm) and double as phase 2
+  acceptance behaviour. Writing it falsified two comfortable assumptions:
+  (1) the default `word_similarity_threshold` (0.6) drops single-typo
+  matches (~0.43), so "stays at the pg_trgm default" was replaced by the
+  pinned 0.4 in the canonical migration, boot-probe-reported; (2) the
+  `film.search_text (title || description)` fixture sketch modeled the
+  long-text-in-trigram anti-pattern the how-to itself warns against, so
+  the fixture became two shapes (direct `film.title` bind, concatenated
+  `actor.search_name`). Also honesty-tightened the typo execution
+  assertion to membership-in-top-N (a same-prefix title can outrank the
+  intended row).
 - 2026-07-16 (Spec revision): the extension round. RDS reality researched
   and recorded (BM25 extensions `pg_search`/`pg_textsearch` named as
   anticipated future `SearchBacking` arms, unavailable on RDS today;
