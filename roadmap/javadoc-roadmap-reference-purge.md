@@ -1,7 +1,7 @@
 ---
 id: R482
 title: "Purge transient roadmap references from javadoc; guard against reintroduction"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 12
 theme: docs
