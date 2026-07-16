@@ -368,6 +368,14 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ---
 
+## Concept explainers
+
+_Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. Authored with the `explainer` skill; this listing derives from `concepts/*.html`, never by hand._
+
+- [Per-participant join paths for polymorphic child fields](concepts/per-participant-child-join-paths.html) (backs R458)
+
+---
+
 ## Done
 
 See [`changelog.md`](changelog.md) for the historical record of shipped rewrite work. Plan files are deleted on Done; git history preserves them.

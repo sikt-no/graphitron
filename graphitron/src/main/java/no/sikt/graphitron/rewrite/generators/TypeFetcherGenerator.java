@@ -108,6 +108,20 @@ public class TypeFetcherGenerator {
      * walk target ({@code <InputName>.fromMap(...)}).
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled, String outputPackage) {
+        return generate(schema, assembled, outputPackage,
+            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry());
+    }
+
+    /**
+     * Canonical entry point (R314). {@code commands} is the per-run
+     * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry} the reentry
+     * rows/load-method declarations commit into; the pipeline surfaces it on the generation
+     * result next to the emitted units so the bidirectional closure oracle can join the two.
+     * The overloads above default to a per-call throwaway registry for callers that don't
+     * consume the command relation.
+     */
+    public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
+            String outputPackage, no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
         var result = new ArrayList<TypeSpec>(schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
@@ -115,7 +129,7 @@ public class TypeFetcherGenerator {
                       || e.getValue() instanceof GraphitronType.ResultType)
             .map(Map.Entry::getKey)
             .sorted()
-            .map(typeName -> generateForType(schema, typeName, assembled, outputPackage))
+            .map(typeName -> generateForType(schema, typeName, assembled, outputPackage, commands))
             .toList());
 
         // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
@@ -127,14 +141,15 @@ public class TypeFetcherGenerator {
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> schema.fieldsOf(e.getKey()).forEach(f -> {
                 if (f instanceof ChildField.NestingField nf) {
-                    collectNestedFetcherClasses(nf, seenNestedTypes, result, assembled, outputPackage);
+                    collectNestedFetcherClasses(nf, seenNestedTypes, result, assembled, outputPackage, commands);
                 }
             }));
         return result;
     }
 
     private static void collectNestedFetcherClasses(ChildField.NestingField nf,
-            Set<String> seen, List<TypeSpec> out, graphql.schema.GraphQLSchema assembled, String outputPackage) {
+            Set<String> seen, List<TypeSpec> out, graphql.schema.GraphQLSchema assembled, String outputPackage,
+            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
         var nestedTypeName = nf.returnType().returnTypeName();
         if (seen.add(nestedTypeName)) {
             // A nested type that owns any fetcher gets a <Type>Fetchers class carrying every
@@ -146,17 +161,18 @@ public class TypeFetcherGenerator {
                 .sorted(Comparator.comparing(GraphitronField::name))
                 .toList();
             if (FetcherEmitter.nestedTypeOwnsFetchers(nestedFields)) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage));
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage, null, commands));
             }
         }
         for (var nested : nf.nestedFields()) {
             if (nested instanceof ChildField.NestingField innerNf) {
-                collectNestedFetcherClasses(innerNf, seen, out, assembled, outputPackage);
+                collectNestedFetcherClasses(innerNf, seen, out, assembled, outputPackage, commands);
             }
         }
     }
 
-    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage) {
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
+            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -164,7 +180,7 @@ public class TypeFetcherGenerator {
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema, commands);
     }
 
     // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
@@ -350,19 +366,23 @@ public class TypeFetcherGenerator {
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
             graphql.schema.GraphQLSchema assembled,
             String outputPackage) {
-        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
+            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry());
     }
 
     /**
      * Canonical form. {@code graphitronSchema} is the classified schema, threaded so the R389
      * joined-table interface fetcher can read each participant's classified fields; {@code null}
      * for unit-tier model-only and nested-type callers (which never emit a joined-table interface).
+     * {@code commands} is the per-run method-command registry (R314); the non-canonical overloads
+     * default it to a per-call throwaway.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
             graphql.schema.GraphQLSchema assembled,
             String outputPackage,
-            GraphitronSchema graphitronSchema) {
+            GraphitronSchema graphitronSchema,
+            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -377,6 +397,9 @@ public class TypeFetcherGenerator {
         // helper methods to materialise. Replaces a previous post-scan that string-grepped
         // method bodies for the literal "graphitronContext(env)".
         var ctx = new TypeFetcherEmissionContext(assembled, typeName, graphitronSchema);
+        // Wire the per-run command registry and this unit's FQCN so the reentry rows/load-method
+        // declaration names resolve through the command-mint seam (R314).
+        ctx.setMethodCommandMint(commands, outputPackage + ".fetchers." + className);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields

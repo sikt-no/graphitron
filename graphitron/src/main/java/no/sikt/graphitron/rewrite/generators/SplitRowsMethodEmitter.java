@@ -600,22 +600,25 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForBatchedTable(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlBatchedTable::new;
+        // Declaration name resolved through the command-mint seam (R314): the Record-sourced arm
+        // commits a reentry MethodCommand, the Table-sourced arm passes through uncommitted.
+        String rowsName = ctx.rowsDeclarationName(btf);
         if (btf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
-                ctx, btf.name(), btf.rowsMethodName(), btf.returnType(),
+                ctx, btf.name(), rowsName, btf.returnType(),
                 btf.joinPath(), btf.filters(), btf.sourceKey(), btf.orderBy(), conn,
                 btf.parentCorrelation(),
                 outputPackage, permit, registry);
         }
         if (btf.emitsSingleRecordPerKey()) {
             return buildSingleMethod(
-                ctx, btf.name(), btf.rowsMethodName(), btf.returnType(),
+                ctx, btf.name(), rowsName, btf.returnType(),
                 btf.joinPath(), btf.filters(), btf.sourceKey(),
                 btf.parentCorrelation(),
                 outputPackage, permit, registry);
         }
         return buildListMethod(
-            ctx, btf.name(), btf.rowsMethodName(), btf.returnType(),
+            ctx, btf.name(), rowsName, btf.returnType(),
             btf.joinPath(), btf.filters(), btf.sourceKey(),
             /* lookupMapping */ null,
             btf.parentCorrelation(),
@@ -636,7 +639,7 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         return buildListMethod(
-            ctx, blf.name(), blf.rowsMethodName(), blf.returnType(),
+            ctx, blf.name(), ctx.rowsDeclarationName(blf), blf.returnType(),
             blf.joinPath(), blf.filters(), blf.sourceKey(),
             blf.lookupMapping(),
             blf.parentCorrelation(),
@@ -670,6 +673,10 @@ public final class SplitRowsMethodEmitter {
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         boolean singleRecordPerKey = rtmf.emitsSingleRecordPerKey();
         TypeName outerReturn = singleRecordPerKey ? listOfRecord : listOfListOfRecord;
+        // Declaration name through the command-mint seam (R314); RecordTableMethodField is
+        // always Record-sourced, so this always commits a reentry MethodCommand — including
+        // for the unsupported-path runtime stub below, which still declares the method.
+        String rowsName = ctx.rowsDeclarationName(rtmf);
 
         List<JoinStep> path = rtmf.joinPath();
         // Condition-join first-hop on class-backed parent is caught upstream by FieldBuilder's
@@ -687,7 +694,7 @@ public final class SplitRowsMethodEmitter {
                         + "FK paths ship in R43 commit 5")
                 .build();
             return RowsMethodSkeleton.build(
-                rtmf.rowsMethodName(),
+                rowsName,
                 outerReturn,
                 keysListType,
                 ctx.graphitronContextCall(),
@@ -698,7 +705,7 @@ public final class SplitRowsMethodEmitter {
         emitRecordTableMethodBody(ctx, body, rtmf, outputPackage, singleRecordPerKey);
 
         return RowsMethodSkeleton.build(
-            rtmf.rowsMethodName(),
+            rowsName,
             outerReturn,
             keysListType,
             ctx.graphitronContextCall(),
@@ -1570,7 +1577,9 @@ public final class SplitRowsMethodEmitter {
         }
 
         return RowsMethodSkeleton.build(
-            stf.rowsMethodName(),
+            // Declaration name through the command-mint seam (R314): the child service-table
+            // lift is always reentry, so this commits the load<X> MethodCommand.
+            ctx.rowsDeclarationName(stf),
             methodReturn,
             keysContainer,
             ctx.graphitronContextCall(),

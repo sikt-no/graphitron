@@ -14,6 +14,8 @@ import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
+import no.sikt.graphitron.rewrite.methodgraph.MethodCommand;
+import no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
@@ -143,9 +145,15 @@ public class GraphQLRewriteGenerator {
      * production {@code generate()} that ignores the result pays no ABI-hashing cost; retaining the
      * specs is a transient reference the run discards. The SDL resource is not a compilation unit and
      * appears in neither map.
+     *
+     * <p>{@code methodCommands} is the run's committed method-command relation (R333 thread I level 2,
+     * landed by R314): every named method a covered emit family claims, one command per method,
+     * populated by the reentry declaration seams. The bidirectional closure oracle joins it against
+     * {@code emittedUnits}.
      */
     public record GenerationResult(Set<Path> emitted, Set<Path> changed,
-                                   Map<String, TypeSpec> emittedUnits, Set<String> changedUnits) {}
+                                   Map<String, TypeSpec> emittedUnits, Set<String> changedUnits,
+                                   List<MethodCommand> methodCommands) {}
 
     /**
      * Mutable per-run accumulator for the emitted set and the changed-file delta, tracked both by path
@@ -286,7 +294,8 @@ public class GraphQLRewriteGenerator {
 
         String outputPackage = ctx.outputPackage();
 
-        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage);
+        var methodCommands = new MethodCommandRegistry();
+        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage, methodCommands);
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         EmissionLog emittedThisRun = new EmissionLog();
@@ -335,7 +344,8 @@ public class GraphQLRewriteGenerator {
             Collections.unmodifiableSet(emittedThisRun.emitted),
             Collections.unmodifiableSet(emittedThisRun.changed),
             Collections.unmodifiableMap(emittedThisRun.emittedUnits),
-            Collections.unmodifiableSet(emittedThisRun.changedUnits)
+            Collections.unmodifiableSet(emittedThisRun.changedUnits),
+            methodCommands.committed()
         );
         // The compile-dependency graph is coarsened from the same classified model, but only the
         // dev-loop incremental compiler needs it; production generate() skips the build (buildCompileGraph

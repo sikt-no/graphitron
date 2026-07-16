@@ -155,6 +155,35 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
+     * Site-level reentry (R314): this coordinate's own emit includes the keyed re-query — the
+     * {@code VALUES(idx, key...)} join re-projecting the target {@code @table} from keys held at
+     * the source, with PK self-identity as the degenerate correlation. Distinct from
+     * {@link #requiresReFetch()}, which is <em>value-level</em> ("this field's value is
+     * re-projected somewhere"): a root {@code @service} field returning a {@code @table} type
+     * hands the produced record straight through and its re-projection is realized by the
+     * downstream child fetchers' {@code $fields}, so the value-level fact is true while no
+     * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
+     * batched arms, {@link ChildField.RecordTableMethodField}, and the projected DML arms all
+     * emit the re-query at their own site.
+     *
+     * <p>Every site-level consumer — the reentry emit dispatch, the
+     * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry}'s covered-family
+     * boundary, the validate-time reentry guard — reads this predicate rather than recomputing
+     * {@code requiresReFetch() && !rootServicePassthrough} per site (two consumers evaluating
+     * the same compound predicate over model fields is the drift {@code requiresReFetch}'s own
+     * single-homing exists to prevent).
+     */
+    default boolean emitsKeyedReQuery() {
+        if (!requiresReFetch()) {
+            return false;
+        }
+        // The root service passthrough: ServiceCall on a RootField re-projects downstream,
+        // never at its own site. Every other re-fetching coordinate (child ServiceCall,
+        // record-sourced child, DML write) owns its keyed re-query.
+        return !(operation() instanceof Operation.ServiceCall) || this instanceof ChildField;
+    }
+
+    /**
      * Wraps a {@link TargetShape} in the {@link Target} wrapper its GraphQL return wrapper dictates: a
      * Relay connection becomes {@code Single(Connection(shape))} (the connection is a single value whose
      * many-ness rides its {@code edges} / {@code nodes} fields), a list wrapper becomes

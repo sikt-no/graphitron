@@ -62,6 +62,31 @@ class ReFetchDerivationTest {
     }
 
     @Test
+    void siteLevelFactExcludesTheRootServicePassthrough() {
+        GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
+
+        // The child @service-table field emits its keyed re-query at its own site (the lift
+        // rows-method): value-level and site-level facts agree.
+        OutputField language = (OutputField) schema.field("Film", "language");
+        assertThat(language.requiresReFetch()).isTrue();
+        assertThat(language.emitsKeyedReQuery()).isTrue();
+
+        // The root @service field is the divergence the site-level fact exists for: its value is
+        // re-projected (requiresReFetch true), but the emitted fetcher is a direct passthrough —
+        // the re-projection is realized by the downstream child fetchers' $fields, so no keyed
+        // re-query is emitted at the root site.
+        OutputField externalFilm = (OutputField) schema.field("Query", "externalFilm");
+        assertThat(externalFilm.requiresReFetch()).isTrue();
+        assertThat(externalFilm.emitsKeyedReQuery())
+            .as("root service passthrough: value-level re-fetch without a site-level re-query")
+            .isFalse();
+
+        // Non-re-fetching fields are trivially not site-level reentry.
+        assertThat(((OutputField) schema.field("Query", "film")).emitsKeyedReQuery()).isFalse();
+        assertThat(((OutputField) schema.field("Film", "rating")).emitsKeyedReQuery()).isFalse();
+    }
+
+    @Test
     void validatorMirrorAgreesWithDispatch() {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
 
@@ -109,6 +134,11 @@ class ReFetchDerivationTest {
         OutputField films = (OutputField) list.field("FilmListPayload", "films");
         assertThat(films).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField.class);
         assertThat(films.requiresReFetch()).isTrue();
+
+        // Record-sourced carriers own their keyed re-query (the rows-method), so the site-level
+        // fact agrees with the value-level one on this family.
+        assertThat(film.emitsKeyedReQuery()).isTrue();
+        assertThat(films.emitsKeyedReQuery()).isTrue();
 
         // Mirror agreement across the Record-source family: the validator's dispatchPerformsReFetch
         // must match requiresReFetch, or the build fails with a re-fetch-derivation drift.
