@@ -4,7 +4,7 @@
 
 [NOTE]
 ====
-*Draft riding roadmap item R427 (status: Spec).* The `@search` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the Oracle landing (R427 phase 4) ships. Unlike the trigram sibling page, whose behaviour tables were verified against a live PostgreSQL, the claims here are pinned against Oracle Text documentation (19c/21c/23ai) only; no live Oracle ran during drafting. Everything that needs a live instance is collected in <<verification,What still needs live verification>> and is owed to the licensed internal pipeline before phase 4 is accepted.
+*Draft riding roadmap item R427 (status: Spec).* The `@typeahead` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the Oracle landing (R427 phase 3) ships. Unlike the trigram sibling page, whose behaviour tables were verified against a live PostgreSQL, the claims here are pinned against Oracle Text documentation (19c/21c/23ai) only; no live Oracle ran during drafting. Everything that needs a live instance is collected in <<verification,What still needs live verification>> and is owed to the licensed internal pipeline before phase 3 is accepted.
 ====
 
 Same promise as the trigram recipe: the frontend sends the user's keystrokes, the backend returns the twenty best matches, fast, from the second keystroke, tolerant of a typo, `[]` for nonsense. On Oracle the mechanism is Oracle Text: `CONTAINS()` over a `CTXSYS.CONTEXT` domain index, ranked by `SCORE()`. Oracle Text ships with every edition (including Free and RDS for Oracle) at no extra cost; the price of the recipe is one migration with two preference calls and an index.
@@ -18,7 +18,7 @@ Identical to the trigram recipe; the platform choice is invisible in the schema.
 [source,graphql]
 ----
 type Query {
-    filmSearch: [Film!]! @search(column: "TITLE", kind: ORACLE_TEXT)
+    filmSearch: [Film!]! @typeahead(column: "TITLE")
 }
 ----
 
@@ -37,11 +37,11 @@ type QueryFilmSearchHit {
 
 The combobox query, the response shape, the bounding contract (`defaultFirst` 20, `maxFirst` 100, error past the cap) and the hit wrapper's future-proofing are all as on the trigram page; this page covers only what Oracle changes.
 
-== One mechanism, one kind, one query shape
+== One mechanism, two demands, one directive
 
-Postgres offers two mechanisms and `@search` maps each to a kind: `TRIGRAM` for type-ahead over names and codes, `TSVECTOR` for weighted relevance over prose. Oracle Text is a single mechanism that could serve both demands, so the kind alone does not determine the query shape; the generator's compiled query does. **In v1, `ORACLE_TEXT` is pinned to the type-ahead demand**, matching what `TRIGRAM` delivers: word-prefix matching, typo tolerance, conjunctive multi-word refinement. `kind` names the *mechanism* (the fact the catalog cannot see, which you assert); the demand is a separate axis, and today it has one value. Weighted prose relevance on Oracle (section weighting, `ABOUT` queries, progressive relaxation) is recorded future work on R427, shaped as a demand argument on the directive that defaults to type-ahead; it will be an additive surface, not a change to this one.
+Graphitron distinguishes *type-ahead* (combobox entity lookup, which `@typeahead` serves) from *prose search* (weighted document relevance, requester-gated future work on R427). Oracle Text is a single mechanism that could serve both demands, so the mechanism alone does not determine the query shape; the generator's compiled query does, and `@typeahead` compiles the type-ahead shape: word-prefix matching, typo tolerance, conjunctive multi-word refinement, the same contract the PostgreSQL arm delivers with `pg_trgm`. You never name the mechanism in the SDL; the build dialect determines it.
 
-If your text is long prose and your users expect "title match beats body match", that demand has no Oracle arm yet; say so on the roadmap item rather than bending this field into it.
+If your text is long prose and your users expect "title match beats body match", that demand is prose search, which has no arm on any platform yet; say so on the roadmap item rather than bending this field into it.
 
 == What the generator sends
 
@@ -102,7 +102,7 @@ END;
 /
 ----
 
-The known operational catch: the index only reindexes a row when the *carrier* column is touched by DML. Updates that change only the other ingested columns need the standard companion trigger that touches the carrier (`SET first_name = :new.first_name, last_name = :new.last_name, last_name = last_name` style, or a dedicated timestamp carrier). This page keeps the single-column shape as its running example; the multi-column shape and its trigger land in the fixture plan when phase 4 is implemented, and both are on the <<verification,verification list>>.
+The known operational catch: the index only reindexes a row when the *carrier* column is touched by DML. Updates that change only the other ingested columns need the standard companion trigger that touches the carrier (`SET first_name = :new.first_name, last_name = :new.last_name, last_name = last_name` style, or a dedicated timestamp carrier). This page keeps the single-column shape as its running example; the multi-column shape and its trigger land in the fixture plan when phase 3 is implemented, and both are on the <<verification,verification list>>.
 
 Keep the ingested text name-like, same rule as the trigram page: no long prose in a type-ahead backing.
 
@@ -149,18 +149,18 @@ Why each line is part of the recipe, not tuning:
 
 == Step 3: regenerate the jOOQ catalog
 
-Run your jOOQ codegen (the commercial jOOQ distribution, since the dialect is Oracle) so the bound column is in the catalog. The build validates `column:` against the catalog; the `CONTEXT` index itself is a domain index and invisible to the catalog, which is why `kind: ORACLE_TEXT` is an assertion you make and the boot-time probe is the runtime check behind it.
+Run your jOOQ codegen (the commercial jOOQ distribution, since the dialect is Oracle) so the bound column is in the catalog. The build validates `column:` against the catalog; the `CONTEXT` index itself is a domain index and invisible to the catalog, so the migration is a fact the build must trust, and the boot-time probe is the runtime check behind it.
 
 == Step 4: bind the field
 
 [source,graphql]
 ----
 type Query {
-    filmSearch: [Film!]! @search(column: "TITLE", kind: ORACLE_TEXT)
+    filmSearch: [Film!]! @typeahead(column: "TITLE")
 }
 ----
 
-The rejection matrix is the trigram page's, with the Oracle specifics: `config:` on an `ORACLE_TEXT` binding rejects (it belongs to `TSVECTOR` only; Oracle analyzer choices live in the lexer preference, in the migration, where they belong), and the column check is membership-only (the domain index and its preferences are invisible to the generated catalog).
+The rejection matrix is the trigram page's, with one Oracle specific: the column check is membership-only (the domain index and its preferences are invisible to the generated catalog). Analyzer choices live in the lexer preference, in the migration, where they belong; there is no SDL argument that mirrors them.
 
 == Bounding and the client contract
 
@@ -177,7 +177,7 @@ One honest caveat on ranking quality: `SCORE` on short name-like fields is coars
 
 == Constraints and pitfalls
 
-* No zero-migration mode, same law as Postgres: `@search` without the index runs into the boot probe, by design.
+* No zero-migration mode, same law as Postgres: `@typeahead` without the index runs into the boot probe, by design.
 * The compiled query is the contract; there is no raw-query escape hatch. A consumer who needs `NEAR`, `ABOUT`, section searches or theme queries is outside the type-ahead demand and should say so on R427.
 * The empty stoplist, prefix wordlist and lexer preferences are load-bearing, not tuning: the compiled query *assumes* them (the prefix arm assumes `PREFIX_INDEX`, never-throws assumes the empty stoplist). Recreating the index without them silently degrades behaviour (stopword errors return, prefixes crawl or hit the expansion cap, accents stop folding); the boot report is where drift shows, and in v1 that report plus the internal pipeline are the only enforcers of this alignment.
 * Reserved-word tokens (`and`, `or`, `near`, ...) match exact-only until the user types the next character. Rare, self-healing, and listed here so it is a known edge, not a bug report.
@@ -187,7 +187,7 @@ One honest caveat on ranking quality: `SCORE` on short name-like fields is coars
 [#verification]
 == What still needs live verification
 
-The licensed internal pipeline owns these before phase 4 acceptance; each becomes an execution-tier assertion there:
+The licensed internal pipeline owns these before phase 3 acceptance; each becomes an execution-tier assertion there:
 
 1. The compiled-query table above behaves as stated end to end (prefix from two characters, fuzzy rescue of "matirx", conjunctive narrowing, `[]` for nonsense and for empty input).
 2. `?tok` fuzzy catches a transposition on short name-like tokens at the default fuzzy score threshold, and its interaction with `BASE_LETTER` folding.

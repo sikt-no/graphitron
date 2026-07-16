@@ -23,8 +23,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | In Review | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
-| `R427` | Free-text search backed by native database search indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
+| `R427` | Type-ahead search backed by native database indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R483` | Audit javadoc for drift against current design and implementation <sub>blocked by: [javadoc-roadmap-reference-purge](javadoc-roadmap-reference-purge.md)</sub> | Spec | 2026-07-15 | [plan](javadoc-implementation-drift-audit.md) |
 | `R482` | Purge transient roadmap references from javadoc; guard against reintroduction | In Progress | 2026-07-16 <sub>created 2026-07-15</sub> | [plan](javadoc-roadmap-reference-purge.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -286,7 +286,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### search
 
-- `R427` [**Free-text search backed by native database search indexes**](relevance-ranked-search.md) — Spec, architecture
+- `R427` [**Type-ahead search backed by native database indexes**](relevance-ranked-search.md) — Spec, architecture
 
 ### lsp
 

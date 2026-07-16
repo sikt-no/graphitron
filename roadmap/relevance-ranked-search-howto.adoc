@@ -4,7 +4,7 @@
 
 [NOTE]
 ====
-*Draft riding roadmap item R427 (status: Spec).* The `@search` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the trigram landing (R427 phase 2) ships. Every wire-behaviour claim below was verified empirically with `pg_trgm` on 2026-07-16 (on the drafting sandbox's PostgreSQL 16; the supported floor is **PostgreSQL 17**, the 17/18 release notes carry no `pg_trgm` behaviour changes, and phase 2's execution tests re-pin every claim on the repo's pinned PostgreSQL 18 image); the examples are the intended acceptance behaviour of phase 2.
+*Draft riding roadmap item R427 (status: Spec).* The `@typeahead` directive does not exist yet. This page is written ahead of implementation to pin the developer experience; it moves to `docs/manual/how-to/` (and gains proper xrefs) when the trigram landing (R427 phase 2) ships. Every wire-behaviour claim below was verified empirically with `pg_trgm` on 2026-07-16 (on the drafting sandbox's PostgreSQL 16; the supported floor is **PostgreSQL 17**, the 17/18 release notes carry no `pg_trgm` behaviour changes, and phase 2's execution tests re-pin every claim on the repo's pinned PostgreSQL 18 image); the examples are the intended acceptance behaviour of phase 2.
 ====
 
 A combobox needs one thing from the backend: "here are the user's keystrokes, give me the twenty best matches, fast". This recipe builds that field. It costs one database migration (an extension, an index, one setting) and one directive in the SDL. In return the frontend gets partial-word matching from the second keystroke, single-typo tolerance, case-insensitive matching, and a ranked, bounded result list that is `[]` for nonsense input instead of garbage.
@@ -18,7 +18,7 @@ You write one field and one directive:
 [source,graphql]
 ----
 type Query {
-    filmSearch: [Film!]! @search(column: "title", kind: TRIGRAM)
+    filmSearch: [Film!]! @typeahead(column: "title")
 }
 ----
 
@@ -62,32 +62,36 @@ and gets back the top hits, best match first:
 
 The hit wrapper is intentional future-proofing: hit-level metadata (an opt-in score, highlighting) can land as new sibling fields of `node` without a breaking change. In v1 it carries only `node`.
 
-== Is TRIGRAM the right kind?
+== Is type-ahead what you need?
 
-`@search` has three kinds; this page covers `TRIGRAM`, which is the combobox default. Pick by what users type and what they type against:
+Graphitron distinguishes two search demands, and `@typeahead` serves exactly one of them. Pick by what users type and what they expect back:
 
 [cols="1,2,2"]
 |===
-| | `TRIGRAM` | `TSVECTOR`
+| | Type-ahead (`@typeahead`) | Prose search (not supported yet)
+
+| The user types
+| A few keystrokes of a name or code they are homing in on
+| A query about content, possibly phrases and negation
 
 | Ranks by
 | String similarity to the typed text
-| Weighted document relevance (`ts_rank` with `setweight` labels)
+| Weighted document relevance ("title match beats body match")
 
 | Partial words ("mat" while typing "matrix")
 | Yes, from the second character
-| No (core FTS has no prefix matching)
+| Not applicable (whole-word matching)
 
 | Typo tolerance
 | Yes (single-typo, with the threshold setting below)
 | No (stemming only)
 
 | Right for
-| Short name/code text: titles, person names, product codes
-| Longer prose: descriptions, articles, where "title match beats body match" matters
+| Comboboxes: titles, person names, product codes
+| Longer prose: descriptions, articles, documents
 |===
 
-If users pick a known entity by typing its name, use `TRIGRAM`. If they search prose and expect field weighting, use `TSVECTOR` (its half of this guide ships with R427 phase 3). On Oracle, the type-ahead demand is `ORACLE_TEXT` (phase 4); see the sibling how-to below.
+If users pick a known entity by typing its name, this page is your recipe. On PostgreSQL the mechanism is `pg_trgm`; on Oracle it is Oracle Text (see the sibling how-to below); you never name the mechanism in the SDL, the build dialect determines it. If users search prose and expect field weighting, that demand is *prose search*, which graphitron does not support yet; it is recorded as requester-gated future work on R427, so say so there rather than bending a type-ahead field into it.
 
 == Step 1: pick the text users type against
 
@@ -106,7 +110,7 @@ ALTER TABLE actor
 
 Stored generated columns are the blessed shape: trigger-free, transactionally fresh (a committed row is immediately findable), and visible to the jOOQ catalog so the build can type-check the binding. Do not use an expression index instead; it is invisible to the generated catalog and the build cannot validate the binding at all.
 
-Keep the concatenation to name-like text. Trigram similarity is a per-word measure with no field weighting; folding a long description into the column invites matches on incidental words with no way to rank them down. Long prose is the `TSVECTOR` kind's job.
+Keep the concatenation to name-like text. Trigram similarity is a per-word measure with no field weighting; folding a long description into the column invites matches on incidental words with no way to rank them down. Long prose is prose search's demand, and graphitron does not serve that demand yet.
 
 == Step 2: the migration
 
@@ -138,19 +142,19 @@ The threshold is a database-level setting and applies from the next connection. 
 
 == Step 3: regenerate the jOOQ catalog
 
-Run your jOOQ codegen so the backing column (and, for the generated-column shape, the new column) is in the catalog. The build validates `column:` against the catalog: an unknown column or a non-text column is a build error. The index itself is invisible to jOOQ's model (access methods and operator classes do not survive codegen), which is exactly why `kind: TRIGRAM` is an assertion you make; the boot-time probe is the runtime check behind it.
+Run your jOOQ codegen so the backing column (and, for the generated-column shape, the new column) is in the catalog. The build validates `column:` against the catalog: an unknown column or a non-text column is a build error. The index itself is invisible to jOOQ's model (access methods and operator classes do not survive codegen), so the migration is a fact the build must trust; the boot-time probe is the runtime check behind it.
 
 == Step 4: bind the field
 
 [source,graphql]
 ----
 type Query {
-    filmSearch: [Film!]! @search(column: "title", kind: TRIGRAM)
-    actorSearch: [Actor!]! @search(column: "search_name", kind: TRIGRAM)
+    filmSearch: [Film!]! @typeahead(column: "title")
+    actorSearch: [Actor!]! @typeahead(column: "search_name")
 }
 ----
 
-The build rejects, with a per-field diagnostic: a `column:` that does not resolve on the entity's table or is not a text type; `config:` on a `TRIGRAM` binding (it belongs to `TSVECTOR` only); `@search` anywhere but a root `Query` field returning a bare non-null list of a `@table`-backed type; co-occurrence with `@asConnection`, `@orderBy` arguments, or `@defaultOrder` (ranking is the search's contract; there is nothing to re-order); an authored argument named `search` or `first` on the field; and an entity table without a primary key (the PK is the deterministic tie-break).
+The build rejects, with a per-field diagnostic: a `column:` that does not resolve on the entity's table or is not a text type; `@typeahead` anywhere but a root `Query` field returning a bare non-null list of a `@table`-backed type; co-occurrence with `@asConnection`, `@orderBy` arguments, or `@defaultOrder` (ranking is the field's contract; there is nothing to re-order); an authored argument named `search` or `first` on the field; and an entity table without a primary key (the PK is the deterministic tie-break).
 
 Authored filter arguments still compose: a `rating: MpaaRating @field(name: "RATING")` argument on the search field ANDs with the match exactly as on any list field, so "search within a category" needs no extra machinery.
 
@@ -190,7 +194,7 @@ An empty `search` string also returns `[]`. Accents get partial tolerance for fr
 
 * `first` omitted: you get `defaultFirst` hits (20 unless the directive says otherwise).
 * `first` above `maxFirst` (100 by default) or below 1: a client-visible error, not a silent clamp.
-* Tune both on the directive when the default does not fit: `@search(column: "title", kind: TRIGRAM, defaultFirst: 10, maxFirst: 25)`.
+* Tune both on the directive when the default does not fit: `@typeahead(column: "title", defaultFirst: 10, maxFirst: 25)`.
 * Results are deterministically ordered: by match distance, then primary key. Two identical requests against the same data return the same list in the same order.
 
 On the client, the usual combobox hygiene applies and is enough: debounce keystrokes (150 to 300 ms), gate firing until 2 typed characters, and render hits in the order received; the ranking is the server's contract.
@@ -204,8 +208,8 @@ On the client, the usual combobox hygiene applies and is enough: debounce keystr
 
 == Constraints and pitfalls
 
-* No zero-migration mode. `@search` without the extension and index runs into the boot probe, by design.
-* `TRIGRAM` is for name-like text. No per-field weighting exists inside one concatenated column; long prose belongs to `TSVECTOR`.
+* No zero-migration mode. `@typeahead` without the extension and index runs into the boot probe, by design.
+* Type-ahead is for name-like text. No per-field weighting exists inside one concatenated column; long prose is prose search's demand, which graphitron does not serve yet.
 * The threshold setting is load-bearing for typo tolerance and easy to lose in environment moves; watch the boot report.
 * Accent tolerance rides the typo threshold: one accented character per word matches, accent-dense text does not. Full accent insensitivity needs a preprocessed column (future recipe); collations do not affect trigram matching.
 * Ranking is string similarity, not popularity or recency. Equal-similarity ties order by primary key. If product wants "best seller first among equal matches", that is a different feature (score exposure and custom tiebreak are recorded as future work on R427).
@@ -213,7 +217,7 @@ On the client, the usual combobox hygiene applies and is enough: debounce keystr
 
 == See also
 
-* R427 (`roadmap/relevance-ranked-search.md`): the full design, including the `TSVECTOR` weighted full-text arm (phase 3) and Oracle Text (phase 4).
+* R427 (`roadmap/relevance-ranked-search.md`): the full design, including the Oracle Text arm (phase 3) and the requester-gated prose-search future work.
 * How-to: Autocomplete search on Oracle (`roadmap/relevance-ranked-search-oracle-howto.adoc`): the same combobox contract over an Oracle Text CONTEXT index; same schema surface, different migration and a generator-owned query compiler.
-* How-to: Sort results, for ordinary column ordering on list fields; ordering on a `@search` field is fixed by the ranking and not authorable.
+* How-to: Sort results, for ordinary column ordering on list fields; ordering on a `@typeahead` field is fixed by the ranking and not authorable.
 * How-to: Cursor-paginated connections, for browsable lists with stable cursors; a search field deliberately is not one.

@@ -1,6 +1,6 @@
 ---
 id: R427
-title: "Free-text search backed by native database search indexes"
+title: "Type-ahead search backed by native database indexes"
 status: Spec
 bucket: architecture
 priority: 8
@@ -10,7 +10,7 @@ created: 2026-07-02
 last-updated: 2026-07-16
 ---
 
-# Free-text search backed by native database search indexes
+# Type-ahead search backed by native database indexes
 
 > Origin: [issue #512](https://github.com/sikt-no/graphitron/issues/512)
 > ("annotering av flere felter for å auto-generere søkeindeks"). Filed
@@ -97,31 +97,28 @@ contract.
    opinionated choice: the feature *requires* a native search backing, and
    the developer documentation carries canonical, copy-pasteable migration
    recipes per platform so the required DB work is cheap and unambiguous.
-4. **Supported backings are native database mechanisms** (revised
-   2026-07-16 after the extension round): two PostgreSQL mechanisms serving
-   complementary query types, `pg_trgm` string similarity (the combobox
-   default: partial words, typos, index-ordered KNN top-N) and core
-   `tsvector` full text (weighted document relevance, stemming, phrases),
-   plus Oracle Text (`CONTAINS()` + `SCORE()` over a `CTXSYS.CONTEXT`
-   domain index). Oracle Text is a single mechanism that could serve both
-   demand types; **v1 pins `ORACLE_TEXT` to the type-ahead demand** (the
-   compiled query below delivers what `TRIGRAM` delivers), and weighted
-   prose relevance on Oracle is recorded future work in Non-goals (revised
-   2026-07-16, Oracle docs-first round). **The supported PostgreSQL floor
-   for this feature is 17** (stated by the item owner 2026-07-16); the
-   repo's CI and Testcontainers already pin PostgreSQL 18
-   (`postgres:18` service, `jdbc:tc:postgresql:18`), and the 17/18
-   release notes contain no `pg_trgm` or core-FTS behaviour changes that
-   touch the claims verified during drafting (the drafting sandbox's
-   native Postgres is 16; the execution tier re-pins every claim on the
-   repo's pinned image, see Tests). Both Postgres mechanisms are
-   available on Amazon RDS,
-   which is the deployment constraint (see *The Postgres extension
-   landscape and RDS*). Specialized engines external to the database
-   (Elasticsearch, OpenSearch, etc.) are **out of scope** unless real
-   demand appears. We are opinionated about what we support; unsupported
-   backing shapes are rejected at build time (the R13 `rejectFacetMisuse`
-   pattern).
+4. **One backing mechanism per dialect, both native to the database**
+   (revised 2026-07-16, grain round): `pg_trgm` string similarity on
+   PostgreSQL (partial words, typos, index-ordered KNN top-N; available
+   on Amazon RDS, the deployment constraint, see *The Postgres extension
+   landscape and RDS*) and Oracle Text on Oracle (`CONTAINS()` +
+   `SCORE()` over a `CTXSYS.CONTEXT` domain index, with the
+   generator-owned compiled query). Type-ahead demand plus build dialect
+   determine the mechanism uniquely, which is why the directive carries
+   no mechanism argument (see the SDL section). Core `tsvector` full text
+   is *not* a type-ahead mechanism (it cannot match partial words,
+   verified 2026-07-16) and belongs to the future prose-search feature.
+   **The supported PostgreSQL floor for this feature is 17** (stated by
+   the item owner 2026-07-16); the repo's CI and Testcontainers already
+   pin PostgreSQL 18 (`postgres:18` service, `jdbc:tc:postgresql:18`),
+   and the 17/18 release notes contain no `pg_trgm` or core-FTS
+   behaviour changes that touch the claims verified during drafting (the
+   drafting sandbox's native Postgres is 16; the execution tier re-pins
+   every claim on the repo's pinned image, see Tests). Specialized
+   engines external to the database (Elasticsearch, OpenSearch, etc.)
+   are **out of scope** unless real demand appears. We are opinionated
+   about what we support; unsupported backing shapes are rejected at
+   build time (the R13 `rejectFacetMisuse` pattern).
 5. **Weights and analyzers are index-time facts, not SDL.** Per-field
    weighting lives in the consumer's `setweight(...)` expression (or Oracle
    Text preferences), authored in their migrations. An SDL weight argument
@@ -141,6 +138,20 @@ contract.
    machinery) and joining hits back to entity tables (the node-key
    machinery). **Descoped for v1** (no requester), but the binding grain
    below is chosen so it lands additively later.
+9. **V1 serves exactly one demand: type-ahead.** (Grain round,
+   2026-07-16.) The vocabulary is pinned: **type-ahead** is combobox
+   entity lookup (raw keystrokes in, ranked entity candidates out; the
+   confirmed #512 demand), **prose search** is weighted document
+   relevance over longer text (a query expression in, ranked documents
+   out). These are different use cases with different input contracts,
+   different result affordances, and different requesters, and the design
+   stops pretending otherwise: the directive is demand-named
+   (`@typeahead`), the synthesized `search:` argument is raw keystrokes
+   on every platform (never a query language), and prose search is
+   requester-gated future work expected to land as a *sibling directive*
+   (the name `@search` is deliberately left unclaimed for it), designed
+   from information-retrieval demand rather than inheriting the combobox
+   contract. See Non-goals.
 
 ## Supply facts the backing bears
 
@@ -174,10 +185,8 @@ author-writes-field / generator-owns-type pattern:
 
 ```graphql
 type Query {
-  # combobox type-ahead over short code/name text (string similarity):
-  filmSearch: [Film!]! @search(column: "search_text", kind: TRIGRAM)
-  # or, weighted full-text relevance over longer text:
-  # filmSearch: [Film!]! @search(column: "fulltext", kind: TSVECTOR, config: "english")
+  # combobox type-ahead over short code/name text:
+  filmSearch: [Film!]! @typeahead(column: "title")
 }
 ```
 
@@ -198,55 +207,55 @@ The directive, in house style:
 
 ```graphql
 """
-Declares a ranked free-text search surface on a root list field. Matching and
-relevance ranking run in the database against a consumer-owned search
-backing; graphitron synthesizes the search arguments and the per-field Hit
-wrapper type and generates a bounded top-N ranked query. Requires a database
-migration owned by the consumer; see the search how-to for the per-platform
-recipe.
+Declares a type-ahead search surface on a root list field: the client sends
+raw keystrokes, the database returns a ranked, bounded top-N of entity
+candidates. Matching and ranking run against a consumer-owned backing
+(pg_trgm on PostgreSQL, Oracle Text on Oracle; the mechanism follows from
+the build dialect); graphitron synthesizes the search arguments and the
+per-field Hit wrapper type. Requires a database migration owned by the
+consumer; see the type-ahead how-to for the per-platform recipe.
 """
-directive @search(
-  """SQL name of the backing column on the entity's table: a plain text column, typically a stored generated concatenation, carrying a trigram index (TRIGRAM); a tsvector column (TSVECTOR); or the text column carrying the Oracle Text CONTEXT index (ORACLE_TEXT)."""
+directive @typeahead(
+  """SQL name of the backing text column on the entity's table: the searched column itself or a stored generated concatenation (PostgreSQL), or the column carrying the Oracle Text CONTEXT index (Oracle)."""
   column: String!
-  """Native search mechanism backing the column; selects the generated SQL shape at build time."""
-  kind: SearchKind!
-  """Text-search configuration used to parse the query string (TSVECTOR only, where it is required). Must match the configuration baked into the vector column's expression; the catalog cannot reveal it, so it is asserted here."""
-  config: String
   """Hits returned when the client omits 'first'."""
   defaultFirst: Int = 20
   """Upper bound on 'first'. A request exceeding it is a client-visible error."""
   maxFirst: Int = 100
 ) on FIELD_DEFINITION
-
-enum SearchKind { TRIGRAM TSVECTOR ORACLE_TEXT }
 ```
 
-**The two Postgres kinds serve different query types, and the how-to leads
-with that fork rather than hiding it.** `TRIGRAM` ranks by *string
-similarity*: partial words and typos match (`mat` finds "Matrix"),
-matching is case-insensitive by construction (trigrams extract lowercased),
-and the top-N is index-ordered (KNN off the GiST index). It has no per-field
-weighting and is meaningless on long text; it is the right relevance metric
-for short code/name type-ahead, i.e. the #512 combobox. `TSVECTOR` ranks by
-*weighted document relevance* (`setweight` labels + `ts_rank`, stemming,
-phrases) but cannot match partial words (`websearch_to_tsquery` has no
-prefix operator, verified empirically 2026-07-16). TRIGRAM is the documented
-combobox default.
+**There is no mechanism argument, because demand plus dialect determine
+the mechanism uniquely** (grain round + principles-architect consult,
+2026-07-16). On PostgreSQL, type-ahead means `pg_trgm` string similarity:
+partial words and typos match (`mat` finds "Matrix"), matching is
+case-insensitive by construction (trigrams extract lowercased), and the
+top-N is index-ordered (KNN off the GiST index); core FTS cannot serve
+type-ahead (`websearch_to_tsquery` has no prefix operator, verified
+empirically 2026-07-16). On Oracle, type-ahead means Oracle Text with the
+generator-owned compiled query. A `kind:`-style argument would restate the
+dialect the generator already builds against: noise with a contradiction
+surface (`kind: TRIGRAM` on an Oracle build), not an assertion. The one
+fact such an argument nominally asserted, "I ran the canonical migration",
+never had a build-time enforcer anyway (the index is invisible to the
+catalog); it is enforced where it always really was, the boot-time supply
+probe. If a dialect ever gains a *second* type-ahead-capable mechanism,
+the disambiguator lands then as an optional `mechanism:` argument
+**defaulting to the incumbent**, so existing SDL classifies unchanged
+(additive, not a cutover).
 
-`kind` is the authored capability assertion the meta probe forced: the
-generated SQL shape is selected at *build* time from the directive, never
-switched at runtime, which keeps "strategy is derived from the schema at
-codegen time" intact. `config` is required for `TSVECTOR` (build-time
-rejection when absent) and rejected for `TRIGRAM` and `ORACLE_TEXT`; a
-query-side
-configuration that disagrees with the vector column's index-time
-configuration breaks matching silently, so the assertion is load-bearing,
-not decoration.
+The generated SQL shape is still selected at *build* time, never switched
+at runtime: the classifier reads the build dialect once, through the
+`JooqCatalog` boundary (never a fresh `SQLDialect` read downstream), and
+carries the decision as the sealed `TypeaheadBacking` arm that the emitter
+and validator switch on; neither re-branches on dialect. "Strategy is
+derived from the schema at codegen time" stays intact; the build's dialect
+is a parse-boundary input exactly as the catalog itself is.
 
 ### Synthesis (rides the R13/connection promoter path)
 
 `ConnectionPromoter`'s field-first walk (`synthesiseForField`,
-`ConnectionPromoter.java:140`) gains a `@search` arm beside the
+`ConnectionPromoter.java:140`) gains a `@typeahead` arm beside the
 `@asConnection` arm:
 
 - Synthesize the **hit wrapper type** `<ParentType><FieldNameUcFirst>Hit`
@@ -261,7 +270,7 @@ not decoration.
   return type becomes `[<Hit>!]!` (non-null list, non-null elements; no
   matches is an empty list, never null) and the two synthesized arguments
   are appended: `search: String!` and `first: Int`.
-- A new `GraphitronType.SearchHitType` model record (beside
+- A new `GraphitronType.TypeaheadHitType` model record (beside
   `ConnectionType` / `FacetsType` / `FacetValueType`,
   `GraphitronType.java:552-630`) carries the schema form;
   `ObjectTypeGenerator.graphqlTypeFor` (`ObjectTypeGenerator.java:120`) and
@@ -279,52 +288,55 @@ deferred, revisit the wrapper before more consumers depend on the shape.
 
 Per R333's additive-facts discipline, no new field leaf is minted:
 
-- A **`SearchSpec` model record** is the carrier, mirroring how R13's
+- A **`TypeaheadSpec` model record** is the carrier, mirroring how R13's
   `FacetSpec` rides `ConnectionType` as a denormalized view carrier:
 
   ```java
-  public record SearchSpec(
-      ColumnRef column,          // the backing column on the resolved table
-      SearchBacking backing,     // sealed supply arm
-      List<ColumnRef> tiebreak,  // the entity table's PK columns, in key order
+  public record TypeaheadSpec(
+      ColumnRef column,           // the backing column on the resolved table
+      TypeaheadBacking backing,   // sealed supply arm, selected by dialect
+      List<ColumnRef> tiebreak,   // the entity table's PK columns, in key order
       int defaultFirst,
       int maxFirst
   ) {}
 
-  public sealed interface SearchBacking {
-      record Trigram() implements SearchBacking {}
-      record Tsvector(String config) implements SearchBacking {}
-      record OracleText() implements SearchBacking {}
-      // future arms, not v1: Bm25 (pg_search / pg_textsearch; not on RDS
-      // today, see the extension-landscape section), SearchTable (multi-type)
+  public sealed interface TypeaheadBacking {
+      record Trigram() implements TypeaheadBacking {}
+      record OracleText() implements TypeaheadBacking {}
+      // Both arms are deliberately empty records: the taxonomy earns
+      // sealed-over-enum through per-arm SQL-template dispatch and
+      // exhaustive Deferred-gate coverage, not through carried data.
+      // A second type-ahead mechanism on one dialect would join as a
+      // new arm; prose-search backings (tsvector, BM25) and multi-type
+      // search tables belong to that future feature's own model.
   }
   ```
 
   Compact constructors pin the invariants the emitter consumes without
-  re-checking: `0 < defaultFirst <= maxFirst`, non-blank `Tsvector.config`,
-  non-empty `tiebreak`.
+  re-checking: `0 < defaultFirst <= maxFirst`, non-empty `tiebreak`.
 - The spec rides the classified root leaf (`QueryTableField`,
   `QueryField.java:108`) as a 0..1 slot (an `Optional` component; the idiom
   exists on other leaves, e.g. `QueryTableMethodTableField`'s
   `Optional<ErrorChannel>`, though `QueryTableField` itself carries none
   today). `operation()` stays `Fetch`: the match predicate is a filter
-  contribution and the ranked order + limit are read from the `SearchSpec`
-  by the emitter. No `Operation.Search` arm is minted in v1; the normalized
+  contribution and the ranked order + limit are read from the `TypeaheadSpec`
+  by the emitter. No `Operation.Typeahead` arm is minted in v1; the normalized
   operation-fact home lands with R314's re-platforming, and the quarantine
   comment says so. One honesty note on the precedent: `Operation.Facet`
   (`Operation.java:89-93`) is a *modeled-but-unpopulated placeholder* with
-  no emitter behind it, while `@search` is live emitting behaviour from its
-  first commit. Borrowing the placeholder's stays-`Fetch` shape for a live
-  concern makes "is this a search carrier?" a predicate over `SearchSpec`
-  presence, which is why the single-sourcing rule in the Validation section
-  is an obligation of this deferral, not a stylistic preference.
-- The two synthesized arguments classify as a new **`ArgumentRef.SearchArgRef`**
+  no emitter behind it, while `@typeahead` is live emitting behaviour from
+  its first commit. Borrowing the placeholder's stays-`Fetch` shape for a
+  live concern makes "is this a type-ahead carrier?" a predicate over
+  `TypeaheadSpec` presence, which is why the single-sourcing rule in the
+  Validation section is an obligation of this deferral, not a stylistic
+  preference.
+- The two synthesized arguments classify as a new **`ArgumentRef.TypeaheadArgRef`**
   arm with a nested `enum Role { QUERY, FIRST }`, structurally identical to
   `PaginationArgRef` (`ArgumentRef.java:347`), skipped by `projectFilters`
   exactly as pagination args are, so authored arguments continue to classify
   as on any list field. **Name-space overlap to pin**: `first` is also a
   reserved pagination name (`isPaginationArg`, `FieldBuilder.java:1126`).
-  On a `@search` carrier the classifier must consult the search-carrier
+  On a `@typeahead` carrier the classifier must consult the carrier
   context *before* the name-based pagination router, or `first` routes to
   `PaginationArgRef.FIRST`; the `@asConnection`-co-occurrence rejection is
   therefore load-bearing for classifier soundness (it keeps both routers
@@ -336,16 +348,16 @@ Authored filter arguments therefore compose for free: they project into
 `WhereFilter`s as today and AND with the match predicate. `@condition` on
 the field composes the same way.
 
-### Generated query (one ranked SELECT, per-kind SQL template)
+### Generated query (one ranked SELECT, per-backing SQL template)
 
 The emitter contributes three query parts to the standard root rows method,
-selected at build time by the `SearchBacking` arm:
+selected at build time by the `TypeaheadBacking` arm:
 
-| Part | `TRIGRAM` | `TSVECTOR` | `ORACLE_TEXT` |
-|---|---|---|---|
-| match predicate | `{q} <% {column}` (word-similarity threshold) | `{vector} @@ websearch_to_tsquery({config}, {q})` | `CONTAINS({column}, {compiledQ}, 1) > 0` |
-| rank ordering | `{q} <<-> {column} ASC` (distance, KNN off the GiST index) | `ts_rank({vector}, websearch_to_tsquery({config}, {q})) DESC` | `SCORE(1) DESC` |
-| tiebreak + bound | `, {pk...} ASC LIMIT {first}` appended in every kind (jOOQ renders the Oracle fetch form) | | |
+| Part | `Trigram` (PostgreSQL) | `OracleText` (Oracle) |
+|---|---|---|
+| match predicate | `{q} <% {column}` (word-similarity threshold) | `CONTAINS({column}, {compiledQ}, 1) > 0` |
+| rank ordering | `{q} <<-> {column} ASC` (distance, KNN off the GiST index) | `SCORE(1) DESC` |
+| tiebreak + bound | `, {pk...} ASC LIMIT {first}` appended in both arms (jOOQ renders the Oracle fetch form) | |
 
 Both templates are plain-SQL `DSL.condition(...)` / `DSL.field(...)`
 templates over the open-source jOOQ artifact; no licensed dependency enters
@@ -370,12 +382,6 @@ opinionated picks:
   visible at deploy time. No threshold surface on the directive in v1.
   Exact-word matches produce frequent distance ties (verified empirically),
   which is what the PK tiebreak is for.
-- `websearch_to_tsquery` over `to_tsquery` / `plainto_tsquery`: it never
-  throws on user input and supports quoted phrases and `-`negation, which is
-  the right default for a combobox fed raw keystrokes.
-- `ts_rank` over `ts_rank_cd` in v1: honors the `setweight` labels baked
-  into the vector, no cover-density surprises; revisiting is a one-line
-  template change that does not touch the contract.
 - **Oracle needs a query compiler, not an escaper** (revised 2026-07-16,
   Oracle docs-first round; the earlier "conservative escaper" was
   falsified). In the `CONTEXT` grammar whitespace between words means
@@ -399,8 +405,8 @@ opinionated picks:
   are named in the Tests section (the compiler's syntactic half is
   unit-pinned; the semantic half is owed to the internal pipeline).
 - The PK tiebreak makes the top-N deterministic within a snapshot; a
-  `@search` carrier whose entity table lacks a primary key is a build-time
-  rejection.
+  `@typeahead` carrier whose entity table lacks a primary key is a
+  build-time rejection.
 
 Runtime semantics:
 
@@ -408,22 +414,24 @@ Runtime semantics:
   `GraphitronClientException`, surfaced as a client-visible error through
   the existing `ErrorRouter.surfaceClientErrorOrRedact` disposition (which
   also redacts any backing failure, the same firewall every fetcher gets).
-- An empty or all-stopword `search` string parses to an empty tsquery and
-  matches nothing: the field returns `[]`. Documented behaviour; combobox
-  clients gate on input length anyway.
+- An empty `search` string returns `[]` on both arms (nothing clears the
+  similarity threshold on Postgres; the Oracle compiler short-circuits
+  tokenless input without touching the database). Documented behaviour;
+  combobox clients gate on input length anyway.
 - Freshness follows the backing: a stored generated column is
   transactionally fresh on Postgres; on Oracle the canonical migration pins
   `SYNC (ON COMMIT)` (plus `OPTIMIZE (AUTO_DAILY)` against the
   fragmentation per-commit syncing causes), which the how-to documents
   together with the staleness window consumers accept if they choose
   `SYNC (EVERY ...)` instead.
-- **Boot-time supply probe**: the generated runtime validates each search
-  binding once at startup, extension presence (`pg_extension` for
-  `TRIGRAM`) plus one dummy-term execution of the ranked query, and fails
-  fast with a named error; for `TRIGRAM` it also reports the effective
-  `pg_trgm.word_similarity_threshold` in the startup log (report, not
-  hard-fail: the pinned 0.4 is the recipe's recommendation, not a contract
-  the consumer cannot deviate from). The `ORACLE_TEXT` arm probes the
+- **Boot-time supply probe**: the generated runtime validates each
+  type-ahead binding once at startup, extension presence (`pg_extension`
+  for the `Trigram` arm) plus one dummy-term execution of the ranked
+  query, and fails fast with a named error; the `Trigram` arm also reports
+  the effective `pg_trgm.word_similarity_threshold` in the startup log
+  (report, not hard-fail: the pinned 0.4 is the recipe's recommendation,
+  not a contract the consumer cannot deviate from). The `OracleText` arm
+  probes the
   domain index's existence on the bound column, executes one dummy
   compiled query, and reports the index's sync policy and the load-bearing
   preference attributes (`PREFIX_INDEX`, stoplist, `BASE_LETTER`) read
@@ -432,43 +440,44 @@ Runtime semantics:
   against their Oracle at their deploy time, so it exists even though this
   repo cannot execute it (its own verification is owed to the internal
   pipeline). This is the runtime's answer to the facts the
-  catalog cannot carry: a wrong `kind:` assertion (extension never
-  installed, index dropped, trigger dead) surfaces at deploy time with a
-  cause, not as redacted per-request errors when the first user types.
+  catalog cannot carry: a missing or drifted migration (extension never
+  installed, index dropped, preference lost) surfaces at deploy time with
+  a cause, not as redacted per-request errors when the first user types.
   Default-on with an opt-out through the `GraphitronContext` seam (reviewer
   question 5).
 
-### Validation (`rejectSearchMisuse`, the R13 template)
+### Validation (`rejectTypeaheadMisuse`, the R13 template)
 
 Diagnostics via `ctx.addDiagnostic(ValidationError.forField(...))` in
 `GraphitronSchemaBuilder`, message shape mirroring `rejectFacetMisuse`
 (`GraphitronSchemaBuilder.java:972`), with one structural improvement over
 that template: **the carrier fact is asserted once and single-sourced**.
-Every `@search` directive application is exhaustively resolved by the
-classifier arm into either a populated `SearchSpec` or a typed `Rejection`;
+Every `@typeahead` directive application is exhaustively resolved by the
+classifier arm into either a populated `TypeaheadSpec` or a typed `Rejection`;
 the misuse pass drains those rejections rather than re-deriving
 well-formedness from the raw SDL surface, and the emitter keys off the same
-`SearchSpec` presence. No application can fall through both passes silently
+`TypeaheadSpec` presence. No application can fall through both passes silently
 (the implicit-coordination smell the `rejectFacetMisuse` shape tolerates
 only because facets are an unpopulated placeholder today). The v1 rejection
 matrix:
 
-- **Carrier shape**: `@search` only on a root `Query` field returning a bare
+- **Carrier shape**: `@typeahead` only on a root `Query` field returning a bare
   non-null list of a `@table`-backed object type. Everything else rejects
   (child fields, interfaces/unions, `@service` / `@tableMethod` /
   `@routine` / `@reference` / `@asConnection` co-occurrence, `@orderBy`
   arguments and `@defaultOrder` on the carrier: ordering is the search's
   contract).
 - **Binding**: `column:` must resolve on the entity's resolved table
-  (`Rejection.unknownColumn`), with the per-kind type check read from
+  (`Rejection.unknownColumn`), with the type check read from
   `JooqCatalog.columnFactsOf` → `ColumnFacts.sqlType`
-  (`JooqCatalog.java:1032/1094`, the surface the meta probe validated). For
-  `TRIGRAM` the column must be a text type (`text` / `character varying`)
-  and `config:` absent; the trigram index and its opclass are invisible to
-  the meta, so the GiST recipe is trusted via the kind. For `TSVECTOR` the
-  column must be `tsvector` and `config:` present. For `ORACLE_TEXT` the
-  check is membership-only (the domain index is invisible) and `config:`
-  absent.
+  (`JooqCatalog.java:1032/1094`, the surface the meta probe validated) and
+  keyed on the same dialect-selected backing arm the classifier produced
+  (validator mirrors classifier; never a second dialect read). For the
+  `Trigram` arm the column must be a text type (`text` / `character
+  varying`); the trigram index and its opclass are invisible to the meta,
+  so the GiST recipe is trusted and the boot probe is the runtime check.
+  For the `OracleText` arm the check is membership-only (the domain index
+  is invisible).
 - **Synthesis collisions**: an authored argument named `search` or `first`
   on the carrier, or an authored type colliding with the derived hit type
   name, rejects with a rename hint.
@@ -496,29 +505,31 @@ query section) and the two-shape fixture (below).
 
 **The Oracle how-to is also drafted**, as
 `roadmap/relevance-ranked-search-oracle-howto.adoc` (2026-07-16, same
-docs-first method), moving to `docs/manual/how-to/` when phase 4 lands.
+docs-first method), moving to `docs/manual/how-to/` when phase 3 lands.
 One honesty difference from the trigram sibling: its claims are pinned
 against Oracle Text documentation, not a live instance, and it says so in
 its banner; its closing "What still needs live verification" checklist
 doubles as the internal pipeline's execution-tier test plan (Tests
 section). Writing it falsified the escaper design and forced the compiled
 query, the canonical-migration preferences, and the demand-pinning
-decision recorded above. The tsvector half is authored in its phase.
+decision recorded above. Prose search, when a requester appears, authors
+its own documentation against its own contract.
 
 ## Implementation sites
 
-- `directives.graphqls`: `@search` + `SearchKind` (definitions above).
-- New `model/SearchSpec.java`, `model/SearchBacking.java`; a 0..1 slot on
+- `directives.graphqls`: `@typeahead` (definition above; no enum, the
+  mechanism is dialect-derived).
+- New `model/TypeaheadSpec.java`, `model/TypeaheadBacking.java`; a 0..1 slot on
   `QueryTableField`; `GraphitronType.SearchHitType` + arms in
   `ObjectTypeGenerator.graphqlTypeFor` and the SDL emitter.
-- `ArgumentRef.java`: new `SearchArgRef` arm; `FieldBuilder.classifyArguments`
-  recognizes the synthesized names on `@search` carriers.
-- `ConnectionPromoter.java`: `@search` arm in `synthesiseForField` (hit-type
+- `ArgumentRef.java`: new `TypeaheadArgRef` arm; `FieldBuilder.classifyArguments`
+  recognizes the synthesized names on `@typeahead` carriers.
+- `ConnectionPromoter.java`: `@typeahead` arm in `synthesiseForField` (hit-type
   synthesis + carrier rewrite); `rebuildAssembledForConnections` pins the
   hit types (the walk is shared; whether the class gets a broader name is
   the implementer's call).
-- `GraphitronSchemaBuilder.java`: `rejectSearchMisuse` (matrix above);
-  R333's directive-coverage table gains a `@search` row in the same commit.
+- `GraphitronSchemaBuilder.java`: `rejectTypeaheadMisuse` (matrix above);
+  R333's directive-coverage table gains a `@typeahead` row in the same commit.
 - Emitters: the ranked query parts in the root rows-method path
   (`TypeFetcherGenerator` + the query-part emitters), per-kind templates;
   hit `node` passthrough registration in `FetcherRegistrationsEmitter`;
@@ -534,9 +545,8 @@ decision recorded above. The tsvector half is authored in its phase.
   last_name`) + GiST index (the concatenation case). The earlier
   `film.search_text (title || description)` sketch is dropped: folding long
   description text into a trigram column is exactly what the how-to warns
-  against, and the fixture must not model the anti-pattern. Phase 3 adds
-  `film.fulltext` stored generated tsvector column (`setweight` A/B, config
-  `english`) + GIN index (description text belongs in this arm); bump
+  against, and the fixture must not model the anti-pattern (long prose is
+  prose search's demand, out of v1). Bump
   `<jooq.codegen.schema.version>` per landing.
 - The boot-time supply probe in the emitted runtime (beside the
   `ConnectionHelper` generator), with its `GraphitronContext` opt-out
@@ -547,8 +557,8 @@ decision recorded above. The tsvector half is authored in its phase.
 
 ## Tests
 
-- **Unit-tier** (invariants the type system can't pin): `SearchSpec` /
-  `SearchBacking` compact-constructor rules; the Oracle query compiler's
+- **Unit-tier** (invariants the type system can't pin): `TypeaheadSpec` /
+  `TypeaheadBacking` compact-constructor rules; the Oracle query compiler's
   *syntactic* invariants, pinned as exact input-to-compiled-string cases
   (a pure `String → String` runtime helper, so this is legitimate
   unit-tier I/O pinning, not a code-string assertion on emitted
@@ -557,12 +567,12 @@ decision recorded above. The tsvector half is authored in its phase.
   prefix-or-fuzzy arm, tokenless input compiles to no query, and no
   input can produce a `DRG-` parse error by construction.
 - **Pipeline-tier** (primary behavioural tier): classification test
-  (`SearchSpec` populated with the expected backing arm, hit type
-  synthesized and registered, arguments appended); the rejection matrix,
-  one case per arm above; emit-surface test for the generated fetcher
-  (method-surface assertions, no code-string assertions, per the R13
-  rework lesson); the exact `ColumnFacts.sqlType` literal for a tsvector
-  column pinned against the real fixture catalog.
+  (`TypeaheadSpec` populated with the backing arm the build dialect
+  selects, hit type synthesized and registered, arguments appended); the
+  rejection matrix, one case per arm above; emit-surface test for the
+  generated fetcher (method-surface assertions, no code-string assertions,
+  per the R13 rework lesson); the exact `ColumnFacts.sqlType` literals the
+  text-type check reads pinned against the real fixture catalog.
 - **Compilation-tier**: the sakila example compiles with the search field
   (consumer javac covers the generated hit type, fetcher, and escaper).
 - **Execution-tier** (the proof, Postgres). Trigram: a partial word
@@ -574,8 +584,7 @@ decision recorded above. The tsvector half is authored in its phase.
   matches and ranks below the exact spelling ("flaklypa" finds "Flåklypa";
   the accent dividend of the 0.4 threshold, verified 2026-07-16), distance
   ties order deterministically by PK, and the boot probe fails fast with a
-  named error against a database missing `pg_trgm`. Tsvector: ranking
-  honors weights (a title match outranks a description match). Shared:
+  named error against a database missing `pg_trgm`. Shared:
   authored filter argument ANDs with the match; `defaultFirst` applies;
   `first` over `maxFirst` errors client-visibly; empty search string
   returns `[]`; the DML pinning test (insert/update on `film` never writes
@@ -602,35 +611,36 @@ decision recorded above. The tsvector half is authored in its phase.
 
 ## Phasing
 
-Four landings, each through the canonical flow:
+Three landings, each through the canonical flow:
 
 1. **Model + classification + synthesis + validation.** Directive, model
-   records, `SearchArgRef`, promoter arm, `rejectSearchMisuse`, unit- and
-   pipeline-tier tests. No emitted-code change beyond the schema surface,
-   and, because every commit ships to trunk, **`@search` is a
-   `Rejection.Deferred` landing in this phase**: a classified search carrier
-   fails the build with "not yet emitted" (the stubbed-leaf mechanism
-   `ValidateMojo` already enforces) rather than silently classifying and
-   then emitting an ordinary unranked `Fetch` that ignores the `search`
-   argument. The sakila-example `filmSearch` field is phase-gated to
-   landing 2 for the same reason. Acceptance: pipeline fixtures classify,
-   the hit type appears in the emitted schema, the rejection matrix fires,
-   and a live `@search` field is `Deferred`, never quietly wrong.
+   records, `TypeaheadArgRef`, promoter arm, `rejectTypeaheadMisuse`, unit-
+   and pipeline-tier tests. No emitted-code change beyond the schema
+   surface, and, because every commit ships to trunk, **`@typeahead` is a
+   `Rejection.Deferred` landing in this phase**: a classified type-ahead
+   carrier fails the build with "not yet emitted" (the stubbed-leaf
+   mechanism `ValidateMojo` already enforces) rather than silently
+   classifying and then emitting an ordinary unranked `Fetch` that ignores
+   the `search` argument. The `Deferred` gate is **keyed on the
+   dialect-selected backing arm**, not on an authored value: in this phase
+   both arms are deferred. The sakila-example `filmSearch` field is
+   phase-gated to landing 2 for the same reason. Acceptance: pipeline
+   fixtures classify, the hit type appears in the emitted schema, the
+   rejection matrix fires, and a live `@typeahead` field is `Deferred`,
+   never quietly wrong.
 2. **Trigram emit + runtime + fixture + docs (serves the requester).** The
-   `TRIGRAM` templates, fetcher emit, the boot-time supply probe, the
-   `Deferred` landing lifted for `TRIGRAM`, the sakila fixture migration
-   (extension + generated text column + GiST index) plus the example
-   `filmSearch` field, execution-tier tests, the how-to's trigram half.
-   Acceptance: the sakila example serves partial-word, typo-tolerant ranked
-   type-ahead end to end under `-Plocal-db`.
-3. **Tsvector emit + fixture + docs.** The `TSVECTOR` templates, the
-   `Deferred` landing lifted for `TSVECTOR`, the `film.fulltext` fixture
-   migration, the weighted-ranking execution tests, the how-to's full-text
-   half. Acceptance: weighted relevance (title beats description)
-   demonstrated end to end.
-4. **Oracle emit + docs.** The `ORACLE_TEXT` templates, the query
+   `Trigram` templates, fetcher emit, the boot-time supply probe, the
+   `Deferred` landing lifted for the `Trigram` arm (PostgreSQL builds;
+   Oracle builds stay `Deferred` until landing 3), the sakila fixture
+   migration (extension + generated text column + GiST index) plus the
+   example `filmSearch` field, execution-tier tests, the trigram how-to
+   promoted from its draft. Acceptance: the sakila example serves
+   partial-word, typo-tolerant ranked type-ahead end to end under
+   `-Plocal-db`.
+3. **Oracle emit + docs.** The `OracleText` templates, the query
    compiler with its unit-pinned syntactic invariants, pipeline-tier
-   shape pinning, the boot probe's Oracle arm, the Oracle how-to
+   shape pinning, the `Deferred` landing lifted for the `OracleText` arm
+   (Oracle builds), the boot probe's Oracle arm, the Oracle how-to
    promoted from its draft (`relevance-ranked-search-oracle-howto.adoc`)
    into `docs/manual/how-to/`; execution deferred to licensed
    infrastructure. Acceptance: emitted Oracle SQL shape pinned; the
@@ -640,33 +650,40 @@ Four landings, each through the canonical flow:
 
 ## Non-goals (v1)
 
+- **Prose search** (the second demand type; vocabulary pinned in decision
+  9): weighted document relevance over longer text: `tsvector` +
+  `setweight` + `ts_rank` on PostgreSQL, section weighting / `ABOUT` /
+  query-relaxation templates on Oracle Text. **Requester-gated**: nobody
+  has asked for it (#512 is type-ahead), and building it now would mean
+  inheriting the combobox contract instead of designing from
+  information-retrieval demand (paging? highlighting? surfaced weights? a
+  documented query language for the search string?). When a requester
+  appears it lands as a *sibling directive*, expected name `@search`
+  (deliberately left unclaimed), with its own synthesized surface and its
+  own backing model; the tsvector supply research in this spec, the
+  meta-probe findings, and the extension-landscape section carry over as
+  its groundwork. It is **not** a mode argument on `@typeahead`: a mode
+  that reinterprets which other arguments are meaningful is the
+  enum-with-shared-field-set smell at the directive layer
+  (principles-architect consult, 2026-07-16, superseding the earlier
+  demand-axis-argument sketch from the Oracle round).
 - **BM25-class relevance** (`pg_search`/ParadeDB, `pg_textsearch`/
   TigerData): genuinely better ranking than `ts_rank` on long-text corpora
-  (corpus statistics, length normalization), and the sealed `SearchBacking`
-  is shaped to take a `Bm25` arm as a pure addition. But neither extension
-  is available on Amazon RDS today (the deployment constraint), so there is
-  nothing to bind; see *The Postgres extension landscape and RDS*.
+  (corpus statistics, length normalization); a prose-search concern, so it
+  belongs to that future feature's backing model, not to
+  `TypeaheadBacking`. Neither extension is available on Amazon RDS today
+  anyway, so there is nothing to bind; see *The Postgres extension
+  landscape and RDS*.
 - **Multi-type search** (a consumer-owned search table with an entity-type
-  discriminator): a recognized backing shape, deferred until demanded; the
-  sealed `SearchBacking` grows a `SearchTable` arm and reuses the row-domain
+  discriminator): a recognized backing shape, deferred until demanded; a
+  future backing model grows a `SearchTable` arm (on `@typeahead` or the
+  prose sibling, whichever the demand names) and reuses the row-domain
   discrimination and node-key machinery.
-- **Weighted prose relevance on Oracle** (section weighting, `ABOUT`
-  queries, query-relaxation templates): Oracle Text is one mechanism
-  serving two demand types, and v1 pins `ORACLE_TEXT` to type-ahead. If
-  the prose demand ever appears, it arrives as a *separate demand-axis
-  argument on the directive* (defaulting to type-ahead, required only
-  where a mechanism serves multiple demands, the same conditional
-  pattern `config:` already uses for `TSVECTOR`), **not** a new
-  `SearchKind` value (that would splice mechanism and demand into one
-  enum, hand-maintaining the cross-product) and **not** a `config:`
-  overload (whose meaning would then differ per kind). `kind` names the
-  mechanism, the fact the catalog cannot see and the author must assert;
-  demand stays its own axis (principles-architect consult, 2026-07-16).
 - **Child-field search**, relevance **score exposure**, **highlighting**
   (`ts_headline`), deep **ranked paging**, and **external engines**
   (Elasticsearch and kin): all recorded in the decisions and dead-ends
   sections above with their rationale.
-- **LSP completion for `column:`** (offering the entity table's tsvector
+- **LSP completion for `column:`** (offering the entity table's text
   columns as candidates): a natural follow-up on the `CompletionData`
   surface, not part of this item.
 
@@ -756,10 +773,10 @@ to avoid; out of scope.
 
 Two design consequences:
 
-- **TRIGRAM + TSVECTOR is not a compromise selection; it is the complete
-  RDS menu for index-backed ranking**, and the two cover complementary
-  query types (string similarity for short type-ahead strings; weighted
-  document relevance for longer text). An empirical demo (2026-07-16)
+- **Trigram + tsvector is the complete RDS menu for index-backed
+  ranking**, and the two split cleanly along the demand vocabulary:
+  trigram is the type-ahead mechanism, tsvector is the waiting
+  prose-search mechanism. An empirical demo (2026-07-16)
   pinned the fork: `websearch_to_tsquery('mat')` finds nothing in
   "Matrix" (no prefix matching in core FTS), while trigram
   `word_similarity` ranks it first, and `EXPLAIN` confirms the trigram
@@ -770,8 +787,9 @@ Two design consequences:
 
 The landscape round also sharpened the assertion problem: whether an
 extension is installed, an index exists, or a trigger still maintains a
-column is invisible at build time, so a wrong `kind:` is undetectable until
-runtime. The boot-time supply probe (Runtime semantics) is the mitigation.
+column is invisible at build time, so the migration assertion is
+undetectable until runtime. The boot-time supply probe (Runtime semantics)
+is the mitigation.
 
 ## Open questions for the reviewer
 
@@ -780,12 +798,12 @@ runtime. The boot-time supply probe (Runtime semantics) is the mitigation.
    result misleads a client that asked for 200 and believes it got them
    all. The counterargument is combobox friendliness: clamping is more
    forgiving of sloppy clients. Leaning error; flip if you disagree.
-2. **`config:` required for `TSVECTOR`.** Requiring it forces the author to
-   state the text-search configuration and makes the silent-mismatch
-   failure mode impossible to hit by omission. The alternative (default
-   `simple` or `english`) is friendlier but reintroduces exactly the silent
-   mismatch. Leaning required.
-3. **Root-only carrier gate in v1.** `@search` on child fields (nested
+2. **Dissolved 2026-07-16 (grain round).** This was "`config:` required
+   for `TSVECTOR`"; `config:` left the directive surface with the
+   prose-search descope, so the question is moot until the prose sibling
+   designs its own configuration assertion. (Kept numbered so later
+   references hold.)
+3. **Root-only carrier gate in v1.** `@typeahead` on child fields (nested
    search under a parent row) is structurally possible later (the
    `TableField` leaf carries the same slots) but rejected in v1 to keep the
    surface small. Confirm the deferral is acceptable.
@@ -793,10 +811,10 @@ runtime. The boot-time supply probe (Runtime semantics) is the mitigation.
    license, so Oracle-dialect codegen is a committed requirement; the open
    logistics question is where licensed execution tests run (worst case
    Sikt's internal GitLab pipelines; optionally ask Lukas whether a CI
-   license for this repo is possible). Phase 4's acceptance is written to
+   license for this repo is possible). Phase 3's acceptance is written to
    be satisfiable without public-CI Oracle.
-5. **Boot-time supply probe default.** The probe turns a wrong `kind:`
-   assertion into a deploy-time failure with a named cause instead of
+5. **Boot-time supply probe default.** The probe turns a missing or
+   drifted migration into a deploy-time failure with a named cause instead of
    redacted per-request errors, at the cost of the generated runtime
    issuing a couple of queries at startup. Default-on with a
    `GraphitronContext` opt-out is the spec's position; flip to opt-in if
@@ -837,6 +855,30 @@ load-bearing for the fulltext case.
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
   case; deep ranked paging has no driver.
+- 2026-07-16 (Spec revision, the grain round): are we at the correct
+  grain, or mixing use cases? Two mixings found and corrected. (1) The
+  `SearchKind` enum spliced mechanism and demand everywhere, not just on
+  Oracle: `TRIGRAM` and `TSVECTOR` each carried an implicit demand. (2)
+  Type-ahead and prose search shared one wire contract by
+  construction-history: different input semantics (raw keystrokes vs the
+  websearch query language), different result affordances, only one
+  requester between them. Resolution (owner decision +
+  principles-architect consult): vocabulary pinned (**type-ahead** vs
+  **prose search**, decision 9); **v1 serves type-ahead only**; the
+  directive is demand-named and sheds `kind:` and `config:`
+  (`@typeahead(column:, defaultFirst:, maxFirst:)`), since demand plus
+  dialect determine the mechanism uniquely and the migration fact's only
+  real enforcer is the boot probe; the classifier reads the dialect once
+  through the `JooqCatalog` boundary and carries the sealed
+  `TypeaheadBacking` arm (`Trigram`/`OracleText`, both legitimately empty
+  records; sealed earned by template dispatch plus Deferred coverage);
+  the `Deferred` gate is dialect-keyed (Oracle builds stay `Deferred`
+  until phase 3); a future second mechanism on one dialect lands as an
+  optional `mechanism:` argument defaulting to the incumbent; prose
+  search moves to Non-goals as a requester-gated sibling directive with
+  `@search` left unclaimed for it, superseding the Oracle round's
+  demand-axis-argument sketch. Reviewer question 2 dissolved; phasing is
+  three landings (the tsvector phase removed); item retitled.
 - 2026-07-16 (Spec revision, floor statement): the supported PostgreSQL
   floor for the feature is **>= 17** (item owner). No design change
   follows: 17/18 release notes carry no `pg_trgm`/core-FTS behaviour
