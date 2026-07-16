@@ -13,7 +13,7 @@ import java.io.InputStream;
  *
  * <ul>
  *   <li>A shared {@code AsyncWarm<Embedder>} that loads {@link BgeEmbedder} off the dev thread (the
- *       heavy ONNX load). Shared because slice 10's catalog tool reuses the same embedder rather than
+ *       heavy ONNX load). Shared because the catalog tool reuses the same embedder rather than
  *       loading a second copy.</li>
  *   <li>An {@code AsyncWarm<DocsIndex>} whose loader reads the bundled tuples off the classpath and
  *       rebuilds the in-memory store. It does <em>not</em> await the embedder: it loads a prebuilt

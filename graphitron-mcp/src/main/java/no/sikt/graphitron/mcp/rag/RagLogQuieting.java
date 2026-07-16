@@ -16,8 +16,7 @@ import java.util.logging.Logger;
  *
  * <p>Two of the three startup-warning groups are graphitron-emitted and handled here; the third
  * (Maven-runtime jansi / guava JVM warnings) is printed by the JVM for Maven's own {@code lib/} jars
- * before any plugin code runs, so a plugin cannot un-print it and it is documented instead (see the
- * "Quieting startup warnings" note in {@code getting-started.adoc}).
+ * before any plugin code runs, so a plugin cannot un-print it.
  *
  * <p><strong>Group 1, DJL tokenizer (mute).</strong> {@code maxLength is not explicitly specified,
  * use modelMaxLength: 512}, emitted by the DJL HuggingFace tokenizer inside langchain4j's bge ONNX

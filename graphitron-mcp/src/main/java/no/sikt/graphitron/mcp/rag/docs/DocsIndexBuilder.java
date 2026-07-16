@@ -31,7 +31,7 @@ import java.util.stream.Stream;
  * <p><strong>Re-embed gate.</strong> A content hash over the in-scope {@code .adoc} is written beside
  * the bundle; when the stamp matches and the bundle is present, the embed is skipped, so a plain
  * {@code mvn install} inner loop does not pay the ONNX cost when docs are unchanged. This is a
- * build-plugin-local up-to-date check and shares no code with slice 10's runtime content-hash
+ * build-plugin-local up-to-date check and shares no code with the runtime content-hash
  * persistence: the two sit on opposite sides of the build/runtime boundary and are kept separate.
  */
 public final class DocsIndexBuilder {

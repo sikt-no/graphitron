@@ -10,7 +10,7 @@ import java.util.List;
  * same class is the seam's fake for fast unit tests, so the seam is exercised without a second
  * in-memory implementation drifting from it.
  *
- * <p>The seam consumes the D1 {@link Embedder.Embedding} / {@link Embedder.Query} records rather
+ * <p>The seam consumes the {@link Embedder.Embedding} / {@link Embedder.Query} records rather
  * than bare {@code float[]} + text pairs, so it reads the KNN vector and the BM25 text off one
  * object instead of trusting two positional arguments to correspond.
  *

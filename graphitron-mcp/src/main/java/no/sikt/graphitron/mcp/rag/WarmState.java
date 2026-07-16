@@ -32,7 +32,7 @@ public sealed interface WarmState<T> permits WarmState.Warming, WarmState.Ready,
 
     /**
      * The single shared degradation message: the standard "index warming, use the
-     * structured tools meanwhile" wording, produced once here so the semantic tools of slices 9/10
+     * structured tools meanwhile" wording, produced once here so the semantic tools
      * do not each re-author it. Handle-agnostic: it reads any {@code WarmState<?>} and branches only
      * on the two non-{@code Ready} states. Exhaustive over the sealed permits with no {@code default},
      * so a new arm forces a compile-time choice here; {@link Ready} is rejected because a ready warm
