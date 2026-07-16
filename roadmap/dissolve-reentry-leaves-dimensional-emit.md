@@ -1,13 +1,13 @@
 ---
 id: R314
 title: "Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: [coordinate-lowers-to-datafetcher-queryparts]
 created: 2026-06-15
-last-updated: 2026-07-13
+last-updated: 2026-07-16
 ---
 
 # Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the model
