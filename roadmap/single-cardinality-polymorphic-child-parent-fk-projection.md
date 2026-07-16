@@ -1,7 +1,7 @@
 ---
 id: R481
 title: "Single-cardinality parent-holds-FK polymorphic child fields crash on non-key parent correlation column"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: interface-union
