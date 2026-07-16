@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Emits the {@code create<TypeName>} / {@code create<TypeName>s} helper methods that populate a
+ * Emits the {@code create<TypeName>} / {@code create<TypeName>List} helper methods that populate a
  * consumer-authored Java bean from a GraphQL input-object {@code Map}. Used by
  * {@link TypeFetcherGenerator} at the {@code *Fetchers} class assembly site for any
  * {@link CallSiteExtraction.InputBean} that appears in a method-backed field's

@@ -53,10 +53,9 @@ final class HandleMethodBody {
     }
 
     private static void emitBindingRecord(CodeBlock.Builder b) {
-        // Inline value type for grouping. JavaPoet doesn't support local records cleanly, so we
-        // use a Map.Entry analogue: a pair (idx, columnValues) carried via Object[]. The select
-        // method consumes List<Object[]> where each Object[] is { Integer idx, Object[] cols }.
-        // No comment in emitted code: the structure is obvious from the loop.
+        // Inline value type for grouping. JavaPoet doesn't support local records cleanly, so the
+        // grouped bindings are carried via Object[] tuples. No comment in emitted code: the
+        // structure is obvious from the loop.
     }
 
     private static void emitGroupingMaps(CodeBlock.Builder b) {

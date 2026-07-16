@@ -37,9 +37,9 @@ import java.util.function.Consumer;
  * {@code build(Consumer<GraphQLSchema.Builder> customizer)} method:
  *
  * <ol>
- *   <li>Creates a {@link graphql.schema.GraphQLCodeRegistry.Builder}. Fetcher registration
- *       calls (one per emitted object type that owns data fetchers) are a follow-up sub-commit
- *       within Commit B; today the registry is handed to the schema builder empty.</li>
+ *   <li>Creates a {@link graphql.schema.GraphQLCodeRegistry.Builder} and registers on it the
+ *       data fetchers and {@code TypeResolver}s for the emitted types (one
+ *       {@code registerFetchers} call per emitted type that owns data fetchers).</li>
  *   <li>Creates a {@link graphql.schema.GraphQLSchema.Builder}. Routes root operation types
  *       ({@code Query}, {@code Mutation}, {@code Subscription}) through the corresponding
  *       {@code .query(...)} / {@code .mutation(...)} / {@code .subscription(...)} entry points
@@ -63,9 +63,9 @@ import java.util.function.Consumer;
  * count; this guards against the chained-call attribution stack overflow that a single deep
  * fluent chain triggers in incremental {@code javac} on large schemas.
  *
- * <p>The generator collects type names from an assembled {@link GraphQLSchema} produced by
- * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder}. Introspection and federation-
- * injected types are skipped to match the per-type emitters.
+ * <p>The generator collects type names from {@link GraphitronSchema#types()}. Introspection and
+ * federation-injected types (names starting with {@code _}) are skipped to match the per-type
+ * emitters.
  */
 public final class GraphitronSchemaClassGenerator {
 

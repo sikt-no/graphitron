@@ -235,7 +235,7 @@ public final class ObjectTypeGenerator {
                                                   graphql.schema.GraphQLFieldDefinition field,
                                                   GraphitronSchema schema, HelperMethodSink sink) {
         // Carrier-field rewriting for directive-driven @asConnection has already happened in the
-        // classifier (GraphitronSchemaBuilder.rebuildAssembledForConnections): the field arrives
+        // classifier (ConnectionPromoter.rebuildAssembledForConnections): the field arrives
         // with its return type pointing at the Connection and `first` / `after` arguments
         // appended. Emission reads the field as-is — no probe, no directive inspection.
         var body = CodeBlock.builder();

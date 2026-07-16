@@ -62,14 +62,6 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  *   <li>{@code scatterByIdx(flat, keys.size())} — emitted once per fetcher class, see
  *       {@code TypeFetcherGenerator.buildScatterByIdxHelper}.</li>
  * </ol>
- *
- * <p>C1 supports list cardinality with {@code parentHoldsFk=false} only — the common
- * {@code @splitQuery} shape where the parent is the PK side and the target holds the FK. Single
- * cardinality and condition-join paths emit runtime-throwing stubs with reasons
- * that name the required followup.
- *
- * <p>{@code ChildField.SplitLookupTableField} lands in C2; C1 throws at codegen time for that
- * branch so the missing step is visible.
  */
 public final class SplitRowsMethodEmitter {
 
@@ -586,9 +578,9 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Builds the rows-method for a {@link ChildField.BatchedTableField} (both source shapes;
-     * the SQL bodies were already shared pre-merge). Sibling entry points
-     * {@link #buildForSplitLookupTable} and {@link #buildForRecordLookupTable} cover the lookup
-     * twins; each caller in {@code TypeFetcherGenerator} already has the concrete field type, so
+     * the SQL bodies were already shared pre-merge). Sibling entry point
+     * {@link #buildForBatchedLookupTable} covers the lookup shape; each caller in
+     * {@code TypeFetcherGenerator} already has the concrete field type, so
      * no capability-typed dispatcher is needed at this seam.
      *
      * <p>Routing is on facts, not the source gate: {@code emitsSingleRecordPerKey} folds the
@@ -705,7 +697,7 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
-        // Lookup-input VALUES (SplitLookupTableField only). Uses the env-based helper shape:
+        // Lookup-input VALUES (BatchedLookupTableField only). Uses the env-based helper shape:
         // args live on env.getArgument(name) for a Split fetcher (not on a child SelectedField
         // as in the inline-projection path). The helper method name follows the
         // <fieldName>InputRows convention used by the inline-projection path.
@@ -752,7 +744,7 @@ public final class SplitRowsMethodEmitter {
         emitFromBridgeAndParentJoin(sel, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
 
-        // Lookup-input JOIN (SplitLookupTableField only). ON predicate uses typed
+        // Lookup-input JOIN (BatchedLookupTableField only). ON predicate uses typed
         // lookupInput.field(i+1, ColType.class) so the .eq against terminalAlias.COL matches
         // types directly. Position mapping inside lookupInput: index 0 is idx, indices 1..M
         // are the lookup columns in LookupMapping order. Same USING-vs-ON reasoning as the
@@ -1075,7 +1067,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Builds the private static {@code emptyScatter(int keyCount)} helper returning a
-     * pre-populated list of empty sublists. Used by the SplitLookupTableField rows method's
+     * pre-populated list of empty sublists. Used by the BatchedLookupTableField rows method's
      * empty-lookup-input short-circuit (when {@code @lookupKey} args are null/empty, every
      * parent gets an empty result without touching the database).
      */

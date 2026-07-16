@@ -765,7 +765,7 @@ public class TypeFetcherGenerator {
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
-        // for SplitLookupTableField and RecordLookupTableField. Plain batched fields
+        // for BatchedLookupTableField. Plain batched fields
         // never use the empty-input short-circuit.
         boolean hasSplitLookupField = fields.stream().anyMatch(f ->
             f instanceof ChildField.BatchedLookupTableField);

@@ -52,7 +52,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
  * per cell, so jOOQ applies the target column's Converter internally and renders a plain JDBC
  * bind — no SQL-level {@code CAST}. See {@link #addRowBuildingCore}.
  *
- * <p>See {@code docs/argument-resolution.md} for the full design rationale across both paths.
+ * <p>See {@code docs/architecture/reference/argument-resolution.adoc} for the full design rationale across both paths.
  *
  * <p>Emitted {@code <fieldName>InputRows} helpers take the aliased target {@code Table} as a
  * parameter — see "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.

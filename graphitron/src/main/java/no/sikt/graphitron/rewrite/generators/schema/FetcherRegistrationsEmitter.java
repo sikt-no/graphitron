@@ -23,8 +23,7 @@ import java.util.TreeMap;
  * and the value is the method body that attaches each fetcher to the shared code registry
  * through {@link graphql.schema.FieldCoordinates}.
  *
- * <p>Covers the categories inherited from the deleted {@code WiringClassGenerator}; every field
- * is now wired through its owning {@code <Type>Fetchers} class:
+ * <p>Every field is wired through its owning {@code <Type>Fetchers} class:
  * <ol>
  *   <li>Regular object types. {@code codeRegistry.dataFetcher(FieldCoordinates.coordinates("Film", "title"), FilmFetchers::title)}.</li>
  *   <li>Nested object types that own any fetcher — every field references into the type's own
@@ -72,7 +71,7 @@ public final class FetcherRegistrationsEmitter {
                       || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType
                       // Single-record DML carriers bind to a JooqTableRecordType and hold one
-                      // record-sourced BatchedTableField (former SingleRecordTableField) data field that needs a wired fetcher entry. They
+                      // record-sourced BatchedTableField data field that needs a wired fetcher entry. They
                       // fall through this filter via the ResultType arm — no NestingType
                       // widening required.
                       || e.getValue() instanceof GraphitronType.ResultType)

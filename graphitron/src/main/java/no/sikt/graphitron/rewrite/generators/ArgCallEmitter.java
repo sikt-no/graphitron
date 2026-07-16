@@ -22,7 +22,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
  * Emits argument-list and per-argument extraction code for condition-method calls.
  *
  * <p>Consumed by {@link TypeFetcherGenerator} (filter/where composition in fetcher bodies)
- * and by {@code InlineTableFieldEmitter} (G5 inline-subquery WHERE). Extracted from
+ * and by {@link InlineTableFieldEmitter} (G5 inline-subquery WHERE). Extracted from
  * {@code TypeFetcherGenerator} so both consumers can share a single emission surface for
  * the {@code <ConditionsClass>.<method>(table, argN...)} call pattern.
  */

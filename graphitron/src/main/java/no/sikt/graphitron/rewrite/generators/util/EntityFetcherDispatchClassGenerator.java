@@ -238,8 +238,7 @@ public final class EntityFetcherDispatchClassGenerator {
     }
 
     // Per-type handle methods and per-alternative select methods are emitted by the helpers
-    // below. Implementations are filled in by subsequent Edit operations to keep this file
-    // composable in small chunks.
+    // below.
     private static MethodSpec buildHandleMethod(
         EntityResolution entity, String outputPackage, ClassName nodeIdEncoder
     ) {

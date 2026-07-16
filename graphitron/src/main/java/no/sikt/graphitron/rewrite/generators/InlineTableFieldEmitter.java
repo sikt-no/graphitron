@@ -25,7 +25,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *
  * <p>Uniform multiset is a deliberate deviation from the G5 plan's two-shape fork — jOOQ 3.20's
  * {@code DSL.row(Collection)} flattens nested aliased fields at render time, breaking depth-2
- * self-referential projections. See plan history iteration 7 for the empirical findings.
+ * self-referential projections.
  *
  * <p>Relies on the C1 invariant {@code TableField.returnType().wrapper() != Connection}.
  *

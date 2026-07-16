@@ -19,7 +19,7 @@ import java.util.List;
  * {@code totalCount}).
  *
  * <p>Also carries the field's {@code Table<?>} and {@code Condition}; per-connection
- * derivables ({@code totalCount} and, in the future, faceted-search aggregates) read these to
+ * derivables ({@code totalCount} and faceted-search aggregates) read these to
  * issue their own SQL using the same source and predicate as the page query. Root fetchers
  * bind the page query's own (table, condition); batched paths (Split-Connection scatter,
  * polymorphic B4c-2) bind a shared count-source derived table with a per-parent

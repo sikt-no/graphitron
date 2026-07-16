@@ -25,7 +25,7 @@ public final class SchemaDirectiveRegistry {
 
     /**
      * Graphitron's own directives. Every name here is defined in
-     * {@code graphitron-common/src/main/resources/directives.graphqls} and read by the
+     * {@code graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls} and read by the
      * rewrite classifier; none of them has runtime meaning in the emitted schema.
      *
      * <p>Kept in sync with the {@code DIR_*} constants in
