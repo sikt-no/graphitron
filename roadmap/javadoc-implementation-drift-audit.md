@@ -5,7 +5,7 @@ status: Ready
 bucket: cleanup
 priority: 10
 theme: docs
-depends-on: [javadoc-link-reference-build-gate]
+depends-on: []
 created: 2026-07-15
 last-updated: 2026-07-16
 ---
