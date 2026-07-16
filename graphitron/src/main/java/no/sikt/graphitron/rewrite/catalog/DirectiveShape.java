@@ -5,9 +5,8 @@ import java.util.Optional;
 
 /**
  * Projection of a {@link graphql.language.DirectiveDefinition} for the LSP
- * snapshot side-channel. Carries the arg surface and description prose
- * phase-2 hover and arg-validation consumers will need; phase 1 uses only
- * the name. See {@link LspSchemaSnapshot}.
+ * snapshot side-channel. Carries the arg surface and description prose. See
+ * {@link LspSchemaSnapshot}.
  *
  * <p>{@code locations} carries the directive's applicable locations as
  * renderable strings (e.g. {@code "OBJECT"}, {@code "FIELD_DEFINITION"}),

@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.catalog;
 /**
  * Sealed projection of a GraphQL type reference (the type half of an
  * {@link graphql.language.InputValueDefinition}). Sealed rather than a
- * rendered SDL string so phase-2 consumers (arg-completion,
+ * rendered SDL string so consumers (arg-completion,
  * arg-validation) discriminate list-vs-named and nullable-vs-non-null
  * without re-parsing.
  */

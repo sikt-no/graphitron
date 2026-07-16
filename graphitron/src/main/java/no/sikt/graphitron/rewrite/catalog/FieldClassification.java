@@ -77,7 +77,7 @@ public sealed interface FieldClassification
     record FkStep(String targetTableName, String fkName) {}
 
     /**
-     * LSP-arm dispatch projection: collapses the 30 {@link FieldClassification} permits
+     * LSP-arm dispatch projection: collapses the {@link FieldClassification} permits
      * onto three audience-specific arms the {@code @field(name:)}-shaped
      * {@code CatalogColumnBinding} consumers all read off ({@code FieldCompletions},
      * {@code Diagnostics.validateFieldMember}, {@code Hovers.columnHover}). Routed through
