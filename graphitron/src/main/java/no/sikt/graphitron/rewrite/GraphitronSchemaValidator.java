@@ -224,70 +224,31 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    /**
-     * Whether the generator's dispatch emits a {@code @table} re-projecting SELECT (re-fetch) for this
-     * field, read from the leaf and its return-shape slot. This <em>mirrors</em> what
-     * {@code TypeFetcherGenerator} actually emits; {@link #validateField} asserts it agrees with the
-     * model's {@code Table mapping x holds-records} derivation
-     * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()}, so the single-homed
-     * predicate and the emitter cannot drift.
-     *
-     * <p>The {@code @service}-table and {@code DML}-projected-{@code @table} arms re-query from a
-     * produced record; the Record-source family (the record-sourced {@code BatchedTableField} arm —
-     * into which the former {@code SingleRecordTableField} carriers and, since R314 slice 2b, the
-     * {@code @tableMethod} DTO-parent shape collapsed — and the record-sourced
-     * {@code BatchedLookupTableField} arm)
-     * re-projects the {@code @table} from keys read off a received record. The
-     * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
-     * re-fetch. The strict {@link no.sikt.graphitron.rewrite.model.TargetShape.Table} guard matches
-     * {@code requiresReFetch}, which fires only on a bare (non-connection) {@code Table} target shape; a
-     * connection-shaped table field carries a {@link no.sikt.graphitron.rewrite.model.TargetShape.Connection}
-     * shape and paginates rather than re-projecting in this derivation's sense.
-     */
-    private static boolean dispatchPerformsReFetch(no.sikt.graphitron.rewrite.model.OutputField field) {
-        if (!(field.target().shape() instanceof no.sikt.graphitron.rewrite.model.TargetShape.Table)) {
-            return false;
-        }
-        return switch (field) {
-            case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField ignored -> true;
-            case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField ignored -> true;
-            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField ignored -> true;
-            // The Record-source family re-projects the @table from keys held at the source
-            // (the former SingleRecordTableField carriers collapsed into the record-sourced arm of
-            // the merged BatchedTableField, R432). The Table-sourced arm reads the parent's own
-            // catalog row and does not re-fetch, mirroring requiresReFetch's sourceShape read.
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f ->
-                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
-            case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f ->
-                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
-            case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
-                // The discriminated-interface arms re-project the shared @table (a follow-up
-                // SELECT keyed by the RETURNING PK) exactly as the projected @table arms do.
-                dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle
-                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList
-                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle
-                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList;
-            default -> false;
-        };
-    }
-
     private void validateField(GraphitronField field, GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        // Re-fetch derivation mirror. The @table re-projecting SELECT is derived once
-        // from Table mapping x holds-records on the field (OutputField.requiresReFetch); the
-        // generator's per-leaf fetcher arms emit it. This mirror pins the single-homed derivation
-        // against what the generator actually dispatches, so a future leaf or reclassification that
-        // yields a holds-records x Table shape without a re-fetch arm (or vice versa) fails at build
-        // time rather than silently emitting the wrong fetcher (validator-mirrors-classifier).
+        // Reentry implementedness guard (R314 slice 5, replacing the retired
+        // dispatchPerformsReFetch mirror). The mirror re-enumerated per leaf what the generator's
+        // re-fetch dispatch did and asserted agreement with the requiresReFetch derivation; since
+        // the reentry emit itself now routes on the model facts (the source-shape-gated batched
+        // fetcher, the service lift, the named DML rows companions), that enumeration became a
+        // second derivation of the same facts — the drift it guarded against is structurally
+        // impossible, and keeping it would itself be the two-consumers smell. What still needs a
+        // build-time guard is implementedness: a future leaf or fact combination that derives
+        // site-level reentry (emitsKeyedReQuery) without being one of the shapes the reentry emit
+        // handles — the DataLoader-backed leaves (BatchKeyField) and the projected/discriminated
+        // DML arms (DmlTableField) — must fail in ValidateMojo, not reach the generator. No
+        // current leaf can fire this (the sealed hierarchy admits no such combination), which is
+        // exactly the state the guard exists to preserve.
         if (field instanceof no.sikt.graphitron.rewrite.model.OutputField out
-                && out.requiresReFetch() != dispatchPerformsReFetch(out)) {
+                && out.emitsKeyedReQuery()
+                && !(field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField)
+                && !(field instanceof no.sikt.graphitron.rewrite.model.MutationField.DmlTableField)) {
             errors.add(new ValidationError(
                 out.qualifiedName(),
-                Rejection.invalidSchema("Field '" + out.qualifiedName() + "': re-fetch derivation (operation "
-                    + out.operation() + " x target " + out.target() + " x source "
-                    + schema.sourceOf(out.parentTypeName(), out.name())
-                    + " -> requiresReFetch=" + out.requiresReFetch() + ") disagrees with the generator's "
-                    + "re-fetch dispatch for " + out.getClass().getSimpleName() + "; the Table-mapping x "
-                    + "holds-records derivation and the re-projecting SELECT have drifted"),
+                Rejection.invalidSchema("Field '" + out.qualifiedName() + "': site-level reentry "
+                    + "(emitsKeyedReQuery, operation " + out.operation() + " x target " + out.target()
+                    + ") on " + out.getClass().getSimpleName() + ", which carries no reentry emit — "
+                    + "the keyed re-query is emitted only for DataLoader-backed leaves and "
+                    + "projected/discriminated DML arms (R314)"),
                 out.location()));
         }
         // An array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key

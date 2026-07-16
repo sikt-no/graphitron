@@ -37,7 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * is asserted for <em>every</em> classified {@link ChildField} the R281 spec-by-example corpus
  * demonstrates ({@link ClassifiedCorpus}), so the leaf-identity switch is cross-checked against the
  * independently-classified parent backing rather than against itself. This is the source-shape
- * analogue of {@code GraphitronSchemaValidator}'s {@code dispatchPerformsReFetch} mirror.
+ * analogue of the validator's retired {@code dispatchPerformsReFetch} mirror (replaced by the
+ * reentry implementedness guard when R314 slice 5 made the reentry emit route on the model facts
+ * directly); unlike that mirror, the parent-backing walk here is a genuinely independent
+ * derivation, so this cross-check keeps earning its keep.
  *
  * <p>{@link #everyChildFieldLeafIsCoveredOrDocumented()} keeps it honest as the leaf set grows: every
  * concrete {@link ChildField} sealed leaf is either exercised by the corpus walk (and thus verified

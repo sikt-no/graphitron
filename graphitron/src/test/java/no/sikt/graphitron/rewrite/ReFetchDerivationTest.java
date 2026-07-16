@@ -13,8 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * operation, target)} coordinate rather than re-decided per leaf. This test pins that the derivation
  * forks on a bare {@code TargetShape.Table} target combined with holds-records (a {@code @service}-table
  * field re-fetches; a {@code @service}-record field does not) and that the
- * {@code GraphitronSchemaValidator} mirror agrees with the generator's dispatch (no re-fetch drift),
- * which is what makes the materialised slot earn its keep: a production consumer pulls on it.
+ * {@code GraphitronSchemaValidator} reentry implementedness guard (R314 slice 5's replacement
+ * for the retired dispatch mirror) stays quiet on every implemented reentry shape, which is
+ * what makes the materialised slot earn its keep: a production consumer pulls on it.
  */
 @PipelineTier
 class ReFetchDerivationTest {
@@ -87,15 +88,18 @@ class ReFetchDerivationTest {
     }
 
     @Test
-    void validatorMirrorAgreesWithDispatch() {
+    void reentryImplementednessGuardStaysQuietOnTheCorpus() {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(SERVICE_FIXTURE);
 
-        // The GraphitronSchemaValidator re-fetch mirror fails the build if the (source, operation,
-        // target) derivation and the generator's re-fetch dispatch disagree; a clean validation proves
-        // the single-homed predicate matches what the emitter actually does.
+        // R314 slice 5 retired the dispatchPerformsReFetch mirror (the reentry emit routes on the
+        // model facts, so the per-leaf enumeration became a second derivation of the same facts);
+        // its replacement is the implementedness guard — a site-level reentry classification on a
+        // leaf outside the implemented shapes fails at validate time. No current leaf can fire it
+        // (the sealed hierarchy admits no such combination), so the corpus assertion is that the
+        // guard stays quiet on every implemented reentry shape.
         assertThat(validate(schema))
             .extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("re-fetch derivation"));
+            .noneMatch(m -> m.contains("carries no reentry emit"));
     }
 
     private static final String RECORD_SOURCE_SINGLE = """
@@ -140,11 +144,11 @@ class ReFetchDerivationTest {
         assertThat(film.emitsKeyedReQuery()).isTrue();
         assertThat(films.emitsKeyedReQuery()).isTrue();
 
-        // Mirror agreement across the Record-source family: the validator's dispatchPerformsReFetch
-        // must match requiresReFetch, or the build fails with a re-fetch-derivation drift.
+        // The reentry implementedness guard (the retired mirror's replacement) stays quiet on
+        // the Record-source family: both carriers are BatchKeyField-backed implemented shapes.
         assertThat(validate(single)).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("re-fetch derivation"));
+            .noneMatch(m -> m.contains("carries no reentry emit"));
         assertThat(validate(list)).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("re-fetch derivation"));
+            .noneMatch(m -> m.contains("carries no reentry emit"));
     }
 }
