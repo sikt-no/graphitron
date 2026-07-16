@@ -146,7 +146,7 @@ public final class Main {
         List<Item> items = readItems(dir);
         validate(items);
         Path readme = dir.resolve("README.md");
-        Files.writeString(readme, render(items, ConceptPages.readTitles(dir.resolve("concepts"))));
+        Files.writeString(readme, render(items, ConceptIndex.of(items, ConceptPages.readPages(dir))));
         System.out.println("wrote " + readme);
     }
 
@@ -154,7 +154,7 @@ public final class Main {
         List<Item> items = readItems(dir);
         validate(items);
         Path readme = dir.resolve("README.md");
-        String rendered = render(items, ConceptPages.readTitles(dir.resolve("concepts")));
+        String rendered = render(items, ConceptIndex.of(items, ConceptPages.readPages(dir)));
         String existing = Files.exists(readme) ? Files.readString(readme) : "";
         if (!existing.equals(rendered)) {
             System.err.println("roadmap README.md is out of date. Regenerate with:");
@@ -447,7 +447,7 @@ public final class Main {
 
         List<Item> items = readItems(roadmapDir);
         validate(items);
-        Map<String, String> concepts = ConceptPages.readTitles(roadmapDir.resolve("concepts"));
+        ConceptIndex concepts = ConceptIndex.of(items, ConceptPages.readPages(roadmapDir));
 
         Files.writeString(outDir.resolve("index.adoc"), renderAdocStatusBoard(items, concepts));
         Files.writeString(outDir.resolve("by-theme.adoc"), renderAdocByTheme(items));
@@ -483,11 +483,11 @@ public final class Main {
 
     /** Status board: Active by status, Backlog by bucket. */
     static String renderAdocStatusBoard(List<Item> items) {
-        return renderAdocStatusBoard(items, Map.of());
+        return renderAdocStatusBoard(items, ConceptIndex.empty());
     }
 
-    /** Status board with a Concept explainers section derived from {@code concepts} (slug → title). */
-    static String renderAdocStatusBoard(List<Item> items, Map<String, String> concepts) {
+    /** Status board with concept-explainer cross-links derived from {@code concepts} (R488). */
+    static String renderAdocStatusBoard(List<Item> items, ConceptIndex concepts) {
         StringBuilder sb = new StringBuilder();
         sb.append("= Rewrite Roadmap\n");
         sb.append(":description: Active and Backlog work on the Graphitron rewrite generator.\n\n");
@@ -525,7 +525,8 @@ public final class Main {
                 }
                 sb.append("\n| ").append(status).append("\n");
                 sb.append("| ").append(renderUpdatedCellAdoc(i)).append("\n");
-                sb.append("| xref:plans/").append(i.slug()).append(".adoc[plan]\n");
+                sb.append("| xref:plans/").append(i.slug()).append(".adoc[plan]")
+                  .append(adocExplainerSuffix(concepts, i.id())).append("\n");
             }
             sb.append("|===\n\n");
         }
@@ -549,7 +550,7 @@ public final class Main {
                     .toList();
                 if (b.isEmpty()) continue;
                 sb.append("=== ").append(capitalize(bucket)).append("\n\n");
-                for (Item i : b) appendBacklogAdocLine(sb, i);
+                for (Item i : b) appendBacklogAdocLine(sb, i, concepts);
                 sb.append("\n");
             }
             List<Item> orphans = activeBacklog.stream()
@@ -558,7 +559,7 @@ public final class Main {
                 .toList();
             if (!orphans.isEmpty()) {
                 sb.append("=== Other\n\n");
-                for (Item i : orphans) appendBacklogAdocLine(sb, i);
+                for (Item i : orphans) appendBacklogAdocLine(sb, i, concepts);
                 sb.append("\n");
             }
             if (!deferredBacklog.isEmpty()) {
@@ -572,6 +573,7 @@ public final class Main {
                     .forEach(i -> {
                         sb.append("* `").append(i.id()).append("` xref:plans/")
                           .append(i.slug()).append(".adoc[").append(escapeAdocCell(i.title())).append("]");
+                        sb.append(adocExplainerParenthetical(concepts, i.id()));
                         if (i.notes() != null && !i.notes().isBlank()) {
                             sb.append(": _").append(i.notes().strip()).append("_");
                         }
@@ -589,9 +591,12 @@ public final class Main {
             sb.append("Intuition-first background pages for dense or recurring roadmap concepts, ");
             sb.append("rendered as interactive HTML. Authored with the `explainer` skill; ");
             sb.append("this listing derives from `roadmap/concepts/*.html`, never by hand.\n\n");
-            new TreeMap<>(concepts).forEach((slug, title) ->
+            concepts.pages().forEach((slug, page) -> {
                 sb.append("* link:concepts/").append(slug).append(".html[")
-                  .append(escapeAdocCell(title)).append("]\n"));
+                  .append(escapeAdocCell(page.title())).append("]")
+                  .append(adocBacks(concepts.anchorsFor(slug)))
+                  .append("\n");
+            });
             sb.append("\n");
         }
 
@@ -601,9 +606,10 @@ public final class Main {
         return sb.toString();
     }
 
-    private static void appendBacklogAdocLine(StringBuilder sb, Item i) {
+    private static void appendBacklogAdocLine(StringBuilder sb, Item i, ConceptIndex concepts) {
         sb.append("* `").append(i.id()).append("` xref:plans/").append(i.slug()).append(".adoc[")
           .append(escapeAdocCell(i.title())).append("]");
+        sb.append(adocExplainerParenthetical(concepts, i.id()));
         String description = firstNonHeadingParagraph(i.body());
         if (!description.isEmpty()) {
             sb.append(": ").append(escapeAdocInline(description));
@@ -757,6 +763,56 @@ public final class Main {
             out.append("xref:").append(prefix).append(s).append(".adoc[").append(s).append("]");
         }
         return out.toString();
+    }
+
+    /**
+     * Item-side explainer links for the status-board Active table (R488): one
+     * {@code · link:concepts/<slug>.html[explainer]} per backing page in slug
+     * order, following the item's plan link. Empty when the item backs no
+     * page; a shipped anchor contributes nothing (the item is not listed).
+     */
+    private static String adocExplainerSuffix(ConceptIndex concepts, String itemId) {
+        StringBuilder out = new StringBuilder();
+        for (String slug : concepts.explainerSlugsFor(itemId)) {
+            out.append(" · link:concepts/").append(slug).append(".html[explainer]");
+        }
+        return out.toString();
+    }
+
+    /**
+     * Item-side explainer links for the status-board Backlog and Deferred lines
+     * (R488): the same per-page links, {@code ·}-separated inside a single
+     * parenthesized group placed after the item's title link. Empty when the
+     * item backs no live page.
+     */
+    private static String adocExplainerParenthetical(ConceptIndex concepts, String itemId) {
+        List<String> slugs = concepts.explainerSlugsFor(itemId);
+        if (slugs.isEmpty()) return "";
+        StringBuilder out = new StringBuilder(" (");
+        for (int idx = 0; idx < slugs.size(); idx++) {
+            if (idx > 0) out.append(" · ");
+            out.append("link:concepts/").append(slugs.get(idx)).append(".html[explainer]");
+        }
+        return out.append(")").toString();
+    }
+
+    /**
+     * Concept-side {@code (backs ...)} annotation for the status-board Concept
+     * explainers listing (R488): each declared anchor in declared order, a
+     * {@link ConceptIndex.Live} one linking to the item's plan and a
+     * {@link ConceptIndex.Shipped} one rendered as plain id text. The items
+     * contract guarantees at least one anchor, so this is never empty.
+     */
+    private static String adocBacks(List<ConceptIndex.ItemAnchor> anchors) {
+        StringBuilder out = new StringBuilder(" (backs ");
+        for (int idx = 0; idx < anchors.size(); idx++) {
+            if (idx > 0) out.append(", ");
+            out.append(switch (anchors.get(idx)) {
+                case ConceptIndex.Live l -> "xref:plans/" + l.itemSlug() + ".adoc[" + l.itemId() + "]";
+                case ConceptIndex.Shipped s -> s.itemId();
+            });
+        }
+        return out.append(")").toString();
     }
 
     /** Best-effort mechanical markdown → AsciiDoc body conversion. */
@@ -1224,11 +1280,11 @@ public final class Main {
     }
 
     static String render(List<Item> items) {
-        return render(items, Map.of());
+        return render(items, ConceptIndex.empty());
     }
 
-    /** README roll-up with a Concept explainers section derived from {@code concepts} (slug → title). */
-    static String render(List<Item> items, Map<String, String> concepts) {
+    /** README roll-up with concept-explainer cross-links derived from {@code concepts} (R488). */
+    static String render(List<Item> items, ConceptIndex concepts) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Rewrite Roadmap\n\n");
         sb.append("_Generated by `graphitron-roadmap-tool`. ");
@@ -1263,9 +1319,9 @@ public final class Main {
         sb.append("`depends-on:` list. The validator fails the build on a stale slug.\n\n");
 
         sb.append("---\n\n");
-        renderActive(sb, items);
+        renderActive(sb, items, concepts);
         sb.append("\n---\n\n");
-        renderBacklog(sb, items);
+        renderBacklog(sb, items, concepts);
         sb.append("\n---\n\n");
         renderByTheme(sb, items);
         sb.append("\n---\n\n");
@@ -1276,7 +1332,7 @@ public final class Main {
         return sb.toString();
     }
 
-    private static void renderActive(StringBuilder sb, List<Item> items) {
+    private static void renderActive(StringBuilder sb, List<Item> items, ConceptIndex concepts) {
         List<Item> active = items.stream()
             .filter(i -> ACTIVE_STATES.contains(i.status()))
             .sorted(Comparator
@@ -1303,7 +1359,8 @@ public final class Main {
               .append(item).append(" | ")
               .append(status).append(" | ")
               .append(renderUpdatedCellMd(i)).append(" | [plan](")
-              .append(i.slug()).append(".md) |\n");
+              .append(i.slug()).append(".md)")
+              .append(mdExplainerSuffix(concepts, i.id())).append(" |\n");
         }
     }
 
@@ -1321,7 +1378,7 @@ public final class Main {
         return i.lastUpdated().toString();
     }
 
-    private static void renderBacklog(StringBuilder sb, List<Item> items) {
+    private static void renderBacklog(StringBuilder sb, List<Item> items, ConceptIndex concepts) {
         sb.append("## Backlog\n\n");
         List<Item> backlog = items.stream()
             .filter(i -> "Backlog".equals(i.status()))
@@ -1345,7 +1402,7 @@ public final class Main {
             }
             sb.append("### ").append(capitalize(bucket)).append("\n\n");
             for (Item i : b) {
-                appendBacklogLine(sb, i);
+                appendBacklogLine(sb, i, concepts);
             }
             sb.append("\n");
         }
@@ -1357,7 +1414,7 @@ public final class Main {
         if (!orphans.isEmpty()) {
             sb.append("### Other\n\n");
             for (Item i : orphans) {
-                appendBacklogLine(sb, i);
+                appendBacklogLine(sb, i, concepts);
             }
             sb.append("\n");
         }
@@ -1370,7 +1427,7 @@ public final class Main {
                 .sorted(Comparator
                     .comparingInt((Item i) -> i.priority() == null ? Integer.MAX_VALUE : i.priority())
                     .thenComparing(Item::title))
-                .forEach(i -> appendDeferredLine(sb, i));
+                .forEach(i -> appendDeferredLine(sb, i, concepts));
             sb.append("\n");
         }
     }
@@ -1439,7 +1496,7 @@ public final class Main {
      * contract in {@link ConceptPages#extractTitle} covers unextractable pages.
      * Emits nothing when there are no pages.
      */
-    private static void renderConceptExplainers(StringBuilder sb, Map<String, String> concepts) {
+    private static void renderConceptExplainers(StringBuilder sb, ConceptIndex concepts) {
         if (concepts.isEmpty()) {
             return;
         }
@@ -1447,9 +1504,60 @@ public final class Main {
         sb.append("_Intuition-first background pages for dense or recurring roadmap concepts, ");
         sb.append("rendered as interactive HTML. Authored with the `explainer` skill; ");
         sb.append("this listing derives from `concepts/*.html`, never by hand._\n\n");
-        new TreeMap<>(concepts).forEach((slug, title) ->
-            sb.append("- [").append(title).append("](concepts/").append(slug).append(".html)\n"));
+        concepts.pages().forEach((slug, page) ->
+            sb.append("- [").append(page.title()).append("](concepts/").append(slug).append(".html)")
+              .append(mdBacks(concepts.anchorsFor(slug))).append("\n"));
         sb.append("\n---\n\n");
+    }
+
+    /**
+     * Item-side explainer links for the README Active table (R488): one
+     * {@code · [explainer](concepts/<slug>.html)} per backing page in slug
+     * order, following the item's plan link. Empty when the item backs no live
+     * page.
+     */
+    private static String mdExplainerSuffix(ConceptIndex concepts, String itemId) {
+        StringBuilder out = new StringBuilder();
+        for (String slug : concepts.explainerSlugsFor(itemId)) {
+            out.append(" · [explainer](concepts/").append(slug).append(".html)");
+        }
+        return out.toString();
+    }
+
+    /**
+     * Item-side explainer links for the README Backlog and Deferred lines
+     * (R488): the same per-page links, {@code ·}-separated inside a single
+     * parenthesized group placed after the item's title link. Empty when the
+     * item backs no live page.
+     */
+    private static String mdExplainerParenthetical(ConceptIndex concepts, String itemId) {
+        List<String> slugs = concepts.explainerSlugsFor(itemId);
+        if (slugs.isEmpty()) return "";
+        StringBuilder out = new StringBuilder(" (");
+        for (int idx = 0; idx < slugs.size(); idx++) {
+            if (idx > 0) out.append(" · ");
+            out.append("[explainer](concepts/").append(slugs.get(idx)).append(".html)");
+        }
+        return out.append(")").toString();
+    }
+
+    /**
+     * Concept-side {@code (backs ...)} annotation for the README Concept
+     * explainers listing (R488): each declared anchor in declared order, a
+     * {@link ConceptIndex.Live} one linking to the item's plan and a
+     * {@link ConceptIndex.Shipped} one rendered as plain id text. The items
+     * contract guarantees at least one anchor, so this is never empty.
+     */
+    private static String mdBacks(List<ConceptIndex.ItemAnchor> anchors) {
+        StringBuilder out = new StringBuilder(" (backs ");
+        for (int idx = 0; idx < anchors.size(); idx++) {
+            if (idx > 0) out.append(", ");
+            out.append(switch (anchors.get(idx)) {
+                case ConceptIndex.Live l -> "[" + l.itemId() + "](" + l.itemSlug() + ".md)";
+                case ConceptIndex.Shipped s -> s.itemId();
+            });
+        }
+        return out.append(")").toString();
     }
 
     private static String linkSlugs(List<String> slugs) {
@@ -1462,9 +1570,10 @@ public final class Main {
         return out.toString();
     }
 
-    private static void appendBacklogLine(StringBuilder sb, Item i) {
+    private static void appendBacklogLine(StringBuilder sb, Item i, ConceptIndex concepts) {
         sb.append("- `").append(i.id()).append("` [**").append(i.title()).append("**](")
           .append(i.slug()).append(".md)");
+        sb.append(mdExplainerParenthetical(concepts, i.id()));
         String description = firstNonHeadingParagraph(i.body());
         if (!description.isEmpty()) {
             sb.append(": ").append(description);
@@ -1493,9 +1602,10 @@ public final class Main {
         return "<sub>updated " + i.lastUpdated() + "</sub>";
     }
 
-    private static void appendDeferredLine(StringBuilder sb, Item i) {
+    private static void appendDeferredLine(StringBuilder sb, Item i, ConceptIndex concepts) {
         sb.append("- `").append(i.id()).append("` [**").append(i.title()).append("**](")
           .append(i.slug()).append(".md)");
+        sb.append(mdExplainerParenthetical(concepts, i.id()));
         if (i.notes() != null && !i.notes().isBlank()) {
             sb.append(" — _").append(i.notes().strip()).append("_");
         }

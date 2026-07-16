@@ -372,7 +372,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 _Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. Authored with the `explainer` skill; this listing derives from `concepts/*.html`, never by hand._
 
-- [Per-participant join paths for polymorphic child fields](concepts/per-participant-child-join-paths.html)
+- [Per-participant join paths for polymorphic child fields](concepts/per-participant-child-join-paths.html) (backs R458)
 
 ---
 
