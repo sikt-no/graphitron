@@ -1,7 +1,7 @@
 ---
 id: R201
 title: "Honor @field(name:) in @error payload construction shape resolution"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 5
 theme: error-channel

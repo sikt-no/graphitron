@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R201` | Honor @field(name:) in @error payload construction shape resolution | In Progress | 2026-07-16 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-payload-construction-shape.md) |
+| `R201` | Honor @field(name:) in @error payload construction shape resolution | In Review | 2026-07-16 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-payload-construction-shape.md) |
 | `R427` | Free-text search backed by native database search indexes | Spec | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R483` | Audit javadoc for drift against current design and implementation <sub>blocked by: [javadoc-roadmap-reference-purge](javadoc-roadmap-reference-purge.md)</sub> | Spec | 2026-07-15 | [plan](javadoc-implementation-drift-audit.md) |
@@ -268,7 +268,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
-- `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — In Progress, bug
+- `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — In Review, bug
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md) — Backlog, structural
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md) — Backlog, architecture
 
