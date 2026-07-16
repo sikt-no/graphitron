@@ -60,14 +60,13 @@ class UnifiedEmissionPinsTest {
     @Test
     void rowsMethodEmitter_unifiedSkeleton() throws IOException {
         // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (7): SplitRowsMethodEmitter's three internal
-        // builders (buildListMethod, buildSingleMethod, buildConnectionMethod) plus
-        // buildForRecordTableMethod's two arms (single-hop FK emit + multi-hop / condition-join /
-        // empty-path runtime stub, R43 commit 5) plus TypeFetcherGenerator.buildServiceRowsMethod
-        // (ServiceRecordField verbatim return) plus SplitRowsMethodEmitter.buildServiceTableLift
-        // (R285 ServiceTableField lift-back re-projection). Together they cover all six
-        // RowsMethodBody permits (the five SQL permits route through four internal SQL builders by
-        // single-vs-list-vs-connection cardinality plus the record-table-method shape; the Service
+        // RowsMethodSkeleton.build. Current sites (5): SplitRowsMethodEmitter's three internal
+        // builders (buildListMethod, buildSingleMethod, buildConnectionMethod — the dissolved
+        // record-table-method shape routes through the first two since R314 slice 2b) plus
+        // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
+        // SplitRowsMethodEmitter.buildServiceTableLift (R285 ServiceTableField lift-back
+        // re-projection). Together they cover all three RowsMethodBody permits (the two SQL
+        // permits route through the three internal SQL builders by cardinality; the Service
         // permit routes via the two service emit sites).
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bRowsMethodSkeleton\\.build\\b"),
@@ -76,7 +75,7 @@ class UnifiedEmissionPinsTest {
             .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
                 + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
                 + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(7);
+            .isEqualTo(5);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

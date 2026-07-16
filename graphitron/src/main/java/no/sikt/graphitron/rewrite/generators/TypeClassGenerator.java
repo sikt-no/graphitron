@@ -479,7 +479,7 @@ public class TypeClassGenerator {
             // Fail at generation time rather than at runtime with a null DataLoader key.
             // The tripwire is the fact predicate (a parent-row-reading capability +
             // Record source shape), not a leaf list — a deliberate leaf-list-to-fact
-            // strengthening that also covers RecordTableMethodField (already Record-shaped)
+            // strengthening that also covers the dissolved @tableMethod DTO-parent shape (Record-sourced)
             // through the same gate. Extended to the ParentRowDemand capability: a
             // record-sourced field carrying parent-row demands reads them off the held object,
             // not the parent SELECT, so reaching this table-parent walk is a generator bug.

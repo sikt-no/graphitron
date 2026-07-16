@@ -163,8 +163,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * hands the produced record straight through and its re-projection is realized by the
      * downstream child fetchers' {@code $fields}, so the value-level fact is true while no
      * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
-     * batched arms, {@link ChildField.RecordTableMethodField}, and the projected DML arms all
-     * emit the re-query at their own site.
+     * batched arms, and the projected DML arms all emit the re-query at their own site.
      *
      * <p>Every site-level consumer — the reentry emit dispatch, the
      * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry}'s covered-family

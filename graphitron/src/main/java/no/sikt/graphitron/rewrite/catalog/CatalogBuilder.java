@@ -256,12 +256,28 @@ public final class CatalogBuilder {
             // The merged batched leaf projects onto the same two classifications the
             // pre-merge leaves produced, gated on the stored sourceShape — the LSP/MCP surface
             // and the @classified corpus observe no verdict change from the merge.
-            case ChildField.BatchedTableField f ->
-                f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
+            case ChildField.BatchedTableField f -> {
+                // The @tableMethod-terminal shape (the dissolved RecordTableMethodField, R314
+                // slice 2b) keeps its TableMethod catalog surface: the projection reads the
+                // hop's TableExpr.MethodCall fact, not a leaf identity.
+                var methodTarget = f.joinPath().stream()
+                    .filter(s -> s instanceof JoinStep.Hop h
+                        && h.target() instanceof no.sikt.graphitron.rewrite.model.TableExpr.MethodCall)
+                    .map(s -> (no.sikt.graphitron.rewrite.model.TableExpr.MethodCall) ((JoinStep.Hop) s).target())
+                    .findFirst();
+                if (methodTarget.isPresent()) {
+                    yield new FieldClassification.TableMethod(
+                        targetTableName(f.returnType()),
+                        methodTarget.get().method().className(),
+                        methodTarget.get().method().methodName(),
+                        true);
+                }
+                yield f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table
                     ? new FieldClassification.TableTarget(
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), true, false)
                     : new FieldClassification.RecordTableTarget(
                         targetTableName(f.returnType()), fkSteps(f.joinPath()), false);
+            }
             case ChildField.LookupTableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, true);
@@ -277,12 +293,6 @@ public final class CatalogBuilder {
                     f.method() != null ? f.method().className() : null,
                     f.method() != null ? f.method().methodName() : null,
                     false);
-            case ChildField.RecordTableMethodField f ->
-                new FieldClassification.TableMethod(
-                    targetTableName(f.returnType()),
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null,
-                    true);
             case ChildField.TableInterfaceField f ->
                 new FieldClassification.TableInterface(
                     targetTableName(f.returnType()),

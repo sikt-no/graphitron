@@ -17,7 +17,7 @@ import java.util.Objects;
  *
  * <p>Carried by {@link ChildField.BatchedTableField} (total since R432; the Table-sourced arm
  * always carries {@link FkColumns}), {@link ChildField.BatchedLookupTableField} (same gate),
- * {@link ChildField.RecordTableMethodField}, and (as {@code parentKeyLift}) the polymorphic
+ * and (as {@code parentKeyLift}) the polymorphic
  * {@link ChildField.InterfaceField} / {@link ChildField.UnionField}. Dispatched exhaustively by
  * {@code GeneratorUtils.buildRecordParentKeyExtraction} on the record-sourced paths; the
  * Table-sourced emit path stays wrap-driven ({@code GeneratorUtils.buildKeyExtraction} against

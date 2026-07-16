@@ -189,7 +189,7 @@ public final class FetcherEmitter {
         //     passthrough) arm-switch here: narrow Success and point the field's own read at
         //     success.value(), resolving null on the ErrorList arm;
         //   - DataLoader/method-backed data fields (record-sourced BatchedTableField / BatchedLookupTableField,
-        //     RecordTableMethodField, and the @service/@tableMethod nested-method variants) resolve
+        //     the dissolved @tableMethod DTO-parent shape, and the @service nested-method variants) resolve
         //     to a generated fetcher method that arm-switches internally (TypeFetcherGenerator +
         //     GeneratorUtils source-bound key extraction), so the registration emits the plain
         //     method reference unchanged via bindRaw.

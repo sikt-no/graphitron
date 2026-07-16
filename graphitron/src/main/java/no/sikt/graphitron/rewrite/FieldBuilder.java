@@ -5720,7 +5720,8 @@ class FieldBuilder {
             }
         }
 
-        // @tableMethod on a class-backed parent — DTO-parent shape, produces RecordTableMethodField.
+        // @tableMethod on a class-backed parent — DTO-parent shape; dissolves onto the merged
+        // batched leaf with a TableExpr.MethodCall terminal hop (R314 slice 2b).
         // Fires BEFORE the @sourceRow branch because both directives may coexist (their roles
         // are complementary: @sourceRow provides the batch-key lifter; @tableMethod provides the
         // developer's static jOOQ table method). When @sourceRow is absent, the parent must be
@@ -5783,7 +5784,35 @@ class FieldBuilder {
                     "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
                     + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
             }
-            var capturedJoinPath = joinPath;
+            // R314 slice 2b: the DTO-parent @tableMethod shape dissolves onto the merged batched
+            // leaf — the developer's method becomes the terminal hop's TableExpr.MethodCall
+            // target, and the generic batched rows-method prelude materializes it through the
+            // shared table-expression switch. The two shapes the retired leaf runtime-stubbed
+            // ("only single-hop FK paths ship in R43 commit 5") upgrade to classification-time
+            // rejections: an empty path's lifted-correlation prelude materializes its target from
+            // the CATALOG constants (it would silently ignore the developer's method), and the
+            // multi-hop chain was never emitted. A Connection wrapper is rejected here for the
+            // same reason the merged leaf's constructor makes it unrepresentable on the Record
+            // arm (no record-parent Connection emit exists, R432).
+            if (buildWrapper(fieldDef) instanceof FieldWrapper.Connection) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@tableMethod on a record-backed parent cannot return a Connection; no "
+                    + "record-parent Connection emit exists"));
+            }
+            if (joinPath.size() != 1 || !(joinPath.get(0) instanceof JoinStep.Hop tmHop)) {
+                String shapeLabel = joinPath.isEmpty()
+                    ? "an empty join path (the @sourceRow pre-keyed shape)"
+                    : "a multi-hop join path";
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@tableMethod on a record-backed parent with " + shapeLabel + " is not yet "
+                    + "supported — only single-hop FK paths ship (previously a runtime "
+                    + "UnsupportedOperationException stub, upgraded to a build-time rejection by "
+                    + "R314 slice 2b)"));
+            }
+            var methodTargetHop = new JoinStep.Hop(
+                new TableExpr.MethodCall(tmTb.method(), tbReturn.table()),
+                tmHop.on(), tmHop.originTable(), tmHop.filter(), tmHop.alias());
+            var capturedJoinPath = List.<JoinStep>of(methodTargetHop);
             var capturedSourceKey = sourceKey;
             var capturedLift = lift;
             var capturedLoaderRegistration = loaderRegistration;
@@ -5795,16 +5824,20 @@ class FieldBuilder {
             // @sourceRow leaf-PK shape arrives pre-resolved as OnLiftedSlots.
             var rtmPcResolution = lifted != null
                 ? new BuildContext.ParentCorrelationResolution.Resolved(lifted)
-                : ctx.buildParentCorrelation(joinPath, /* parentTable= */ null);
+                : ctx.buildParentCorrelation(capturedJoinPath, /* parentTable= */ null);
             if (rtmPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
             var rtmParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) rtmPcResolution).correlation();
+            // The channel slot is provably empty on this shape (resolveErrorChannel guards on
+            // ResultReturnType; this return is table-bound) — the wrapper is kept for its
+            // declared-checked-exceptions rejection, and the merged leaf carries no channel.
             return buildMethodBackedWithChannel(tbReturn, tmTb.method(),
                 parentTypeName, name, location, fieldDef,
-                ch -> new ChildField.RecordTableMethodField(parentTypeName, name, location, tbReturn,
-                    capturedJoinPath, tmTb.method(), capturedSourceKey, capturedLift,
-                    capturedLoaderRegistration, ch, rtmParentCorrelation));
+                ch -> new ChildField.BatchedTableField(parentTypeName, name, location, tbReturn,
+                    capturedJoinPath, List.of(), new OrderBySpec.None(), null,
+                    SourceShape.Record, capturedSourceKey, capturedLift,
+                    capturedLoaderRegistration, rtmParentCorrelation));
         }
 
         // @sourceRow is owned by its dedicated resolver from this point onward: the resolver

@@ -92,12 +92,37 @@ public final class JoinPathEmitter {
      */
     public static CodeBlock emitTableExpression(JoinStep step, PreviousNodeRef previousNode,
             ArgumentValueSource argSource) {
+        return emitTableExpression(step, previousNode, argSource, null, null);
+    }
+
+    /**
+     * {@code @tableMethod}-capable overload (R314 slice 2b): {@code ctx} and
+     * {@code conditionsClassName} feed {@link ArgCallEmitter#buildMethodBackedCallArgs} for a
+     * {@link TableExpr.MethodCall} node. The three-arg overload passes {@code null} for both;
+     * a {@code MethodCall} node reaching it is a wiring bug (only the batched rows-method
+     * prelude materializes method-called nodes — a record-backed parent's children are always
+     * DataLoader-batched, never inline-projected), guarded loudly below.
+     */
+    public static CodeBlock emitTableExpression(JoinStep step, PreviousNodeRef previousNode,
+            ArgumentValueSource argSource, TypeFetcherEmissionContext ctx, String conditionsClassName) {
         return switch (step) {
             case JoinStep.Hop hop -> switch (hop.target()) {
                 case TableExpr.Catalog c -> CodeBlock.of("$T.$L",
                     c.table().constantsClass(), c.table().javaFieldName());
                 case TableExpr.RoutineCall rc ->
                     RoutineCallEmitter.emitCall(rc, previousNode, argSource);
+                case TableExpr.MethodCall mc -> {
+                    if (ctx == null) {
+                        throw new IllegalStateException(
+                            "TableExpr.MethodCall reached a materialization site without the "
+                            + "@tableMethod call context; method-called nodes are batched-prelude "
+                            + "material only (R314 slice 2b)");
+                    }
+                    yield CodeBlock.of("$T.$L($L)",
+                        no.sikt.graphitron.javapoet.ClassName.bestGuess(mc.method().className()),
+                        mc.method().methodName(),
+                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, mc.method(), null, conditionsClassName));
+                }
             };
         };
     }

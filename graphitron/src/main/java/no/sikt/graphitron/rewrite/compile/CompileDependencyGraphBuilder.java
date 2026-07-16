@@ -184,7 +184,6 @@ public final class CompileDependencyGraphBuilder {
                 addConditionsEdge(fetcher, field.parentTypeName());
             }
             case ChildField.TableMethodField f -> addTypeClassEdge(fetcher, f.returnType());
-            case ChildField.RecordTableMethodField f -> addTypeClassEdge(fetcher, f.returnType());
             case ChildField.NestingField f -> addTypeClassEdge(fetcher, f.returnType());
             case ChildField.InterfaceField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             case ChildField.UnionField f -> addParticipantTypeClassEdges(fetcher, f.participants());
@@ -392,7 +391,6 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.TableInterfaceField ignored -> { }
             case ChildField.ServiceTableField ignored -> { }
             case ChildField.TableMethodField ignored -> { }
-            case ChildField.RecordTableMethodField ignored -> { }
             case ChildField.InterfaceField ignored -> { }
             case ChildField.UnionField ignored -> { }
             case ChildField.ServiceRecordField ignored -> { }

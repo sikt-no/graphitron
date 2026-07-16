@@ -244,7 +244,6 @@ public class TypeFetcherGenerator {
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.TableMethodField.class,
-        ChildField.RecordTableMethodField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -403,8 +402,8 @@ public class TypeFetcherGenerator {
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
-        // (the record-sourced BatchedTableField / BatchedLookupTableField arms /
-        // RecordTableMethodField) arm-switch inside
+        // (the record-sourced BatchedTableField / BatchedLookupTableField arms)
+        // arm-switch inside
         // their generated fetcher method: narrow Success, read the key off success.value(), and
         // return completedFuture(null) on the ErrorList arm. The same predicate drives the
         // registration-site routing in FetcherRegistrationsEmitter; FetcherEmitter.hasWrapperArmErrors
@@ -582,10 +581,6 @@ public class TypeFetcherGenerator {
                 // LightFetcher), collected below. No-op arm here.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
-                case ChildField.RecordTableMethodField rtmf -> {
-                    builder.addMethod(buildBatchedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), rtmf.lift(), parentTable, resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
-                }
                 // SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
                 // encode) is reified by FetcherEmitter.bind into a named (DataFetchingEnvironment
                 // env) method, collected below. No-op arm here.
@@ -738,8 +733,7 @@ public class TypeFetcherGenerator {
             || (f instanceof ChildField.BatchedLookupTableField blf
                 && (blf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record
                     || blf.returnType().wrapper() instanceof FieldWrapper.List))
-            || (f instanceof ChildField.RecordTableMethodField rtmf && rtmf.returnType().wrapper().isList()
-                && !rtmf.emitsSingleRecordPerKey()));
+);
         if (hasListSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
         }
@@ -794,17 +788,13 @@ public class TypeFetcherGenerator {
      * per-class {@code parentKeyCellValue} helper (see
      * {@link SplitRowsMethodEmitter#buildParentKeyCellValueHelper()}). Mirrors the emission
      * routing above: the four split/record prelude variants always emit the parent-input rows
-     * method; {@link ChildField.RecordTableMethodField} only on its supported single-hop shape
-     * (the unsupported shapes emit a throwing stub with no VALUES table); the polymorphic child
-     * fields only on the batched (list / connection) arms with at least one table-bound
-     * participant.
+     * method; the polymorphic child fields only on the batched (list / connection) arms with at
+     * least one table-bound participant.
      */
     private static boolean emitsRowKeyedParentInputRowsMethod(GraphitronField field) {
         return switch (field) {
             case ChildField.BatchedTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
-            case ChildField.RecordTableMethodField f ->
-                f.joinPath().size() == 1 && f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.InterfaceField f ->
                 (f.returnType().wrapper().isList() || f.returnType().wrapper() instanceof FieldWrapper.Connection)
                     && f.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)
@@ -6501,9 +6491,9 @@ public class TypeFetcherGenerator {
     }
 
     // -----------------------------------------------------------------------
-    // Batched leaves (BatchedTableField / BatchedLookupTableField / RecordTableMethodField) —
-    // one DataLoader-registering fetcher builder for both source shapes; flat correlated-batch
-    // rows methods in SplitRowsMethodEmitter.
+    // Batched leaves (BatchedTableField / BatchedLookupTableField) — one DataLoader-registering
+    // fetcher builder for both source shapes; flat correlated-batch rows methods in
+    // SplitRowsMethodEmitter.
     // -----------------------------------------------------------------------
 
     /**
@@ -6527,7 +6517,8 @@ public class TypeFetcherGenerator {
 
     /**
      * The one batched-field DataFetcher builder (R314 slice 2): both source shapes of the merged
-     * batched leaves plus {@link ChildField.RecordTableMethodField} share the framing — loader
+     * batched leaves share the framing (including the dissolved {@code @tableMethod} DTO-parent
+     * shape, whose terminal hop carries a {@code TableExpr.MethodCall} target) — loader
      * registration, batch lambda, dispatch, async wrap/catch tails — and the stored source-shape
      * fact gates exactly the two facts it owns:
      *

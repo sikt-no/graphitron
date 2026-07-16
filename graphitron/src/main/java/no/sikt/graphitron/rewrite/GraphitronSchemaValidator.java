@@ -233,11 +233,11 @@ public class GraphitronSchemaValidator {
      * predicate and the emitter cannot drift.
      *
      * <p>The {@code @service}-table and {@code DML}-projected-{@code @table} arms re-query from a
-     * produced record; the Record-source family (the record-sourced {@code BatchedTableField} arm,
-     * into which the former {@code SingleRecordTableField} carriers collapsed via
-     * the record-sourced {@code BatchedLookupTableField} arm /
-     * {@code RecordTableMethodField})
- * re-projects the {@code @table} from keys read off a received record. The
+     * produced record; the Record-source family (the record-sourced {@code BatchedTableField} arm —
+     * into which the former {@code SingleRecordTableField} carriers and, since R314 slice 2b, the
+     * {@code @tableMethod} DTO-parent shape collapsed — and the record-sourced
+     * {@code BatchedLookupTableField} arm)
+     * re-projects the {@code @table} from keys read off a received record. The
      * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
      * re-fetch. The strict {@link no.sikt.graphitron.rewrite.model.TargetShape.Table} guard matches
      * {@code requiresReFetch}, which fires only on a bare (non-connection) {@code Table} target shape; a
@@ -260,7 +260,6 @@ public class GraphitronSchemaValidator {
                 f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f ->
                 f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record;
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
                 // The discriminated-interface arms re-project the shared @table (a follow-up
                 // SELECT keyed by the RETURNING PK) exactly as the projected @table arms do.
@@ -348,7 +347,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField f -> validateBatchedLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField f  -> validateRecordTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
@@ -951,10 +949,6 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.TableMethodField field, List<ValidationError> errors) {
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-    }
-    private void validateRecordTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }

@@ -81,7 +81,6 @@ public final class RowsMethodSkeleton {
         switch (body) {
             case RowsMethodBody.SqlBatchedTable s      -> emitSqlBody(b, s.content(), graphitronContextCall);
             case RowsMethodBody.SqlBatchedLookupTable s -> emitSqlBody(b, s.content(), graphitronContextCall);
-            case RowsMethodBody.SqlRecordTableMethod s -> emitSqlBody(b, s.content(), graphitronContextCall);
             case RowsMethodBody.Service s              -> emitServiceBody(b, s, graphitronContextCall);
         }
         return b.build();

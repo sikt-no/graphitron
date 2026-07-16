@@ -16,7 +16,6 @@ public sealed interface ChildField extends OutputField
             ChildField.CompositeColumnField, ChildField.CompositeColumnReferenceField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
-            ChildField.RecordTableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField,
             ChildField.ServiceRecordField,
@@ -86,7 +85,6 @@ public sealed interface ChildField extends OutputField
             case BatchedLookupTableField f -> f.sourceShape();
             // Record-backed parents (DTO batching, @service / DML payload carriers): the source is a
             // producer-handed domain record.
-            case RecordTableMethodField ignored -> SourceShape.Record;
             case RecordField ignored -> SourceShape.Record;
             case RecordCompositeField ignored -> SourceShape.Record;
             case PropertyField ignored -> SourceShape.Record;
@@ -111,7 +109,6 @@ public sealed interface ChildField extends OutputField
             case TableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             // Method-backed / polymorphic table reads carry no field-level filter surface.
             case TableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            case RecordTableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case InterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case UnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             // Lookup-keyed reads.
@@ -151,7 +148,6 @@ public sealed interface ChildField extends OutputField
             case BatchedLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case TableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
-            case RecordTableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
@@ -748,46 +744,6 @@ public sealed interface ChildField extends OutputField
                 return fk.sourceSideColumns();
             }
             return List.of();
-        }
-    }
-
-    /**
-     * DTO-parent sibling of {@link TableMethodField}: a child field on a class-backed (non-table)
-     * parent that uses {@code @tableMethod} to bind a developer-authored static jOOQ table method.
-     * The parent has no parent-table alias to join from, so the developer's table is joined against
-     * a DataLoader-keyed batch lifted out of the parent DTO via {@link #sourceKey}, mirroring the
-     * existing record-sourced {@link BatchedTableField} / {@link BatchedLookupTableField} pattern. {@link #joinPath}
-     * is the resolved parent-to-target chain: {@code [fkJoin]} for the FK-auto-derive arm on a
-     * jOOQ-table-record-backed parent, the lifter's resolved chain on the {@code @sourceRow} arm.
-     *
-     * <p>The directive resolver narrows the returnType to
-     * {@link ReturnTypeRef.TableBoundReturnType} for both this variant and {@link TableMethodField}.
-     */
-    record RecordTableMethodField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<JoinStep> joinPath,
-        MethodRef method,
-        SourceKey sourceKey,
-        KeyLift lift,
-        LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel> errorChannel,
-        ParentCorrelation parentCorrelation
-    ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
-        public RecordTableMethodField {
-            java.util.Objects.requireNonNull(lift, "lift");
-            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableMethodField");
-            KeyLift.checkResidueAgreement(lift, sourceKey, "RecordTableMethodField");
-        }
-        @Override
-        public boolean emitsSingleRecordPerKey() {
-            return !returnType().wrapper().isList()
-                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
         }
     }
 

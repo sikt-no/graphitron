@@ -12,6 +12,7 @@ import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.DmlKind;
@@ -31,7 +32,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
@@ -3513,18 +3513,20 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== RecordTableMethodField (R43 commit 4 — child @tableMethod on record-backed parent) =====
+    // ===== Record-parent @tableMethod (dissolved onto BatchedTableField, R314 slice 2b) =====
 
     /**
-     * Classifier coverage for {@link RecordTableMethodField}: child {@code @tableMethod} on a
-     * record-backed (non-table) parent. Two admit arms (FK-auto-derive on a JooqTableRecord-
-     * backed parent + lifter-derived via {@code @sourceRow} on a free-form DTO parent) and one
-     * rejection (free-form DTO without {@code @sourceRow}). Emit stays stubbed at commit 4;
-     * end-to-end emit + execution coverage lands with commit 5.
+     * Classifier coverage for the child {@code @tableMethod} on a record-backed (non-table)
+     * parent: since R314 slice 2b the shape classifies to a record-sourced
+     * {@link ChildField.BatchedTableField} whose terminal hop carries a
+     * {@link TableExpr.MethodCall} target (the retired {@code RecordTableMethodField}'s
+     * distinguishing datum moved onto the join-path fact). Two admit arms (FK-auto-derive on a
+     * JooqTableRecord-backed parent, explicit {@code @reference} path) and one rejection
+     * (free-form DTO without {@code @sourceRow}).
      */
-    enum RecordTableMethodFieldCase implements ClassificationCase {
+    enum RecordParentTableMethodCase implements ClassificationCase {
         JOOQ_TABLE_RECORD_PARENT_AUTO_FK(
-            "JooqTableRecordType record-backed parent + @tableMethod with single FK → RecordTableMethodField, auto-FK source-key",
+            "JooqTableRecordType record-backed parent + @tableMethod with single FK → record-sourced BatchedTableField with a MethodCall terminal hop",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -3537,16 +3539,18 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableMethodField) schema.field("FilmDetails", "inventories");
+                var f = (ChildField.BatchedTableField) schema.field("FilmDetails", "inventories");
+                assertThat(f.sourceShape()).isEqualTo(SourceShape.Record);
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                var target = ((JoinStep.Hop) f.joinPath().get(0)).target();
+                assertThat(target).isInstanceOf(TableExpr.MethodCall.class);
+                assertThat(((TableExpr.MethodCall) target).method().methodName()).isEqualTo("getInventory");
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
                 assertThat(f.returnType().wrapper().isList()).isTrue();
-                assertThat(f.method().methodName()).isEqualTo("getInventory");
             }),
 
         JOOQ_TABLE_RECORD_PARENT_EXPLICIT_REFERENCE(
-            "JooqTableRecordType record-backed parent + @tableMethod + @reference(path:) → RecordTableMethodField with explicit FK path",
+            "JooqTableRecordType record-backed parent + @tableMethod + @reference(path:) → record-sourced BatchedTableField, explicit FK path, MethodCall terminal hop",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -3561,9 +3565,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableMethodField) schema.field("FilmDetails", "language");
+                var f = (ChildField.BatchedTableField) schema.field("FilmDetails", "language");
+                assertThat(f.sourceShape()).isEqualTo(SourceShape.Record);
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(((JoinStep.Hop) f.joinPath().get(0)).target())
+                    .isInstanceOf(TableExpr.MethodCall.class);
                 assertThat(f.lift()).isInstanceOf(KeyLift.FkColumns.class);
             }),
 
@@ -3590,23 +3596,23 @@ class GraphitronSchemaBuilderTest {
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        RecordTableMethodFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        RecordParentTableMethodCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(RecordTableMethodField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ChildField.BatchedTableField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(RecordTableMethodFieldCase.class)
-    void recordTableMethodFieldClassification(RecordTableMethodFieldCase tc) {
+    @EnumSource(RecordParentTableMethodCase.class)
+    void recordParentTableMethodClassification(RecordParentTableMethodCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
     @Test
-    @ProjectionFor(RecordTableMethodField.class)
-    void recordTableMethodFieldProjectionFlipsRecordParentFlag() {
+    @ProjectionFor(ChildField.BatchedTableField.class)
+    void recordParentTableMethodProjectionFlipsRecordParentFlag() {
         var snapshot = buildSnapshot("""
             type Language @table(name: "language") { name: String }
             type FilmDetails {

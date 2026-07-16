@@ -255,7 +255,9 @@ public sealed interface FieldClassification
 
     /**
      * A child field using {@code @tableMethod}. Covers {@code ChildField.TableMethodField}
-     * and {@code ChildField.RecordTableMethodField}; the {@code recordParent} flag
+     * and the dissolved DTO-parent {@code @tableMethod} shape (a record-sourced
+     * {@code ChildField.BatchedTableField} whose terminal hop carries a
+     * {@code TableExpr.MethodCall} target, R314 slice 2b); the {@code recordParent} flag
      * encodes the parent-shape axis.
      */
     record TableMethod(
