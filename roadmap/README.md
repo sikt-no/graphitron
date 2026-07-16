@@ -35,7 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R486` | Roadmap concept explainers: an interactive developer-facing explanation space under roadmap/concepts/, plus a skill to author the pages | Ready | 2026-07-16 | [plan](roadmap-concept-explainers.md) |
+| `R486` | Roadmap concept explainers: an interactive developer-facing explanation space under roadmap/concepts/, plus a skill to author the pages | In Progress | 2026-07-16 | [plan](roadmap-concept-explainers.md) |
 
 ---
 
@@ -344,7 +344,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md) — Backlog, architecture
 - `R289` [**Correct KeyNodeSynthesiser opt-out javadoc: @key(resolvable: false) does not keep a type out of _Entity**](keynodesynthesiser-resolvable-false-entity-doc.md) — Backlog, bug
 - `R404` [**Reintroduce @sourceRow documentation when it enters the supported surface**](reintroduce-sourcerow-docs.md) — Backlog, docs
-- `R486` [**Roadmap concept explainers: an interactive developer-facing explanation space under roadmap/concepts/, plus a skill to author the pages**](roadmap-concept-explainers.md) — Ready, architecture
+- `R486` [**Roadmap concept explainers: an interactive developer-facing explanation space under roadmap/concepts/, plus a skill to author the pages**](roadmap-concept-explainers.md) — In Progress, architecture
 
 ### tooling
 
