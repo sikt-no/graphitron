@@ -109,6 +109,59 @@ order, error paths intact — plus the
 re-platforming, plus the goal-4 deliverable: the bidirectional closure oracle exists and passes for
 the reentry family.
 
+## Implementation plan (In Progress, 2026-07-16)
+
+Slices, each full-reactor green and shipped to trunk. The plan folds a principles-architect
+consultation (2026-07-16) whose three central findings share one shape: invariants the first sketch
+stated in prose are carried instead as derived facts off the model.
+
+**The site-level fact.** Recon confirmed the root-service divergence: `QueryServiceTableField` /
+`MutationServiceTableField` have `requiresReFetch() == true` yet emit a direct passthrough with no
+re-query at their own site (the re-projection is realized by the downstream child fetchers'
+`$fields`). So `requiresReFetch()` is a value-level fact ("this field's value is re-projected
+somewhere") and the emit needs a distinct site-level one ("this coordinate emits the keyed re-query
+here") — R333's operation-set membership, in minimal form. Slice 1 lands it as a derived model
+predicate next to `requiresReFetch()` (absent exactly on the root service arm), and every later
+consumer (emit dispatch, registry family boundary, the slice-5 validate guard) reads it rather than
+recomputing `requiresReFetch() && !rootService` per site.
+
+1. **Site-level reentry fact + command registry + bidirectional oracle.** The derived fact above;
+   a main-source command/name registry surfaced on the generation result alongside
+   `emittedUnits()`; the bidirectional oracle (every covered emitted method is exactly one
+   committed command's output; every callee edge into covered methods resolves to a committed
+   command). Two hard conditions from the consultation: the registry is the **name authority** —
+   the reentry family's current name derivations (`rowsMethodName`, the service-lift `load<X>`,
+   the DML follow-up sites) route *through* command minting so the emitter reads the name off the
+   command (regime-1), never registers a parallel description beside its own formula (the R268
+   drift); and the covered-family boundary **derives from the site-level fact**, never a
+   hand-attached tag. Green before any re-platforming; slices 2-4 run under it.
+2. **Child record-sourced reentry onto the model-composed unit.** The `Batched*` Record arms and
+   `RecordTableMethodField` compose the keyed re-query from `(sourceKey/lift, operation, target)`;
+   `RecordTableMethodField` dissolves (or thins) once its distinguishing data lives on the facts;
+   the `SqlRecordTableMethod` permit retires if residue-free.
+3. **Service reentry.** `ServiceTableField`'s lift onto the same unit. Row-15 verdict (stated):
+   the channel catch / early-return arms **stay folded into the Fetcher** — no independent seam —
+   with the load-bearing premise ("reentry service fields are single-channel / the arms are
+   strategy-invariant across the family") pinned by an enforcer (validate-time rejection or
+   pipeline-tier assertion), not left as prose. Root service leaves thin to records whose absent
+   site-level fact carries the passthrough distinction; where their reentry is realized
+   (downstream `$fields`) gets documented, not re-implemented.
+4. **DML projected reentry.** `emitProjected` / `emitDiscriminated`'s follow-up SELECT composes
+   through the same unit: **one rendering** — the VALUES-join with PK self-identity as the
+   degenerate correlation (per R333's re-query unification resolution) — with scatter gated on the
+   arrival/wrapper axis (absent for the single-anchor DML case), never a PK-IN "second rendering"
+   forked on an emit-site self-identity predicate. Transaction boundary (follow-up outside the
+   write transaction) stays pinned by `SingleRecordPayloadDmlTest`. If normalization turns out to
+   change observable query shape or SELECT counts beyond execution-tier equivalence, PK-IN stays as
+   recorded residue with a named successor Backlog item (the `OnlyChild` precedent), not as a
+   permanent second rendering.
+5. **Retire `dispatchPerformsReFetch`.** The generator consults the model facts directly; the
+   validator mirror error retires **in the same slice** as a replacement validate-time guard
+   sourced from the slice-1 site-level fact (an unsupported reentry classification still fails in
+   `ValidateMojo`, not at runtime); `ReFetchDerivationTest`'s derivation assertions stay,
+   mirror-agreement assertions repoint.
+6. **Docs sweep + spec shipped-notes → In Review.**
+
 ## Lineage
 
 Follows **R305** (dissolved `SingleRecordTableField`, made `requiresReFetch` axis-derived, kept the
