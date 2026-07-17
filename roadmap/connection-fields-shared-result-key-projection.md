@@ -1,7 +1,7 @@
 ---
 id: R499
 title: "Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence)"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness
