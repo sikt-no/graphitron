@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flattened selection sets and shared result keys: explainer</title>
+<link rel="stylesheet" href="concepts.css">
+</head>
+<body>
+<main>
+
+  <p class="crumb"><a href="../README.md">← Roadmap</a></p>
+  <p class="kicker">Concept explainer · R499 · R500 · theme: codegen-correctness</p>
+  <h1 data-concept-title="Flattened selection sets and shared result keys"
+      data-concept-items="R499, R500">Flattened selection sets and shared result keys</h1>
+  <p class="lede">How the generated <code>$fields</code> projection reads a GraphQL query, why <code>edges.node</code> and <code>nodes</code> collapse into one bucket, and what "merge the occurrences" actually means. Read this first, then the <a href="../connection-fields-shared-result-key-projection.md">R499 plan</a>.</p>
+
+  <div class="note">
+    This page builds intuition; the <a href="../connection-fields-shared-result-key-projection.md">R499 plan</a> is the spec (exact call sites, contract, test matrix). The sibling defect on the same substrate is <a href="../result-key-aware-reference-projection.md">R500</a>.
+  </div>
+
+  <div class="tldr">
+    <span class="kicker">The one-sentence version</span>
+    The generated <code>$fields</code> method builds one SQL SELECT list from graphql-java's <em>flattened</em> result-key map, in which a single key can carry several selected fields from different paths of the query; a projection that honours only the first occurrence serves the other paths a row they never asked for.
+  </div>
+
+  <h2>The problem, concretely</h2>
+  <p>Take the Sakila example schema's <code>stores</code> connection (<code>[Store!]! @asConnection</code>). A Relay connection offers the same nodes twice, as <code>edges { node }</code> and as the <code>nodes</code> shortcut, and a client (or a router composing independent fragments) may use both in one operation with different sub-selections of a reference field:</p>
+<pre><code>query {
+  stores(first: 10) {
+    edges { node { address { district } } }
+    nodes {          address { phone postalCode } }
+  }
+}</code></pre>
+  <p>Both sides read the same generated SQL row per store: the projection is computed once, and <code>address</code> becomes one correlated <code>MULTISET</code> subquery aliased <code>"address"</code>. If that subquery projects only what <code>edges.node</code> asked for (<code>district</code>), the <code>nodes</code> mapper then reads <code>phone</code> from a row type that does not contain it. The result is a per-row jOOQ error, <code>Field "..." is not contained in row type</code>, and silent <code>null</code> data on the diverging side. That is R499, observed in production-shaped testing against the opptak subgraph.</p>
+
+  <h2>Why one bucket holds both</h2>
+  <p>The connection fetcher hands the <em>whole</em> connection-level selection set, unnavigated, to the node type's <code>$fields</code>. graphql-java's <code>getFieldsGroupedByResultKey()</code> flattens the entire subtree and groups by each field's <strong>leaf result key</strong> (alias, or field name when unaliased), not by path. So the map for the query above contains entries for <code>edges</code>, <code>node</code>, <code>nodes</code>, <code>pageInfo</code>... and one entry <code>address</code> whose value list holds <em>two</em> <code>SelectedField</code>s: the one under <code>edges.node</code> and the one under <code>nodes</code>.</p>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head">Why the flattened map works at all</div>
+      <div class="body">
+        <p>The generated switch matches on the field <em>name</em> and lets everything else fall through a <code>default</code> arm. Connection wrapper keys (<code>edges</code>, <code>node</code>, <code>cursor</code>...) are not fields of the node type, so they are skipped, and the node's own leaf names hit their arms regardless of the path they arrived by.</p>
+      </div>
+    </div>
+    <div class="pane bad">
+      <div class="head">Where it bites</div>
+      <div class="body">
+        <p>The grouping deliberately erases the path. When the same result key arrives by two paths with <em>different</em> sub-selections, the bucket holds both occurrences, and code that binds <code>entry.getValue().get(0)</code> silently throws the second one away. That single expression is the R499 defect site.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q1">
+    <p class="q"><span class="tag">Quiz</span> The same query selects scalar columns divergently: <code>edges { node { storeId } }</code> and <code>nodes { lastUpdate }</code>. Does the first-occurrence bug corrupt them too?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Yes; only the <code>edges.node</code> scalars end up in the SELECT.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">No; scalar arms never read the sub-selection, and the node's base row is always fully projected.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">No; scalars are read from a second query.</button>
+    <div class="explain">A scalar's switch arm adds its column and looks no deeper, and <code>$fields</code> always projects the node table's base columns. Divergence only matters for arms that <em>descend</em> into a nested selection: inline reference fields (<code>TableField</code> / <code>LookupTableField</code>) and nesting wrappers. That asymmetry is why the bug hid until reference fields were selected on both sides.</div>
+  </div>
+
+  <h2>The tempting fix that cannot work</h2>
+  <p>If one occurrence is not enough, why not run the switch once per occurrence and let the accumulator deduplicate?</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">Re-emit the arm per occurrence</div>
+      <div class="body">
+        <p>An inline reference arm emits <code>DSL.multiset(...).as("address")</code>. Every <code>.as(...)</code> call mints a <em>fresh</em> jOOQ <code>Field</code>, so the <code>LinkedHashSet</code> accumulator cannot collapse two emissions: the SELECT ends up with two subqueries under the same SQL alias.</p>
+        <p>The set only dedupes raw <code>table.X</code> adds, because jOOQ caches those per aliased table instance.</p>
+      </div>
+    </div>
+    <div class="pane good">
+      <div class="head">Merge the selections, emit once</div>
+      <div class="body">
+        <p>Keep one arm emission per result key, but make its nested descent operate on the <strong>union of every occurrence's sub-selection</strong>, recursively at every depth. The <code>address</code> subquery then projects <code>district</code>, <code>phone</code> and <code>postalCode</code>; each side's mapper reads only what it asked for, and extra columns in the row are harmless.</p>
+      </div>
+    </div>
+  </div>
+  <p>That is R499's core move: the union happens on the <em>selection</em> side, before emission, not on the emitted fields.</p>
+
+  <h2>Arguments: the part a union cannot paper over</h2>
+  <p>Inline reference arms also read runtime <em>arguments</em> off the selected field (filter args, pagination <code>first</code>, routine call args). GraphQL validation never merges sibling selection sets, so this operation is perfectly legal:</p>
+<pre><code>edges { node { films(first: 5)  { title } } }
+nodes {          films(first: 10) { title } }</code></pre>
+  <p>One projection cannot serve both: there is a single <code>films</code> subquery, and it takes one <code>LIMIT</code>. Any merge has to decide what happens here.</p>
+
+  <div class="quiz" id="q2">
+    <p class="q"><span class="tag">Quiz</span> Under R499's contract, what does the generated code do with the divergent <code>first:</code> arguments above?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Uses the first occurrence's arguments; the union covers the columns, so data is complete.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Rejects the schema at build time.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Throws a descriptive runtime error that surfaces as a GraphQL field error.</button>
+    <div class="explain">Silently taking <code>get(0)</code>'s arguments serves provably wrong data to the other path, which is the exact failure class R499 exists to kill. And there is no build-time home for the check: the occurrence set is a property of the incoming <em>query</em>, not the schema, so the only available enforcer is a runtime guard. Fail loud, name the field and the conflicting values. Occurrences that agree (the overwhelmingly common case, and every no-argument field) proceed normally.</div>
+  </div>
+
+  <h2>R499 and R500: same substrate, different axis</h2>
+  <p>Grouping is by result key, but the switch and the SQL alias go by field <em>name</em>. Those two identities diverge in exactly one situation: client aliases.</p>
+
+  <div class="sxs">
+    <div class="pane">
+      <div class="head">R499: one bucket, several occurrences</div>
+      <div class="body">
+        <p><code>edges.node.address</code> and <code>nodes.address</code>. Same result key, same name, one bucket. Fix: merge sub-selections <em>within</em> the bucket, guard name/argument divergence.</p>
+        <p>Fails <strong>silently wrong</strong> today, hence priority.</p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="head">R500: two buckets, same field name</div>
+      <div class="body">
+        <p><code>a: address { district }</code> and <code>b: address { phone }</code>. Two result keys, two buckets, and both arms project <code>.as("address")</code>: a duplicate SQL alias. Fix needs projections aliased by <em>result key</em> and result-key-aware readers.</p>
+        <p>Fails <strong>loud</strong> today (jOOQ duplicate-alias error), hence lower priority.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q3">
+    <p class="q"><span class="tag">Quiz</span> A client sends <code>myAddr: address { district }</code> under <code>edges.node</code> and <code>address { phone }</code> under <code>nodes</code>. Which item owns that shape?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">R499: it is the edges/nodes divergence.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">R500: the alias puts the two selections in different result-key buckets, so R499's within-bucket merge never sees them together.</button>
+    <div class="explain">R499's merge keys on the result-key bucket. <code>myAddr</code> and <code>address</code> are distinct keys, so this is the cross-bucket duplicate-name case: both arms fire independently and collide on the <code>.as("address")</code> SQL alias. That is R500's axis. The two fixes are orthogonal by design, which is why they are two items.</div>
+  </div>
+
+  <h2>Where the fix lives</h2>
+  <p>One defect site covers every route in: plain connections and polymorphic connections both funnel into the same generated <code>$fields</code> loop (the polymorphic path goes through a <code>restrictTo</code> view that already preserves full occurrence lists). The merge and the divergence guard are schema-independent, so they land on a shared util-singleton scaffold rather than being copied into every generated type class; the guard's applicability derives from the same structural fact that makes an arm read arguments off the selection (<code>ArgumentValueSource.FromSelectedField</code>), so future arm variants inherit it instead of silently reverting to first-occurrence picking. The reasoning behind both choices is the <a href="../../docs/architecture/explanation/development-principles.adoc">development principles</a> (single-sourced facts, every invariant has an enforcer); the fail-loud stance is the same instinct as <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed rejection</a>, applied at the only tier that can see a query.</p>
+
+  <!-- derived:status -->
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-17)</span></h2>
+  <ul class="status">
+    <li><span class="pill pending">spec</span><a href="../connection-fields-shared-result-key-projection.md">R499</a> (within-bucket occurrence merge + fail-loud argument guard): plan body written, awaiting Spec → Ready sign-off by an independent session.</li>
+    <li><span class="pill pending">backlog</span><a href="../result-key-aware-reference-projection.md">R500</a> (result-key-aware aliasing for aliased duplicates): filed from the R499 trace, no plan body yet.</li>
+    <li><span class="pill pending">backlog</span><a href="../batched-polymorphic-parent-holds-fk-correlation.md">R481</a> shares the jOOQ "not contained in row type" symptom string on an unrelated code path; listed here only to prevent mis-triage.</li>
+  </ul>
+  <!-- /derived:status -->
+
+  <footer>
+    <strong>See also.</strong>
+    <a href="../connection-fields-shared-result-key-projection.md">R499 plan</a> ·
+    <a href="../result-key-aware-reference-projection.md">R500</a> ·
+    <a href="../../docs/manual/reference/directives/asConnection.adoc"><code>@asConnection</code></a> ·
+    <a href="../../docs/manual/reference/directives/reference.adoc"><code>@reference</code></a> ·
+    <a href="../../docs/architecture/explanation/development-principles.adoc">Development principles</a>
+    <!-- derived:backlinks -->
+    <p style="margin-top:1em"><strong>Referenced by.</strong> No roadmap items link this page yet.</p>
+    <!-- /derived:backlinks -->
+  </footer>
+
+</main>
+<script src="concepts.js"></script>
+</body>
+</html>
