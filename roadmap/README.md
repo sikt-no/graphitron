@@ -25,7 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R484` | Purge transient roadmap references from string literals; drop the planSlug field that renders one | In Progress | 2026-07-17 <sub>created 2026-07-15</sub> | [plan](rejection-message-roadmap-slug-purge.md) |
+| `R484` | Purge transient roadmap references from string literals; drop the planSlug field that renders one | In Review | 2026-07-17 <sub>created 2026-07-15</sub> | [plan](rejection-message-roadmap-slug-purge.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
@@ -210,7 +210,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
 - `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
-- `R484` [**Purge transient roadmap references from string literals; drop the planSlug field that renders one**](rejection-message-roadmap-slug-purge.md) — In Progress, cleanup
+- `R484` [**Purge transient roadmap references from string literals; drop the planSlug field that renders one**](rejection-message-roadmap-slug-purge.md) — In Review, cleanup
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md) — Backlog, Typed rejection chain
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md) — Backlog, bugs
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md) — Backlog, architecture
