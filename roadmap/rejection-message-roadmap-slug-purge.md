@@ -1,7 +1,7 @@
 ---
 id: R484
 title: "Purge transient roadmap references from string literals; drop the planSlug field that renders one"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 14
 theme: diagnostics
