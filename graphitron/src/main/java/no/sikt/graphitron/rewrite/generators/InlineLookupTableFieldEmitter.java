@@ -63,19 +63,36 @@ public final class InlineLookupTableFieldEmitter {
      *                     than a hardcoded literal — required for {@code NestingField}
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
+     * @param entryName    the caller-scope {@code Map.Entry<String, List<SelectedField>>}
+     *                     variable name holding the full result-key bucket ({@code sfName} is its
+     *                     canonical first occurrence). The nested {@code $fields} descent takes the
+     *                     whole bucket so the target projects the union of every occurrence's
+     *                     sub-selection; depth-suffixed like {@code sfName}.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName,
-            String outputPackage, CompositeDecodeHelperRegistry registry) {
-        return buildArm(lf, parentAlias, sfName, outputPackage, registry);
+            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
+        return buildArm(lf, parentAlias, sfName, entryName, outputPackage, registry);
     }
 
     private static CodeBlock buildArm(ChildField.LookupTableField lf, String parentAlias, String sfName,
-            String outputPackage, CompositeDecodeHelperRegistry registry) {
+            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
         ClassName typeClass = ClassName.get(outputPackage + ".types", lf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
+
+        // Occurrence argument guard: a lookup arm always reads runtime state off the canonical
+        // SelectedField — the input-rows helper extracts the @lookupKey argument values from it
+        // (ArgumentValueSource.FromSelectedField), and filters/pagination may add further reads.
+        // When the result-key bucket holds several occurrences (edges.node vs nodes in a
+        // connection) they must agree on getArguments(); otherwise serving the canonical
+        // occurrence's arguments for every path is silent wrong data. Unconditional, unlike
+        // InlineTableFieldEmitter's predicate-gated guard, because the @lookupKey read is
+        // structural to this arm.
+        code.addStatement("$T.requireConsistentArguments($L.getKey(), $L.getValue())",
+            TypeClassGenerator.selectionOccurrencesClass(outputPackage), entryName, entryName);
+
         List<String> aliases;
         String terminalAlias;
 
@@ -135,8 +152,8 @@ public final class InlineLookupTableFieldEmitter {
         // by jOOQ, so the branch happens in Java, not SQL.
         code.beginControlFlow("if (rows.length == 0)");
         code.addStatement(
-            "fields.add($T.multiset($T.select($T.$$fields($L.getSelectionSet(), $L, env)).from($L).where($T.falseCondition())).as($S))",
-            DSL, DSL, typeClass, sfName, terminalAlias, terminalAlias, DSL, lf.name());
+            "fields.add($T.multiset($T.select($T.$$fields($L.getValue(), $L, env)).from($L).where($T.falseCondition())).as($S))",
+            DSL, DSL, typeClass, entryName, terminalAlias, terminalAlias, DSL, lf.name());
         code.nextControlFlow("else");
 
         // VALUES derived-table alias: "idx" + one column per lookup key. Labels must match the
@@ -177,7 +194,7 @@ public final class InlineLookupTableFieldEmitter {
         ArgCallEmitter.emitJooqConvertKeyLifts(code, lf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            parentAlias, onCondition.build(), sfName, registry, fkTargetAliases);
+            parentAlias, onCondition.build(), sfName, entryName, registry, fkTargetAliases);
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
         code.endControlFlow();
 
@@ -191,15 +208,19 @@ public final class InlineLookupTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, CodeBlock onCondition, String sfName, CompositeDecodeHelperRegistry registry,
+            String parentAlias, CodeBlock onCondition, String sfName, String entryName,
+            CompositeDecodeHelperRegistry registry,
             Map<WhereFilter, List<String>> fkTargetAliases) {
         var sel = CodeBlock.builder();
+        // The descent hands over the whole result-key bucket so the target projects the union of
+        // all occurrences' sub-selections (edges.node vs nodes divergence); each path's readers
+        // ignore columns they didn't ask for.
         // Invariant: `env` threaded onward into the nested $fields call is correct — each
         // nested level re-derives its own SelectedField and env is only needed there for
         // request-scoped context reads. Only this arm's own runtime argument reads route through the
         // SelectedField (ArgumentValueSource.FromSelectedField). Do not "fix" env to the SelectedField.
-        sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
-            DSL, typeClass, sfName, terminalAlias);
+        sel.add("$T.select($T.$$fields($L.getValue(), $L, env))",
+            DSL, typeClass, entryName, terminalAlias);
 
         // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);

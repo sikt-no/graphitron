@@ -2,12 +2,15 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
+import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -60,20 +63,36 @@ public final class InlineTableFieldEmitter {
      *                     than a hardcoded literal — required for {@code NestingField}
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
+     * @param entryName    the caller-scope {@code Map.Entry<String, List<SelectedField>>}
+     *                     variable name holding the full result-key bucket ({@code sfName} is its
+     *                     canonical first occurrence). The nested {@code $fields} descent takes the
+     *                     whole bucket so the target projects the union of every occurrence's
+     *                     sub-selection; depth-suffixed like {@code sfName}.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName,
-            String outputPackage, CompositeDecodeHelperRegistry registry) {
-        return buildArm(tf, parentAlias, sfName, outputPackage, registry);
+            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
+        return buildArm(tf, parentAlias, sfName, entryName, outputPackage, registry);
     }
 
     private static CodeBlock buildArm(ChildField.TableField tf, String parentAlias, String sfName,
-            String outputPackage, CompositeDecodeHelperRegistry registry) {
+            String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
         ClassName typeClass = ClassName.get(outputPackage + ".types", tf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
+
+        // Occurrence argument guard: this arm reads runtime state off the canonical SelectedField
+        // (ArgumentValueSource.FromSelectedField), so when the result-key bucket holds several
+        // occurrences (edges.node vs nodes in a connection) they must agree on getArguments() —
+        // otherwise serving the canonical occurrence's arguments for every path is silent wrong
+        // data. Gated on readsSelectedFieldArguments so an arm that carries arguments but never
+        // consumes them cannot false-positive.
+        if (readsSelectedFieldArguments(tf)) {
+            code.addStatement("$T.requireConsistentArguments($L.getKey(), $L.getValue())",
+                TypeClassGenerator.selectionOccurrencesClass(outputPackage), entryName, entryName);
+        }
 
         String terminalAlias;
         if (path.isEmpty()) {
@@ -130,7 +149,7 @@ public final class InlineTableFieldEmitter {
         ArgCallEmitter.emitJooqConvertKeyLifts(code, tf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
 
         // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, registry, fkTargetAliases);
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, entryName, registry, fkTargetAliases);
 
         // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
@@ -148,20 +167,24 @@ public final class InlineTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, String sfName, CompositeDecodeHelperRegistry registry,
+            String parentAlias, String sfName, String entryName, CompositeDecodeHelperRegistry registry,
             Map<WhereFilter, List<String>> fkTargetAliases) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
         var sel = CodeBlock.builder();
         // SELECT projection: always unwrapped $fields(...) fed into DSL.multiset at the outer wrap.
+        // The descent hands over the whole result-key bucket (every occurrence of this field across
+        // merged selection paths, e.g. edges.node vs nodes), so the target projects the union of
+        // all occurrences' sub-selections; a sub-field requested under only one path still lands in
+        // the SELECT, and each path's readers ignore columns they didn't ask for.
         // Invariant: `env` is threaded onward into the nested $fields call unchanged — that is
         // correct. Each nested level re-derives its own SelectedField (the switch loop's `sfN` local),
         // and env is needed there only for request-scoped context reads (ContextArg), which
         // legitimately read the ancestor env. Do NOT "fix" this env to the SelectedField: only the
         // field's own runtime *argument* reads route through the SelectedField (via ArgumentValueSource
         // .FromSelectedField), and those are emitted here in this arm, not down the recursion.
-        sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
-            DSL, typeClass, sfName, terminalAlias);
+        sel.add("$T.select($T.$$fields($L.getValue(), $L, env))",
+            DSL, typeClass, entryName, terminalAlias);
 
         // FROM: step 0's aliased table, with the JOIN chain walking forward towards the
         // terminal: a lateral routine hop's call arguments reference the previous
@@ -257,6 +280,47 @@ public final class InlineTableFieldEmitter {
         }
 
         return sel.build();
+    }
+
+    /**
+     * True when the arm body {@link #buildArm} emits for {@code tf} reads runtime arguments off
+     * the canonical {@code SelectedField} — i.e. when any of its emission sites consumes an
+     * {@link ArgumentValueSource.FromSelectedField} read. This is the predicate the occurrence
+     * argument guard tracks, clause for clause against the emission sites in this file:
+     *
+     * <ul>
+     *   <li>pagination — the non-single-cardinality {@code .limit(...)} reads
+     *       {@code sf.getArguments().get("first")};</li>
+     *   <li>filters — {@code FkTargetConditionEmitter.emitTerm} / the JooqConvert key lifts read
+     *       each argument-extracting {@link no.sikt.graphitron.rewrite.model.CallParam} off
+     *       {@code sf}. A
+     *       {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.ContextArg} param is the
+     *       one extraction that stays env-based at the inline sites (request-scoped context), so
+     *       an all-{@code ContextArg} filter does not consume {@code sf};</li>
+     *   <li>routine hops — {@code RoutineCallEmitter.emitCall} reads each
+     *       {@link no.sikt.graphitron.rewrite.model.ParamSource.Arg} binding off {@code sf}.</li>
+     * </ul>
+     *
+     * <p>Keeping the predicate beside the emission it mirrors (rather than in the switch host)
+     * means a new {@code FromSelectedField}-consuming emission site is added in the same file that
+     * must extend this predicate; an arm that merely <em>carries</em> arguments it never consumes
+     * stays unguarded, so it cannot false-positive on divergence in arguments nothing reads.
+     */
+    static boolean readsSelectedFieldArguments(ChildField.TableField tf) {
+        boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
+        if (!singleCardinality && tf.pagination() != null && tf.pagination().first() != null) {
+            return true;
+        }
+        if (tf.filters().stream()
+                .flatMap(f -> f.callParams().stream())
+                .anyMatch(p -> !(p.extraction() instanceof CallSiteExtraction.ContextArg))) {
+            return true;
+        }
+        return tf.joinPath().stream().anyMatch(step ->
+            step instanceof JoinStep.Hop hop
+                && hop.target() instanceof TableExpr.RoutineCall rc
+                && rc.routine().argBindings().stream()
+                    .anyMatch(b -> b.source() instanceof ParamSource.Arg));
     }
 
     /** Source alias for a hop's filter call: the previous hop's alias, or the parent alias for step 0. */

@@ -36,12 +36,13 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when {@code type}'s {@code $fields} method contains a switch arm for {@code fieldName}.
-     * The switch arm is emitted as {@code case "fieldName" -> …} (JavaPoet renders with the quoted
-     * field name); this helper searches for that literal.
+     * True when {@code type}'s {@code $fieldsGrouped} switch loop (the private method both public
+     * {@code $fields} entries delegate to) contains a switch arm for {@code fieldName}. The switch
+     * arm is emitted as {@code case "fieldName" -> …} (JavaPoet renders with the quoted field
+     * name); this helper searches for that literal.
      */
     public static boolean hasFieldsArm(TypeSpec type, String fieldName) {
-        return methodBody(type, "$fields")
+        return methodBody(type, "$fieldsGrouped")
             .map(body -> body.contains("case \"" + fieldName + "\""))
             .orElse(false);
     }
@@ -101,7 +102,7 @@ public final class TypeSpecAssertions {
      * Java name (e.g. {@code "FILM_ID"}).
      */
     public static boolean appendsRequiredColumn(TypeSpec type, String columnJavaName) {
-        String body = methodBody(type, "$fields").orElse("");
+        String body = methodBody(type, "$fieldsGrouped").orElse("");
         return body.contains("fields.add(table." + columnJavaName + ")");
     }
 
@@ -115,8 +116,24 @@ public final class TypeSpecAssertions {
      * a shape assertion. Sibling of {@link #appendsRequiredColumn}.
      */
     public static boolean appendsFullParentRow(TypeSpec type) {
-        String body = methodBody(type, "$fields").orElse("");
+        String body = methodBody(type, "$fieldsGrouped").orElse("");
         return body.contains(".as(\"__src_");
+    }
+
+    /**
+     * True when the {@code $fieldsGrouped} switch arm for {@code fieldName} opens with the
+     * occurrence argument-consistency guard
+     * ({@code SelectionOccurrences.requireConsistentArguments(...)}). The arm span is taken from
+     * the arm's {@code case "fieldName"} label to the next {@code case} label (or the body end),
+     * which is exact for the flat depth-0 arms the callers assert on.
+     */
+    public static boolean armGuardsArgumentConsistency(TypeSpec type, String fieldName) {
+        String body = methodBody(type, "$fieldsGrouped").orElse("");
+        int start = body.indexOf("case \"" + fieldName + "\"");
+        if (start < 0) return false;
+        int end = body.indexOf("case \"", start + 1);
+        String arm = end < 0 ? body.substring(start) : body.substring(start, end);
+        return arm.contains(".requireConsistentArguments(");
     }
 
     private static Optional<String> methodBody(TypeSpec type, String methodName) {

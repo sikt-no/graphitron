@@ -3,10 +3,12 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -29,6 +31,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 
+import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.PUBLIC;
 import static javax.lang.model.element.Modifier.STATIC;
 
@@ -38,11 +41,18 @@ import static javax.lang.model.element.Modifier.STATIC;
  * <p>Class names follow the GraphQL type name (e.g. {@code Film} for GraphQL type {@code Film}).
  * If two GraphQL types map to the same SQL table, each gets its own type class.
  *
- * <p>Each class contains a single {@code $fields(sel, table, env)} method that assembles the
- * SELECT list from a {@link graphql.schema.DataFetchingFieldSelectionSet}. The caller supplies
- * the table alias as a parameter — this is the prerequisite for G5 inline nested fields, which
- * need the parent alias for correlated join conditions. Execution (DSL context, query building,
- * pagination) is the responsibility of the calling {@code *Fetchers} class.
+ * <p>Each class contains a {@code $fields} method pair that assembles the SELECT list for one
+ * level of the query: the fetcher-facing entry takes a
+ * {@link graphql.schema.DataFetchingFieldSelectionSet}, and an occurrence-list overload takes the
+ * {@code List<SelectedField>} bucket a shared result key groups to (several occurrences when
+ * sibling selection paths collapse onto one key, e.g. {@code edges.node} vs {@code nodes} in a
+ * Relay connection). Both delegate to one private switch loop over the result-key-grouped map;
+ * the occurrence overload first unions all occurrences' sub-selections via the generated
+ * {@code SelectionOccurrences} scaffold
+ * ({@link no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator}). The
+ * caller supplies the table alias as a parameter — this is the prerequisite for G5 inline nested
+ * fields, which need the parent alias for correlated join conditions. Execution (DSL context,
+ * query building, pagination) is the responsibility of the calling {@code *Fetchers} class.
  *
  * <p>Generated files are placed in the {@code rewrite.types} sub-package of the configured
  * output package.
@@ -54,6 +64,7 @@ public class TypeClassGenerator {
     private static final ClassName SELECTION_SET     = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
     private static final ClassName ARRAY_LIST        = ClassName.get(ArrayList.class);
     private static final ClassName LINKED_HASH_SET   = ClassName.get(LinkedHashSet.class);
+    private static final ClassName MAP               = ClassName.get("java.util", "Map");
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         return schema.types().entrySet().stream()
@@ -148,13 +159,15 @@ public class TypeClassGenerator {
             String outputPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC);
+        builder.addMethod(buildSelectionSetEntryMethod(tableRef));
+        builder.addMethod(buildOccurrencesEntryMethod(tableRef, outputPackage));
         // One decode-helper registry per type class: inline TableField / LookupTableField filter
         // sites that decode a @nodeId argument lift a per-class private static helper through it.
         // collectInto co-locates construct and drain so the lifted helpers land on this class
         // alongside $fields and the lift can never be silently dropped. The registry threads through
         // emitSelectionSwitch's NestingField recursion, so nested inline fields share it.
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry ->
-            builder.addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage, registry)));
+            builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage, registry)));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -187,8 +200,10 @@ public class TypeClassGenerator {
     }
 
     /**
-     * Generates a {@code $fields(sel, table, env)} method that assembles the SELECT list for one
-     * level of the query from a {@link graphql.schema.DataFetchingFieldSelectionSet}.
+     * Generates the fetcher-facing {@code $fields(sel, table, env)} entry. Delegates to the
+     * private grouped switch loop ({@link #build$FieldsGroupedMethod}) via
+     * {@code sel.getFieldsGroupedByResultKey()}; the signature is the stable cross-class surface
+     * every {@code *Fetchers} call site (and the polymorphic {@code restrictTo} view) targets.
      *
      * <p>{@code public static} — called cross-class from the {@code *Fetchers} classes.
      * The {@code $} prefix is chosen because GraphQL field names match {@code /[_A-Za-z][_0-9A-Za-z]&#42;/}
@@ -200,7 +215,49 @@ public class TypeClassGenerator {
      * <p>{@code env} is included now rather than deferred to G5. G5 is the immediate next roadmap
      * item; omitting it here would require a second signature migration one step later.
      */
-    private static MethodSpec build$FieldsMethod(TableRef tableRef,
+    private static MethodSpec buildSelectionSetEntryMethod(TableRef tableRef) {
+        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        return MethodSpec.methodBuilder("$fields")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(listOfFieldWildcard())
+            .addParameter(SELECTION_SET, "sel")
+            .addParameter(names.jooqTableClass(), "table")
+            .addParameter(ENV, "env")
+            .addStatement("return $$fieldsGrouped(sel.getFieldsGroupedByResultKey(), table, env)")
+            .build();
+    }
+
+    /**
+     * Generates the occurrence-list {@code $fields(occurrences, table, env)} overload: the entry
+     * the inline {@code TableField} / {@code LookupTableField} switch arms descend through with the
+     * full result-key bucket ({@code entry.getValue()}), so a nested projection operates on the
+     * <em>union</em> of every occurrence's sub-selection rather than only the first occurrence's.
+     * The union happens on the selection side (one merged map, one arm emission, one SELECT term
+     * per result key); re-emitting an arm per occurrence would instead mint duplicate
+     * {@code DSL.multiset(...).as(...)} SQL aliases, because {@code .as(...)} produces a fresh jOOQ
+     * {@code Field} on every call and the accumulator dedupes raw column adds only.
+     */
+    private static MethodSpec buildOccurrencesEntryMethod(TableRef tableRef, String outputPackage) {
+        var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        return MethodSpec.methodBuilder("$fields")
+            .addModifiers(PUBLIC, STATIC)
+            .returns(listOfFieldWildcard())
+            .addParameter(ParameterizedTypeName.get(LIST, SELECTED_FIELD), "occurrences")
+            .addParameter(names.jooqTableClass(), "table")
+            .addParameter(ENV, "env")
+            .addStatement("return $$fieldsGrouped($T.mergeByResultKey(occurrences), table, env)",
+                selectionOccurrencesClass(outputPackage))
+            .build();
+    }
+
+    /**
+     * Generates the private {@code $fieldsGrouped(grouped, table, env)} switch loop both public
+     * {@code $fields} entries delegate to: it assembles the SELECT list for one level of the query
+     * from a result-key-grouped selection map (the shape
+     * {@code DataFetchingFieldSelectionSet.getFieldsGroupedByResultKey()} produces and
+     * {@code SelectionOccurrences.mergeByResultKey} reproduces for occurrence lists).
+     */
+    private static MethodSpec build$FieldsGroupedMethod(TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
             List<ChildField.CompositeColumnField> compositeColumnFields,
             List<ChildField.ColumnReferenceField> columnReferenceFields,
@@ -214,6 +271,9 @@ public class TypeClassGenerator {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
+        var groupedType = ParameterizedTypeName.get(MAP,
+            ClassName.get(String.class),
+            ParameterizedTypeName.get(LIST, SELECTED_FIELD));
         var entryType = ParameterizedTypeName.get(
             ClassName.get("java.util", "Map", "Entry"),
             ClassName.get(String.class),
@@ -226,10 +286,10 @@ public class TypeClassGenerator {
         // produces a fresh Field; two arms with distinct SDL names stay distinct. The method still
         // returns List<Field<?>> (callers consume via Collection-accepting jOOQ overloads); the
         // final return wraps to ArrayList to preserve the signature.
-        var builder = MethodSpec.methodBuilder("$fields")
-            .addModifiers(PUBLIC, STATIC)
+        var builder = MethodSpec.methodBuilder("$fieldsGrouped")
+            .addModifiers(PRIVATE, STATIC)
             .returns(listOfField)
-            .addParameter(SELECTION_SET, "sel")
+            .addParameter(groupedType, "grouped")
             .addParameter(names.jooqTableClass(), "table")
             .addParameter(ENV, "env")
             .addStatement("$T<$T> fields = new $T<>()", LINKED_HASH_SET, fieldWildcard, LINKED_HASH_SET);
@@ -242,7 +302,7 @@ public class TypeClassGenerator {
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
         flat.addAll(computedFields);
-        // Stamp @SuppressWarnings("unchecked") on $fields — the narrowest enclosing member —
+        // Stamp @SuppressWarnings("unchecked") on $fieldsGrouped — the narrowest enclosing member —
         // when any inline field's filter param emits an unchecked cast under the FromSelectedField
         // argument source (a list-typed Direct / JooqConvert / non-JooqConvert-leaf NestedInputField).
         // The predicate is source-aware (CallParam.emitsUncheckedCastFromSelectedField): the casts
@@ -289,34 +349,46 @@ public class TypeClassGenerator {
     }
 
     /**
-     * Emits a {@code for}/{@code switch} block projecting the supplied fields from
-     * {@code selN.getFieldsGroupedByResultKey()} (where N is the recursion depth). At depth 0 the
-     * loop variables are {@code entry}/{@code sf} — matching the names that the inline table-field
-     * and lookup-table-field emitters embed in their generated code. Nested depths (1, 2, …) append
+     * Emits a {@code for}/{@code switch} block projecting the supplied fields from the
+     * result-key-grouped map in scope: the {@code grouped} parameter at depth 0, and the
+     * {@code SelectionOccurrences.mergeByResultKey(entryN.getValue())} union of the previous
+     * depth's occurrence bucket at nested depths. At depth 0 the loop variables are
+     * {@code entry}/{@code sf} — matching the names that the inline table-field and
+     * lookup-table-field emitters embed in their generated code. Nested depths (1, 2, …) append
      * the depth number to avoid shadowing outer scopes — plain {@code entry}/{@code sf} would
      * violate JLS §14.4.2.
      *
-     * <p>A {@code NestingField} arm recurses with {@code depth + 1}, reading from the current
-     * depth's {@code sf.getSelectionSet()}. The nested type shares the parent's table context, so
+     * <p>A {@code NestingField} arm recurses with {@code depth + 1}, reading from the merged map
+     * of the current depth's bucket. The nested type shares the parent's table context, so
      * {@code tableArg} is threaded through unchanged.
      *
- * <p>The per-depth {@code sfN} local is the {@code SelectedField} the inline table /
+     * <p>The per-depth {@code sfN} local is the <em>canonical</em> occurrence of the bucket
+     * ({@code SelectionOccurrences.canonical(...)}, which fail-louds when occurrences under one
+     * result key name different underlying fields — a shape the single-name {@code switch}
+     * dispatch cannot represent for any arm). It is the {@code SelectedField} the inline table /
      * lookup-field arms read their own runtime <em>arguments</em> from (via
-     * {@code ArgumentValueSource.FromSelectedField}). The {@code $fields} method's {@code env}
-     * parameter stays the ancestor fetcher's environment at every depth and is used only for
-     * request-scoped context reads; it is deliberately <em>not</em> the source of field arguments.
+     * {@code ArgumentValueSource.FromSelectedField}); those arms additionally guard that all
+     * occurrences agree on the arguments before serving the canonical one's. The enclosing
+     * method's {@code env} parameter stays the ancestor fetcher's environment at every depth and
+     * is used only for request-scoped context reads; it is deliberately <em>not</em> the source of
+     * field arguments.
      */
     private static void emitSelectionSwitch(MethodSpec.Builder builder, int depth,
                                             List<ChildField> fields, String tableArg,
                                             ParameterizedTypeName entryType,
                                             String outputPackage,
                                             CompositeDecodeHelperRegistry registry) {
-        String parentSel = (depth == 0) ? "sel" : (sfName(depth - 1) + ".getSelectionSet()");
         String entry = entryName(depth);
         String sf = sfName(depth);
+        var selectionOccurrences = selectionOccurrencesClass(outputPackage);
+        var parentGrouped = (depth == 0)
+            ? CodeBlock.of("grouped")
+            : CodeBlock.of("$T.mergeByResultKey($L.getValue())",
+                selectionOccurrences, entryName(depth - 1));
 
-        builder.addCode("for ($T $L : $L.getFieldsGroupedByResultKey().entrySet()) {\n", entryType, entry, parentSel);
-        builder.addCode("    $T $L = $L.getValue().get(0);\n", SELECTED_FIELD, sf, entry);
+        builder.addCode("for ($T $L : $L.entrySet()) {\n", entryType, entry, parentGrouped);
+        builder.addCode("    $T $L = $T.canonical($L.getKey(), $L.getValue());\n",
+            SELECTED_FIELD, sf, selectionOccurrences, entry, entry);
         builder.addCode("    switch ($L.getName()) {\n", sf);
         for (var f : fields) {
             switch (f) {
@@ -340,12 +412,12 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
-                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage, registry));
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, entry, outputPackage, registry));
                     builder.addCode("        }\n");
                 }
                 case ChildField.LookupTableField lf -> {
                     builder.addCode("        case $S -> {\n", lf.name());
-                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, outputPackage, registry));
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, entry, outputPackage, registry));
                     builder.addCode("        }\n");
                 }
                 case ChildField.NestingField nf -> {
@@ -371,6 +443,17 @@ public class TypeClassGenerator {
 
     private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }
     private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
+
+    /** {@code List<Field<?>>} — the return type of every {@code $fields} entry. */
+    private static ParameterizedTypeName listOfFieldWildcard() {
+        return ParameterizedTypeName.get(LIST,
+            ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class)));
+    }
+
+    /** The generated {@code <outputPackage>.util.SelectionOccurrences} runtime scaffold. */
+    static ClassName selectionOccurrencesClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".util", SelectionOccurrencesClassGenerator.CLASS_NAME);
+    }
 
     /**
  * True when any inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}

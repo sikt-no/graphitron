@@ -50,6 +50,14 @@ class TypeClassGeneratorTest {
             .orElseThrow(() -> new AssertionError("Method not found: " + methodName));
     }
 
+    private static MethodSpec fieldsOverload(String firstParamType) {
+        return spec().methodSpecs().stream()
+            .filter(m -> m.name().equals("$fields"))
+            .filter(m -> m.parameters().get(0).type().toString().equals(firstParamType))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No $fields overload taking " + firstParamType));
+    }
+
     // ===== Class structure =====
 
     @Test
@@ -59,8 +67,10 @@ class TypeClassGeneratorTest {
 
     @Test
     void generate_allMethodsArePresent() {
+        // Two public $fields entries (selection-set and occurrence-list) delegating into the
+        // private $fieldsGrouped switch loop.
         assertThat(spec().methodSpecs()).extracting(MethodSpec::name)
-            .containsExactly("$fields");
+            .containsExactly("$fields", "$fields", "$fieldsGrouped");
     }
 
     // ===== NodeId fields (composite arity > 1; arity-1 lands on ColumnField switch arm) =====
@@ -86,8 +96,8 @@ class TypeClassGeneratorTest {
     // ===== Signatures =====
 
     @Test
-    void $fields_signature() {
-        var m = method("$fields");
+    void $fields_selectionSetEntrySignature() {
+        var m = fieldsOverload("graphql.schema.DataFetchingFieldSelectionSet");
         assertThat(m.modifiers()).contains(
             javax.lang.model.element.Modifier.PUBLIC,
             javax.lang.model.element.Modifier.STATIC);
@@ -95,6 +105,36 @@ class TypeClassGeneratorTest {
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
                 "graphql.schema.DataFetchingFieldSelectionSet",
+                DEFAULT_JOOQ_PACKAGE + ".tables.Film",
+                "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void $fields_occurrenceListOverloadSignature() {
+        // The occurrence-list overload the inline arms descend through with the full result-key
+        // bucket, so nested projections union every occurrence's sub-selection.
+        var m = fieldsOverload("java.util.List<graphql.schema.SelectedField>");
+        assertThat(m.modifiers()).contains(
+            javax.lang.model.element.Modifier.PUBLIC,
+            javax.lang.model.element.Modifier.STATIC);
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly(
+                "java.util.List<graphql.schema.SelectedField>",
+                DEFAULT_JOOQ_PACKAGE + ".tables.Film",
+                "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void $fieldsGrouped_isThePrivateSwitchLoopBothEntriesDelegateTo() {
+        var m = method("$fieldsGrouped");
+        assertThat(m.modifiers()).contains(
+            javax.lang.model.element.Modifier.PRIVATE,
+            javax.lang.model.element.Modifier.STATIC);
+        assertThat(m.returnType().toString()).isEqualTo("java.util.List<org.jooq.Field<?>>");
+        assertThat(m.parameters()).extracting(p -> p.type().toString())
+            .containsExactly(
+                "java.util.Map<java.lang.String, java.util.List<graphql.schema.SelectedField>>",
                 DEFAULT_JOOQ_PACKAGE + ".tables.Film",
                 "graphql.schema.DataFetchingEnvironment");
     }

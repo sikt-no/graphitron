@@ -54,6 +54,7 @@ import no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -312,6 +313,7 @@ public class GraphQLRewriteGenerator {
             write(OneOfDirectiveSdlGenerator.generate(outputPackage),                              "util",       emittedThisRun);
         }
         write(PolymorphicSelectionSetClassGenerator.generate(),                                   "util",       emittedThisRun);
+        write(SelectionOccurrencesClassGenerator.generate(outputPackage),                         "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
         write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig()),    "schema",     emittedThisRun);

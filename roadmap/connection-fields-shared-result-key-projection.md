@@ -146,6 +146,36 @@ Generated-code shape:
 5. **Pinned-output refresh.** Existing unit/pipeline pins of `$fields` emission
    (`TypeClassGeneratorTest` and friends) update with the restructure.
 
+## Implementation notes (In Progress)
+
+- Design fork resolved as recommended: a new sibling scaffold `SelectionOccurrences`
+  (`SelectionOccurrencesClassGenerator`, registered as `FrozenScaffold` in `UtilSingleton.ALL`).
+  Freeze-semantics confirmation: the class is schema-independent graphql-java manipulation, so its
+  public ABI never moves on a schema edit; the `FrozenScaffold` variant (blanket-edge-safe) is the
+  correct classification, and `PolymorphicSelectionSet`'s frozen ABI stays untouched.
+- Generated shape: two public `$fields` entries (`DataFetchingFieldSelectionSet` and
+  `List<SelectedField>`) delegate into one private `$fieldsGrouped(Map<String, List<SelectedField>>,
+  T, env)` switch loop; the `@SuppressWarnings("unchecked")` stamp moves to `$fieldsGrouped` (the
+  narrowest enclosing member holding the casts).
+- The universal name check is `SelectionOccurrences.canonical(key, occurrences)`, which replaces the
+  loop's `entry.getValue().get(0)` binding, so it runs per bucket before every switch dispatch by
+  construction. The arm-scoped argument guard is emitted by the inline emitters themselves
+  (`InlineTableFieldEmitter.readsSelectedFieldArguments` mirrors the arm's
+  `FromSelectedField`-consumption sites clause for clause; the lookup arm guards unconditionally
+  because its input-rows helper always reads the `@lookupKey` argument), keeping the predicate in
+  the same file as the emission it tracks.
+- Contract refinement discovered at the execution tier: a plain runtime exception thrown from the
+  guards is redacted by `ErrorRouter` to "An error occurred. Reference: <uuid>", defeating the
+  "descriptive" half of contract point 2. The guards therefore throw the generated
+  `GraphitronClientException` (the client-mistake marker `ErrorRouter.surfaceClientErrorOrRedact`
+  surfaces raw), the same disposition as `ConnectionHelper`'s malformed-cursor guard; the
+  divergence genuinely is a client query mistake. Scaffold-to-scaffold references need no compile
+  graph edge (frozen scaffolds are exempt as reference-walk oracle sources).
+- Compile graph: one new blanket frozen-scaffold edge per type class
+  (`addTypeProjectionEdges` → `util.SelectionOccurrences`), beside the existing
+  `GraphitronClientException` blanket; `addProjectionChildEdges` needed no per-type changes, as the
+  Spec predicted.
+
 ## Test plan (tiers per `development-principles.adoc`)
 
 - **Unit:** emit-shape tests beside `TypeClassGenerator` pinning that the overload exists with the

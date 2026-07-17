@@ -336,6 +336,11 @@ public final class CompileDependencyGraphBuilder {
             // rather than gated on the helper because the target is a UtilSingleton.FrozenScaffold,
             // so an over-approximated edge onto it never fires a recompile (its ABI is schema-invariant).
             acc.addEdge(hostClass, graphitronClientExceptionFqcn());
+            // Blanket frozen-scaffold edge: every type class's $fields loop leans on the
+            // SelectionOccurrences merge/guard statics (occurrence-union descent for shared result
+            // keys). Structural to the emitted shape, so unconditional; the target is ABI-frozen,
+            // so the blanket never fires a recompile.
+            acc.addEdge(hostClass, units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences"));
             for (var field : schema.fieldsOf(host)) {
                 if (field instanceof ChildField cf) {
                     addProjectionChildEdges(hostClass, cf);

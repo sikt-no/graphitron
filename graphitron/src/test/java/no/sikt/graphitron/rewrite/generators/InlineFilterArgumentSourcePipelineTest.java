@@ -68,8 +68,10 @@ class InlineFilterArgumentSourcePipelineTest {
     }
 
     private static MethodSpec fieldsMethod(TypeSpec type) {
+        // The unchecked casts live in the private $fieldsGrouped switch loop (the narrowest
+        // enclosing member); the public $fields entries are pure delegations and stay unstamped.
         return type.methodSpecs().stream()
-            .filter(m -> m.name().equals("$fields")).findFirst().orElseThrow();
+            .filter(m -> m.name().equals("$fieldsGrouped")).findFirst().orElseThrow();
     }
 
     private static boolean stampsUncheckedSuppression(MethodSpec method) {

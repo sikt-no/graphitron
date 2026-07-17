@@ -52,6 +52,7 @@ sealed interface UtilSingleton {
         new FrozenScaffold(GeneratedUnits.SUB_UTIL, "ConnectionHelper"),
         new FrozenScaffold(GeneratedUnits.SUB_UTIL, "OrderByResult"),
         new FrozenScaffold(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet"),
+        new FrozenScaffold(GeneratedUnits.SUB_UTIL, "SelectionOccurrences"),
         new FrozenScaffold(GeneratedUnits.SUB_UTIL, "GraphitronValues"),
         new FrozenScaffold(GeneratedUnits.SUB_SCHEMA, "Outcome"),
         new FrozenScaffold(GeneratedUnits.SUB_SCHEMA, "ConstraintViolations"),

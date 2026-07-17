@@ -194,6 +194,17 @@ class CompileDependencyGraphBuilderTest {
     }
 
     @Test
+    void typeClassBlanketsSelectionOccurrences() {
+        var g = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
+
+        // Every emitted type class's $fields loop leans on the SelectionOccurrences merge/guard
+        // statics (occurrence-union descent for shared result keys); the target is frozen, so the
+        // blanket edge is safe.
+        assertThat(g.directReferences(PKG + ".types.Film")).contains(PKG + ".util.SelectionOccurrences");
+        assertThat(g.directReferences(PKG + ".types.Language")).contains(PKG + ".util.SelectionOccurrences");
+    }
+
+    @Test
     void typeClassReachesNodeIdEncoderOnlyWhenAnInlineFilterDecodesANodeId() {
         var without = CompileDependencyGraphBuilder.fromModel(filmProjectsLanguageSchema(List.of()), PKG);
         assertThat(without.directReferences(PKG + ".types.Film"))
