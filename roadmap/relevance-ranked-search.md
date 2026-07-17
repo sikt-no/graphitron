@@ -858,7 +858,18 @@ is the mitigation.
    repo's CI, or keep licensed execution in internal GitLab), not a design
    or build-config question. Phase 3 lands the gated commercial-repo
    declaration and profile regardless; where the secret lives is decided
-   when phase 3 runs.
+   when phase 3 runs. **Structural refinement (Lukas, same exchange):**
+   the license key must never be published, and the repo should be
+   *modularized by licensed usage* so that most of it compiles and tests
+   without a license. This aligns with the design already: the licensed
+   dependency is confined to Oracle execution, so phase 3 isolates the
+   licensed Oracle execution tests in their own module (a leaf gated by
+   the Oracle-IT profile, depending on `org.jooq.pro`), while model,
+   classification, synthesis, validation, the SQL-template emit, and the
+   pipeline-tier Oracle shape pinning all stay on open-source `org.jooq`
+   in the existing modules. A license is then required only to run that
+   one leaf; the whole rest of the reactor builds license-free for every
+   contributor and for public CI.
 5. **Boot-time supply probe default.** The probe turns a missing or
    drifted migration into a deploy-time failure with a named cause instead of
    redacted per-request errors, at the cost of the generated runtime
@@ -911,7 +922,14 @@ load-bearing for the fulltext case.
   question 4 to a pure secret-provisioning decision (this repo's CI vs
   internal GitLab), not a build-structure or design blocker. Phase 3 lands
   the gated commercial-repo declaration + Oracle profile either way; no
-  design change follows.
+  design change follows. Follow-up in the same exchange added a structural
+  refinement: never publish the license key, and modularize by licensed
+  usage so most of the repo builds license-free. Recorded in open question
+  4 as: isolate the licensed Oracle execution tests in their own
+  Oracle-IT-profile-gated leaf on `org.jooq.pro`, keeping model /
+  classification / synthesis / validation / SQL-template emit / pipeline-
+  tier Oracle shape pinning on open-source `org.jooq` in the existing
+  modules, so a license is needed only to run that one leaf.
 - 2026-07-02: filed from the initial issue #512 discussion (contract vs
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
