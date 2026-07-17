@@ -7,7 +7,7 @@ priority: 8
 theme: search
 depends-on: []
 created: 2026-07-02
-last-updated: 2026-07-16
+last-updated: 2026-07-17
 ---
 
 # Type-ahead search backed by native database indexes
@@ -841,7 +841,24 @@ is the mitigation.
    logistics question is where licensed execution tests run (worst case
    Sikt's internal GitLab pipelines; optionally ask Lukas whether a CI
    license for this repo is possible). Phase 3's acceptance is written to
-   be satisfiable without public-CI Oracle.
+   be satisfiable without public-CI Oracle. **Build-mechanics half resolved
+   2026-07-17** (Lukas Eder, jOOQ): the commercial jOOQ repository
+   (`https://repo.jooq.org/repo`) may be declared openly in this repo's
+   build file with a comment stating that a license is required to resolve
+   from it; the license *credentials* are supplied out-of-band via system
+   properties (the jOOQ-mcve `settings.gradle.kts` uses `jooqUsername` /
+   `jooqPassword`, the Maven analog being a `settings.xml` `<server>` whose
+   password reads a system property or env var), never committed. A
+   contributor without a license builds unaffected (open-source `org.jooq`
+   artifact, Oracle execution profile off); only a build that activates the
+   licensed profile and actually resolves a `org.jooq.pro` artifact needs
+   the credentials. This removes the build-structure blocker, so licensed
+   Oracle execution tests *can* run in this repo's CI: what remains is a
+   pure provisioning decision (does Sikt inject a license secret into this
+   repo's CI, or keep licensed execution in internal GitLab), not a design
+   or build-config question. Phase 3 lands the gated commercial-repo
+   declaration and profile regardless; where the secret lives is decided
+   when phase 3 runs.
 5. **Boot-time supply probe default.** The probe turns a missing or
    drifted migration into a deploy-time failure with a named cause instead of
    redacted per-request errors, at the cost of the generated runtime
@@ -881,6 +898,20 @@ load-bearing for the fulltext case.
 
 ## History
 
+- 2026-07-17: Oracle-licensing build-mechanics question (reviewer open
+  question 4) resolved after the item owner wrote to Lukas Eder (jOOQ).
+  The commercial jOOQ repo can be declared openly in this repo's build
+  with a license-required comment; credentials are supplied via system
+  properties out-of-band (jOOQ-mcve `settings.gradle.kts` pattern:
+  `jooqUsername` / `jooqPassword`; the Maven analog is a `settings.xml`
+  `<server>` reading a property or env var), never committed. Contributors
+  without a license are unaffected; only the licensed-profile-active build
+  that resolves an `org.jooq.pro` artifact needs credentials. Consequence:
+  licensed Oracle execution can run in this repo's CI, reducing open
+  question 4 to a pure secret-provisioning decision (this repo's CI vs
+  internal GitLab), not a build-structure or design blocker. Phase 3 lands
+  the gated commercial-repo declaration + Oracle profile either way; no
+  design change follows.
 - 2026-07-02: filed from the initial issue #512 discussion (contract vs
   execution split, no-DDL constraint, keyset-vs-rank analysis).
 - 2026-07-14: requester confirmed bounded top-N suffices for the combobox
