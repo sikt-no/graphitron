@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-tenant fan-out: explainer</title>
+<link rel="stylesheet" href="concepts.css">
+</head>
+<body>
+<main>
+
+  <p class="crumb"><a href="../README.md">← Roadmap</a></p>
+  <p class="kicker">Concept explainer · R46 · theme: runtime-connection</p>
+  <h1 data-concept-title="Multi-tenant fan-out"
+      data-concept-items="R46">Multi-tenant fan-out</h1>
+  <p class="lede">What to do when there is no tenant-index to route by: query <em>every</em> tenant the user can see and union the results. The deliberate, marked fallback to <a href="operation-divined-tenant-routing.html">operation-divined routing</a>. Read this before the <a href="../service-multi-tenant-fanout.md">R46 plan</a>.</p>
+
+  <div class="note">
+    R46 is still Backlog: this page explains the shape and the one resolved decision (the fan-out domain), but the marker syntax, result semantics, and parallelism story are open questions the Spec pass will settle. The <a href="../service-multi-tenant-fanout.md">plan</a> is where those land.
+  </div>
+
+  <div class="tldr">
+    <span class="kicker">The one-sentence version</span>
+    When no tenant-index table can name which tenant holds a field's data, the only correct answer to "give me all of it" is to open every tenant database the requesting user has a role in, run the field against each, and union what comes back; R46 makes that an explicit, marked arm of <a href="operation-divined-tenant-routing.html">R45</a>'s tenant-binding model rather than something consumers hand-roll.
+  </div>
+
+  <h2>The problem, concretely</h2>
+  <p>Two production patterns need the same shape:</p>
+  <ul>
+    <li><strong>No index narrows the tenant.</strong> A student's results live in per-university databases. When a <a href="operation-divined-tenant-routing.html">tenant-index table</a> exists, R45 routes each child row to its named tenant. When one does <em>not</em>, the only way to answer "all results for this student" is to ask every organisation and union what returns.</li>
+    <li><strong>Membership-driven fan-out.</strong> A resolver like <code>megVedLarested</code> ("me, at each institution") today bypasses <code>@service</code> and hand-writes the loop: for each tenant the logged-in user belongs to, open that tenant's connection, call the service, drop nulls, union. The service method is plain GraphQL-free Java; what does not fit codegen today is the per-tenant connection plumbing and the parallel orchestration.</li>
+  </ul>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head">R45: an index narrows the tenant</div>
+      <div class="body">
+        <p>The index row names the tenant, so each child is routed to exactly one database. Precise: one query per tenant that actually holds data for this parent.</p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="head">R46: no index, so fan out</div>
+      <div class="body">
+        <p>Nothing narrows the set, so you query <em>every</em> tenant in the user's reach and union. Broad by necessity: the model cannot say where the data is, only where it <em>could</em> be.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Why fan-out must be asked for, never inferred</h2>
+  <p>This is the hinge that connects R46 to R45. R45's whole posture is <em>inference</em>: it divines the tenant from column bindings the schema already carries. But fan-out is not a fact you can divine; "look everywhere" is a decision, not a binding. So R45 draws a hard line: a tenant-scoped field with no binding in scope is a <a href="../../docs/architecture/explanation/typed-rejection.adoc">build rejection</a> (<code>noTenantBinding</code>), never a silent default connection, because routing tenant data through the default source because nothing named the tenant is exactly the cross-tenant leak the design exists to prevent.</p>
+  <p>R46 is the <strong>positive</strong> arm that resolves that rejection: an explicit schema marker classifies the field into a fan-out arm, and the arm ships together with its emitters here. That ordering is deliberate; R45's rejection keeps guarding every <em>unmarked</em> unroutable field, so an unfinished R46 can never quietly turn into a wrong-database read.</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">Unmarked and unroutable → rejected</div>
+      <div class="body"><p>R45 fails the build, naming the field. No guessing.</p></div>
+    </div>
+    <div class="pane good">
+      <div class="head">Marked → fan-out arm (R46)</div>
+      <div class="body"><p>The author positively opts in. The field classifies into the fan-out arm, which owns its emitters. Never a flag that suppresses the rejection.</p></div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q1">
+    <p class="q"><span class="tag">Quiz</span> Why can't R45 just infer fan-out for a tenant-scoped field that has no binding, instead of rejecting it?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)">"Query every tenant" is a decision with real cost and semantics, not a fact recoverable from column mappings; inferring it would turn a mistake (a genuinely unroutable field) into a silent expensive fan-out.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">R45 could infer it, but nobody has implemented the inference yet.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Fan-out is inferred; the rejection only applies to mutations.</button>
+    <div class="explain">Inference divines what the schema already encodes. Fan-out encodes nothing: an unroutable field is far more often a schema mistake than a deliberate "search everywhere," so defaulting to fan-out would mask errors and silently multiply query cost. The author must state the intent with a marker; absent that, the field stays rejected.</div>
+  </div>
+
+  <h2>The fan-out domain: not the whole map, not the raw claims</h2>
+  <p>The one decision the item has already resolved is <em>which</em> tenants a fanned-out field actually queries. It is the <strong>intersection</strong> of two sets: the tenant keys present in the deployment's <code>Map&lt;TenantId, DataSource&gt;</code>, and the tenantIds the requesting user holds a role for in the request's claims. Neither set alone is ever the domain. And the two <em>directions of the difference</em> are handled oppositely, which is the part worth slowing down on:</p>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head">Mapped tenant, user has no role → skip silently</div>
+      <div class="body">
+        <p>The database exists in the map, but the user holds no role there. Never queried. This is the authorization pre-filter, silent by design; the user simply cannot see tenants they have no claim to.</p>
+      </div>
+    </div>
+    <div class="pane bad">
+      <div class="head">Claimed tenant, missing from map → request error</div>
+      <div class="body">
+        <p>The user's claims name a tenant this subgraph does not host. This is a <strong>request-level error before any SQL runs</strong>, not a silent skip. The derived tenant set is the model's statement that data could exist there, so skipping it would present incomplete results as complete.</p>
+      </div>
+    </div>
+  </div>
+  <p>R45 already gives the same event, a divined tenant with no <code>DataSource</code>, the same error semantics, so the two items stay consistent. Deployments where a user's claims legitimately span more tenants than this particular subgraph hosts narrow the set in the claims-extraction seam, where the narrowing is the consumer's explicit statement rather than a silent runtime drop.</p>
+
+  <div class="quiz" id="q2">
+    <p class="q"><span class="tag">Quiz</span> A user's claims list tenant <code>42</code>, but <code>42</code> is not in this deployment's <code>DataSource</code> map. Fan-out over a marked field: what happens?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Tenant 42 is silently skipped; the union just omits it.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Request-level error before any SQL: the claim asserts data could exist there, so a silent skip would return incomplete results as if complete.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Tenant 42 is queried against the default source as a fallback.</button>
+    <div class="explain">Note the asymmetry with the other direction: a <em>mapped</em> tenant the user has no role for is skipped silently (authorization). But a <em>claimed</em> tenant absent from the map is an error, because the derived set is a positive statement that the user's data could live there. Silently dropping it would understate the answer. If claims legitimately over-reach this subgraph, the fix is to narrow the derived set explicitly in the claims-extraction seam, not to swallow the mismatch at query time.</div>
+  </div>
+
+  <h2>Mechanics ride the shipped substrate</h2>
+  <p>Fan-out does not reimplement connection handling; it rides R429's acquisition seam (shipped, in the <a href="../changelog.md">changelog</a>). For each tenant in the domain, graphitron acquires through the map, runs one read-only transaction per tenant (R429's demarcation rule already covers N transactions per operation), and sets session state per acquisition so per-tenant row-level security composes: a tenant where the user has no row access simply contributes nothing. Results union; nulls and empties drop. The connection threading is R429's seam, not hand-rolled executor code inside generated fetchers, which is exactly the plumbing the hand-written <code>megVedLarested</code> resolver does by hand today.</p>
+
+  <div class="quiz" id="q3">
+    <p class="q"><span class="tag">Quiz</span> The fan-out domain includes a tenant the user has a role in, but in that tenant's database RLS grants them access to zero rows. What does the union get from it?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)">Nothing: the per-acquisition session state lets RLS return an empty result, which drops out of the union. No error.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">A request-level error, same as a claimed-but-unmapped tenant.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">The user's role is revoked for the rest of the request.</button>
+    <div class="explain">Role-in-tenant (which decides the domain) and row-access-within-tenant (which RLS decides per query) are different layers. The user legitimately belongs to the tenant, so it is queried; RLS then scopes the rows, and zero rows is a valid empty answer, not a mismatch. That composes cleanly because session state is set per acquisition. Contrast the unmapped-claim case, which is an error precisely because the tenant was never queryable at all.</div>
+  </div>
+
+  <h2>What the Spec pass still has to settle</h2>
+  <p>The domain is resolved; several things are not, and they are why R46 is still Backlog rather than Spec:</p>
+  <ul>
+    <li><strong>Claims-extraction seam.</strong> How graphitron reads the tenant set out of the claims: a consumer-derived collection contextArgument (e.g. <code>Set&lt;Long&gt; tenantRoles</code>, keeping graphitron claims-format-agnostic) or a claims-map plus configured extraction. The pre-derived contextArgument is the lighter seam and matches how the hand-written resolver already reads its roles.</li>
+    <li><strong>Marker syntax.</strong> A directive (something like <code>@fanOut</code>) or a list-typed contextArgument naming the tenant subset, reconciled with R45's inference posture (fan-out is asked for, never inferred).</li>
+    <li><strong>Result semantics.</strong> Ordering across the union; pagination and <code>@asConnection</code> over a fanned-out field; per-tenant partial failure (drop nulls vs surface the error), composing with the typed-errors work.</li>
+    <li><strong>Parallelism bounds.</strong> Fanning out to dozens of databases per field needs a concurrency cap and a timeout story, likely R429 config.</li>
+  </ul>
+
+  <!-- derived:status -->
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-17)</span></h2>
+  <ul class="status">
+    <li><span class="pill pending">backlog</span><strong>R46 (this concept)</strong> is Backlog. Resolved so far: the fan-out domain (map keys ∩ role-bearing claims, with the two difference directions treated oppositely) and that mechanics ride R429. Open for the Spec pass: claims-extraction seam, marker syntax, result semantics, parallelism bounds.</li>
+    <li><span class="pill pending">pending</span><strong>Depends on R45</strong> (<a href="../tenant-routing-and-execution-input.md">operation-divined tenant routing</a>, Spec): the <code>TenantBinding</code> axis this item adds its arm to, and the tenant-index routing that makes fan-out the fallback rather than the default.</li>
+    <li><span class="pill done">landed</span><strong>Depends on R429</strong> (connection lifecycle, in the <a href="../changelog.md">changelog</a>): acquisition, per-tenant transaction demarcation, and session state, the threading fan-out must not reimplement.</li>
+  </ul>
+  <!-- /derived:status -->
+
+  <footer>
+    <strong>See also.</strong>
+    <a href="../service-multi-tenant-fanout.md">R46 plan</a> ·
+    <a href="operation-divined-tenant-routing.html">Operation-divined tenant routing (R45)</a> ·
+    <a href="../tenant-routing-and-execution-input.md">R45 plan</a> ·
+    <a href="../changelog.md">R429 (connection lifecycle) in the changelog</a> ·
+    <a href="../../docs/architecture/reference/runtime-extension-points.adoc">Runtime extension points</a> ·
+    <a href="../../docs/architecture/explanation/typed-rejection.adoc">Typed rejection</a>
+    <!-- derived:backlinks -->
+    <p style="margin-top:1em"><strong>Referenced by.</strong> No roadmap items link this page yet.</p>
+    <!-- /derived:backlinks -->
+  </footer>
+
+</main>
+<script src="concepts.js"></script>
+</body>
+</html>
