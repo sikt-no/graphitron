@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | In Review | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-16 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -336,7 +335,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### docs
 
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
-- `R488` [**Concept explainers declare and cross-link their backing roadmap item(s)**](concept-explainer-item-crosslinks.md) — In Review, architecture
 - `R443` [**Post-R438 stale-reference residue: ConditionResolution javadoc**](post-r438-stale-reference-residue.md) — Backlog, structural
 - `R495` [**Reconcile InputRecordGenerator generated service-reference-audit javadoc with actual enforcement**](input-record-generator-service-audit-javadoc.md) — Backlog, docs
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
