@@ -1,7 +1,7 @@
 ---
 id: R500
 title: "Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key)"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: codegen-correctness
