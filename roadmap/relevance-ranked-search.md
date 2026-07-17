@@ -208,7 +208,7 @@ wire shape the frontend sees is:
 
 ```graphql
 type Query {
-  filmSearch(search: String!, first: Int): [QueryFilmSearchHit!]!
+  filmSearch(search: String!, first: Int!): [QueryFilmSearchHit!]!
 }
 
 type QueryFilmSearchHit {
@@ -231,9 +231,7 @@ consumer; see the type-ahead how-to for the per-platform recipe.
 directive @typeahead(
   """SQL name of the backing text column on the entity's table: the searched column itself or a stored generated concatenation (PostgreSQL), or the column carrying the Oracle Text CONTEXT index (Oracle)."""
   column: String!
-  """Hits returned when the client omits 'first'."""
-  defaultFirst: Int = 20
-  """Upper bound on 'first'. A request exceeding it is a client-visible error."""
+  """Upper bound on the synthesized, required 'first' argument. There is no default page size: 'first' is 'Int!', so every client states its bound explicitly rather than inheriting a silent default. A request exceeding 'maxFirst' is a client-visible error; because GraphQL cannot express this bound in the schema, that error message is the only channel through which 'maxFirst' reaches the schema consumer, so the generated message states the value."""
   maxFirst: Int = 100
 ) on FIELD_DEFINITION
 ```
@@ -282,7 +280,8 @@ is a parse-boundary input exactly as the catalog itself is.
 - Rewrite the carrier field (the `rewriteCarrierField` precedent, `:322`):
   return type becomes `[<Hit>!]!` (non-null list, non-null elements; no
   matches is an empty list, never null) and the two synthesized arguments
-  are appended: `search: String!` and `first: Int`.
+  are appended: `search: String!` and `first: Int!` (required, no default:
+  the client must choose a page size).
 - A new `GraphitronType.TypeaheadHitType` model record (beside
   `ConnectionType` / `FacetsType` / `FacetValueType`,
   `GraphitronType.java:552-630`) carries the schema form;
@@ -309,8 +308,7 @@ Per R333's additive-facts discipline, no new field leaf is minted:
       ColumnRef column,           // the backing column on the resolved table
       TypeaheadBacking backing,   // sealed supply arm, selected by dialect
       List<ColumnRef> tiebreak,   // the entity table's PK columns, in key order
-      int defaultFirst,
-      int maxFirst
+      int maxFirst                // upper bound on the required 'first' arg; no default page size
   ) {}
 
   public sealed interface TypeaheadBacking {
@@ -326,7 +324,7 @@ Per R333's additive-facts discipline, no new field leaf is minted:
   ```
 
   Compact constructors pin the invariants the emitter consumes without
-  re-checking: `0 < defaultFirst <= maxFirst`, non-empty `tiebreak`.
+  re-checking: `0 < maxFirst`, non-empty `tiebreak`.
 - The spec rides the classified root leaf (`QueryTableField`,
   `QueryField.java:108`) as a 0..1 slot (an `Optional` component; the idiom
   exists on other leaves, e.g. `QueryTableMethodTableField`'s
@@ -423,10 +421,16 @@ opinionated picks:
 
 Runtime semantics:
 
-- `first` omitted → `defaultFirst`; `first > maxFirst` or `first < 1` →
-  `GraphitronClientException`, surfaced as a client-visible error through
-  the existing `ErrorRouter.surfaceClientErrorOrRedact` disposition (which
-  also redacts any backing failure, the same firewall every fetcher gets).
+- `first` is required (`Int!`), so an omitted `first` is a GraphQL
+  validation error rejected before the resolver runs, never a silent
+  default: the client always chooses a page size. `first > maxFirst` or
+  `first < 1` → `GraphitronClientException`, surfaced as a client-visible
+  error through the existing `ErrorRouter.surfaceClientErrorOrRedact`
+  disposition (which also redacts any backing failure, the same firewall
+  every fetcher gets). The exceeds-`maxFirst` message states the bound
+  (e.g. "first N exceeds the maximum of M"): GraphQL cannot carry the cap
+  in the schema, so this message is the only place the consumer learns
+  `maxFirst`, and the emitter is obligated to name the value.
 - An empty `search` string returns `[]` on both arms (nothing clears the
   similarity threshold on Postgres; the Oracle compiler short-circuits
   tokenless input without touching the database). Documented behaviour;
@@ -440,7 +444,15 @@ Runtime semantics:
 - **Boot-time supply probe**: the generated runtime validates each
   type-ahead binding once at startup, extension presence (`pg_extension`
   for the `Trigram` arm) plus one dummy-term execution of the ranked
-  query, and fails fast with a named error; the `Trigram` arm also reports
+  query. **The probe always runs (no opt-out seam)**, and a failed probe
+  does *not* fail the boot: it logs a named error/warning and marks that
+  one binding failed, so the affected type-ahead field short-circuits to a
+  client-visible error on every request while the rest of the schema
+  serves normally (reviewer decision, 2026-07-17). A missing migration
+  therefore degrades exactly one field with a diagnosable cause at deploy
+  time, rather than either taking down the whole service (the earlier
+  fail-fast position) or silently emitting redacted per-request errors
+  with no startup signal. The `Trigram` arm also reports
   the effective `pg_trgm.word_similarity_threshold` in the startup log
   (report, not hard-fail: the pinned 0.4 is the recipe's recommendation,
   not a contract the consumer cannot deviate from). The `OracleText` arm
@@ -456,8 +468,9 @@ Runtime semantics:
   catalog cannot carry: a missing or drifted migration (extension never
   installed, index dropped, preference lost) surfaces at deploy time with
   a cause, not as redacted per-request errors when the first user types.
-  Default-on with an opt-out through the `GraphitronContext` seam (reviewer
-  question 5).
+  Always on, no opt-out; failure short-circuits only the affected field
+  (reviewer decision 2026-07-17, see the field-scoped-degradation note
+  above).
 
 ### Validation (`rejectTypeaheadMisuse`, the R13 template)
 
@@ -494,9 +507,10 @@ matrix:
 - **Synthesis collisions**: an authored argument named `search` or `first`
   on the carrier, or an authored type colliding with the derived hit type
   name, rejects with a rename hint.
-- **Bounds**: `defaultFirst`/`maxFirst` violating
-  `0 < defaultFirst <= maxFirst` rejects at build time; missing PK on the
-  entity table rejects (no deterministic tiebreak).
+- **Bounds**: `maxFirst` violating `0 < maxFirst` rejects at build time
+  (there is no `defaultFirst`: `first` is a required argument with no
+  default page size); missing PK on the entity table rejects (no
+  deterministic tiebreak).
 
 ### Documentation (first-class deliverable)
 
@@ -562,8 +576,9 @@ its own documentation against its own contract.
   prose search's demand, out of v1). Bump
   `<jooq.codegen.schema.version>` per landing.
 - The boot-time supply probe in the emitted runtime (beside the
-  `ConnectionHelper` generator), with its `GraphitronContext` opt-out
-  seam.
+  `ConnectionHelper` generator): always on, and on failure it marks the
+  binding so the affected field short-circuits to a client-visible error
+  while the rest of the schema serves.
 - `graphitron-sakila-example`: a `filmSearch` field in the example schema
   (phase 2, when the emitter exists; see Phasing).
 - `docs/`: the Postgres and Oracle how-tos (phase-gated below).
@@ -596,10 +611,13 @@ its own documentation against its own contract.
   match stays out (`ma` does not find "Amadeus"), a single-accent mismatch
   matches and ranks below the exact spelling ("flaklypa" finds "Flåklypa";
   the accent dividend of the 0.4 threshold, verified 2026-07-16), distance
-  ties order deterministically by PK, and the boot probe fails fast with a
-  named error against a database missing `pg_trgm`. Shared:
-  authored filter argument ANDs with the match; `defaultFirst` applies;
-  `first` over `maxFirst` errors client-visibly; empty search string
+  ties order deterministically by PK, and against a database missing
+  `pg_trgm` the boot probe logs a named error and the `filmSearch` field
+  short-circuits to a client-visible error while an ordinary (non-search)
+  field on the same schema still serves. Shared:
+  authored filter argument ANDs with the match; an omitted required `first`
+  is a validation error; `first` over `maxFirst` errors client-visibly with
+  the bound named in the message; empty search string
   returns `[]`; the DML pinning test (insert/update on `film` never writes
   the backing columns, which stay consumer-invisible). The execution tier
   runs against the repo's pinned PostgreSQL image (18 today), which is
@@ -822,20 +840,29 @@ is the mitigation.
 
 ## Open questions for the reviewer
 
-1. **`first` over `maxFirst`: error or clamp?** The spec says error
-   (`GraphitronClientException`), on the grounds that a silently clamped
-   result misleads a client that asked for 200 and believes it got them
-   all. The counterargument is combobox friendliness: clamping is more
-   forgiving of sloppy clients. Leaning error; flip if you disagree.
+1. **`first` over `maxFirst`: error or clamp? RESOLVED 2026-07-17 (owner):
+   error, and no default `first`.** A silently clamped result misleads a
+   client that asked for 200 and believes it got them all, so out-of-range
+   `first` is a `GraphitronClientException`, not a clamp. The decision went
+   further than the original fork: `first` has **no default** either
+   (`first: Int!`, required), because a client should make an actual page-
+   size choice rather than inherit a silent default. `defaultFirst` is
+   removed from the directive and the model. Consequence the owner flagged:
+   the author's `maxFirst` value must reach the schema consumer somehow, and
+   since GraphQL cannot express the bound in the schema, the exceeds-cap
+   **error message is the only channel**, so the emitter is obligated to
+   name the value in that message. Design body updated (directive, wire
+   shape, `TypeaheadSpec`, runtime semantics, validation, tests).
 2. **Dissolved 2026-07-16 (grain round).** This was "`config:` required
    for `TSVECTOR`"; `config:` left the directive surface with the
    prose-search descope, so the question is moot until the prose sibling
    designs its own configuration assertion. (Kept numbered so later
    references hold.)
-3. **Root-only carrier gate in v1.** `@typeahead` on child fields (nested
-   search under a parent row) is structurally possible later (the
-   `TableField` leaf carries the same slots) but rejected in v1 to keep the
-   surface small. Confirm the deferral is acceptable.
+3. **Root-only carrier gate in v1. RESOLVED 2026-07-17 (owner): deferral
+   is fine.** `@typeahead` on child fields (nested search under a parent
+   row) is structurally possible later (the `TableField` leaf carries the
+   same slots) but rejected in v1 to keep the surface small. The owner
+   confirmed the deferral is acceptable.
 4. **Oracle test placement (logistics, does not gate).** Sikt holds a jOOQ
    license, so Oracle-dialect codegen is a committed requirement; the open
    logistics question is where licensed execution tests run (worst case
@@ -870,12 +897,17 @@ is the mitigation.
    in the existing modules. A license is then required only to run that
    one leaf; the whole rest of the reactor builds license-free for every
    contributor and for public CI.
-5. **Boot-time supply probe default.** The probe turns a missing or
-   drifted migration into a deploy-time failure with a named cause instead of
-   redacted per-request errors, at the cost of the generated runtime
-   issuing a couple of queries at startup. Default-on with a
-   `GraphitronContext` opt-out is the spec's position; flip to opt-in if
-   startup side effects feel wrong for consumers.
+5. **Boot-time supply probe default. RESOLVED 2026-07-17 (owner): always
+   on, no opt-out, and failure degrades one field rather than the boot.**
+   The probe turns a missing or drifted migration into a deploy-time signal
+   with a named cause instead of redacted per-request errors. The owner
+   chose to always run it (no `GraphitronContext` opt-out seam) and, on
+   failure, to log an error/warning and short-circuit the affected
+   type-ahead field with a client-visible error while the rest of the
+   schema serves normally. This is neither the fail-fast (whole-boot)
+   position the spec floated nor an opt-in: the blast radius of a missing
+   migration is exactly the one field it backs. Design body updated
+   (Runtime semantics, Implementation sites, Tests).
 
 ## Dead ends (recorded so they are not relitigated)
 
@@ -909,6 +941,20 @@ load-bearing for the fulltext case.
 
 ## History
 
+- 2026-07-17: reviewer open questions 1, 3, 5 resolved by the item owner.
+  (1) `first` over `maxFirst` errors rather than clamps, **and** `first`
+  loses its default entirely (`first: Int!`, required, no `defaultFirst`):
+  clients choose a page size explicitly; since GraphQL cannot express
+  `maxFirst` in the schema, the exceeds-cap error message is the sole
+  channel that communicates the bound, so the emitter must name it there.
+  (3) The root-only carrier gate (no `@typeahead` on child fields in v1) is
+  an accepted deferral. (5) The boot-time supply probe is always on with no
+  opt-out; a failed probe logs a named error/warning and short-circuits
+  only the affected field with a client-visible error, leaving the rest of
+  the schema serving, superseding both the earlier fail-fast-whole-boot and
+  opt-out positions. Design body updated across the directive, wire shape,
+  `TypeaheadSpec`, runtime semantics, validation, tests, and both how-to
+  drafts; no phasing change.
 - 2026-07-17: Oracle-licensing build-mechanics question (reviewer open
   question 4) resolved after the item owner wrote to Lukas Eder (jOOQ).
   The commercial jOOQ repo can be declared openly in this repo's build

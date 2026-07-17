@@ -27,7 +27,7 @@ Graphitron synthesizes the arguments and the hit wrapper, so the schema your fro
 [source,graphql]
 ----
 type Query {
-    filmSearch(search: String!, first: Int): [QueryFilmSearchHit!]!
+    filmSearch(search: String!, first: Int!): [QueryFilmSearchHit!]!
 }
 
 type QueryFilmSearchHit {
@@ -192,16 +192,16 @@ An empty `search` string also returns `[]`. Accents get partial tolerance for fr
 
 == Bounding and the client contract
 
-* `first` omitted: you get `defaultFirst` hits (20 unless the directive says otherwise).
-* `first` above `maxFirst` (100 by default) or below 1: a client-visible error, not a silent clamp.
-* Tune both on the directive when the default does not fit: `@typeahead(column: "title", defaultFirst: 10, maxFirst: 25)`.
+* `first` is required (`Int!`): there is no default page size, so every request states how many hits it wants. Omitting `first` is a schema validation error, caught before the query runs.
+* `first` above `maxFirst` (100 by default) or below 1: a client-visible error, not a silent clamp. The error message names the maximum, since the schema itself cannot carry the bound; that message is where a client learns the cap.
+* Set the cap on the directive when the default does not fit: `@typeahead(column: "title", maxFirst: 25)`.
 * Results are deterministically ordered: by match distance, then primary key. Two identical requests against the same data return the same list in the same order.
 
 On the client, the usual combobox hygiene applies and is enough: debounce keystrokes (150 to 300 ms), gate firing until 2 typed characters, and render hits in the order received; the ranking is the server's contract.
 
 == Operational notes
 
-* *Startup, not first-keystroke, is when a broken binding surfaces.* The generated runtime probes each search binding at boot: extension present, ranked query executes, effective threshold reported. A database missing `pg_trgm` fails deployment with a named error instead of redacted per-request errors in production.
+* *Startup, not first-keystroke, is when a broken binding surfaces.* The generated runtime probes each search binding at boot: extension present, ranked query executes, effective threshold reported. A database missing `pg_trgm` makes the probe log a named error at startup, and that one search field then short-circuits to a client-visible error on every request, while the rest of your schema keeps serving normally. You see the cause at deploy time instead of meeting redacted per-request errors in production.
 * *Freshness is transactional.* The GiST index and any stored generated column update in the writing transaction; a committed row is immediately findable. There is no sync job to operate.
 * *The threshold travels with the database, not the code.* Restoring into a fresh instance re-runs migrations; if your restore path skips `ALTER DATABASE` settings, the boot report is where you notice.
 * *Writes never touch the backing.* Generated columns are database-maintained and never SDL-mapped, so graphitron's mutation paths do not see them.

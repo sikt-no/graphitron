@@ -27,7 +27,7 @@ and the frontend sees the same synthesized surface:
 [source,graphql]
 ----
 type Query {
-    filmSearch(search: String!, first: Int): [QueryFilmSearchHit!]!
+    filmSearch(search: String!, first: Int!): [QueryFilmSearchHit!]!
 }
 
 type QueryFilmSearchHit {
@@ -35,7 +35,7 @@ type QueryFilmSearchHit {
 }
 ----
 
-The combobox query, the response shape, the bounding contract (`defaultFirst` 20, `maxFirst` 100, error past the cap) and the hit wrapper's future-proofing are all as on the trigram page; this page covers only what Oracle changes.
+The combobox query, the response shape, the bounding contract (required `first` with no default, `maxFirst` 100, error past the cap with the bound named in the message) and the hit wrapper's future-proofing are all as on the trigram page; this page covers only what Oracle changes.
 
 == One mechanism, two demands, one directive
 
@@ -164,7 +164,7 @@ The rejection matrix is the trigram page's, with one Oracle specific: the column
 
 == Bounding and the client contract
 
-Identical to the trigram page: `defaultFirst` 20, `maxFirst` 100, both tunable on the directive, out-of-range `first` is a client-visible error, ordering is `SCORE` descending with the primary key as deterministic tiebreak.
+Identical to the trigram page: `first` is required (`Int!`, no default page size), `maxFirst` 100 and tunable on the directive, out-of-range `first` is a client-visible error whose message names the cap, ordering is `SCORE` descending with the primary key as deterministic tiebreak.
 
 One honest caveat on ranking quality: `SCORE` on short name-like fields is coarse (term frequency in a three-word title carries little signal), so ties are common and the PK tiebreak does more work than trigram distance does on Postgres. Whether the ranked feel matches the trigram arm, or needs the query-relaxation upgrade recorded as future work, is a <<verification,verification item>>.
 
