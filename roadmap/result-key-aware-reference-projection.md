@@ -176,6 +176,32 @@ Two observations beyond the Backlog text:
 - **Determinism:** `GeneratorDeterminismTest` covers the emission cross-cuttingly; no dedicated
   work unless it fires.
 
+## Post-R499 verification (second Ready review)
+
+The original Spec → Ready sign-off predates R499's implementation landing; a second independent
+review re-verified this spec against the post-R499 codebase. The defect and the design both
+survive unchanged: the switch still dispatches on `sf.getName()`
+(`TypeClassGenerator.emitSelectionSwitch`, now `TypeClassGenerator.java:392`), and R499's
+`SelectionOccurrences.canonical` / merge guards operate within one bucket, never across buckets.
+The rebase the Design section predicted is mechanical, with two anchor updates for the implementer:
+
+- Write-side alias sites moved: `InlineTableFieldEmitter.java:158`,
+  `InlineLookupTableFieldEmitter.java:155` (falseCondition branch) and `:198`,
+  `ComputedField` arm at `TypeClassGenerator.java:430`; `InlineColumnReferenceFieldEmitter.java:62`
+  / `:93` and both read-side anchors (`FetcherEmitter.java:476`, `:524`) are unchanged.
+- Implementation plan step 2's parenthetical "(they currently receive only `sfName`)" is
+  partially done: R499 already threads the per-depth entry variable into
+  `InlineTableFieldEmitter.buildSwitchArmBody` and `InlineLookupTableFieldEmitter.buildSwitchArmBody`
+  for the occurrence-list descent. Only `InlineColumnReferenceFieldEmitter` and the inline
+  `ComputedField` arm still lack access to the entry; the step's action stands.
+
+Re-verified in passing: `GeneratorUtils.RESERVED_SRC_ALIAS_PREFIX` as the `__src_` precedent,
+`Field.getResultKey()` present in graphql-java 25.0, all four read families source-only by field
+name, per-coordinate registration in `FetcherRegistrationsEmitter`, `PolymorphicSelectionSet.restrictTo`
+preserving result-key buckets, the `SqlGeneratingField` / `MethodBackedField` precedents for the
+membership design fork, and the already-correct claims (scalar arms, DataLoader path-scoped names,
+`ParticipantColumnReferenceField.aliasName()`). Sign-off remains valid; no reopen.
+
 ## Out of scope
 
 - **R499** (within-bucket occurrence merge and argument-divergence guard); same loop, orthogonal
