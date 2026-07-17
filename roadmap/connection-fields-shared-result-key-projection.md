@@ -1,7 +1,7 @@
 ---
 id: R499
 title: "Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence)"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 theme: codegen-correctness
@@ -16,4 +16,160 @@ The generated `<Node>.$fields(...)` projection builder discards every occurrence
 
 Note: this is distinct from R481 (batched polymorphic parent-holds-FK correlation), which shares the jOOQ "not contained in row type" symptom string but is a different code path.
 
-Fix direction (for Spec): the nested-descent arms must recurse over the union of the sub-selections of every `SelectedField` in `entry.getValue()`, not just `get(0)`, unioning the projected `Field<?>`s into the `LinkedHashSet` that `$fields` already builds (the set already dedupes identical columns). Watch-out: the inline table-field and lookup-field arms read their runtime arguments off `sf` via `ArgumentValueSource.FromSelectedField` (see the emitter javadoc at `TypeClassGenerator.java:303-307`); if two occurrences carry different arguments the merge must decide which win or normalise/reject them, rather than silently taking `get(0)`'s arguments while unioning everyone's projection. The scalar arms need no change. Suggested coverage: an execution-tier test on the sakila corpus firing a connection query that selects a reference field under both `edges.node` and `nodes` with divergent sub-selections, asserting both sides resolve without a "not contained in row type" error in all four directions (edges ⊂ nodes, nodes ⊂ edges, disjoint, identical), plus a check that identical-on-both-sides selections leave generated output byte-unchanged.
+---
+
+## Mechanism (traced; corrects two Backlog claims)
+
+How the two occurrences end up in one list: the connection fetcher
+(`TypeFetcherGenerator.buildQueryConnectionFetcher`, the `pageRequest` emit around
+`TypeFetcherGenerator.java:5179`) passes the raw `env.getSelectionSet()` into
+`<Node>.$fields(...)`. graphql-java's `DataFetchingFieldSelectionSet.getFieldsGroupedByResultKey()`
+flattens the *whole* subtree and groups by leaf result key, not by path, so
+`edges { node { <ref> {a} } }` and `nodes { <ref> {b} }` contribute two `SelectedField`s to the
+`<ref>` entry. The connection wrapper keys (`edges`, `node`, `nodes`, `pageInfo`, `cursor`,
+`totalCount`) fall through the switch's `default -> { }` arm; the flattened substrate itself is
+long-standing behaviour and stays unchanged by this item. Polymorphic connections route through the
+generated `PolymorphicSelectionSet.restrictTo(...)` view, which preserves full occurrence lists per
+key (`PolymorphicSelectionSetClassGenerator.java:68-86`) before feeding the same `$fields` loop, so
+one fix at the loop covers plain and polymorphic connections; `TypeClassGenerator.java:319`
+(`entry.getValue().get(0)`) is the single defect site in the reactor.
+
+Two corrections to the Backlog paragraph above:
+
+1. The scalar `ColumnReferenceField` arm does *not* descend and reads nothing off `sf`:
+   `InlineColumnReferenceFieldEmitter` materialises its table expressions with
+   `ArgumentValueSource.Env` and keeps the `sfName` parameter only for signature symmetry. The
+   occurrence-sensitive arms are `TableField` and `LookupTableField` (both descend via
+   `sf.getSelectionSet()` into `Target.$fields(...)` and read runtime arguments off `sf` via
+   `ArgumentValueSource.FromSelectedField`: join-path routine args, filter args, JooqConvert key
+   lifts, pagination `first`), plus `NestingField`'s inline recursion (descent only, no argument
+   reads).
+2. "Unioning into the `LinkedHashSet`" cannot be done by re-emitting an arm per occurrence: the
+   inline arms mint one `DSL.multiset(...).as(<fieldName>)` per arm, `.as(...)` produces a fresh
+   jOOQ `Field` every call (the set dedupes raw `table.X` adds only, by jOOQ per-alias `TableField`
+   caching), so per-occurrence re-emission would put duplicate SQL aliases in the SELECT. The union
+   must happen on the *selection* side, merging all occurrences' sub-selections into a single arm
+   emission.
+
+## Contract
+
+1. **Union descent.** For a result-key entry with N occurrences, every nested descent (inline
+   `TableField` / `LookupTableField` projection, `NestingField` recursion) operates on the union of
+   all N occurrences' sub-selections, recursively at every depth. Each arm still emits exactly one
+   SELECT term per result key. Any sub-field requested under either `edges.node` or `nodes` is
+   projected; the mapper on each side reads only what it asked for, and extra columns in the row are
+   harmless.
+2. **Fail loud on unrepresentable divergence.** Occurrences under one result key that disagree on
+   `getName()` or on `getArguments()` throw a descriptive runtime exception naming the field and the
+   conflicting values, surfacing as a GraphQL field error. Rationale: the occurrence set is a
+   runtime query artifact with no build-time home, so a runtime guard is the only available
+   enforcer; today's behaviour (silently serving `get(0)`'s arguments for both paths) is silent
+   wrong data. The guard is reachable, not dead code: `edges.node.<ref>` and `nodes.<ref>` live in
+   sibling selection sets that GraphQL field-merging validation never merges, so divergent
+   arguments are legal at the GraphQL layer and only graphitron's flattening collapses them into
+   one bucket.
+3. **Scalar arms unchanged.** `ColumnField` / `CompositeColumnField` / `ComputedField` /
+   `ColumnReferenceField` read nothing beyond the switch key.
+4. **Pure emit-layer fix.** No classification, model, or validator change; query shape is runtime,
+   so no validator mirror is owed.
+
+## Design
+
+Generated-code shape:
+
+- The public `$fields(DataFetchingFieldSelectionSet sel, T table, env)` entry keeps its signature
+  (all existing fetcher call sites unchanged) and delegates into the switch loop over
+  `Map<String, List<SelectedField>>`.
+- Each type class additionally exposes `$fields(List<SelectedField> occurrences, T table, env)`:
+  it merges `occ.getSelectionSet().getFieldsGroupedByResultKey()` across the occurrences
+  (concatenating lists per key, insertion-ordered) and runs the same switch loop. The inline
+  `TableField` / `LookupTableField` arms call `Target.$fields(entry.getValue(), alias, env)`
+  instead of `Target.$fields(sf.getSelectionSet(), alias, env)`; the `NestingField` arm's inline
+  recursion iterates the merged map of `entryN.getValue()` instead of
+  `sfN.getSelectionSet().getFieldsGroupedByResultKey()`.
+- The merge and the divergence guard are schema-independent graphql-java manipulation (identical
+  bytecode for every type), so they live as statics on a util-singleton scaffold registered in
+  `UtilSingleton.ALL` (the sanctioned pruning-safe pattern; a blanket edge into a frozen-ABI
+  singleton is a harmless superset per `UtilSingleton.java:28-33`), *not* as per-class private
+  helpers, which would be a copy maintained apart from its source at generated-code scale.
+  Design fork on the host: extend the existing selection-focused scaffold
+  (`PolymorphicSelectionSet`) versus mint a small sibling (e.g. `SelectionOccurrences`).
+  Recommendation: a new sibling, so the existing scaffold's frozen ABI is not touched; the
+  implementer confirms against `UtilSingleton`'s freeze semantics.
+- Guard applicability is single-sourced, not a hardcoded `{TableField, LookupTableField}` list:
+  whether an arm's emission consumes `sf` for runtime state is a structural fact already carried by
+  its `ArgumentValueSource.FromSelectedField` usage (join-path args, filters, key lifts,
+  pagination), so the guard emission derives from that same predicate. A future variant that emits
+  a `FromSelectedField` read then gets the guard for free instead of silently reverting to
+  first-occurrence argument picking.
+- After the guard passes, `get(0)` serves as the canonical occurrence for argument reads, now
+  provably equivalent to every other occurrence. Singleton lists (the overwhelmingly common case)
+  short-circuit both guard and merge.
+
+## Implementation plan
+
+1. **Scaffold.** Add the occurrence-merge and consistency-guard statics to the chosen util
+   singleton (design fork above); register in `UtilSingleton.ALL`; emit test beside it (the
+   `PolymorphicSelectionSetClassEmitTest` pattern).
+2. **`TypeClassGenerator`.** Restructure `build$FieldsMethod` / `emitSelectionSwitch`: entry-method
+   delegation, the `List<SelectedField>` overload, merged-map iteration in the `NestingField` arm,
+   guard emission driven by the `FromSelectedField` predicate.
+3. **Inline emitters.** `InlineTableFieldEmitter` / `InlineLookupTableFieldEmitter`: swap the
+   `sf.getSelectionSet()` descent for the occurrence-list overload; argument reads keep `sf`
+   (post-guard canonical).
+4. **Compile graph.** `CompileDependencyGraphBuilder`'s projection mirror
+   (`addProjectionChildEdges`) should need no new per-type edges (nested arms already depend on the
+   target type class; the scaffold edge is blanket); verify the mirror stays in sync.
+5. **Pinned-output refresh.** Existing unit/pipeline pins of `$fields` emission
+   (`TypeClassGeneratorTest` and friends) update with the restructure.
+
+## Test plan (tiers per `development-principles.adoc`)
+
+- **Unit:** emit-shape tests beside `TypeClassGenerator` pinning that the overload exists with the
+  right signature and that guard emission tracks the `FromSelectedField` predicate; scaffold emit
+  test for the merge/guard statics. No code-string assertions on method bodies (banned at every
+  tier).
+- **Pipeline:** pin that generated type classes expose both `$fields` entries and that fetcher call
+  sites still target the `DataFetchingFieldSelectionSet` entry; signature-level TypeSpec assertions
+  only.
+- **Compilation:** `graphitron-sakila-example` compiles the restructured output (automatic).
+- **Execution** (`GraphQLQueryTest` or a new `@ExecutionTier` companion in
+  `graphitron-sakila-example`; existing `@asConnection` fixtures such as `stores` / `filmsFaceted`
+  suffice for the shape):
+  - a connection query selecting the same reference field under both `edges { node { ... } }` and
+    `nodes { ... }` in all four directions (edges ⊂ nodes, nodes ⊂ edges, disjoint, identical),
+    asserting both sides resolve with correct data and no "not contained in row type" error;
+  - a deep-nesting variant (the divergence one level down);
+  - a polymorphic-connection variant (e.g. `searchConnection`);
+  - an argument-divergence query asserting the descriptive field error (add a fixture if no
+    argument-bearing inline field currently sits under a connection node);
+  - a non-connection control query, proving behaviour parity on the restructured shared path for
+    single-occurrence selections.
+- **Determinism:** `GeneratorDeterminismTest` covers the new emission cross-cuttingly; no dedicated
+  work unless it fires.
+
+Acceptance-criterion correction versus the Backlog paragraph: "identical-on-both-sides selections
+leave generated output byte-unchanged" is unsatisfiable as written, because the restructure changes
+every type class's generated source regardless of query shape (generation is per-schema; the
+projection choice is runtime). The criterion this Spec pins instead: identical and single-occurrence
+selections are behaviourally identical to pre-change at the execution tier, and generated-source
+determinism stays guarded by `GeneratorDeterminismTest`.
+
+## Out of scope
+
+- **R500** (`result-key-aware-reference-projection`, filed from this trace): two different aliases
+  of the same reference field (`a: ref { x } b: ref { y }`) occupy *distinct* result-key buckets
+  with the same `getName()`, so they never reach this item's within-bucket guard; both arms project
+  `.as(<fieldName>)` and collide on the SQL alias. Fails loud today (jOOQ duplicate-alias error, no
+  silent wrong data) and needs result-key-based aliasing plus result-key-aware readers; orthogonal
+  to this fix.
+- The whole-subtree-flattening substrate itself (wrapper keys and foreign sub-field names swept
+  into the map and tolerated by the `default` arm) stays as-is.
+
+## Cross-references
+
+- **R481** (`batched-polymorphic-parent-holds-fk-correlation`) shares the jOOQ "not contained in
+  row type" symptom string on a different code path; neither item depends on the other.
+- **R500** (above) is the sibling defect on the aliased-duplicate axis.
+- Surfaced during runtime testing of the opptak subgraph against graphitron 10.0.0-RC27; the
+  reproduction matrix in the problem statement above is the field evidence.
