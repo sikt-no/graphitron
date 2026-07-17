@@ -64,10 +64,15 @@ Two corrections to the Backlog paragraph above:
    conflicting values, surfacing as a GraphQL field error. Rationale: the occurrence set is a
    runtime query artifact with no build-time home, so a runtime guard is the only available
    enforcer; today's behaviour (silently serving `get(0)`'s arguments for both paths) is silent
-   wrong data. The guard is reachable, not dead code: `edges.node.<ref>` and `nodes.<ref>` live in
-   sibling selection sets that GraphQL field-merging validation never merges, so divergent
-   arguments are legal at the GraphQL layer and only graphitron's flattening collapses them into
-   one bucket.
+   wrong data. Both halves of the check are reachable, not dead code: `edges.node.<ref>` and
+   `nodes.<ref>` live in sibling selection sets that GraphQL field-merging validation never merges,
+   so divergent arguments *and* divergent underlying field names (two fields aliased to one result
+   key, `x: a` under one path and `x: b` under the other) are legal at the GraphQL layer and only
+   graphitron's flattening collapses them into one bucket. The two halves have different scopes,
+   which the Design pins precisely: the `getName()` half is **universal** (a single-name `switch`
+   dispatch over a mixed-name bucket is unrepresentable for *every* arm, arg-consuming or not),
+   while the `getArguments()` half is **arm-scoped** (only an arm that consumes `sf` for runtime
+   state can serve wrong arguments).
 3. **Scalar arms unchanged.** `ColumnField` / `CompositeColumnField` / `ComputedField` /
    `ColumnReferenceField` read nothing beyond the switch key.
 4. **Pure emit-layer fix.** No classification, model, or validator change; query shape is runtime,
@@ -96,12 +101,26 @@ Generated-code shape:
   (`PolymorphicSelectionSet`) versus mint a small sibling (e.g. `SelectionOccurrences`).
   Recommendation: a new sibling, so the existing scaffold's frozen ABI is not touched; the
   implementer confirms against `UtilSingleton`'s freeze semantics.
-- Guard applicability is single-sourced, not a hardcoded `{TableField, LookupTableField}` list:
-  whether an arm's emission consumes `sf` for runtime state is a structural fact already carried by
-  its `ArgumentValueSource.FromSelectedField` usage (join-path args, filters, key lifts,
-  pagination), so the guard emission derives from that same predicate. A future variant that emits
-  a `FromSelectedField` read then gets the guard for free instead of silently reverting to
-  first-occurrence argument picking.
+- The guard is two checks with two scopes; conflating them reopens the bug:
+  - **Name check (universal).** Emitted once per merged bucket, before the `switch` dispatch, for
+    *every* arm. The switch routes on `get(0).getName()` and the union descent then merges all
+    occurrences' sub-selections under that one name; if the occurrences disagree on `getName()`
+    (two distinct fields aliased to one result key) the merge would run one field's arm over
+    another field's sub-selection, silently dropping the diverging side, exactly the bug class this
+    item fixes. This is unrepresentable regardless of whether the arm reads `sf`, so a
+    `NestingField` / `ColumnReferenceField` / scalar bucket must fail loud too, not just the
+    arg-consuming arms. The check is schema-independent, so it lives on the merge scaffold and runs
+    for free per bucket.
+  - **Argument check (arm-scoped, not a hardcoded `{TableField, LookupTableField}` list).** Whether
+    an arm's emission consumes `sf` for runtime state is a structural fact already carried by its
+    `ArgumentValueSource.FromSelectedField` usage (join-path args, filters, key lifts, pagination),
+    so the argument-guard emission derives from that same predicate. A future variant that emits a
+    `FromSelectedField` read then gets the argument guard for free instead of silently reverting to
+    first-occurrence argument picking. Gating this half on the predicate (rather than guarding
+    arguments universally) avoids a false-positive fail-loud on an argument some arm carries but
+    never consumes; the comparison is over the full `getArguments()` map, which is conservative but
+    errs toward fail-loud on the arms that do consume it (their consumable args *are* the field's
+    args).
 - After the guard passes, `get(0)` serves as the canonical occurrence for argument reads, now
   provably equivalent to every other occurrence. Singleton lists (the overwhelmingly common case)
   short-circuit both guard and merge.
@@ -110,10 +129,14 @@ Generated-code shape:
 
 1. **Scaffold.** Add the occurrence-merge and consistency-guard statics to the chosen util
    singleton (design fork above); register in `UtilSingleton.ALL`; emit test beside it (the
-   `PolymorphicSelectionSetClassEmitTest` pattern).
+   `PolymorphicSelectionSetClassEmitTest` pattern). The merge groups by result key, so duplicate
+   leaf selections across the two sides collapse into one bucket and each arm still emits exactly
+   one SELECT term per key; no separate dedup pass is owed. The universal name check lives here and
+   runs once per bucket.
 2. **`TypeClassGenerator`.** Restructure `build$FieldsMethod` / `emitSelectionSwitch`: entry-method
    delegation, the `List<SelectedField>` overload, merged-map iteration in the `NestingField` arm,
-   guard emission driven by the `FromSelectedField` predicate.
+   the universal name-consistency check per bucket (before the `switch`), and the arm-scoped
+   argument-consistency check driven by the `FromSelectedField` predicate.
 3. **Inline emitters.** `InlineTableFieldEmitter` / `InlineLookupTableFieldEmitter`: swap the
    `sf.getSelectionSet()` descent for the occurrence-list overload; argument reads keep `sf`
    (post-guard canonical).
@@ -143,6 +166,11 @@ Generated-code shape:
   - a polymorphic-connection variant (e.g. `searchConnection`);
   - an argument-divergence query asserting the descriptive field error (add a fixture if no
     argument-bearing inline field currently sits under a connection node);
+  - a name-divergence query on a non-arg-consuming arm: the same result key aliased to two distinct
+    fields across `edges { node { x: a { ... } } }` and `nodes { x: b { ... } }` (a `NestingField` /
+    reference bucket, not a `TableField`), asserting the descriptive fail-loud rather than the silent
+    drop that first-occurrence dispatch would produce, proving the name check is universal and not
+    gated on the argument-consumption predicate;
   - a non-connection control query, proving behaviour parity on the restructured shared path for
     single-occurrence selections.
 - **Determinism:** `GeneratorDeterminismTest` covers the new emission cross-cuttingly; no dedicated
