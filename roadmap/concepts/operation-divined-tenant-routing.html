@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operation-divined tenant routing: explainer</title>
+<link rel="stylesheet" href="concepts.css">
+</head>
+<body>
+<main>
+
+  <p class="crumb"><a href="../README.md">← Roadmap</a></p>
+  <p class="kicker">Concept explainer · R45 · theme: runtime-connection</p>
+  <h1 data-concept-title="Operation-divined tenant routing"
+      data-concept-items="R45">Operation-divined tenant routing</h1>
+  <p class="lede">How graphitron picks the right per-tenant database <em>without</em> a tenant parameter, by reading the column mappings the schema already carries. Read this before the <a href="../tenant-routing-and-execution-input.md">R45 plan</a>.</p>
+
+  <div class="note">
+    This page builds intuition; the <a href="../tenant-routing-and-execution-input.md">plan</a> is the spec (exact call sites, the sealed arms, rejection wording, slice boundaries). Read this first, then the plan.
+  </div>
+
+  <div class="tldr">
+    <span class="kicker">The one-sentence version</span>
+    graphitron already knows which database column every argument, input field, node id, federation representation, and parent row binds to; if the deployment additionally declares <strong>which column carries the tenant id</strong>, graphitron can divine, per field, where the tenant comes from and route each subtree to the correct per-tenant database, with no <code>@tenantId</code> directive and no request-level tenant parameter.
+  </div>
+
+  <h2>The problem, concretely</h2>
+  <p>Picture a multi-tenant deployment: each customer organisation's data lives in its own database (database-per-tenant), and the same generated API serves all of them. A query arrives:</p>
+<pre><code>query { emner(filter: { eierOrganisasjon: 1234 }) { ... } }</code></pre>
+  <p>Nothing in the transport says "tenant 1234". The tenant is <em>inside the operation</em>: the filter argument <code>eierOrganisasjon</code> maps to a database column that happens to be the tenant key, so the value <code>1234</code> both filters the rows <strong>and</strong> names the database they live in. Graphitron must notice that and acquire the connection for tenant 1234's source, not the default one.</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">The tempting shape: a request-level tenant</div>
+      <div class="body">
+        <p>Ask the caller to pass the tenant up front, at request scope, and thread it through everything.</p>
+        <p>But an API user can legitimately hold data in <em>several</em> tenants at once (a student with results at multiple universities). One request, many tenants: a single request-scope value cannot express it.</p>
+      </div>
+    </div>
+    <div class="pane good">
+      <div class="head">The design: divine it from the operation</div>
+      <div class="body">
+        <p>Every field already knows its column bindings. If one of those columns is the tenant column, the tenant is <em>right there</em> in the field's own inputs or its parent row.</p>
+        <p>Different fields in one query can divine different tenants, so multi-tenant queries are first-class rather than a special case.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q1">
+    <p class="q"><span class="tag">Quiz</span> Why not just add a <code>@tenantId</code> directive to the argument that carries the tenant?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)">The column mapping <em>is</em> the declaration already; a directive would restate a fact the schema encodes.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Directives cannot appear on arguments.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">It would be too slow at runtime.</button>
+    <div class="explain">graphitron already resolves each argument/input field to a database column (the same resolution filters and conditions use). Once the deployment says which column is the tenant column, the binding falls out of information the schema already carries. A directive would be redundant surface. (The plan keeps a <code>@tenantId</code> override in its back pocket as an open question, deferred until a real schema shows inference picking the wrong binding.)</div>
+  </div>
+
+  <h2>One declaration, three table scopes</h2>
+  <p>The whole machinery switches on a single deployment-level element naming the column:</p>
+<pre><code>&lt;tenantColumn&gt;eier_organisasjon&lt;/tenantColumn&gt;</code></pre>
+  <p>Absent this element, none of the routing exists and graphitron's single-<code>DataSource</code> world is the whole story. Present, every table classifies into one of three scopes at catalog load:</p>
+
+  <div class="sxs">
+    <div class="pane">
+      <div class="head">Tenant-scoped</div>
+      <div class="body"><p>Carries the tenant column and is <strong>partitioned</strong> per tenant. Lives in the per-tenant databases. (<code>RESULTAT</code>: a student's grades.)</p></div>
+    </div>
+    <div class="pane">
+      <div class="head">Tenant index</div>
+      <div class="body"><p>Carries the tenant column but is <strong>not</strong> partitioned; lives on the default source and its rows point <em>out into</em> tenants. Must be declared explicitly, because carrying the column cannot tell an index from partitioned data. (<code>STUDENT_ORGANISASJON</code>: which orgs hold a given student's data.)</p></div>
+    </div>
+    <div class="pane">
+      <div class="head">Global</div>
+      <div class="body"><p>Does not carry the column. Reference data on the default source. (Country codes, language names.)</p></div>
+    </div>
+  </div>
+  <p>The tenant's Java type is not configured; it is read off the jOOQ catalog's column type, and every table carrying the column must agree on that type (disagreement is a build rejection). The type of the tenant is a fact of the database, so graphitron reads it rather than asking.</p>
+
+  <h2>The idea: a per-field tenant binding</h2>
+  <p>The core model is a sealed per-field axis, <code>TenantBinding</code>, computed only when <code>&lt;tenantColumn&gt;</code> is configured. It is an <em>optional overlay</em> on the existing field-classification axes (the same family as <code>source()</code> / <code>operation()</code> / <code>target()</code>); in a single-tenant build the axis is simply absent, not "everything is <code>Untenanted</code>". Sealed variants are how graphitron models "one of a fixed set of shapes, handled exhaustively"; see <a href="../../docs/architecture/explanation/dispatch-axes.adoc">Dispatch axes</a>.</p>
+  <p>Each field lands in exactly one arm, deciding <em>where its tenant comes from</em>:</p>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head">Where the tenant is a single value for the field</div>
+      <div class="body">
+        <p><strong><code>ArgumentBound</code></strong>: an argument or input field maps to the tenant column. The <code>emner(filter:&nbsp;{&nbsp;eierOrganisasjon&nbsp;})</code> case, and mutations too.</p>
+        <p><strong><code>Inherited</code></strong>: a field below a bound ancestor; the divined tenant flows down the subtree as a value hand-down.</p>
+        <p><strong><code>Untenanted</code></strong>: touches only global or tenant-index tables; runs on the default source.</p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="head">The per-row family: one batch spans tenants</div>
+      <div class="body">
+        <p><strong><code>NodeIdBound</code></strong>: resolved by node id; the tenant is a decoded-column position of the batch key. Each id carries its own tenant.</p>
+        <p><strong><code>EntityRepBound</code></strong>: federation <code>_entities</code>; the tenant is a decoded position of each representation.</p>
+        <p><strong><code>ParentRowBound</code></strong>: a child under a <em>tenant-index</em> parent; each parent row names its own tenant.</p>
+      </div>
+    </div>
+  </div>
+  <p>The right column is the subtle half. For a node-id batch or a federation <code>_entities</code> call or the children of an index, a <em>single batch spans many tenants</em>, so the consumer cannot take one value and hand it down; it must <strong>partition</strong> the batch per tenant. Notice the two decoded arms deliberately share one shape ("a positional slot in a decoded key"): node ids and federation reps both decode at the DataFetcher boundary, and the model carries the decoded position, never a reference back into the raw id string or rep map. Wire format stays a boundary concern.</p>
+
+  <div class="quiz" id="q2">
+    <p class="q"><span class="tag">Quiz</span> A tenant-scoped <code>resultater</code> child sits under a <em>tenant-index</em> parent (<code>organisasjoner</code>). What arm, and why not <code>Inherited</code>?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)"><code>ParentRowBound</code>: each index row names a different tenant, so the batch of children spans tenants and must be partitioned per parent row.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)"><code>Inherited</code>: children always inherit their parent's tenant.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)"><code>Untenanted</code>: children of an index are always global.</button>
+    <div class="explain"><code>Inherited</code> applies under a <em>tenant-scoped</em> parent, where the execution context is already tenant-homogeneous (one tenant for the whole subtree) so the tenant is just handed down. A tenant-<em>index</em> parent is the opposite: each of its rows points at a different tenant, so its children's batch is tenant-mixed by construction and each row's tenant must be read off that row. Same child type, different parent scope, different arm.</div>
+  </div>
+
+  <h2>No binding in scope is a build error, not a fallback</h2>
+  <p>This is the rule the whole item exists to enforce. A field that reaches a tenant-scoped table with <strong>no tenant binding in scope</strong> is rejected at build time (<code>noTenantBinding</code>), never routed through the default connection as a best guess. Routing tenant data through the default source because nothing named the tenant is exactly the cross-tenant leak the design prevents.</p>
+  <p>This is graphitron's <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed-rejection</a> discipline: a shape the generator cannot resolve safely is a first-class rejection with a message, not a silent default.</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">Unroutable and unmarked → rejected</div>
+      <div class="body"><p>A tenant-scoped field with nothing divining its tenant. Build fails, naming the field. Fix the schema or mark it deliberately (below).</p></div>
+    </div>
+    <div class="pane good">
+      <div class="head">Deliberate no-binding → fan out (R46)</div>
+      <div class="body"><p>When you genuinely mean "look in every tenant and union the results" (the pattern production runs by hand today), an explicit schema marker classifies into a positively-typed fan-out arm. That arm lands in <a href="../service-multi-tenant-fanout.md">R46</a> together with its emitters, never as a flag that suppresses the rejection.</p></div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q3">
+    <p class="q"><span class="tag">Quiz</span> A new field reads a tenant-scoped table but no argument, node id, rep, or parent row binds the tenant. Someone proposes "just default to the primary tenant's connection." Sound?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Yes; defaulting keeps the schema working without extra annotation.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">No; that is the exact cross-tenant leak the rejection guards against. It must be a build error or an explicit fan-out marker.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Yes, as long as it only reads (never writes).</button>
+    <div class="explain">A silent default connection would serve one tenant's rows to a request that never named that tenant, or leak across tenants depending on deployment. The design forbids the guess entirely: either something in scope divines the tenant, or the author positively opts into fanning across all of them (R46). "Reads only" does not make a cross-tenant read safe.</div>
+  </div>
+
+  <h2>Worked example: student results across universities</h2>
+  <p>A student's grades live in whichever universities hold their data. <code>STUDENT_ORGANISASJON</code> is a declared tenant-index table on the default source; <code>RESULTAT</code> is tenant-scoped.</p>
+<pre><code>query {
+  student(id: "...") {
+    organisasjoner {          # index rows, default source; Untenanted
+      eierOrganisasjon
+      resultater { karakter } # ParentRowBound: routed per row's eierOrganisasjon
+    }
+  }
+}</code></pre>
+  <p><code>organisasjoner</code> runs one query on the default source. <code>resultater</code> partitions its loader by each row's <code>eierOrganisasjon</code> and acquires per partition: one query per university that holds data for this student, each in its own read-only transaction. Fields below <code>resultater</code> classify <code>Inherited</code>: the tenant is fixed for that subtree. Per-tenant row-level security composes on top, so a tenant database where this user has no access returns nothing rather than leaking.</p>
+
+  <h2>Why partitioning is load-bearing, not cosmetic</h2>
+  <p>The per-row arms all end at the same mechanism: <strong>partition every batch so each SQL execution touches exactly one tenant.</strong> For batched children this is enforced through DataLoader identity: the tenant key joins the path-derived loader name, so a loader is tenant-homogeneous by construction.</p>
+  <p>Here is why that is not optional. A batch loader resolves <em>one</em> <code>DSLContext</code> from the environment captured when the loader was created. A tenant-<em>mixed</em> loader would run <strong>every</strong> key against the first key's tenant, silently reading the wrong database for the rest. Two invariants keep it honest: one shared helper composes the loader name at both the registration and lookup sites, and the tenant segment is an opaque partition key, never parsed back to recover the value (the captured environment carries the typed tenant).</p>
+
+  <div class="quiz" id="q4">
+    <p class="q"><span class="tag">Quiz</span> Why does the tenant have to be part of the DataLoader's <em>identity</em>, rather than passed as a per-key argument inside one shared loader?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)">A batch loader binds one <code>DSLContext</code> at creation from its captured environment; a mixed-tenant loader would execute all keys against a single tenant's connection.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">DataLoaders cannot take arguments.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">It makes the loader name easier to read in logs.</button>
+    <div class="explain">The connection is resolved once, per loader, from the environment captured at loader creation, not per key. So the tenant must partition <em>which loader you land in</em>, giving each loader a homogeneous tenant and a correctly-routed captured environment. The per-request <code>DataLoaderRegistry</code> means this only matters within a request, which is exactly when node ids and entity reps span tenants.</div>
+  </div>
+
+  <h2>Where the connection actually comes from</h2>
+  <p>Routing rides the shipped acquisition seam rather than inventing a new one. graphitron already owns connection acquisition and transactions; a database-per-tenant deployment hands it a per-tenant <code>DataSource</code> map on the generated <code>TenantConnections</code> carrier, keyed by an opaque tenant key. R45 does not add a tenant parameter to the request factory (the tenant is not a request-scope fact); it extends that carrier and supplies the divined key at each acquisition. The default source serves <code>Untenanted</code> fields; each divined binding supplies the key for its own acquisition; an unknown divined key errors before any SQL. See the <a href="../../docs/architecture/reference/runtime-extension-points.adoc">runtime extension points</a> reference for the acquisition and transaction model this builds on.</p>
+
+  <!-- derived:status -->
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-17)</span></h2>
+  <ul class="status">
+    <li><span class="pill done">landed</span><strong>The substrate</strong> (R429, in the <a href="../changelog.md">changelog</a>): graphitron owns connection acquisition, operation-typed transactions, and session state, and ships the tenant-keyed <code>TenantConnections</code> carrier this item's routing consumes. Its isolation proofs cover the caller-known-tenant case.</li>
+    <li><span class="pill pending">pending</span><strong>R45 (this concept)</strong> is in Spec: the <code>&lt;tenantColumn&gt;</code> declaration, three-way table classification, the <code>TenantBinding</code> per-field inference, the factory extension, per-tenant partitioning at every fan-out point, and the <code>noTenantBinding</code> / <code>tenantColumnTypeDisagreement</code> rejections.</li>
+    <li><span class="pill pending">pending</span><strong>R46</strong> (<a href="../service-multi-tenant-fanout.md">service-multi-tenant-fanout</a>, Backlog): the deliberate no-binding fan-out arm, landing with its own emitters.</li>
+  </ul>
+  <!-- /derived:status -->
+
+  <footer>
+    <strong>See also.</strong>
+    <a href="../tenant-routing-and-execution-input.md">R45 plan</a> ·
+    <a href="../service-multi-tenant-fanout.md">R46 (multi-tenant fan-out)</a> ·
+    <a href="../changelog.md">R429 (connection lifecycle) in the changelog</a> ·
+    <a href="../../docs/architecture/reference/runtime-extension-points.adoc">Runtime extension points</a> ·
+    <a href="../../docs/architecture/explanation/dispatch-axes.adoc">Dispatch axes</a> ·
+    <a href="../../docs/architecture/explanation/typed-rejection.adoc">Typed rejection</a>
+    <!-- derived:backlinks -->
+    <p style="margin-top:1em"><strong>Referenced by.</strong> No roadmap items link this page yet.</p>
+    <!-- /derived:backlinks -->
+  </footer>
+
+</main>
+<script src="concepts.js"></script>
+</body>
+</html>

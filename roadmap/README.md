@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-07-14 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
-| `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) |
+| `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R488` | Concept explainers declare and cross-link their backing roadmap item(s) | In Review | 2026-07-16 | [plan](concept-explainer-item-crosslinks.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
@@ -384,6 +384,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 _Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. Authored with the `explainer` skill; this listing derives from `concepts/*.html`, never by hand._
 
+- [Operation-divined tenant routing](concepts/operation-divined-tenant-routing.html) (backs [R45](tenant-routing-and-execution-input.md))
 - [Per-participant join paths for polymorphic child fields](concepts/per-participant-child-join-paths.html) (backs R458)
 
 ---
