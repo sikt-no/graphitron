@@ -354,7 +354,7 @@ public final class ErrorRouterClassGenerator {
                 + "\n"
                 + "<p>This is the no-channel counterpart {@code redact} was for channel-less\n"
                 + "fetchers; it narrows surfacing to the client-error marker type so a future query\n"
-                + "{@code @error} lift (R397) can route the same throw through a channel with no\n"
+                + "{@code @error} lift can route the same throw through a channel with no\n"
                 + "change at the throw site.\n",
                 clientException, DATA_FETCHER_RESULT)
             .addCode(CodeBlock.builder()

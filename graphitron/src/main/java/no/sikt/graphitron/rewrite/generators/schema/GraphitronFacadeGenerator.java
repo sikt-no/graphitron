@@ -242,7 +242,7 @@ public final class GraphitronFacadeGenerator {
             + "at wiring time over a consumer-owned pooled {@code DataSource} and its jOOQ dialect:\n"
             + "{@code var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);}.\n"
             + "\n"
-            + "<p>This is the opinionated path (R429): per request you call\n"
+            + "<p>This is the opinionated path: per request you call\n"
             + "{@code Graphitron.newOwnedExecutionInput(claims, ...)} and graphitron acquires the\n"
             + "connection, runs the connect hook, and releases at completion. The lower-opinion escape\n"
             + "hatch is the static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller\n"
@@ -320,7 +320,7 @@ public final class GraphitronFacadeGenerator {
 
     private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs) {
         var sb = new StringBuilder();
-        sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path (R429):\n");
+        sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
         sb.append("pass only the opaque {@code claims} payload (typically the JWT) and any declared\n");
         sb.append("{@code contextArguments}. Unlike {@link #newExecutionInput}, no {@code DSLContext} is\n");
         sb.append("supplied here; the execution instrumentation wired by\n");

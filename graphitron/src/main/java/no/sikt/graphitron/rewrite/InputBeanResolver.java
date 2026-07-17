@@ -383,7 +383,7 @@ final class InputBeanResolver {
                         + ": nested input field '" + dottedPath(path) + "' is typed '" + nestedIot.getName()
                         + "' which carries @table — a nested @table input is a second DML target, not a"
                         + " column group to flatten onto the param record's table (compound multi-table"
-                        + " mutations are R122's scope). Drop @table to flatten this group's columns onto"
+                        + " mutations are not supported). Drop @table to flatten this group's columns onto"
                         + " the parent, or model it as a separate mutation");
                 }
                 if (classifyCtx.isExpanding(nestedIot.getName())) {

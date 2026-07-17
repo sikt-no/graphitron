@@ -150,7 +150,7 @@ public final class DeleteRowsWalker {
                         errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
                             n.name(), "list-typed NestingField",
                             "list-typed nested input types (e.g. '" + n.name() + ": [" + n.typeName()
-                            + "!]') on @mutation(typeName: DELETE) fields are not yet supported (R186); "
+                            + "!]') on @mutation(typeName: DELETE) fields are not yet supported; "
                             + "a list grouping has no obvious meaning when flattening onto one outer row."));
                     } else if (n.condition().isPresent()) {
                         errors.add(new DeleteRowsError.UnsupportedInputFieldShape(

@@ -132,7 +132,7 @@ public final class FieldCompletions {
         return CompletionItems.replacing(
             no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL,
             CompletionItemKind.Keyword, context.replaceRange(),
-            "Root-value sigil — bind to the upstream Java value as a whole (R159)");
+            "Root-value sigil — bind to the upstream Java value as a whole");
     }
 
     private static List<CompletionItem> tableColumnItems(

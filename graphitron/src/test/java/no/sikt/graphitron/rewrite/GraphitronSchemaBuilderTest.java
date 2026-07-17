@@ -4064,7 +4064,7 @@ class GraphitronSchemaBuilderTest {
                 // see LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED for that shape.
                 var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
                 assertThat(f.reason())
-                    .contains("R144");
+                    .contains("@lookupKey on a mutation input field is no longer supported");
             }),
 
         LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED(
@@ -6584,7 +6584,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Query", "filmByKey");
                 assertThat(f.reason())
-                    .contains("R144")
+                    .contains("@lookupKey on a mutation input field is no longer supported")
                     .contains("ARGUMENT_DEFINITION");
             }),
 
@@ -6896,7 +6896,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Mutation", "upsertFilm");
                 assertThat(field).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) field).reason())
-                    .contains("@mutation(typeName: UPSERT) is not supported under the R144");
+                    .contains("@mutation(typeName: UPSERT) is not yet supported");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -8082,7 +8082,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     void asConnectionOnCatalogTerminusRoutineChainDefers() {
         // A chain that merely CONTAINS a routine node but terminates on a catalog table could
-        // support pagination later, so it lands typed Deferred (empty planSlug), not a conflict.
+        // support pagination later, so it lands typed Deferred, not a conflict.
         var schema = build("""
             type Film @table(name: "film") { title: String }
             type Query {
@@ -8187,8 +8187,8 @@ class GraphitronSchemaBuilderTest {
     void mutationSingleNodeRoutineDefersToResultShapesFollowUp() {
         // D2 — the single-node @routine on Mutation has no @reference hop, so there is no
         // post-commit table to re-read the response from; it stays a typed Deferred from
-        // classifyMutationField's top, its planSlug repointed from routine-mutation-write to the
-        // result-shapes follow-up that carries the void / scalar / OUT-parameter story.
+        // classifyMutationField's top, its summary naming the result-shapes follow-up that
+        // carries the void / scalar / OUT-parameter story.
         var schema = build(TILGANG_TYPE + """
             type Query { tilgang: Tilgang }
             type Mutation {
@@ -8198,7 +8198,6 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-write-result-shapes");
         assertThat(f.reason()).contains("no post-commit table");
     }
 
@@ -8219,7 +8218,6 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "countRentals");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEqualTo("routine-write-result-shapes");
         assertThat(f.reason()).contains("not table-valued");
     }
 
@@ -8387,8 +8385,6 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Query", "films");
         assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(((Rejection.Deferred) f.rejection()).planSlug())
-            .isEqualTo("routine-chain-fetch-form-breadth");
         assertThat(f.reason()).contains("@lookupKey");
     }
 
@@ -8861,7 +8857,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.rejection())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class);
-                assertThat(f.reason()).contains("list-typed nested input types").contains("R186");
+                assertThat(f.reason()).contains("list-typed nested input types");
             }),
 
         DML_NESTING_LIST_REJECTED_DELETE(
@@ -8877,7 +8873,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.rejection())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape.class);
-                assertThat(f.reason()).contains("list-typed nested input types").contains("R186");
+                assertThat(f.reason()).contains("list-typed nested input types");
             }),
 
         DML_NESTING_LIST_REJECTED_INSERT(
@@ -8891,7 +8887,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
-                assertThat(f.reason()).contains("list-typed nested input types").contains("R186");
+                assertThat(f.reason()).contains("list-typed nested input types");
             }),
 
         DML_TWO_TABLE_INPUT_ARGS_REJECTED(
@@ -9134,7 +9130,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "upsertFilms");
-                assertThat(f.reason()).contains("@mutation(typeName: UPSERT) is not supported under the R144");
+                assertThat(f.reason()).contains("@mutation(typeName: UPSERT) is not yet supported");
             }),
 
         DML_INSERT_LIST_SINGLE_T_REJECTED(
@@ -9447,7 +9443,6 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilms");
                 assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
-                assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEmpty();
                 assertThat(f.reason()).contains("UPDATE", "multiRow: true", "not yet supported");
             }),
 

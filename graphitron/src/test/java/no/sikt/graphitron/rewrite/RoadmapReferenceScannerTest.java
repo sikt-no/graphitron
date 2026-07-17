@@ -9,9 +9,12 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pins the detection contract of {@link RoadmapReferenceScanner}: a citation in a comment or
- * javadoc region is a finding, the same token inside a string, character, or text-block literal
- * is not, permanent-artifact slugs are allowlisted, and a line comment ends at its newline.
+ * Pins the detection contract of {@link RoadmapReferenceScanner}, one projection per habitat.
+ * The comment scan ({@link RoadmapReferenceScanner#scanSource}) flags a citation in a comment
+ * or javadoc region and ignores string literals; the string-literal scan
+ * ({@link RoadmapReferenceScanner#scanSourceStrings}) is its mirror, flagging a citation inside a
+ * string, character, or text-block literal and ignoring comments. Permanent-artifact slugs are
+ * allowlisted in both, and a line comment ends at its newline.
  *
  * <p>Every fixture is an in-memory source string, so this test carries no citation of its own in
  * a scanned region; the tokens under test live inside the fixture strings.
@@ -23,6 +26,10 @@ class RoadmapReferenceScannerTest {
 
     private static int count(String source) {
         return RoadmapReferenceScanner.scanSource(F, source).size();
+    }
+
+    private static int countStrings(String source) {
+        return RoadmapReferenceScanner.scanSourceStrings(F, source).size();
     }
 
     @Test
@@ -41,14 +48,48 @@ class RoadmapReferenceScannerTest {
     }
 
     @Test
-    void stringLiteralCitation_isNotFlagged() {
-        // A roadmap id inside a user-facing message string is a separate habitat, out of scope.
+    void stringLiteralCitation_isNotFlaggedByCommentScan() {
+        // The comment scan ignores string literals; the string scan owns that habitat.
         assertThat(count("String s = \"see R484 for details\";")).isZero();
     }
 
     @Test
-    void textBlockCitation_isNotFlagged() {
+    void textBlockCitation_isNotFlaggedByCommentScan() {
         assertThat(count("String s = \"\"\"\n  rejected: see R484\n  \"\"\";")).isZero();
+    }
+
+    @Test
+    void stringLiteralCitation_isFlaggedByStringScan() {
+        assertThat(countStrings("String s = \"see R484 for details\";")).isEqualTo(1);
+    }
+
+    @Test
+    void textBlockCitation_isFlaggedByStringScan() {
+        assertThat(countStrings("String s = \"\"\"\n  rejected: see R484\n  \"\"\";")).isEqualTo(1);
+    }
+
+    @Test
+    void stringSlugCitation_isFlaggedByStringScan() {
+        assertThat(countStrings("String s = \"see roadmap/some-transient-slug.md\";")).isEqualTo(1);
+    }
+
+    @Test
+    void allowlistedSlugInString_isNotFlaggedByStringScan() {
+        assertThat(countStrings("String s = \"recorded in roadmap/changelog.md\";")).isZero();
+    }
+
+    @Test
+    void commentCitation_isNotFlaggedByStringScan() {
+        // The mirror of the comment-scan cases: the string scan ignores comment regions.
+        assertThat(countStrings("class X {\n  // keyed per R123 rule\n  int y;\n}")).isZero();
+    }
+
+    @Test
+    void stringScan_reportsCitationLineNumber() {
+        List<RoadmapReferenceScanner.Finding> f = RoadmapReferenceScanner.scanSourceStrings(F,
+            "class X {\n  String a = \"clean\";\n  String b = \"deferred under R145\";\n}");
+        assertThat(f).hasSize(1);
+        assertThat(f.get(0).line()).isEqualTo(3);
     }
 
     @Test

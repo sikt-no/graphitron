@@ -58,7 +58,7 @@ public record RoutineChain(TableExpr.RoutineCall start, List<JoinStep> hops) {
                 throw new IllegalArgumentException(
                     "RoutineChain admits exactly one routine node, the chain's start; a routine "
                     + "node at hop position (a multi-routine chain) classifies as typed Deferred "
-                    + "(R435) and must not reach this carrier");
+                    + "and must not reach this carrier");
             }
         }
     }

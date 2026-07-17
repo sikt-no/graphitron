@@ -19,7 +19,7 @@ Three user-visible consequences:
 
 * *Directives interact through the category.* Whether xref:../reference/directives/asConnection.adoc[`@asConnection`] composes with xref:../reference/directives/lookupKey.adoc[`@lookupKey`], whether xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is redundant on a particular field, whether xref:../reference/directives/condition.adoc[`@condition`] applies, all flow from the category. The directive reference pages name "what category this puts the field in" and "what other directives are admitted in that category".
 * *Rejection messages reference categories.* When the validator says "field cannot have `@asConnection` and `@lookupKey` simultaneously" or "the parent must be `@table`-bound for this directive", it's reading the category off the field and reporting which categories admit which directive sets. The xref:../reference/diagnostics-glossary.adoc[diagnostics glossary] catalogues the closed-set rejection kinds; most of them are category-driven.
-* *Stubs versus errors.* When a category is recognised but not yet emitted, the validator records a *deferred* rejection with a `planSlug:` pointing at the roadmap entry. When a category isn't recognised at all (a directive set that no category admits), the validator records a *structural* rejection. The two outcomes look similar from outside; the diagnostics glossary names the difference.
+* *Stubs versus errors.* When a category is recognised but not yet emitted, the validator records a *deferred* rejection stating that the feature is not yet generated. When a category isn't recognised at all (a directive set that no category admits), the validator records a *structural* rejection. The two outcomes look similar from outside; the diagnostics glossary names the difference.
 
 == A concrete walk-through
 
@@ -64,7 +64,7 @@ Two rejection shapes are the most common things you'll see:
 * *Unknown name with candidate hint.* A `@field(name: "FIRST_NAMEZ")` typo against the `customer` table fails resolution against the jOOQ catalog; the rejection names the typo and the closest match. xref:../reference/diagnostics-glossary.adoc#kind-author-error[The `author-error` rejection kind] is the umbrella; the rejection's *attempt kind* says what was being looked up (a column, a foreign key, a service method, an enum constant, etc.).
 * *Directive conflict.* Two directives that don't compose, like `@service` + `@mutation` on the same field. The validator names both directives and explains why they don't compose. xref:../reference/diagnostics-glossary.adoc#kind-invalid-schema[The `invalid-schema` rejection kind] covers these.
 
-A third, less common shape: *deferred*. The validator recognises the field but the emitter hasn't been built yet. The rejection carries a `planSlug:` pointing at the roadmap entry that will close the gap; the runtime stub the generator emits in its place fails fast with the same plan slug.
+A third, less common shape: *deferred*. The validator recognises the field but the emitter hasn't been built yet. The rejection states that the feature is not yet generated; the runtime stub the generator emits in its place fails fast with the same message.
 
 == See also
 

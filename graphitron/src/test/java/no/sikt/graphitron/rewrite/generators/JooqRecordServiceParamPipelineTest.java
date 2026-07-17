@@ -757,7 +757,7 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(((UnclassifiedField) field).reason())
             .contains("@table")
             .contains("second DML target")
-            .contains("R122");
+            .contains("compound multi-table mutations are not supported");
     }
 
     @Test

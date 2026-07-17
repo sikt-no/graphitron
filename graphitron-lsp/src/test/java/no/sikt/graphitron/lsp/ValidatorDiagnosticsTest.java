@@ -82,7 +82,7 @@ class ValidatorDiagnosticsTest {
         var uri = ValidationReport.canonicalUri(path);
         var error = new ValidationError(
             "Foo.bar",
-            Rejection.deferred("variant not yet implemented", "some-roadmap-item"),
+            Rejection.deferred("variant not yet implemented"),
             new SourceLocation(5, 1, path));
         var report = ValidationReport.from(List.of(error), List.of());
 

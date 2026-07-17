@@ -2439,7 +2439,7 @@ class BuildContext {
         }
         if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) {
             return new InputFieldResolution.Unresolved(name, null,
-                "@lookupKey on a mutation input field is no longer supported (R144); "
+                "@lookupKey on a mutation input field is no longer supported; "
                 + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
                 + "partition is derived from the catalog by the walker). On Query-side "
                 + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
@@ -2583,8 +2583,7 @@ class BuildContext {
                         ID_REF_SHIM_LOGGER.warn(
                             "input field '{}.{}' synthesizes a NodeId reference from qualifier '{}'"
                             + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
-                            + " The shim will be removed in a future release;"
-                            + " see roadmap/retire-id-reference-synthesis-shim.md",
+                            + " The shim will be removed in a future release.",
                             parentTypeName, name, qualifier, shimFkName, canonical);
                         Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, errors);
                         // Synthesis shim is for input-side NodeId refs; the parent (input field's
@@ -2648,8 +2647,7 @@ class BuildContext {
             if (nodeIdMeta.isPresent()) {
                 NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes a NodeId-decoded column"
                     + " without '@nodeId'; declare the directive explicitly. The synthesis shim"
-                    + " will be removed in a future release."
-                    + " See roadmap/retire-synthesis-shims.md",
+                    + " will be removed in a future release.",
                     parentTypeName, name);
                 // Arity-1 lands on InputField.ColumnField with extraction =
                 // NodeIdDecodeKeys.SkipMismatchedElement; arity > 1 lands on

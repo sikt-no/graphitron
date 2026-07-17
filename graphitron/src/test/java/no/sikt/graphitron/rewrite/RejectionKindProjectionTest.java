@@ -40,13 +40,13 @@ class RejectionKindProjectionTest {
 
     @Test
     void deferredProjectsToDeferred() {
-        var r = Rejection.deferred("x", "");
+        var r = Rejection.deferred("x");
         assertThat(RejectionKind.of(r)).isEqualTo(RejectionKind.DEFERRED);
     }
 
     @Test
-    void deferredWithSlugProjectsToDeferred() {
-        var r = Rejection.deferred("x", "slug");
+    void deferredKeyedByVariantClassProjectsToDeferred() {
+        var r = Rejection.deferred("x", no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField.class);
         assertThat(RejectionKind.of(r)).isEqualTo(RejectionKind.DEFERRED);
     }
 

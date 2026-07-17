@@ -289,7 +289,7 @@ public class TypeFetcherGenerator {
     /**
      * Maps each unimplemented field variant class to the {@link Rejection.Deferred} that both the
      * generated stub method ({@link #stub}) and {@code GraphitronSchemaValidator.validateVariantIsImplemented}
-     * project. The deferred value carries a {@code summary}, a roadmap {@code planSlug}, and a
+     * project. The deferred value carries a {@code summary} and a
      * {@link Rejection.StubKey.VariantClass} naming the same variant class the map keys on; the
      * uniform {@link Rejection.Deferred#message()} renderer produces the user-facing prose for both
      * paths so the validator's deferred-gate output stays in lock-step with the runtime stub message.
@@ -325,13 +325,12 @@ public class TypeFetcherGenerator {
                 deferredFor(ChildField.CompositeColumnReferenceField.class,
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
                     + " — requires JOIN-with-projection emission; rooted-at-parent fixture"
-                    + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage",
-                    "nodeidreferencefield-join-projection-form"))
+                    + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage"))
         );
 
     private static Rejection.Deferred deferredFor(
-            Class<? extends GraphitronField> fieldClass, String summary, String planSlug) {
-        return new Rejection.Deferred(summary, planSlug, new Rejection.StubKey.VariantClass(fieldClass));
+            Class<? extends GraphitronField> fieldClass, String summary) {
+        return new Rejection.Deferred(summary, new Rejection.StubKey.VariantClass(fieldClass));
     }
 
     /**
@@ -1819,7 +1818,7 @@ public class TypeFetcherGenerator {
             builder.addStatement("throw new $T($S)",
                 UnsupportedOperationException.class,
                 "child @tableMethod with " + shapeLabel + " is not yet emitted — only single-hop FK "
-                    + "paths ship in R43 commit 3 (multi-hop and condition-join emit are follow-ups)");
+                    + "paths ship (multi-hop and condition-join emit are follow-ups)");
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(catchArm(outputPackage, tmf.errorChannel()));
             builder.endControlFlow();
@@ -5921,8 +5920,8 @@ public class TypeFetcherGenerator {
             // buildRecordDeleteChain with the carrier's WHERE groups); the compact-constructor on
             // MutationDmlRecordField rejects DELETE, so this arm is unreachable.
             case DELETE -> throw new IllegalStateException(
-                "MutationDmlRecordField cannot carry DmlKind.DELETE — R266 routes the payload-"
-                + "returning DELETE onto MutationDeletePayloadField; this leaf carries {INSERT, UPSERT}");
+                "MutationDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker routes the "
+                + "payload-returning DELETE onto MutationDeletePayloadField; this leaf carries {INSERT, UPSERT}");
         };
     }
 
@@ -6304,14 +6303,13 @@ public class TypeFetcherGenerator {
                 tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
             case UPSERT -> throw new IllegalStateException(
                 "MutationBulkDmlRecordField with DmlKind.UPSERT — compact-constructor should "
-                + "have rejected this; UPSERT is deferred to R145 under R144's cardinality-"
-                + "safety regime");
+                + "have rejected this; UPSERT is deferred under the cardinality-safety regime");
             // DELETE is carved off onto MutationBulkDeletePayloadField (its own fetcher calls
             // buildBulkRecordPerRowDeleteBody with the carrier's WHERE groups); the compact-
             // constructor on MutationBulkDmlRecordField rejects DELETE, so this arm is unreachable.
             case DELETE -> throw new IllegalStateException(
-                "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — R266 routes the payload-"
-                + "returning bulk DELETE onto MutationBulkDeletePayloadField; this leaf carries {INSERT}");
+                "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker routes the "
+                + "payload-returning bulk DELETE onto MutationBulkDeletePayloadField; this leaf carries {INSERT}");
         };
     }
 

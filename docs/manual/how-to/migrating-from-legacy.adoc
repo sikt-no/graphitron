@@ -83,7 +83,7 @@ type Customer implements Node @table(name: "customer") @node {
 }
 ----
 
-The WARN message names the field: `field 'Customer.id' synthesizes an `@nodeId` carrier without the directive; declare `@nodeId` explicitly.` It mentions the roadmap path so the team-internal trace from log line to migration ticket is one step.
+The WARN message names the field: `field 'Customer.id' synthesizes an `@nodeId` carrier without the directive; declare `@nodeId` explicitly.` It also notes that the synthesis shim will be removed in a future release, so the fix is to add the directive now.
 
 When the shim retires, the WARN flips to a classify-time rejection: the field reads as `UnclassifiedField` and the build fails with a "column 'id' could not be resolved" diagnostic.
 

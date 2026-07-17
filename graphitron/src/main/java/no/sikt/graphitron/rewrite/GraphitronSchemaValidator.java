@@ -248,7 +248,7 @@ public class GraphitronSchemaValidator {
                     + "(emitsKeyedReQuery, operation " + out.operation() + " x target " + out.target()
                     + ") on " + out.getClass().getSimpleName() + ", which carries no reentry emit — "
                     + "the keyed re-query is emitted only for DataLoader-backed leaves and "
-                    + "projected/discriminated DML arms (R314)"),
+                    + "projected/discriminated DML arms"),
                 out.location()));
         }
         // An array-typed column used as a DataLoader batch key (@splitQuery / SourceKey key
@@ -812,7 +812,6 @@ public class GraphitronSchemaValidator {
                 (Rejection.Deferred) Rejection.deferred(
                     "ColumnReferenceField NodeIdEncodeKeys (rooted-at-parent NodeId reference) not yet implemented"
                     + " — requires JOIN-with-projection emission",
-                    "nodeidreferencefield-join-projection-form",
                     no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class),
                 errors);
             return;
@@ -996,7 +995,7 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(
                 field.qualifiedName(),
             Rejection.deferred("Field '" + field.qualifiedName() + "': " + field.getClass().getSimpleName()
-                    + " is not yet supported under NestingField", ""),
+                    + " is not yet supported under NestingField"),
                 field.location()
             ));
         }
@@ -1117,7 +1116,7 @@ public class GraphitronSchemaValidator {
             Rejection.deferred("Nested type '" + nestedTypeName + "' shared across '" + repParent
                         + "' and '" + otherParent + "': field '" + name
                         + "' classifies as " + rf.getClass().getSimpleName()
-                        + " which is not yet supported across multiple parents", ""),
+                        + " which is not yet supported across multiple parents"),
                     other.location()
                 ));
             }
@@ -1154,7 +1153,7 @@ public class GraphitronSchemaValidator {
                 field.qualifiedName(),
                 Rejection.structural("Field '" + field.qualifiedName() + "': a reentry @service field "
                     + "carrying an error channel is not supported — the reentry fetcher inlines its "
-                    + "channel arms on the single-channel premise (R314 row-15 verdict); widening "
+                    + "channel arms on the single-channel premise; widening "
                     + "channel resolution to table-bound payloads requires designing that arm first"),
                 field.location()
             ));
@@ -1204,8 +1203,7 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(
                 field.qualifiedName(),
             Rejection.deferred("Field '" + field.qualifiedName() + "': @service with a @reference path "
-                    + "(condition-join lift form) is not yet supported — see "
-                    + "roadmap/service-record-field.md", ""),
+                    + "(condition-join lift form) is not yet supported"),
                 field.location()));
             return;
         }
@@ -1222,8 +1220,7 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(
                 field.qualifiedName(),
             Rejection.deferred("Field '" + field.qualifiedName() + "': @externalField with a @reference path "
-                    + "(condition-join lift form) is not yet supported — see "
-                    + "roadmap/computed-field-with-reference.md", ""),
+                    + "(condition-join lift form) is not yet supported"),
                 field.location()));
             return;
         }

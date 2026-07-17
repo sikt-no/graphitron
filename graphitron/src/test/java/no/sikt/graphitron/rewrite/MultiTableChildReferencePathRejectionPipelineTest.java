@@ -38,8 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class MultiTableChildReferencePathRejectionPipelineTest {
 
-    private static final String SLUG_POINTER = "roadmap/per-participant-multitable-child-join-paths.md";
-
     /** Two participants that both FK to {@code film} — the supported auto-discovered shape. */
     private static final String INTERFACE_PARTICIPANTS = """
         interface FilmReferrer { rowId: Int }
@@ -73,8 +71,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
             .contains("Film.referrer")
             .contains("an explicit @reference is not supported on a multi-table interface/union child field")
             .contains("auto-discovered")
-            .contains("Remove the @reference directive")
-            .contains(SLUG_POINTER);
+            .contains("Remove the @reference directive");
     }
 
     @Test
@@ -89,8 +86,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
         var rejection = rejectionOf(schema.field("Film", "referrer"));
         assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
-            .contains("an explicit @reference is not supported on a multi-table interface/union child field")
-            .contains(SLUG_POINTER);
+            .contains("an explicit @reference is not supported on a multi-table interface/union child field");
     }
 
     @Test
@@ -162,8 +158,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
         assertThat(rejection.message())
             .contains("FilmSelf")
             .contains("same table as the parent/hub ('film')")
-            .contains("@referenceFor(type: \"FilmSelf\"")
-            .contains(SLUG_POINTER);
+            .contains("@referenceFor(type: \"FilmSelf\"");
     }
 
     // ===== Rule 1c: auto-discovery FK-count failures carry the multi-table-child context wrapper =====
@@ -184,8 +179,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
         assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
             .contains("no foreign key found between tables 'actor'")
-            .contains("an explicit @reference is not supported on multi-table interface/union child fields")
-            .contains(SLUG_POINTER);
+            .contains("an explicit @reference is not supported on multi-table interface/union child fields");
     }
 
     @Test
@@ -202,8 +196,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
         assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
             .contains("multiple foreign keys found between tables 'language' and 'film'")
-            .contains("an explicit @reference is not supported on multi-table interface/union child fields")
-            .contains(SLUG_POINTER);
+            .contains("an explicit @reference is not supported on multi-table interface/union child fields");
     }
 
     // ===== Control: the auto-discovered fixture still classifies, carrying KeyTupleWhere =====

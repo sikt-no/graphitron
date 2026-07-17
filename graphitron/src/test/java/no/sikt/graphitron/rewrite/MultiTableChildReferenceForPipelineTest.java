@@ -23,8 +23,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class MultiTableChildReferenceForPipelineTest {
 
-    private static final String SLUG_POINTER = "roadmap/per-participant-multitable-child-join-paths.md";
-
     // ===== Multi-FK disambiguation (slice 1 capability) =====
 
     @Test
@@ -63,8 +61,7 @@ class MultiTableChildReferenceForPipelineTest {
         assertThat(rejection).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
             .contains("multiple foreign keys found between tables 'language' and 'film'")
-            .contains("@referenceFor")
-            .contains(SLUG_POINTER);
+            .contains("@referenceFor");
     }
 
     // ===== Same-table self-FK route + override-merge (slice 1 capability) =====
@@ -337,8 +334,7 @@ class MultiTableChildReferenceForPipelineTest {
         assertThat(rejection.message())
             .contains("Film")
             .contains("filter")
-            .contains("first hop")
-            .contains(SLUG_POINTER);
+            .contains("first hop");
     }
 
     @Test
@@ -361,8 +357,7 @@ class MultiTableChildReferenceForPipelineTest {
         assertThat(rejection.message())
             .contains("ActorP")
             .contains("filter")
-            .contains("first hop")
-            .contains(SLUG_POINTER);
+            .contains("first hop");
     }
 
     // ===== Producer-arm coverage: union element type, record-backed parent =====

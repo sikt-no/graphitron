@@ -22,7 +22,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
  * validation failed. The {@link Rejection} hierarchy gives the validator's near-miss checks
  * an on-ramp to typed {@link Rejection.AuthorError.UnknownName} (with candidate lists), typed
  * {@link Rejection.InvalidSchema.DirectiveConflict} (with conflicting-directive lists), and
- * typed {@link Rejection.Deferred} (with planSlug + stubKey) without re-parsing prose.
+ * typed {@link Rejection.Deferred} (with stubKey) without re-parsing prose.
  * The {@link #kind()} and {@link #message()} accessors project the variant for the byte-stable
  * validator log surface.
  */

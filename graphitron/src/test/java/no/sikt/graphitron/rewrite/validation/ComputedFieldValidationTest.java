@@ -47,8 +47,7 @@ class ComputedFieldValidationTest {
                     "")),
                 DUMMY_METHOD),
             List.of("Field 'Film.fullTitle': @externalField with a @reference path "
-                + "(condition-join lift form) is not yet supported — see "
-                + "roadmap/computed-field-with-reference.md"));
+                + "(condition-join lift form) is not yet supported"));
 
         private final String description;
         private final GraphitronField field;

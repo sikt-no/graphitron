@@ -116,7 +116,7 @@ public final class JoinPathEmitter {
                         throw new IllegalStateException(
                             "TableExpr.MethodCall reached a materialization site without the "
                             + "@tableMethod call context; method-called nodes are batched-prelude "
-                            + "material only (R314 slice 2b)");
+                            + "material only");
                     }
                     yield CodeBlock.of("$T.$L($L)",
                         no.sikt.graphitron.javapoet.ClassName.bestGuess(mc.method().className()),
@@ -191,7 +191,7 @@ public final class JoinPathEmitter {
                 prevAlias, emitTwoArgMethodCall(pred.condition(), prevAlias, hopAlias));
             case On.Lateral ignored -> throw new IllegalStateException(
                 "a lateral routine hop cannot appear in a " + pathKindLabel + " path; "
-                + "multi-node routine chains classify as typed Deferred (R435)");
+                + "multi-node routine chains classify as typed Deferred");
         };
     }
 

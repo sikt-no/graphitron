@@ -256,7 +256,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + returnExpression.getClass().getSimpleName() + "): DELETE removes the row, and "
                     + "RETURNING carries only the primary key, so a full @table projection is "
                     + "impossible. The @mutation classifier rejects DELETE -> @table at authoring "
-                    + "time (R287); this carrier only ever holds an encoded-ID return.");
+                    + "time; this carrier only ever holds an encoded-ID return.");
             }
         }
         @Override public DomainReturnType domainReturnType() {
@@ -514,15 +514,15 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // sealed-on-kind split must carry.
             if (kind == DmlKind.UPDATE) {
                 throw new IllegalArgumentException(
-                    "MutationDmlRecordField cannot carry DmlKind.UPDATE — R258 routes the "
-                    + "payload-returning UPDATE onto MutationUpdatePayloadField via the UpdateRows "
-                    + "walker carrier; this leaf carries {INSERT, UPSERT}.");
+                    "MutationDmlRecordField cannot carry DmlKind.UPDATE — the UpdateRows walker "
+                    + "routes the payload-returning UPDATE onto MutationUpdatePayloadField; this "
+                    + "leaf carries {INSERT, UPSERT}.");
             }
             if (kind == DmlKind.DELETE) {
                 throw new IllegalArgumentException(
-                    "MutationDmlRecordField cannot carry DmlKind.DELETE — R266 routes the "
-                    + "payload-returning DELETE onto MutationDeletePayloadField via the DeleteRows "
-                    + "walker carrier; this leaf carries {INSERT, UPSERT}.");
+                    "MutationDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker "
+                    + "routes the payload-returning DELETE onto MutationDeletePayloadField; this "
+                    + "leaf carries {INSERT, UPSERT}.");
             }
         }
         @Override public DomainReturnType domainReturnType() {
@@ -603,19 +603,18 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         public MutationBulkDmlRecordField {
             if (kind == DmlKind.UPSERT) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.UPSERT under R144's "
+                    "MutationBulkDmlRecordField cannot carry DmlKind.UPSERT under the "
                     + "cardinality-safety regime — UPSERT is refused at the upstream "
-                    + "MutationInputResolver and lifts via R145 "
-                    + "(mutation-cardinality-safety-upsert).");
+                    + "MutationInputResolver pending a designed cardinality story.");
             }
             // UPDATE is carved off onto MutationBulkUpdatePayloadField — the payload-returning
             // bulk UPDATE sources its per-row SET/WHERE partition from the UpdateRows walker carrier
             // (PK-or-UK matched-key membership), not @value.
             if (kind == DmlKind.UPDATE) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.UPDATE — R258 routes the "
-                    + "payload-returning bulk UPDATE onto MutationBulkUpdatePayloadField via the "
-                    + "UpdateRows walker carrier; this leaf carries {INSERT}.");
+                    "MutationBulkDmlRecordField cannot carry DmlKind.UPDATE — the UpdateRows walker "
+                    + "routes the payload-returning bulk UPDATE onto MutationBulkUpdatePayloadField; "
+                    + "this leaf carries {INSERT}.");
             }
             // DELETE is carved off onto MutationBulkDeletePayloadField — the payload-returning
             // bulk DELETE sources its per-row WHERE columns from the DeleteRows walker carrier, not
@@ -623,9 +622,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // {INSERT}.
             if (kind == DmlKind.DELETE) {
                 throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — R266 routes the "
-                    + "payload-returning bulk DELETE onto MutationBulkDeletePayloadField via the "
-                    + "DeleteRows walker carrier; this leaf carries {INSERT}.");
+                    "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — the DeleteRows walker "
+                    + "routes the payload-returning bulk DELETE onto MutationBulkDeletePayloadField; "
+                    + "this leaf carries {INSERT}.");
             }
             if (!tableInputArg.list()) {
                 throw new IllegalArgumentException(

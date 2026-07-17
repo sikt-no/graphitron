@@ -57,8 +57,7 @@ class ServiceFieldValidationTest {
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), TestFixtures.filmTable(), "")),
                 RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
-                + "(condition-join lift form) is not yet supported — see "
-                + "roadmap/service-record-field.md"));
+                + "(condition-join lift form) is not yet supported"));
 
         private final String description;
         private final GraphitronField field;
@@ -224,7 +223,7 @@ class ServiceFieldValidationTest {
             .extracting(ValidationError::message)
             .anyMatch(m -> m.contains("reentry @service field")
                 && m.contains("error channel")
-                && m.contains("R314 row-15"));
+                && m.contains("single-channel premise"));
     }
 
     private static ServiceTableField multipleSourcesField() {

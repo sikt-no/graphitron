@@ -1414,7 +1414,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
         method: "isEnglish"
     })
-    # R75 Phase 1 durability-test fixture: a @service-backed leaf that always throws.
+    # Durability-test fixture: a @service-backed leaf that always throws.
     # Queries that select this field force a mid-traversal field error, which the
     # SingleRecordCarrierDmlTest uses to prove the two-step DML emit's durability
     # invariant — the row was committed when the mutation fetcher's transactionResult

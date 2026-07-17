@@ -232,8 +232,7 @@ public class DevMojo extends AbstractRewriteMojo {
             getLog().info("graphitron:dev: this reactor resolved to a single module and no "
                 + "sibling modules were found to scan. If services / conditions / records "
                 + "live in sibling modules, run from the aggregator (e.g. mvn -pl <module> "
-                + "graphitron:dev) or check that the parent pom's <modules> lists this module "
-                + "(see R99).");
+                + "graphitron:dev) or check that the parent pom's <modules> lists this module.");
         }
         // Name any module the auto-include could not close: scanned for completion
         // (its target/classes is on disk) but contributing no walked source root, so
@@ -246,7 +245,7 @@ public class DevMojo extends AbstractRewriteMojo {
                 + "goto-definition / hover on their declarations returns nothing: "
                 + String.join(", ", unwalked)
                 + ". Build a module to put its generated sources on disk; a table that "
-                + "arrives only as a dependency JAR has no source to walk (see R369).");
+                + "arrives only as a dependency JAR has no source to walk.");
         }
         // Build the warm compiler and compile the whole generated tree before the watchers start, so
         // the exclusive dir holds a complete runnable image the MCP query tools can execute against

@@ -554,7 +554,7 @@ public final class SplitRowsMethodEmitter {
                             "hop-0 filter reached buildWhereCondition under "
                             + parentCorrelation.getClass().getSimpleName() + "; the classifier lands "
                             + "any hop-0 filter on ParentCorrelation.OnParentJoin so a parent alias "
-                            + "is in scope to bind the filter's source parameter (R450)");
+                            + "is in scope to bind the filter's source parameter");
                     }
                     srcAlias = "parentAlias";
                 } else {

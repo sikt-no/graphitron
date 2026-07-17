@@ -1240,7 +1240,7 @@ class FieldBuilder {
                 if (retiredLookupKey.isPresent()) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                         Rejection.structural("input field '" + retiredLookupKey.get().getName()
-                        + "': @lookupKey on a mutation input field is no longer supported (R144); "
+                        + "': @lookupKey on a mutation input field is no longer supported; "
                         + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
                         + "partition is derived from the catalog by the walker). On Query-side "
                         + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
@@ -2253,8 +2253,7 @@ class FieldBuilder {
             // root and child positions alike.
             if (routineApplications > 1) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                    "a table chain with more than one routine node classifies but does not emit yet",
-                    "routine-chain-fetch-form-breadth"));
+                    "a table chain with more than one routine node classifies but does not emit yet"));
             }
             if (isQueryRoot && chainDirectives.size() > 1) {
                 // Root-head rule above guarantees the chain starts with @routine here: the
@@ -2341,8 +2340,8 @@ class FieldBuilder {
      * per-hop {@code filter}. The write fetcher's step 2 anchors the post-commit re-read on hop
      * 0's table keyed by the captured routine columns, so a condition-joined or filtered hop 0
      * (whose predicate references the routine alias, absent from step 2) has no derivable re-read
-     * anchor; it lands a typed {@code Deferred} with an empty planSlug (the established precedent for a
-     * shape someone may file a follow-up for) rather than reaching the leaf. Hops past 0 keep
+     * anchor; it lands a typed {@code Deferred} whose summary stands alone (the established precedent
+     * for a shape someone may file a follow-up for) rather than reaching the leaf. Hops past 0 keep
      * their filters — both aliases are in scope in step 2's SELECT.
      *
      * <p>The chain's non-empty {@code hops} is the caller's guarantee
@@ -2367,8 +2366,7 @@ class FieldBuilder {
                             "a Mutation routine chain whose first hop joins by condition or carries "
                             + "a filter has no derivable post-commit re-read anchor (the predicate "
                             + "references the routine alias, which must not appear in the follow-up "
-                            + "query) and does not emit yet",
-                            ""));
+                            + "query) and does not emit yet"));
                 }
                 yield new MutationField.MutationRoutineWriteField(parentTypeName, name, location,
                     walk.tb().returnType(),
@@ -2401,8 +2399,7 @@ class FieldBuilder {
         if (!(parentType instanceof TableBackedType tbt) || parentType instanceof TableInterfaceType) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                 "a child-positioned @routine under a non-table-backed parent classifies "
-                + "but does not emit yet",
-                "routine-chain-fetch-form-breadth"));
+                + "but does not emit yet"));
         }
         return switch (walkRoutineChain(fieldDef, parentTypeName, name, tbt.table())) {
             case ChainWalk.Rejected r ->
@@ -2415,8 +2412,7 @@ class FieldBuilder {
                 }
                 if (hasLookupKeyAnywhere(fieldDef)) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-                        "@lookupKey on a routine-backed child field classifies but does not emit yet",
-                        "routine-chain-fetch-form-breadth"));
+                        "@lookupKey on a routine-backed child field classifies but does not emit yet"));
                 }
                 boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
                 // @splitQuery forces the batched keyed re-query anchor, which needs a key. A
@@ -2563,7 +2559,7 @@ class FieldBuilder {
      * and the Connection fork — a routine-terminus chain can never support keyset pagination
      * (the FK-less routine result carries no ordering contract), so it rejects as
      * {@code DirectiveConflict}; a catalog-terminus chain could support it later, so it lands
-     * typed {@code Deferred} with an empty planSlug until someone files that follow-up item.
+     * typed {@code Deferred} until someone files that follow-up item.
      * Returns {@code null} when the chain passes. Deciding here keeps the routine-node resolver
      * position-agnostic; the leaf compact constructors re-assert the terminus mechanically.
      */
@@ -2577,7 +2573,7 @@ class FieldBuilder {
                     + "pagination needs an ordering contract the routine result does not carry; use [T] or T instead")
                 : Rejection.deferred(
                     "Connection pagination over a catalog-terminus chain containing a routine node "
-                    + "is not yet supported", "");
+                    + "is not yet supported");
         }
         if (!terminusTable.denotesSameTableAs(returnType.table())) {
             return Rejection.structural(terminusIsRoutine
@@ -4258,7 +4254,7 @@ class FieldBuilder {
             return classifyQueryField(fieldDef, parentTypeName);
         }
         return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef), fieldDef,
-            Rejection.deferred("fields on '" + parentTypeName + "' (Subscription is not supported)", ""));
+            Rejection.deferred("fields on '" + parentTypeName + "' (Subscription is not supported)"));
     }
 
     /**
@@ -4469,7 +4465,7 @@ class FieldBuilder {
         // "both absent" fallback bury the actual cause.
         if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL, "routine-write-result-shapes"));
+                Rejection.deferred(MUTATION_SINGLE_NODE_ROUTINE_DEFERRAL));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE) && fieldDef.hasAppliedDirective(DIR_MUTATION)) {
@@ -4622,7 +4618,7 @@ class FieldBuilder {
                     // by contrast, admits multiRow as the DeleteRows.Broadcast arm (see below).
                     if (MutationInputResolver.parseMultiRow(fieldDef)) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                            Rejection.deferred("@mutation(typeName: UPDATE) with multiRow: true is not yet supported", ""));
+                            Rejection.deferred("@mutation(typeName: UPDATE) with multiRow: true is not yet supported"));
                     }
                     ReturnTypeRef updateReturnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
                     if (updateReturnType instanceof ReturnTypeRef.ResultReturnType rrt) {
@@ -4698,9 +4694,9 @@ class FieldBuilder {
                                         if (kind == DmlKind.UPSERT) {
                                             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                                 "@mutation(typeName: UPSERT) with bulk @table input and a list-"
-                                                + "shaped data field on the carrier is deferred to R145 "
-                                                + "(mutation-cardinality-safety-upsert); use INSERT or UPDATE, or "
-                                                + "use a single-record carrier with single @table input"));
+                                                + "shaped data field on the carrier is not yet supported; use "
+                                                + "INSERT or UPDATE, or use a single-record carrier with single "
+                                                + "@table input"));
                                         }
                                         return new MutationField.MutationBulkDmlRecordField(
                                             parentTypeName, name, location, rrt, tia, kind, dmlChannel);
@@ -4755,12 +4751,12 @@ class FieldBuilder {
                             DialectRequirement.None.INSTANCE, tia, ch),
                         enc);
                     case UPDATE -> throw new IllegalStateException(
-                        "R246 / R258: every UPDATE is intercepted before resolveInput — the "
+                        "every UPDATE is intercepted before resolveInput — the "
                         + "direct-@table/ID-return shape by classifyUpdateTableField, the payload-"
                         + "returning shape by classifyUpdatePayloadField; the final-switch UPDATE arm "
                         + "is unreachable for field '" + name + "'");
                     case DELETE -> throw new IllegalStateException(
-                        "R266: every DELETE is intercepted before resolveInput — the "
+                        "every DELETE is intercepted before resolveInput — the "
                         + "direct-@table/ID-return shape by classifyDeleteTableField, the payload-"
                         + "returning shape by classifyDeletePayloadField; the final-switch DELETE arm "
                         + "is unreachable for field '" + name + "'");
@@ -5153,7 +5149,7 @@ class FieldBuilder {
                 + "to delete from with @mutation(table: \"<table>\") on this field (preferred), or "
                 + "annotate the input type '" + argTypeName + "' with @table (deprecated). A DELETE "
                 + "cannot derive its table from the return type — the row is gone after the statement, "
-                + "so a @table return is not supported (see R287).")));
+                + "so a @table return is not supported.")));
         }
 
         // 4. Input fields against the write target.
@@ -5337,7 +5333,7 @@ class FieldBuilder {
             }
             case BuildContext.DmlElementKind.RecordElement ignored -> {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                    "R156: record-element data field on DELETE is not supported; use @service for "
+                    "record-element data field on DELETE is not supported; use @service for "
                     + "record-element carriers or an @table-element / ID-scalar data field for DML carriers"));
             }
         }
@@ -5401,8 +5397,8 @@ class FieldBuilder {
     private sealed interface PairVerdict permits PairVerdict.Conflict, PairVerdict.Deferred, PairVerdict.Composes {
         /** Two source-claiming directives that cannot co-occur. The default for any pair. */
         record Conflict() implements PairVerdict {}
-        /** A recognised-but-unsupported combination, signposting {@code planSlug}. */
-        record Deferred(String planSlug) implements PairVerdict {}
+        /** A recognised-but-unsupported combination. */
+        record Deferred() implements PairVerdict {}
         /** A combination that legitimately composes (no rejection). */
         record Composes() implements PairVerdict {}
     }
@@ -5422,7 +5418,7 @@ class FieldBuilder {
     private static PairVerdict pairVerdict(String a, String b) {
         var pair = Set.of(a, b);
         if (pair.equals(Set.of(DIR_ROUTINE, DIR_LOOKUP_KEY))) {
-            return new PairVerdict.Deferred("routine-chain-fetch-form-breadth");
+            return new PairVerdict.Deferred();
         }
         if (pair.equals(Set.of(DIR_ROUTINE, DIR_SPLIT_QUERY))) {
             return new PairVerdict.Composes();
@@ -5442,7 +5438,7 @@ class FieldBuilder {
      */
     private Rejection reduceDirectiveConflict(List<String> present) {
         var conflicting = new LinkedHashSet<String>();
-        String deferredSlug = null;
+        boolean sawDeferred = false;
         for (int i = 0; i < present.size(); i++) {
             for (int j = i + 1; j < present.size(); j++) {
                 switch (pairVerdict(present.get(i), present.get(j))) {
@@ -5450,9 +5446,7 @@ class FieldBuilder {
                         conflicting.add(present.get(i));
                         conflicting.add(present.get(j));
                     }
-                    case PairVerdict.Deferred d -> {
-                        if (deferredSlug == null) deferredSlug = d.planSlug();
-                    }
+                    case PairVerdict.Deferred ignored -> sawDeferred = true;
                     case PairVerdict.Composes ignored -> { }
                 }
             }
@@ -5462,12 +5456,11 @@ class FieldBuilder {
             String at = names.stream().map(n -> "@" + n).collect(Collectors.joining(", "));
             return Rejection.directiveConflict(names, at + " are mutually exclusive");
         }
-        if (deferredSlug != null) {
+        if (sawDeferred) {
             // The only Deferred pair the table mints is @routine × @lookupKey.
             return Rejection.deferred(
                 "@" + DIR_ROUTINE + " with @" + DIR_LOOKUP_KEY
-                + " on a root field classifies but does not emit yet",
-                deferredSlug);
+                + " on a root field classifies but does not emit yet");
         }
         return null;
     }
@@ -5805,9 +5798,7 @@ class FieldBuilder {
                     : "a multi-hop join path";
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@tableMethod on a record-backed parent with " + shapeLabel + " is not yet "
-                    + "supported — only single-hop FK paths ship (previously a runtime "
-                    + "UnsupportedOperationException stub, upgraded to a build-time rejection by "
-                    + "R314 slice 2b)"));
+                    + "supported — only single-hop FK paths ship"));
             }
             var methodTargetHop = new JoinStep.Hop(
                 new TableExpr.MethodCall(tmTb.method(), tbReturn.table()),
@@ -5921,14 +5912,12 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         Rejection.deferred(
                             "@service on a record-backed parent is not yet supported; the batch key "
-                            + "must be lifted through the parent chain to the rooted @table",
-                            "service-record-field"));
+                            + "must be lifted through the parent chain to the rooted @table"));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         Rejection.deferred(
                             "@service on a record-backed parent is not yet supported; the batch key "
-                            + "must be lifted through the parent chain to the rooted @table",
-                            "service-record-field"));
+                            + "must be lifted through the parent chain to the rooted @table"));
                 // Route (a) restores polymorphic returns on root @service fields only; a
                 // child @service on a class-backed parent returning an interface/union is doubly
                 // out of scope (record-backed-parent batch key + polymorphic dispatch).
@@ -5936,8 +5925,7 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         Rejection.deferred(
                             "child @service returning a polymorphic type (interface/union) is not yet supported"
-                            + " — route (a) restores it on root @service fields only",
-                            "polymorphic-entity-service-return"));
+                            + " — route (a) restores it on root @service fields only"));
             };
         }
 
@@ -6876,8 +6864,7 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.Polymorphic p ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
                         "child @service returning a polymorphic type (interface/union) is not yet supported"
-                        + " — route (a) restores it on root @service fields only",
-                        "polymorphic-entity-service-return"));
+                        + " — route (a) restores it on root @service fields only"));
             };
         }
 
@@ -7028,7 +7015,7 @@ class FieldBuilder {
                     && !hasFieldDirective) {
                 LOG.warn("field '{}.{}' synthesizes an `@nodeId` carrier without the directive;"
                     + " declare `@nodeId` explicitly. The synthesis shim will be removed in a"
-                    + " future release. See roadmap/retire-synthesis-shims.md",
+                    + " future release.",
                     parentTypeName, name);
                 return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
@@ -7196,23 +7183,6 @@ class FieldBuilder {
     }
 
     /**
-     * The roadmap slug the deferred-capability rejections point authors at: per-participant
-     * explicit join paths on multi-table interface/union child fields (multi-FK disambiguation,
-     * condition joins, multi-hop chains, same-table self-FK participants). File basename under
-     * {@code roadmap/}, no extension.
-     */
-    private static final String PER_PARTICIPANT_JOIN_PATHS_SLUG = "per-participant-multitable-child-join-paths";
-
-    /**
-     * Roadmap slug for batched parent-holds-FK correlation on multi-table polymorphic child
-     * fields. The gap C deferred rejection in {@link #classifyParticipantRoute} points here: a
-     * list/connection field correlating through a foreign key held on the parent's table is served
-     * at single cardinality; batching it needs the correlation columns carried through the
-     * DataLoader key, which that capability delivers. File basename under {@code roadmap/}, no extension.
-     */
-    private static final String BATCHED_PARENT_HOLDS_FK_SLUG = "batched-polymorphic-parent-holds-fk-correlation";
-
-    /**
      * A one-line {@code @referenceFor} usage sketch, appended to the rule 1b / 1c steers so the
      * author sees the sanctioned surface, not just the deferred-capability pointer.
      */
@@ -7304,8 +7274,7 @@ class FieldBuilder {
                 + parentTable.tableName() + "'); a field-level @reference applies one stated path to "
                 + "every participant, so it can be terminal-correct for at most one and cannot express "
                 + "a distinct join per participant. Remove the @reference directive and, where "
-                + "auto-discovery is insufficient, state a per-participant path with @referenceFor. "
-                + "See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                + "auto-discovery is insufficient, state a per-participant path with @referenceFor."));
         }
 
         // Valid @referenceFor `type:` targets are the field's table-bound participants.
@@ -7432,8 +7401,7 @@ class FieldBuilder {
                     + "interface/union child field the parent side of the first hop correlates by value, "
                     + "not a joined alias, so the filter's parent-table source parameter has nothing to "
                     + "bind against and would be silently dropped. Express the correlation as a pure "
-                    + "{condition:} first hop, or move the filter onto a later (intermediate) hop. "
-                    + "See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                    + "{condition:} first hop, or move the filter onto a later (intermediate) hop."));
             }
             // Single-hop FK: correlation is a key-tuple WHERE against the parent's bound key values,
             // no joins. Everything else (a multi-hop FK chain — slice 2 — or a route carrying a
@@ -7451,7 +7419,7 @@ class FieldBuilder {
                     "participant '" + type + "': " + parsed.errorMessage()
                     + ". Note: an explicit @reference is not supported on multi-table interface/union child "
                     + "fields; auto-discovery could not derive a single FK for this participant. "
-                    + REFERENCE_FOR_USAGE_SKETCH + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                    + REFERENCE_FOR_USAGE_SKETCH));
             }
             if (parsed.elements().isEmpty()) {
                 // Rule 1b: same-table participant. parsePath skips FK auto-discovery when source and target
@@ -7461,8 +7429,7 @@ class FieldBuilder {
                     fieldLabel + ": participant '" + type + "' is backed by the same table as the "
                     + "parent/hub ('" + parentTable.tableName() + "'), so no foreign-key correlation from "
                     + "parent to participant can be auto-discovered. State the self-referencing key with "
-                    + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}]). See roadmap/"
-                    + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                    + "@referenceFor(type: \"" + type + "\", path: [{key: \"<self-fk>\"}])."));
             }
             var pairs = singleHopFkColumnPairs(parsed.elements());
             if (pairs.isEmpty()) {
@@ -7471,8 +7438,7 @@ class FieldBuilder {
                 // change rather than crashing in the emitter.
                 return ParticipantRouteOutcome.fail(Rejection.structural(
                     fieldLabel + ": participant '" + type + "' resolved to an unsupported multi-table child "
-                    + "join shape (only a single-hop foreign key is auto-discovered). " + REFERENCE_FOR_USAGE_SKETCH
-                    + " See roadmap/" + PER_PARTICIPANT_JOIN_PATHS_SLUG + ".md"));
+                    + "join shape (only a single-hop foreign key is auto-discovered). " + REFERENCE_FOR_USAGE_SKETCH));
             }
             correlation = new no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere(pairs.get());
         }
@@ -7524,8 +7490,7 @@ class FieldBuilder {
             + " outside its primary key). A parent-holds-FK participant is single-valued (at most one "
             + "row per parent), so it is served at single cardinality; batching it through the "
             + "DataLoader key is not yet supported. Make the field single-valued, or await batched "
-            + "parent-holds-FK correlation support.",
-            BATCHED_PARENT_HOLDS_FK_SLUG);
+            + "parent-holds-FK correlation support.");
     }
 
     /**
@@ -7541,7 +7506,7 @@ class FieldBuilder {
         boolean anyStructural = errors.stream().anyMatch(r -> !(r instanceof Rejection.Deferred));
         return anyStructural
             ? Rejection.structural(joined)
-            : Rejection.deferred(joined, PER_PARTICIPANT_JOIN_PATHS_SLUG);
+            : Rejection.deferred(joined);
     }
 
     /** Collects the non-null discriminator values from all table-backed participants

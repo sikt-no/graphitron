@@ -40,7 +40,7 @@ There is no runtime introspection of directives, no schema reading, no reflectio
 * *A directive doesn't bind.* Build error with a candidate hint. The xref:../reference/diagnostics-glossary.adoc[diagnostics glossary] explains the rejection kinds; the relevant directive page in xref:../reference/directives/index.adoc[the directive reference] gives the binding rules.
 * *A query is slow.* Read the generated `*Fetchers.java` for the path. The query is selection-aware, so missing columns mean missing GraphQL selections; an unexpected join means an explicit `@reference` somewhere up the path.
 * *N+1 in the logs.* The field is not batched. Either it has no xref:../reference/directives/splitQuery.adoc[`@splitQuery`] / xref:../reference/directives/lookupKey.adoc[`@lookupKey`] when it should, or its parent isn't part of a batch. xref:batching-model.adoc[The batching model] is the reading path.
-* *A feature returns a stub.* Validator `deferred` rejection at build time, runtime stub at request time. Check the rejection's `planSlug:` for the roadmap entry that owns the feature.
+* *A feature returns a stub.* Validator `deferred` rejection at build time, runtime stub at request time. The rejection message states which shape is not yet generated.
 
 == See also
 

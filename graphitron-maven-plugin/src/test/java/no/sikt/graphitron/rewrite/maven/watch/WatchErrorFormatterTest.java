@@ -128,7 +128,7 @@ class WatchErrorFormatterTest {
         Rejection rejection = switch (kind) {
             case AUTHOR_ERROR  -> Rejection.structural(message);
             case INVALID_SCHEMA -> Rejection.invalidSchema(message);
-            case DEFERRED      -> Rejection.deferred(message, "");
+            case DEFERRED      -> Rejection.deferred(message);
         };
         return new ValidationError(coord, rejection, new SourceLocation(line, col, file));
     }

@@ -105,7 +105,7 @@ public final class OneOfDirectiveSdlGenerator {
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Reinstates the GraphQL {@code @oneOf} directive definition on the runtime\n"
-                + "{@code _Service.sdl} value (R283). Generated once per federation run that uses\n"
+                + "{@code _Service.sdl} value. Generated once per federation run that uses\n"
                 + "{@code @oneOf}; see {@code OneOfDirectiveSdlGenerator} for emission semantics.\n")
             .addField(definition)
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())

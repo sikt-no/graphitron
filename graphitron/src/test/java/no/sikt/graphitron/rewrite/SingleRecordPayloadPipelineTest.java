@@ -79,12 +79,12 @@ class SingleRecordPayloadPipelineTest {
     }
 
     @Test
-    void payload_bulkInput_listDataField_upsertDeferredToR145() {
+    void payload_bulkInput_listDataField_upsertDeferred() {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.UPSERT, "type FilmPayload { films: [Film!] }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.UPSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("UPSERT", "R145", "not supported");
+        assertThat(reason).contains("UPSERT", "not yet supported");
     }
 
     @ParameterizedTest

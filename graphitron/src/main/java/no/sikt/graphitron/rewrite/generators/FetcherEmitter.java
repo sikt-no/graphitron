@@ -316,7 +316,7 @@ public final class FetcherEmitter {
                 ClassName.bestGuess(javaBackingFqcn), accessor, CodeBlock.of("success.value()"));
         }
         throw new IllegalStateException(
-            "R268 arm-switch: unsupported inline success-projection field "
+            "inline success-projection arm-switch: unsupported field "
             + field.getClass().getSimpleName() + " on backing " + resultType);
     }
 

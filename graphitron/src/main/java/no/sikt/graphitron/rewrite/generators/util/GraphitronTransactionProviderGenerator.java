@@ -138,7 +138,7 @@ public final class GraphitronTransactionProviderGenerator {
             .addParameter(TRANSACTION_CONTEXT, "ctx")
             .beginControlFlow("try")
             .beginControlFlow("if (depth == 0 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
-            .addComment("Deferred-rollback dev mode (R428): open the operation transaction once and keep")
+            .addComment("Deferred-rollback dev mode: open the operation transaction once and keep")
             .addComment("it open across field settles, so post-settle read-backs observe the writes; each")
             .addComment("field boundary is a savepoint. PinnedConnection.release discards the whole")
             .addComment("transaction and restores autocommit at operation completion.")
@@ -230,7 +230,7 @@ public final class GraphitronTransactionProviderGenerator {
             .addEnumConstant("COMMIT")
             .addEnumConstant("ROLLBACK_ONLY")
             .addJavadoc("Global commit policy for every top-level transaction. {@code COMMIT} persists a\n"
-                + "successful transaction; {@code ROLLBACK_ONLY} is R428's rollback-everything dev mode\n"
+                + "successful transaction; {@code ROLLBACK_ONLY} is the rollback-everything dev mode\n"
                 + "(execute a mutation, observe its result, persist nothing): the operation transaction is\n"
                 + "opened once and deferred across field settles (each field boundary is a savepoint), so\n"
                 + "post-settle payload read-backs observe the uncommitted writes, and the whole transaction\n"

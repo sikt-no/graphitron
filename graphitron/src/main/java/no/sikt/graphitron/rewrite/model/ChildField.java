@@ -481,7 +481,7 @@ public sealed interface ChildField extends OutputField
                         "TableField with a routine-node path must be the inline correlated "
                         + "chain shape (exactly one lateral routine node, no filters/"
                         + "argument-ordering/pagination, non-Connection); other routine chain "
-                        + "shapes classify as typed Deferred (R435)");
+                        + "shapes classify as typed Deferred");
                 }
             }
         }
@@ -581,7 +581,7 @@ public sealed interface ChildField extends OutputField
                             "BatchedTableField with a routine-node path must be the batched correlated "
                             + "chain shape (exactly one lateral routine node, no filters/"
                             + "argument-ordering/pagination, non-Connection); other routine chain "
-                            + "shapes classify as typed Deferred (R435)");
+                            + "shapes classify as typed Deferred");
                     }
                 }
                 if (parentCorrelation instanceof ParentCorrelation.OnLateralArgs
@@ -589,7 +589,7 @@ public sealed interface ChildField extends OutputField
                     throw new IllegalArgumentException(
                         "BatchedTableField with a lateral-headed path must key the batch on the "
                         + "routine's column-bound inputs; an empty sourceKey is the uncorrelated "
-                        + "shape, which the classifier rejects as DirectiveConflict (R435)");
+                        + "shape, which the classifier rejects as DirectiveConflict");
                 }
             } else {
                 // (4) no record-parent Connection mint exists; the Connection emit arm and its
@@ -598,7 +598,7 @@ public sealed interface ChildField extends OutputField
                 if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                     throw new IllegalArgumentException(
                         "BatchedTableField with sourceShape=Record cannot be a Connection; no "
-                        + "record-parent Connection mint exists (R432)");
+                        + "record-parent Connection mint exists");
                 }
             }
         }

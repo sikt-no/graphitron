@@ -55,23 +55,23 @@ class RejectionRenderingTest {
     }
 
     @Test
-    void deferredWithoutSlugReturnsSummaryVerbatim() {
-        var r = Rejection.deferred("fields on 'Subscription' (Subscription is not supported)", "");
+    void deferredReturnsSummaryVerbatim() {
+        var r = Rejection.deferred("fields on 'Subscription' (Subscription is not supported)");
         assertThat(r.message()).isEqualTo("fields on 'Subscription' (Subscription is not supported)");
     }
 
     @Test
-    void deferredWithSlugAppendsRoadmapPath() {
-        var r = Rejection.deferred(
-            "@service on a record-backed parent is not yet supported",
-            "service-record-field");
-        assertThat(r.message()).isEqualTo(
-            "@service on a record-backed parent is not yet supported — see roadmap/service-record-field.md");
+    void deferredMessageIsSummaryAndRendersNoRoadmapPath() {
+        // message() is a pure function of summary, so it structurally cannot compose a roadmap
+        // path suffix onto the author log surface; a deferred rejection states the fact and stands alone.
+        var r = Rejection.deferred("@service on a record-backed parent is not yet supported");
+        assertThat(r.message()).isEqualTo("@service on a record-backed parent is not yet supported");
+        assertThat(r.message()).doesNotContain("roadmap/");
     }
 
     @Test
-    void deferredKeyedByVariantClassRendersWithoutSlugSuffix() {
-        var r = Rejection.deferred("Single-cardinality requires single-hop", "", ChildField.BatchedTableField.class);
+    void deferredKeyedByVariantClassRendersSummaryVerbatim() {
+        var r = Rejection.deferred("Single-cardinality requires single-hop", ChildField.BatchedTableField.class);
         assertThat(r.message()).isEqualTo("Single-cardinality requires single-hop");
     }
 
@@ -170,7 +170,7 @@ class RejectionRenderingTest {
 
     @Test
     void prefixedWithPreservesDeferredStubKey() {
-        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", "", ChildField.BatchedTableField.class);
+        var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", ChildField.BatchedTableField.class);
         var prefixed = (Rejection.Deferred) inner.prefixedWith("on Foo.bar: ");
         assertThat(prefixed.summary()).isEqualTo("on Foo.bar: X is not yet supported");
         assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(ChildField.BatchedTableField.class));

@@ -278,7 +278,7 @@ public final class GraphitronDevExecutorGenerator {
     }
 
     private static String classJavadoc() {
-        return "Dev-loop query execution entry point (R428): runs a GraphQL operation against this\n"
+        return "Dev-loop query execution entry point: runs a GraphQL operation against this\n"
             + "schema's generated resolvers in-process, on a caller-supplied JDBC connection, and\n"
             + "returns the {@code ExecutionResult.toSpecification()} JSON. Driven reflectively by the\n"
             + "{@code graphitron:dev} MCP {@code execute} tool; not part of the application runtime\n"

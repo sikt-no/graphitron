@@ -347,7 +347,7 @@ class GraphQLOverHttpConformanceTest {
             .statusCode(200)
             .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
             .body("errors[0].extensions.classification", notNullValue())
-            .body(not(containsString("R75 durability")))
+            .body(not(containsString("durability-test fixture")))
             .body(not(containsString("RuntimeException")));
     }
 }

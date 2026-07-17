@@ -93,7 +93,7 @@ final class RoutineDirectiveResolver {
         if (hasOrderOrCondition) {
             return new Resolved.Rejected(Rejection.deferred(
                 "@orderBy / @condition on a routine-backed field is not yet supported — "
-                + "no filter or order surface ships for routine-backed fields", ""));
+                + "no filter or order surface ships for routine-backed fields"));
         }
 
         String rawTypeName = baseTypeName(fieldDef);
@@ -143,8 +143,7 @@ final class RoutineDirectiveResolver {
             // Non-root position whose implicit head is not a resolvable catalog table (a
             // record-backed parent). Correlation against a record head lands with the emit slice.
             return new Resolved.Rejected(Rejection.deferred(
-                "@routine columnMapping under a parent without a catalog table is not yet supported",
-                "routine-chain-fetch-form-breadth"));
+                "@routine columnMapping under a parent without a catalog table is not yet supported"));
         }
 
         return switch (ctx.catalog.resolveTableValuedFunction(routineName)) {
@@ -157,8 +156,7 @@ final class RoutineDirectiveResolver {
             // non-table-valued call surface's follow-up item rather than the unknown-name rejection.
             case JooqCatalog.RoutineResolution.NonTableValuedRoutine ntv -> new Resolved.Rejected(Rejection.deferred(
                 "@routine " + ntv.detail()
-                + "; the non-table-valued call surface (procedures, scalar and void routines) does not emit yet",
-                "routine-write-result-shapes"));
+                + "; the non-table-valued call surface (procedures, scalar and void routines) does not emit yet"));
             case JooqCatalog.RoutineResolution.NotATableValuedFunction ignored -> new Resolved.Rejected(Rejection.structural(
                 "@routine could not be resolved — '" + routineName
                 + "' resolves to a table or view, not a table-valued function"));

@@ -738,7 +738,7 @@ final class RecordBindingResolver {
         int safety = 0;
         while (changed) {
             if (safety++ > 1000) {
-                throw new IllegalStateException("R96 walker did not converge in 1000 passes");
+                throw new IllegalStateException("record-binding walker did not converge in 1000 passes");
             }
             changed = false;
             // Snapshot the currently-folded bindings so we don't iterate over mutations.

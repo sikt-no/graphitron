@@ -28,8 +28,7 @@ class ColumnReferenceFieldValidationTest {
     private static final String DEFERRED_NODEID_ENCODE =
         "Field 'Film.languageName': "
         + "ColumnReferenceField NodeIdEncodeKeys (rooted-at-parent NodeId reference) not yet implemented"
-        + " — requires JOIN-with-projection emission"
-        + " — see roadmap/nodeidreferencefield-join-projection-form.md";
+        + " — requires JOIN-with-projection emission";
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
         TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),

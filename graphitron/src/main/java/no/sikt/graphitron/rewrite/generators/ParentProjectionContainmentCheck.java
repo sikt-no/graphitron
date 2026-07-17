@@ -93,7 +93,7 @@ final class ParentProjectionContainmentCheck {
                 if (bk.sourceKey().wrap() instanceof SourceKey.Wrap.TableRecord) {
                     if (!guaranteed.reservedFullRow()) {
                         throw new IllegalStateException(
-                            "Graphitron generator bug (parent-projection containment, R425 family): field '"
+                            "Graphitron generator bug (parent-projection containment): field '"
                                 + f.parentTypeName() + "." + f.name() + "' keys its DataLoader batch on the typed"
                                 + " parent record (SourceKey.Wrap.TableRecord), which requires the reserved"
                                 + " full parent row in type '" + anchorTypeName + "'s $fields SELECT, but the"
@@ -106,7 +106,7 @@ final class ParentProjectionContainmentCheck {
                     for (ColumnRef col : bk.sourceKey().columns()) {
                         if (!guaranteedColumns.contains(col)) {
                             throw new IllegalStateException(
-                                "Graphitron generator bug (parent-projection containment, R425 family): field '"
+                                "Graphitron generator bug (parent-projection containment): field '"
                                     + f.parentTypeName() + "." + f.name() + "' is DataLoader-backed off a table"
                                     + " parent and its key extraction reads column '" + col.sqlName() + "' off"
                                     + " the parent row, but the projection walk"
@@ -129,7 +129,7 @@ final class ParentProjectionContainmentCheck {
                 for (ColumnRef col : prd.parentRowColumns()) {
                     if (!guaranteedColumns.contains(col)) {
                         throw new IllegalStateException(
-                            "Graphitron generator bug (parent-projection containment, R425 family): field '"
+                            "Graphitron generator bug (parent-projection containment): field '"
                                 + f.parentTypeName() + "." + f.name() + "' reads parent-row column '"
                                 + col.sqlName() + "' off the parent record (ParentRowDemand), but the"
                                 + " projection walk (TypeClassGenerator.collectRequiredProjection) for type '"

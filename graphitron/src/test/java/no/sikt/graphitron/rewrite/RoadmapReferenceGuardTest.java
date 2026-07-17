@@ -12,24 +12,33 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Structural guard: no transient roadmap-item citation survives in a comment or javadoc
- * region of an in-scope module. See the "Javadoc conventions" rule in {@code CLAUDE.md} for
- * the authoring convention this backs, and {@link RoadmapReferenceScanner} for the lexer that
- * separates comment regions from string literals.
+ * Structural guard: no transient roadmap-item citation survives in an in-scope module, in
+ * either of two habitats the {@link RoadmapReferenceScanner} lexer separates.
  *
- * <p>In-scope is the generator, its runtime/support modules, and the fixtures and tooling
+ * <ul>
+ *   <li>{@link #noRoadmapReferencesInComments} scans comment / javadoc regions across every
+ *       in-scope module's main and test sources.</li>
+ *   <li>{@link #noRoadmapReferencesInGeneratorStringLiterals} scans string, character, and
+ *       text-block literals across every in-scope module's <em>main</em> sources: the rejection
+ *       messages, invariant-throw messages, and documentation text emitted into generated
+ *       output that would render a rotting id or slug at a consumer with no {@code roadmap/}
+ *       directory. Test-source string literals citing an item as provenance are a distinct
+ *       habitat and are deliberately not scanned; they render to no consumer surface.</li>
+ * </ul>
+ *
+ * <p>See the "Javadoc conventions" rule in {@code CLAUDE.md} for the authoring convention this
+ * backs. In-scope is the generator, its runtime/support modules, and the fixtures and tooling
  * around them; the one deliberate exclusion is {@code roadmap-tool}, whose entire domain is
  * roadmap items, so an item id in its sources is a legitimate reference rather than a stale
- * documentation citation.
+ * citation.
  *
  * <p>The scanned-file count is asserted well above zero: this guard lives in one module but
  * reaches its siblings by walking up to the repository root, so a drifted root (a rename, a
  * moved module) would silently scan nothing and pass vacuously. The floor catches that.
  *
- * <p>When this guard fires, rewrite the offending comment to name a live symbol (a
- * {@code {@link}}), a published docs page, or simply the fact; do not suppress the guard.
- * A roadmap id inside a user-facing message string is a different concern in a habitat this
- * guard does not scan, so it is not what trips here.
+ * <p>When this guard fires, rewrite the offending citation to name a live symbol (a
+ * {@code {@link}} in a comment, the class / method in prose in a message string), a published
+ * docs page, or simply the fact; do not suppress the guard.
  */
 @UnitTier
 class RoadmapReferenceGuardTest {
@@ -50,6 +59,9 @@ class RoadmapReferenceGuardTest {
 
     /** A floor on scanned files: comfortably below the true count, high enough to catch a walk that reached nothing. */
     private static final int MIN_SCANNED_FILES = 500;
+
+    /** The main-source-only floor for the string-literal scan; comfortably below the true main-source count. */
+    private static final int MIN_SCANNED_MAIN_FILES = 200;
 
     @Test
     void noRoadmapReferencesInComments() throws IOException {
@@ -76,6 +88,39 @@ class RoadmapReferenceGuardTest {
             .as("transient roadmap-item citations (R<n> / roadmap/<slug>) must not appear in comment or "
                 + "javadoc regions; reference a live symbol, a docs page, or the fact itself instead "
                 + "(see CLAUDE.md \"Javadoc conventions\"). Offending sites:\n"
+                + findings.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).orElse(""))
+            .isEmpty();
+    }
+
+    @Test
+    void noRoadmapReferencesInGeneratorStringLiterals() throws IOException {
+        Path repoRoot = locateRepoRoot();
+        List<RoadmapReferenceScanner.Finding> findings = new ArrayList<>();
+        int scanned = 0;
+        for (String module : IN_SCOPE_MODULES) {
+            // Main sources only: string literals that render to a consumer surface (author-facing
+            // rejection messages, invariant-throw messages, documentation emitted into generated
+            // output). A test's @DisplayName or assertion description citing an item as provenance
+            // renders to no such surface, so the test tree is out of this projection's scope.
+            Path root = repoRoot.resolve(module).resolve("src/main/java");
+            if (!Files.isDirectory(root)) continue;
+            findings.addAll(RoadmapReferenceScanner.scanStrings(root));
+            try (var paths = Files.walk(root)) {
+                scanned += (int) paths.filter(p -> p.toString().endsWith(".java")).count();
+            }
+        }
+
+        assertThat(scanned)
+            .as("the guard reaches sibling modules by walking to the repository root; a scanned-file "
+                + "count near zero means the root drifted and the guard would pass vacuously")
+            .isGreaterThan(MIN_SCANNED_MAIN_FILES);
+
+        assertThat(findings)
+            .as("transient roadmap-item citations (R<n> / roadmap/<slug>) must not appear in string, "
+                + "character, or text-block literals of generator main sources; these render onto author "
+                + "log surfaces, invariant-throw messages, or generated-output documentation where the id "
+                + "rots and the consumer has no roadmap/ directory. State the fact or name the live "
+                + "class/method in prose instead. Offending sites:\n"
                 + findings.stream().map(Object::toString).reduce((a, b) -> a + "\n" + b).orElse(""))
             .isEmpty();
     }

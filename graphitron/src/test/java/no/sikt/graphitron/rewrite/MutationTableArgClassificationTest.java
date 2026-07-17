@@ -94,7 +94,7 @@ class MutationTableArgClassificationTest {
             .anyMatch(m -> m.contains("has no write target")
                         && m.contains("@mutation(table:")
                         && m.indexOf("@mutation(table:") < m.indexOf("@table (deprecated)")
-                        && m.contains("R287"));
+                        && m.contains("a @table return is not supported"));
     }
 
     @Test

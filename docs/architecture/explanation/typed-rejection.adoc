@@ -78,7 +78,7 @@ Rejection
 
 `InvalidSchema.CaseFoldCollision` is the case-fold-uniqueness arm: two or more type-name stems collapse to the same identifier on case-insensitive filesystems (APFS, NTFS), which would clobber the emitted Java files. The variant carries the full case-equivalent group as a typed `List<String>` plus a `CaseFoldCollision.Origin` enum (`SDL`, `SYNTH_CONNECTION`, `SYNTH_EDGE`, `SYNTH_PAGE_INFO`) identifying which classifier arm each demoted member came from; `message()` switches on origin to specialise the actionable fix hint (synthesised arms point at `@asConnection(connectionName: ...)`; SDL arms suggest a rename). Carrying the group as structured data lets an LSP fix-it offer "rename one of these" with the candidate list ready, without scraping prose.
 
-`Deferred` classifies cleanly but the generator hasn't shipped emit support for the variant yet. The arm carries a `summary` plus a `planSlug` (the roadmap file basename, no extension) plus a `StubKey`. The stub key is itself a sealed sub-type: a `VariantClass` arm names the stubbed variant class (or carries `null` for inline-defer sites whose rejection names a feature shape); an `EmitBlock` arm names a typed enum value for "this shape can't emit yet" sites inside the emitters. The validator projects every `Deferred` through the same renderer; the typed key lets the LSP offer "open the roadmap item" instead of parsing the path back out.
+`Deferred` classifies cleanly but the generator hasn't shipped emit support for the variant yet. The arm carries a `summary` plus a `StubKey`. The stub key is a sealed sub-type with a single arm: a `VariantClass` names the stubbed variant class (or carries `null` for inline-defer sites whose rejection names a feature shape rather than a leaf class). The validator projects every `Deferred` through the same renderer the runtime stub uses, so a deferred message reads identically on the build log and in the stub's exception text. The `summary` is the whole message: it states the fact that the feature is not yet generated and stands alone, so the render composes no roadmap-path suffix and cannot cite a transient item that would rot at a consumer with no `roadmap/` directory.
 
 The xref:development-principles.adoc#acceptances-classifier-guarantees-shape-emitter-assumptions[classifier-shaped emitter-assumption] principle and the xref:development-principles.adoc#rejections-validator-mirrors-classifier-invariants[validator-mirrors-classifier] rule both ride this contract: the validator switches on the same dispatch sets the generator does, so an unsupported classification surfaces as a typed `Deferred` at validate time, not as an `UnsupportedOperationException` at runtime. Validate is a typed-rejection projection of classify.
 
@@ -150,7 +150,6 @@ classDiagram
     }
     class Deferred {
         +String summary
-        +String planSlug
         +StubKey stubKey
     }
 

@@ -259,7 +259,7 @@ public final class InlineLookupTableFieldEmitter {
                     });
                 case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                     "a lateral routine hop cannot head a lookup path; @lookupKey on routine "
-                    + "chains classifies as typed Deferred (R435)");
+                    + "chains classifies as typed Deferred");
             case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
                 "ParentCorrelation.OnLiftedSlots never reaches the inline emitters; the "
                 + "pre-keyed lifted shape is DataLoader-batched through SplitRowsMethodEmitter");

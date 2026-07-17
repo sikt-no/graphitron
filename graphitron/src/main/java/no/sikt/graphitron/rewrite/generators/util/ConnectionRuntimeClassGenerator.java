@@ -496,7 +496,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addSuperinterface(AutoCloseable.class)
             .addJavadoc("One pinned connection with per-request identity mounted for its acquisition-scoped\n"
-                + "lifetime. Carries no transaction machinery (R429 slice 2's {@code TransactionProvider} +\n"
+                + "lifetime. Carries no transaction machinery (the {@code TransactionProvider} and\n"
                 + "execution instrumentation compose over this seam); {@link #afterSettle} is the one\n"
                 + "identity-side hook the provider triggers, through an opaque callback, after each\n"
                 + "top-level settle. See {@code ConnectionRuntimeClassGenerator} for the full lifecycle\n"
@@ -527,9 +527,9 @@ public final class ConnectionRuntimeClassGenerator {
         boolean requiresPostgres = projection.requiresPostgres();
         var dataSourceField = FieldSpec.builder(DATA_SOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build();
         var tenantSourcesField = FieldSpec.builder(OBJECT_DATASOURCE_MAP, "dataSourcesByTenant", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("Per-tenant {@code DataSource}s for database-per-tenant routing (R45); empty for the\n"
+            .addJavadoc("Per-tenant {@code DataSource}s for database-per-tenant routing; empty for the\n"
                 + "single-tenant runtime. Keyed by the divined tenant value, erased to {@code Object} because\n"
-                + "the key type is R45's classification concern, not the lifecycle's.\n")
+                + "the key type is a classification concern, not the lifecycle's.\n")
             .build();
         var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build();
         var hookField = FieldSpec.builder(sessionHook, "sessionHook", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -565,7 +565,8 @@ public final class ConnectionRuntimeClassGenerator {
         var canonicalConstructor = canonicalBuilder
             .addStatement("this.sessionHook = $L", hookInitializer)
             .addJavadoc("Builds the runtime over a default {@code DataSource} (untenanted / single-tenant SQL)\n"
-                + "and a per-tenant map for database-per-tenant routing (R45's construction overload). The\n"
+                + "and a per-tenant map for database-per-tenant routing (the tenant-routing construction\n"
+                + "overload). The\n"
                 + "consumer (or their framework) still owns pool creation and tuning.\n"
                 + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
                 + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
@@ -621,11 +622,11 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return $T.acquire(tenantDataSource, sessionHook, claims, abortExecutor, $L)",
                 pinnedConnection, projection.remountAfterSettle())
             .addJavadoc("Pins one connection from the {@code tenantKey}'s {@code DataSource} and mounts identity\n"
-                + "on it, for database-per-tenant routing (R45). An unknown key raises\n"
+                + "on it, for database-per-tenant routing. An unknown key raises\n"
                 + "{@link java.util.NoSuchElementException} before any connection is acquired (request-level\n"
                 + "error, no SQL). Per-key deduplication within one operation is the caller's ({@code $L}); this\n"
                 + "is the raw keyed acquisition primitive.\n"
-                + "@param tenantKey the divined tenant value selecting the source; type is R45's concern\n"
+                + "@param tenantKey the divined tenant value selecting the source\n"
                 + "@param claims the opaque per-request claims payload, never parsed here\n", TENANT_CONNECTIONS_CLASS_NAME)
             .build();
 

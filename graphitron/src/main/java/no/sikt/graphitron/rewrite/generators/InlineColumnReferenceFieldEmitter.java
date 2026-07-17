@@ -132,7 +132,7 @@ public final class InlineColumnReferenceFieldEmitter {
                 });
             case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                 "a lateral routine hop cannot head a column-reference path; routine chains do "
-                + "not produce ColumnReferenceField (R435)");
+                + "not produce ColumnReferenceField");
             case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
                 "ParentCorrelation.OnLiftedSlots never reaches the inline emitters; the "
                 + "pre-keyed lifted shape is DataLoader-batched through SplitRowsMethodEmitter");

@@ -366,10 +366,8 @@ final class MutationInputResolver {
     Resolved resolveInput(GraphQLFieldDefinition fieldDef, DmlKind kind) {
         if (kind == DmlKind.UPSERT) {
             return new Resolved.Rejected(Rejection.deferred(
-                "@mutation(typeName: UPSERT) is not supported under the R144 cardinality-safety "
-                + "regime; the conflict-target's uniqueness and the bulk-UPSERT cardinality story "
-                + "are designed under R145 (mutation-cardinality-safety-upsert).",
-                "mutation-cardinality-safety-upsert"));
+                "@mutation(typeName: UPSERT) is not yet supported; the conflict-target's uniqueness "
+                + "and the bulk-UPSERT cardinality story are not yet designed."));
         }
 
         boolean multiRow = parseMultiRow(fieldDef);
@@ -480,7 +478,7 @@ final class MutationInputResolver {
             throw new IllegalStateException(
                 "MutationInputResolver.resolveInput reached with DmlKind." + kind + " — UPDATE and "
                 + "DELETE are intercepted in FieldBuilder by their walker classifiers before "
-                + "resolveInput and never reach the @value / PK-coverage machinery (R246 / R258 / R266).");
+                + "resolveInput and never reach the @value / PK-coverage machinery.");
         }
 
         return new Resolved.Ok(foundTia);
@@ -501,7 +499,7 @@ final class MutationInputResolver {
             if (sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) {
                 return new Resolved.Rejected(Rejection.structural(
                     "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
-                    + "': @lookupKey on a mutation input field is no longer supported (R144); "
+                    + "': @lookupKey on a mutation input field is no longer supported; "
                     + "remove it (the field is a filter by default)"));
             }
             if (sdlField.hasAppliedDirective(DIR_CONDITION)) {
@@ -557,8 +555,7 @@ final class MutationInputResolver {
                         + "': CompositeColumnField on @mutation(typeName: INSERT) is not"
                         + " supported; the composite-PK INSERT shape is structurally valid"
                         + " but architecturally rare. Route through individual @field columns"
-                        + " if you really need it.",
-                        ""));
+                        + " if you really need it."));
                 }
                 continue;
             }
@@ -602,13 +599,13 @@ final class MutationInputResolver {
                     return new Resolved.Rejected(Rejection.structural(
                         "@mutation input '" + typeName + "' field '" + nf.name()
                         + "': list-typed nested input types (e.g. '" + nf.name() + ": ["
-                        + nf.typeName() + "!]') are not yet supported (R186); a list grouping has no "
+                        + nf.typeName() + "!]') are not yet supported; a list grouping has no "
                         + "obvious meaning when flattening onto one outer row."));
                 }
                 if (nf.condition().isPresent()) {
                     return new Resolved.Rejected(Rejection.structural(
                         "@mutation input '" + typeName + "' field '" + nf.name()
-                        + "': @condition on a nested grouping input is not supported (R245)."));
+                        + "': @condition on a nested grouping input is not supported."));
                 }
                 var nestedRejection = admitMutationInputFields(nf.fields(), typeName, kind);
                 if (nestedRejection != null) {

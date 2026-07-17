@@ -122,7 +122,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("this.runtime = runtime")
             .addStatement("this.commitPolicy = commitPolicy")
             .addJavadoc("Builds the instrumentation over {@code runtime} with an explicit commit policy;\n"
-                + "{@code ROLLBACK_ONLY} is R428's rollback-everything dev mode (see its enum constant\n"
+                + "{@code ROLLBACK_ONLY} is the rollback-everything dev mode (see its enum constant\n"
                 + "for the deferred observe-then-discard topology and its stated fidelity limits).\n")
             .build();
 

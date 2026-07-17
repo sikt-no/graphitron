@@ -302,13 +302,13 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "upsertBar");
         assertThat(f.reason())
-            .contains("@mutation(typeName: UPSERT) is not supported under the R144");
+            .contains("@mutation(typeName: UPSERT) is not yet supported");
     }
 
     @Test
     void compositePkNodeId_insert_rejected() {
         // CompositeColumnField on @mutation(typeName: INSERT) is not supported (the same-table
-        // carve-out). The Deferred rejection carries an empty planSlug; no roadmap item exists today.
+        // carve-out). The Deferred rejection's summary stands alone.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -781,7 +781,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "upsertBarRef");
         assertThat(f.reason())
-            .contains("@mutation(typeName: UPSERT) is not supported under the R144");
+            .contains("@mutation(typeName: UPSERT) is not yet supported");
     }
 
     // ===== self-FK @nodeId @reference on @mutation INSERT inputs =====

@@ -28,6 +28,6 @@ public final class DurabilityErrorService {
     private DurabilityErrorService() {}
 
     public static Map<Record1<Integer>, String> synthesize(Set<Record1<Integer>> filmIds, DSLContext dsl) {
-        throw new RuntimeException("R75 durability-test fixture: synthetic mid-traversal error");
+        throw new RuntimeException("durability-test fixture: synthetic mid-traversal error");
     }
 }

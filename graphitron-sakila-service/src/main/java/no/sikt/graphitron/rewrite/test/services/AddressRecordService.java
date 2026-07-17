@@ -47,8 +47,8 @@ public final class AddressRecordService {
         // omitted: address_id stayed unset (changed=false), so the service owns the INSERT and the
         // database assigns the serial PK. Fill the other NOT NULL columns (city_id 1 is seeded) so the
         // row is valid, then read the DB-assigned PK back off the refreshed record.
-        in.setAddress("R315 fixture");
-        in.setDistrict("R315");
+        in.setAddress("record-service fixture address");
+        in.setDistrict("fixture district");
         in.setCityId(1);
         in.attach(dsl.configuration());
         in.insert();
