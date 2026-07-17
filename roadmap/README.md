@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R501` | @pivot: discriminator-keyed aggregate projections | Spec | 2026-07-17 | [plan](pivot-projection-directive.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-14 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -310,6 +311,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### codegen-correctness
 
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
+- `R501` [**@pivot: discriminator-keyed aggregate projections**](pivot-projection-directive.md) — Spec, feature
 - `R472` [**Generated condition filters on nested fields reference a conditions method that is never emitted**](nested-generated-condition-filters-never-emitted.md) — Backlog, bug
 - `R499` [**Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence)**](connection-fields-shared-result-key-projection.md) — In Review, bug
 - `R500` [**Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key)**](result-key-aware-reference-projection.md) — Ready, bug
