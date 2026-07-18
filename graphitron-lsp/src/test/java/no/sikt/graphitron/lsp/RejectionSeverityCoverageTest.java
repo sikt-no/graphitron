@@ -173,7 +173,7 @@ class RejectionSeverityCoverageTest {
         }
         if (permit == Rejection.Deferred.class) {
             return new Rejection.Deferred(
-                "summary", "plan-slug",
+                "summary",
                 new Rejection.StubKey.VariantClass(null));
         }
         // ServiceMethodCallError sub-seal of AuthorError. The seal carries only the two arms
