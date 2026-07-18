@@ -24,7 +24,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R497` | Pin or drop the FederationSpec.URL caller census in its class javadoc | In Review | 2026-07-18 <sub>created 2026-07-16</sub> | [plan](federation-spec-url-caller-census.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -339,7 +338,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R443` [**Post-R438 stale-reference residue: ConditionResolution javadoc**](post-r438-stale-reference-residue.md) — Backlog, structural
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
-- `R497` [**Pin or drop the FederationSpec.URL caller census in its class javadoc**](federation-spec-url-caller-census.md) — In Review, docs
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
