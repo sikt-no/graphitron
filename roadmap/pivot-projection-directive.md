@@ -209,8 +209,8 @@ column, etc.) is the per-field choice, exactly as with translations. The value t
 ## Model
 
 **New type variant `GraphitronType.PivotProjection`.** A record-backed output type that, unlike the
-existing `ResultType` arms (`JavaRecordType`, `PojoResultType`, `JooqRecordType`,
-`JooqTableRecordType`), is *not* reflected from a Java class: its runtime carrier is an anonymous jOOQ
+existing `ResultType` arms (`JavaRecordType`, `PojoResultType`, and the `JooqRecordCarrier`
+partition over `JooqRecordType` / `JooqTableRecordType`), is *not* reflected from a Java class: its runtime carrier is an anonymous jOOQ
 `Record` produced by the pivot subselect, and it has no `fqClassName`. It therefore cannot satisfy
 `ResultType`'s contract and lands as a direct `GraphitronType` sibling, not a `ResultType` arm. It
 carries its ordered slots, each slot being `(sdlName, outputAlias, discriminatorValue)`. The
@@ -286,11 +286,11 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
   `ResultType`-typed helper chain (`propertyOrRecordBinding`, `inlineSuccessRead`) keeps its narrow
   parameter and its accessor/`fqClassName` contract untouched, since `PivotProjection` is not a
   `ResultType` and must not be threaded through it. The "children read by name off a generic jOOQ
-  `Record`" disjunction those two helpers already restate is a pre-existing duplication, tracked
-  separately as R502 (`record-by-name-read-capability`). Per that item's membership rule,
-  `PivotProjection` joins its carrier partition only if a read site actually consults it for pivot
-  parents; the `PivotSlotField` arm here does not, so this slice neither carries nor triggers that
-  refactor.
+  `Record`" fact those two helpers consult is single-sourced since R502 shipped: the sealed
+  intermediate `GraphitronType.JooqRecordCarrier` (see the R502 entry in `roadmap/changelog.md`).
+  That partition is `ResultType`-scoped (its members carry `fqClassName`), so `PivotProjection`
+  stays outside it by construction, and the `PivotSlotField` arm reads by alias without consulting
+  the carrier fact; this slice does not touch that seam.
 - **Selection gating** reads the pivot type's slots off `env.getSelectionSet()`, the same source
   `Type.$fields(...)` already consults.
 
