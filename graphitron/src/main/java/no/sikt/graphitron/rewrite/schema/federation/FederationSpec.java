@@ -5,12 +5,7 @@ package no.sikt.graphitron.rewrite.schema.federation;
  * federation-jvm runtime call) so callers at different stages can reference it without inverting
  * the pipeline ordering.
  *
- * <p>Today this is just the canonical {@code @link} URL. Three callers reach for it:
- * {@link no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser} when synthesising a
- * {@code @link} for a consumer that set {@code <schemaInput tag>} but no explicit {@code @link};
- * {@link no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier} when documenting which
- * spec version is bundled; and {@code GraphitronSchemaBuilder} when loading the federation
- * directive name set for recipe-error rewriting.
+ * <p>Today this is just the canonical {@code @link} URL.
  */
 public final class FederationSpec {
 

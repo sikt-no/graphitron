@@ -32,7 +32,7 @@ So the census carries one false entry and one omission: the drift the R483 audit
 
 The two `{@link}` targets in the census are build-checked live symbols (the javadoc reference gate resolves them), so the census reads as enforced. But the gate pins that the *symbol exists*, not that it *reads the value of `URL`*. That guarantee is orthogonal to the census's actual claim, which is precisely why a link-only referrer sits inside the list and a real consumer sits outside it.
 
-## Direction
+## Direction (implemented; see Outcome below)
 
 Drop the enumerated census. An unguarded inventory on a leaf constant reads as authoritative and rots on every caller add or remove while earning nothing derivation cannot recover: find-usages is the single source of the caller set, and the correctly-directed consumer-to-producer `{@link}`s already live at the call sites. Replacing the census with a mechanically-checked form is the wrong altitude here; there is no compiler-checked "who reads this constant" mechanism for a `public static final String`, so that path would mean inventing bespoke enforcement for a one-constant class.
 
@@ -49,3 +49,11 @@ The class javadoc should state what the constant is and why the holder is neutra
 * No change to any consumer; this is a single-file javadoc edit.
 
 Surfaced by the R483 javadoc drift audit.
+
+## Outcome
+
+Implemented as specified: the "Three callers reach for it: ..." sentence is gone from
+`FederationSpec`'s class javadoc. The javadoc now states what the constant is (the canonical
+`@link` URL) and why the holder is neutral, and stops. The neutrality rationale and the `URL`
+field javadoc (version-bump guidance) are untouched, as are all consumers. Verified with a full
+`-Plocal-db` reactor build (javadoc reference gate included).
