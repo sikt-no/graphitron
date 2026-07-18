@@ -148,7 +148,7 @@ public final class InputRecordGenerator {
                 + "<p><strong>Do not reference from service code.</strong> This class lives "
                 + "under {@code $L.inputs} and exists only so the validator pre-step has an "
                 + "annotated walk target. Service code consumes the consumer-bean path or "
-                + "the existing {@code Map.get} pattern; a build-time audit enforces this rule.\n",
+                + "the existing {@code Map.get} pattern.\n",
                 className, outputPackage);
 
         var fields = new ArrayList<FieldSpec>(shape.components().size());
