@@ -7,7 +7,7 @@ priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-17
-last-updated: 2026-07-17
+last-updated: 2026-07-18
 ---
 
 # @pivot: discriminator-keyed aggregate projections
@@ -214,8 +214,8 @@ value `ColumnRef`, so there is no drift copy.
 implements `EmitsPerTypeFile` and appears in `schema.types()`: a schema type and per-slot datafetchers
 are emitted, only the Java DTO and `.convertFrom(...)` are not. The new field leaves (below) land in
 the `TypeFetcherGenerator` dispatch partition (`IMPLEMENTED_LEAVES`), so
-`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces coverage; the slot
-`PropertyField`s already sit in that partition.
+`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces coverage; the new
+slot leaf (below) joins the same partition.
 
 **New producer leaves, split on the delivery axis.** Delivery (inline vs batched) is a real orthogonal
 axis the model already splits for tables (`ChildField.TableField`, inline, does *not* implement
@@ -232,9 +232,16 @@ discriminator `ColumnRef` (from `on:`), the value `ColumnRef` (from `value:`), a
 Both report `SourceShape.Record` for their children. This keeps the delivery fact forked on leaf
 identity, never re-derived from a null check.
 
-**Slot fields reuse `ChildField.PropertyField`.** Each projection slot is a `PropertyField` with
-`columnName = outputAlias` and `column = null` (no `TableRef`), which routes through the existing
-by-name record read. No new slot leaf is needed.
+**Slot fields are a dedicated leaf `ChildField.PivotSlotField`.** Each projection slot is a new
+`ChildField` leaf carrying exactly its two facts: the output alias and the discriminator value. A
+nulled-out `ChildField.PropertyField` reuse was considered and rejected: `PropertyField`'s meaning
+is a read off a `ResultType`-classified parent (a resolved `AccessorResolution` or `ColumnRef`,
+neither of which a slot has), and the binding dispatch narrows the parent to
+`GraphitronType.ResultType` before `PropertyField`'s guard fires, so a slot under a
+`PivotProjection` parent (not a `ResultType` arm) would never reach the by-name read at all; it
+would fall through to the method-reference fallback. Reuse saves nothing and puts one leaf's
+meaning in the hands of its parent's classification, the shared-accessor-whose-meaning-depends-on-
+variant smell. The dedicated leaf forks on identity in the sealed dispatch instead.
 
 ## Implementation
 
@@ -259,14 +266,15 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
   nullability stance, not a reusable column form. Inline needs no `GROUP BY`. The `@splitQuery` path routes through `SplitRowsMethodEmitter` with the pivot
   projection as the select list and `GROUP BY __idx__` over the batch, scattered single-per-key via the
   existing `scatterSingleByIdx`.
-- **Slot extraction.** Extend the record-by-name arm guard in `FetcherEmitter.propertyOrRecordBinding`
-  (and its Outcome sibling `inlineSuccessRead`) to accept `GraphitronType.PivotProjection` alongside
-  `JooqRecordType` / `JooqTableRecordType`, so a slot emits
-  `return ((Record) source).get(DSL.field("<alias>"));`. This is the one edit to an existing emitter
-  arm; everything else is additive. The fact widened here ("children read by name off a generic jOOQ
-  `Record`") is now uniformly true across three `GraphitronType` variants; if a second read site tests
-  the same disjunction, reify it as a "reads-by-name-off-`Record`" capability the record-backed variants
-  implement and have the emitters consult, rather than growing the `instanceof` OR-list at each site.
+- **Slot extraction.** A new `PivotSlotField` arm in `FetcherEmitter.bindRaw` emits the by-alias
+  read, `return ((Record) source).get(DSL.field("<alias>"));`, via the existing `columnByAlias`
+  helper (already the emission four `bindRaw` arms share). No existing emitter arm is edited: the
+  `ResultType`-typed helper chain (`propertyOrRecordBinding`, `inlineSuccessRead`) keeps its narrow
+  parameter and its accessor/`fqClassName` contract untouched, since `PivotProjection` is not a
+  `ResultType` and must not be threaded through it. The "children read by name off a generic jOOQ
+  `Record`" disjunction those two helpers already restate is a pre-existing duplication, tracked
+  separately as R502 (`record-by-name-read-capability`); when that capability lands, the pivot slot
+  is a natural third member, but this slice does not carry the refactor.
 - **Selection gating** reads the pivot type's slots off `env.getSelectionSet()`, the same source
   `Type.$fields(...)` already consults.
 
@@ -293,9 +301,9 @@ LSP code:
   rejected.
 - A `@pivot` field with a list return type, or with no establishable join to an attribute table, is
   rejected.
-- `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` covers the new `PivotField`
-  leaf; `SealedHierarchyDocCoverageTest` covers the new `PivotProjection` variant and any new rejection
-  arm.
+- `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` covers the three new
+  leaves (`PivotField`, `BatchedPivotField`, `PivotSlotField`); `SealedHierarchyDocCoverageTest`
+  covers the new `PivotProjection` variant and any new rejection arm.
 
 ## Tests
 
@@ -326,7 +334,8 @@ assertions on method bodies):
 
 ## Roadmap entries
 
-Single slice: inline + `@splitQuery`, single + composite keys, in one item. The additive-then-cutover
-discipline applies only to the one existing-emitter edit (the `propertyOrRecordBinding` guard); the new
-type variant, leaf, and emitter are purely additive.
+Single slice: inline + `@splitQuery`, single + composite keys, in one item. The change is purely
+additive: a new type variant, three new field leaves, a new `bindRaw` arm, and a new projection
+emitter; no existing emitter arm or narrowed helper contract is edited, so the additive-then-cutover
+discipline has nothing to cut over.
 
