@@ -438,8 +438,7 @@ final class SourceRowDirectiveResolver {
 
     private static String rejectByParentShape(
             GraphitronType.ResultType parentResultType, String parentTypeName, String fieldName) {
-        if (parentResultType instanceof GraphitronType.JooqTableRecordType
-                || parentResultType instanceof GraphitronType.JooqRecordType) {
+        if (parentResultType instanceof GraphitronType.JooqRecordCarrier) {
             return "@sourceRow on '" + parentTypeName + "." + fieldName
                 + "' is not supported on jOOQ-backed parents; the catalog record's "
                 + "columns drive batching — use the existing FK path or @reference";

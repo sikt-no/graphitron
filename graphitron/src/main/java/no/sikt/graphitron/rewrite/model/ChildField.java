@@ -1034,7 +1034,8 @@ public sealed interface ChildField extends OutputField
      *     {@link GraphitronField.UnclassifiedField} instead of riding on this slot, so the
      *     emitter consumer never sees a {@link AccessorResolution.Rejected} value here. The
      *     slot stays nullable to carry the parent shapes that don't run reflective resolution
-     *     at all (jOOQ-record-backed parents, null-{@code fqClassName} parents).
+     *     at all ({@link GraphitronType.JooqRecordCarrier} parents, null-{@code fqClassName}
+     *     parents).
      */
     record RecordField(
         String parentTypeName,
@@ -1137,9 +1138,9 @@ public sealed interface ChildField extends OutputField
      *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
      * @param accessor the resolved accessor when the parent is a
      *     {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
-     *     with non-null {@code fqClassName}; {@code null} otherwise (jOOQ-record parents,
-     *     null-{@code fqClassName} parents, and {@code @error}-type parents do not run
-     *     reflective accessor resolution). See {@link RecordField}'s analogous slot for the
+     *     with non-null {@code fqClassName}; {@code null} otherwise
+     *     ({@link GraphitronType.JooqRecordCarrier} parents, null-{@code fqClassName} parents,
+     *     and {@code @error}-type parents do not run reflective accessor resolution). See {@link RecordField}'s analogous slot for the
      *     full contract — including that classifier-side rejection routes through
      *     {@link GraphitronField.UnclassifiedField} rather than a {@code Rejected} value
      *     riding on this slot.

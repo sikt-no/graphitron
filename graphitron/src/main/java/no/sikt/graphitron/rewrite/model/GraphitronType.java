@@ -95,7 +95,7 @@ public sealed interface GraphitronType
      */
     sealed interface ResultType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
-                GraphitronType.JooqRecordType, GraphitronType.JooqTableRecordType {
+                GraphitronType.JooqRecordCarrier {
 
         /** The binary class name of the backing Java class, or {@code null} when not specified. */
         String fqClassName();
@@ -138,6 +138,22 @@ public sealed interface GraphitronType
     }
 
     /**
+     * The {@link ResultType} partition whose runtime carrier is a generic {@link org.jooq.Record}.
+     *
+     * <p>The runtime object a fetcher receives for a member type ({@code env.getSource()} or
+     * {@code Outcome.Success.value()}) is a generic {@code org.jooq.Record}: the
+     * {@code (Record) source} cast is always valid, reads are source-only and never inject the
+     * environment, and no reflected accessor exists. The read <em>strategy</em> is deliberately
+     * not part of this contract; sites needing the which-variant fact (typed {@code Tables.X.COL}
+     * constant read vs by-name read) switch on the leaf identities.
+     *
+     * <p>The permits clause is the single-sourced, compiler-closed membership of the partition;
+     * sites consult this type instead of restating the member disjunction.
+     */
+    sealed interface JooqRecordCarrier extends ResultType
+        permits GraphitronType.JooqRecordType, GraphitronType.JooqTableRecordType {}
+
+    /**
      * A result type whose producer's reflected return is a jOOQ {@code Record<?>} (not table-bound).
      * {@code fqClassName} is the binary class name of the jOOQ record class.
      */
@@ -145,7 +161,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String fqClassName
-    ) implements ResultType {}
+    ) implements JooqRecordCarrier {}
 
     /**
      * A result type whose producer's reflected return is a jOOQ {@code TableRecord<?>}.
@@ -161,7 +177,7 @@ public sealed interface GraphitronType
         SourceLocation location,
         String fqClassName,
         TableRef table
-    ) implements ResultType {}
+    ) implements JooqRecordCarrier {}
 
     /**
      * A root operation type (Query or Mutation). Unmapped — no source context, no SQL until

@@ -6063,8 +6063,8 @@ class FieldBuilder {
 
     /**
      * Resolves an SDL output field's accessor against the parent's backing Java class. Returns
-     * {@code null} when reflective accessor resolution does not apply: jOOQ-record-backed parents
-     * ({@link GraphitronType.JooqTableRecordType} / {@link GraphitronType.JooqRecordType}) reach
+     * {@code null} when reflective accessor resolution does not apply:
+     * {@link GraphitronType.JooqRecordCarrier} parents reach
      * their values through column projection, not bean-style accessors;
      * {@link GraphitronType.PojoResultType} with a null {@code fqClassName} falls through to
      * graphql-java's {@code PropertyDataFetcher}. Returns a non-null
@@ -6076,8 +6076,7 @@ class FieldBuilder {
     private AccessorResolution resolveRecordAccessor(GraphQLFieldDefinition fieldDef, String accessorBaseName,
             GraphitronType.ResultType parentResultType, Class<?> parentBackingClass) {
         if (parentBackingClass == null) return null;
-        if (!(parentResultType instanceof GraphitronType.JavaRecordType
-                || parentResultType instanceof GraphitronType.PojoResultType)) return null;
+        if (parentResultType instanceof GraphitronType.JooqRecordCarrier) return null;
         var order = parentResultType instanceof GraphitronType.JavaRecordType
             ? ClassAccessorResolver.CandidateOrder.RECORD_FIRST
             : ClassAccessorResolver.CandidateOrder.POJO_FIRST;
@@ -6396,15 +6395,15 @@ class FieldBuilder {
     private AccessorDerivation deriveAccessorRecordParentSource(
             String fieldName, String accessorBaseName, ReturnTypeRef.TableBoundReturnType tb,
             GraphitronType.ResultType parentResultType) {
-        // Resolve parent backing class via sealed switch over GraphitronType.ResultType's four
-        // permits. JooqRecordType / JooqTableRecordType participate in the FK-derivation path
-        // and never reach this helper with the FK derivation having returned non-null; on the
-        // null-FK path they have no typed accessor mapping the field's @table return, so they
-        // fall through to None.
+        // Resolve parent backing class via sealed switch over GraphitronType.ResultType's
+        // permits. JooqRecordCarrier parents participate in the FK-derivation path and never
+        // reach this helper with the FK derivation having returned non-null; on the null-FK
+        // path they have no typed accessor mapping the field's @table return, so they fall
+        // through to None.
         String parentFqClassName = switch (parentResultType) {
             case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
             case GraphitronType.PojoResultType prt -> prt.fqClassName();
-            case GraphitronType.JooqRecordType _, GraphitronType.JooqTableRecordType _ -> null;
+            case GraphitronType.JooqRecordCarrier _ -> null;
         };
         if (parentFqClassName == null) return new AccessorDerivation.None();
 
@@ -6704,7 +6703,7 @@ class FieldBuilder {
         String parentFqClassName = switch (parentResultType) {
             case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
             case GraphitronType.PojoResultType prt -> prt.fqClassName();
-            case GraphitronType.JooqRecordType _, GraphitronType.JooqTableRecordType _ -> null;
+            case GraphitronType.JooqRecordCarrier _ -> null;
         };
         if (parentFqClassName == null) {
             return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(

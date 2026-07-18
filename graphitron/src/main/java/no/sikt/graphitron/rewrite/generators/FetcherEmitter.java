@@ -260,8 +260,7 @@ public final class FetcherEmitter {
         if (accessor == null) {
             return false;
         }
-        if (resultType instanceof GraphitronType.JooqTableRecordType
-                || resultType instanceof GraphitronType.JooqRecordType) {
+        if (resultType instanceof GraphitronType.JooqRecordCarrier) {
             return false;
         }
         return switch (accessor) {
@@ -298,8 +297,7 @@ public final class FetcherEmitter {
             return CodeBlock.of("(($T) success.value()).get($T.$L.$L)",
                 RECORD, jtrt.table().constantsClass(), jtrt.table().javaFieldName(), column.javaName());
         }
-        if ((resultType instanceof GraphitronType.JooqTableRecordType
-                || resultType instanceof GraphitronType.JooqRecordType) && columnName != null) {
+        if (resultType instanceof GraphitronType.JooqRecordCarrier && columnName != null) {
             return CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, columnName);
         }
         // Record-backed (Pojo / JavaRecord) accessor read.
@@ -692,8 +690,7 @@ public final class FetcherEmitter {
                 CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
                     RECORD, jtrt.table().constantsClass(), jtrt.table().javaFieldName(), column.javaName()));
         }
-        if (resultType instanceof GraphitronType.JooqTableRecordType
-                || resultType instanceof GraphitronType.JooqRecordType) {
+        if (resultType instanceof GraphitronType.JooqRecordCarrier) {
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.field($S));\n", RECORD, DSL, columnName));
         }
