@@ -1,7 +1,7 @@
 ---
 id: R502
 title: "JooqRecordCarrier: reify the jOOQ-Record carrier partition of ResultType"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: codegen-correctness
