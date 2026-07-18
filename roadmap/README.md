@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R499` | Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence) | In Review | 2026-07-17 | [plan](connection-fields-shared-result-key-projection.md) · [explainer](concepts/flattened-selection-result-keys.html) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R500` | Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key) | Ready | 2026-07-17 | [plan](result-key-aware-reference-projection.md) · [explainer](concepts/flattened-selection-result-keys.html) |
-| `R502` | JooqRecordCarrier: reify the jOOQ-Record carrier partition of ResultType | In Review | 2026-07-18 | [plan](record-by-name-read-capability.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
@@ -317,7 +316,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R499` [**Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence)**](connection-fields-shared-result-key-projection.md) — In Review, bug
 - `R500` [**Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key)**](result-key-aware-reference-projection.md) — Ready, bug
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
-- `R502` [**JooqRecordCarrier: reify the jOOQ-Record carrier partition of ResultType**](record-by-name-read-capability.md) — In Review, architecture
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R494` [**Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet)**](schema-directive-registry-generator-only-sync.md) — Backlog, bug
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
