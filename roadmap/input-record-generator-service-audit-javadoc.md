@@ -1,7 +1,7 @@
 ---
 id: R495
 title: "Reconcile InputRecordGenerator generated service-reference-audit javadoc with actual enforcement"
-status: Spec
+status: Ready
 bucket: docs
 priority: 6
 theme: docs
