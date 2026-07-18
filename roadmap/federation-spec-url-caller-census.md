@@ -1,7 +1,7 @@
 ---
 id: R497
 title: "Pin or drop the FederationSpec.URL caller census in its class javadoc"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 7
 theme: docs
