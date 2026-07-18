@@ -1,7 +1,7 @@
 ---
 id: R501
 title: "@pivot: discriminator-keyed aggregate projections"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: codegen-correctness
