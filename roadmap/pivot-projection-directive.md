@@ -70,8 +70,14 @@ field, so it folds into the parent query as a correlated aggregate subselect, on
 DataLoader, no N+1 by construction, and no `GROUP BY` (the aggregate over the correlated set collapses
 to one row on its own). `@splitQuery` opts into the existing batched DataLoader seam
 (`BatchKeyField` → `SplitRowsMethodEmitter`, positional `__idx__` scatter), which re-introduces
-`GROUP BY __idx__` over the batch; it earns its place only when the parent is not SQL-backed or the
-field is costly and rarely selected.
+`GROUP BY __idx__` over the batch; it earns its place when the field is costly and rarely selected.
+The parent must be SQL-backed in v1: a record-backed (class-backed) parent is rejected at validate
+time. Inline correlation needs a parent query to fold into, and the record-parent batched seam
+derives its keys from accessors (`FieldBuilder.resolveRecordParentSource`), a different capability
+than the `deriveSplitQuerySource` path this item reuses. `@splitQuery` is not an escape hatch there:
+on record-backed parents the directive is already lint-ignored as redundant
+(`LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT`), so "add `@splitQuery`" cannot be the authoring
+answer; extending the pivot to record-backed parents is a later item (see Out of scope).
 
 **Selection-set gating.** The projection obeys the same discipline as `Type.$fields(selectionSet,
 alias, env)`: walk the selection set on the projection type and emit one
@@ -193,8 +199,10 @@ column, etc.) is the per-field choice, exactly as with translations. The value t
 * `on` and `value` must both resolve to columns on the `@reference` terminus (attribute) table. The
   build fails, naming the unresolved column, if either does not.
 * The field must be single-valued (one projection record per parent). A list return type is rejected.
-* Inline delivery is the default; add `@splitQuery` for batched delivery when the parent is not
-  SQL-backed or the field is expensive and rarely selected.
+* The parent type must be SQL-backed (`@table`); a `@pivot` field on a record-backed parent fails
+  the build.
+* Inline delivery is the default; add `@splitQuery` for batched delivery when the field is
+  expensive and rarely selected.
 
 #### See also
 
@@ -321,9 +329,18 @@ LSP code:
   column, its type, and the expected scalar.
 - A `@pivot` field with a list return type, or with no establishable join to an attribute table, is
   rejected.
+- A `@pivot` field on a record-backed (class-backed) parent is rejected, naming the parent type:
+  inline correlation requires a parent query, and the record-parent batched seam is out of scope in
+  v1 (see Delivery). The rejection message must not suggest `@splitQuery`, which is lint-ignored as
+  redundant on record-backed parents.
+- Two slots on one projection type carrying the same discriminator value (duplicate `@field(name:)`)
+  are rejected: the pivot would emit two identical aggregates under different aliases, always an
+  authoring mistake.
 - `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` covers the three new
-  leaves (`PivotField`, `BatchedPivotField`, `PivotSlotField`); `SealedHierarchyDocCoverageTest`
-  covers the new `PivotProjection` variant and any new rejection arm.
+  leaves (`PivotField`, `BatchedPivotField`, `PivotSlotField`); `VariantCoverageTest` requires a
+  classification case for each new leaf and for the `PivotProjection` variant (the pipeline-tier
+  tests below provide them); `SealedHierarchyDocCoverageTest` covers any new rejection arm (its
+  scope is the `Rejection` permit-to-doc mapping, not `GraphitronType` variants).
 
 ## Tests
 
@@ -352,6 +369,9 @@ assertions on method bodies):
   `(owner, discriminator)`, so `max` just returns it). Custom aggregates are a later item.
 - A projection whose slots draw from *different* value columns (one value column per projection in v1).
 - Non-equality discriminators (ranges, `IN`-sets per slot).
+- `@pivot` on a record-backed (class-backed) parent. The record-parent batch seam derives its keys
+  from accessors (`FieldBuilder.resolveRecordParentSource`) rather than `deriveSplitQuerySource`;
+  extending the pivot there is a later item. V1 rejects it at validate time.
 - Writing through a pivot (mutations); `@pivot` is read-only.
 
 ## Roadmap entries
