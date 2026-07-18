@@ -273,8 +273,10 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
   parameter and its accessor/`fqClassName` contract untouched, since `PivotProjection` is not a
   `ResultType` and must not be threaded through it. The "children read by name off a generic jOOQ
   `Record`" disjunction those two helpers already restate is a pre-existing duplication, tracked
-  separately as R502 (`record-by-name-read-capability`); when that capability lands, the pivot slot
-  is a natural third member, but this slice does not carry the refactor.
+  separately as R502 (`record-by-name-read-capability`). Per that item's membership rule,
+  `PivotProjection` joins its carrier partition only if a read site actually consults it for pivot
+  parents; the `PivotSlotField` arm here does not, so this slice neither carries nor triggers that
+  refactor.
 - **Selection gating** reads the pivot type's slots off `env.getSelectionSet()`, the same source
   `Type.$fields(...)` already consults.
 
