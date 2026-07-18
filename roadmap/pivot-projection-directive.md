@@ -52,9 +52,18 @@ with how a type's backing is already inferred from its producer (the `@record` d
 `max(value).filterWhere(disc.eq('sme'))` returns SQL null whenever no row carries that value, and the
 generator cannot know at build time whether any does. So every projection slot is inherently
 best-effort. A **non-null slot is a validate-time rejection** (typed, LSP-coded), naming the slot and
-the reason. The dual holds and is worth stating: the projection *field itself* may be non-null, since
-a correlated aggregate over an empty set still returns one row (of nulls), never a null record; only
-its slots must be nullable.
+the reason. The dual holds and is worth stating: the projection *field itself* may be non-null; only
+its slots must be nullable. That dual is an invariant of the pivot, not of one delivery: **one
+projection record exists per parent, always; which slots are null is the only data-dependent part.**
+Inline satisfies it for free (a correlated aggregate over an empty set still returns one row, of
+nulls, never a null record). The split path must preserve it rather than inherit the table shape's
+absent-key behaviour: `SplitRowsMethodEmitter`'s table shape inner-joins the `VALUES` parent-input
+table, so a parent with no attribute rows would produce no `GROUP BY __idx__` group and
+`scatterSingleByIdx` would hand that key a null record, silently null-bombing a non-null projection
+field and diverging from inline. The pivot's batch query therefore joins the attribute table *from*
+the parent-input table key-preservingly (a left join; the one deviation from the table shape's
+join), so every batch key produces a group and a row-less parent scatters to a record of null slots
+on both deliveries.
 
 **Delivery.** Inline is the default and the better runtime shape: the projection is a single-valued
 field, so it folds into the parent query as a correlated aggregate subselect, one round-trip, no
@@ -175,7 +184,9 @@ column, etc.) is the per-field choice, exactly as with translations. The value t
   `@field(name:)`. A field without it, or with a value that cannot be a discriminator string, fails
   the build.
 * Every field on the projection type must be **nullable**. A non-null slot fails the build: pivot
-  slots are filtered aggregates that are null when no row carries the value.
+  slots are filtered aggregates that are null when no row carries the value. The projection record
+  itself always exists, one per parent, even when the parent has no attribute rows at all; absence
+  surfaces as null slots, never as a null record, so the `@pivot` field itself may be non-null.
 * A pivot projection type must be reached only through `@pivot` fields. Using it as an ordinary
   object type elsewhere fails the build, since its `@field(name:)` values are discriminator values,
   not column names.
@@ -204,8 +215,10 @@ existing `ResultType` arms (`JavaRecordType`, `PojoResultType`, `JooqRecordType`
 `ResultType`'s contract and lands as a direct `GraphitronType` sibling, not a `ResultType` arm. It
 carries its ordered slots, each slot being `(sdlName, outputAlias, discriminatorValue)`. The
 `discriminatorValue` is lifted from the slot field's `@field(name:)` through the *same* helper that
-lifts `EnumValueSpec.runtimeValue` (one shared function, not a parallel implementation; SDL name is the
-fallback when the directive is absent). `TypeBuilder` classifies a type as `PivotProjection` when it is
+lifts `EnumValueSpec.runtimeValue` (one shared function, not a parallel implementation). The helper's
+SDL-name fallback never fires for slots: validation rejects a slot without the directive (see
+Constraints), because a silently name-matched slot (`nn` matching a `nn` discriminator by accident of
+naming) is exactly the wrong-value hazard the explicit mapping exists to prevent. `TypeBuilder` classifies a type as `PivotProjection` when it is
 consumed by a `@pivot` field; the type carries no directive of its own, mirroring how a type's backing
 is inferred from its producer. The per-slot scalar type is *not* stored; it is derived from the single
 value `ColumnRef`, so there is no drift copy.
@@ -264,8 +277,9 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
   filtered aggregate today. The `@asFacet` facets emission (`ConnectionHelperClassGenerator`, a
   UNION ALL of per-facet `GROUP BY` arms) is precedent only for the best-effort-aggregate
   nullability stance, not a reusable column form. Inline needs no `GROUP BY`. The `@splitQuery` path routes through `SplitRowsMethodEmitter` with the pivot
-  projection as the select list and `GROUP BY __idx__` over the batch, scattered single-per-key via the
-  existing `scatterSingleByIdx`.
+  projection as the select list, the key-preserving join from the parent-input table (the one
+  deviation from the table shape's inner join; see Nullability), and `GROUP BY __idx__` over the
+  batch, scattered single-per-key via the existing `scatterSingleByIdx`.
 - **Slot extraction.** A new `PivotSlotField` arm in `FetcherEmitter.bindRaw` emits the by-alias
   read, `return ((Record) source).get(DSL.field("<alias>"));`, via the existing `columnByAlias`
   helper (already the emission four `bindRaw` arms share). No existing emitter arm is edited: the
@@ -301,6 +315,10 @@ LSP code:
   unresolved column.
 - All slots must share one scalar type (they read the same value column); a divergent slot type is
   rejected.
+- The `value:` column's type must map to the slots' declared scalar type. The projection type is
+  reused across usages with different value columns, so this check is per `@pivot` field, not per
+  type: a usage whose value column cannot produce the declared slot scalar is rejected, naming the
+  column, its type, and the expected scalar.
 - A `@pivot` field with a list return type, or with no establishable join to an attribute table, is
   rejected.
 - `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` covers the three new
@@ -320,9 +338,11 @@ assertions on method bodies):
   a numeric/currency pivot), inline and split, single and composite key, compile under `<release>17>`.
 - **Execution tier (PostgreSQL).** Add attribute tables to `graphitron-sakila-db` (a single-key
   translation table over an existing entity, a composite-key one, and a numeric currency-price table),
-  seed rows that leave at least one discriminator value unpopulated, and assert: pivoted values land on
-  the right slots; an unpopulated slot returns null; the composite-key pivot keys correctly; inline and
-  split return identical results (the existing inline/split parity convention).
+  seed rows that leave at least one discriminator value unpopulated *and* at least one parent with no
+  attribute rows at all, and assert: pivoted values land on the right slots; an unpopulated slot
+  returns null; a row-less parent yields a projection record with every slot null, not a null record,
+  on both deliveries (this pins the split path's key-preserving join); the composite-key pivot keys
+  correctly; inline and split return identical results (the existing inline/split parity convention).
 - **Validation tier.** Each rejection above has a negative fixture asserting the build fails with the
   typed error.
 
