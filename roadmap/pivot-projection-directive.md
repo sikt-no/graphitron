@@ -252,9 +252,11 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
 - **Projection emission.** A new emitter builds the selection-set-gated correlated aggregate subselect:
   for each *selected* slot, `DSL.max(value).filterWhere(disc.eq(DSL.inline(discriminatorValue))).as(alias)`,
   wrapped in `DSL.row(...)` and delivered as a scalar-record subselect field
-  (`field(select(row(...)).from(terminus).where(<correlation>))`). The filtered-aggregate shape is
-  already emitted by `@asFacet` in `ConnectionHelperClassGenerator`; reuse that column form. Inline
-  needs no `GROUP BY`. The `@splitQuery` path routes through `SplitRowsMethodEmitter` with the pivot
+  (`field(select(row(...)).from(terminus).where(<correlation>))`). The
+  `max(...).filterWhere(...)` column form is new with this item; nothing in the generator emits a
+  filtered aggregate today. The `@asFacet` facets emission (`ConnectionHelperClassGenerator`, a
+  UNION ALL of per-facet `GROUP BY` arms) is precedent only for the best-effort-aggregate
+  nullability stance, not a reusable column form. Inline needs no `GROUP BY`. The `@splitQuery` path routes through `SplitRowsMethodEmitter` with the pivot
   projection as the select list and `GROUP BY __idx__` over the batch, scattered single-per-key via the
   existing `scatterSingleByIdx`.
 - **Slot extraction.** Extend the record-by-name arm guard in `FetcherEmitter.propertyOrRecordBinding`
