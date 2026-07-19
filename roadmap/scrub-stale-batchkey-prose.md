@@ -1,7 +1,7 @@
 ---
 id: R126
 title: "Scrub deleted classification-vocabulary from prose (BatchKey / Reader / SourceKey.Cardinality / Mapped*Keyed)"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 9
 theme: docs
@@ -66,7 +66,7 @@ The review pass surfaced more identifiers in the `graphitron` module's test tier
 * `InterfaceFieldValidationTest.rejects_listArm_onAccessorKeyedManyHubArityOver21` (`:200`); drop the dead arm name (e.g. `..._onAccessorManyHubArityOver21`).
 * Fixture methods referenced by name from SDL string literals, so each rename updates its SDL call sites in lockstep: `TestFilmService.getRankMappedRecordKeyed` (`generators/TestFilmService.java:86`; cited at `ServiceProjectionPipelineTest.java:158`) and `TestServiceStub.childServiceMappedRecordKeyedWrongScalarValue` (`TestServiceStub.java:548`; cited at `GraphitronSchemaBuilderTest.java:10349`).
 
-The identifier renames widen the blast radius past a pure prose scrub, so the reviewer confirms or drops them; the prose scrub proceeds either way. The 2026-07-19 review pass recommends taking all of them (test-only identifiers, cheap, and leaving them defeats the item's discoverability goal), but the call is recorded at Spec -> Ready sign-off. If dropped, refresh the affected Javadoc/comment bodies but keep the identifiers. `roadmap/changelog.md`'s historical entries naming these identifiers are append-only provenance and are **not** touched under either choice.
+The identifier renames widen the blast radius past a pure prose scrub, so the reviewer confirms or drops them; the prose scrub proceeds either way. **Spec -> Ready sign-off decision (2026-07-19): take all of them.** They are test-tier and fixture-only identifiers whose in-tree callers update in lockstep, carry no production or public-API surface, and leaving a dead type name embedded in a test class or method name keeps the retired vocabulary alive in code search, which is exactly what this item exists to eliminate. If dropped, refresh the affected Javadoc/comment bodies but keep the identifiers. `roadmap/changelog.md`'s historical entries naming these identifiers are append-only provenance and are **not** touched under either choice.
 
 ## Scope, non-goals, coverage
 
