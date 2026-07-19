@@ -27,7 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R443` | Sealed tri-state ConditionResolution result (post-R438 residue) | In Review | 2026-07-19 <sub>created 2026-07-08</sub> | [plan](post-r438-stale-reference-residue.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R126` | Scrub residual BatchKey.X references from sakila-service / sakila-example prose | Spec | 2026-07-19 | [plan](scrub-stale-batchkey-prose.md) |
+| `R126` | Scrub deleted classification-vocabulary from prose (BatchKey / Reader / SourceKey.Cardinality / Mapped*Keyed) | Spec | 2026-07-19 | [plan](scrub-stale-batchkey-prose.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
@@ -340,7 +340,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
-- `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Spec, cleanup
+- `R126` [**Scrub deleted classification-vocabulary from prose (BatchKey / Reader / SourceKey.Cardinality / Mapped*Keyed)**](scrub-stale-batchkey-prose.md) — Spec, cleanup
 - `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md) — Backlog, architecture
 - `R289` [**Correct KeyNodeSynthesiser opt-out javadoc: @key(resolvable: false) does not keep a type out of _Entity**](keynodesynthesiser-resolvable-false-entity-doc.md) — Backlog, bug
