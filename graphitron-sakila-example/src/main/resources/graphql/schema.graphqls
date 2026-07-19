@@ -415,8 +415,8 @@ type Query {
         })
     # R370 compilation-tier fixture (producer #1): the nested-carrier counterpart of
     # recentlyCreatedFilmsBatched. The service returns List<NestedFilmsPayloadHolder.Payload>
-    # (a nested record); the films accessor derives an AccessorCall-keyed, list-cardinality
-    # SourceKey via deriveAccessorRecordParentSource, whose key extraction (buildAccessorKeyMany)
+    # (a nested record); the films accessor derives a KeyLift.Accessor lift (Arity.MANY)
+    # via deriveAccessorRecordParentSource, whose key extraction (buildAccessorKeyMany)
     # casts env.getSource() to the nested backing class. Independent witness for producer #1.
     nestedRecentlyCreatedFilms: [NestedFilmsPayload!]!
         @service(service: {
@@ -569,11 +569,11 @@ type Query {
             method: "recentlyCreatedFilms"
         })
 
-    # R60 fixture: accessor-derived BatchKey, list-cardinality (Many) variant. The service
+    # R60 fixture: accessor-derived batch key, list-cardinality (Many) variant. The service
     # hand-rolls two CreateFilmsPayload rows whose `films` accessor returns
-    # List<FilmRecord>; the classifier auto-derives AccessorKeyedMany from the accessor
-    # alone, and the generator emits loader.loadMany dispatch for the chained film fetch.
-    # Single-cardinality coverage (AccessorKeyedSingle) lives at the pipeline tier; the
+    # List<FilmRecord>; the classifier auto-derives a KeyLift.Accessor lift (Arity.MANY) from the
+    # accessor alone, and the generator emits loader.loadMany dispatch for the chained film fetch.
+    # Single-cardinality coverage (KeyLift.Accessor with Arity.ONE) lives at the pipeline tier; the
     # validator's Invariant #10 rejects single-cardinality RecordTableField returns until the
     # rows-method's single-arm ships (tracked as a separate emitter arm), so an end-to-end
     # fixture can't exercise it yet.
@@ -597,8 +597,8 @@ type Query {
 
     # R366 compilation-tier fixture: free-form record-backed payload whose typed
     # List<AddressRecord> accessor drives a list-cardinality multi-table polymorphic child
-    # (OccupantsBatchPayload.occupants). The classifier derives Reader.AccessorCall +
-    # Cardinality.MANY, which routes through MultiTablePolymorphicEmitter.buildBatchedListFetcher.
+    # (OccupantsBatchPayload.occupants). The classifier derives a KeyLift.Accessor lift
+    # (Arity.MANY), which routes through MultiTablePolymorphicEmitter.buildBatchedListFetcher.
     # Pre-R366 that emitter hardcoded loader.load(key, env) against the MANY extraction's
     # loop-local key and failed javac; this fixture forces the loader.loadMany dispatch to compile.
     occupantsBatch: [OccupantsBatchPayload!]!
@@ -698,10 +698,10 @@ type CreateFilmPayload {
 }
 
 # R60 fixture: free-form record-backed payload with a typed List<FilmRecord> accessor. No
-# batching directive on `films` — the classifier auto-derives BatchKey.AccessorKeyedMany from
-# the canonical record-component accessor, and the generator emits loader.loadMany dispatch.
+# batching directive on `films` — the classifier auto-derives a KeyLift.Accessor lift (Arity.MANY)
+# from the canonical record-component accessor, and the generator emits loader.loadMany dispatch.
 type CreateFilmsPayload {
-    # AccessorKeyedMany(LIST). Each parent contributes N keys (one per FilmRecord); loadMany
+    # KeyLift.Accessor (Arity.MANY). Each parent contributes N keys (one per FilmRecord); loadMany
     # supplies one record per element-PK key, returned as List<Record> matching the field shape.
     films: [Film!]!
 }
@@ -710,7 +710,7 @@ type CreateFilmsPayload {
 # (addresses()) is the polymorphic hub for a list-cardinality multi-table polymorphic child.
 # The `occupants` field remaps to the accessor via @field(name:) and resolves to the
 # AddressOccupant = Customer | Staff union (both FK back to address). The classifier produces
-# SourceKey(Reader.AccessorCall, Cardinality.MANY); the list arm routes through
+# a KeyLift.Accessor lift (Arity.MANY); the list arm routes through
 # MultiTablePolymorphicEmitter.buildBatchedListFetcher, whose load site must dispatch
 # loader.loadMany(keys, …) (not loader.load(key, …)) for the MANY key extraction. The compile
 # of this type's generated fetcher is the R366 assertion.
@@ -722,7 +722,7 @@ type OccupantsBatchPayload {
 # address_id but no jOOQ FK metadata. @sourceRow + @reference composes the navigation: the
 # lifter materialises the address_id value (matching the first FK hop's source-side column,
 # customer.address_id, on customer_address_id_fkey), and @reference walks the FK chain to the
-# leaf table `address`. This is the canonical path-keyed shape (BatchKey.LifterPathKeyed);
+# leaf table `address`. This is the canonical path-keyed shape (KeyLift.Lifter);
 # end-to-end compile-spec coverage flows through Query.customerAddressSummary below.
 type CustomerAddressSummary {
     customerId: Int!
@@ -1015,7 +1015,7 @@ type NestedOccupantCarrier {
 # R370 fixture: the nested-carrier counterpart of CreateFilmsPayload. Produced by
 # Query.nestedRecentlyCreatedFilms, which returns List<NestedFilmsPayloadHolder.Payload> (a NESTED
 # Java record with a typed List<FilmRecord> accessor). No batching directive on `films`; the
-# classifier auto-derives an AccessorCall-keyed, list-cardinality SourceKey. The generated key
+# classifier auto-derives a KeyLift.Accessor lift (Arity.MANY). The generated key
 # extraction (buildAccessorKeyMany) casts env.getSource() to the nested backing class, which must
 # spell Outer.Nested. Independent compiling witness for producer #1 (deriveAccessorRecordParentSource).
 type NestedFilmsPayload {
@@ -1230,7 +1230,7 @@ type Inventory @table(name: "inventory") {
     })
     # Field<FilmCardData> where FilmCardData is record FilmCardData(FilmRecord film).
     # The classifier picks the canonical film() accessor on FilmCardData and produces
-    # an AccessorKeyedSingle BatchKey for the GraphQL child field `film: Film`,
+    # a KeyLift.Accessor lift (Arity.ONE) for the GraphQL child field `film: Film`,
     # batch-fetching the full Film row by PK at request time.
     filmCardData: FilmCardWrapper @externalField(reference: {
         className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
@@ -1239,7 +1239,7 @@ type Inventory @table(name: "inventory") {
     # R269 execution-tier fixture: a nullable to-one @table accessor that resolves to NO row on
     # a non-error parent. The extension hands back a FilmCardData whose film() accessor is null
     # for even film_ids (the related row is absent) and present for odd ones, so the child
-    # `film: Film` (AccessorKeyedSingle → buildAccessorKeySingle) must render null for the absent
+    # `film: Film` (KeyLift.Accessor Arity.ONE → buildAccessorKeySingle) must render null for the absent
     # arm rather than NPEing on element.into(...). The mixed batch proves the guard nulls only the
     # absent parent while the present ones still resolve their Film row through the same loader.
     filmCardDataMaybeMissing: FilmCardWrapper @externalField(reference: {
@@ -1272,12 +1272,12 @@ type FilmDetailsForMethod {
 }
 
 type FilmCardWrapper {
-    # AccessorKeyedSingle: the canonical Java-record accessor `film()` on FilmCardData returns
+    # KeyLift.Accessor (Arity.ONE): the canonical Java-record accessor `film()` on FilmCardData returns
     # FilmRecord (typed accessor matching this field's @table return). The framework
-    # auto-derives the BatchKey, batches dispatch via `loader.load(key, env)` keyed on the
+    # auto-derives the batch key, batches dispatch via `loader.load(key, env)` keyed on the
     # element table's PK, and returns one Film row per key. R61 lifted Invariant #10 (the
     # single-cardinality RecordTableField rejection) so this fixture exercises the
-    # AccessorKeyedSingle path end-to-end.
+    # KeyLift.Accessor (Arity.ONE) path end-to-end.
     film: Film
     # R88 execution-tier fixture: exercises three accessor-resolution arms via the FilmCardData
     # `example()` accessor. RecordExample's three fields each resolve through a different arm
@@ -1436,7 +1436,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     })
     # R61 sibling: identical wiring to titleUppercase but the service method takes
     # Set<Row1<Integer>> (Row source-shape) and returns Map<Row1<Integer>, String>. The
-    # classifier routes Row1 sources to MappedRowKeyed (vs MappedRecordKeyed for the
+    # classifier routes Row1 sources to the Wrap.Row source shape (vs Wrap.Record for the
     # Record1 sibling); both shapes are accepted post-R61. Confirms the field<N>()-based
     # dispatch keeps working end-to-end.
     titleLowercase: String @service(service: {
@@ -1446,7 +1446,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # R70 sibling: identical wiring to titleUppercase / titleLowercase but the service method
     # takes Set<FilmRecord> (typed-TableRecord source-shape) and returns
     # Map<FilmRecord, String>. The classifier routes Set<X extends TableRecord> to
-    # MappedTableRecordKeyed (carrying the typed record class); the rows-method emitter
+    # the Wrap.TableRecord source shape (carrying the typed record class); the rows-method emitter
     # passes through `keys` directly, the validator's expected outer return type comes out
     # as Map<FilmRecord, String> from the variant's keyElementType().
     titleTitlecase: String @service(service: {
@@ -2725,7 +2725,7 @@ type FilmPayload {
 # R141: bulk-input single-payload carrier wrapping a list-shaped @table data field. The SDL
 # author authors no Java class — the type promotes to PojoResultType.NoBacking at
 # type-classification time; the data field classifies as ChildField.SingleRecordTableField
-# with SourceKey.Cardinality.MANY (the data field's wrapper is list-shaped); the mutation
+# with Arity.MANY (the data field's wrapper is list-shaped); the mutation
 # classifies as MutationField.MutationBulkDmlRecordField with batched per-row DML inside one
 # transaction. The data field's @table (film) must equal the input @table (film), enforced
 # structurally by ProducerBinding.DmlEmitted's compact-constructor invariant.
@@ -2938,7 +2938,7 @@ type Mutation {
     # R141: bulk-input single-carrier list-data-field DML mutations. The classifier routes the
     # bulk-input + list-shaped @table-element data field case to MutationBulkDmlRecordField; the
     # emitter batches per-row DML inside one dsl.transactionResult(...), collects PKs in input
-    # order, and lets the data field's SingleRecordTableField fetcher (Cardinality.MANY) run the
+    # order, and lets the data field's SingleRecordTableField fetcher (Arity.MANY) run the
     # follow-up response SELECT against those PKs outside the transaction. The order-preservation
     # invariant (output.data[i] corresponds to input[i]) is exercised by
     # DmlBulkMutationsExecutionTest's deliberately-non-PK-ordered round-trip. UPSERT is deferred

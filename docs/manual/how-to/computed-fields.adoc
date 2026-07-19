@@ -104,7 +104,7 @@ The lifted `FilmRecord` carries only the PK; the framework batch-fetches non-PK 
 
 === Lifted `Field<CustomJavaRecord>`
 
-Use this shape when the wrapper is a developer-defined Java record with a typed `TableRecord` accessor. The classifier picks the canonical accessor (the record's component whose declared type is a jOOQ `TableRecord`) and produces an `AccessorKeyedSingle` batch key for any GraphQL child field returning the wrapped `@table` type, batching dispatch through a `DataLoader` keyed on the element table's PK:
+Use this shape when the wrapper is a developer-defined Java record with a typed `TableRecord` accessor. The classifier picks the canonical accessor (the record's component whose declared type is a jOOQ `TableRecord`) and produces an accessor-keyed batch key (single-record accessor) for any GraphQL child field returning the wrapped `@table` type, batching dispatch through a `DataLoader` keyed on the element table's PK:
 
 [source,graphql]
 ----
@@ -134,7 +134,7 @@ public static Field<FilmCardData> filmCardData(Inventory table) {
 }
 ----
 
-The execution-tier test `inventoryById_filmCardData_firesAccessorKeyedSingleLiftThroughCustomJavaRecord` runs `{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { film { filmId title } } } }`, asserts the `filmId` round-trips through the lift, and checks that `title` (a non-PK column not present on the lifted `FilmRecord`) resolves through the framework's PK-keyed batch fetch. This is the path that makes "lift one column on the parent, then read the full child row by PK" work without writing a service.
+The execution-tier test `inventoryById_filmCardData_firesAccessorLiftThroughCustomJavaRecord` runs `{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { film { filmId title } } } }`, asserts the `filmId` round-trips through the lift, and checks that `title` (a non-PK column not present on the lifted `FilmRecord`) resolves through the framework's PK-keyed batch fetch. This is the path that makes "lift one column on the parent, then read the full child row by PK" work without writing a service.
 
 == Pick a shape
 

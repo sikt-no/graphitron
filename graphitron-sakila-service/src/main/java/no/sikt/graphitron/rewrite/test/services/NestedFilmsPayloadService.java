@@ -7,8 +7,8 @@ import java.util.List;
 /**
  * Compilation-tier fixture (producer #1): a root {@code @service} that hand-rolls two
  * {@link NestedFilmsPayloadHolder.Payload} rows. Each nested-record payload exposes a
- * {@code List<FilmRecord>} accessor the classifier walks reflectively to derive an
- * {@code AccessorCall}-keyed, list-cardinality {@code SourceKey}.
+ * {@code List<FilmRecord>} accessor the classifier walks reflectively to derive a
+ * {@code KeyLift.Accessor} lift ({@code Arity.MANY}).
  *
  * <p>The nested-carrier counterpart of {@link CreateFilmsPayloadService}; its only role is to give
  * {@code FieldBuilder.deriveAccessorRecordParentSource} → {@code GeneratorUtils.buildAccessorKeyMany}

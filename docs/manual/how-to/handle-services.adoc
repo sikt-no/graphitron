@@ -122,7 +122,7 @@ When the return type is a non-table GraphQL scalar (or list of scalars), the Jav
 
 When the return type is a class-backed type (a custom payload whose backing class is reflected from this `@service` method's return type), each row in the service's result has children that the framework still resolves. Two paths drive the child-fetch dispatch:
 
-* *Auto-derived from accessor.* If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives a `BatchKey.AccessorKeyedSingle`/`AccessorKeyedMany` for the field. No extra directive is needed.
+* *Auto-derived from accessor.* If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives an accessor-keyed batch key for the field, single or list to match the accessor's cardinality. No extra directive is needed.
 * *Explicit `@sourceRow`.* When the catalog cannot derive the key (e.g. the payload carries a raw FK column instead of a typed record), declare a lifter that takes the parent and returns a `RowN` of the FK column values.
 
 The `recentlyCreatedFilms` example exercises the lifter path:
@@ -171,7 +171,7 @@ public static Map<Record1<Integer>, String> titleUppercase(Set<Record1<Integer>>
 
 The `Set<Record1<Integer>>` parameter is the framework's batch: one entry per distinct parent the request touched. The returned `Map`'s keys must be the same instances (or value-equal substitutes) the framework supplied; the framework reads each parent's value out of the map by lookup. Missing keys yield `null` for the field on that parent.
 
-The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. The corresponding `BatchKey` variants (`MappedRowKeyed`, `MappedRecordKeyed`, `MappedTableRecordKeyed`) are emitted by `ServiceCatalog.classifySourcesType:600-639` based on the parameter's reflected type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you fully-populated parent records when the parent has a `@table`.
+The accepted source shapes are `Set<Row<N>>`, `Set<Record<N>>`, and `Set<X extends TableRecord>`. `ServiceCatalog.classifySourcesType` picks the matching batch shape from the parameter's reflected element type. `Row<N>` works (use `DSL.row(value)` to construct keys back); `Record<N>` lets you call `.value1()`/`.value2()` to extract column values directly; the typed-record arm hands you fully-populated parent records when the parent has a `@table`.
 
 == `@service` on a child field: the `@splitQuery` contract
 
@@ -203,9 +203,9 @@ public static Map<FilmRecord,       String> titleTitlecase(Set<FilmRecord>      
 
 The classifier picks the variant by inspecting the `Set<E>`'s element type:
 
-* `Row<N>` → `MappedRowKeyed`. Keys carry no value accessors; reconstruct keys with `DSL.row(value)` if you need to read or rebuild them. Use this when the SQL side composes against the row (`DSL.row(FILM_ID).in(filmIds)`).
-* `Record<N>` → `MappedRecordKeyed`. Keys expose `.value1()`/`.value2()`/etc. Use this when the body needs to extract column values from each key.
-* `X extends TableRecord` → `MappedTableRecordKeyed`. The framework supplies fully-populated parent records (every column on the parent table), rebuilt column by column from the parent row (which the SELECT projects under reserved aliases so client-selected fields can never collide with it). Use this when the body needs columns beyond the parent's PK; `titleTitlecase` reads `film.getTitle()` straight off the record without a SELECT. Note the cost: choosing the typed-record shape opts the parent SELECT into projecting the full parent row whenever the field is selected, regardless of how narrow the client's selection is.
+* `Row<N>`. Keys carry no value accessors; reconstruct keys with `DSL.row(value)` if you need to read or rebuild them. Use this when the SQL side composes against the row (`DSL.row(FILM_ID).in(filmIds)`).
+* `Record<N>`. Keys expose `.value1()`/`.value2()`/etc. Use this when the body needs to extract column values from each key.
+* `X extends TableRecord`. The framework supplies fully-populated parent records (every column on the parent table), rebuilt column by column from the parent row (which the SELECT projects under reserved aliases so client-selected fields can never collide with it). Use this when the body needs columns beyond the parent's PK; `titleTitlecase` reads `film.getTitle()` straight off the record without a SELECT. Note the cost: choosing the typed-record shape opts the parent SELECT into projecting the full parent row whenever the field is selected, regardless of how narrow the client's selection is.
 
 The typed-record arm is the most powerful, with one caveat: on a table-backed parent the framework projects the full parent row whenever the field is selected, so every column is present; but if the parent is itself a `@service` returning a hand-rolled record, the framework has no SELECT to widen and the record is only as populated as the producing service made it. Plan accordingly.
 

@@ -561,7 +561,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * batched per-row DML inside one transaction (N+1 statements), collecting PKs in input
      * order into a {@code Result<RecordN<PK>>}. The downstream data-field fetcher
      * ({@link no.sikt.graphitron.rewrite.generators.FetcherEmitter}'s
-     * {@code buildSingleRecordTableFetcherValue} {@code Cardinality.MANY} arm) then builds a
+     * {@code buildSingleRecordTableFetcherValue} {@link Arity#MANY} arm) then builds a
      * PK-keyed map of the response-SELECT result and iterates {@code source.getValues(PK)}
      * (the input-ordered PK list) to project rows in input order. Input order is therefore
      * a property of the emitted Java code, not of the SQL planner's choice of scan strategy

@@ -100,7 +100,7 @@ class SingleRecordPayloadPipelineTest {
         assertThat(rtf.returnType()).isInstanceOf(ReturnTypeRef.TableBoundReturnType.class);
         assertThat(rtf.returnType().table().tableName()).isEqualTo("film");
         assertThat(rtf.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
-        // SourceKey shape: Reader.ProducedRecordRead, Wrap.Row, single LiftedHop (source=target),
+        // SourceKey shape: KeyLift.ProducedRecords lift, Wrap.Row, single LiftedHop (source=target),
         // PK columns. The bulk (list) data field is per-key cardinality MANY (the held collection).
         var sk = rtf.sourceKey();
         assertThat(rtf.lift()).isInstanceOf(KeyLift.ProducedRecords.class);

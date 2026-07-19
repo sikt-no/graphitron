@@ -62,7 +62,7 @@ type FilmCard {
 }
 ----
 
-A `Field<CustomJavaRecord>` lift returning a developer-defined record whose canonical accessor returns a typed jOOQ record. The classifier auto-derives an `AccessorKeyedSingle` batch key from the typed accessor, so a child `@table`-returning field on the wrapper resolves through a `DataLoader` keyed on the lifted record's PK:
+A `Field<CustomJavaRecord>` lift returning a developer-defined record whose canonical accessor returns a typed jOOQ record. The classifier auto-derives an accessor-keyed batch key (single-record accessor) from the typed accessor, so a child `@table`-returning field on the wrapper resolves through a `DataLoader` keyed on the lifted record's PK:
 
 [source,graphql]
 ----

@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * identity is implicit in the {@code LiftedHop}'s {@code targetTable}.
  *
  * <p>Per the development principles, body-shape assertions on emitted method bodies are not
- * used; the {@code ColumnRead} variant pins TypeSpec equivalence with a table-backed parent
+ * used; the {@code KeyLift.FkColumns} variant pins TypeSpec equivalence with a table-backed parent
  * fixture so any drift across the two producers fails fast.
  */
 @PipelineTier
@@ -72,7 +72,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childInterfaceField_recordParent_rowKeyed() {
         // JooqTableRecordType-backed parent → hub = parent's mapped table = film →
-        // SourceKey (Wrap.Row + ColumnRead) off film's PK (single column, film_id). The
+        // SourceKey (Wrap.Row) from a KeyLift.FkColumns lift off film's PK (single column, film_id). The
         // classifier arm produced here is byte-for-byte equivalent to the table-backed branch's
         // construction when the table-backed parent is the same hub; pin TypeSpec equivalence to
         // surface any drift across the two producers.
@@ -135,7 +135,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childInterfaceField_recordParent_accessorKeyedSingle() {
         // Pojo parent (AccessorPayloads.SinglePayload) exposes `FilmRecord film()`. The
-        // single-cardinality polymorphic child named `film` resolves to AccessorKeyedSingle on
+        // single-cardinality polymorphic child named `film` resolves to KeyLift.Accessor (Arity.ONE) on
         // the hub `film`; the scalar per-parent fetcher binds parentRecord to the accessor's
         // returned hub record (rather than casting env.getSource() to a jOOQ Record) and reads
         // the hub FK columns off it inline. Was previously deferred because the scalar fetcher
@@ -163,7 +163,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childInterfaceField_recordParent_accessorKeyedMany() {
         // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`. The
-        // list-cardinality polymorphic child named `films` resolves to AccessorKeyedMany;
+        // list-cardinality polymorphic child named `films` resolves to KeyLift.Accessor (Arity.MANY);
         // dispatch is LOAD_MANY (loader.loadMany returns one Record per element key).
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type ListPayloadType {

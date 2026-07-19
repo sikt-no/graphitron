@@ -2126,7 +2126,7 @@ class TypeFetcherGeneratorTest {
     private static no.sikt.graphitron.rewrite.model.TableRef filmActorParentTableForList() {
         // Single-column PK on FilmActor that doubles as the FK source on the participants' join
         // paths (filmActorChildJoinPaths sources both FKs from last_update). The list
-        // arm constructs a SourceKey (Wrap.Row + ColumnRead) over the parent PK; aligning the
+        // arm constructs a SourceKey (Wrap.Row) from a KeyLift.FkColumns lift over the parent PK; aligning the
         // parent PK with the FK source columns lets the emitted JOIN parentInput predicate land
         // on the same column the WHERE predicate used to read.
         return TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",

@@ -545,7 +545,7 @@ class TestServiceStub {
      * mapped rows-method shape. This stub declares {@code Map<Record1<Integer>, Integer>}
      * to deliberately mismatch the per-key element type.
      */
-    public static java.util.Map<org.jooq.Record1<Integer>, Integer> childServiceMappedRecordKeyedWrongScalarValue(java.util.Set<org.jooq.Record1<Integer>> keys) {
+    public static java.util.Map<org.jooq.Record1<Integer>, Integer> childServiceRecordWrapWrongScalarValue(java.util.Set<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 

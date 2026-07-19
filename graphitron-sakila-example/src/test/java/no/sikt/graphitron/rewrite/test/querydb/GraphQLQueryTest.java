@@ -460,8 +460,8 @@ class GraphQLQueryTest {
     void films_titleLowercase_resolvesViaServiceRecordFieldDataLoader_row1Source() {
         // L6 sibling: identical wiring to titleUppercase but the developer-side method
         // takes Set<Row1<Integer>> (Row source-shape) and returns Map<Row1<Integer>, String>.
-        // The classifier routes Row1 sources to MappedRowKeyed (vs MappedRecordKeyed for the
-        // Record1 sibling); the framework's MappedRowKeyed.keyElementType() = Row1<Integer>
+        // The classifier routes Row1 sources to the Wrap.Row source shape (vs Wrap.Record for the
+        // Record1 sibling); the framework's Row-wrap key element type Row1<Integer>
         // matches the developer's declaration. Confirms the field<N>()-based dispatch path
         // round-trips cleanly through the SQL VALUES table to the database and back, with
         // value-based Row.equals/hashCode joining the developer's response Map to the
@@ -483,7 +483,7 @@ class GraphQLQueryTest {
         // L6 sibling: identical wiring to titleUppercase / titleLowercase but the
         // developer-side method takes Set<FilmRecord> (typed-TableRecord source-shape) and
         // returns Map<FilmRecord, String>. The classifier routes Set<X extends TableRecord>
-        // to MappedTableRecordKeyed (carrying FilmRecord on the variant); the rows-method
+        // to the Wrap.TableRecord source shape (carrying FilmRecord); the rows-method
         // emitter passes through `keys` directly because the generated lambda's keys local is
         // already typed Set<FilmRecord>. Confirms the typed extraction
         // (env.getSource().into(Tables.FILM)) round-trips through the DataLoader and the
@@ -582,8 +582,8 @@ class GraphQLQueryTest {
         // rows-method body calls FilmService.titleUppercase via the parameterised
         // ArgCallEmitter (Sources -> keys, DslContext -> dsl local). Each key is one parent
         // FILM_ID; the developer's method returns Map<Row1<Integer>, String> with uppercased
-        // titles. End-to-end verification that the Phase A plumbing (BatchKey, IMPLEMENTED_LEAVES,
-        // shared emitters) works with Phase B's body emission against PostgreSQL.
+        // titles. End-to-end verification that the Phase A plumbing (the KeyLift/SourceKey model,
+        // IMPLEMENTED_LEAVES, shared emitters) works with Phase B's body emission against PostgreSQL.
         Map<String, Object> data = execute("{ films { title titleUppercase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .hasSize(5)
@@ -684,11 +684,11 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void inventoryById_filmCardData_firesAccessorKeyedSingleLiftThroughCustomJavaRecord() {
+    void inventoryById_filmCardData_firesAccessorLiftThroughCustomJavaRecord() {
         // Execution-tier fixture: @externalField returning Field<CustomJavaRecord>
         // where the custom record (FilmCardData) carries a typed FilmRecord accessor.
         // The classifier picks the canonical film() accessor on FilmCardData and produces
-        // an AccessorKeyedSingle BatchKey for the GraphQL child field `film: Film`. The
+        // a KeyLift.Accessor lift (Arity.ONE) for the GraphQL child field `film: Film`. The
         // framework batches dispatch via loader.load(key, env) keyed on the element table's
         // PK (Record1<Integer>) and returns one Film row per key — full columns this time,
         // so Film.title resolves from the framework-fetched record (the lifted FilmRecord
@@ -697,7 +697,7 @@ class GraphQLQueryTest {
         // The generator lifted Invariant #10 (the single-cardinality RecordTableField rejection at
         // GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected) by
         // extending RecordTableField.emitsSingleRecordPerKey() to also be true for
-        // single-cardinality fields, so this test exercises the AccessorKeyedSingle path
+        // single-cardinality fields, so this test exercises the KeyLift.Accessor (Arity.ONE) path
         // end-to-end against PostgreSQL.
         Map<String, Object> data = execute(
             "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { film { filmId title } } } }");
@@ -733,7 +733,7 @@ class GraphQLQueryTest {
         // emitted `if (element == null)` out of the fetcher body (banned per the development principles).
         //
         // Mixed batch: with the seed inventory_id N -> film_id N, inventories 1 and 3 (odd film_ids)
-        // still resolve their full Film row through the same AccessorKeyedSingle loader, proving the
+        // still resolve their full Film row through the same accessor-keyed (Arity.ONE) loader, proving the
         // guard nulls only the absent arm and leaves present siblings untouched.
         Map<String, Object> data = execute(
             "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardDataMaybeMissing { film { filmId title } } } }");

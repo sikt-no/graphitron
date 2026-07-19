@@ -197,11 +197,11 @@ class InterfaceFieldValidationTest {
     }
 
     @Test
-    void rejects_listArm_onAccessorKeyedManyHubArityOver21() {
+    void rejects_listArm_onAccessorManyHubArityOver21() {
         // Validator reads parentSourceKey.columns().size() uniformly across all record-
-        // parent SourceKey shapes. The accessor-call arm publishes the hub PK as the key
+        // parent SourceKey shapes. The accessor lift arm publishes the hub PK as the key
         // columns; a 22-column hub PK trips the same Row22 cap as the table-backed
-        // ColumnRead case. The error message names the parent type and the column count.
+        // KeyLift.FkColumns case. The error message names the parent type and the column count.
         var wideCols = new java.util.ArrayList<ColumnRef>();
         for (int i = 0; i < 22; i++) {
             wideCols.add(new ColumnRef("k" + i, "K" + i, "java.lang.Integer"));

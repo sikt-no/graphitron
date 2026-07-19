@@ -155,7 +155,7 @@ class ServiceProjectionPipelineTest {
             type Language @table(name: "language") {
                 name: String @field(name: "name")
                 rank: Int @service(
-                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedRecordKeyed"}
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankRecordWrap"}
                 )
             }
             type Query { language: Language }

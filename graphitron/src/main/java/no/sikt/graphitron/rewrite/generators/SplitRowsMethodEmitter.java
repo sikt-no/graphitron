@@ -241,11 +241,11 @@ public final class SplitRowsMethodEmitter {
             String outputPackage) {
         TableRef terminalTable = returnType.table();
 
-        // Side-aware column list: ColumnRead carries parent-side FK columns (catalog-FK arm);
-        // SourceRowsCall and AccessorCall carry the join target columns (target side via the
+        // Side-aware column list: KeyLift.FkColumns carries parent-side FK columns (catalog-FK arm);
+        // KeyLift.Lifter and KeyLift.Accessor carry the join target columns (target side via the
         // lifted correlation / FK-derived Hop chain). All four produce RowN<...> of the same Java types as the
         // JOIN target columns. The SourceKey parameter encodes "only the four prelude-reachable
-        // shapes reach this site" structurally; the @service Readers are unreachable here by
+        // shapes reach this site" structurally; the @service source shapes are unreachable here by
         // entry-point construction (only the four BatchKeyField permits with sourceKey() routed
         // through buildList/Single/Connection reach the prelude).
         List<ColumnRef> pkCols = sourceKey.columns();

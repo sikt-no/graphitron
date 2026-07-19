@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (single-record carrier) or {@code List<XRecord>} (list-record carrier) lands a
  * {@link ChildField.BatchedTableField} on the carrier's data field (the former
  * {@code SingleRecordTableField} collapsed into it) keyed on a source=target re-fetch key
- * ({@link SourceKey.Reader.ProducedRecordRead} + {@link SourceKey.Wrap.Row}, the PK read off the
+ * ({@link KeyLift.ProducedRecords} + {@link SourceKey.Wrap.Row}, the PK read off the
  * produced record(s)). The {@code DIRECT} / {@code OUTCOME_SUCCESS} source envelope is no longer
  * carried on the SourceKey; the generator derives it at the type level. Rejection cases pin the
  * strict-return predicate and the single-producer-kind invariant.
@@ -51,7 +51,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         var rtf = (ChildField.BatchedTableField) dataField;
         var sk = rtf.sourceKey();
-        // Source=target re-fetch key — ProducedRecordRead reads the PK off the produced
+        // Source=target re-fetch key — KeyLift.ProducedRecords reads the PK off the produced
         // record, Wrap.Row carries the PK tuple. The DIRECT/OUTCOME_SUCCESS envelope is no longer
         // on the SourceKey (the generator derives it at the type level).
         assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
@@ -66,7 +66,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     /**
  * The source-record carrier with an error channel. Adding an {@code errors} field to
      * the payload routes the {@code @service} producer through the typed {@code Outcome} wrapper; the
-     * data field collapses into {@link ChildField.BatchedTableField} (ProducedRecordRead source=target
+     * data field collapses into {@link ChildField.BatchedTableField} (KeyLift.ProducedRecords source=target
      * re-fetch) and the sibling errors field is the {@code WrapperArm} transport. The
      * {@code OUTCOME_SUCCESS} envelope is no longer recorded on the data field's SourceKey — the
      * generator derives it from the payload's error channel at the type level. This is the opptak

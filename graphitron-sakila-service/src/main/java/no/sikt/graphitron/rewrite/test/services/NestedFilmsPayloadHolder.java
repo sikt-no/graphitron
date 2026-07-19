@@ -10,8 +10,8 @@ import java.util.List;
  * has no {@code $}), this carrier is a <em>nested</em> record ({@code Payload} enclosed here), so
  * its binary name is {@code NestedFilmsPayloadHolder$Payload}.
  *
- * <p>The {@code films()} accessor returns {@code List<FilmRecord>}; the classifier auto-derives an
- * {@code AccessorCall}-keyed, list-cardinality {@code SourceKey} via
+ * <p>The {@code films()} accessor returns {@code List<FilmRecord>}; the classifier auto-derives a
+ * {@code KeyLift.Accessor} lift ({@code Arity.MANY}) via
  * {@code FieldBuilder.deriveAccessorRecordParentSource} (producer #1), whose {@code AccessorRef}
  * carries the parent backing {@code ClassName}. That {@code ClassName} is consumed by
  * {@code GeneratorUtils.buildAccessorKeyMany} (and {@code buildAccessorKeySingle}) to cast

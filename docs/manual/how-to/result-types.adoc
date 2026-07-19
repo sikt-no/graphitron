@@ -53,9 +53,9 @@ Matching rules:
 * Zero parameters.
 * Method name matches the GraphQL field name as `fieldName`, `getFieldName`, or `isFieldName`.
 * Return type peels through `List<...>` / `Set<...>` (for list cardinality) and the element type must be assignable to the child's `@table` return's record class.
-* Cardinality alignment: list child needs list/set accessor (`AccessorKeyedMany`); single child needs single-record accessor (`AccessorKeyedSingle`).
+* Cardinality alignment: a list child needs a list/set accessor; a single child needs a single-record accessor.
 
-When all four hold, the classifier emits `BatchKey.AccessorKeyedSingle` or `BatchKey.AccessorKeyedMany`, the generator wires `loader.load(key)` or `loader.loadMany(keys)` against the element table's PK, and no directive on the child is needed.
+When all four hold, the classifier auto-derives an accessor-keyed batch key, the generator wires `loader.load(key)` (single-record accessor) or `loader.loadMany(keys)` (list/set accessor) against the element table's PK, and no directive on the child is needed.
 
 The example schema's `CreateFilmsPayload` exercises the `Many` shape. Its `@service` producer returns the backing class, so reflection binds it:
 
@@ -91,7 +91,7 @@ type FilmCardWrapper {
 public record FilmCardData(FilmRecord film) {}
 ----
 
-The `film()` accessor returns one `FilmRecord` matching the child field's `Film` table. The classifier emits `AccessorKeyedSingle`; per request, all parents' single keys batch through `loader.load`, returning one `Film` row per distinct PK.
+The `film()` accessor returns one `FilmRecord` matching the child field's `Film` table. The classifier auto-derives the single-record accessor key; per request, all parents' single keys batch through `loader.load`, returning one `Film` row per distinct PK.
 
 == When to reach for `@sourceRow`
 

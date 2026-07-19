@@ -575,7 +575,7 @@ class DmlBulkMutationsExecutionTest {
     // carrier wrapping a list-shaped @table-element data field. The classifier routes the
     // bulk-input + list-data-field cell to MutationBulkDmlRecordField; the emitter batches
     // per-row DML inside one dsl.transactionResult(...), collects PKs in input order, and lets
-    // the data field's SingleRecordTableField fetcher (Cardinality.MANY) run the follow-up
+    // the data field's SingleRecordTableField fetcher (Arity.MANY) run the follow-up
     // response SELECT against those PKs outside the transaction. The order-preservation
     // invariant (output.data[i] corresponds to input[i]) is the load-bearing assertion the
     // non-PK-ordered round-trip pins; any future single-statement emit refinement must preserve

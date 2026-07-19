@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * Fixture: root {@code @service} that hand-rolls {@link OccupantsBatchPayload} rows whose
  * {@code addresses()} accessor returns {@code List<AddressRecord>}. The classifier walks the
- * accessor reflectively to derive a {@code Reader.AccessorCall} + {@code Cardinality.MANY}
+ * accessor reflectively to derive a {@code KeyLift.Accessor} + {@code Arity.MANY}
  * polymorphic parent key for the {@code occupants} child; the generator must emit the
  * {@code loader.loadMany(keys, …)} dispatch for the list-cardinality multi-table polymorphic
  * fetcher (see {@link OccupantsBatchPayload}).

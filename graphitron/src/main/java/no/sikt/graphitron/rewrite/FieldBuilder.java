@@ -3924,8 +3924,8 @@ class FieldBuilder {
      * Structural strict-return check for {@code @service} mutations whose payload
      * has no resolved backing class on the SDL payload type. Inspects the
      * payload SDL directly (single {@code @table}-typed data field) and compares the method's
-     * reflected return type against the expected {@code XRecord} (Cardinality.ONE) /
-     * {@code List<XRecord>} (Cardinality.MANY) shape.
+     * reflected return type against the expected {@code XRecord} ({@link Arity#ONE}) /
+     * {@code List<XRecord>} ({@link Arity#MANY}) shape.
      *
      * <p>The check is restricted to unbacked payloads because ClassBacked payloads have their
      * own diagnostic path through {@link #buildServiceField}'s surviving legacy-equality
@@ -5856,9 +5856,10 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
             var tfc = (TableFieldComponents.Ok) components;
-            // joinPath: empty + OnLiftedSlots for LifterLeafKeyed (no @reference), the
-            // resolved FK chain for LifterPathKeyed (@reference present). The resolver already
-            // constructs the right shape and surfaces it as ok.joinPath() / ok.lifted().
+            // joinPath: empty + OnLiftedSlots for the leaf-PK lift (no @reference), the
+            // resolved FK chain for the @reference-composed lift (@reference present). Both are
+            // the KeyLift.Lifter arm; the resolver already constructs the right shape and
+            // surfaces it as ok.joinPath() / ok.lifted().
             List<JoinStep> joinPath = ok.joinPath();
             // class-backed-parent carriers: the surface SDL parent type has no @table binding, so a
             // condition-join first hop has no parent table to anchor against and routes to
@@ -6511,7 +6512,7 @@ class FieldBuilder {
         // The per-member name matching, is-gate, and member filter come from the shared
         // candidate enumeration so the name rules cannot drift from the other reductions. The
         // record-source reduction accepts zero-arg methods only (an env-taking / per-argument /
-        // public-field candidate is unrepresentable in an AccessorCall), expressed by requesting the
+        // public-field candidate cannot back a KeyLift.Accessor lift), expressed by requesting the
         // PER_ARGUMENT_METHOD kind with a zero-argument expected shape. Candidate order is irrelevant
         // here (all matches are collected, then reduced by identity), so it derives from the class.
         var candidates = ClassAccessorResolver.enumerate(parentClass, accessorBaseName,
@@ -6644,14 +6645,15 @@ class FieldBuilder {
      * {@link GraphitronType.ResultType} permits handled:
      *
      * <ul>
-     *   <li>{@link GraphitronType.JooqTableRecordType} with a non-null table → {@code Resolved(
-     *       SourceKey(Wrap.Row, parent.PK, ColumnRead, Cardinality.ONE), parent.table())}.
-     *       Empty PK or null table is routed through {@code Rejected(structural)} — same shape
-     *       as the existing table-backed arm's {@code UnclassifiedField} path.</li>
+     *   <li>{@link GraphitronType.JooqTableRecordType} with a non-null table → {@code Resolved}
+     *       with a {@link KeyLift.FkColumns} lift, a residue {@link SourceKey} over the parent PK
+     *       (wrap {@code Row}), and {@code parent.table()}. Empty PK or null table is routed through
+     *       {@code Rejected(structural)}, same shape as the existing table-backed arm's
+     *       {@code UnclassifiedField} path.</li>
      *   <li>{@link GraphitronType.PojoResultType} / {@link GraphitronType.JavaRecordType} →
      *       delegates to {@link #derivePolymorphicHubSource}, which discovers the hub from
-     *       the unique matching typed accessor and projects to {@code AccessorCall} + the
-     *       Single / Many cardinality.</li>
+     *       the unique matching typed accessor and projects to a {@link KeyLift.Accessor} lift
+     *       with the single / list {@link Arity}.</li>
      *   <li>{@link GraphitronType.JooqRecordType} → {@code Rejected(structural)} (no table
      *       reference, no hub derivation).</li>
      * </ul>

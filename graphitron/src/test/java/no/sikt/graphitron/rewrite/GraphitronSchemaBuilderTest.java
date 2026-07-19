@@ -2724,7 +2724,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum SourceRowClassificationCase implements ClassificationCase {
         POJO_PARENT_VALID_ROW1_LIST(
-            "Pojo parent + valid Row1<Integer> lifter + @reference, list return → BatchedTableField with LifterPathKeyed",
+            "Pojo parent + valid Row1<Integer> lifter + @reference, list return → BatchedTableField with KeyLift.Lifter",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2756,7 +2756,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         POJO_PARENT_VALID_PLUS_LOOKUPKEY(
-            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → BatchedLookupTableField with LifterPathKeyed and lookupMapping populated",
+            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → BatchedLookupTableField with KeyLift.Lifter and lookupMapping populated",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -3304,7 +3304,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum AccessorDerivedSourceCase implements ClassificationCase {
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR(
-            "List field + list-of-TableRecord accessor → BatchedTableField with AccessorCall + Cardinality.MANY",
+            "List field + list-of-TableRecord accessor → BatchedTableField with KeyLift.Accessor + Arity.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3331,7 +3331,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_SET_ACCESSOR(
-            "List field + set-of-TableRecord accessor → BatchedTableField with AccessorCall + Cardinality.MANY",
+            "List field + set-of-TableRecord accessor → BatchedTableField with KeyLift.Accessor + Arity.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3354,7 +3354,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_SINGLE_SINGLE_FIELD_SINGLE_ACCESSOR(
-            "Single field + single-TableRecord accessor → BatchedTableField with AccessorCall + Cardinality.ONE",
+            "Single field + single-TableRecord accessor → BatchedTableField with KeyLift.Accessor + Arity.ONE",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -6985,7 +6985,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.field("Mutation", "createFilms"))
                     .isInstanceOf(MutationField.MutationServiceRecordField.class);
                 // The data field collapsed into BatchedTableField — a source=target re-fetch.
-                // MANY (list) per-key cardinality, ProducedRecordRead reading the records off the
+                // MANY (list) per-key cardinality, KeyLift.ProducedRecords reading the records off the
                 // source (the OUTCOME_SUCCESS envelope is now applied by the generator at the type
                 // level, not carried on the SourceKey).
                 var dataField = schema.field("FilmsPayload", "films");
@@ -10346,7 +10346,7 @@ class GraphitronSchemaBuilderTest {
             "child @service on @table parent declaring Map<K, Integer> for a String-valued field → UnclassifiedField",
             """
             type Film @table(name: "film") {
-                titleUppercase: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceMappedRecordKeyedWrongScalarValue"})
+                titleUppercase: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRecordWrapWrongScalarValue"})
             }
             type Query { film: Film }
             """,

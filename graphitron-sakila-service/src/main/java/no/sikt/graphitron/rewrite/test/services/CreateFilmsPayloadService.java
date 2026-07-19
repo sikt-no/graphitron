@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Fixture: root {@code @service} that hand-rolls two {@link CreateFilmsPayload} rows for
- * {@code AccessorDerivedBatchKeyTest}'s {@code Many} case. Each payload exposes a
+ * {@code AccessorDerivedSourceTest}'s {@code Many} case. Each payload exposes a
  * {@code List<FilmRecord>} accessor that the classifier walks reflectively to derive an
  * accessor-derived batch key.
  *

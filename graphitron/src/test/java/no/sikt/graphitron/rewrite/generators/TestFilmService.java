@@ -83,7 +83,7 @@ public class TestFilmService {
      * {@code Wrap.Record} keys carry exactly the key columns, so the parent projection stays
      * key-columns-only — pins that the full-row widening is wrap-gated.
      */
-    public static Map<Record1<Integer>, Integer> getRankMappedRecordKeyed(Set<Record1<Integer>> languageKeys) {
+    public static Map<Record1<Integer>, Integer> getRankRecordWrap(Set<Record1<Integer>> languageKeys) {
         throw new UnsupportedOperationException();
     }
 

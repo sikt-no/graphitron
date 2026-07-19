@@ -6075,7 +6075,7 @@ public class TypeFetcherGenerator {
      * upstream {@code Result<RecordN<PK>>} therefore lands at the data-field fetcher with
      * PKs in input order. The downstream SELECT's {@code WHERE pk IN (...)} does not preserve
      * order, but {@link FetcherEmitter}'s {@code buildSingleRecordTableFetcherValue}
-     * {@code Cardinality.MANY} arm re-keys the SELECT result into a PK-indexed map and walks
+     * {@link no.sikt.graphitron.rewrite.model.Arity#MANY} arm re-keys the SELECT result into a PK-indexed map and walks
      * {@code source.getValues(PK)} to project rows in input order — input order is a property
      * of the emitted Java, not of the SQL planner's choice. The deliberately-non-PK-ordered
      * round-trip in {@code DmlBulkMutationsExecutionTest} is the runtime audit; any future

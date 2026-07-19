@@ -278,13 +278,13 @@ class ServiceFieldValidationTest {
             List.of()),
 
         MAPPED_ROW_KEYED_SINGLE_PK(
-            "MappedRowKeyed — Set<Row1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
+            "Wrap.Row — Set<Row1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
             filmTableType(FILM_TABLE_SINGLE_PK),
             serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), true),
             List.of()),
 
         MAPPED_RECORD_KEYED_SINGLE_PK(
-            "MappedRecordKeyed — Set<Record1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
+            "Wrap.Record — Set<Record1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
             filmTableType(FILM_TABLE_SINGLE_PK),
             serviceField(new SourceKey.Wrap.Record(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), true),
             List.of()),

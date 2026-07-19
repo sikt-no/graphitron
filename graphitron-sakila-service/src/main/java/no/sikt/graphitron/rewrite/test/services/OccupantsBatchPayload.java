@@ -9,10 +9,10 @@ import java.util.List;
  * {@code List<AddressRecord>}, paired with a <em>list-cardinality multi-table polymorphic</em>
  * child ({@code occupants: [AddressOccupant!]!}, the {@code Customer | Staff} union, both FK back
  * to {@code address}). The classifier resolves the polymorphic hub ({@code address}) from the
- * {@code addresses()} accessor and produces a {@code SourceKey} with
- * {@code Reader.AccessorCall} + {@code Cardinality.MANY}.
+ * {@code addresses()} accessor and produces a {@code KeyLift.Accessor} lift with
+ * {@code Arity.MANY}.
  *
- * <p>That MANY reader is the path the fix targets: {@code MultiTablePolymorphicEmitter}'s
+ * <p>That MANY-arity lift is the path the fix targets: {@code MultiTablePolymorphicEmitter}'s
  * {@code buildBatchedListFetcher} used to emit {@code loader.load(key, env)} against the
  * out-of-scope loop-local {@code key} the MANY key-extraction declares (it declares a
  * {@code List<RecordN<…>> keys}), so the generated fetcher failed javac with

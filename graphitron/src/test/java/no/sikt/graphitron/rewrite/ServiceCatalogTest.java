@@ -380,11 +380,11 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_compositeKeyTableRecordSources_classifiedAsMappedTableRecordKeyed() {
+    void reflectServiceMethod_compositeKeyTableRecordSources_classifiedAsWrapTableRecord() {
         // Mirrors the consumer-side regelverk_exp.graphqls case where the @service source
         // is a typed record over a multi-column composite primary key. The classifier must
-        // route Set<X> for composite-PK X to MappedTableRecordKeyed (carrying the typed
-        // record class), not collapse to MappedRowKeyed which would pin the validator's
+        // route Set<X> for composite-PK X to the Wrap.TableRecord source shape (carrying the typed
+        // record class), not collapse to Wrap.Row which would pin the validator's
         // expected outer return to Map<RowN<...>, V> rather than the developer's
         // Map<X, V>.
         var filmActorPk = List.of(
@@ -406,7 +406,7 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_setOfTableRecordSources_classifiedAsMappedTableRecordKeyed() {
+    void reflectServiceMethod_setOfTableRecordSources_classifiedAsWrapTableRecord() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithSetOfTableRecordSources", bindings(Map.of()), Set.of(), filmPk, null);
@@ -424,7 +424,7 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_setOfRow1Sources_classifiedAsMappedRowKeyed() {
+    void reflectServiceMethod_setOfRow1Sources_classifiedAsWrapRow() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithSetOfRow1Sources", bindings(Map.of()), Set.of(), filmPk, null);
@@ -441,7 +441,7 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_setOfRecord1Sources_classifiedAsMappedRecordKeyed() {
+    void reflectServiceMethod_setOfRecord1Sources_classifiedAsWrapRecord() {
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithSetOfRecord1Sources", bindings(Map.of()), Set.of(), filmPk, null);

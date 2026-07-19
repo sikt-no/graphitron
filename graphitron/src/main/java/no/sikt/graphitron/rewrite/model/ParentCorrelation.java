@@ -196,8 +196,8 @@ public sealed interface ParentCorrelation
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException(
                     "ParentCorrelation.OnLiftedSlots requires a non-empty column tuple — every "
-                    + "arm delegating its key columns through this correlation (SourceRowsCall, "
-                    + "AccessorCall, ProducedRecordRead) needs at least one column.");
+                    + "arm delegating its key columns through this correlation (KeyLift.Lifter, "
+                    + "KeyLift.Accessor, KeyLift.ProducedRecords) needs at least one column.");
             }
             columns = List.copyOf(columns);
         }
