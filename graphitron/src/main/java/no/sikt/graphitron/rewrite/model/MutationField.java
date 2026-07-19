@@ -12,8 +12,9 @@ import java.util.Optional;
  * <p>Every variant is fetcher-emitting and therefore implements {@link WithErrorChannel};
  * when the carrier classifier resolves an {@code errors}-shaped field on the payload, the
  * channel is populated and the emitter wraps the fetcher body in a try/catch routing thrown
- * exceptions into the typed {@code errors} field. Until the C3 carrier classifier lands,
- * call sites pass {@link Optional#empty()}.
+ * exceptions into the typed {@code errors} field. The carrier-side channel is resolved by
+ * {@code FieldBuilder.resolveErrorChannel} (an {@link Optional#empty()} channel means no
+ * {@code errors} field on the payload, not an unclassified one).
  */
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationRoutineWriteField,
@@ -416,8 +417,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * mutation analogue of {@link QueryField.QueryServicePolymorphicField}: the service hands back a
      * PK-populated jOOQ {@code TableRecord} per branch, and the emitted fetcher dispatches on each
      * returned record's runtime class against the participant set, tags {@code __typename}, and
-     * auto-fetches the selected columns by PK. Interface only — a union return is permanently
-     * unsupported and a single-table discriminated interface is deferred, both rejected at classify.
+     * auto-fetches the selected columns by PK. Interface only, and a distinct-table interface:
+     * a union return is permanently unsupported (rejected at classify), and a single-table
+     * discriminated interface routes to the sibling {@link MutationServiceTableInterfaceField}
+     * leaf, not this one.
      */
     record MutationServicePolymorphicField(
         String parentTypeName,

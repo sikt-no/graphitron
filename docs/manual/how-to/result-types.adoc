@@ -45,7 +45,7 @@ Smallest jOOQ-record fixture: `FilmCard` (backed by `FilmRecord`, reflected from
 
 == Accessor inference on free-form parents
 
-When the parent is a `JavaRecordType` or `PojoResultType` and a child returns a `@table` type, the classifier introspects the backing class for a *typed accessor*: an instance method that takes no arguments and returns either a jOOQ `TableRecord` subclass (single-cardinality) or a `List<TableRecord>` / `Set<TableRecord>` (list-cardinality), where the `TableRecord` element type matches the child field's `@table` return (`FieldBuilder.deriveBatchKeyFromTypedAccessor:2817-2934`).
+When the parent is a `JavaRecordType` or `PojoResultType` and a child returns a `@table` type, the classifier introspects the backing class for a *typed accessor*: an instance method that takes no arguments and returns either a jOOQ `TableRecord` subclass (single-cardinality) or a `List<TableRecord>` / `Set<TableRecord>` (list-cardinality), where the `TableRecord` element type matches the child field's `@table` return (`FieldBuilder.deriveAccessorRecordParentSource`).
 
 Matching rules:
 

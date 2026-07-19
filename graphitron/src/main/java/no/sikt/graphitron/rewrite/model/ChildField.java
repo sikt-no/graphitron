@@ -414,7 +414,7 @@ public sealed interface ChildField extends OutputField
     /**
      * A child field that navigates to (or stays at) a table scope and generates SQL.
      *
-     * <p>All eight variants carry the same three SQL-generation components in addition to the
+     * <p>All six variants carry the same three SQL-generation components in addition to the
      * core {@link ReturnTypeRef.TableBoundReturnType returnType} and join path:
      * <ul>
      *   <li>{@link #filters()} — ordered list of WHERE-clause contributions ({@link WhereFilter});
@@ -1214,12 +1214,14 @@ public sealed interface ChildField extends OutputField
      * <ul>
      *   <li>{@link PayloadAccessor} : the parent payload exposes the errors list as a
      *       property reachable via graphql-java's default {@code PropertyDataFetcher}
-     *       (record accessor, JavaBean getter, or public field). Today's only arm.</li>
+     *       (record accessor, JavaBean getter, or public field).</li>
      *   <li>{@link LocalContext} : the fetcher reads from
      *       {@code env.getLocalContext()}. Pairs with an
      *       {@link ErrorChannel.LocalContext} catch arm that ships
      *       {@code DataFetcherResult.<R>newResult().data(null).localContext(errors).build()};
      *       the parent payload is bypassed entirely.</li>
+     *   <li>{@link WrapperArm} : the errors ride an {@code Outcome.ErrorList} arm on
+     *       {@code env.getSource()}, paired with an {@link ErrorChannel.Mapped} catch arm.</li>
      * </ul>
      */
     sealed interface Transport {

@@ -60,7 +60,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  *       {@link InlineLookupTableFieldEmitter} (junction tables re-expose the FK column and
  *       would collide under USING).</li>
  *   <li>{@code scatterByIdx(flat, keys.size())} — emitted once per fetcher class, see
- *       {@code TypeFetcherGenerator.buildScatterByIdxHelper}.</li>
+ *       {@code SplitRowsMethodEmitter.buildScatterByIdxHelper}.</li>
  * </ol>
  */
 public final class SplitRowsMethodEmitter {
@@ -227,8 +227,8 @@ public final class SplitRowsMethodEmitter {
      * {@code parentInput} derived-table aliasing, and the FK-chain alias declarations. Mutates
      * {@code body} and returns the bindings each sibling needs at its divergence point.
      *
-     * <p>Single-cardinality callers pass a single-hop {@code joinPath}; the FK-chain loop emits
-     * one declaration in that case.
+     * <p>Callers may pass a multi-hop {@code joinPath} in either cardinality; the FK-chain loop
+     * emits one alias declaration per hop, collapsing to a single declaration for a single-hop path.
      */
     private static PreludeBindings emitParentInputAndFkChain(
             TypeFetcherEmissionContext ctx,

@@ -502,10 +502,11 @@ public final class MultiTablePolymorphicEmitter {
      *       available at this cardinality (one record per parent invocation; nothing to dedup).</li>
      * </ul>
      *
-     * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} (resolved single-hop FK
-     *                              column pairs) from the parent table to each
-     *                              {@link ParticipantRef.TableBound} participant. The classifier
- * admits only the auto-discovered single-hop FK shape.
+     * @param participantJoinPaths typename-keyed {@link ParticipantCorrelation} from the parent
+     *                              table to each {@link ParticipantRef.TableBound} participant. The
+     *                              classifier admits a single-hop FK ({@link ParticipantCorrelation.KeyTupleWhere})
+     *                              or a multi-hop / condition-join chain
+     *                              ({@link ParticipantCorrelation.JoinedCorrelation}).
      * @param parentSourceKey       parent-object source-side key, projected from the field's
      *                              parent classification. The classifier produces a catalog-FK
      *                              {@link KeyLift.FkColumns} key for a table-backed parent and an
@@ -583,7 +584,8 @@ public final class MultiTablePolymorphicEmitter {
      *
      * <p>v1 scope: forward/backward pagination ({@code first}/{@code last}/{@code after}/
      * {@code before}); single-PK participants only (validator rejects composite-PK participants
-     * because the JSONB cursor round-trip is not yet covered); single-hop FK paths for child
+     * because the JSONB cursor round-trip is not yet covered); the same single-hop-FK or
+     * multi-hop / condition-join participant correlations the list arm accepts, for child
      * connections; parent PK arity 1..21 for the batched form (parent PK + idx fits in
      * {@code Row22}; validator rejects above).
      *
@@ -1089,11 +1091,13 @@ public final class MultiTablePolymorphicEmitter {
      * <p>For the child-fetcher form, each branch additionally carries a
      * {@code .where(<parent-FK predicate>)} restricting that participant to rows whose FK
      * matches the carrier {@code parentRecord}'s PK. The predicate is derived from the
-     * resolved single-hop FK column pairs each {@link ParticipantCorrelation} carries. The classifier
-     * rejects every shape but the auto-discovered single FK hop (a field-level {@code @reference},
-     * a same-table participant, and zero/multi-FK failures all fail at build time), and the
-     * {@link ParticipantCorrelation} carrier makes an unsupported shape unrepresentable here, so this
-     * emitter has no multi-hop / condition-join arm to guard.
+     * {@link ParticipantCorrelation} each participant carries: a
+     * {@link ParticipantCorrelation.KeyTupleWhere} (single-hop FK, value-bound against the carrier
+     * PK) or a {@link ParticipantCorrelation.JoinedCorrelation} (a multi-hop FK chain and/or a
+     * condition/predicate hop), the latter emitted through {@link #branchBridgingJoins} and
+     * {@code singleBranchCorrelationWhere}. The carrier makes an unsupported shape unrepresentable
+     * here; a field-level {@code @reference} and zero/multi-FK auto-discovery failures still reject
+     * at build time.
      *
      * <p>The result is declared as {@code Result<? extends Record>} so jOOQ's typed
      * {@code Result<RecordN<...>>} inference (one type-arg per projected column) widens to a

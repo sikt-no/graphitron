@@ -1002,9 +1002,10 @@ class FieldBuilder {
         if (elementType instanceof InterfaceType interfaceType) {
             // Per-participant FK auto-discovery from parent table to each participant's table.
             // resolveChildPolymorphicJoinPaths is the gate: it rejects a field-level
-            // @reference (which cannot express per-participant joins), a same-table participant,
-            // and zero/multi-FK auto-discovery failures, so only the auto-discovered single-hop
-            // FK shape reaches the emitter.
+            // @reference (which cannot express per-participant joins) and, absent a @referenceFor
+            // route, a same-table participant or a zero/multi-FK auto-discovery failure. The
+            // correlations reaching the emitter are the auto-discovered single-hop FK plus any
+            // explicit @referenceFor route (single-hop, multi-hop, condition, or self-FK).
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
                 location, parentTableType.table(), interfaceType.participants(), buildWrapper(fieldDef).isList());
             if (resolved.rejection() != null) {
@@ -7232,10 +7233,11 @@ class FieldBuilder {
      *       {@link BuildContext#parseExplicitPath}; a resolution error or terminal-target mismatch
      *       rejects naming the participant. A single-hop FK route lowers to
      *       {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere} (multi-FK
-     *       disambiguation and same-table self-FK, both shipped in slice 1). A multi-hop route is a
-     *       DEFERRED rejection keyed to slice 2; a condition (predicate) hop to slice 3 — their
-     *       emitter arms have not shipped, so the classifier physically cannot construct
-     *       {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation} yet.</li>
+     *       disambiguation and same-table self-FK). A multi-hop FK chain, or a route carrying a
+     *       condition (predicate) hop, lowers to
+     *       {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.JoinedCorrelation}; both
+     *       arms are emittable by {@code MultiTablePolymorphicEmitter} in all three cardinality
+     *       forms.</li>
      *   <li><b>Rule 1b</b> — a same-table participant with no {@code @referenceFor} produces an empty
      *       auto-path ({@code parsePath} skips FK discovery when source and target match); now a live
      *       structural steer to {@code @referenceFor} (self-FK is author-correctable in slice 1), not

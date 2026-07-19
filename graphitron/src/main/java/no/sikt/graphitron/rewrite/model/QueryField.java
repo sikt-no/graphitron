@@ -355,9 +355,10 @@ public sealed interface QueryField extends RootField
      * participant's table.
      *
      * <p>Interface only: a {@code @service} returning a union is permanently unsupported (union
-     * polymorphism is a generated-query-path capability), and a single-table discriminated interface
-     * ({@code TableInterfaceType}) is deferred; both are rejected at classify time, so this variant
-     * only ever carries a distinct-table multitable interface return.
+     * polymorphism is a generated-query-path capability, rejected at classify time), and a
+     * single-table discriminated interface ({@code TableInterfaceType}) routes to the sibling
+     * {@link QueryServiceTableInterfaceField} leaf; so this variant only ever carries a
+     * distinct-table multitable interface return.
      *
      * <p>{@code participants} is the resolved participant set, attached at the classify site from
      * the interface type (the same source {@link QueryInterfaceField} uses).
