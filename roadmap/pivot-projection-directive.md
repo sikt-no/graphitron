@@ -46,19 +46,21 @@ binding lives entirely on the consuming `@pivot` field. This is the key move awa
 draft that put `@field(name:)` on the slots to name discriminator values. That overloaded
 `@field(name:)` (which means "column" on an object field) with a second, consumer-imported meaning,
 forcing a non-local "reached only through `@pivot`" enforcer and making the type all-or-nothing pivot.
-Removing it makes the projection type context-free and freely **reusable in both modes**, including
+Removing it makes the projection type context-free and freely **reusable in every mode**, including
 within one schema: reached by a `@pivot` field it is a pivot record; reached by a plain field on a
-`@table` parent it is an ordinary nesting object. This works because pivot-ness never becomes a fact
-of the type at any layer. In the model, the return type registers as the ordinary
-`GraphitronType.NestingType` whichever consumer reaches it, so mixed consumption is two registrations
-of the same value, an idempotent repeat in `TypeRegistry.register`; every pivot fact lives on the
-consuming field. At runtime, graphql-java wires one datafetcher per `(type, field)` coordinate, and
-one datafetcher genuinely serves both sources: nested children already read by column name on the
-generic jOOQ `Record` precisely so the same nested type can be reached from multiple parents
+`@table` parent it is an ordinary nesting object; reached as a field of a class-backed `@service`
+result it is an ordinary POJO / Java-record property. This works because pivot-ness never becomes a
+fact of the type; every pivot fact lives on the consuming field. graphql-java wires one datafetcher
+per `(type, field)` coordinate, so that one fetcher must serve every source shape the schema can
+hand it. Two of the shapes coincide already: nested children read by column name on the generic
+jOOQ `Record` precisely so one nested type can be reached from multiple parents
 (`ChildField.NestingField`'s documented contract, pinned by
 `GraphitronSchemaBuilderTest.SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE`), and the pivot subselect
-aliases each aggregate by the same derived read name, so the by-name read cannot tell the sources
-apart (see Model).
+aliases each aggregate by the same derived read name, so pivot and nesting sources are
+indistinguishable to the by-name read. A class-backed source is genuinely a second shape: its read
+is a pre-resolved accessor, not a column. The coordinate's fetcher therefore dispatches on the
+source's shape at run time, over the closed set of shapes the classifier proved can reach it (see
+Model).
 
 **The slot → discriminator token map lives where `@field(name:)` is already canonical: on the values
 of a text-mapped enum.** When the GraphQL slot names differ from the database tokens (`nn` vs `nno`),
@@ -231,8 +233,8 @@ and the enum is unnecessary; name a `vocabulary:` enum only when the two diverge
 #### Constraints
 
 * The return type must be a plain output type: no `@table`. Its fields are the slots; they carry no
-  pivot directives. The type is not reserved for pivots, so it may also be reached as an ordinary
-  nested object elsewhere, including in the same schema.
+  pivot directives. The type is not reserved for pivots, so it may also be reached elsewhere in the
+  same schema as an ordinary nested object or as a field of a `@service`-returned record.
 * Every slot must be **nullable**. A non-null slot fails the build: pivot slots are filtered
   aggregates that are null when no row carries the token. The projection record itself always exists,
   one per parent, even when the parent has no attribute rows at all; absence surfaces as null slots,
@@ -264,8 +266,12 @@ and the enum is unnecessary; name a `vocabulary:` enum only when the two diverge
 
 **No new type variant.** The pivot imposes no classification on its return type: the classifier
 registers the ordinary `GraphitronType.NestingType` for it, with the same assembled-schema form a
-plain nesting consumer registers, so dual use is an idempotent repeat in `TypeRegistry.register` and
-the one-classification-per-name invariant never engages. An earlier draft introduced a
+plain nesting consumer registers, behind the same `contains` guard the nesting and producer-carrier
+registrations already use (`registerNestingTypesIn` / `registerProducerBackedCarrier`): the first
+classification keeps the name, so a class-backed carrier verdict registered by a `@service` producer
+stands, and vice versa. Which entry wins is deliberately not load-bearing: the slot fetchers' arm
+set derives from the consuming edges, never from the type-level winner (see Emission surface), so
+the first-wins order cannot change emitted behaviour. An earlier draft introduced a
 `PivotProjection` type variant; it is gone because everything it would carry is either derivable from
 the SDL type (the slot names) or a fact of the consuming `@pivot` field. The slot → token map is the
 field's fact: the same plain type is reused across pivots that may resolve different tokens, so the
@@ -278,11 +284,24 @@ restates its consumers' facts would be the drift copy the model bans.
 fields (first occurrence wins as the representative) and its `nestedBody` emits one by-name read per
 field against the generic jOOQ `Record`, behind the `FetcherEmitter.nestedTypeOwnsFetchers` gate it
 shares with `TypeFetcherGenerator.collectNestedFetcherClasses`. The pivot leaves join that
-collection: a pivot-only type gets its wiring from the pivot edge, a dual-use type from whichever
-edge is seen first, and either representative produces the same fetcher because the read name
-derives from the slot's SDL name by one function that both the nesting read and the pivot's
-projected alias consume. That single-sourced read name is the load-bearing fact of dual use; the
-execution-tier dual-use case below pins it end-to-end. The new field leaves (below, including the
+collection: a pivot-only type gets its wiring from the pivot edge, a pivot-plus-nesting type from
+whichever edge is seen first, and either representative produces the same fetcher because the read
+name derives from the slot's SDL name by one function that both the nesting read and the pivot's
+projected alias consume. That single-sourced read name is the load-bearing fact of record-shaped
+dual use; the execution-tier dual-use case below pins it end-to-end.
+
+When a class-backed producer also reaches the type (a `@service` POJO / Java-record result carrying
+the projection type as a field), the coordinate has two genuinely different source shapes, and the
+wiring **unions the classifier-known read facts instead of picking a representative**: the emitted
+fetcher dispatches on the source at run time, a `source instanceof org.jooq.Record` fork selecting
+the by-name read, the other arm reading the pre-resolved accessor (the existing
+`recordBackedAccessorRead` emission). The arm set is exactly the set of shapes the classifier proved
+reach the coordinate; a single-shape coordinate keeps today's single-arm emission byte-for-byte, so
+existing consumers see no diff. This is not the defensive-cast smell the acceptances principle bans:
+the dispatch is a classify-time decision over a closed shape set, carried into the emit, and each
+arm independently validates against the same SDL slot (the accessor arm through the existing
+accessor-resolution checks, the pivot arm through the checks under Validation), so no new
+cross-shape check is needed. The new field leaves (below, including the
 slot leaf) land in the `TypeFetcherGenerator` dispatch partition (`IMPLEMENTED_LEAVES`), so
 `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces coverage. There is
 **no "reached only through `@pivot`" enforcer** and nothing for one to enforce: the earlier draft
@@ -333,9 +352,11 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
   type's slots into a shared `PivotSpec`, and for the batched leaf derive the
   `SourceKey`/`LoaderRegistration` triple via the existing `deriveSplitQuerySource` path.
 - **Type classification.** Nothing new: the return type registers as the ordinary
-  `GraphitronType.NestingType`, the same registration a plain nesting consumer produces, so dual use
-  is an idempotent repeat. No per-slot directive is read; the token map is the consuming field's
-  fact, not the type's.
+  `GraphitronType.NestingType`, the same registration a plain nesting consumer produces, behind the
+  same `contains` guard (first classification keeps the name; a class-backed carrier verdict from a
+  `@service` producer stands when registered first). The slot fetchers' arm set derives from the
+  consuming edges, never from which registration won. No per-slot directive is read; the token map
+  is the consuming field's fact, not the type's.
 - **Projection emission.** A new emitter builds the selection-set-gated correlated aggregate subselect:
   for each *selected* slot, `DSL.max(value).filterWhere(disc.eq(DSL.inline(token))).as(alias)` where the
   token comes from `PivotSpec`'s resolved slot → token map,
@@ -358,7 +379,10 @@ Anchored on symbols; line numbers are omitted deliberately (they drift).
   (see the R502 entry in `roadmap/changelog.md`) stays `ResultType`-scoped; this slice does not
   touch that seam. The read deliberately matches the nesting children's by-name read so one
   registered fetcher per slot coordinate serves both the pivot subselect's `Record` and a
-  compatible nesting parent's record.
+  compatible nesting parent's record. When the classifier proves a class-backed shape also reaches
+  the coordinate, the wiring emits the run-time shape dispatch instead (see Emission surface): the
+  `instanceof org.jooq.Record` arm is this same by-name read, the class-backed arm is the existing
+  accessor emission, each unchanged inside its arm.
 - **Selection gating** reads the pivot type's slots off `env.getSelectionSet()`, the same source
   `Type.$fields(...)` already consults.
 
@@ -416,7 +440,11 @@ assertions on method bodies):
   carries the expected slot → token map (both the `vocabulary:`-enum and the identity cases); a
   dual-use schema reaching the same type through a `@pivot` field *and* a plain nesting field
   classifies both edges with no conflict (the pivot sibling of
-  `SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE`); a selection subset narrows the projected slot
+  `SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE`); a schema where a class-backed `@service` result
+  also carries the projection type classifies both edges and the slot coordinates' classifier-known
+  shape set is the two-shape union, in both registration orders (pivot edge first and producer edge
+  first), pinning that the first-wins registry entry does not drive the arm set; a selection subset
+  narrows the projected slot
   set; a composite-key `@reference` produces the AND-chained correlation. Inline and `@splitQuery`
   variants both classify.
 - **Compilation tier.** `graphitron-sakila-example` fixtures for both examples (a translation pivot and
@@ -428,9 +456,11 @@ assertions on method bodies):
   returns null; a row-less parent yields a projection record with every slot null, not a null record,
   on both deliveries (this pins the split path's key-preserving join); the composite-key pivot keys
   correctly; inline and split return identical results (the existing inline/split parity convention);
-  and a dual-use case reaches one type both through a `@pivot` field and as an ordinary nested object
-  on a compatible `@table` parent and asserts both read correctly, pinning that the one registered
-  fetcher per slot coordinate serves both source shapes.
+  and a coexistence case reaches one type three ways in one schema: through a `@pivot` field, as an
+  ordinary nested object on a compatible `@table` parent, and as a field of a class-backed
+  `@service` result (fixture in `graphitron-sakila-service`), asserting all three read correctly.
+  This pins that the one registered fetcher per slot coordinate serves every source shape, including
+  the run-time dispatch between the by-name `Record` arm and the accessor arm.
 - **Validation tier.** Each rejection above has a negative fixture asserting the build fails with the
   typed error.
 
