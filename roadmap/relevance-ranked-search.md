@@ -231,7 +231,7 @@ consumer; see the type-ahead how-to for the per-platform recipe.
 directive @typeahead(
   """SQL name of the backing text column on the entity's table: the searched column itself or a stored generated concatenation (PostgreSQL), or the column carrying the Oracle Text CONTEXT index (Oracle)."""
   column: String!
-  """Upper bound on the synthesized, required 'first' argument. There is no default page size: 'first' is 'Int!', so every client states its bound explicitly rather than inheriting a silent default. A request exceeding 'maxFirst' is a client-visible error; because GraphQL cannot express this bound in the schema, that error message is the only channel through which 'maxFirst' reaches the schema consumer, so the generated message states the value."""
+  """Upper bound on the synthesized, required 'first' argument. There is no default page size: 'first' is 'Int!', so every client states its bound explicitly rather than inheriting a silent default. A request exceeding 'maxFirst' is a client-visible error. GraphQL cannot *enforce* the bound in the type system, but it can *communicate* it, on two channels graphitron populates from this value: the synthesized 'first' argument carries a generated description naming the 1..maxFirst range (introspectable, visible in schema tooling before any request), and the exceeds-cap error message also names the value (read reactively, when a client actually hits the cap). Both, because the description is proactive prose a developer may skip while the error is the more-likely-read channel."""
   maxFirst: Int = 100
 ) on FIELD_DEFINITION
 ```
@@ -281,7 +281,10 @@ is a parse-boundary input exactly as the catalog itself is.
   return type becomes `[<Hit>!]!` (non-null list, non-null elements; no
   matches is an empty list, never null) and the two synthesized arguments
   are appended: `search: String!` and `first: Int!` (required, no default:
-  the client must choose a page size).
+  the client must choose a page size). The synthesized `first` argument
+  carries a generated description naming the `1..maxFirst` range, rendered
+  from `TypeaheadSpec.maxFirst`, so the bound is introspectable in the
+  schema and not only discoverable by tripping the runtime error.
 - A new `GraphitronType.TypeaheadHitType` model record (beside
   `ConnectionType` / `FacetsType` / `FacetValueType`,
   `GraphitronType.java:552-630`) carries the schema form;
@@ -427,10 +430,16 @@ Runtime semantics:
   `first < 1` → `GraphitronClientException`, surfaced as a client-visible
   error through the existing `ErrorRouter.surfaceClientErrorOrRedact`
   disposition (which also redacts any backing failure, the same firewall
-  every fetcher gets). The exceeds-`maxFirst` message states the bound
-  (e.g. "first N exceeds the maximum of M"): GraphQL cannot carry the cap
-  in the schema, so this message is the only place the consumer learns
-  `maxFirst`, and the emitter is obligated to name the value.
+  every fetcher gets). The `maxFirst` value reaches the consumer on two
+  emitter-populated channels: the synthesized `first` argument's generated
+  description names the `1..maxFirst` range (introspectable, read before
+  any request), and the exceeds-`maxFirst` error message also states the
+  bound (e.g. "first N exceeds the maximum of M", read when the cap is
+  actually hit). GraphQL cannot *enforce* the bound in the type system, so
+  both are communication, not enforcement; the emitter is obligated to name
+  the value in **both** the description and the message, because the
+  description is proactive prose a developer may skip while the error is the
+  more-likely-read channel.
 - An empty `search` string returns `[]` on both arms (nothing clears the
   similarity threshold on Postgres; the Oracle compiler short-circuits
   tokenless input without touching the database). Documented behaviour;
@@ -445,14 +454,28 @@ Runtime semantics:
   type-ahead binding once at startup, extension presence (`pg_extension`
   for the `Trigram` arm) plus one dummy-term execution of the ranked
   query. **The probe always runs (no opt-out seam)**, and a failed probe
-  does *not* fail the boot: it logs a named error/warning and marks that
-  one binding failed, so the affected type-ahead field short-circuits to a
-  client-visible error on every request while the rest of the schema
-  serves normally (reviewer decision, 2026-07-17). A missing migration
-  therefore degrades exactly one field with a diagnosable cause at deploy
-  time, rather than either taking down the whole service (the earlier
-  fail-fast position) or silently emitting redacted per-request errors
-  with no startup signal. The `Trigram` arm also reports
+  does *not* fail the boot: it logs a named error/warning carrying the
+  diagnosable cause and sets a **per-binding health flag, written once at
+  boot and read-only thereafter** (immutable post-boot config that the
+  fetcher consults, not live mutable health state). A binding flagged
+  unhealthy makes its type-ahead field short-circuit on every request while
+  the rest of the schema serves normally (reviewer decision, 2026-07-17). A
+  missing migration therefore degrades exactly one field with a diagnosable
+  cause at deploy time, rather than either taking down the whole service
+  (the earlier fail-fast position) or silently emitting redacted
+  per-request errors with no startup signal. **This short-circuit is a
+  third error disposition, named explicitly because it does not fall out of
+  the existing two-arm `ErrorRouter` split.** A probe failure *is* a
+  backing failure, which the request-time firewall redacts; but here the
+  field is administratively disabled and the client must be told the field
+  is unavailable, so the disposition is the *surfaced* arm with a
+  **generic, redaction-safe message** (no backing internals: extension
+  names, index names, and driver text stay out of it), and the cause lives
+  **only in the startup log**, never in the client message. It is not the
+  redacted per-request arm (which carries a correlation id, not a
+  field-unavailable signal) and not the plain client-error arm (whose
+  messages, like the `maxFirst` message, are safe to be specific). The
+  `Trigram` arm also reports
   the effective `pg_trgm.word_similarity_threshold` in the startup log
   (report, not hard-fail: the pinned 0.4 is the recipe's recommendation,
   not a contract the consumer cannot deviate from). The `OracleText` arm
@@ -613,11 +636,14 @@ its own documentation against its own contract.
   the accent dividend of the 0.4 threshold, verified 2026-07-16), distance
   ties order deterministically by PK, and against a database missing
   `pg_trgm` the boot probe logs a named error and the `filmSearch` field
-  short-circuits to a client-visible error while an ordinary (non-search)
-  field on the same schema still serves. Shared:
+  short-circuits with a **generic field-unavailable client error carrying
+  no backing internals** (extension/index names appear in the startup log,
+  not the response) while an ordinary (non-search) field on the same schema
+  still serves. Shared:
   authored filter argument ANDs with the match; an omitted required `first`
   is a validation error; `first` over `maxFirst` errors client-visibly with
-  the bound named in the message; empty search string
+  the bound named in the message, and the emitted schema's `first` argument
+  description names the `1..maxFirst` range; empty search string
   returns `[]`; the DML pinning test (insert/update on `film` never writes
   the backing columns, which stay consumer-invisible). The execution tier
   runs against the repo's pinned PostgreSQL image (18 today), which is
@@ -649,12 +675,19 @@ Three landings, each through the canonical flow:
    and pipeline-tier tests. No emitted-code change beyond the schema
    surface, and, because every commit ships to trunk, **`@typeahead` is a
    `Rejection.Deferred` landing in this phase**: a classified type-ahead
-   carrier fails the build with "not yet emitted" (the stubbed-leaf
-   mechanism `ValidateMojo` already enforces) rather than silently
+   carrier fails the build with "not yet emitted" rather than silently
    classifying and then emitting an ordinary unranked `Fetch` that ignores
-   the `search` argument. The `Deferred` gate is **keyed on the
-   dialect-selected backing arm**, not on an authored value: in this phase
-   both arms are deferred. The sakila-example `filmSearch` field is
+   the `search` argument. The enforcer is the classifier-attached
+   `Rejection.Deferred` itself, not the leaf-granular stubbed-leaf coverage
+   check: that check partitions over `GraphitronField` *leaves*, and this
+   carrier is a *within-leaf* predicate (`QueryTableField` **carrying a
+   `TypeaheadSpec`**, the leaf itself already emits ordinary fetches), which
+   a leaf-granular partition cannot express. The deferral is attached during
+   classification and drained by the misuse pass (the same single-sourcing
+   the Validation section names), pinned by a **new pipeline-tier assertion**
+   that a live `@typeahead` carrier resolves to `Deferred`. The `Deferred`
+   gate is **keyed on the dialect-selected backing arm**, not on an authored
+   value: in this phase both arms are deferred. The sakila-example `filmSearch` field is
    phase-gated to landing 2 for the same reason. Acceptance: pipeline
    fixtures classify, the hit type appears in the emitted schema, the
    rejection matrix fires, and a live `@typeahead` field is `Deferred`,
@@ -848,11 +881,16 @@ is the mitigation.
    (`first: Int!`, required), because a client should make an actual page-
    size choice rather than inherit a silent default. `defaultFirst` is
    removed from the directive and the model. Consequence the owner flagged:
-   the author's `maxFirst` value must reach the schema consumer somehow, and
-   since GraphQL cannot express the bound in the schema, the exceeds-cap
-   **error message is the only channel**, so the emitter is obligated to
-   name the value in that message. Design body updated (directive, wire
-   shape, `TypeaheadSpec`, runtime semantics, validation, tests).
+   the author's `maxFirst` value must reach the schema consumer somehow.
+   GraphQL cannot *enforce* the bound in the type system, but it can
+   *communicate* it, and the self-review corrected an early framing that
+   the error message was the *only* channel: the synthesized `first`
+   argument's **description** carries the `1..maxFirst` range too, and it is
+   introspectable before any request. Owner decision (2026-07-17): use
+   **both** channels, since the description is proactive prose a developer
+   may skip while the error message is the more-likely-read channel; the
+   emitter names the value in each. Design body updated (directive, wire
+   shape, synthesis, `TypeaheadSpec`, runtime semantics, validation, tests).
 2. **Dissolved 2026-07-16 (grain round).** This was "`config:` required
    for `TSVECTOR`"; `config:` left the directive surface with the
    prose-search descope, so the question is moot until the prose sibling
@@ -941,6 +979,31 @@ load-bearing for the fulltext case.
 
 ## History
 
+- 2026-07-17 (self-review tightening): a principles-architect self-review
+  of the just-resolved open questions surfaced two consistency seams (a
+  how-to worked query that omitted the now-required `first`; the hit-type
+  record named both `TypeaheadHitType` and `SearchHitType`), both fixed,
+  and three design tightenings the owner accepted. (1) `maxFirst` is
+  communicated on **both** channels, not the error message alone: the
+  synthesized `first` argument carries a generated description naming the
+  `1..maxFirst` range (introspectable before any request) *and* the
+  exceeds-cap error message names the value (read reactively). The early
+  "error message is the only channel" framing was a false premise, the
+  argument description is a durable, introspectable channel; both are kept
+  because the description is proactive prose a developer may skip while the
+  error is the more-likely-read channel. (2) The boot-probe field
+  short-circuit is named as a **third error disposition**: a probe-detected
+  backing failure surfaces as a client-visible *field-unavailable* error
+  with a generic, redaction-safe message (cause log-only), distinct from
+  both the redacted per-request arm and the specific-message client-error
+  arm; the per-binding health flag is written once at boot and read-only
+  thereafter. (3) The phase-1 `Deferred` gate's enforcer is the
+  classifier-attached `Rejection.Deferred` pinned by a new pipeline
+  assertion, not the leaf-granular stubbed-leaf coverage check (which
+  cannot express a within-leaf `QueryTableField`-carries-`TypeaheadSpec`
+  predicate). Carried as a handoff caution, not a spec edit: the eventual
+  operation-fact quarantine code comment must state the fact without citing
+  a roadmap id (the reference guard forbids it).
 - 2026-07-17: reviewer open questions 1, 3, 5 resolved by the item owner.
   (1) `first` over `maxFirst` errors rather than clamps, **and** `first`
   loses its default entirely (`first: Int!`, required, no `defaultFirst`):

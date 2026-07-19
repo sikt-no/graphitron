@@ -193,7 +193,7 @@ An empty `search` string also returns `[]`. Accents get partial tolerance for fr
 == Bounding and the client contract
 
 * `first` is required (`Int!`): there is no default page size, so every request states how many hits it wants. Omitting `first` is a schema validation error, caught before the query runs.
-* `first` above `maxFirst` (100 by default) or below 1: a client-visible error, not a silent clamp. The error message names the maximum, since the schema itself cannot carry the bound; that message is where a client learns the cap.
+* `first` above `maxFirst` (100 by default) or below 1: a client-visible error, not a silent clamp. The cap is discoverable two ways: the `first` argument's description in the schema names the `1..maxFirst` range (visible in introspection and schema tooling before you send anything), and the error message also names the maximum when you exceed it.
 * Set the cap on the directive when the default does not fit: `@typeahead(column: "title", maxFirst: 25)`.
 * Results are deterministically ordered: by match distance, then primary key. Two identical requests against the same data return the same list in the same order.
 
