@@ -1,7 +1,7 @@
 ---
 id: R443
 title: "Sealed tri-state ConditionResolution result (post-R438 residue)"
-status: In Progress
+status: In Review
 bucket: structural
 priority: 5
 theme: docs
