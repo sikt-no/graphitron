@@ -46,9 +46,16 @@ binding lives entirely on the consuming `@pivot` field. This is the key move awa
 draft that put `@field(name:)` on the slots to name discriminator values. That overloaded
 `@field(name:)` (which means "column" on an object field) with a second, consumer-imported meaning,
 forcing a non-local "reached only through `@pivot`" enforcer and making the type all-or-nothing pivot.
-Removing it makes the projection type context-free and freely **reusable in both modes**: reached by a
+Removing it makes the projection type context-free and **reusable in both modes**: reached by a
 `@pivot` field it is a pivot record; reached by a plain `@reference` it is an ordinary nesting object;
-the type does not care, exactly as graphitron already infers a type's backing per-producer.
+nothing on the type prefers either, exactly as graphitron already infers a type's backing from its
+producer. One qualifier, inherited from the model's accumulator rather than from any pivot rule: a
+type *name* maps to a single classification (`TypeRegistry.register` demotes an incompatible repeat
+to `UnclassifiedType`, failing the build), so one schema uses one name in one mode. Mixing both modes
+on the same name in one schema is rejected by that existing arm, and the author gives the plain usage
+a second type name. The restriction is also structurally forced, not just a model convention:
+graphql-java wires one datafetcher per `(type, field)` coordinate, so one type's slots cannot
+simultaneously be pivot by-alias reads and ordinary column reads.
 
 **The slot → discriminator token map lives where `@field(name:)` is already canonical: on the values
 of a text-mapped enum.** When the GraphQL slot names differ from the database tokens (`nn` vs `nno`),
@@ -75,7 +82,12 @@ table, so a parent with no attribute rows would produce no `GROUP BY __idx__` gr
 field and diverging from inline. The pivot's batch query therefore joins the attribute table *from*
 the parent-input table key-preservingly (a left join; the one deviation from the table shape's
 join), so every batch key produces a group and a row-less parent scatters to a record of null slots
-on both deliveries.
+on both deliveries. Key preservation must hold over the *entire* parent-input → terminus chain,
+which is why v1 restricts the pivot's `@reference` path to a single FK hop:
+`SplitRowsMethodEmitter`'s bridging hops are forward inner joins and its per-hop filters land in the
+WHERE clause, either of which would re-drop the null-extended row on a longer chain. On the
+single-hop shape the one left join suffices; extending key preservation chain-wide is a later item
+(see Out of scope).
 
 **Delivery.** Inline is the default and the better runtime shape: the projection is a single-valued
 field, so it folds into the parent query as a correlated aggregate subselect, one round-trip, no
@@ -177,9 +189,9 @@ type AdmissioLand @key(fields: "landkode") @table(name: "land") {
 ```
 
 `OversatteTekster` is a plain type carrying no pivot markers, so it is reused freely across every
-translated field (the value column varies per usage) and could also be reached as an ordinary nested
-object elsewhere. A sibling field over `kravelement_sprak.beskrivelse`, keyed on a three-column FK,
-reuses the identical type, enum, and directive:
+translated field (the value column varies per usage). A sibling field over
+`kravelement_sprak.beskrivelse`, keyed on a three-column FK, reuses the identical type, enum, and
+directive:
 
 ```graphql
 beskrivelse: OversatteTekster
@@ -216,8 +228,9 @@ and the enum is unnecessary; name a `vocabulary:` enum only when the two diverge
 #### Constraints
 
 * The return type must be a plain output type: no `@table`. Its fields are the slots; they carry no
-  pivot directives. The type is not reserved for pivots, so it may also be reached as an ordinary
-  nested object elsewhere.
+  pivot directives. The shape is not reserved for pivots, but each type name maps to a single
+  classification: within one schema, a type consumed by `@pivot` fields cannot also be consumed as an
+  ordinary nested object. Give a plain usage of the same shape its own type name.
 * Every slot must be **nullable**. A non-null slot fails the build: pivot slots are filtered
   aggregates that are null when no row carries the token. The projection record itself always exists,
   one per parent, even when the parent has no attribute rows at all; absence surfaces as null slots,
@@ -225,6 +238,8 @@ and the enum is unnecessary; name a `vocabulary:` enum only when the two diverge
 * When `vocabulary:` is given, every slot's SDL name must resolve to a value of the named enum; a slot
   with no matching enum value fails the build, naming the slot. When omitted, each slot's name is used
   as the token directly (identity).
+* The `@reference` path must be a single FK hop to the attribute table (composite keys are fine;
+  multi-hop chains and condition-join hops are not supported under `@pivot`).
 * `on` and `value` must both resolve to columns on the `@reference` terminus (attribute) table. The
   build fails, naming the unresolved column, if either does not.
 * The field must be single-valued (one projection record per parent). A list return type is rejected.
@@ -238,7 +253,7 @@ and the enum is unnecessary; name a `vocabulary:` enum only when the two diverge
 * xref:field.adoc[`@field`] on the vocabulary enum's values names the database token each slot maps
   to (its enum-value role); the `vocabulary:` enum is an ordinary enum, reusable as a field type.
 * xref:reference.adoc[`@reference`] establishes the join to the attribute table, including
-  composite-FK and multi-hop paths.
+  composite-FK paths (a single hop under `@pivot`).
 * xref:splitQuery.adoc[`@splitQuery`] switches delivery from inline to batched.
 
 ---
@@ -259,10 +274,14 @@ on the consuming field, so there is no drift copy.
 
 `PivotProjection` is the classification the `@pivot` **consumer** imposes on its return type; the type
 carries no directive of its own, mirroring how a type's backing is inferred from its producer. Because
-nothing on the type is pivot-specific, the same type reached by a non-`@pivot` consumer classifies
-normally (nesting / record) with no conflict, so there is **no "reached only through `@pivot`"
-enforcer**: the earlier draft needed one only because `@field(name:)` on the slots carried a
-consumer-dependent meaning, and that overload is gone.
+nothing on the type is pivot-specific, the same slot shape reached only by non-`@pivot` consumers
+classifies normally (nesting / record). When one type name is consumed in *both* modes in one schema,
+the two consumers register incompatible classifications and `TypeRegistry.register`'s existing
+accumulator arm demotes the name to `UnclassifiedType`, surfaced as a build error by the
+unclassified-type pass. So there is **no bespoke "reached only through `@pivot`" enforcer**: the
+earlier draft needed one only because `@field(name:)` on the slots carried a consumer-dependent
+meaning, and that overload is gone; the one-classification-per-name invariant is enforced where it
+already lives.
 
 *Emission surface.* `PivotProjection` is a real GraphQL type clients query, so like `NestingType` it
 implements `EmitsPerTypeFile` and appears in `schema.types()`: a schema type and per-slot datafetchers
@@ -281,7 +300,8 @@ axis the model already splits for tables (`ChildField.TableField`, inline, does 
   `SourceKey` / `LoaderRegistration` triple from `FieldBuilder.deriveSplitQuerySource`.
 
 Both compose a shared `PivotSpec` sub-record carrying the facts common to both deliveries: the resolved
-`@reference` join path (reuse `ctx.parsePath`, so composite-FK and multi-hop come free), the
+`@reference` join path (reuse `ctx.parsePath`; composite FKs come free, and the parsed path is
+validated to be a single FK hop in v1, see Nullability), the
 discriminator `ColumnRef` (from `on:`), the value `ColumnRef` (from `value:`), the projection type, and
 the resolved **slot → token map**. That map is built at classify time: when `vocabulary:` is present,
 by looking each slot's SDL name up in the named enum's `buildTextEnumMapping` (SDL name → token from
@@ -352,8 +372,9 @@ LSP code:
   the `@asFacet` `FacetValueType` / `FacetsType` already carry.
 - When `vocabulary:` is given, a slot whose SDL name is not a value of the named enum is rejected,
   naming the slot and the enum. When `vocabulary:` names a type that is not a text-mapped enum, that is
-  rejected too. (There is no non-local "reached only through `@pivot`" enforcer: the projection type
-  carries nothing pivot-specific, so dual use is not a conflict.)
+  rejected too. (There is no bespoke "reached only through `@pivot`" enforcer: one type name consumed
+  in both modes in one schema is an incompatible classification repeat, demoted to `UnclassifiedType`
+  by `TypeRegistry.register`'s existing arm; see Model.)
 - A projection slot that is itself an object or list rather than a scalar is rejected.
 - `on` / `value` that do not resolve to columns on the `@reference` terminus are rejected, naming the
   unresolved column.
@@ -365,6 +386,10 @@ LSP code:
   column, its type, and the expected scalar.
 - A `@pivot` field with a list return type, or with no establishable join to an attribute table, is
   rejected.
+- A `@pivot` field whose `@reference` path is anything other than a single FK hop (a multi-hop chain,
+  or a condition-join hop) is rejected, naming the field: the split delivery's one-record-per-parent
+  invariant requires the whole parent-input → terminus chain to be key-preserving, and v1 guarantees
+  that only for the single-hop shape (see Nullability).
 - A `@pivot` field on a record-backed (class-backed) parent is rejected, naming the parent type:
   inline correlation requires a parent query, and the record-parent batched seam is out of scope in
   v1 (see Delivery). The rejection message must not suggest `@splitQuery`, which is lint-ignored as
@@ -387,9 +412,9 @@ assertions on method bodies):
 - **Pipeline tier.** SDL → classified model → generated `TypeSpec`: a `@pivot` field classifies as
   `PivotField`, its return type as `PivotProjection` carrying the slot aliases, and the field's
   `PivotSpec` carries the expected slot → token map (both the `vocabulary:`-enum and the identity
-  cases; and the same plain type reached by a non-`@pivot` field still classifies normally, pinning
-  dual use); a selection subset narrows the projected slot set; a composite-key `@reference` produces
-  the AND-chained correlation. Inline and `@splitQuery` variants both classify.
+  cases; and the same slot shape under a separate type name reached only by plain fields still
+  classifies normally); a selection subset narrows the projected slot set; a composite-key
+  `@reference` produces the AND-chained correlation. Inline and `@splitQuery` variants both classify.
 - **Compilation tier.** `graphitron-sakila-example` fixtures for both examples (a translation pivot and
   a numeric/currency pivot), inline and split, single and composite key, compile under `<release>17>`.
 - **Execution tier (PostgreSQL).** Add attribute tables to `graphitron-sakila-db` (a single-key
@@ -400,7 +425,10 @@ assertions on method bodies):
   on both deliveries (this pins the split path's key-preserving join); the composite-key pivot keys
   correctly; inline and split return identical results (the existing inline/split parity convention).
 - **Validation tier.** Each rejection above has a negative fixture asserting the build fails with the
-  typed error.
+  typed error. Additionally, one fixture consumes a single type name both via `@pivot` and as a plain
+  nested object in one schema and asserts the build fails via the existing incompatible-classification
+  demotion (`TypeRegistry.register`'s demote arm), pinning that the accumulator, not a bespoke
+  enforcer, owns that conflict.
 
 ## Out of scope
 
@@ -408,6 +436,14 @@ assertions on method bodies):
   `(owner, discriminator)`, so `max` just returns it). Custom aggregates are a later item.
 - A projection whose slots draw from *different* value columns (one value column per projection in v1).
 - Non-equality discriminators (ranges, `IN`-sets per slot).
+- Multi-hop `@reference` paths (and condition-join hops) under `@pivot`. Inline delivery would
+  tolerate them (a correlated aggregate over an empty joined set still yields one row), but the split
+  delivery's key-preserving join must span every hop, `SplitRowsMethodEmitter`'s bridging hops are
+  inner joins today, and inline/split parity is an invariant of the pivot; v1 rejects the path shape
+  at validate time. Extending the batch shape chain-wide is a later item.
+- Consuming one type name both via `@pivot` and as a plain nested object in the same schema. Each
+  type name maps to a single classification; the existing accumulator demotion rejects the mix, and
+  the authoring answer is a second type name for the plain usage.
 - `@pivot` on a record-backed (class-backed) parent. The record-parent batch seam derives its keys
   from accessors (`FieldBuilder.resolveRecordParentSource`) rather than `deriveSplitQuerySource`;
   extending the pivot there is a later item. V1 rejects it at validate time.
