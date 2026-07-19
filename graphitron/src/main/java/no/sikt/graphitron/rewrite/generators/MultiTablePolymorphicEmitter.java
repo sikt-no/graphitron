@@ -507,10 +507,11 @@ public final class MultiTablePolymorphicEmitter {
      *                              {@link ParticipantRef.TableBound} participant. The classifier
  * admits only the auto-discovered single-hop FK shape.
      * @param parentSourceKey       parent-object source-side key, projected from the field's
-     *                              parent classification. The classifier produces
-     *                              catalog-FK / {@link KeyLift.FkColumns} parent keys
-     *                              (table-backed parents); the class-backed-parent
-     *                              classifier arm reaches the lifter and accessor lift arms.
+     *                              parent classification. The classifier produces a catalog-FK
+     *                              {@link KeyLift.FkColumns} key for a table-backed parent and an
+     *                              accessor-derived {@link KeyLift.Accessor} key for a class-backed
+     *                              / record parent; a source=target produced-record parent carries
+     *                              {@link KeyLift.ProducedRecords}.
      * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()},
      *                              threaded from the field's classification site so the batched
      *                              rows method's VALUES cells and JOIN lookups can bind through

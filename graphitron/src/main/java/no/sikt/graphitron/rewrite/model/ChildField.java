@@ -784,9 +784,11 @@ public sealed interface ChildField extends OutputField
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
-     * Today the classifier produces only catalog-FK / {@link KeyLift.FkColumns} parent
-     * source-keys (table-backed parents); wiring the class-backed-parent classifier arm
-     * to reach the lifter and accessor lift arms is follow-up work.
+     * The classifier produces a catalog-FK {@link KeyLift.FkColumns} key for a table-backed
+     * parent and an accessor-derived {@link KeyLift.Accessor} key for a class-backed / record
+     * parent (the hub discovered by {@code FieldBuilder.derivePolymorphicHubSource}).
+     * {@link KeyLift#checkResidueAgreement} pins the residue {@code parentSourceKey} to the lift
+     * arm at construction.
      *
      * <p>{@code parentKeyOwnerTable} is the parent/hub table owning
      * {@code parentSourceKey.columns()} — the parent's {@code @table} on the table-backed arm,
