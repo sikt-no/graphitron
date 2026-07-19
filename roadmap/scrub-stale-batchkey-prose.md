@@ -1,7 +1,7 @@
 ---
 id: R126
 title: "Scrub deleted classification-vocabulary from prose (BatchKey / Reader / SourceKey.Cardinality / Mapped*Keyed)"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 9
 theme: docs
