@@ -1,13 +1,13 @@
 ---
 id: R443
 title: "Sealed tri-state ConditionResolution result (post-R438 residue)"
-status: Spec
+status: Ready
 bucket: structural
 priority: 5
 theme: docs
 depends-on: []
 created: 2026-07-08
-last-updated: 2026-07-18
+last-updated: 2026-07-19
 ---
 
 # Sealed tri-state ConditionResolution result
