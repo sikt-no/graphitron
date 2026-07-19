@@ -1,13 +1,13 @@
 ---
 id: R501
 title: "@pivot: discriminator-keyed aggregate projections"
-status: Ready
+status: Spec
 bucket: feature
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-17
-last-updated: 2026-07-18
+last-updated: 2026-07-19
 ---
 
 # @pivot: discriminator-keyed aggregate projections
@@ -29,8 +29,8 @@ discriminator-keyed aggregate projection, generating the pivot the service write
 
 ## Design
 
-The pattern decomposes into five orthogonal facts, four of which existing machinery already carries.
-Each is stated once, at its grain:
+The pattern decomposes into five orthogonal facts. Only two are new (`@pivot`'s `on:` and `value:`);
+the other three reuse existing machinery. Each is stated once, at its grain:
 
 | Fact | Grain | Where it is stated |
 |---|---|---|
@@ -38,15 +38,27 @@ Each is stated once, at its grain:
 | Delivery: inline vs batched | per usage | inline default; `@splitQuery` opts in (exists) |
 | Discriminator column (`sprakkode`) | per attribute table | `@pivot(on:)` (new) |
 | Value column (`navn` / `beskrivelse`) | per usage | `@pivot(value:)` (new) |
-| Field → discriminator value (`nn`→`nno`) | intrinsic to the reused type | `@field(name:)` on the projection type's fields (exists as a concept) |
+| Slot → discriminator token (`nn`→`nno`) | the code vocabulary | a text-mapped enum (`@field(name:)` on its *values*), named by `@pivot(vocabulary:)`; identity when omitted |
 
-The return type becomes a **pivot projection type**: a non-`@table` type whose fields are attribute
-slots, each carrying `@field(name:)` naming the discriminator value it selects. This reuses
-`@field(name:)`'s existing `ENUM_VALUE` semantics verbatim ("the database string this value maps to",
-lifted at classify time into `EnumValueSpec.runtimeValue` by `TypeBuilder`); the projection field is
-a new site for the same axis, disambiguated by the return type being a pivot projection. No type-level
-marker is needed: the type's pivot-ness is inferred from the `@pivot` field consuming it, consistent
-with how a type's backing is already inferred from its producer (the `@record` deprecation rationale).
+The return type is a **plain, directive-free output type**: its fields are attribute slots named for
+the languages/codes, carrying no pivot markers of their own. Nothing on the type says "pivot"; the
+binding lives entirely on the consuming `@pivot` field. This is the key move away from an earlier
+draft that put `@field(name:)` on the slots to name discriminator values. That overloaded
+`@field(name:)` (which means "column" on an object field) with a second, consumer-imported meaning,
+forcing a non-local "reached only through `@pivot`" enforcer and making the type all-or-nothing pivot.
+Removing it makes the projection type context-free and freely **reusable in both modes**: reached by a
+`@pivot` field it is a pivot record; reached by a plain `@reference` it is an ordinary nesting object;
+the type does not care, exactly as graphitron already infers a type's backing per-producer.
+
+**The slot → discriminator token map lives where `@field(name:)` is already canonical: on the values
+of a text-mapped enum.** When the GraphQL slot names differ from the database tokens (`nn` vs `nno`),
+the pivot names a vocabulary enum with `@pivot(vocabulary: "Sprak")`; each selected slot's SDL name is
+matched to a `Sprak` value, whose `@field(name:)` gives the token (reusing the existing
+`buildTextEnumMapping` / `EnumValueSpec.runtimeValue` machinery at its unambiguous `ENUM_VALUE` site,
+not overloading the object-field site). When slot names already equal the tokens, `vocabulary:` is
+omitted and the mapping is identity. The vocabulary is per-`@pivot`, which is the honest grain: two
+attribute tables could use different code vocabularies for the same GraphQL type. `Sprak` is an
+ordinary enum, independently reusable as a real field type.
 
 **Nullability.** Which discriminator values are actually populated is data, not schema:
 `max(value).filterWhere(disc.eq('sme'))` returns SQL null whenever no row carries that value, and the
@@ -81,8 +93,8 @@ answer; extending the pivot to record-backed parents is a later item (see Out of
 
 **Selection-set gating.** The projection obeys the same discipline as `Type.$fields(selectionSet,
 alias, env)`: walk the selection set on the projection type and emit one
-`max(<value>).filterWhere(<disc>.eq(<mappedValue>)).as(<alias>)` column per *requested* slot, using
-the `@field(name:)` → value map. A `{ navn { nn en } }` selection projects two filtered aggregates,
+`max(<value>).filterWhere(<disc>.eq(<token>)).as(<alias>)` column per *requested* slot, using the
+`PivotSpec` slot → token map. A `{ navn { nn en } }` selection projects two filtered aggregates,
 not four.
 
 **No generated record.** The subselect returns a jOOQ `Record`; the slot fields resolve through the
@@ -111,65 +123,81 @@ Turns a single-valued child field into a **discriminator-keyed aggregate project
 field per discriminator value, each holding an aggregate of a value column filtered to that value.
 This generates, declaratively, the row-to-column pivot that would otherwise be a hand-written service.
 
-The field's return type is a **pivot projection type**: a type with no `@table`, whose every field
-carries `@field(name:)` naming the discriminator value that field selects (the same meaning
-`@field(name:)` has on an enum value). The field reaches the attribute table with `@reference`; it
-delivers inline by default, or batched if `@splitQuery` is also present.
+The field's return type is a **plain output type** with no `@table` and no per-field directives: its
+fields are the projection slots, named for the languages or codes. The field reaches the attribute
+table with `@reference`; it delivers inline by default, or batched if `@splitQuery` is also present.
+
+Each slot selects the row whose discriminator column equals a database token. By default the token is
+the slot's own name; when the two differ (a `nn` slot selecting the token `nno`), name a text-mapped
+enum with `vocabulary:` and the enum's `@field(name:)` values supply the tokens.
 
 #### SDL signature
 
 ```graphql
-directive @pivot(on: String!, value: String!) on FIELD_DEFINITION
+directive @pivot(on: String!, value: String!, vocabulary: String) on FIELD_DEFINITION
 ```
 
 #### Parameters
 
 | Name | Type | Description |
 |---|---|---|
-| `on` | `String!` | The discriminator column on the referenced attribute table. Each projection field's `@field(name:)` is matched against this column's value. |
-| `value` | `String!` | The column on the referenced attribute table whose value is aggregated per discriminator value. |
+| `on` | `String!` | The discriminator column on the referenced attribute table. Each slot is matched to a token that this column is filtered to. |
+| `value` | `String!` | The column on the referenced attribute table whose value is aggregated per token. |
+| `vocabulary` | `String` | Optional. Names a text-mapped enum whose values map each slot's SDL name to the database token (via the enum values' `@field(name:)`). Omit when slot names already equal the tokens (identity). |
 
 #### Example 1: translations
 
 An attribute table `land_sprak(landkode, sprakkode, navn)` holds a country's name once per language.
 `AdmissioLand.navn` pivots those rows into one field per language:
 
+The GraphQL slot names (`nn`, `nb`, ...) differ from the database tokens (`nno`, `nob`, ...), so a
+text-mapped enum carries the mapping once, at `@field`'s canonical enum-value site:
+
 ```graphql
+enum Sprak {
+    nn @field(name: "nno")
+    nb @field(name: "nob")
+    se @field(name: "sme")
+    en @field(name: "eng")
+}
+
 type OversatteTekster {
-    nn: String @field(name: "nno")
-    nb: String @field(name: "nob")
-    se: String @field(name: "sme")
-    en: String @field(name: "eng")
+    nn: String
+    nb: String
+    se: String
+    en: String
 }
 
 type AdmissioLand @key(fields: "landkode") @table(name: "land") {
     landkode: String! @shareable
     navn: OversatteTekster
         @reference(path: [{table: "land_sprak"}])
-        @pivot(on: "sprakkode", value: "navn")
+        @pivot(on: "sprakkode", value: "navn", vocabulary: "Sprak")
 }
 ```
 
-`OversatteTekster` is reused across every translated field; the value column varies per usage. A
-sibling field over `kravelement_sprak.beskrivelse`, keyed on a three-column FK, reuses the identical
-type and directive:
+`OversatteTekster` is a plain type carrying no pivot markers, so it is reused freely across every
+translated field (the value column varies per usage) and could also be reached as an ordinary nested
+object elsewhere. A sibling field over `kravelement_sprak.beskrivelse`, keyed on a three-column FK,
+reuses the identical type, enum, and directive:
 
 ```graphql
 beskrivelse: OversatteTekster
     @reference(path: [{table: "kravelement_sprak"}])
-    @pivot(on: "sprakkode", value: "beskrivelse")
+    @pivot(on: "sprakkode", value: "beskrivelse", vocabulary: "Sprak")
 ```
 
 #### Example 2: prices by currency
 
 The shape is not specific to i18n. Any narrow `(owner, discriminator, value)` attribute table
-pivots the same way. Given `product_price(product_id, currency_code, amount)`:
+pivots the same way. Given `product_price(product_id, currency_code, amount)`, and slot names chosen
+to equal the database tokens, no `vocabulary:` is needed:
 
 ```graphql
 type PriceByCurrency {
-    nok: BigDecimal @field(name: "NOK")
-    usd: BigDecimal @field(name: "USD")
-    eur: BigDecimal @field(name: "EUR")
+    NOK: BigDecimal
+    USD: BigDecimal
+    EUR: BigDecimal
 }
 
 type Product @table(name: "product") {
@@ -182,20 +210,21 @@ type Product @table(name: "product") {
 
 `PriceByCurrency` is reused for any price column; the value column (`amount`, a discounted-price
 column, etc.) is the per-field choice, exactly as with translations. The value type is arbitrary
-(here `BigDecimal`), not just `String`.
+(here `BigDecimal`), not just `String`. Because the slot names are the tokens, the mapping is identity
+and the enum is unnecessary; name a `vocabulary:` enum only when the two diverge.
 
 #### Constraints
 
-* The return type must be a pivot projection type: no `@table`, and every field carries
-  `@field(name:)`. A field without it, or with a value that cannot be a discriminator string, fails
-  the build.
-* Every field on the projection type must be **nullable**. A non-null slot fails the build: pivot
-  slots are filtered aggregates that are null when no row carries the value. The projection record
-  itself always exists, one per parent, even when the parent has no attribute rows at all; absence
-  surfaces as null slots, never as a null record, so the `@pivot` field itself may be non-null.
-* A pivot projection type must be reached only through `@pivot` fields. Using it as an ordinary
-  object type elsewhere fails the build, since its `@field(name:)` values are discriminator values,
-  not column names.
+* The return type must be a plain output type: no `@table`. Its fields are the slots; they carry no
+  pivot directives. The type is not reserved for pivots, so it may also be reached as an ordinary
+  nested object elsewhere.
+* Every slot must be **nullable**. A non-null slot fails the build: pivot slots are filtered
+  aggregates that are null when no row carries the token. The projection record itself always exists,
+  one per parent, even when the parent has no attribute rows at all; absence surfaces as null slots,
+  never as a null record, so the `@pivot` field itself may be non-null.
+* When `vocabulary:` is given, every slot's SDL name must resolve to a value of the named enum; a slot
+  with no matching enum value fails the build, naming the slot. When omitted, each slot's name is used
+  as the token directly (identity).
 * `on` and `value` must both resolve to columns on the `@reference` terminus (attribute) table. The
   build fails, naming the unresolved column, if either does not.
 * The field must be single-valued (one projection record per parent). A list return type is rejected.
@@ -206,8 +235,8 @@ column, etc.) is the per-field choice, exactly as with translations. The value t
 
 #### See also
 
-* xref:field.adoc[`@field`] names the discriminator value on each projection-type field (the same
-  role it plays on an enum value).
+* xref:field.adoc[`@field`] on the vocabulary enum's values names the database token each slot maps
+  to (its enum-value role); the `vocabulary:` enum is an ordinary enum, reusable as a field type.
 * xref:reference.adoc[`@reference`] establishes the join to the attribute table, including
   composite-FK and multi-hop paths.
 * xref:splitQuery.adoc[`@splitQuery`] switches delivery from inline to batched.
@@ -218,18 +247,22 @@ column, etc.) is the per-field choice, exactly as with translations. The value t
 
 **New type variant `GraphitronType.PivotProjection`.** A record-backed output type that, unlike the
 existing `ResultType` arms (`JavaRecordType`, `PojoResultType`, and the `JooqRecordCarrier`
-partition over `JooqRecordType` / `JooqTableRecordType`), is *not* reflected from a Java class: its runtime carrier is an anonymous jOOQ
-`Record` produced by the pivot subselect, and it has no `fqClassName`. It therefore cannot satisfy
-`ResultType`'s contract and lands as a direct `GraphitronType` sibling, not a `ResultType` arm. It
-carries its ordered slots, each slot being `(sdlName, outputAlias, discriminatorValue)`. The
-`discriminatorValue` is lifted from the slot field's `@field(name:)` through the *same* helper that
-lifts `EnumValueSpec.runtimeValue` (one shared function, not a parallel implementation). The helper's
-SDL-name fallback never fires for slots: validation rejects a slot without the directive (see
-Constraints), because a silently name-matched slot (`nn` matching a `nn` discriminator by accident of
-naming) is exactly the wrong-value hazard the explicit mapping exists to prevent. `TypeBuilder` classifies a type as `PivotProjection` when it is
-consumed by a `@pivot` field; the type carries no directive of its own, mirroring how a type's backing
-is inferred from its producer. The per-slot scalar type is *not* stored; it is derived from the single
-value `ColumnRef`, so there is no drift copy.
+partition over `JooqRecordType` / `JooqTableRecordType`), is *not* reflected from a Java class: its
+runtime carrier is an anonymous jOOQ `Record` produced by the pivot subselect, and it has no
+`fqClassName`. It therefore cannot satisfy `ResultType`'s contract and lands as a direct
+`GraphitronType` sibling, not a `ResultType` arm. It carries only its ordered slot **aliases** (each
+slot's SDL name, which is the projected column alias); it does *not* carry discriminator tokens. The
+slot → token map is not a fact of the type at all: the same plain type is reused across pivots that
+may resolve different tokens, so the token lives on the consuming `@pivot` field (see `PivotSpec`),
+not the slot. The per-slot scalar type is likewise not stored; it is derived from the value `ColumnRef`
+on the consuming field, so there is no drift copy.
+
+`PivotProjection` is the classification the `@pivot` **consumer** imposes on its return type; the type
+carries no directive of its own, mirroring how a type's backing is inferred from its producer. Because
+nothing on the type is pivot-specific, the same type reached by a non-`@pivot` consumer classifies
+normally (nesting / record) with no conflict, so there is **no "reached only through `@pivot`"
+enforcer**: the earlier draft needed one only because `@field(name:)` on the slots carried a
+consumer-dependent meaning, and that overload is gone.
 
 *Emission surface.* `PivotProjection` is a real GraphQL type clients query, so like `NestingType` it
 implements `EmitsPerTypeFile` and appears in `schema.types()`: a schema type and per-slot datafetchers
@@ -249,36 +282,42 @@ axis the model already splits for tables (`ChildField.TableField`, inline, does 
 
 Both compose a shared `PivotSpec` sub-record carrying the facts common to both deliveries: the resolved
 `@reference` join path (reuse `ctx.parsePath`, so composite-FK and multi-hop come free), the
-discriminator `ColumnRef` (from `on:`), the value `ColumnRef` (from `value:`), and the projection type.
-Both report `SourceShape.Record` for their children. This keeps the delivery fact forked on leaf
-identity, never re-derived from a null check.
+discriminator `ColumnRef` (from `on:`), the value `ColumnRef` (from `value:`), the projection type, and
+the resolved **slot → token map**. That map is built at classify time: when `vocabulary:` is present,
+by looking each slot's SDL name up in the named enum's `buildTextEnumMapping` (SDL name → token from
+the values' `@field(name:)`); when absent, by identity (token = slot name). This is the one place the
+token vocabulary is consumed. Both leaves report `SourceShape.Record` for their children. This keeps
+the delivery fact forked on leaf identity, never re-derived from a null check.
 
 **Slot fields are a dedicated leaf `ChildField.PivotSlotField`.** Each projection slot is a new
-`ChildField` leaf carrying exactly its two facts: the output alias and the discriminator value. A
-nulled-out `ChildField.PropertyField` reuse was considered and rejected: `PropertyField`'s meaning
-is a read off a `ResultType`-classified parent (a resolved `AccessorResolution` or `ColumnRef`,
-neither of which a slot has), and the binding dispatch narrows the parent to
-`GraphitronType.ResultType` before `PropertyField`'s guard fires, so a slot under a
-`PivotProjection` parent (not a `ResultType` arm) would never reach the by-name read at all; it
-would fall through to the method-reference fallback. Reuse saves nothing and puts one leaf's
-meaning in the hands of its parent's classification, the shared-accessor-whose-meaning-depends-on-
-variant smell. The dedicated leaf forks on identity in the sealed dispatch instead.
+`ChildField` leaf carrying exactly one fact: its output alias (the token never reaches the slot; it is
+used only when `PivotSpec` builds the subselect). A nulled-out `ChildField.PropertyField` reuse was
+considered and rejected: `PropertyField`'s meaning is a read off a `ResultType`-classified parent (a
+resolved `AccessorResolution` or `ColumnRef`, neither of which a slot has), and the binding dispatch
+narrows the parent to `GraphitronType.ResultType` before `PropertyField`'s guard fires, so a slot
+under a `PivotProjection` parent (not a `ResultType` arm) would never reach the by-name read at all; it
+would fall through to the method-reference fallback. Reuse saves nothing and puts one leaf's meaning in
+the hands of its parent's classification, the shared-accessor-whose-meaning-depends-on-variant smell.
+The dedicated leaf forks on identity in the sealed dispatch instead.
 
 ## Implementation
 
 Anchored on symbols; line numbers are omitted deliberately (they drift).
 
-- **Directive.** Declare `directive @pivot(on: String!, value: String!) on FIELD_DEFINITION` in
-  `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`.
+- **Directive.** Declare `directive @pivot(on: String!, value: String!, vocabulary: String) on FIELD_DEFINITION`
+  in `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`.
 - **Field classification.** `FieldBuilder` classifies a `@pivot`-bearing field into `PivotField`
   (inline) or `BatchedPivotField` (`@splitQuery` present): parse the `@reference` path, resolve
-  `on`/`value` to `ColumnRef` on the terminus into a shared `PivotSpec`, and for the batched leaf derive
-  the `SourceKey`/`LoaderRegistration` triple via the existing `deriveSplitQuerySource` path.
-- **Type classification.** `TypeBuilder` produces `GraphitronType.PivotProjection` for the return type,
-  lifting each slot's `@field(name:)` into its discriminator value (reuse the `EnumValueSpec`
-  lift), and recording each slot's output alias.
+  `on`/`value` to `ColumnRef` on the terminus, resolve the slot → token map (via
+  `buildTextEnumMapping` on the `vocabulary:` enum, or identity when absent) against the return
+  type's slots into a shared `PivotSpec`, and for the batched leaf derive the
+  `SourceKey`/`LoaderRegistration` triple via the existing `deriveSplitQuerySource` path.
+- **Type classification.** `TypeBuilder` produces `GraphitronType.PivotProjection` for the return type
+  when it is consumed by a `@pivot` field, recording each slot's output alias only. No per-slot
+  directive is read; the token map is the consuming field's fact, not the type's.
 - **Projection emission.** A new emitter builds the selection-set-gated correlated aggregate subselect:
-  for each *selected* slot, `DSL.max(value).filterWhere(disc.eq(DSL.inline(discriminatorValue))).as(alias)`,
+  for each *selected* slot, `DSL.max(value).filterWhere(disc.eq(DSL.inline(token))).as(alias)` where the
+  token comes from `PivotSpec`'s resolved slot → token map,
   wrapped in `DSL.row(...)` and delivered as a scalar-record subselect field
   (`field(select(row(...)).from(terminus).where(<correlation>))`). The
   `max(...).filterWhere(...)` column form is new with this item; nothing in the generator emits a
@@ -311,14 +350,11 @@ LSP code:
 - A non-null slot on a `PivotProjection` type is rejected, naming the slot and the reason (filtered
   aggregates are null when no row carries the value). This mirrors the best-effort-aggregate nullability
   the `@asFacet` `FacetValueType` / `FacetsType` already carry.
-- **Ambiguity enforcer.** A `PivotProjection`-classified type consumed by any non-`@pivot` producer is
-  rejected. `@field(name:)` on that type's fields means "discriminator value" only under pivot
-  consumption; reached as an ordinary nesting/record type the same directive would mean "column name."
-  Since the pivot-ness is inferred non-locally (from the consuming `@pivot` field, not the slot's own
-  site), the conflict has no other enforcer, so the build must fail on the dual use rather than pick a
-  meaning silently.
-- A slot without a resolvable discriminator value, or a `PivotProjection` type field that is itself an
-  object/list rather than a scalar, is rejected.
+- When `vocabulary:` is given, a slot whose SDL name is not a value of the named enum is rejected,
+  naming the slot and the enum. When `vocabulary:` names a type that is not a text-mapped enum, that is
+  rejected too. (There is no non-local "reached only through `@pivot`" enforcer: the projection type
+  carries nothing pivot-specific, so dual use is not a conflict.)
+- A projection slot that is itself an object or list rather than a scalar is rejected.
 - `on` / `value` that do not resolve to columns on the `@reference` terminus are rejected, naming the
   unresolved column.
 - All slots must share one scalar type (they read the same value column); a divergent slot type is
@@ -333,9 +369,10 @@ LSP code:
   inline correlation requires a parent query, and the record-parent batched seam is out of scope in
   v1 (see Delivery). The rejection message must not suggest `@splitQuery`, which is lint-ignored as
   redundant on record-backed parents.
-- Two slots on one projection type carrying the same discriminator value (duplicate `@field(name:)`)
-  are rejected: the pivot would emit two identical aggregates under different aliases, always an
-  authoring mistake.
+- Two slots on one `@pivot` field resolving to the same token (whether by two enum values sharing a
+  `@field(name:)`, or by identity collision) are rejected: the pivot would emit two identical
+  aggregates under different aliases, always an authoring mistake. This is a per-`@pivot` check, since
+  the token map is the field's fact.
 - `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` covers the three new
   leaves (`PivotField`, `BatchedPivotField`, `PivotSlotField`); `VariantCoverageTest` requires a
   classification case for each new leaf and for the `PivotProjection` variant (the pipeline-tier
@@ -348,9 +385,11 @@ Per the test-tier discipline (behaviour pinned at the pipeline tier and above; n
 assertions on method bodies):
 
 - **Pipeline tier.** SDL → classified model → generated `TypeSpec`: a `@pivot` field classifies as
-  `PivotField`, its return type as `PivotProjection` with the expected slot→discriminator map; a
-  selection subset narrows the projected slot set; a composite-key `@reference` produces the AND-chained
-  correlation. Inline and `@splitQuery` variants both classify.
+  `PivotField`, its return type as `PivotProjection` carrying the slot aliases, and the field's
+  `PivotSpec` carries the expected slot → token map (both the `vocabulary:`-enum and the identity
+  cases; and the same plain type reached by a non-`@pivot` field still classifies normally, pinning
+  dual use); a selection subset narrows the projected slot set; a composite-key `@reference` produces
+  the AND-chained correlation. Inline and `@splitQuery` variants both classify.
 - **Compilation tier.** `graphitron-sakila-example` fixtures for both examples (a translation pivot and
   a numeric/currency pivot), inline and split, single and composite key, compile under `<release>17>`.
 - **Execution tier (PostgreSQL).** Add attribute tables to `graphitron-sakila-db` (a single-key
