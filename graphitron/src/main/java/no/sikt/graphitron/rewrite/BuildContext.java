@@ -1867,16 +1867,14 @@ class BuildContext {
             JoinConditionRef whereFilter = null;
             if (hasCondition) {
                 Map<String, Object> condMap = asMap(conditionRaw);
-                var res = resolveConditionRef(condMap);
-                if (res.error() != null) {
-                    errors.add(res.error());
-                    return;
+                switch (resolveConditionRef(condMap)) {
+                    case ConditionResolution.Failed fail -> { errors.add(fail.message()); return; }
+                    case ConditionResolution.Unresolved u -> {
+                        errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                        return;
+                    }
+                    case ConditionResolution.Resolved r -> whereFilter = new JoinConditionRef(r.ref());
                 }
-                if (res.ref() == null) {
-                    errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
-                    return;
-                }
-                whereFilter = new JoinConditionRef(res.ref());
             }
             var keyResolution = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (keyResolution) {
@@ -1899,16 +1897,14 @@ class BuildContext {
             JoinConditionRef whereFilter = null;
             if (hasCondition) {
                 Map<String, Object> condMap = asMap(conditionRaw);
-                var res = resolveConditionRef(condMap);
-                if (res.error() != null) {
-                    errors.add(res.error());
-                    return;
+                switch (resolveConditionRef(condMap)) {
+                    case ConditionResolution.Failed fail -> { errors.add(fail.message()); return; }
+                    case ConditionResolution.Unresolved u -> {
+                        errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                        return;
+                    }
+                    case ConditionResolution.Resolved r -> whereFilter = new JoinConditionRef(r.ref());
                 }
-                if (res.ref() == null) {
-                    errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
-                    return;
-                }
-                whereFilter = new JoinConditionRef(res.ref());
             }
             // A hop out of a routine result keys by the name-matched target key — the
             // result table carries no FK metadata, so the FK-count machinery below can never
@@ -1939,38 +1935,36 @@ class BuildContext {
         }
         if (hasCondition) {
             Map<String, Object> condMap = asMap(conditionRaw);
-            var res = resolveConditionRef(condMap);
-            if (res.error() != null) {
-                errors.add(res.error());
-                return;
-            }
-            if (res.ref() == null) {
-                errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
-                return;
-            }
-            var targetResolution = resolveConditionJoinTarget(res.ref(), isTerminal, terminalTargetSqlName);
-            switch (targetResolution) {
-                case ConditionJoinTargetResolution.Resolved r -> {
-                    // originTable is kept mechanically on every hop (pre-resolved over
-                    // re-derived); null when the source is not table-backed.
-                    TableRef conditionOrigin = null;
-                    if (currentSourceSqlName != null
-                        && catalog.findTable(currentSourceSqlName)
-                            instanceof JooqCatalog.TableResolution.Resolved originResolved) {
-                        conditionOrigin = originResolved.entry().toTableRef(currentSourceSqlName);
+            switch (resolveConditionRef(condMap)) {
+                case ConditionResolution.Failed fail -> errors.add(fail.message());
+                case ConditionResolution.Unresolved u ->
+                    errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                case ConditionResolution.Resolved cr -> {
+                    var targetResolution = resolveConditionJoinTarget(cr.ref(), isTerminal, terminalTargetSqlName);
+                    switch (targetResolution) {
+                        case ConditionJoinTargetResolution.Resolved r -> {
+                            // originTable is kept mechanically on every hop (pre-resolved over
+                            // re-derived); null when the source is not table-backed.
+                            TableRef conditionOrigin = null;
+                            if (currentSourceSqlName != null
+                                && catalog.findTable(currentSourceSqlName)
+                                    instanceof JooqCatalog.TableResolution.Resolved originResolved) {
+                                conditionOrigin = originResolved.entry().toTableRef(currentSourceSqlName);
+                            }
+                            out.add(new JoinStep.Hop(
+                                new TableExpr.Catalog(r.target()),
+                                new On.Predicate(new JoinConditionRef(cr.ref())),
+                                conditionOrigin, null, alias));
+                            // Check 2: the ON-clause method is called method(sourceAlias, targetAlias).
+                            // Source is the table entering this hop; target is the resolved condition-join
+                            // target (return table for a terminal hop, second-parameter-resolved otherwise).
+                            // Thread the resolved TableRefs: conditionOrigin is null when the source
+                            // is not table-backed (the existing skip), r.target() is already a TableRef.
+                            validateConditionParamTables(cr.ref(), conditionOrigin, r.target(), errors);
+                        }
+                        case ConditionJoinTargetResolution.AuthorError e -> errors.add(e.message());
                     }
-                    out.add(new JoinStep.Hop(
-                        new TableExpr.Catalog(r.target()),
-                        new On.Predicate(new JoinConditionRef(res.ref())),
-                        conditionOrigin, null, alias));
-                    // Check 2: the ON-clause method is called method(sourceAlias, targetAlias).
-                    // Source is the table entering this hop; target is the resolved condition-join
-                    // target (return table for a terminal hop, second-parameter-resolved otherwise).
-                    // Thread the resolved TableRefs: conditionOrigin is null when the source
-                    // is not table-backed (the existing skip), r.target() is already a TableRef.
-                    validateConditionParamTables(res.ref(), conditionOrigin, r.target(), errors);
                 }
-                case ConditionJoinTargetResolution.AuthorError e -> errors.add(e.message());
             }
             return;
         }
@@ -2237,17 +2231,22 @@ class BuildContext {
     }
 
     /**
-     * Result of {@link #resolveConditionRef}: exactly one of {@code ref} and {@code error} is
-     * non-null. {@code error} carries an actionable message (parser failure, unknown argMapping
-     * source, reflection failure); the path-step caller surfaces it directly. The "no class /
-     * no method" case maps to a generic resolution error.
+     * Result of {@link #resolveConditionRef}. Tri-state, compiler-enforced via an exhaustive
+     * {@code switch} at each {@link #parsePathElement} caller.
      */
-    private record ConditionResolution(MethodRef ref, String error) {}
+    private sealed interface ConditionResolution {
+        /** The condition map resolved to a method. */
+        record Resolved(MethodRef ref) implements ConditionResolution {}
+        /** Resolution failed with an actionable {@code message} the caller surfaces directly. */
+        record Failed(String message) implements ConditionResolution {}
+        /** No class/method named and no reflective match; the caller emits its own generic message. */
+        record Unresolved() implements ConditionResolution {}
+    }
 
     /**
      * Resolves an {@code ExternalCodeReference} condition map to a {@link MethodRef} via
-     * {@link ServiceCatalog#reflectTableMethod}. Returns a {@link ConditionResolution} with
-     * either {@code ref} or {@code error} populated.
+     * {@link ServiceCatalog#reflectTableMethod}. Returns one of {@link ConditionResolution}'s
+     * three arms: {@code Resolved}, {@code Failed}, or {@code Unresolved}.
      *
      * <p>The deprecated {@code name:} form is resolved via {@link RewriteContext#namedReferences()},
      * exactly as in {@link FieldBuilder#parseExternalRef}.
@@ -2267,29 +2266,29 @@ class BuildContext {
             }
         }
         if (className == null || methodName == null || svc == null) {
-            return new ConditionResolution(null, null);
+            return new ConditionResolution.Unresolved();
         }
         String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
-            return new ConditionResolution(null,
+            return new ConditionResolution.Failed(
                 "path-step @condition: " + pe.message());
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
         var bindingResult = ArgBindingMap.of(java.util.Map.<String, graphql.schema.GraphQLInputType>of(), segmentChains);
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
-            return new ConditionResolution(null,
+            return new ConditionResolution.Failed(
                 "path-step @condition: no GraphQL arguments are in scope at a path-step @condition; "
                 + u.message());
         }
         if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
-            return new ConditionResolution(null,
+            return new ConditionResolution.Failed(
                 "path-step @condition: " + p.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null,
             ServiceCatalog.TableSlotPolicy.REQUIRED);
-        return result.failed() ? new ConditionResolution(null, null) : new ConditionResolution(result.ref(), null);
+        return result.failed() ? new ConditionResolution.Unresolved() : new ConditionResolution.Resolved(result.ref());
     }
 
     private String extractConditionQualifiedName(Map<String, Object> conditionMap) {
