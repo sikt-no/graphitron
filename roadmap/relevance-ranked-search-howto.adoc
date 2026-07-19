@@ -40,7 +40,7 @@ The combobox fires this on each (debounced) keystroke:
 [source,graphql]
 ----
 query Typeahead($q: String!) {
-    filmSearch(search: $q) {
+    filmSearch(search: $q, first: 20) {
         node { id title }
     }
 }

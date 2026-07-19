@@ -547,7 +547,7 @@ its own documentation against its own contract.
 - `directives.graphqls`: `@typeahead` (definition above; no enum, the
   mechanism is dialect-derived).
 - New `model/TypeaheadSpec.java`, `model/TypeaheadBacking.java`; a 0..1 slot on
-  `QueryTableField`; `GraphitronType.SearchHitType` + arms in
+  `QueryTableField`; `GraphitronType.TypeaheadHitType` + arms in
   `ObjectTypeGenerator.graphqlTypeFor` and the SDL emitter.
 - `ArgumentRef.java`: new `TypeaheadArgRef` arm; `FieldBuilder.classifyArguments`
   recognizes the synthesized names on `@typeahead` carriers.
