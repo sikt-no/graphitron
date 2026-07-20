@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parent-holds-FK correlation in polymorphic child fields: explainer</title>
+<link rel="stylesheet" href="concepts.css">
+</head>
+<body>
+<main>
+
+  <p class="crumb"><a href="../README.md">← Roadmap</a></p>
+  <p class="kicker">Concept explainer · R481 · R487 · theme: interface-union</p>
+  <h1 data-concept-title="Parent-holds-FK correlation in polymorphic child fields"
+      data-concept-items="R481, R487">Parent-holds-FK correlation in polymorphic child fields</h1>
+  <p class="lede">Which table owns the foreign key decides how graphitron correlates a polymorphic participant to its parent. When the parent owns it, the batched fetch path has a hole; this page is the intuition for why, and what closing it takes.</p>
+
+  <div class="note">
+    This page builds intuition. The mechanics of per-participant join paths live in the <a href="per-participant-child-join-paths.html">sibling explainer</a>; read that first if <code>@referenceFor</code> is new to you. The batched capability itself is spec'd in the <a href="../batched-polymorphic-parent-holds-fk-correlation.md">R487 plan</a>.
+  </div>
+
+  <div class="tldr">
+    <span class="kicker">The one-sentence version</span>
+    A polymorphic child field's batched fetch correlates each participant against a <code>parentInput</code> VALUES table keyed on the parent's primary key; that only works when the correlating column sits on the <em>child</em>, so a participant whose FK lives on the <em>parent</em> asks <code>parentInput</code> for a column it never carried.
+  </div>
+
+  <h2>The problem, concretely</h2>
+  <p>Take a Sakila <code>Customer</code> with a polymorphic list field whose members live in different tables:</p>
+<pre><code>type Customer {
+    related: [CustomerRelated]   # union of Payment | Address
+}
+union CustomerRelated = Payment | Address</code></pre>
+  <p>A customer has many payments and one address, so the field is a list. Two participants, two ways the foreign key can point:</p>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head">Child holds the FK: <code>Payment</code></div>
+      <div class="body">
+        <p><code>payment.customer_id → customer.customer_id</code>. The FK column lives on the participant's own table.</p>
+        <p>To find a customer's payments, match <code>payment.customer_id</code> against the customer's <strong>primary key</strong> value.</p>
+      </div>
+    </div>
+    <div class="pane bad">
+      <div class="head">Parent holds the FK: <code>Address</code></div>
+      <div class="body">
+        <p><code>customer.address_id → address.address_id</code>. The FK column lives on the <strong>parent</strong> table.</p>
+        <p>To find a customer's address, match <code>address.address_id</code> against the customer's <code>address_id</code> value, <em>not</em> its primary key.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>How batched correlation actually joins</h2>
+  <p>For a list or connection field, graphitron never fires one query per parent (see the <a href="../../docs/manual/explanation/batching-model.adoc">batching model</a>). It collects every parent in the execution batch into one <code>parentInput</code> VALUES table, runs a single UNION-ALL with one branch per participant, and joins each branch back to <code>parentInput</code>. The VALUES table is aliased to the parent's <strong>bound key</strong> columns, <code>parentSourceKey.columns()</code>, its primary key.</p>
+  <p>Each branch's WHERE is emitted by <code>parentInputSlotPredicate</code>, which reads the parent side of the correlation slot out of the VALUES table by <em>column name</em>:</p>
+<pre><code>&lt;participant&gt;.&lt;slot.targetSide()&gt;
+    .eq(parentInput.field("&lt;slot.sourceSide().sqlName()&gt;", ...))</code></pre>
+  <p>So everything hinges on one question: <strong>is <code>slot.sourceSide()</code> (the parent-side column) one of the columns <code>parentInput</code> actually carries?</strong></p>
+
+  <div class="sxs">
+    <div class="pane good">
+      <div class="head"><code>Payment</code> branch resolves</div>
+      <div class="body">
+        <p><code>sourceSide()</code> is <code>customer.customer_id</code>, the bound key. <code>parentInput</code> carries it.</p>
+<pre><code>payment.customer_id
+  = parentInput.field("customer_id")  // ✓ column exists</code></pre>
+      </div>
+    </div>
+    <div class="pane bad">
+      <div class="head"><code>Address</code> branch breaks</div>
+      <div class="body">
+        <p><code>sourceSide()</code> is <code>customer.address_id</code>, not the bound key. <code>parentInput</code> never aliased it.</p>
+<pre><code>address.address_id
+  = parentInput.field("address_id")   // ✗ returns null</code></pre>
+        <p>jOOQ's <code>field(name)</code> returns <code>null</code> for an absent column, and the generated code is broken at runtime.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q1">
+    <p class="q"><span class="tag">Quiz</span> The field is a <em>list</em>. Doesn't cardinality tell graphitron the FK direction, so it could just orient the join the right way?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Yes; a list field means the FK is on the child, a single field means it is on the parent.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">No; a cross-table FK's direction is a fact of the schema, independent of the field's cardinality.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">No; polymorphic list fields are rejected outright regardless of FK direction.</button>
+    <div class="explain">The <code>selfRefFkOnSource = !isList</code> hint orients <em>same-table</em> self-FKs only, where cardinality genuinely picks the navigation direction. A cross-table FK like <code>customer.address_id</code> points where the schema put it; a list field can perfectly well name a parent-holds-FK participant (its branch just contributes at most one row per parent). So cardinality does not save you, and the broken form classifies and emits today.</div>
+  </div>
+
+  <h2>Not every correlation reads a parent column</h2>
+  <p>Only the FK-oriented correlations trip on this. A participant reached by a <code>{condition:}</code> predicate joins the parent's own aliased table into the branch and pins it to the batch through <code>parentInputKeyPredicate</code>, which reads the <strong>bound key</strong>, exactly what <code>parentInput</code> carries. So the hole is specific: it is a <code>KeyTupleWhere</code> slot, or a <code>JoinedCorrelation</code> FK hop-0 slot, whose parent side is a column <em>outside</em> the parent's primary key.</p>
+
+  <div class="quiz" id="q2">
+    <p class="q"><span class="tag">Quiz</span> Three participants on one batched field: (a) child-holds-FK, (b) parent-holds-FK, (c) correlated by a <code>{condition:}</code>. Which branches read a column <code>parentInput</code> might not carry?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">All three, since every branch joins <code>parentInput</code>.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Only (b); (a) reads the bound key and (c) pins on the bound key via <code>parentInputKeyPredicate</code>.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Only (c), because conditions are the general case.</button>
+    <div class="explain">A condition hop-0 joins the parent alias and correlates it on the parent's key, so it lives entirely inside the bound-key columns <code>parentInput</code> already carries. The child-holds-FK slot reads the bound key too. Only the parent-holds-FK slot reaches for a non-key parent column, so it is the one shape the batched form cannot express today.</div>
+  </div>
+
+  <h2>Why single cardinality already works, and batched does not</h2>
+  <p>The single-valued form of the very same field was fixed by <a href="../changelog.md">R481</a>. Seeing why its fix does not carry over is the crux of R487.</p>
+
+  <div class="sxs">
+    <div class="pane">
+      <div class="head">Single form reads the parent <em>row</em></div>
+      <div class="body">
+        <p>It correlates off <code>parentRecord</code>, the actual parent row. R481 made the parent-projection walk carry the correlation column onto that row (a <code>ParentRowDemand</code> capability), so <code>parentRecord.getAddressId()</code> is simply there to read.</p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="head">Batched form reads the parent <em>key</em></div>
+      <div class="body">
+        <p>It correlates off <code>parentInput</code>, a VALUES table that carries only the DataLoader key. Projecting a column onto the parent row does not put it into the key, so the batched branch still cannot find it. The column has to be threaded <em>through the key</em>.</p>
+      </div>
+    </div>
+  </div>
+  <p>R481 closed the single-cardinality crash and, for the batched case it could not yet build, installed a build-time gate: <code>FieldBuilder.classifyParticipantRoute</code> rejects a list or connection field whose correlation reads an off-key parent column as a typed <code>Deferred</code>, keyed to R487, steering the author toward single cardinality where the relationship is single-valued anyway. That is graphitron's <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed-rejection</a> discipline: a shape the generator cannot yet emit correctly is a first-class rejection, never a silent guess.</p>
+
+  <h2>What R487 has to carry, and the decision it turns on</h2>
+  <p>The capability is: make the batched forms carry each participant's parent-side correlation columns, not just the bound key, all the way through the DataLoader key and into <code>parentInput</code>. Three moving parts:</p>
+  <ul>
+    <li>the per-parent key extraction (<code>buildRecordParentKeyExtraction</code> on table-backed parents, the accessor arms on record-backed ones) must project the <em>union</em> of correlation columns;</li>
+    <li><code>parentInput</code> must alias those columns so <code>parentInput.field("address_id")</code> resolves;</li>
+    <li>key identity and dedup semantics need a deliberate decision.</li>
+  </ul>
+  <p>That last one is the subtle part. Today the DataLoader key <em>is</em> the bound key, unique per parent, so two parents never collide. Correlation columns carry no such guarantee: two customers can share an <code>address_id</code>.</p>
+
+  <div class="quiz" id="q3">
+    <p class="q"><span class="tag">Quiz</span> Tempting shortcut: just key the DataLoader by the FK correlation columns (<code>address_id</code>) instead of the primary key. What goes wrong?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Nothing; the FK value uniquely identifies each parent.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Two parents sharing an <code>address_id</code> collapse into one key, so results cannot be routed back to the right parent.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">jOOQ forbids non-primary-key columns in a VALUES table.</button>
+    <div class="explain">The DataLoader key does double duty: it correlates the branch <em>and</em> identifies the parent for result routing. Correlation columns satisfy the first but not the second, since they are not unique per parent. So the key cannot simply become the correlation columns; the open fork R487 decides is whether it becomes (bound key + correlation columns) as one widened key, or per-participant keys, keeping per-parent identity intact while also carrying what each branch needs to join.</div>
+  </div>
+
+  <p>The other pickup question is reuse: R481 already ships a single-cardinality parent-holds-FK projection mechanism (the <code>ParentRowDemand</code> union across participant join paths). R487 asks whether that same projection can feed the batched extraction side, so the two cardinalities share one way of naming which parent columns a participant needs.</p>
+
+  <!-- derived:status -->
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-20)</span></h2>
+  <ul class="status">
+    <li><span class="pill done">landed</span><a href="../changelog.md">R481</a>: single-cardinality parent-holds-FK reads are projected correctly (the <code>ParentRowDemand</code> capability), and the batched case is gated at build time with a <code>Deferred</code> rejection pointing at R487.</li>
+    <li><span class="pill pending">backlog</span><a href="../batched-polymorphic-parent-holds-fk-correlation.md">R487</a>: carry the participants' parent-side correlation columns through the DataLoader key into <code>parentInput</code>, so batched list and connection forms emit correct SQL instead of hitting the gate. Open at pickup: the key-identity fork (widened key vs per-participant keys) and whether R481's projection mechanism can be reused for the extraction side.</li>
+  </ul>
+  <!-- /derived:status -->
+
+  <footer>
+    <strong>See also.</strong>
+    <a href="per-participant-child-join-paths.html">Per-participant join paths (sibling explainer)</a> ·
+    <a href="../batched-polymorphic-parent-holds-fk-correlation.md">R487 plan</a> ·
+    <a href="../../docs/manual/explanation/batching-model.adoc">Batching model</a> ·
+    <a href="../../docs/manual/how-to/polymorphic-types.adoc">Polymorphic types how-to</a> ·
+    <a href="../../docs/manual/reference/directives/referenceFor.adoc"><code>@referenceFor</code></a> ·
+    <a href="../../docs/architecture/explanation/dispatch-axes.adoc">Dispatch axes (sealed variants)</a> ·
+    <a href="../../docs/architecture/reference/code-generation-triggers.adoc">Code generation triggers</a>
+    <!-- derived:backlinks -->
+    <p style="margin-top:1em"><strong>Referenced by.</strong> No roadmap items link this page yet.</p>
+    <!-- /derived:backlinks -->
+  </footer>
+
+</main>
+<script src="concepts.js"></script>
+</body>
+</html>
