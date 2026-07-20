@@ -323,7 +323,7 @@ public class GraphQLRewriteGenerator {
             : null;
         write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig(), tenantKeyType), "schema", emittedThisRun);
         write(GraphitronTransactionProviderGenerator.generate(outputPackage),                       "schema",     emittedThisRun);
-        write(GraphitronConnectionInstrumentationGenerator.generate(outputPackage),                 "schema",     emittedThisRun);
+        write(GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null), "schema", emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);
         write(GraphitronClientExceptionClassGenerator.generate(),                                 "schema",     emittedThisRun);
         write(ErrorRouterClassGenerator.generate(outputPackage),                                  "schema",     emittedThisRun);

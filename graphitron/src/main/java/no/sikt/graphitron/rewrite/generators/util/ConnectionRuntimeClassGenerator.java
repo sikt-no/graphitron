@@ -717,6 +717,11 @@ public final class ConnectionRuntimeClassGenerator {
         var pinnedField = FieldSpec.builder(pinnedMapType, "pinnedByTenant", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", LINKED_HASH_MAP)
             .build();
+        var defaultPinnedField = FieldSpec.builder(pinnedConnection, "defaultPinned", Modifier.PRIVATE)
+            .addJavadoc("The default-source pinned connection serving untenanted SQL, pinned on first\n"
+                + "{@link #dslDefault()} use. A field rather than a reserved map key: the map is keyed by\n"
+                + "the typed divined tenant value, and no tenant value means the default source.\n")
+            .build();
 
         var constructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
@@ -756,10 +761,35 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param tenantKey the divined tenant value; an unknown key raises before any SQL\n")
             .build();
 
+        var dslDefault = MethodSpec.methodBuilder("dslDefault")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(DSL_CONTEXT)
+            .addException(SQL_EXCEPTION)
+            .beginControlFlow("if (defaultPinned == null)")
+            .addComment("First untenanted SQL in the operation: pin one default-source connection.")
+            .addStatement("defaultPinned = runtime.acquire(claims)")
+            .endControlFlow()
+            .addStatement("$T connection = defaultPinned.connection()", CONNECTION)
+            .addStatement("$T dsl = $T.using(connection, runtime.dialect())", DSL_CONTEXT, DSL)
+            .addStatement("dsl.configuration().set(new $T(connection, commitPolicy, defaultPinned::afterSettle))", provider)
+            .addStatement("return dsl")
+            .addJavadoc("Returns the provider-bound {@code DSLContext} for the default source (untenanted\n"
+                + "SQL: global reference data), pinning and mounting one connection on first use and\n"
+                + "reusing it thereafter. The untenanted sibling of {@link #dslFor}.\n")
+            .build();
+
         var releaseAll = MethodSpec.methodBuilder("releaseAll")
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
             .addStatement("$T failure = null", RuntimeException.class)
+            .beginControlFlow("if (defaultPinned != null)")
+            .beginControlFlow("try")
+            .addStatement("defaultPinned.release()")
+            .nextControlFlow("catch ($T e)", RuntimeException.class)
+            .addStatement("failure = e")
+            .endControlFlow()
+            .addStatement("defaultPinned = null")
+            .endControlFlow()
             .beginControlFlow("for ($T pinned : pinnedByTenant.values())", pinnedConnection)
             .beginControlFlow("try")
             .addStatement("pinned.release()")
@@ -790,8 +820,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(claimsField)
             .addField(policyField)
             .addField(pinnedField)
+            .addField(defaultPinnedField)
             .addMethod(constructor)
             .addMethod(dslFor)
+            .addMethod(dslDefault)
             .addMethod(releaseAll)
             .build();
     }

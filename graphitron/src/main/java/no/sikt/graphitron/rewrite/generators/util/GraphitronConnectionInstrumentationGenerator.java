@@ -82,19 +82,33 @@ public final class GraphitronConnectionInstrumentationGenerator {
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronRuntime})
      */
     public static List<TypeSpec> generate(String outputPackage) {
+        return generate(outputPackage, false);
+    }
+
+    /**
+     * Canonical form. {@code multiTenant} is true when {@code <tenantColumn>} is configured:
+     * the per-operation state becomes the tenant-keyed {@code TenantConnections} carrier
+     * (published under its own class key; fetchers route through {@code dslFor} /
+     * {@code dslDefault}) and acquisition turns lazy, since the tenant is divined per field
+     * and an operation touching no tenant-scoped table should pin nothing. Single-tenant
+     * output is unchanged: one eager pinned connection whose {@code DSLContext} is published
+     * under {@code DSLContext.class}.
+     */
+    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
         String schemaPackage = outputPackage + ".schema";
         var self = ClassName.get(schemaPackage, CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         var pinnedConnection = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
+        var tenantConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
-        return List.of(instrumentation(self, runtime, pinnedConnection, provider, commitPolicy, state));
+        return List.of(instrumentation(self, runtime, pinnedConnection, tenantConnections, provider, commitPolicy, state, multiTenant));
     }
 
     private static TypeSpec instrumentation(
-            ClassName self, ClassName runtime, ClassName pinnedConnection,
-            ClassName provider, ClassName commitPolicy, ClassName state) {
+            ClassName self, ClassName runtime, ClassName pinnedConnection, ClassName tenantConnections,
+            ClassName provider, ClassName commitPolicy, ClassName state, boolean multiTenant) {
 
         var claimsKey = FieldSpec.builder(String.class, CLAIMS_KEY_FIELD, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("$S", CLAIMS_KEY_VALUE)
@@ -138,7 +152,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
 
         var resultContext = ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, EXECUTION_RESULT);
 
-        var beginExecuteOperation = MethodSpec.methodBuilder("beginExecuteOperation")
+        var beginExecuteOperationBuilder = MethodSpec.methodBuilder("beginExecuteOperation")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
             .returns(resultContext)
@@ -155,44 +169,72 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 + "owned-connection path; it is a named follow-on")
             .endControlFlow()
             .addCode("\n")
-            .addStatement("$T claims = graphQLContext.get($L)", String.class, CLAIMS_KEY_FIELD)
-            .addStatement("$T pinned", pinnedConnection)
-            .beginControlFlow("try")
-            .addStatement("pinned = runtime.acquire(claims)")
-            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
-            .addComment("A throwing connect hook (fail-closed) propagates as an unchecked cause already;")
-            .addComment("only the getConnection() SQLException is checked. Either way: request error, no SQL ran.")
-            .addStatement("throw new $T($S, e)", RuntimeException.class, "Could not acquire a database connection")
-            .endControlFlow()
-            .addStatement("state.pinned = pinned")
-            .addStatement("$T connection = pinned.connection()", CONNECTION)
-            .addCode("\n")
-            .addComment("Bind a DSLContext to the pinned connection, then swap in the transaction provider (the")
-            .addComment("one seam) on its live configuration, and publish it under the same key getDslContext(env)")
-            .addComment("reads. DSL.using(connection, dialect) wraps the connection in jOOQ's own single-connection")
-            .addComment("provider whose release is a no-op, so jOOQ never closes it; the runtime owns close/evict.")
-            .addComment("The settle callback re-fires unconfirmed session hooks after each per-field settle, so")
-            .addComment("post-commit read-back projections and later mutation fields see remounted identity.")
-            .addStatement("$T dsl = $T.using(connection, runtime.dialect())", DSL_CONTEXT, DSL)
-            .addStatement("dsl.configuration().set(new $T(connection, commitPolicy, pinned::afterSettle))", provider)
-            .addStatement("graphQLContext.put($T.class, dsl)", DSL_CONTEXT)
-            .addCode("\n")
-            .addComment("Release the pinned connection on every completion path (success, error, cancellation).")
-            .addComment("Queries run in autocommit (no outer transaction); each mutation field owns its own")
-            .addComment("per-field transaction through the provider on the published DSLContext. release() is")
-            .addComment("idempotent and evicts on disconnect failure.")
-            .addStatement("return $T.whenCompleted((result, throwable) -> state.pinned.release())",
-                SIMPLE_INSTRUMENTATION_CONTEXT)
-            .addJavadoc("Pins the connection, mounts identity, and publishes its {@code DSLContext} under the\n"
-                + "key {@code getDslContext(env)} reads, then releases on completion. See the class javadoc\n"
-                + "for the full sequence.\n")
+            .addStatement("$T claims = graphQLContext.get($L)", String.class, CLAIMS_KEY_FIELD);
+
+        if (multiTenant) {
+            beginExecuteOperationBuilder = beginExecuteOperationBuilder
+                .addComment("Multi-tenant: acquisition is lazy and per divined tenant. Publish the per-operation")
+                .addComment("carrier; routed fetchers call dslFor(key), untenanted fetchers call dslDefault(),")
+                .addComment("and nothing is pinned until a fetcher actually asks.")
+                .addStatement("$T tenants = new $T(runtime, claims, commitPolicy)", tenantConnections, tenantConnections)
+                .addStatement("state.tenants = tenants")
+                .addStatement("graphQLContext.put($T.class, tenants)", tenantConnections)
+                .addCode("\n")
+                .addComment("Release every pinned connection on every completion path (success, error,")
+                .addComment("cancellation). releaseAll() is idempotent and one tenant's disconnect failure")
+                .addComment("never orphans another's connection.")
+                .addStatement("return $T.whenCompleted((result, throwable) -> state.tenants.releaseAll())",
+                    SIMPLE_INSTRUMENTATION_CONTEXT);
+        } else {
+            beginExecuteOperationBuilder = beginExecuteOperationBuilder
+                .addStatement("$T pinned", pinnedConnection)
+                .beginControlFlow("try")
+                .addStatement("pinned = runtime.acquire(claims)")
+                .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+                .addComment("A throwing connect hook (fail-closed) propagates as an unchecked cause already;")
+                .addComment("only the getConnection() SQLException is checked. Either way: request error, no SQL ran.")
+                .addStatement("throw new $T($S, e)", RuntimeException.class, "Could not acquire a database connection")
+                .endControlFlow()
+                .addStatement("state.pinned = pinned")
+                .addStatement("$T connection = pinned.connection()", CONNECTION)
+                .addCode("\n")
+                .addComment("Bind a DSLContext to the pinned connection, then swap in the transaction provider (the")
+                .addComment("one seam) on its live configuration, and publish it under the same key getDslContext(env)")
+                .addComment("reads. DSL.using(connection, dialect) wraps the connection in jOOQ's own single-connection")
+                .addComment("provider whose release is a no-op, so jOOQ never closes it; the runtime owns close/evict.")
+                .addComment("The settle callback re-fires unconfirmed session hooks after each per-field settle, so")
+                .addComment("post-commit read-back projections and later mutation fields see remounted identity.")
+                .addStatement("$T dsl = $T.using(connection, runtime.dialect())", DSL_CONTEXT, DSL)
+                .addStatement("dsl.configuration().set(new $T(connection, commitPolicy, pinned::afterSettle))", provider)
+                .addStatement("graphQLContext.put($T.class, dsl)", DSL_CONTEXT)
+                .addCode("\n")
+                .addComment("Release the pinned connection on every completion path (success, error, cancellation).")
+                .addComment("Queries run in autocommit (no outer transaction); each mutation field owns its own")
+                .addComment("per-field transaction through the provider on the published DSLContext. release() is")
+                .addComment("idempotent and evicts on disconnect failure.")
+                .addStatement("return $T.whenCompleted((result, throwable) -> state.pinned.release())",
+                    SIMPLE_INSTRUMENTATION_CONTEXT);
+        }
+        var beginExecuteOperation = beginExecuteOperationBuilder
+            .addJavadoc(multiTenant
+                ? "Publishes the per-operation tenant-keyed connection carrier for routed fetchers and\n"
+                    + "releases every pinned connection on completion; acquisition is lazy and per divined\n"
+                    + "tenant. See the class javadoc for the full sequence.\n"
+                : "Pins the connection, mounts identity, and publishes its {@code DSLContext} under the\n"
+                    + "key {@code getDslContext(env)} reads, then releases on completion. See the class javadoc\n"
+                    + "for the full sequence.\n")
             .build();
 
         var stateType = TypeSpec.classBuilder("State")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(INSTRUMENTATION_STATE)
-            .addField(FieldSpec.builder(pinnedConnection, "pinned", Modifier.PRIVATE).build())
-            .addJavadoc("Per-request instrumentation state: the pinned connection to release at completion.\n")
+            .addField(multiTenant
+                ? FieldSpec.builder(tenantConnections, "tenants", Modifier.PRIVATE).build()
+                : FieldSpec.builder(pinnedConnection, "pinned", Modifier.PRIVATE).build())
+            .addJavadoc(multiTenant
+                ? "Per-request instrumentation state: the tenant-keyed connection carrier to release at\n"
+                    + "completion.\n"
+                : "Per-request instrumentation state: the pinned connection to release at completion.\n")
             .build();
 
         return TypeSpec.classBuilder(CLASS_NAME)
