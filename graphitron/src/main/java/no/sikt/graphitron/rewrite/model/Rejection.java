@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -312,6 +312,36 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 no.sikt.graphitron.javapoet.TypeName declared
             ) {}
         }
+
+        /**
+         * A field (or dispatch surface) reaches a tenant-scoped table with no tenant binding
+         * in scope: no argument or input-object field maps to the tenant column, the decoded
+         * batch key does not carry it, and no ancestor established a tenant context. Routing
+         * tenant data through the default connection because nothing named the tenant is
+         * exactly the cross-tenant leak the tenant-binding classification exists to prevent,
+         * so the absence is a build error, never a silent fallback.
+         *
+         * <p>Carries the offending coordinate (a {@code Type.field} pair, or a type name for a
+         * node-id / entity dispatch surface), the tenant-scoped table reached, and a
+         * {@code detail} sentence naming which route failed to bind. The rejection fires from
+         * the tenant-binding classification computed after the schema walk.
+         */
+        record NoTenantBinding(String coordinate, String tableName, String detail)
+                implements AuthorError {
+
+            @Override public String message() {
+                return "'" + coordinate + "' reaches tenant-scoped table '" + tableName
+                    + "' with no tenant binding in scope: " + detail
+                    + " Bind an argument or input field to the tenant column on this field or"
+                    + " an ancestor, or route the field through a source that carries the"
+                    + " tenant; unrouted tenant data would silently read the default"
+                    + " connection.";
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new NoTenantBinding(prefix + coordinate, tableName, detail);
+            }
+        }
     }
 
     /**
@@ -514,6 +544,15 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     static Rejection tenantColumnTypeDisagreement(
             String columnName, List<AuthorError.TenantColumnTypeDisagreement.TableSite> tables) {
         return new AuthorError.TenantColumnTypeDisagreement(columnName, tables);
+    }
+
+    /**
+     * {@link AuthorError.NoTenantBinding} factory. Produced by the tenant-binding
+     * classification when a field or dispatch surface reaches a tenant-scoped table and
+     * neither the field, its decoded batch key, nor any ancestor supplies a tenant binding.
+     */
+    static Rejection noTenantBinding(String coordinate, String tableName, String detail) {
+        return new AuthorError.NoTenantBinding(coordinate, tableName, detail);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

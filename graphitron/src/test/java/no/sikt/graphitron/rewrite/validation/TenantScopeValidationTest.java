@@ -61,6 +61,26 @@ class TenantScopeValidationTest {
     }
 
     @Test
+    void validator_drainsNoTenantBindingIntoValidationErrors() {
+        var ctx = TestConfiguration.testContext().withTenantColumn("film_id");
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Query { allFilms: [Film!]! }
+            """, ctx);
+
+        var errors = new GraphitronSchemaValidator().validate(schema);
+
+        var unrouted = errors.stream()
+            .filter(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding)
+            .toList();
+        assertThat(unrouted).hasSize(1);
+        assertThat(unrouted.get(0).coordinate()).isEqualTo("Query.allFilms");
+        var rejection = (Rejection.AuthorError.NoTenantBinding) unrouted.get(0).rejection();
+        assertThat(rejection.tableName()).isEqualTo("film");
+        assertThat(rejection.message()).contains("no tenant binding in scope");
+    }
+
+    @Test
     void agreedTenantColumnValidatesClean() {
         var ctx = TestConfiguration.testContext().withTenantColumn("k1");
         var schema = TestSchemaHelper.buildSchema(TRIVIAL_SDL, ctx);

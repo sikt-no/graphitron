@@ -333,9 +333,14 @@ public class GraphitronSchemaBuilder {
         // computed here and threaded onto the schema for the dispatch emitter and the validator's
         // shape-set rule to read one fact.
         var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, dedupedFields);
+        // The per-field tenant-binding fold. Ancestor-context fact (Inherited needs every
+        // reaching path bound), so it is computed here post-walk beside the arrival fold and
+        // threaded onto the schema for the validator's tenant mirror and the routing emitters.
+        var tenantBindings = TenantBindingIndex.compute(
+            ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
-            ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes);
+            ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings);
         return new BuildResult(model, rebuiltAssembled);
     }
 

@@ -174,6 +174,15 @@ class RejectionSeverityCoverageTest {
                         "public.person",
                         no.sikt.graphitron.javapoet.ClassName.get(String.class))));
         }
+        if (permit == Rejection.AuthorError.NoTenantBinding.class) {
+            // Tenant-binding fold rejection: a field reaches a tenant-scoped table with no
+            // binding in scope. Diagnostics.compute's switch on Rejection.AuthorError catches
+            // it uniformly (Error severity).
+            return new Rejection.AuthorError.NoTenantBinding(
+                "Query.emner", "emne",
+                "no argument or input field maps to tenant column 'eier_organisasjon', and no"
+                    + " ancestor established a tenant context.");
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

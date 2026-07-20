@@ -68,6 +68,9 @@ public class GraphitronSchemaValidator {
                 ));
             }
         }
+        // The per-field half: the tenant-binding fold's noTenantBinding findings, already
+        // fully-formed ValidationErrors carrying the offending coordinate.
+        errors.addAll(schema.tenantBindings().rejections());
     }
 
     /**

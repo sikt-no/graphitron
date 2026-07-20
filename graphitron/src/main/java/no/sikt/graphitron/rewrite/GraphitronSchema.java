@@ -74,13 +74,30 @@ public record GraphitronSchema(
     List<ValidationError> diagnostics,
     Map<String, Arrival> arrivals,
     Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
-    TenantScopes tenantScopes
+    TenantScopes tenantScopes,
+    TenantBindingIndex tenantBindings
 ) {
 
     public GraphitronSchema {
         // Null-tolerant: only catalog-aware builds populate the tenant classification; every
         // other caller (unit tier, hand-built schemas) defaults to single-tenant.
         tenantScopes = tenantScopes == null ? TenantScopes.None.INSTANCE : tenantScopes;
+        tenantBindings = tenantBindings == null ? TenantBindingIndex.EMPTY : tenantBindings;
+    }
+
+    /**
+     * The field's tenant-binding arm, or {@code null} when the axis is absent (single-tenant
+     * build) or the coordinate carries no arm (a rejected unroutable field, or a coordinate
+     * that is not a classified {@link OutputField}). The single seam consumers read the
+     * per-field arm through, mirroring {@link #sourceOf(FieldCoordinates)}.
+     */
+    public no.sikt.graphitron.rewrite.model.TenantBinding tenantBindingOf(FieldCoordinates coord) {
+        return tenantBindings.byCoordinate().get(coord);
+    }
+
+    /** {@link #tenantBindingOf(FieldCoordinates)} keyed by type/field name. */
+    public no.sikt.graphitron.rewrite.model.TenantBinding tenantBindingOf(String typeName, String fieldName) {
+        return tenantBindingOf(FieldCoordinates.coordinates(typeName, fieldName));
     }
 
     /**
@@ -92,7 +109,7 @@ public record GraphitronSchema(
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE);
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY);
     }
 
     /**
@@ -108,12 +125,13 @@ public record GraphitronSchema(
                             Map<String, Arrival> arrivals,
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes) {
         this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            TenantScopes.None.INSTANCE);
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY);
     }
 
     /**
      * The {@link GraphitronSchemaBuilder} constructor: the seven-arg field-grouping form plus
-     * the catalog-derived {@code tenantScopes} classification.
+     * the catalog-derived {@code tenantScopes} classification and the post-walk
+     * {@code tenantBindings} fold.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -122,10 +140,11 @@ public record GraphitronSchema(
                             List<ValidationError> diagnostics,
                             Map<String, Arrival> arrivals,
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
-                            TenantScopes tenantScopes) {
+                            TenantScopes tenantScopes,
+                            TenantBindingIndex tenantBindings) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
-            Map.copyOf(reachableSourceShapes), tenantScopes);
+            Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings);
     }
 
     /**
@@ -153,7 +172,7 @@ public record GraphitronSchema(
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
-            TenantScopes.None.INSTANCE);
+            TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY);
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
