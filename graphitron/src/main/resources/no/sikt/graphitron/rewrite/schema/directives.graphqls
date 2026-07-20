@@ -242,14 +242,13 @@ directive @condition(
 
 """
 Names a Query-side lookup key on an `ARGUMENT_DEFINITION`: the resolver derives the target
-table via the `@nodeId`-decoded keys of the argument (`LookupTableField` /
-`SplitLookupTableField`).
+table via the `@nodeId`-decoded keys of the argument.
 
 Retired on `INPUT_FIELD_DEFINITION`. The declaration retains the location only so the GraphQL
 parser does not fail with "unknown directive location"; the rewrite classifier rejects any
 `INPUT_FIELD_DEFINITION` use with a migration message. Mutation input fields default to
 participating in the WHERE clause; the UPDATE SET / WHERE partition is derived from the catalog's
-PK-or-UK match by the `UpdateRowsWalker`, not from a directive. See R144 / R266.
+PK-or-UK match by the `UpdateRowsWalker`, not from a directive.
 """
 directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 

@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code JooqTableRecordType} (NoBacking is retired);
  * the mutation classifies as {@code MutationField.MutationDmlRecordField} with PK-only
  * RETURNING inside a tight transaction; the data field classifies as
- * {@code ChildField.SingleRecordTableField} and runs the response SELECT outside the
+ * {@code ChildField.BatchedTableField} and runs the response SELECT outside the
  * transaction. Read errors during traversal propagate as graphql-java field errors and
  * cannot undo the DML.
  */

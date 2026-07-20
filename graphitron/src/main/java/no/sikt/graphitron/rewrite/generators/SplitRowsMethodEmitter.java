@@ -1288,7 +1288,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Rows-method for a {@link ChildField.ServiceTableField}: the condensed
-     * {@code ServiceRecordField -> RecordTableField} (now the record-sourced {@code BatchedTableField} arm) shape. The developer's {@code @service}
+     * {@code ServiceRecordField} -> record-sourced {@code BatchedTableField} shape. The developer's {@code @service}
      * method produces real {@code XRecord}s (the {@code serviceCall} expression, returning the
      * loader's {@code Map}/{@code List} container of {@code XRecord}); this method lifts those
      * back by extracting each returned record's primary key, re-projecting the bound table on

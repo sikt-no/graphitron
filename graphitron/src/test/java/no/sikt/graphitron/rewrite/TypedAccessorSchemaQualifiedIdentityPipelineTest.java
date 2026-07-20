@@ -86,7 +86,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
     }
 
     @Test
-    void qualifiedTableEcho_matchesAccessorByClassIdentity_classifiesRecordTableField() {
+    void qualifiedTableEcho_matchesAccessorByClassIdentity_classifiesBatchedTableField() {
         // SchemaAEventsPayload exposes `List<EventRecord> events()` where EventRecord is
         // multischema_a's. The element type's @table echo "multischema_a.event" never equals the
         // accessor table's bare canonical name "event", so the old bare-name compare dropped
@@ -97,15 +97,15 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
         assertThat(field)
             .as("EventPayload.events must classify green via the accessor-derived source")
             .isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) field;
+        var btf = (ChildField.BatchedTableField) field;
 
-        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
             assertThat(ac.accessor().methodName()).isEqualTo("events");
             assertThat(ac.arity()).isEqualTo(Arity.MANY);
         });
         // The source target is the qualified element table, pinned by class identity (its name()
         // is the verbatim "multischema_a.event" echo; tableClass is jOOQ's Event under schema A).
-        assertThat(rtf.returnType().table().tableClass()).isEqualTo(SCHEMA_A_EVENT);
+        assertThat(btf.returnType().table().tableClass()).isEqualTo(SCHEMA_A_EVENT);
     }
 
     @Test

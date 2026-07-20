@@ -1757,7 +1757,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void nestingField_splitTableFieldClassifiedAsNestedSplitTableField() {
+    void nestingField_splitQueryChildClassifiedAsNestedBatchedTableField() {
         var schema = build("""
             type Actor @table(name: "actor") { name: String }
             type FilmInfo {
@@ -1772,10 +1772,10 @@ class GraphitronSchemaBuilderTest {
             .filter(f -> f.name().equals("cast"))
             .findFirst().orElseThrow();
         assertThat(castField).isInstanceOf(BatchedTableField.class);
-        var stf = (BatchedTableField) castField;
-        assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
-        assertThat(stf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(stf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
+        var btf = (BatchedTableField) castField;
+        assertThat(btf.parentTypeName()).isEqualTo("FilmInfo");
+        assertThat(btf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
+        assertThat(btf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 
     // A plain-object nested type shared across two @table parents whose shared field
@@ -3190,7 +3190,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         LEAF_PK_NO_REFERENCE(
-            "Pojo parent + @sourceRow alone (no @reference) → BatchedTableField with LifterLeafKeyed; lifter RowN matches the leaf target's PK columns directly.",
+            "Pojo parent + @sourceRow alone (no @reference) → BatchedTableField with KeyLift.Lifter; lifter RowN matches the leaf target's PK columns directly.",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -7908,7 +7908,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void splitQueryOnCorrelatedRoutineChildClassifiesAsSplitTableField() {
+    void splitQueryOnCorrelatedRoutineChildClassifiesAsBatchedTableField() {
         // Batched form: @splitQuery forces the keyed re-query anchor, and a routine-headed
         // chain's batch key IS the routine's column-bound inputs — the SourceColumn bindings
         // ride the parentInput VALUES table and the lateral call reads them off it directly,

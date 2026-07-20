@@ -51,8 +51,8 @@ type Query {
         method: "greet"
     }, contextArguments: ["userId"])
     # Producer for FilmDetailsCarrier: returns the film records as a list, binding the carrier to
-    # FilmRecord (JooqTableRecordType) by reflection. Drives the RecordTableField /
-    # RecordLookupTableField multi-parent DataLoader-batching tests.
+    # FilmRecord (JooqTableRecordType) by reflection. Drives the record-sourced BatchedTableField /
+    # BatchedLookupTableField multi-parent DataLoader-batching tests.
     filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
         method: "filmsByIds"
@@ -590,10 +590,8 @@ type Query {
     # hand-rolls two CreateFilmsPayload rows whose `films` accessor returns
     # List<FilmRecord>; the classifier auto-derives a KeyLift.Accessor lift (Arity.MANY) from the
     # accessor alone, and the generator emits loader.loadMany dispatch for the chained film fetch.
-    # Single-cardinality coverage (KeyLift.Accessor with Arity.ONE) lives at the pipeline tier; the
-    # validator's Invariant #10 rejects single-cardinality RecordTableField returns until the
-    # rows-method's single-arm ships (tracked as a separate emitter arm), so an end-to-end
-    # fixture can't exercise it yet.
+    # Single-cardinality coverage (KeyLift.Accessor with Arity.ONE) is exercised end-to-end by
+    # FilmCardWrapper.film.
     recentlyCreatedFilmsBatched: [CreateFilmsPayload!]!
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
@@ -703,7 +701,7 @@ type City @table(name: "city") {
 # FK metadata on a DTO parent). See docs/manual/how-to/source-row.adoc.
 type CreateFilmPayload {
     languageId: Int!
-    # @sourceRow leaf-PK case (RecordTableField + LifterLeafKeyed): the lifter's Row1<Integer>
+    # @sourceRow leaf-PK case (record-sourced BatchedTableField + KeyLift.Lifter): the lifter's Row1<Integer>
     # matches Language's PK directly, no @reference needed. Per-parent Row1<Integer> lift of
     # the languageId, fed into the rows-method's `language_id IN (...)` batch. List-cardinality
     # return; each parent yields a 0..1-element Language list.
@@ -876,7 +874,7 @@ type FieldRenamedSetterShapeFilmReviewPayload {
 # R268 fixture (errorchannel-arm-switch-table-data-fields.md): a root @service Outcome payload
 # that pairs a @table-bound DataLoader data field with the errors field — the combination
 # R244's inventory found nowhere in sakila. `film` is the @sourceRow leaf-PK shape proven by
-# CreateFilmPayload.language (a RecordTableField resolved via a DataLoader batch keyed off the
+# CreateFilmPayload.language (a record-sourced BatchedTableField resolved via a DataLoader batch keyed off the
 # payload's backing object), here sibling to a WrapperArm errors field. It is nullable per the
 # success-projection rule: on the ErrorList arm the generated film fetcher narrows
 # Outcome.Success, sees the error arm, and returns completedFuture(null) before key extraction
@@ -1306,9 +1304,9 @@ type FilmCardWrapper {
     # KeyLift.Accessor (Arity.ONE): the canonical Java-record accessor `film()` on FilmCardData returns
     # FilmRecord (typed accessor matching this field's @table return). The framework
     # auto-derives the batch key, batches dispatch via `loader.load(key, env)` keyed on the
-    # element table's PK, and returns one Film row per key. R61 lifted Invariant #10 (the
-    # single-cardinality RecordTableField rejection) so this fixture exercises the
-    # KeyLift.Accessor (Arity.ONE) path end-to-end.
+    # element table's PK, and returns one Film row per key. Single-cardinality record-parent
+    # returns are admitted, so this fixture exercises the KeyLift.Accessor (Arity.ONE) path
+    # end-to-end.
     film: Film
     # R88 execution-tier fixture: exercises three accessor-resolution arms via the FilmCardData
     # `example()` accessor. RecordExample's three fields each resolve through a different arm
@@ -1370,14 +1368,14 @@ type Category @table(name: "category") {
 """
 FilmDetails is backed by jOOQ's FilmRecord (JooqTableRecordType), reflection-bound under R276.
 It is reached via Film.filmDetails as a same-table NestingField (the Film Record is passed through
-as the FilmDetails source, no producer directive), and has a RecordTableField child
+as the FilmDetails source, no producer directive), and has a record-sourced BatchedTableField child
 (language: Language) that DataLoader-batches language lookups keyed by the Film's language_id column.
 """
 type FilmDetails {
     title:    String!     @field(name: "title")
     language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
-    # record-fields Phase 2 fixture: record-backed parent + @lookupKey. Classifies as
-    # RecordLookupTableField — DataLoader-batches actor lookups keyed by the Film record's
+    # Record-backed parent + @lookupKey. Classifies as a record-sourced
+    # BatchedLookupTableField — DataLoader-batches actor lookups keyed by the Film record's
     # film_id, with the lookup-input VALUES join narrowing by the caller-provided actor_id list.
     # @splitQuery is not needed on record-parent fields; classifyChildFieldOnResultType never
     # inspects it (record-parent table-bound fields are DataLoader-batched unconditionally).
@@ -1389,7 +1387,7 @@ type FilmDetails {
 
 # Record-backed sibling of FilmDetails, produced by the @service Query.filmDetailsBatch (which
 # returns List<FilmRecord>), so it binds to FilmRecord (JooqTableRecordType) by reflection. Its
-# language / actorsByLookup children classify as RecordTableField / RecordLookupTableField and
+# language / actorsByLookup children classify as record-sourced BatchedTableField / BatchedLookupTableField and
 # DataLoader-batch across the producer's list elements. This carries the multi-parent batching
 # coverage that FilmDetails lost when R276 reclassified it (reached only via the Film.filmDetails
 # passthrough, no producer) into a same-table NestingField. Kept a distinct type from FilmDetails
@@ -1547,8 +1545,8 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # rather than a literal sf. Without the parameterisation, the generated code for
     # either nested arm would reference an undefined sf variable at depth ≥ 1.
     inlineBundle: FilmInlineBundle
-    # C4 RecordTableField fixture: pass Film record through to FilmDetails (same-table NestingField),
-    # then batch-load Language via DataLoader from FilmDetails.language (RecordTableField).
+    # Record-sourced BatchedTableField fixture: pass Film record through to FilmDetails
+    # (same-table NestingField), then batch-load Language via DataLoader from FilmDetails.language.
     filmDetails: FilmDetails
     # argres Phase 2a: child-level @lookupKey via junction table (film_actor).
     # VALUES+USING keyset narrows by actor_id; FK chain restricts to the parent film.
@@ -1556,14 +1554,14 @@ type Film implements Node & Searchable @table(name: "film") @node {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
-    # argres Phase 2b C4: SplitLookupTableField fixture. Same junction-path shape as actors
+    # BatchedLookupTableField fixture (@splitQuery + @lookupKey). Same junction-path shape as actors
     # above, but DataLoader-batched — each Film gets its own filtered actor list via the
     # flat-SELECT + VALUES+ON keyset + per-parent scatter shape.
     actorsBySplitLookup(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
-    # R232 execution-tier fixture: SplitTableField + ConditionJoin first hop. The condition
+    # R232 execution-tier fixture: @splitQuery + ConditionJoin first hop. The condition
     # method `filmActorsViaCondition` expresses the film_actor junction as an EXISTS predicate
     # bridging film and actor. The split-rows emitter routes step-0 correlation through the
     # condition method (FROM actor JOIN film ON cond(film, actor) JOIN parentInput ON
@@ -1787,10 +1785,10 @@ type FilmInfo {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
-    # Nested-depth @splitQuery + @lookupKey: SplitLookupTableField inside a
+    # Nested-depth @splitQuery + @lookupKey: BatchedLookupTableField inside a
     # plain-object NestingField. Classifier, emitter, and wiring paths all
-    # treat Split and SplitLookup uniformly via BatchKeyField; this fixture
-    # verifies the lookup arm ships too.
+    # treat the batched and batched-lookup leaves uniformly via BatchKeyField;
+    # this fixture verifies the lookup arm ships too.
     castByKey(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
@@ -2771,9 +2769,9 @@ input UpdateEmailReplyInput @table(name: "email") {
     inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
 }
 
-# R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
-# the type promotes to PojoResultType.NoBacking at type-classification time; the data field
-# classifies as ChildField.SingleRecordTableField; the mutation classifies as
+# Single-record DML carrier payload type. The SDL author authors no Java class —
+# the classifier binds the type to its RETURNING table's JooqTableRecordType; the data field
+# classifies as a record-sourced ChildField.BatchedTableField; the mutation classifies as
 # MutationField.MutationDmlRecordField with a PK-only RETURNING in a tight transaction.
 # The data field's @table (film) must equal the input @table (film), enforced structurally
 # by ProducerBinding.DmlEmitted's compact-constructor invariant.
@@ -2781,9 +2779,9 @@ type FilmPayload {
     film: Film
 }
 
-# R141: bulk-input single-payload carrier wrapping a list-shaped @table data field. The SDL
-# author authors no Java class — the type promotes to PojoResultType.NoBacking at
-# type-classification time; the data field classifies as ChildField.SingleRecordTableField
+# Bulk-input single-payload carrier wrapping a list-shaped @table data field. The SDL
+# author authors no Java class — the classifier binds the type to its RETURNING table's
+# JooqTableRecordType; the data field classifies as a record-sourced ChildField.BatchedTableField
 # with Arity.MANY (the data field's wrapper is list-shaped); the mutation
 # classifies as MutationField.MutationBulkDmlRecordField with batched per-row DML inside one
 # transaction. The data field's @table (film) must equal the input @table (film), enforced
@@ -2792,12 +2790,10 @@ type FilmsPayload {
     films: [Film!]
 }
 
-# R158 execution-tier fixture: @service-backed carrier payload. The producer returns
-# List<FilmRecord> / FilmRecord verbatim; the carrier's data field classifies as
-# ChildField.SingleRecordTableField with SourceKey.Wrap.TableRecord(FilmRecord) (the
-# @service producer kind). FetcherEmitter's Wrap.TableRecord arm casts env.getSource() to
-# List<FilmRecord> (MANY) or FilmRecord (ONE) and reads PKs via record.get(Tables.FILM.
-# FILM_ID); the response SELECT runs outside the service call.
+# Execution-tier fixture: @service-backed carrier payload. The producer returns
+# List<FilmRecord> / FilmRecord verbatim; the carrier's data field classifies as a
+# record-sourced ChildField.BatchedTableField whose KeyLift.ProducedRecords reads the PKs
+# off the produced records; the response SELECT runs outside the service call.
 type FilmServicePayload {
     film: Film
 }
@@ -2806,8 +2802,8 @@ type FilmServicePayload {
 # carrier shape — a @service producer returning a bare FilmRecord into a payload that pairs the
 # @table-bound `film` data field with an `errors` union. This is the opptak `{ sak: Sak, errors }`
 # shape on sakila. Because the payload carries an errors field, the producer wraps the record in
-# Outcome, so `film` classifies as SingleRecordTableField with ResultRowWalk envelope
-# OUTCOME_SUCCESS: its fetcher narrows Outcome.Success and reads off success.value(), rendering
+# Outcome, so `film` classifies as a record-sourced BatchedTableField with the
+# OUTCOME_SUCCESS envelope: its fetcher narrows Outcome.Success and reads off success.value(), rendering
 # null on the ErrorList arm. The errors field is the WrapperArm transport, resolving null (not [])
 # on the success arm. Distinct from FilmServicePayload (no errors field -> DIRECT envelope) and from
 # FilmReviewWithFilmPayload (a @record payload whose film is a DataLoader-batched @sourceRow field).
@@ -2820,7 +2816,7 @@ type FilmCarrierWithErrorsPayload {
 # the opptak leggTilTagger -> LeggTilTaggerPayload { saker: [Sak!], errors } shape. The @service
 # producer returns List<FilmRecord>; the payload pairs the list data field with an errors union,
 # and the carrier emit runs a PK-keyed follow-up SELECT off the producer's records. `films`
-# classifies as SingleRecordTableField, MANY cardinality, ResultRowWalk envelope OUTCOME_SUCCESS.
+# classifies as a record-sourced BatchedTableField, MANY cardinality, OUTCOME_SUCCESS envelope.
 # R294: a redundant @splitQuery on this carrier field used to ride along here purely to fire the
 # tolerated-redundant advisory; that path is pinned on minimal SDL at pipeline tier by
 # SingleRecordTableFieldServiceProducerPipelineTest.serviceProducer_splitQueryListCarrier_withErrors_admitsAndWarnsRedundantDirective,
@@ -2966,8 +2962,8 @@ type Mutation {
     # Single-record DML carrier mutations (FilmPayload, plain SDL Object with no
     # @record/@table). The structural DML-payload scan (BuildContext.scanStructuralDmlPayload)
     # admits payload-returning DML, the @mutation classifier produces MutationDmlRecordField,
-    # and the data field classifies as ChildField.SingleRecordTableField with a SourceKey
-    # (Reader.ResultRowWalk, Wrap.Record, PK columns). The fetcher runs PK-only RETURNING
+    # and the data field classifies as a record-sourced ChildField.BatchedTableField keyed
+    # on the PK read off the produced records. The fetcher runs PK-only RETURNING
     # inside a tight transaction; the data field's fetcher runs the response SELECT outside
     # it, so read errors during graphql-java's traversal cannot undo the DML. R156 lifts
     # DELETE-with-carrier via the ID-typed PK-echo element-shape arm; see deleteFilmsIdCarrier
@@ -2997,7 +2993,7 @@ type Mutation {
     # R141: bulk-input single-carrier list-data-field DML mutations. The classifier routes the
     # bulk-input + list-shaped @table-element data field case to MutationBulkDmlRecordField; the
     # emitter batches per-row DML inside one dsl.transactionResult(...), collects PKs in input
-    # order, and lets the data field's SingleRecordTableField fetcher (Arity.MANY) run the
+    # order, and lets the data field's BatchedTableField fetcher (Arity.MANY) run the
     # follow-up response SELECT against those PKs outside the transaction. The order-preservation
     # invariant (output.data[i] corresponds to input[i]) is exercised by
     # DmlBulkMutationsExecutionTest's deliberately-non-PK-ordered round-trip. UPSERT is deferred
@@ -3026,12 +3022,9 @@ type Mutation {
 
     # R158 execution-tier surfaces: @service-backed mutations returning carrier-payload
     # types whose data field is the @service producer's typed jOOQ record (List<FilmRecord>
-    # or FilmRecord). The classifier registers the carrier data field as
-    # ChildField.SingleRecordTableField with SourceKey.Wrap.TableRecord(FilmRecord); the
-    # FetcherEmitter's Wrap.TableRecord arm casts env.getSource() to the typed record /
-    # list and reads PKs via the typed record.get(Tables.FILM.FILM_ID) accessor. Mirrors
-    # the DML producer's Wrap.Record arm shape but typed against XRecord instead of
-    # RecordN. The service hand-runs a SELECT to produce the records so the data-field
+    # or FilmRecord). The classifier registers the carrier data field as a record-sourced
+    # ChildField.BatchedTableField whose KeyLift.ProducedRecords reads the PKs off the
+    # produced records. The service hand-runs a SELECT to produce the records so the data-field
     # fetcher's response SELECT is the second JDBC round-trip in the test path.
     serviceFilmsByIds(ids: [Int!]!): FilmsServicePayload
         @service(service: {
@@ -3060,7 +3053,7 @@ type Mutation {
         })
 
     # R275 source-record carrier with an error channel: the producer returns a bare FilmRecord,
-    # the payload pairs `film` (SingleRecordTableField, OUTCOME_SUCCESS envelope) with `errors`.
+    # the payload pairs `film` (record-sourced BatchedTableField, OUTCOME_SUCCESS envelope) with `errors`.
     # id 999 throws the mapped @error (ErrorList arm -> film null, typed error); any other id
     # resolves the film off Outcome.Success.value() and errors null on the success arm.
     serviceFilmByIdWithErrors(id: Int!): FilmCarrierWithErrorsPayload

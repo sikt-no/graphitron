@@ -36,8 +36,8 @@ class StubbedVariantPipelineTest {
             .noneMatch(m -> m.contains("not yet implemented"));
     }
 
-    // BatchedTableField / BatchedLookupTableField intra-variant stub paths are exercised via the
-    // per-variant SplitTableFieldValidationTest / SplitLookupTableFieldValidationTest with
+    // BatchedTableField / BatchedLookupTableField intra-variant stub paths are exercised via
+    // BatchedTableFieldValidationTest / BatchedLookupTableFieldValidationTest with
     // hand-constructed fixtures. A pipeline-level test here is blocked by unrelated jOOQ-catalog
     // infrastructure on the test schemas (same failure surface as other pre-existing
     // pipeline tests against @table types).

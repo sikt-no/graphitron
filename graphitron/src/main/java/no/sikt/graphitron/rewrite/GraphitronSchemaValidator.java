@@ -258,9 +258,9 @@ public class GraphitronSchemaValidator {
      * re-fetch field's visible order is locked to the source/target key correspondence (the
      * {@code ORDER BY idx} scatter re-keys the re-projected rows to the upstream source order), so
      * the "list-shaped + {@code None}" signal does not imply non-determinism for them, regardless of
-     * intent. This also covers the former {@code SingleRecordTableField} and {@code ServiceTableField}
-     * carriers that the retired {@code OrderingOwnedByProducer} marker exempted, and correctly admits
-     * a PK-less idx-ordered re-fetch that the marker would have rejected.
+     * intent. This covers the carriers that the retired {@code OrderingOwnedByProducer} marker
+     * exempted, and correctly admits a PK-less idx-ordered re-fetch that the marker would have
+     * rejected.
      */
     private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
         if (field instanceof SqlGeneratingField sgf
@@ -1350,11 +1350,9 @@ public class GraphitronSchemaValidator {
      *   <li>Record-sourced {@code BatchedTableField} → {@code buildRecordBasedDataFetcher}
      *       (explicit {@code if (env.getSource() == null) return completedFuture(null);} prelude
      *       before the key read; the {@code OUTCOME_SUCCESS} arm's {@code instanceof Success}
-     *       narrowing also rejects null). This is the successor to the former
-     *       {@code SingleRecordTableField} carrier, which collapsed into {@code RecordTableField}
-     *       (merged into the record-sourced arm). The Table-sourced arm is deliberately
+     *       narrowing also rejects null). The Table-sourced arm is deliberately
      *       excluded: {@code buildSplitQueryDataFetcher} carries no null-source guard, exactly as
-     *       the pre-merge {@code SplitTableField} was absent from this allow-list.</li>
+     *       the table-sourced leaf was absent from this allow-list before the arms merged.</li>
      *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
      *       (explicit guard before encoder dispatch).</li>
      * </ul>

@@ -33,7 +33,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
     /** ONE / single-PK admission: @service returning {@code FilmRecord} for a non-list data field. */
     @Test
-    void serviceProducer_one_singlePk_admitsAsRecordTableField() {
+    void serviceProducer_one_singlePk_admitsAsBatchedTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { film: Film }
@@ -49,16 +49,16 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) dataField;
-        var sk = rtf.sourceKey();
+        var btf = (ChildField.BatchedTableField) dataField;
+        var sk = btf.sourceKey();
         // Source=target re-fetch key — KeyLift.ProducedRecords reads the PK off the produced
         // record, Wrap.Row carries the PK tuple. The DIRECT/OUTCOME_SUCCESS envelope is no longer
         // on the SourceKey (the generator derives it at the type level).
-        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(rtf.joinPath()).isEmpty();
-        assertThat(rtf.parentCorrelation())
+        assertThat(btf.joinPath()).isEmpty();
+        assertThat(btf.parentCorrelation())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots.class);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
@@ -74,7 +74,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
      * error channels were supported.
      */
     @Test
-    void serviceProducer_withErrorsField_collapsesToRecordTableField() {
+    void serviceProducer_withErrorsField_collapsesToBatchedTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type DbErr @error(handlers: [{handler: DATABASE}]) {
@@ -328,7 +328,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
     /** MANY / single-PK admission: @service returning {@code List<FilmRecord>}. */
     @Test
-    void serviceProducer_many_singlePk_admitsAsRecordTableField() {
+    void serviceProducer_many_singlePk_admitsAsBatchedTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmListPayload { films: [Film!] }
@@ -341,9 +341,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
         var dataField = schema.field("FilmListPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) dataField;
-        var sk = rtf.sourceKey();
-        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+        var btf = (ChildField.BatchedTableField) dataField;
+        var sk = btf.sourceKey();
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
@@ -368,9 +368,9 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
         var dataField = schema.field("FilmActorListPayload", "filmActors");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) dataField;
-        var sk = rtf.sourceKey();
-        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+        var btf = (ChildField.BatchedTableField) dataField;
+        var sk = btf.sourceKey();
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         // Composite PK: both columns in declaration order from the catalog.
@@ -405,12 +405,12 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             .isInstanceOf(MutationField.MutationServiceRecordField.class);
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) dataField;
-        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+        var btf = (ChildField.BatchedTableField) dataField;
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
         // Each payload element's single film re-fetches through LOAD_ONE; graphql-java coalesces the
         // per-element loads into one batched rows-method query (proven end-to-end at the execution tier).
-        assertThat(rtf.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
+        assertThat(btf.loaderRegistration().dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(schema.diagnostics()).isEmpty();
     }
 

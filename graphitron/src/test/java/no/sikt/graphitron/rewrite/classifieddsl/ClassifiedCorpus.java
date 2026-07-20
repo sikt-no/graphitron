@@ -623,8 +623,9 @@ public final class ClassifiedCorpus {
          * @table children under a jOOQ-TableRecord-backed parent, reached by @lookupKey and by
          * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
          * new-query is derived): `FilmDetails.language` is a BatchedLookupTableField (its @lookupKey makes
-         * the operation Lookup, target Table) and `FilmDetails.inventories` a RecordTableMethodField (Fetch,
-         * Table). FilmDetails is record-bound as getFilm's jOOQ-TableRecord return type, which supplies
+         * the operation Lookup, target Table) and `FilmDetails.inventories` a BatchedTableField whose
+         * @tableMethod supplies the rows (Fetch, Table). FilmDetails is record-bound as getFilm's
+         * jOOQ-TableRecord return type, which supplies
          * the FK source key for both.
          */
         new Example("record-method", """

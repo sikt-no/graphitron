@@ -795,11 +795,9 @@ class GraphQLQueryTest {
         // so Film.title resolves from the framework-fetched record (the lifted FilmRecord
         // only carried the PK).
         //
-        // The generator lifted Invariant #10 (the single-cardinality RecordTableField rejection at
-        // GraphitronSchemaValidator.validateRecordParentSingleCardinalityRejected) by
-        // extending RecordTableField.emitsSingleRecordPerKey() to also be true for
-        // single-cardinality fields, so this test exercises the KeyLift.Accessor (Arity.ONE) path
-        // end-to-end against PostgreSQL.
+        // Single-cardinality record-parent fields are admitted (BatchKeyField.emitsSingleRecordPerKey()
+        // is true for them, so the loader hands back one record per key); this test exercises the
+        // KeyLift.Accessor (Arity.ONE) path end-to-end against PostgreSQL.
         Map<String, Object> data = execute(
             "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { film { filmId title } } } }");
         @SuppressWarnings("unchecked")
@@ -914,15 +912,15 @@ class GraphQLQueryTest {
         + "FilmDetailsForMethod (now a same-table NestingField after R276 dropped @record binding). "
         + "Re-enable as the execution-tier fixture when R277 lands.")
     @Test
-    void filmById_detailsForMethod_languageViaTableMethod_routesThroughRecordTableMethodFieldDtoParentEmit() {
+    void filmById_detailsForMethod_languageViaTableMethod_routesThroughDtoParentTableMethodEmit() {
         // Execution-tier fixture: child @tableMethod on a @record (DTO) parent.
         // Film.detailsForMethod is a same-table NestingField passthrough to FilmDetailsForMethod,
         // a @record(FilmRecord)-backed type (JooqTableRecordType). FilmDetailsForMethod's
-        // languageViaTableMethod field classifies as ChildField.RecordTableMethodField; the
-        // FK-auto-derive arm of the new @tableMethod branch in
+        // languageViaTableMethod field classifies as a record-sourced ChildField.BatchedTableField
+        // with a TableExpr.MethodCall target; the FK-auto-derive arm of the @tableMethod branch in
         // FieldBuilder.classifyChildFieldOnResultType produces it with SourceKey columns =
         // [film.language_id] (FK source side). The emit
-        // (SplitRowsMethodEmitter.buildForRecordTableMethod) uses the RecordTableField
+        // (SplitRowsMethodEmitter.buildForBatchedTable) uses the
         // DataLoader-keyed batch skeleton with the developer's static @tableMethod call
         // (SampleQueryService.tableMethodLanguage) substituted for the direct Tables.LANGUAGE
         // reference. languageId is declared on FilmDetailsForMethod so the parent SELECT
@@ -2207,11 +2205,11 @@ class GraphQLQueryTest {
             .extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
     }
 
-    // ===== argres Phase 2b: Split(Lookup)TableField DataLoader fan-out =====
+    // ===== @splitQuery Batched(Lookup)TableField DataLoader fan-out =====
 
     @Test
     void splitTableField_singleParent_returnsItsChildren() {
-        // Language.films (SplitTableField) — language 1 has films 1-5 seeded.
+        // Language.films — language 1 has films 1-5 seeded.
         Map<String, Object> data = execute(
             "{ languageByKey(language_id: [1]) { languageId films { filmId } } }");
         assertThat(data).extractingByKey("languageByKey", as(LIST))
@@ -2466,7 +2464,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void splitTableField_singleCardinality_returnsAddressPerCustomer() {
-        // Customer.addressSplit (SplitTableField, single cardinality, parent-holds-FK):
+        // Customer.addressSplit (single cardinality, parent-holds-FK):
         // each customer resolves to its own address. Seeded customer→address mapping:
         //   c1→a1  c2→a2  c3→a3  c4→a1 (shared)  c5→a2 (shared)
         Map<String, Object> data = execute(
@@ -2485,7 +2483,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void splitTableField_singleCardinality_multiHop_bridgesToTerminalAddressPerCustomer() {
-        // Customer.storeAddressSplit (SplitTableField, single cardinality, multi-hop
+        // Customer.storeAddressSplit (single cardinality, multi-hop
         // parent-holds-FK: customer -> store -> address). The rows-method keys by customer.store_id,
         // bridges store -> address via store_address_id_fkey, and scatters the terminal Address 1:1.
         // Seeded chain: c1/c2/c4 -> store 1 -> address 1 (47 MySakila Drive);
@@ -2670,7 +2668,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void splitTableField_conditionJoin_returnsActorsPerFilm() {
-        // Film.actorsByCondition (SplitTableField + ConditionJoin first hop).
+        // Film.actorsByCondition (ConditionJoin first hop).
         // The condition method `filmActorsViaCondition` expresses the film_actor junction
         // as an EXISTS predicate; the split-rows emitter routes step-0 correlation through
         // the condition method (FROM actor JOIN film ON cond(film, actor) JOIN parentInput
@@ -2906,12 +2904,13 @@ class GraphQLQueryTest {
             .contains("An error occurred. Reference:");
     }
 
-    // ===== C4: RecordTableField — @record parent + DataLoader language batch =====
+    // ===== Record-sourced BatchedTableField: @record parent + DataLoader language batch =====
 
     @Test
     void recordTableField_singleFilm_returnsLanguage() {
         // Film 1 (ACADEMY DINOSAUR) has language_id=1 (English).
-        // filmDetails is a same-table NestingField pass-through; language is a RecordTableField DataLoader.
+        // filmDetails is a same-table NestingField pass-through; language is a record-sourced
+        // BatchedTableField DataLoader.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { languageId filmDetails { title language { name } } } }");
         var details = assertThat(data).extractingByKey("filmById", as(LIST))
@@ -2929,7 +2928,7 @@ class GraphQLQueryTest {
     @Test
     void recordTableField_multipleParents_batchesIntoOneSqlRoundTrip() {
         // FilmDetailsCarrier is record-backed (Query.filmDetailsBatch returns List<FilmRecord>), so
-        // language is a RecordTableField. 5 films all have language_id=1; the DataLoader should
+        // language is a record-sourced BatchedTableField. 5 films all have language_id=1; the DataLoader should
         // batch all 5 language lookups into 1 SQL SELECT (the rowsLanguage method) rather than
         // firing 5 separate queries. Expected: 2 round-trips — 1 for the service query + 1 for the
         // batched language rows.
@@ -2964,11 +2963,11 @@ class GraphQLQueryTest {
                 "AFFAIR PREJUDICE", "AGENT TRUMAN");
     }
 
-    // ===== record-fields Phase 2: RecordLookupTableField — @record parent + @splitQuery + @lookupKey =====
+    // ===== Record-sourced BatchedLookupTableField: @record parent + @splitQuery + @lookupKey =====
 
     @Test
     void recordLookupTableField_singleFilm_returnsFilteredActors() {
-        // FilmDetails.actorsByLookup: RecordLookupTableField — DataLoader-batched lookup keyed by
+        // FilmDetails.actorsByLookup: record-sourced BatchedLookupTableField — DataLoader-batched lookup keyed by
         // the Film record's film_id, narrowed by the caller's actor_id list via VALUES-join.
         // Film 1 (ACADEMY DINOSAUR) cast: PENELOPE (1), NICK (2).
         Map<String, Object> data = execute(
@@ -2997,8 +2996,8 @@ class GraphQLQueryTest {
     @Test
     void recordLookupTableField_multipleParents_batchesIntoOneRoundTrip() {
         // FilmDetailsCarrier is record-backed (Query.filmDetailsBatch returns List<FilmRecord>), so
-        // actorsByLookup is a RecordLookupTableField. 3 carriers + 1 batched RecordLookup child =
-        // 2 round-trips. Unbatched: 1 + 3 = 4.
+        // actorsByLookup is a record-sourced BatchedLookupTableField. 3 carriers + 1 batched
+        // lookup child = 2 round-trips. Unbatched: 1 + 3 = 4.
         // Film 2 cast: PENELOPE (1), ED (3). Film 3 cast: PENELOPE (1). actor_id: [1, 3] →
         // film 1 gets {1}; film 2 gets {1, 3}; film 3 gets {1}.
         QUERY_COUNT.set(0);
@@ -3354,7 +3353,7 @@ class GraphQLQueryTest {
             .isEqualTo("first must not be negative (was: -1)");
     }
 
-    // ===== SplitTableField / SplitLookupTableField under NestingField =====
+    // ===== BatchedTableField / BatchedLookupTableField under NestingField =====
 
     @SuppressWarnings("unchecked")
     @Test
@@ -3547,7 +3546,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_nestedUnderNestingField_batchesPerOuterParent() {
-        // FilmInfo.castByKey exercises the SplitLookupTableField arm under NestingField:
+        // FilmInfo.castByKey exercises the table-sourced BatchedLookupTableField arm under NestingField:
         // classifier, emitter, and wiring all route via BatchKeyField uniformly, so
         // @splitQuery + @lookupKey at nested depth takes the same path as the top-level
         // Film.actorsBySplitLookup (:732 above).
@@ -6148,7 +6147,7 @@ class GraphQLQueryTest {
     // ===== Arm-switch: @table DataLoader data field under a root @service Outcome payload =====
     //
     // submitFilmReviewWithFilm returns a FilmReviewWithFilmPayload whose `film` field is a
-    // @table-bound DataLoader lookup (RecordTableField, @sourceRow leaf-PK keyed off the payload's
+    // @table-bound DataLoader lookup (record-sourced BatchedTableField, @sourceRow leaf-PK keyed off the payload's
     // filmId) sibling to the WrapperArm errors field. This is the pairing the Outcome inventory found
     // nowhere in sakila and that the retired arm-switch allow-list wrongly rejected. Both arms run
     // against the real generated fetchers: the success arm batch-loads the Film off
@@ -6218,7 +6217,7 @@ class GraphQLQueryTest {
     // ===== Source-record carrier with an error channel end-to-end =====
     //
     // serviceFilmByIdWithErrors returns a bare FilmRecord into { film: Film, errors: [...] }. The
-    // producer wraps the record in Outcome; the `film` field is a SingleRecordTableField with the
+    // producer wraps the record in Outcome; the `film` field is a record-sourced BatchedTableField with the
     // OUTCOME_SUCCESS envelope, so its fetcher narrows Outcome.Success and reads off success.value()
     // (success arm) or returns null (ErrorList arm). Before the fix the fetcher cast the Outcome source
     // straight to FilmRecord and threw ClassCastException — the opptak buckets B/D defect.

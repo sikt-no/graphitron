@@ -378,7 +378,7 @@ class BatchedTableFieldPipelineTest {
     // ===== BatchedTableField under NestingField =====
 
     @Test
-    void nestingFieldWithSplitTableField_producesNestedFetchersClass() {
+    void nestingFieldWithSplitQueryChild_producesNestedFetchersClass() {
         var schema = TestSchemaHelper.buildSchema("""
             type Actor @table(name: "actor") { name: String }
             type FilmInfo {
@@ -401,7 +401,7 @@ class BatchedTableFieldPipelineTest {
     }
 
     @Test
-    void nestingFieldWithSplitTableField_outerFetchersClassUnaffected() {
+    void nestingFieldWithSplitQueryChild_outerFetchersClassUnaffected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Actor @table(name: "actor") { name: String }
             type FilmInfo {

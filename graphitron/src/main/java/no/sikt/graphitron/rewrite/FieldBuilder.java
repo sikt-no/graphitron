@@ -5191,7 +5191,7 @@ class FieldBuilder {
      * payload machinery the record-carrier classifier uses (the payload scan, the data-field
      * {@code @table}-equality check, the error-channel detection) with the {@code UpdateRowsWalker}
      * the direct-return UPDATE uses (PK-or-UK identification + SET/WHERE partition), so no UPDATE
-     * path reads {@code @value}. The data field's record-sourced {@code BatchedTableField} (former SingleRecordTableField) classification is
+     * path reads {@code @value}. The data field's record-sourced {@code BatchedTableField} classification is
      * grounded independently by {@code RecordBindingResolver.groundDmlMutationField} (which reads
      * {@code @mutation(typeName:)} straight off the SDL), so no per-field reclassify is needed here.
      * A pre-check failure or a walker {@code Err} surfaces as an {@link UnclassifiedField}; the

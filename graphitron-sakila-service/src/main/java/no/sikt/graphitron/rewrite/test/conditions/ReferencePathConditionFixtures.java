@@ -34,7 +34,7 @@ public final class ReferencePathConditionFixtures {
     }
 
     /**
-     * SplitTableField fixture: condition expressing the {@code film -> film_actor -> actor}
+     * Condition expressing the {@code film -> film_actor -> actor}
      * junction as an EXISTS predicate. Used by {@code Film.actorsByCondition} to exercise the
      * split-rows emission shape ({@code FROM actor JOIN film ON cond(film, actor) JOIN
      * parentInput ON film.film_id = parentInput.film_id}). The EXISTS subquery is the only way

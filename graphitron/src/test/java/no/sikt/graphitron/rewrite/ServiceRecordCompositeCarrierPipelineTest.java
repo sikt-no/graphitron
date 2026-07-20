@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * List&lt;ActorRecord&gt;) returned by {@link TestServiceStub#createFilmsWithActors} /
  * {@link TestServiceStub#createFilmWithActors}.
  *
- * <p>The casing-mismatch sibling ({@link #caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField})
+ * <p>The casing-mismatch sibling ({@link #caseMismatchedTableName_classifiesCompositeChildrenAsBatchedTableField})
  * covers the same carrier whose {@code @table} children declare {@code @table(name:)} in a case that differs from
  * the lowercase jOOQ catalog name; both children still resolve through the accessor path.
  */
@@ -94,9 +94,9 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(((ChildField.BatchedTableField) film).returnType().table().tableName()).isEqualTo("film");
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.BatchedTableField.class);
-        var actorsRtf = (ChildField.BatchedTableField) actors;
-        assertThat(actorsRtf.returnType().table().tableName()).isEqualTo("actor");
-        assertThat(actorsRtf.returnType().wrapper().isList()).isTrue();
+        var actorsBtf = (ChildField.BatchedTableField) actors;
+        assertThat(actorsBtf.returnType().table().tableName()).isEqualTo("actor");
+        assertThat(actorsBtf.returnType().wrapper().isList()).isTrue();
 
         assertThat(schema.diagnostics()).isEmpty();
     }
@@ -309,7 +309,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
      * verdict under a casing mismatch is the behaviour.
      */
     @Test
-    void caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField() {
+    void caseMismatchedTableName_classifiesCompositeChildrenAsBatchedTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "FILM") { title: String }
             type Actor @table(name: "ACTOR") { firstName: String @field(name: "first_name") }
@@ -334,16 +334,16 @@ class ServiceRecordCompositeCarrierPipelineTest {
         // casing ("FILM") differing from the lowercase jOOQ catalog name ("film").
         var film = schema.field("CreateFilmsResult", "film");
         assertThat(film).isInstanceOf(ChildField.BatchedTableField.class);
-        var filmRtf = (ChildField.BatchedTableField) film;
-        assertThat(filmRtf.returnType().table().tableName()).isEqualToIgnoringCase("film");
-        assertThat(filmRtf.returnType().wrapper().isList()).isFalse();
+        var filmBtf = (ChildField.BatchedTableField) film;
+        assertThat(filmBtf.returnType().table().tableName()).isEqualToIgnoringCase("film");
+        assertThat(filmBtf.returnType().wrapper().isList()).isFalse();
 
         // The to-many child likewise resolves (list cardinality), not dropped to UnclassifiedField.
         var actors = schema.field("CreateFilmsResult", "actors");
         assertThat(actors).isInstanceOf(ChildField.BatchedTableField.class);
-        var actorsRtf = (ChildField.BatchedTableField) actors;
-        assertThat(actorsRtf.returnType().table().tableName()).isEqualToIgnoringCase("actor");
-        assertThat(actorsRtf.returnType().wrapper().isList()).isTrue();
+        var actorsBtf = (ChildField.BatchedTableField) actors;
+        assertThat(actorsBtf.returnType().table().tableName()).isEqualToIgnoringCase("actor");
+        assertThat(actorsBtf.returnType().wrapper().isList()).isTrue();
 
         assertThat(schema.diagnostics()).isEmpty();
     }

@@ -89,26 +89,26 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_bulkInput_listDataField_dataFieldClassifiesAsRecordTableField(DmlKind kind) {
+    void payload_bulkInput_listDataField_dataFieldClassifiesAsBatchedTableField(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
         // The former SingleRecordTableField carrier collapsed into BatchedTableField — a
         // source=target re-fetch keyed on the PK read off the produced record(s).
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) dataField;
-        assertThat(rtf.returnType()).isInstanceOf(ReturnTypeRef.TableBoundReturnType.class);
-        assertThat(rtf.returnType().table().tableName()).isEqualTo("film");
-        assertThat(rtf.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
+        var btf = (ChildField.BatchedTableField) dataField;
+        assertThat(btf.returnType()).isInstanceOf(ReturnTypeRef.TableBoundReturnType.class);
+        assertThat(btf.returnType().table().tableName()).isEqualTo("film");
+        assertThat(btf.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
         // SourceKey shape: KeyLift.ProducedRecords lift, Wrap.Row, single LiftedHop (source=target),
         // PK columns. The bulk (list) data field is per-key cardinality MANY (the held collection).
-        var sk = rtf.sourceKey();
-        assertThat(rtf.lift()).isInstanceOf(KeyLift.ProducedRecords.class);
+        var sk = btf.sourceKey();
+        assertThat(btf.lift()).isInstanceOf(KeyLift.ProducedRecords.class);
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
-        assertThat(rtf.joinPath()).isEmpty();
-        assertThat(rtf.parentCorrelation())
+        assertThat(btf.joinPath()).isEmpty();
+        assertThat(btf.parentCorrelation())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots.class);
-        assertThat(((KeyLift.ProducedRecords) rtf.lift()).arity()).isEqualTo(Arity.MANY);
+        assertThat(((KeyLift.ProducedRecords) btf.lift()).arity()).isEqualTo(Arity.MANY);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
 
@@ -123,15 +123,15 @@ class SingleRecordPayloadPipelineTest {
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var rtf = (ChildField.BatchedTableField) dataField;
-        assertThat(rtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+        var btf = (ChildField.BatchedTableField) dataField;
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
     // Payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
     // a bare @record on a single-record DML payload does not change classification; @record is
     // deprecated and ignored, so this is the same fixture as the no-@record single-payload case
-    // above, which already pins the SingleRecordTableField (cardinality ONE) leaf.
+    // above, which already pins the cardinality-ONE BatchedTableField leaf.
 
     // ===== DELETE-with-carrier admission =====
 
@@ -203,7 +203,7 @@ class SingleRecordPayloadPipelineTest {
     void directReturn_atTableType_classifiesAsExistingPath() {
         // A @table return type goes through the existing TableBoundReturnType path; the
         // carrier trigger returns NotCandidate. The mutation field is a normal
-        // MutationInsertTableField; no SingleRecordTableField is registered.
+        // MutationInsertTableField; no payload-carrier BatchedTableField is registered.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -222,7 +222,7 @@ class SingleRecordPayloadPipelineTest {
         // A reflection-backed carrier (FilmCarrier binds to the @service producer's return) keeps
         // the existing authored-carrier path: when the SDL shape would otherwise admit as carrier
         // (one @table-element data field), the classifier instead walks the type's fields through
-        // classifyChildFieldOnResultType. No SingleRecordTableField is registered on a
+        // classifyChildFieldOnResultType. No payload-carrier BatchedTableField is registered on a
         // JavaRecordType / PojoResultType.Backed.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
@@ -553,13 +553,13 @@ class SingleRecordPayloadPipelineTest {
         var ef = (ChildField.ErrorsField) errorsField;
         assertThat(ef.transport()).isInstanceOf(ChildField.Transport.LocalContext.class);
 
-        // Sibling data channel still classifies as SingleRecordTableField (cardinality ONE for
-        // single-input form). The validator-mirror allow-list admits this arm; the runtime
+        // Sibling data channel still classifies as a record-sourced BatchedTableField (lift
+        // arity ONE for the single-input form). The validator-mirror allow-list admits this arm; the runtime
         // fetcher honors the null-source short-circuit guard the LocalContext catch path needs.
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
-        var srtf = (ChildField.BatchedTableField) dataField;
-        assertThat(srtf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
+        var btf = (ChildField.BatchedTableField) dataField;
+        assertThat(btf.lift()).isInstanceOfSatisfying(KeyLift.ProducedRecords.class,
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
