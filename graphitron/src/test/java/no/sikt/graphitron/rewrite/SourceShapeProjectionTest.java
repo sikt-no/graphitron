@@ -61,6 +61,10 @@ class SourceShapeProjectionTest {
         Map.entry(ChildField.CompositeColumnReferenceField.class,
             "Composite (RowN) reference projection; not in the corpus. Catalog reference carrier — "
             + "SourceShape.Table by the parent-backing projection."),
+        Map.entry(ChildField.PivotSlotField.class,
+            "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(), never "
+            + "schema.fields(), so the corpus walk cannot observe it. Its source is the pivot "
+            + "subselect's graphitron-built jOOQ Record — SourceShape.Record by construction."),
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
             "R156 payload-returning DELETE: the only admissible data field is an encoded-PK ID off "
             + "RETURNING, which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus "

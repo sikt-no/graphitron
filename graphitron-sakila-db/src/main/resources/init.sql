@@ -1084,3 +1084,66 @@ INSERT INTO multischema_b.note (note_id, event_id, body) VALUES (300, 20, 'note-
 INSERT INTO multischema_a.signal (signal_id, signal_kind, label, widget_id) VALUES (1, 'ALERT',  'disk-full', 1);
 INSERT INTO multischema_a.signal (signal_id, signal_kind, label, widget_id) VALUES (2, 'NOTICE', 'login',     NULL);
 INSERT INTO multischema_a.signal (signal_id, signal_kind, label, widget_id) VALUES (3, 'ALERT',  'cpu-high',  1);
+
+-- @pivot execution fixtures: narrow (owner-key..., discriminator, value) attribute tables pivoted
+-- into wide records by the generator. Three shapes: a single-key translation table over film
+-- (two value columns, so one projection type serves two @pivot usages), a composite-key
+-- translation table over film_actor (the pivot correlation is arity-generic), and a numeric
+-- price-by-currency table (the value type is arbitrary, not just text; slot names equal the
+-- tokens so the identity mapping applies). Seeds deliberately leave discriminator values
+-- unpopulated (null-slot assertions) and leave film 2 with no attribute rows at all (a row-less
+-- parent must yield a projection record of null slots, never a null record, on both deliveries).
+CREATE TABLE film_translation (
+    film_id     int         NOT NULL REFERENCES film(film_id),
+    lang_code   varchar(3)  NOT NULL,
+    title_txt   varchar(255),
+    tagline_txt varchar(255),
+    PRIMARY KEY (film_id, lang_code)
+);
+
+CREATE TABLE film_actor_note (
+    actor_id   int         NOT NULL,
+    film_id    int         NOT NULL,
+    lang_code  varchar(3)  NOT NULL,
+    note_txt   varchar(255),
+    PRIMARY KEY (actor_id, film_id, lang_code),
+    FOREIGN KEY (actor_id, film_id) REFERENCES film_actor(actor_id, film_id)
+);
+
+CREATE TABLE film_price (
+    film_id       int          NOT NULL REFERENCES film(film_id),
+    currency_code varchar(3)   NOT NULL,
+    amount        numeric(8,2),
+    PRIMARY KEY (film_id, currency_code)
+);
+
+-- A @table host whose columns are named like the projection type's slots, so the same plain
+-- projection type is also reachable as an ordinary nested object (the dual-use coexistence case).
+CREATE TABLE pivot_nesting_host (
+    host_id  serial      PRIMARY KEY,
+    nn       varchar(50),
+    nb       varchar(50),
+    se       varchar(50),
+    en       varchar(50)
+);
+
+-- Film 1: nob + nno populated, sme + eng absent (null slots). Film 3: only nob, and only the
+-- tagline column carries a value for nno (per-value-column independence). Film 2: no rows at all.
+INSERT INTO film_translation (film_id, lang_code, title_txt, tagline_txt) VALUES
+    (1, 'nob', 'AKADEMIET DINOSAUR', 'Et episk drama'),
+    (1, 'nno', 'AKADEMIET DINOSAUR (nynorsk)', NULL),
+    (3, 'nob', 'TILPASNINGSHOL', NULL),
+    (3, 'nno', NULL, 'Ein sær komedie');
+
+-- Composite-key notes: (actor 1, film 1) carries two languages; (actor 2, film 1) none.
+INSERT INTO film_actor_note (actor_id, film_id, lang_code, note_txt) VALUES
+    (1, 1, 'nob', 'hovedrolle'),
+    (1, 1, 'eng', 'lead role');
+
+-- Prices: film 1 has NOK and EUR (USD stays null); film 2 none.
+INSERT INTO film_price (film_id, currency_code, amount) VALUES
+    (1, 'NOK', 49.90),
+    (1, 'EUR', 4.20);
+
+INSERT INTO pivot_nesting_host (host_id, nn, nb, se, en) VALUES
+    (1, 'nn-vert', 'nb-vert', NULL, 'en-host');

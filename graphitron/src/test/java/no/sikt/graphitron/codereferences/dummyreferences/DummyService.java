@@ -50,6 +50,8 @@ public final class DummyService {
     public static DummyFetcherFixtures.DetailsProps makeDetailsProps() { return unused(); }
     public static DummyFetcherFixtures.FilmDetailsRating makeFilmDetailsRating() { return unused(); }
     public static DummyFetcherFixtures.FilmHolder makeFilmHolder() { return unused(); }
+    public static DummyFetcherFixtures.TranslatedTextsDto makeTranslatedTexts() { return unused(); }
+    public static DummyFetcherFixtures.PivotHolder makePivotHolder() { return unused(); }
 
     // ===== AccessorPayloads.* =====
     public static AccessorPayloads.ListPayload makeAccessorListPayload() { return unused(); }

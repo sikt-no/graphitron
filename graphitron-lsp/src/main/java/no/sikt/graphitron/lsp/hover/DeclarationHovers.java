@@ -210,6 +210,11 @@ public final class DeclarationHovers {
                 appendParticipants(sb, p.participantTypeNames());
             case FieldClassification.Nesting ignored ->
                 sb.append("\n\nNested projection on parent table.");
+            case FieldClassification.Pivot p ->
+                sb.append("\n\nPivot over `").append(nullSafe(p.tableName()))
+                  .append("`: one aggregate of `").append(nullSafe(p.valueColumn()))
+                  .append("` per `").append(nullSafe(p.onColumn())).append("` token")
+                  .append(p.batched() ? "\n- batched via DataLoader" : "");
             case FieldClassification.ServiceBacked s ->
                 sb.append("\n\nService method `").append(nullSafe(s.methodClassName())).append("#")
                   .append(nullSafe(s.methodName())).append("`")

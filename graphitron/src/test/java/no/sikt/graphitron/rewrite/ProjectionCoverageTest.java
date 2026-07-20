@@ -66,6 +66,10 @@ class ProjectionCoverageTest {
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel "
             + "slot; classifier doesn't produce it until C3 lifts the five "
             + "PolymorphicReturnType rejection sites. Mirrors VariantCoverageTest."),
+        Map.entry(ChildField.PivotSlotField.class,
+            "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(), never "
+            + "schema.fields(), so no coordinate exists for the LSP projection to render. "
+            + "Mirrors VariantCoverageTest's allowlist."),
         Map.entry(ChildField.CompositeColumnField.class,
             "Covered by NodeIdPipelineTest.OutputCase (composite-PK NodeId path requires "
             + "the nodeid fixture's `bar` table). Mirrors VariantCoverageTest."),

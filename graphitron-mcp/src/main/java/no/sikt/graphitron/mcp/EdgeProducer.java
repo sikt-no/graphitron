@@ -103,6 +103,10 @@ final class EdgeProducer {
                 if (f.tableBound()) targetsTable(edges, f.tableName(), ctx);
             }
             case FieldClassification.DmlRecord f -> targetsTable(edges, f.tableName(), ctx);
+            case FieldClassification.Pivot f -> {
+                backsColumn(edges, f.tableName(), f.onColumn(), ctx);
+                backsColumn(edges, f.tableName(), f.valueColumn(), ctx);
+            }
 
             // ---- deliberate no-edge arms (kept explicit; never swept by a default) ----
             case FieldClassification.Nesting ignored -> { }
@@ -288,7 +292,8 @@ final class EdgeProducer {
         FieldClassification.QueryService.class,
         FieldClassification.DmlMutation.class,
         FieldClassification.MutationService.class,
-        FieldClassification.DmlRecord.class);
+        FieldClassification.DmlRecord.class,
+        FieldClassification.Pivot.class);
 
     /** {@link FieldClassification} permits deliberately mapped to no edge. */
     static final Set<Class<? extends FieldClassification>> NO_EDGE_FIELDS = Set.of(

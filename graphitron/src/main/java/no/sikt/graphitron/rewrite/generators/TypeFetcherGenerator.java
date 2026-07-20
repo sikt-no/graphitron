@@ -163,17 +163,51 @@ public class TypeFetcherGenerator {
                 if (f instanceof ChildField.NestingField nf) {
                     collectNestedFetcherClasses(nf, seenNestedTypes, result, assembled, outputPackage, commands);
                 }
+                var pivotSpec = pivotSpecOf(f);
+                if (pivotSpec != null) {
+                    collectNestedFetcherClasses(pivotWiring(pivotSpec), seenNestedTypes, result, assembled, outputPackage, commands);
+                }
             }));
         return result;
     }
 
     /** First-occurrence-wins index of the {@code NestingField} embedding each nesting-reached type. */
     private static void indexNestingByType(GraphitronField field, Map<String, ChildField.NestingField> out) {
+        // A pivot edge reaches its projection type with the same generic-Record shape a nesting
+        // edge does; it joins this index through a synthetic wiring carrier (see
+        // pivotWiring) so a pivot-first representative feeds the same dual-shape seam.
+        var pivotSpec = pivotSpecOf(field);
+        if (pivotSpec != null) {
+            out.putIfAbsent(pivotSpec.projectionTypeName(), pivotWiring(pivotSpec));
+            return;
+        }
         if (!(field instanceof ChildField.NestingField nf)) {
             return;
         }
         out.putIfAbsent(nf.returnType().returnTypeName(), nf);
         nf.nestedFields().forEach(child -> indexNestingByType(child, out));
+    }
+
+    /** The {@link no.sikt.graphitron.rewrite.model.PivotSpec} of a pivot leaf, else {@code null}. */
+    private static no.sikt.graphitron.rewrite.model.PivotSpec pivotSpecOf(GraphitronField field) {
+        return switch (field) {
+            case ChildField.PivotField pf -> pf.spec();
+            case ChildField.BatchedPivotField bpf -> bpf.spec();
+            default -> null;
+        };
+    }
+
+    /**
+     * An emit-time wiring carrier for a pivot edge, in the shape the nested-type seams already
+     * consume ({@code returnTypeName} / {@code table} / {@code nestedFields}). Never registered in
+     * the model: it exists only so the pivot edge rides {@link #indexNestingByType} and
+     * {@link #collectNestedFetcherClasses} without forking those seams on a second wiring type.
+     */
+    private static ChildField.NestingField pivotWiring(no.sikt.graphitron.rewrite.model.PivotSpec spec) {
+        return new ChildField.NestingField(spec.projectionTypeName(), spec.projectionTypeName(), null,
+            new ReturnTypeRef.TableBoundReturnType(spec.projectionTypeName(), spec.pivotTable(),
+                new FieldWrapper.Single(true)),
+            java.util.List.copyOf(spec.slots()));
     }
 
     private static void collectNestedFetcherClasses(ChildField.NestingField nf,
@@ -227,10 +261,11 @@ public class TypeFetcherGenerator {
                     schema.reachableSourceShapes(typeName, field.name()))) {
             return null;
         }
-        ChildField.ColumnField columnArm = null;
+        ChildField columnArm = null;
         for (var f : dualWiring.nestedFields()) {
-            if (f instanceof ChildField.ColumnField cf && cf.name().equals(field.name())) {
-                columnArm = cf;
+            if ((f instanceof ChildField.ColumnField || f instanceof ChildField.PivotSlotField)
+                    && f.name().equals(field.name())) {
+                columnArm = f;
                 break;
             }
         }
@@ -296,6 +331,7 @@ public class TypeFetcherGenerator {
         ChildField.ServiceRecordField.class,
         ChildField.BatchedTableField.class,
         ChildField.BatchedLookupTableField.class,
+        ChildField.BatchedPivotField.class,
         ChildField.PropertyField.class,
         ChildField.RecordField.class,
         ChildField.RecordCompositeField.class,
@@ -342,7 +378,11 @@ public class TypeFetcherGenerator {
         ChildField.LookupTableField.class,
         ChildField.ColumnReferenceField.class,
         ChildField.CompositeColumnField.class,
-        ChildField.NestingField.class);
+        ChildField.NestingField.class,
+        // The inline pivot projects into $fields (PivotProjectionEmitter arm); its multiset
+        // unwrap and its slots' by-name reads are reified by FetcherEmitter.bind.
+        ChildField.PivotField.class,
+        ChildField.PivotSlotField.class);
 
     /**
      * Maps each unimplemented field variant class to the {@link Rejection.Deferred} that both the
@@ -678,6 +718,16 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.NestingField ignored            -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
+                // Inline @pivot: projection via TypeClassGenerator.$fields (PivotProjectionEmitter
+                // arm); the multiset unwrap read is reified by FetcherEmitter.bind, collected below.
+                case ChildField.PivotField ignored              -> { }
+                // A projection slot's by-name read is reified by FetcherEmitter.bind on the
+                // projection type's own Fetchers class (collectNestedFetcherClasses); no-op here.
+                case ChildField.PivotSlotField ignored          -> { }
+                case ChildField.BatchedPivotField f -> {
+                    builder.addMethod(buildPivotBatchedDataFetcher(ctx, f, parentTable, outputPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForBatchedPivot(ctx, f, outputPackage));
+                }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
@@ -865,6 +915,7 @@ public class TypeFetcherGenerator {
         return switch (field) {
             case ChildField.BatchedTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.BatchedLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.BatchedPivotField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
             case ChildField.InterfaceField f ->
                 (f.returnType().wrapper().isList() || f.returnType().wrapper() instanceof FieldWrapper.Connection)
                     && f.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)
@@ -6765,6 +6816,30 @@ public class TypeFetcherGenerator {
             keyExtraction,
             asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
             dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()));
+    }
+
+    /**
+     * The {@code @pivot} sibling of {@link #buildBatchedDataFetcher}, specialised to the pivot's
+     * invariants: the parent is always table-backed (empty prelude), the loader value is always
+     * one {@code Record} per key, and — unlike the single-cardinality table arm — the key read
+     * deliberately skips the NULL-key short-circuit. One projection record exists per parent,
+     * always: a parent whose key column is NULL simply matches no attribute rows, and the rows
+     * method's key-preserving left join scatters it a record of null slots, matching inline
+     * delivery instead of resolving the field to null.
+     */
+    private static MethodSpec buildPivotBatchedDataFetcher(TypeFetcherEmissionContext ctx,
+            ChildField.BatchedPivotField field, TableRef parentTable, String outputPackage) {
+        TypeName keyType = field.sourceKey().keyElementType();
+        LoaderRegistration registration = field.loaderRegistration();
+        return DataLoaderFetcherEmitter.build(
+            field.name(),
+            keyType, RECORD, asyncResultType(RECORD),
+            registration,
+            RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
+            CodeBlock.of(""),
+            GeneratorUtils.buildKeyExtraction(field.sourceKey(), parentTable),
+            asyncWrapTail(RECORD, outputPackage, Optional.empty()),
+            dataLoaderSyncCatchBody(RECORD, outputPackage, Optional.empty()));
     }
 
     // -----------------------------------------------------------------------

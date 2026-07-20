@@ -103,6 +103,7 @@ class BuildContext {
     static final String DIR_AS_CONNECTION       = "asConnection";
     static final String DIR_AS_FACET            = "asFacet";
     static final String DIR_SOURCE_ROW          = "sourceRow";
+    static final String DIR_PIVOT               = "pivot";
 
     // ===== Argument names =====
 
@@ -116,6 +117,7 @@ class BuildContext {
     static final String ARG_VALUE              = "value";
     static final String ARG_NAME               = "name";
     static final String ARG_ON                 = "on";
+    static final String ARG_VOCABULARY         = "vocabulary";
     static final String ARG_TYPE_ID            = "typeId";
     static final String ARG_KEY_COLUMNS        = "keyColumns";
     static final String ARG_TYPE_NAME          = "typeName";

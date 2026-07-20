@@ -621,6 +621,83 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
+    // BatchedPivotField
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds the rows-method for a {@link ChildField.BatchedPivotField}: the discriminator-keyed
+     * aggregate projection delivered through the DataLoader seam. Reuses the shared parent-input
+     * prelude ({@link #emitParentInputAndFkChain}) but deliberately not
+     * {@link #emitFromBridgeAndParentJoin}: the pivot attaches the attribute table to the
+     * parent-input {@code VALUES} table with a <em>left</em> join — the one deviation from the
+     * table shape's inner join — so every batch key produces a {@code GROUP BY __idx__} group and
+     * a row-less parent scatters to one record of null slots via {@code scatterSingleByIdx},
+     * matching the inline delivery's one-record-per-parent invariant instead of null-bombing the
+     * field. That key preservation is what restricts the {@code @pivot} path to a single FK hop
+     * (bridging hops are inner joins; a per-hop filter lands in WHERE — either would re-drop the
+     * null-extended row), which {@link no.sikt.graphitron.rewrite.model.PivotSpec} pins
+     * structurally.
+     *
+     * <p>The select list is the selection-gated filtered-aggregate projection shared with the
+     * inline arm through {@link PivotProjectionEmitter#slotSelectionLoop}, plus {@code __idx__};
+     * {@code GROUP BY __idx__} collapses the batch to one row per key.
+     */
+    static MethodSpec buildForBatchedPivot(TypeFetcherEmissionContext ctx,
+            ChildField.BatchedPivotField field, String outputPackage) {
+        var spec = field.spec();
+        // Synthetic table-bound view of the projection for the shared prelude, which reads only
+        // the terminus table off it (alias generation).
+        var preludeReturnType = new ReturnTypeRef.TableBoundReturnType(
+            spec.projectionTypeName(), spec.pivotTable(), new no.sikt.graphitron.rewrite.model.FieldWrapper.Single(true));
+
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+
+        var body = CodeBlock.builder();
+        PreludeBindings p = emitParentInputAndFkChain(ctx,
+            body, field.name(), field.sourceKey(), preludeReturnType, spec.joinPath(),
+            field.parentCorrelation(), outputPackage);
+        String pivotAlias = p.terminalAlias();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, p.keyElement());
+
+        body.add(PivotProjectionEmitter.slotSelectionLoop(spec, field.name() + "Pivot",
+            pivotAlias, "selectFields",
+            CodeBlock.of("env.getSelectionSet().getFieldsGroupedByResultKey().values()")));
+        body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
+            Integer.class, IDX_COLUMN);
+
+        // Key-preserving left join: parent-input ON the FK slot pairs (arity-generic), then
+        // GROUP BY idx so each batch key yields exactly one aggregate row.
+        var onCond = CodeBlock.builder();
+        TableRef ownerTable = field.parentCorrelation().parentKeyOwnerTable();
+        for (int i = 0; i < p.joinOnCols().size(); i++) {
+            if (i > 0) onCond.add(".and(");
+            onCond.add("$L.$L.eq($L)",
+                p.joinOnAlias(), p.joinOnCols().get(i).javaName(),
+                parentInputFieldLookup("parentInput", p.joinOnParentCols().get(i), ownerTable));
+            if (i > 0) onCond.add(")");
+        }
+        var sel = CodeBlock.builder();
+        sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
+        sel.indent();
+        sel.add(".select(selectFields)\n");
+        sel.add(".from(parentInput)\n");
+        sel.add(".leftJoin($L).on($L)\n", p.firstAlias(), onCond.build());
+        sel.add(".groupBy(parentInput.field(0, $T.class))\n", Integer.class);
+        sel.add(".fetch();\n");
+        sel.unindent();
+        body.add(sel.build());
+
+        body.addStatement("return scatterSingleByIdx(flat, keys.size())");
+
+        return RowsMethodSkeleton.build(
+            ctx.rowsDeclarationName(field),
+            listOfRecord,
+            keysListType,
+            ctx.graphitronContextCall(),
+            new RowsMethodBody.SqlBatchedPivot(body.build()));
+    }
+
+    // -----------------------------------------------------------------------
     // BatchedLookupTableField (C2)
     // -----------------------------------------------------------------------
 

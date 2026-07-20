@@ -223,7 +223,7 @@ public final class FetcherEmitter {
      * so it never reaches this emitter.
      */
     public static FetcherBinding bindDualShape(
-            GraphitronField accessorField, ChildField.ColumnField columnArm,
+            GraphitronField accessorField, ChildField recordArm,
             ClassName fetchersClass, TableRef nestingParentTable,
             GraphitronType.ResultType resultType, String outputPackage) {
         AccessorResolution.Resolved accessor =
@@ -236,7 +236,7 @@ public final class FetcherEmitter {
         var backingClass = ClassName.bestGuess(fqClassName);
         boolean envDependent = isEnvDependentAccessorRead(accessorField, resultType);
         CodeBlock accessorRead = recordBackedAccessorRead(backingClass, accessor, CodeBlock.of("source"));
-        CodeBlock columnRead = dualShapeColumnRead(columnArm, nestingParentTable);
+        CodeBlock columnRead = dualShapeRecordArmRead(recordArm, nestingParentTable);
         var body = CodeBlock.builder();
         if (envDependent) {
             body.add("$T source = env.getSource();\n", Object.class);
@@ -256,7 +256,14 @@ public final class FetcherEmitter {
      * encode compaction. Mirrors {@link #bindRaw}'s {@code ColumnField} arm, differing only in the source
      * subject (the narrowed {@code rec} local rather than {@code ((Record) source)}).
      */
-    private static CodeBlock dualShapeColumnRead(ChildField.ColumnField cf, TableRef parentTable) {
+    private static CodeBlock dualShapeRecordArmRead(ChildField recordArm, TableRef parentTable) {
+        // A pivot-edge representative reads its slot by derived name off the pivot record —
+        // the by-name form works identically against a compatible nesting parent's row, so a
+        // pivot-first representative serves both generic-Record sources.
+        if (recordArm instanceof ChildField.PivotSlotField slot) {
+            return CodeBlock.of("rec.get($T.field($T.name($S)))", DSL, DSL, slot.readName());
+        }
+        var cf = (ChildField.ColumnField) recordArm;
         if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
             return CodeBlock.of("$T.$L(rec.get($T.$L.$L))",
                 enc.encodeMethod().encoderClass(), enc.encodeMethod().methodName(),
@@ -548,6 +555,30 @@ public final class FetcherEmitter {
         }
         if (field instanceof ChildField.LookupTableField) {
             return columnByAlias(field.name(), fetchersClass);
+        }
+        if (field instanceof ChildField.PivotField) {
+            // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
+            // (PivotProjectionEmitter); unwrap it exactly as the single-cardinality TableField
+            // read does. The row always exists (a correlated aggregate over an empty set still
+            // yields one row of nulls), so the empty-guard is defensive symmetry, not a semantic
+            // fork.
+            var resultClass = ClassName.get("org.jooq", "Result");
+            var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
+            CodeBlock body = CodeBlock.builder()
+                .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
+                    RECORD, RESERVED_RK_ALIAS_PREFIX, resultClass)
+                .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
+                .build();
+            return envDependent(field.name(), fetchersClass, body);
+        }
+        if (field instanceof ChildField.PivotSlotField slot) {
+            // A projection slot reads its aggregate off the pivot record by its derived read
+            // name — the same by-name generic-Record read nesting children emit, which is what
+            // lets one registered fetcher per slot coordinate serve both the pivot subselect's
+            // Record and a compatible nesting parent's record.
+            return sourceOnly(field.name(), fetchersClass, outputPackage,
+                CodeBlock.of("return (($T) source).get($T.field($T.name($S)));\n",
+                    RECORD, DSL, DSL, slot.readName()));
         }
         if (field instanceof ChildField.ComputedField) {
             // Wired by name: TypeClassGenerator.$fields() inlines the developer's method call

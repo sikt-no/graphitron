@@ -328,6 +328,13 @@ final class SchemaView {
                 m.put("participantTypeNames", f.participantTypeNames());
             }
             case FieldClassification.Nesting ignored -> m.put("kind", "Nesting");
+            case FieldClassification.Pivot f -> {
+                m.put("kind", "Pivot");
+                McpWire.putIfNotNull(m, "tableName", f.tableName());
+                McpWire.putIfNotNull(m, "onColumn", f.onColumn());
+                McpWire.putIfNotNull(m, "valueColumn", f.valueColumn());
+                m.put("batched", f.batched());
+            }
             case FieldClassification.ServiceBacked f -> {
                 m.put("kind", "ServiceBacked");
                 McpWire.putIfNotNull(m, "methodClassName", f.methodClassName());

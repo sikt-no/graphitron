@@ -67,6 +67,8 @@ import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.PivotError;
+import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
@@ -127,6 +129,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MULTITABLE_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_PIVOT;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_ON;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_VALUE;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_VOCABULARY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NOT_GENERATED;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
@@ -1115,6 +1121,204 @@ class FieldBuilder {
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, record-backed, interface, or union Graphitron type"));
+    }
+
+    // ===== @pivot classification =====
+
+    /**
+     * Classifies a {@code @pivot}-bearing child field on a {@code @table}-backed parent into
+     * {@link ChildField.PivotField} (inline) or {@link ChildField.BatchedPivotField}
+     * ({@code @splitQuery} present). Every admission check fires here as a typed
+     * {@link PivotError} arm; the distinct-token invariant is the one check left to
+     * validate time ({@code GraphitronSchemaValidator.validatePivotSpec}), since it is checkable
+     * on the classified leaf.
+     *
+     * <p>The slot → token map is resolved registry-free off the SDL: the {@code vocabulary:}
+     * enum's values are read with the same {@code argString(value, DIR_FIELD, ARG_NAME)}
+     * derivation {@code TypeBuilder} lifts into {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue},
+     * so the mapping cannot depend on whether the enum type's own classification has run yet
+     * (the registry-read-free invariant this classifier holds everywhere else).
+     */
+    private GraphitronField classifyPivotField(GraphQLFieldDefinition fieldDef, String parentTypeName,
+            TableBackedType parentTableType) {
+        String name = fieldDef.getName();
+        SourceLocation location = locationOf(fieldDef);
+        String qualified = parentTypeName + "." + name;
+
+        var wrapper = buildWrapper(fieldDef);
+        if (wrapper.isList()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.ListReturn(qualified));
+        }
+
+        String returnTypeName = baseTypeName(fieldDef);
+        if (!(ctx.schema.getType(returnTypeName) instanceof GraphQLObjectType projectionType)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.InvalidProjectionType(qualified, returnTypeName,
+                    "is not an output object type"));
+        }
+        // The same edge-level gate nesting uses: a plain directiveless output type, possibly also
+        // reached through a class-backed producer (the mixed-source reach). A @table or otherwise
+        // directive-bound type cannot serve as a projection.
+        if (!typeBuilder.isNestingEdgeTarget(returnTypeName)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.InvalidProjectionType(qualified, returnTypeName,
+                    "is not a plain output type (a @table-backed or otherwise directive-bound "
+                    + "type cannot serve as a pivot projection)"));
+        }
+
+        var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), null);
+        if (referencePath.hasError()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural(referencePath.errorMessage()));
+        }
+        var elements = referencePath.elements();
+        if (elements.isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.UnsupportedReferencePath(qualified,
+                    "no @reference path establishes the join to the attribute table"));
+        }
+        if (elements.size() > 1) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.UnsupportedReferencePath(qualified,
+                    "the path has " + elements.size() + " hops, and multi-hop chains are not key-"
+                    + "preserving on the batched delivery"));
+        }
+        if (!(elements.get(0) instanceof JoinStep.Hop hop) || !(hop.on() instanceof On.ColumnPairs)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.UnsupportedReferencePath(qualified,
+                    "the hop is not a plain foreign-key join (condition and routine hops are not "
+                    + "key-preserving on the batched delivery)"));
+        }
+        if (hop.filter() != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.UnsupportedReferencePath(qualified,
+                    "the hop carries a join condition, which is not key-preserving on the batched "
+                    + "delivery"));
+        }
+        TableRef pivotTable = hop.targetTable();
+
+        String onArg = argString(fieldDef, DIR_PIVOT, ARG_ON).orElse(null);
+        String valueArg = argString(fieldDef, DIR_PIVOT, ARG_VALUE).orElse(null);
+        if (onArg == null || valueArg == null) {
+            // Unreachable through the parser (both arguments are non-null in the SDL declaration);
+            // kept as a defensive structural rejection rather than an NPE downstream.
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural("@pivot requires both on: and value: arguments"));
+        }
+        List<String> pivotColumnCandidates = pivotTable.allColumns().stream()
+            .map(ColumnRef::sqlName).toList();
+        Optional<ColumnRef> discriminator = pivotTable.column(onArg);
+        if (discriminator.isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.ColumnUnresolved("on", onArg, pivotTable.tableName(), pivotColumnCandidates));
+        }
+        Optional<ColumnRef> value = pivotTable.column(valueArg);
+        if (value.isEmpty()) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.ColumnUnresolved("value", valueArg, pivotTable.tableName(), pivotColumnCandidates));
+        }
+
+        var slots = new ArrayList<ChildField.PivotSlotField>();
+        String declaredScalar = null;
+        for (var slotDef : projectionType.getFieldDefinitions()) {
+            if (slotDef.getType() instanceof GraphQLNonNull) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    new PivotError.NonNullSlot(slotDef.getName(), returnTypeName));
+            }
+            if (!(GraphQLTypeUtil.unwrapAll(slotDef.getType()) instanceof GraphQLScalarType scalar)
+                    || GraphQLTypeUtil.unwrapNonNull(slotDef.getType()) instanceof GraphQLList) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    new PivotError.NonScalarSlot(slotDef.getName(), returnTypeName));
+            }
+            if (declaredScalar == null) {
+                declaredScalar = scalar.getName();
+            } else if (!declaredScalar.equals(scalar.getName())) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    new PivotError.DivergentSlotType(slotDef.getName(), returnTypeName,
+                        declaredScalar, scalar.getName()));
+            }
+            // The read name is the same @field(name:)-or-SDL-name derivation the inline column
+            // mapping uses; it is both the projected aggregate's alias and the slot fetcher's
+            // by-name read, single-sourced here so the two cannot drift.
+            String readName = argString(slotDef, DIR_FIELD, ARG_NAME).orElse(slotDef.getName());
+            slots.add(new ChildField.PivotSlotField(
+                returnTypeName, slotDef.getName(), locationOf(slotDef), readName));
+        }
+        if (declaredScalar != null && !valueColumnMapsToScalar(value.get(), declaredScalar)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.ValueTypeMismatch(valueArg, value.get().columnClass(), declaredScalar));
+        }
+
+        var tokenBySlot = new LinkedHashMap<String, String>();
+        Optional<String> vocabulary = argString(fieldDef, DIR_PIVOT, ARG_VOCABULARY);
+        if (vocabulary.isPresent()) {
+            if (!(ctx.schema.getType(vocabulary.get()) instanceof GraphQLEnumType vocabEnum)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    new PivotError.VocabularyNotTextEnum(vocabulary.get()));
+            }
+            var tokenByValueName = new LinkedHashMap<String, String>();
+            for (var enumValue : vocabEnum.getValues()) {
+                tokenByValueName.put(enumValue.getName(),
+                    argString(enumValue, DIR_FIELD, ARG_NAME).orElse(enumValue.getName()));
+            }
+            for (var slot : slots) {
+                String token = tokenByValueName.get(slot.name());
+                if (token == null) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        new PivotError.SlotMissingFromVocabulary(slot.name(), vocabulary.get(),
+                            List.copyOf(tokenByValueName.keySet())));
+                }
+                tokenBySlot.put(slot.name(), token);
+            }
+        } else {
+            for (var slot : slots) {
+                tokenBySlot.put(slot.name(), slot.name());
+            }
+        }
+
+        var pcResolution = ctx.buildParentCorrelation(elements, parentTableType.table());
+        if (pcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural(e.message()));
+        }
+        var correlation = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
+
+        var spec = new PivotSpec(elements, pivotTable, discriminator.get(), value.get(),
+            returnTypeName, slots, tokenBySlot);
+        if (fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) {
+            var split = deriveSplitQuerySource(correlation, parentTableType.table(), false);
+            return new ChildField.BatchedPivotField(parentTypeName, name, location, spec,
+                split.sourceKey(), split.lift(), split.loaderRegistration(), correlation);
+        }
+        return new ChildField.PivotField(parentTypeName, name, location, spec);
+    }
+
+    /**
+     * Best-effort check that the {@code value:} column's Java type can produce the slots'
+     * declared scalar. Enforced for the GraphQL spec built-ins (whose serializers reject
+     * mismatched Java types at request time — the failure this check moves to build time);
+     * custom scalars and unloadable column classes are admitted, since their coercion surface
+     * is not knowable here.
+     */
+    private static boolean valueColumnMapsToScalar(ColumnRef value, String declaredScalar) {
+        return switch (declaredScalar) {
+            case "String" -> "java.lang.String".equals(value.columnClass());
+            case "Boolean" -> "java.lang.Boolean".equals(value.columnClass());
+            case "Int", "Float" -> isNumberColumnClass(value.columnClass());
+            case "ID" -> "java.lang.String".equals(value.columnClass())
+                || isNumberColumnClass(value.columnClass());
+            default -> true;
+        };
+    }
+
+    private static boolean isNumberColumnClass(String columnClass) {
+        try {
+            return Number.class.isAssignableFrom(
+                Class.forName(columnClass, false, FieldBuilder.class.getClassLoader()));
+        } catch (ClassNotFoundException e) {
+            return true; // not loadable here — admit rather than false-reject
+        }
     }
 
     // ===== Wrapper helpers =====
@@ -4248,6 +4452,12 @@ class FieldBuilder {
     // ===== Root field classification (P5) =====
 
     private GraphitronField classifyRootField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
+        // @pivot is a child-field projection off an SQL-backed parent row; a root field has no
+        // parent query to correlate with. Same typed arm as the record-backed-parent rejection.
+        if (fieldDef.hasAppliedDirective(DIR_PIVOT)) {
+            return new UnclassifiedField(parentTypeName, fieldDef.getName(), locationOf(fieldDef), fieldDef,
+                new PivotError.RecordBackedParent(parentTypeName + "." + fieldDef.getName(), parentTypeName));
+        }
         if (parentTypeName.equals("Mutation")) {
             return classifyMutationField(fieldDef, parentTypeName);
         }
@@ -5570,6 +5780,15 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
+        // @pivot needs a parent SELECT to fold its correlated aggregate into (inline) or a
+        // catalog-keyed batch seam (@splitQuery); a record-backed parent offers neither in v1.
+        // The typed rejection deliberately does not suggest @splitQuery, which is lint-ignored
+        // as redundant on record-backed parents (warnIfSplitQueryOnRecordParent).
+        if (fieldDef.hasAppliedDirective(DIR_PIVOT)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new PivotError.RecordBackedParent(parentTypeName + "." + name, parentTypeName));
+        }
+
         // A child field on a DML-emitted payload classifies
         // through the unified path against the producer's inner @table. The parent's source at
         // runtime is the DML fetcher's RecordN<PK> (single) or Result<RecordN<PK>> (bulk); the
@@ -6230,7 +6449,12 @@ class FieldBuilder {
     private static SplitQuerySource deriveSplitQuerySource(
             no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
             TableRef parentTable, ReturnTypeRef.TableBoundReturnType returnType) {
-        boolean isList = returnType.wrapper().isList();
+        return deriveSplitQuerySource(correlation, parentTable, returnType.wrapper().isList());
+    }
+
+    private static SplitQuerySource deriveSplitQuerySource(
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
+            TableRef parentTable, boolean isList) {
         // The batch grain is a pure projection off the step-0 correlation arm
         // (ParentCorrelation.parentKeyColumns) — FK-slot columns for OnFkSlots, parent PK for the
         // parent-anchor OnParentJoin arm, routine inputs for OnLateralArgs. Reading it here rather
@@ -6815,6 +7039,10 @@ class FieldBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@sourceRow is for record-backed (non-table) parents; use @reference on a @table parent"));
+        }
+
+        if (fieldDef.hasAppliedDirective(DIR_PIVOT)) {
+            return classifyPivotField(fieldDef, parentTypeName, tableType);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {

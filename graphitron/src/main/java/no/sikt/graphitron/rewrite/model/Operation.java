@@ -95,6 +95,16 @@ public sealed interface Operation {
     /** A structural nesting that produces nothing, inherits the parent's scope, and regroups children. */
     record Nest() implements Operation {}
 
+    /**
+     * A discriminator-keyed aggregate projection ({@code @pivot}): the field pivots a narrow
+     * {@code (owner-key…, discriminator, value)} attribute table into one record per parent, one
+     * filtered aggregate per selected slot of the projection type. The pivot facts (join path,
+     * discriminator / value columns, slot → token map) live on the consuming leaf's
+     * {@link PivotSpec}; the verb here says the field performs a row-to-column pivot rather than a
+     * plain {@link Fetch} (the projected columns are synthesised aggregates, not catalog columns).
+     */
+    record Pivot() implements Operation {}
+
     // ---- framework resolvers ----
 
     /** Relay {@code node} / {@code nodes} resolution (cardinality is a {@link Target} wrapper, not a second arm). */

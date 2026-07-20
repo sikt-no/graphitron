@@ -47,7 +47,7 @@ public final class ClassifiedDsl {
         enum SourceWrapper { Query Mutation OnlyChild Child }
 
         enum Operation {
-          Fetch Paginate Lookup ServiceCall Count Facet Nest
+          Fetch Paginate Lookup ServiceCall Count Facet Nest Pivot
           NodeResolve EntityResolve
           Insert Upsert Update UpdateMatching Delete DeleteMatching RoutineWrite
         }

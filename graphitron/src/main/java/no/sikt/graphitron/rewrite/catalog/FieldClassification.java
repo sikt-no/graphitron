@@ -51,6 +51,7 @@ public sealed interface FieldClassification
             FieldClassification.TableInterface,
             FieldClassification.Polymorphic,
             FieldClassification.Nesting,
+            FieldClassification.Pivot,
             FieldClassification.ServiceBacked,
             FieldClassification.RecordOrProperty,
             FieldClassification.Computed,
@@ -142,6 +143,7 @@ public sealed interface FieldClassification
                  TableInterface _,
                  Polymorphic _,
                  Nesting _,
+                 Pivot _,
                  ServiceBacked _,
                  RecordOrProperty _,
                  Computed _,
@@ -300,6 +302,15 @@ public sealed interface FieldClassification
      * label switch.
      */
     record Nesting() implements FieldClassification {}
+
+    /**
+     * Discriminator-keyed aggregate projection ({@code @pivot}): the field pivots the attribute
+     * table's {@code (owner-key…, discriminator, value)} rows into one filtered aggregate per
+     * slot of its plain return type. Carries the attribute table and the two pivot columns for
+     * hover rendering; {@code batched} mirrors the {@code @splitQuery} delivery fork.
+     */
+    record Pivot(String tableName, String onColumn, String valueColumn, boolean batched)
+        implements FieldClassification {}
 
     /**
      * A child field backed by a developer-provided {@code @service} method. Covers

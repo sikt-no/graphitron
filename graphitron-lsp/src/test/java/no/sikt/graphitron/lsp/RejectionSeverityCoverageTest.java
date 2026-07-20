@@ -342,6 +342,53 @@ class RejectionSeverityCoverageTest {
                 no.sikt.graphitron.rewrite.model.Arity.MANY,
                 no.sikt.graphitron.rewrite.model.Arity.MANY);
         }
+        // PivotError sub-seal of AuthorError (@pivot classification). One sample per arm;
+        // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
+        // severity), and lspCodeOf forwards each arm's stable graphitron.pivot.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.NonNullSlot.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.NonNullSlot("nn", "TranslatedTexts");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.NonScalarSlot.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.NonScalarSlot("nn", "TranslatedTexts");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.DivergentSlotType.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.DivergentSlotType(
+                "nn", "TranslatedTexts", "String", "Int");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.VocabularyNotTextEnum.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.VocabularyNotTextEnum("Sprak");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.SlotMissingFromVocabulary.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.SlotMissingFromVocabulary(
+                "se", "Sprak", List.of("nn", "nb"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.DuplicateSlotToken.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.DuplicateSlotToken(
+                "nob", List.of("nb", "bokmaal"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.ColumnUnresolved.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.ColumnUnresolved(
+                "on", "langcode", "film_translation", List.of("lang_code", "title_txt"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.ValueTypeMismatch.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.ValueTypeMismatch(
+                "amount", "java.math.BigDecimal", "String");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.ListReturn.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.ListReturn("Film.titleTranslations");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.UnsupportedReferencePath.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.UnsupportedReferencePath(
+                "Film.titleTranslations", "the path has 2 hops");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.RecordBackedParent.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.RecordBackedParent(
+                "Holder.texts", "Holder");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.PivotError.InvalidProjectionType.class) {
+            return new no.sikt.graphitron.rewrite.model.PivotError.InvalidProjectionType(
+                "Film.titleTranslations", "Language", "is not a plain output type");
+        }
         return null;
     }
 }

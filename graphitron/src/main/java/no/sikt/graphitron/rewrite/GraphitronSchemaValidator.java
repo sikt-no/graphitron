@@ -201,6 +201,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotField f              -> validatePivotSpec(f, f.spec(), errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField f       -> validatePivotSpec(f, f.spec(), errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField f          -> {} // readName-only leaf; every pivot admission check fires at classify time (PivotError via UnclassifiedField), and the consuming leaf's validatePivotSpec walks the slots
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // Narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
@@ -831,6 +834,35 @@ public class GraphitronSchemaValidator {
         // this is the integration point the emitter's projection helper relies on for unreachability
         // of its fallthrough arm.
         walkNestedVariantsForImplementation(field.nestedFields(), errors);
+    }
+
+    /**
+     * Shared by both {@code @pivot} delivery leaves: mirrors at validate time the classifier
+     * invariants that survive into the model. The schema-shape rejections (non-null / non-scalar
+     * slots, vocabulary misses, unresolved columns, path shape, record parent, list return) fire
+     * at classify time as typed {@link no.sikt.graphitron.rewrite.model.PivotError} arms via
+     * {@code UnclassifiedField}; what remains checkable on the classified leaf is the
+     * distinct-token invariant (the emitter would otherwise project two identical aggregates
+     * under different aliases) plus the slot leaves' implementedness, the same walk
+     * {@link #validateNestingField} runs over its nested fields.
+     */
+    private void validatePivotSpec(GraphitronField field,
+            no.sikt.graphitron.rewrite.model.PivotSpec spec, List<ValidationError> errors) {
+        var slotsByToken = new java.util.LinkedHashMap<String, List<String>>();
+        spec.tokenBySlot().forEach((slot, token) ->
+            slotsByToken.computeIfAbsent(token, k -> new java.util.ArrayList<>()).add(slot));
+        slotsByToken.forEach((token, slots) -> {
+            if (slots.size() > 1) {
+                slots.sort(String::compareTo);
+                errors.add(new ValidationError(
+                    field.qualifiedName(),
+                    new no.sikt.graphitron.rewrite.model.PivotError.DuplicateSlotToken(token, slots),
+                    field.location()));
+            }
+        });
+        for (var slot : spec.slots()) {
+            validateVariantIsImplemented(slot, errors);
+        }
     }
 
     private void walkNestedVariantsForImplementation(List<ChildField> fields, List<ValidationError> errors) {

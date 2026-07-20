@@ -1,0 +1,111 @@
+= @pivot
+:description: Turn a child field into a discriminator-keyed aggregate projection over a narrow attribute table, one output slot per discriminator value.
+:!toc:
+
+Turns a single-valued child field into a *discriminator-keyed aggregate projection*: one output field per discriminator value, each holding an aggregate of a value column filtered to that value. This generates, declaratively, the row-to-column pivot that would otherwise be a hand-written service: real schemas model a multi-valued attribute (translations are the canonical case) as a narrow `(owner-key..., discriminator, value)` table, then need it back as a wide record.
+
+The field's return type is a *plain output type* with no `@table` and no per-field directives: its fields are the projection slots, named for the languages or codes. The field reaches the attribute table with xref:reference.adoc[`@reference`]; it delivers inline by default, or batched if xref:splitQuery.adoc[`@splitQuery`] is also present.
+
+Each slot selects the row whose discriminator column equals a database token. By default the token is the slot's own name; when the two differ (a `nn` slot selecting the token `nno`), name a text-mapped enum with `vocabulary:` and the enum's `@field(name:)` values supply the tokens.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @pivot(on: String!, value: String!, vocabulary: String) on FIELD_DEFINITION
+----
+
+[cols="1,2,4"]
+|===
+|Name |Type |Description
+
+|`on`
+|`String!`
+|The discriminator column on the referenced attribute table. Each slot is matched to a token that this column is filtered to.
+
+|`value`
+|`String!`
+|The column on the referenced attribute table whose value is aggregated per token.
+
+|`vocabulary`
+|`String`
+|Optional. Names a text-mapped enum whose values map each slot's SDL name to the database token (via the enum values' `@field(name:)`). Omit when slot names already equal the tokens (identity).
+|===
+
+== Canonical examples
+
+Translations. An attribute table `film_translation(film_id, lang_code, title_txt, tagline_txt)` holds a film's texts once per language. The GraphQL slot names (`nn`, `nb`, ...) differ from the database tokens (`nno`, `nob`, ...), so a text-mapped enum carries the mapping once, at `@field`'s canonical enum-value site:
+
+[source,graphql]
+----
+enum PivotLang {
+    nn @field(name: "nno")
+    nb @field(name: "nob")
+    se @field(name: "sme")
+    en @field(name: "eng")
+}
+
+type TranslatedTexts {
+    nn: String
+    nb: String
+    se: String
+    en: String
+}
+
+type Film @table(name: "film") {
+    titleTranslations: TranslatedTexts
+        @reference(path: [{table: "film_translation"}])
+        @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+}
+----
+
+`TranslatedTexts` is a plain type carrying no pivot markers, so it is reused freely across every translated field (the value column varies per usage) and may also serve as an ordinary nested object elsewhere in the schema. A sibling field over the same table's `tagline_txt` column, or a field over a composite-key attribute table, reuses the identical type, enum, and directive:
+
+[source,graphql]
+----
+taglineTranslations: TranslatedTexts
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "tagline_txt", vocabulary: "PivotLang")
+----
+
+Prices by currency. The shape is not specific to i18n: any narrow `(owner, discriminator, value)` attribute table pivots the same way. With slot names chosen to equal the database tokens, no `vocabulary:` is needed, and the value type is arbitrary (here a numeric column):
+
+[source,graphql]
+----
+type PriceByCurrency {
+    NOK: Float
+    USD: Float
+    EUR: Float
+}
+
+type Film @table(name: "film") {
+    prices: PriceByCurrency
+        @reference(path: [{table: "film_price"}])
+        @pivot(on: "currency_code", value: "amount")
+}
+----
+
+== Semantics
+
+One projection record exists per parent, *always*: an aggregate over an empty set yields one row of nulls, never a null record. Which slots are null is the only data-dependent part; a parent with no attribute rows at all resolves to a record whose every slot is null, on both deliveries. This is why every slot must be nullable while the `@pivot` field itself may be non-null.
+
+The projection is selection-gated: only the requested slots project a filtered aggregate. Inline delivery folds the projection into the parent query as a correlated aggregate subselect (one round-trip, no `GROUP BY`); `@splitQuery` routes it through the batched DataLoader seam, which re-introduces a `GROUP BY` over the batch and earns its place when the field is costly and rarely selected. Composite owner keys are supported from the start; the correlation is arity-generic.
+
+== Constraints
+
+* The return type must be a plain output type: no `@table`. Its fields are the slots; they carry no pivot directives. The type is not reserved for pivots, so it may also be reached elsewhere in the same schema as an ordinary nested object or as a field of a `@service`-returned record.
+* Every slot must be *nullable*. A non-null slot fails the build: pivot slots are filtered aggregates that are null when no row carries the token.
+* All slots must be single-valued scalars sharing one type (they read the same value column), and the value column's type must map to that scalar.
+* When `vocabulary:` is given, every slot's SDL name must resolve to a value of the named enum; a slot with no matching enum value fails the build, naming the slot. When omitted, each slot's name is used as the token directly (identity). Two slots resolving to the same token fail the build.
+* The `@reference` path must be a single foreign-key hop to the attribute table (composite keys are fine; multi-hop chains and condition-join hops are not supported under `@pivot`).
+* `on` and `value` must both resolve to columns on the `@reference` terminus (attribute) table. The build fails, naming the unresolved column, if either does not.
+* The field must be single-valued (one projection record per parent). A list return type is rejected.
+* The parent type must be SQL-backed (`@table`); a `@pivot` field on a record-backed parent or a root type fails the build.
+
+== See also
+
+* xref:field.adoc[`@field`] on the vocabulary enum's values names the database token each slot maps to (its enum-value role); the `vocabulary:` enum is an ordinary enum, reusable as a field type.
+* xref:reference.adoc[`@reference`] establishes the join to the attribute table, including composite-FK paths (a single hop under `@pivot`).
+* xref:splitQuery.adoc[`@splitQuery`] switches delivery from inline to batched.
+
+xref:../index.adoc[← Reference index]

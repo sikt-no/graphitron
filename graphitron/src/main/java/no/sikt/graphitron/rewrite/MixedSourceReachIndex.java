@@ -73,6 +73,14 @@ final class MixedSourceReachIndex {
     }
 
     private static void collectNestingReached(GraphitronField field, Set<String> out) {
+        // A @pivot edge reaches its projection type with the same generic-Record shape a nesting
+        // edge does (the slot fetchers read the pivot subselect's Record by name), so it
+        // contributes the identical NESTING_RECORD reach to the union.
+        switch (field) {
+            case ChildField.PivotField pf -> out.add(pf.spec().projectionTypeName());
+            case ChildField.BatchedPivotField bpf -> out.add(bpf.spec().projectionTypeName());
+            default -> { }
+        }
         if (!(field instanceof ChildField.NestingField nf)) {
             return;
         }

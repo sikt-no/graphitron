@@ -112,6 +112,12 @@ class VariantCoverageTest {
             + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
             + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands."),
+        Map.entry(ChildField.PivotSlotField.class,
+            "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(), never "
+            + "schema.fields(), so no @classified coordinate can land on it (the corpus collects "
+            + "leaves off top-level coordinates only). Its classification is pinned by the "
+            + "'pivot' corpus example's field assertions via the consuming PivotField / "
+            + "BatchedPivotField and the pivot cases in GraphitronSchemaBuilderTest."),
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
             "R156: produced by the @mutation classifier for @mutation(typeName: DELETE) carriers "
             + "with an ID-typed data field. Covered structurally by the four "

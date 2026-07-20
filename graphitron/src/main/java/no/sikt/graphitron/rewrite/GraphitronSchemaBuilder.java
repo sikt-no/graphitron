@@ -528,14 +528,31 @@ public class GraphitronSchemaBuilder {
      */
     private static void registerNestingTypesIn(BuildContext ctx, TypeBuilder typeBuilder,
             no.sikt.graphitron.rewrite.model.GraphitronField field) {
+        // A @pivot projection type registers exactly the way a plain nesting target does: the
+        // pivot imposes no classification of its own (every pivot fact lives on the consuming
+        // field's PivotSpec), so the projection joins the same first-wins NestingType
+        // registration, and a class-backed carrier verdict from a @service producer stands when
+        // registered first. Slots are scalar leaves; no recursion applies.
+        String pivotProjection = switch (field) {
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotField pf -> pf.spec().projectionTypeName();
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf -> bpf.spec().projectionTypeName();
+            default -> null;
+        };
+        if (pivotProjection != null) {
+            registerNestingTypeIfPlainTarget(ctx, typeBuilder, pivotProjection);
+            return;
+        }
         if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nf)) return;
-        String name = nf.returnType().returnTypeName();
+        registerNestingTypeIfPlainTarget(ctx, typeBuilder, nf.returnType().returnTypeName());
+        nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, typeBuilder, child));
+    }
+
+    private static void registerNestingTypeIfPlainTarget(BuildContext ctx, TypeBuilder typeBuilder, String name) {
         if (typeBuilder.isDirectivelessNestingTarget(name) && !ctx.typeRegistry.contains(name)) {
             var objType = ctx.schema.getObjectType(name);
             ctx.typeRegistry.register(name, new no.sikt.graphitron.rewrite.model.GraphitronType.NestingType(
                 name, BuildContext.locationOf(objType), objType));
         }
-        nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, typeBuilder, child));
     }
 
     /**
@@ -734,8 +751,22 @@ public class GraphitronSchemaBuilder {
         return false;
     }
 
-    /** Whether {@code field} is (or recursively contains) a {@code NestingField} embedding {@code typeName}. */
+    /**
+     * Whether {@code field} reaches {@code typeName} with the generic-Record shape: a
+     * {@code NestingField} embedding it (recursively), or a {@code @pivot} edge projecting it —
+     * the pivot subselect's record is read by the same by-name slot fetchers, so a pivot +
+     * class-backed producer disagreement is the same supported dual reach.
+     */
     private static boolean nestingReaches(no.sikt.graphitron.rewrite.model.GraphitronField field, String typeName) {
+        switch (field) {
+            case no.sikt.graphitron.rewrite.model.ChildField.PivotField pf -> {
+                if (pf.spec().projectionTypeName().equals(typeName)) return true;
+            }
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField bpf -> {
+                if (bpf.spec().projectionTypeName().equals(typeName)) return true;
+            }
+            default -> { }
+        }
         if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nf)) return false;
         if (nf.returnType().returnTypeName().equals(typeName)) return true;
         for (var child : nf.nestedFields()) {

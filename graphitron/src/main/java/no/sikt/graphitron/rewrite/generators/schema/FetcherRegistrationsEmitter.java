@@ -236,17 +236,37 @@ public final class FetcherRegistrationsEmitter {
             dualWiring.representativeParentTable(), resultType, outputPackage).registrationValue();
     }
 
-    /** The nesting-arm {@link ChildField.ColumnField} for {@code fieldName}, or {@code null}. */
-    private static ChildField.ColumnField dispatchColumnArm(NestedTypeWiring dualWiring, String fieldName) {
+    /**
+     * The generic-Record-arm leaf for {@code fieldName} — the nesting edge's
+     * {@link ChildField.ColumnField} or the pivot edge's {@link ChildField.PivotSlotField},
+     * whichever representative won the wiring — or {@code null}.
+     */
+    private static ChildField dispatchColumnArm(NestedTypeWiring dualWiring, String fieldName) {
         for (var f : dualWiring.fields()) {
-            if (f instanceof ChildField.ColumnField cf && cf.name().equals(fieldName)) {
-                return cf;
+            if ((f instanceof ChildField.ColumnField || f instanceof ChildField.PivotSlotField)
+                    && f.name().equals(fieldName)) {
+                return f;
             }
         }
         return null;
     }
 
     private static void collectNestedTypes(GraphitronField field, Map<String, NestedTypeWiring> out) {
+        // The pivot edge contributes its slots to the same first-occurrence-wins collection a
+        // nesting edge does: either representative produces the same fetcher per slot coordinate,
+        // because the read name derives from the slot's SDL name on both edges (the pivot's
+        // projected alias and the nesting column resolution consume the same derivation).
+        var pivotSpec = switch (field) {
+            case ChildField.PivotField pf -> pf.spec();
+            case ChildField.BatchedPivotField bpf -> bpf.spec();
+            default -> null;
+        };
+        if (pivotSpec != null) {
+            out.putIfAbsent(pivotSpec.projectionTypeName(),
+                new NestedTypeWiring(pivotSpec.projectionTypeName(),
+                    List.copyOf(pivotSpec.slots()), pivotSpec.pivotTable()));
+            return;
+        }
         if (!(field instanceof ChildField.NestingField nf)) {
             return;
         }

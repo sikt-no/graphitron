@@ -45,4 +45,10 @@ public final class DummyFetcherFixtures {
      * nests off a {@code @table} parent.
      */
     public record FilmHolder(FilmDetailsRating details) {}
+
+    /** Class-backed producer shape for the @pivot mixed-source reach: slots as record components. */
+    public record TranslatedTextsDto(String nn, String nb) {}
+
+    /** Record-backed parent for the @pivot-on-record-parent rejection fixture. */
+    public record PivotHolder(TranslatedTextsDto texts) {}
 }

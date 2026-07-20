@@ -65,6 +65,17 @@ public sealed interface RowsMethodBody {
         }
     }
 
+    /**
+     * SQL body for {@code BatchedPivotField} — the key-preserving left join from the parent-input
+     * {@code VALUES} table to the attribute table, the selection-gated filtered aggregates, and
+     * {@code GROUP BY __idx__}, scattered single-per-key.
+     */
+    record SqlBatchedPivot(CodeBlock content) implements RowsMethodBody {
+        public SqlBatchedPivot {
+            Objects.requireNonNull(content, "content");
+        }
+    }
+
 
     /**
      * Service-delegating body for {@code ServiceTableField} / {@code ServiceRecordField}. The

@@ -305,6 +305,41 @@ public final class ClassifiedCorpus {
             type Query { film: Film }
             """),
 
+        /*
+         * @pivot: a discriminator-keyed aggregate projection. The field pivots the narrow
+         * film_translation (film_id, lang_code, title_txt) attribute table into one record per
+         * parent, one filtered aggregate per selected slot; the return type is a plain output
+         * type registered as an ordinary NestingType (nothing on the type says "pivot" — every
+         * pivot fact lives on the consuming field's PivotSpec). The verdict is a new operation
+         * (Pivot, the row-to-column verb) with target Single(Record) (the graphitron-built jOOQ
+         * record the slot fetchers read by name). Delivery is not a tuple axis: the @splitQuery
+         * sibling classifies the batched leaf with the identical verdict, exactly as child-table
+         * inline/split pairs do. The vocabulary enum maps slot names to discriminator tokens at
+         * @field(name:)'s canonical ENUM_VALUE site; the identity case (slot names = tokens)
+         * omits it.
+         */
+        new Example("pivot", """
+            enum Sprak @classifiedType(as: EnumType) {
+              nn @field(name: "nno")
+              nb @field(name: "nob")
+            }
+            type TranslatedTexts @classifiedType(as: NestingType) {
+              nn: String
+              nb: String
+            }
+            type Film @table(name: "film") {
+              titleTexts: TranslatedTexts
+                @reference(path: [{table: "film_translation"}])
+                @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
+                @classified(source: OnlyChild, operation: Pivot, target: Single, targetShape: Record)
+              titleTextsSplit: TranslatedTexts @splitQuery
+                @reference(path: [{table: "film_translation"}])
+                @pivot(on: "lang_code", value: "title_txt", vocabulary: "Sprak")
+                @classified(source: OnlyChild, operation: Pivot, target: Single, targetShape: Record)
+            }
+            type Query { film: Film }
+            """),
+
         // The former "constructor" example (a record-backed child type under a @table parent) left the
         // classified corpus when ConstructorField was dissolved. That shape is now the mixed-source reach:
         // FilmDetails projects as a NestingField off @table Film and is also read through its producer.

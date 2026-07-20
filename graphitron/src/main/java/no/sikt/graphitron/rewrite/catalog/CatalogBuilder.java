@@ -304,6 +304,16 @@ public final class CatalogBuilder {
                 new FieldClassification.Polymorphic(participantNames(f.participants()));
             case ChildField.NestingField ignored ->
                 new FieldClassification.Nesting();
+            case ChildField.PivotField f ->
+                new FieldClassification.Pivot(f.spec().pivotTable().tableName(),
+                    f.spec().discriminator().sqlName(), f.spec().value().sqlName(), false);
+            case ChildField.BatchedPivotField f ->
+                new FieldClassification.Pivot(f.spec().pivotTable().tableName(),
+                    f.spec().discriminator().sqlName(), f.spec().value().sqlName(), true);
+            // A projection slot is a by-name read off the pivot record; its LSP surface is the
+            // same column-or-accessor shape a record property presents (no accessor to name).
+            case ChildField.PivotSlotField f ->
+                new FieldClassification.RecordOrProperty(f.readName(), null);
             case ChildField.ServiceTableField f ->
                 new FieldClassification.ServiceBacked(
                     f.method() != null ? f.method().className() : null,

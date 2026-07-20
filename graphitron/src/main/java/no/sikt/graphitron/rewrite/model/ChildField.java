@@ -18,6 +18,7 @@ public sealed interface ChildField extends OutputField
             ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.NestingField,
+            ChildField.PivotField, ChildField.BatchedPivotField, ChildField.PivotSlotField,
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.RecordCompositeField,
@@ -77,6 +78,13 @@ public sealed interface ChildField extends OutputField
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
+            // @pivot leaves sit on an SQL-backed (@table) parent by classifier guarantee (a
+            // record-backed parent is rejected at classify time), so the source is a table row.
+            case PivotField ignored -> SourceShape.Table;
+            case BatchedPivotField ignored -> SourceShape.Table;
+            // A projection slot reads off the pivot subselect's graphitron-built jOOQ Record
+            // (or, on the batched path, the scattered per-key Record): a record source.
+            case PivotSlotField ignored -> SourceShape.Record;
             // The merged batched re-query leaf: the parent backing is a stored component,
             // not a leaf identity — read it. SourceShapeProjectionTest's cross-check against the
             // independently-classified parent backing keeps holding and gets stronger here (a
@@ -126,6 +134,11 @@ public sealed interface ChildField extends OutputField
             case ComputedField ignored -> OutputField.bareFetch();
             // Structural nesting (asserted, not derived from an absent join-path).
             case NestingField ignored -> new Operation.Nest();
+            // The row-to-column pivot verb; the pivot facts live on the leaf's PivotSpec.
+            case PivotField ignored -> new Operation.Pivot();
+            case BatchedPivotField ignored -> new Operation.Pivot();
+            // A slot is a bare read of one projected aggregate off the pivot record.
+            case PivotSlotField ignored -> OutputField.bareFetch();
             // Encoded-PK scalar carriers and the errors field: bare reads off the source record.
             case SingleRecordIdFieldFromReturning ignored -> OutputField.bareFetch();
             case SingleRecordIdField ignored -> OutputField.bareFetch();
@@ -158,6 +171,12 @@ public sealed interface ChildField extends OutputField
             // not a scalar Field and not a @table), distinguishing this leaf from RecordField.
             case RecordCompositeField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case PropertyField ignored -> OutputField.single(new TargetShape.Field());
+            // The pivot projects one graphitron-built record per parent (never a list; the
+            // classifier rejects list returns), so the target is Single(Record) on both deliveries.
+            case PivotField ignored -> OutputField.single(new TargetShape.Record());
+            case BatchedPivotField ignored -> OutputField.single(new TargetShape.Record());
+            // A slot is a scalar read off that record: the Java scalar side, like PropertyField.
+            case PivotSlotField ignored -> OutputField.single(new TargetShape.Field());
             // @externalField inlines a jOOQ Field<X> into the parent SELECT; the shape stays Column.
             case ComputedField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
             // Polymorphic children: catalog-bound (shape payload modeled-but-unpopulated this slice).
@@ -889,6 +908,120 @@ public sealed interface ChildField extends OutputField
          */
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
+        }
+    }
+
+    /**
+     * The inline {@code @pivot} leaf: a discriminator-keyed aggregate projection folded into the
+     * parent query as a correlated aggregate subselect — one round-trip, no DataLoader, no
+     * {@code GROUP BY} (the aggregate over the correlated set collapses to one row on its own).
+     * One projection record exists per parent, always: a correlated aggregate over an empty set
+     * still returns one row of nulls, never a null record; which slots are null is the only
+     * data-dependent part. Every pivot fact rides {@link #spec()}; the return type is a plain
+     * directive-free output type registered as an ordinary {@link GraphitronType.NestingType}.
+     *
+     * <p>Mirrors the {@link TableField} / {@link BatchedTableField} delivery split rather than
+     * fusing both deliveries into one nullable-bag leaf: this inline arm deliberately does not
+     * implement {@link BatchKeyField}; {@code @splitQuery} classifies the sibling
+     * {@link BatchedPivotField} instead.
+     */
+    record PivotField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        PivotSpec spec
+    ) implements ChildField, ResultKeyAliasedField {
+        public PivotField {
+            java.util.Objects.requireNonNull(spec, "spec");
+        }
+        /**
+         * The projection subselect returns a graphitron-built generic jOOQ {@code Record} whose
+         * fields are the slot aggregates; the slot fetchers read it by name, exactly as nesting
+         * children read a shared parent record. Same identity as {@link NestingField}, so a
+         * projection type reached by both a pivot edge and a plain nesting edge agrees on its
+         * domain return type.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
+        }
+    }
+
+    /**
+     * The batched ({@code @splitQuery}) {@code @pivot} leaf: the same projection as
+     * {@link PivotField}, delivered through the existing DataLoader seam (a keyed rows method with
+     * a {@code VALUES} parent-input table, {@code GROUP BY __idx__} over the batch, scattered
+     * single-per-key). The pivot's batch query joins the attribute table <em>from</em> the
+     * parent-input table key-preservingly (a left join — the one deviation from the table shape's
+     * inner join) so every batch key produces a group and a row-less parent scatters to a record
+     * of null slots, preserving the one-record-per-parent invariant inline delivery satisfies for
+     * free. That key preservation must hold over the entire parent-input → terminus chain, which
+     * is why the {@link PivotSpec} pins the path to a single FK hop.
+     */
+    record BatchedPivotField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        PivotSpec spec,
+        SourceKey sourceKey,
+        KeyLift lift,
+        LoaderRegistration loaderRegistration,
+        ParentCorrelation parentCorrelation
+    ) implements ChildField, BatchKeyField {
+        public BatchedPivotField {
+            java.util.Objects.requireNonNull(spec, "spec");
+            java.util.Objects.requireNonNull(lift, "lift");
+            KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedPivotField");
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, spec.joinPath(), "BatchedPivotField");
+            // The parent is SQL-backed by classifier guarantee, so the key is always lifted by
+            // column projection and dispatched LOAD_ONE — the same Table-arm invariants
+            // BatchedTableField pins.
+            if (!(lift instanceof KeyLift.FkColumns)) {
+                throw new IllegalArgumentException(
+                    "BatchedPivotField must lift by column projection (KeyLift.FkColumns); a "
+                    + "member-read lift (" + lift.getClass().getSimpleName()
+                    + ") is a class-backed-parent mechanism and @pivot rejects class-backed parents");
+            }
+            if (loaderRegistration.dispatch() != LoaderRegistration.Dispatch.LOAD_ONE) {
+                throw new IllegalArgumentException(
+                    "BatchedPivotField must dispatch LOAD_ONE; the loadMany contract is an "
+                    + "accessor-arity (record-parent) shape");
+            }
+        }
+        /** One projection record per key, always — the pivot invariant, not a cardinality fold. */
+        @Override public boolean emitsSingleRecordPerKey() {
+            return true;
+        }
+        /** See {@link PivotField#domainReturnType()}: the same generic-record identity. */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
+        }
+    }
+
+    /**
+     * One projection slot of a {@code @pivot} field's return type, carrying exactly one fact: its
+     * {@link #readName()}, the projected column alias derived from the slot's SDL name. The
+     * discriminator token never reaches the slot — it is consumed only where {@link PivotSpec}
+     * builds the subselect — so the same plain projection type is reusable across pivots that
+     * resolve different tokens. The emitted read is the same by-name generic-{@code Record} read
+     * nesting children emit, which is what lets one registered fetcher per slot coordinate serve
+     * both the pivot subselect's {@code Record} and a compatible nesting parent's record.
+     *
+     * <p>A nulled-out {@link PropertyField} reuse was considered and rejected:
+     * {@code PropertyField}'s meaning is a read off a {@link GraphitronType.ResultType}-classified
+     * parent carrying a resolved accessor or column, neither of which a slot has. The dedicated
+     * leaf forks on identity in the sealed dispatch instead.
+     */
+    record PivotSlotField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String readName
+    ) implements ChildField {
+        public PivotSlotField {
+            java.util.Objects.requireNonNull(readName, "readName");
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
         }
     }
 

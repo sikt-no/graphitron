@@ -43,6 +43,7 @@ public final class LspClassificationLabels {
             case FieldClassification.TableInterface x -> FieldClassification.TableInterface.class.getSimpleName();
             case FieldClassification.Polymorphic x -> FieldClassification.Polymorphic.class.getSimpleName();
             case FieldClassification.Nesting x -> FieldClassification.Nesting.class.getSimpleName();
+            case FieldClassification.Pivot x -> FieldClassification.Pivot.class.getSimpleName();
             case FieldClassification.ServiceBacked x -> FieldClassification.ServiceBacked.class.getSimpleName();
             case FieldClassification.RecordOrProperty x -> FieldClassification.RecordOrProperty.class.getSimpleName();
             case FieldClassification.Computed x -> FieldClassification.Computed.class.getSimpleName();

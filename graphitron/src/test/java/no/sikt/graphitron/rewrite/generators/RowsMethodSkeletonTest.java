@@ -108,12 +108,14 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the three body shapes (R432 merged the split/record "
+            .as("RowsMethodBody permits exactly the four body shapes (R432 merged the split/record "
                 + "pairs onto SqlBatchedTable / SqlBatchedLookupTable; R314 slice 2b dissolved the "
-                + "record-table-method shape onto SqlBatchedTable)")
+                + "record-table-method shape onto SqlBatchedTable; the @pivot batched delivery "
+                + "added SqlBatchedPivot)")
             .containsExactlyInAnyOrder(
                 RowsMethodBody.SqlBatchedTable.class,
                 RowsMethodBody.SqlBatchedLookupTable.class,
+                RowsMethodBody.SqlBatchedPivot.class,
                 RowsMethodBody.Service.class);
     }
 }

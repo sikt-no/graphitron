@@ -63,6 +63,16 @@ type Query {
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
     filmById(film_id: [ID] @lookupKey): [Film!]!
+    # @pivot coexistence fixtures: the TranslatedTexts projection type is reached three ways in
+    # this schema — through the Film/FilmActor @pivot fields, as an ordinary nested object on
+    # the pivot_nesting_host table (whose columns are named like the slots), and as a field of
+    # the class-backed PivotTexts @service result. One registered fetcher per slot coordinate
+    # serves all three sources.
+    pivotHosts: [PivotNestingHost!]!
+    pivotServiceTexts: TranslatedTexts @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService",
+        method: "translatedTexts"
+    })
     # R300: @routine table-valued read function. Binds the three TEXT IN parameters of
     # public.tilganger_for_feidebruker_med_fs_fiktivt_fnr from GraphQL arguments and reads the
     # RETURNS TABLE result through the existing selection-narrowing projection.
@@ -1405,6 +1415,26 @@ type Film implements Node & Searchable @table(name: "film") @node {
     description: String       @field(name: "DESCRIPTION")
     # R503 mixed-source nested type fixture (nesting edge): FilmBlurb projected off the film row.
     blurb: FilmBlurb
+    # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
+    # film_price attribute tables. titleTranslations / taglineTranslations reuse one projection
+    # type with different value columns through the PivotLang vocabulary enum; prices uses the
+    # identity mapping (slot names are the tokens) and a numeric value type. The @splitQuery
+    # siblings pin inline/split parity.
+    titleTranslations: TranslatedTexts
+        @reference(path: [{table: "film_translation"}])
+        @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+    titleTranslationsSplit: TranslatedTexts @splitQuery
+        @reference(path: [{table: "film_translation"}])
+        @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+    taglineTranslations: TranslatedTexts
+        @reference(path: [{table: "film_translation"}])
+        @pivot(on: "lang_code", value: "tagline_txt", vocabulary: "PivotLang")
+    prices: PriceByCurrency
+        @reference(path: [{table: "film_price"}])
+        @pivot(on: "currency_code", value: "amount")
+    pricesSplit: PriceByCurrency @splitQuery
+        @reference(path: [{table: "film_price"}])
+        @pivot(on: "currency_code", value: "amount")
     rentalRate:     Float!       @field(name: "RENTAL_RATE")
     # R77 Phase B fixture: smallint NOT NULL DEFAULT 3 in Sakila. Read-back column for the
     # createFilm_omittedFieldUsesColumnDefault execution test (DSL.defaultValue lands the 3).
@@ -1817,6 +1847,12 @@ type FilmActor implements Node @table(name: "film_actor") @node {
     # service return carried no multiset column here and the actor fetcher threw "Field actor is
     # not contained in row type"; the lift re-projects through FilmActor.$fields so it resolves.
     actor:   Actor @reference(path: [{key: "film_actor_actor_id_fkey"}])
+    # @pivot over a composite-key attribute table (film_actor_note's two-column FK): the pivot
+    # correlation is an AND-chain over both key columns, so single- and composite-key pivots
+    # generate through identical code.
+    noteTranslations: TranslatedTexts
+        @reference(path: [{table: "film_actor_note"}])
+        @pivot(on: "lang_code", value: "note_txt", vocabulary: "PivotLang")
 }
 
 # R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path
@@ -3325,4 +3361,37 @@ type Mutation {
             className: "no.sikt.graphitron.rewrite.test.services.CustomerRecordService",
             method: "describeCustomerUpsert"
         })
+}
+
+# ===== @pivot fixtures =====
+# The projection types are plain, directive-free output types: nothing on them says "pivot".
+# TranslatedTexts is deliberately reused across four @pivot usages (two value columns on
+# film_translation, one on film_actor_note), as a nested object on PivotNestingHost, and as the
+# class-backed PivotTexts @service result. Every slot is nullable: a pivot slot is a filtered
+# aggregate that is SQL null whenever no row carries its discriminator token.
+
+"Maps the projection slot names to the language tokens the lang_code column stores."
+enum PivotLang {
+    nn @field(name: "nno")
+    nb @field(name: "nob")
+    se @field(name: "sme")
+    en @field(name: "eng")
+}
+
+type TranslatedTexts {
+    nn: String
+    nb: String
+    se: String
+    en: String
+}
+
+type PriceByCurrency {
+    NOK: Float
+    USD: Float
+    EUR: Float
+}
+
+type PivotNestingHost @table(name: "pivot_nesting_host") {
+    hostId: Int! @field(name: "host_id")
+    texts: TranslatedTexts
 }

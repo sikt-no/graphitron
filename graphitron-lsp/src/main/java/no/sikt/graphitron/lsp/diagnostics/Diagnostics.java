@@ -225,6 +225,9 @@ public final class Diagnostics {
         if (rejection instanceof no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError scse) {
             return scse.lspCode();
         }
+        if (rejection instanceof no.sikt.graphitron.rewrite.model.PivotError pe) {
+            return pe.lspCode();
+        }
         return null;
     }
 

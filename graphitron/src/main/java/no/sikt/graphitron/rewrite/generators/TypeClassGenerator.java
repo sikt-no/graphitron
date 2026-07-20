@@ -114,6 +114,11 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.ComputedField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
+        var pivotFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.PivotField)
+            .map(f -> (ChildField.PivotField) f)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
         // Fields whose fetchers read parent-row columns the parent SELECT would not otherwise
         // project must opt those columns into $fields explicitly:
         //   - BatchKeyField fields (DataLoader-backed; they don't appear in $fields) — their
@@ -134,7 +139,7 @@ public class TypeClassGenerator {
         // DataLoader key column being absent from the parent row and silently null. Keyed on the
         // BatchKeyField capability + sourceShape(), not leaf identity.
         ParentProjectionContainmentCheck.check(schema, typeName, requiredProjection);
-        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage);
+        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage);
     }
 
     /**
@@ -156,6 +161,7 @@ public class TypeClassGenerator {
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
+            List<ChildField.PivotField> pivotFields,
             RequiredProjection requiredProjection,
             String outputPackage) {
         var builder = TypeSpec.classBuilder(typeName)
@@ -168,7 +174,7 @@ public class TypeClassGenerator {
         // alongside $fields and the lift can never be silently dropped. The registry threads through
         // emitSelectionSwitch's NestingField recursion, so nested inline fields share it.
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry ->
-            builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage, registry)));
+            builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage, registry)));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -266,6 +272,7 @@ public class TypeClassGenerator {
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
+            List<ChildField.PivotField> pivotFields,
             RequiredProjection requiredProjection,
             String outputPackage,
             CompositeDecodeHelperRegistry registry) {
@@ -303,6 +310,7 @@ public class TypeClassGenerator {
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
         flat.addAll(computedFields);
+        flat.addAll(pivotFields);
         // Stamp @SuppressWarnings("unchecked") on $fieldsGrouped — the narrowest enclosing member —
         // when any inline field's filter param emits an unchecked cast under the FromSelectedField
         // argument source (a list-typed Direct / JooqConvert / non-JooqConvert-leaf NestedInputField).
@@ -431,6 +439,11 @@ public class TypeClassGenerator {
                     // Alias by the runtime result key so aliased duplicate selections stay distinct.
                     builder.addCode("        case $S -> fields.add($T.$L($L).as($S + $L.getKey()));\n",
                         cf.name(), refClass, cf.method().methodName(), tableArg, RESERVED_RK_ALIAS_PREFIX, entry);
+                }
+                case ChildField.PivotField pf -> {
+                    builder.addCode("        case $S -> {\n", pf.name());
+                    builder.addCode("$L", PivotProjectionEmitter.buildSwitchArmBody(pf, tableArg, entry, outputPackage));
+                    builder.addCode("        }\n");
                 }
                 default -> {
                     // Unexpected variants in a projection switch are skipped — validator rejects them.

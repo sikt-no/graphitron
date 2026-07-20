@@ -203,6 +203,12 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.ComputedField ignored -> { }
             case ChildField.ServiceRecordField ignored -> { }
             case ChildField.ErrorsField ignored -> { }
+            // Pivot leaves emit raw filtered aggregates over the attribute table (typed Tables
+            // constants, no generated projection class), so they contribute no cross-type edge;
+            // the slot reads live on the projection type's own Fetchers unit.
+            case ChildField.PivotField ignored -> { }
+            case ChildField.BatchedPivotField ignored -> { }
+            case ChildField.PivotSlotField ignored -> { }
             // Root query / mutation fields.
             case QueryField qf -> addRootFieldEdges(fetcher, field.parentTypeName(), qf);
             case MutationField mf -> addRootFieldEdges(fetcher, field.parentTypeName(), mf);
@@ -405,6 +411,12 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.SingleRecordIdField ignored -> { }
             case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
             case ChildField.ErrorsField ignored -> { }
+            // The inline pivot's $fields arm composes DSL aggregates over the attribute table's
+            // typed Tables constants only — no generated projection class is referenced. The
+            // batched leaf is not emitted inline, and slots never appear in a $fields walk.
+            case ChildField.PivotField ignored -> { }
+            case ChildField.BatchedPivotField ignored -> { }
+            case ChildField.PivotSlotField ignored -> { }
         }
     }
 

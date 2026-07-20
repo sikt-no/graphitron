@@ -41,32 +41,37 @@ class UnifiedEmissionPinsTest {
     @Test
     void fetcherEmitter_unifiedDispatch() throws IOException {
         // Every DataFetcher MethodSpec emit site in the generators package routes through
-        // DataLoaderFetcherEmitter.build. Current sites (2): TypeFetcherGenerator's
+        // DataLoaderFetcherEmitter.build. Current sites (3): TypeFetcherGenerator's
         // buildServiceDataFetcher and buildBatchedDataFetcher (the former
         // buildSplitQueryDataFetcher / buildRecordBasedDataFetcher pair was merged onto the one
-        // source-shape-gated builder; generated output stayed byte-identical).
+        // source-shape-gated builder; generated output stayed byte-identical), plus
+        // buildPivotBatchedDataFetcher (the @pivot specialisation: empty prelude, Record value,
+        // no NULL-key short-circuit).
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bDataLoaderFetcherEmitter\\.build\\b"),
             "DataLoaderFetcherEmitter.java");
         assertThat(unifiedCalls)
             .as("Every R38 DataFetcher emit site outside DataLoaderFetcherEmitter itself routes "
-                + "through DataLoaderFetcherEmitter.build. The two sites — "
-                + "buildServiceDataFetcher and buildBatchedDataFetcher — are the post-R314-slice-2 "
-                + "enumeration. A handcrafted bypass replaces one call here with inline "
+                + "through DataLoaderFetcherEmitter.build. The three sites — "
+                + "buildServiceDataFetcher, buildBatchedDataFetcher, and "
+                + "buildPivotBatchedDataFetcher — are the current enumeration. A handcrafted "
+                + "bypass replaces one call here with inline "
                 + "DataFetcher MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(2);
+            .isEqualTo(3);
     }
 
     @Test
     void rowsMethodEmitter_unifiedSkeleton() throws IOException {
         // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (5): SplitRowsMethodEmitter's three internal
+        // RowsMethodSkeleton.build. Current sites (6): SplitRowsMethodEmitter's three internal
         // builders (buildListMethod, buildSingleMethod, buildConnectionMethod — the dissolved
-        // record-table-method shape routes through the first two) plus
+        // record-table-method shape routes through the first two), its @pivot sibling
+        // buildForBatchedPivot (the key-preserving left-join aggregate shape, the
+        // SqlBatchedPivot permit), plus
         // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
         // SplitRowsMethodEmitter.buildServiceTableLift (ServiceTableField lift-back
-        // re-projection). Together they cover all three RowsMethodBody permits (the two SQL
-        // permits route through the three internal SQL builders by cardinality; the Service
+        // re-projection). Together they cover all four RowsMethodBody permits (the SQL
+        // permits route through the four SQL builders by shape; the Service
         // permit routes via the two service emit sites).
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bRowsMethodSkeleton\\.build\\b"),
@@ -75,7 +80,7 @@ class UnifiedEmissionPinsTest {
             .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
                 + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
                 + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(5);
+            .isEqualTo(6);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

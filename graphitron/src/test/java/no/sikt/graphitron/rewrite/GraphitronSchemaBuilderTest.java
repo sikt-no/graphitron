@@ -1714,6 +1714,35 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
+    @ProjectionFor({no.sikt.graphitron.rewrite.model.ChildField.PivotField.class,
+        no.sikt.graphitron.rewrite.model.ChildField.BatchedPivotField.class})
+    void pivotFieldProjectionCarriesTableAndColumnsAndDeliveryFlag() {
+        // Both @pivot delivery leaves project onto FieldClassification.Pivot, carrying the
+        // attribute table, the two pivot columns, and the @splitQuery delivery fork.
+        var snapshot = buildSnapshot("""
+            type Texts { nob: String nno: String }
+            type Film @table(name: "film") {
+              texts: Texts
+                @reference(path: [{table: "film_translation"}])
+                @pivot(on: "lang_code", value: "title_txt")
+              textsSplit: Texts @splitQuery
+                @reference(path: [{table: "film_translation"}])
+                @pivot(on: "lang_code", value: "title_txt")
+            }
+            type Query { film: Film }
+            """);
+        var inline = snapshot.fieldClassificationsByCoord().get("Film.texts");
+        assertThat(inline).isInstanceOf(FieldClassification.Pivot.class);
+        var p = (FieldClassification.Pivot) inline;
+        assertThat(p.tableName()).isEqualTo("film_translation");
+        assertThat(p.onColumn()).isEqualTo("lang_code");
+        assertThat(p.valueColumn()).isEqualTo("title_txt");
+        assertThat(p.batched()).isFalse();
+        var split = (FieldClassification.Pivot) snapshot.fieldClassificationsByCoord().get("Film.textsSplit");
+        assertThat(split.batched()).isTrue();
+    }
+
+    @Test
     @ProjectionFor(NestingField.class)
     void nestingFieldProjectionIsZeroPayload() {
         // NestingField fragments a parent's table-bound shape into a sub-projection; the
