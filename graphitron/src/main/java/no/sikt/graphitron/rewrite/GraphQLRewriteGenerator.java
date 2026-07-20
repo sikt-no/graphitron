@@ -316,7 +316,12 @@ public class GraphQLRewriteGenerator {
         write(SelectionOccurrencesClassGenerator.generate(outputPackage),                         "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
-        write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig()),    "schema",     emittedThisRun);
+        // The tenant key type read off the catalog's tenant column types every tenant-keyed
+        // runtime surface when <tenantColumn> is configured; null keeps the erased Object shape.
+        var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
+            ? configuredTenancy.tenantType()
+            : null;
+        write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig(), tenantKeyType), "schema", emittedThisRun);
         write(GraphitronTransactionProviderGenerator.generate(outputPackage),                       "schema",     emittedThisRun);
         write(GraphitronConnectionInstrumentationGenerator.generate(outputPackage),                 "schema",     emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);

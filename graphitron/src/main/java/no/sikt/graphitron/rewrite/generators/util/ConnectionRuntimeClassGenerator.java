@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
@@ -147,10 +148,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName HASH_MAP = ClassName.get("java.util", "HashMap");
     private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
     private static final ClassName NO_SUCH_ELEMENT = ClassName.get("java.util", "NoSuchElementException");
-    private static final ParameterizedTypeName WILDCARD_DATASOURCE_MAP = ParameterizedTypeName.get(
-        MAP, WildcardTypeName.subtypeOf(Object.class), DATA_SOURCE);
-    private static final ParameterizedTypeName OBJECT_DATASOURCE_MAP = ParameterizedTypeName.get(
-        MAP, ClassName.get(Object.class), DATA_SOURCE);
+    private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
 
@@ -164,6 +162,22 @@ public final class ConnectionRuntimeClassGenerator {
      *                      emit a concrete {@link #SESSION_HOOK_IMPL_CLASS_NAME} the runtime bakes in
      */
     public static List<TypeSpec> generate(String outputPackage, SessionStateConfig sessionState) {
+        return generate(outputPackage, sessionState, null);
+    }
+
+    /**
+     * Canonical form carrying the divined tenant key type. {@code tenantKeyType} is the tenant
+     * Java type read off the jOOQ catalog's tenant column when {@code <tenantColumn>} is
+     * configured, or {@code null} for single-tenant builds. A configured type replaces the
+     * erased {@code Object} on every tenant-keyed surface (the constructor map, the keyed
+     * acquisition, the per-operation carrier), so a consumer wiring a map keyed with the wrong
+     * type is a compile error rather than a first-request lookup miss.
+     */
+    public static List<TypeSpec> generate(String outputPackage, SessionStateConfig sessionState,
+                                          TypeName tenantKeyType) {
+        TypeName tenantKey = tenantKeyType == null
+            ? OBJECT_KEY
+            : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
         var sessionHook = ClassName.get(schemaPackage, SESSION_HOOK_CLASS_NAME);
         var sessionHookImpl = ClassName.get(schemaPackage, SESSION_HOOK_IMPL_CLASS_NAME);
@@ -179,8 +193,8 @@ public final class ConnectionRuntimeClassGenerator {
         var units = new ArrayList<TypeSpec>();
         units.add(sessionHook(sessionHook));
         units.add(pinnedConnection(pinnedConnection, sessionHook));
-        units.add(runtime(sessionHook, pinnedConnection, instrumentation, projection));
-        units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy));
+        units.add(runtime(sessionHook, pinnedConnection, instrumentation, projection, tenantKey));
+        units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey));
         TypeSpec impl = sessionHookImpl(sessionHook, sessionState);
         if (impl != null) {
             units.add(impl);
@@ -522,14 +536,17 @@ public final class ConnectionRuntimeClassGenerator {
 
     /** The application-scoped runtime holding the DataSource, dialect, and baked session hook. */
     private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection, ClassName instrumentation,
-                                    RuntimeHookProjection projection) {
+                                    RuntimeHookProjection projection, TypeName tenantKey) {
         CodeBlock hookInitializer = projection.hookInitializer();
         boolean requiresPostgres = projection.requiresPostgres();
         var dataSourceField = FieldSpec.builder(DATA_SOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build();
-        var tenantSourcesField = FieldSpec.builder(OBJECT_DATASOURCE_MAP, "dataSourcesByTenant", Modifier.PRIVATE, Modifier.FINAL)
+        var tenantSourcesField = FieldSpec.builder(
+                ParameterizedTypeName.get(MAP, tenantKey, DATA_SOURCE),
+                "dataSourcesByTenant", Modifier.PRIVATE, Modifier.FINAL)
             .addJavadoc("Per-tenant {@code DataSource}s for database-per-tenant routing; empty for the\n"
-                + "single-tenant runtime. Keyed by the divined tenant value, erased to {@code Object} because\n"
-                + "the key type is a classification concern, not the lifecycle's.\n")
+                + "single-tenant runtime. Keyed by the divined tenant value; the key type is read off the\n"
+                + "catalog's tenant column when {@code <tenantColumn>} is configured, {@code Object}\n"
+                + "otherwise (the key type is a classification concern, not the lifecycle's).\n")
             .build();
         var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build();
         var hookField = FieldSpec.builder(sessionHook, "sessionHook", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -544,7 +561,8 @@ public final class ConnectionRuntimeClassGenerator {
         var canonicalBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
-            .addParameter(WILDCARD_DATASOURCE_MAP, "dataSourcesByTenant")
+            .addParameter(ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), DATA_SOURCE),
+                "dataSourcesByTenant")
             .addParameter(SQL_DIALECT, "dialect")
             .addStatement("this.dataSource = $T.requireNonNull(defaultDataSource, $S)", OBJECTS, "defaultDataSource")
             .addStatement("this.dataSourcesByTenant = new $T<>($T.requireNonNull(dataSourcesByTenant, $S))",
@@ -610,7 +628,7 @@ public final class ConnectionRuntimeClassGenerator {
         var acquireForTenant = MethodSpec.methodBuilder("acquireForTenant")
             .addModifiers(Modifier.PUBLIC)
             .returns(pinnedConnection)
-            .addParameter(Object.class, "tenantKey")
+            .addParameter(tenantKey, "tenantKey")
             .addParameter(String.class, "claims")
             .addException(SQL_EXCEPTION)
             .addStatement("$T tenantDataSource = dataSourcesByTenant.get(tenantKey)", DATA_SOURCE)
@@ -690,8 +708,8 @@ public final class ConnectionRuntimeClassGenerator {
      * rewire the instrumentation.
      */
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
-                                              ClassName provider, ClassName commitPolicy) {
-        var pinnedMapType = ParameterizedTypeName.get(MAP, ClassName.get(Object.class), pinnedConnection);
+                                              ClassName provider, ClassName commitPolicy, TypeName tenantKey) {
+        var pinnedMapType = ParameterizedTypeName.get(MAP, tenantKey, pinnedConnection);
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var claimsField = FieldSpec.builder(String.class, "claims", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -716,7 +734,7 @@ public final class ConnectionRuntimeClassGenerator {
         var dslFor = MethodSpec.methodBuilder("dslFor")
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
-            .addParameter(Object.class, "tenantKey")
+            .addParameter(tenantKey, "tenantKey")
             .addException(SQL_EXCEPTION)
             .addStatement("$T pinned = pinnedByTenant.get(tenantKey)", pinnedConnection)
             .beginControlFlow("if (pinned == null)")
