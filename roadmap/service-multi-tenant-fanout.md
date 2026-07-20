@@ -6,7 +6,7 @@ bucket: architecture
 priority: 6
 theme: runtime-connection
 depends-on: [tenant-routing-and-execution-input]
-last-updated: 2026-07-03
+last-updated: 2026-07-20
 ---
 
 # Multi-tenant fan-out: run one field across many tenants and union the results
@@ -15,7 +15,7 @@ last-updated: 2026-07-03
 
 Two production patterns need the same shape:
 
-- **No index narrows the tenant.** A student's results live in per-university databases. When a tenant-index table exists, R45 routes children per row; when it does not, the only way to answer "all results for this student" is to query *every* organisation and union what comes back. This is what production does by hand today.
+- **No index narrows the tenant.** A student's results live in per-university databases. Until a tenant-index table routes children per row (R505, [`tenant-index-parent-row-routing.md`](tenant-index-parent-row-routing.md)), the only way to answer "all results for this student" is to query *every* organisation and union what comes back. This is what production does by hand today, and this item is the first-iteration answer for tenant-spanning queries.
 - **Membership-driven fan-out.** A downstream resolver (`megVedLarested`) bypasses `@service` and hand-writes: for each tenant the logged-in user belongs to, open that tenant's connection, call the service, drop nulls, union. The service method is GraphQL-free Java; what does not fit codegen today is the per-tenant connection plumbing and the parallel orchestration.
 
 ## Direction (to be spec'd)
@@ -37,5 +37,6 @@ The previous design here (a `ContextValueRegistration<FanOut>` permit, `DslConte
 
 ## Siblings
 
-- **Depends on R45** ([`tenant-routing-and-execution-input.md`](tenant-routing-and-execution-input.md)): the `TenantBinding` axis this item adds its arm to, and the tenant-index routing that makes fan-out the fallback rather than the default.
+- **Depends on R45** ([`tenant-routing-and-execution-input.md`](tenant-routing-and-execution-input.md)): the `TenantBinding` axis this item adds its arm to.
+- **R505** ([`tenant-index-parent-row-routing.md`](tenant-index-parent-row-routing.md)): the tenant-index routing that later narrows this item's fan-out to the tenants that actually hold data, making fan-out the fallback rather than the default.
 - **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): acquisition, transaction demarcation, session state, and the threading rules fan-out must not reimplement.

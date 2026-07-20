@@ -93,7 +93,7 @@
       <div class="body">
         <p><strong><code>NodeIdBound</code></strong>: resolved by node id; the tenant is a decoded-column position of the batch key. Each id carries its own tenant.</p>
         <p><strong><code>EntityRepBound</code></strong>: federation <code>_entities</code>; the tenant is a decoded position of each representation.</p>
-        <p><strong><code>ParentRowBound</code></strong>: a child under a <em>tenant-index</em> parent; each parent row names its own tenant.</p>
+        <p><strong><code>ParentRowBound</code></strong>: a child under a <em>tenant-index</em> parent; each parent row names its own tenant. Extracted to R505; R45's first iteration classifies tables two-way (tenant-scoped or global) and this arm arrives with the index scope.</p>
       </div>
     </div>
   </div>
@@ -130,8 +130,8 @@
     <div class="explain">A silent default connection would serve one tenant's rows to a request that never named that tenant, or leak across tenants depending on deployment. The design forbids the guess entirely: either something in scope divines the tenant, or the author positively opts into fanning across all of them (R46). "Reads only" does not make a cross-tenant read safe.</div>
   </div>
 
-  <h2>Worked example: student results across universities</h2>
-  <p>A student's grades live in whichever universities hold their data. <code>STUDENT_ORGANISASJON</code> is a declared tenant-index table on the default source; <code>RESULTAT</code> is tenant-scoped.</p>
+  <h2>Worked example: student results across universities <span style="font-weight:400;font-size:.7em;color:var(--muted)">(the index shape lands with R505)</span></h2>
+  <p>A student's grades live in whichever universities hold their data. <code>STUDENT_ORGANISASJON</code> is a declared tenant-index table on the default source; <code>RESULTAT</code> is tenant-scoped. Until R505 ships the index scope, this query shape is answered by R46's fan-out: query every tenant and union the results.</p>
 <pre><code>query {
   student(id: "...") {
     organisasjoner {          # index rows, default source; Untenanted
@@ -158,11 +158,12 @@
   <p>Routing rides the shipped acquisition seam rather than inventing a new one. graphitron already owns connection acquisition and transactions; a database-per-tenant deployment hands it a per-tenant <code>DataSource</code> map on the generated <code>TenantConnections</code> carrier, keyed by an opaque tenant key. R45 does not add a tenant parameter to the request factory (the tenant is not a request-scope fact); it extends that carrier and supplies the divined key at each acquisition. The default source serves <code>Untenanted</code> fields; each divined binding supplies the key for its own acquisition; an unknown divined key errors before any SQL. See the <a href="../../docs/architecture/reference/runtime-extension-points.adoc">runtime extension points</a> reference for the acquisition and transaction model this builds on.</p>
 
   <!-- derived:status -->
-  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-17)</span></h2>
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-20)</span></h2>
   <ul class="status">
     <li><span class="pill done">landed</span><strong>The substrate</strong> (R429, in the <a href="../changelog.md">changelog</a>): graphitron owns connection acquisition, operation-typed transactions, and session state, and ships the tenant-keyed <code>TenantConnections</code> carrier this item's routing consumes. Its isolation proofs cover the caller-known-tenant case.</li>
-    <li><span class="pill pending">pending</span><strong>R45 (this concept)</strong> is in Spec: the <code>&lt;tenantColumn&gt;</code> declaration, three-way table classification, the <code>TenantBinding</code> per-field inference, the factory extension, per-tenant partitioning at every fan-out point, and the <code>noTenantBinding</code> / <code>tenantColumnTypeDisagreement</code> rejections.</li>
-    <li><span class="pill pending">pending</span><strong>R46</strong> (<a href="../service-multi-tenant-fanout.md">service-multi-tenant-fanout</a>, Backlog): the deliberate no-binding fan-out arm, landing with its own emitters.</li>
+    <li><span class="pill pending">pending</span><strong>R45 (this concept)</strong> is in Spec: the <code>&lt;tenantColumn&gt;</code> declaration, two-way table classification (tenant-scoped or global), the <code>TenantBinding</code> per-field inference, the factory extension, per-tenant partitioning at every fan-out point, and the <code>noTenantBinding</code> / <code>tenantColumnTypeDisagreement</code> rejections.</li>
+    <li><span class="pill pending">pending</span><strong>R46</strong> (<a href="../service-multi-tenant-fanout.md">service-multi-tenant-fanout</a>, Backlog): the deliberate no-binding fan-out arm, landing with its own emitters; the first-iteration answer for queries spanning tenants.</li>
+    <li><span class="pill pending">pending</span><strong>R505</strong> (<a href="../tenant-index-parent-row-routing.md">tenant-index-parent-row-routing</a>, Backlog): the tenant-index scope, its declaration surface, and the <code>ParentRowBound</code> arm, extracted from R45 on 2026-07-20.</li>
   </ul>
   <!-- /derived:status -->
 
@@ -170,6 +171,7 @@
     <strong>See also.</strong>
     <a href="../tenant-routing-and-execution-input.md">R45 plan</a> ·
     <a href="../service-multi-tenant-fanout.md">R46 (multi-tenant fan-out)</a> ·
+    <a href="../tenant-index-parent-row-routing.md">R505 (tenant-index tables)</a> ·
     <a href="../changelog.md">R429 (connection lifecycle) in the changelog</a> ·
     <a href="../../docs/architecture/reference/runtime-extension-points.adoc">Runtime extension points</a> ·
     <a href="../../docs/architecture/explanation/dispatch-axes.adoc">Dispatch axes</a> ·
