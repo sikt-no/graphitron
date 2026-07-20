@@ -19,7 +19,7 @@ The tenant is not known at request scope; it is divined from the operation itsel
 query { emner(filter: { eierOrganisasjon: 1234 }) { ... } }
 ```
 
-The main insight: graphitron already knows which database column every argument, input field, nodeId package, federation representation, and parent row binds to. If the consumer additionally declares **which column carries the tenant id**, graphitron can infer, per field, where the tenant key comes from and route the connection accordingly. No `@tenantId` directive, no request-level tenant parameter: the schema's existing column mappings are the declaration, and `eierOrganisasjon: 1234` above routes the whole subtree to tenant 1234's database.
+The main insight: graphitron already knows which database column every argument, input field, nodeId package, federation representation, and parent row binds to. If the consumer additionally declares **which column carries the tenant id**, graphitron can infer, per field, where the tenant key comes from and route the connection accordingly. No `@tenantId` directive, no request-level tenant parameter: the schema's existing column mappings are the declaration, and `eierOrganisasjon: 1234` above routes the whole subtree to tenant 1234's database. A production consumer runs this divination by hand today as a per-fetch instrumentation heuristic; the [Production prior art](#production-prior-art-design-validation) section maps it onto the model.
 
 Multi-tenant queries are first-class: an API user can hold data in several tenants at once. The canonical case is a student with results at multiple universities. In this item's iteration, that shape is served by R46's arm of the model: fan out across every tenant and union the results, the pattern production runs by hand today (see [Siblings](#siblings)). The targeted refinement, a **tenant-index table** on the default source whose rows name the tenant each child row must be fetched from, is extracted to R505 and layers on later; this item's classification is deliberately two-way (tenant-scoped or global) until then.
 
@@ -96,6 +96,23 @@ Routing happens where the key is divined; batching machinery partitions so each 
 - **Batched children** (`Inherited`): DataLoader identity partitions per tenant (the tenant key joins the path-derived loader name), so each loader is tenant-homogeneous and its captured environment routes the right source. This is load-bearing, not cosmetic: a batch loader resolves one `DSLContext` from the environment captured at loader creation, so a tenant-mixed loader would execute every key against the first key's tenant. The per-request `DataLoaderRegistry` means the partition only matters within a request, which is exactly when node ids and entity reps span tenants. Two invariants keep the scheme honest: the name is composed by a single shared helper read by both the registration and lookup sites, and the tenant segment is an opaque partition key, never parsed back to recover the value (the captured environment carries the typed tenant).
 
 Per-tenant RLS composes with every routed acquisition: each acquisition sets session state from the request's contextArguments, so a tenant database where this user has no access returns nothing rather than leaking. The worked student-across-universities example moved to R505 with the tenant-index scope; this iteration's canonical shapes are the `emner(filter: { eierOrganisasjon })` root routing and the per-row node-id/entity batches above.
+
+### Production prior art (design validation)
+
+The by-hand production stack (reviewed 2026-07-20 against the live consumer code) is a graphql-java `SimplePerformantInstrumentation` that wraps every DataFetcher and a `QueryInspector` heuristic that divines the tenant from the dynamic environment on each fetch, stashing it in `localContext` for descendants. Mapping it onto the model validates the axis: every heuristic lands on an arm.
+
+- A recursive name-based search for the tenant argument through nested argument maps is `ArgumentBound`, including its input-object nesting. Production matches by argument *name* (two names, `eierInstitusjonsnummer` and `eierOrganisasjonskode`, carry the same id); R45 classifies by column mapping at build time, so a coincidentally-named argument cannot route and a renamed one cannot silently stop routing.
+- Decoding the tenant out of the `id` / `ids` arguments is `NodeIdBound`. Production confirms the arm's precondition: tenant-scoped types' node ids embed the tenant column in their key (a per-tenant primary key is not globally unique without it).
+- Scanning `ID!`-typed input fields and requiring all decoded values to agree is mutation-side `ArgumentBound` with the runtime-equality guard. Production already needed that guard, so open question 2's resolution is load-bearing, not defensive.
+- Stashing the divined tenant in `localContext` and short-circuiting when a parent already set one is `Inherited`: first binding wins, the value flows down the subtree.
+
+The deltas are the design case:
+
+- Production *throws* on a mixed-tenant batch (more than one distinct tenant across a `nodes(ids:)` list or an input list). R45 partitions instead, one tenant-homogeneous execution per group, so batch-spanning requests become servable rather than erroring.
+- Production's no-binding fallback silently runs on the default connection. R45 rejects at build time (`noTenantBinding`).
+- Production re-divines on every field fetch with runtime reflection: recursive argument walks, schema-type inspection, `ID!` string matching. R45 computes the binding once at build time, from absolute knowledge of where the tenant id lives, and emits exactly the right read; the entire runtime heuristic collapses into classification.
+
+Retirement criterion: with R45 (and R46 for the fan-out shapes) live, the consumer deletes its instrumentation and inspector wholesale.
 
 ### Legacy retirement (implementation tasks)
 
