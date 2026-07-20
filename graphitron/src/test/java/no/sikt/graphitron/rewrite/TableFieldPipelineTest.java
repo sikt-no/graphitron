@@ -62,7 +62,7 @@ class TableFieldPipelineTest {
 
         assertThat(methodNames)
             .as("R303: TableField projects inline via TypeClassGenerator.$fields; the read of that "
-                + "projection is reified as a named source-only method")
+                + "result-key-aliased projection is reified as a named env-dependent method")
             .contains("language");
     }
 

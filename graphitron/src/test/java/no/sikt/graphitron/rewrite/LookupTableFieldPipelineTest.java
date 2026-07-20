@@ -65,7 +65,7 @@ class LookupTableFieldPipelineTest {
         var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
         assertThat(methodNames)
             .as("R303: LookupTableField projects inline via TypeClassGenerator.$fields; the read of "
-                + "that projection is reified as a named source-only method")
+                + "that result-key-aliased projection is reified as a named env-dependent method")
             .contains("actors");
     }
 

@@ -82,6 +82,34 @@ class GeneratorUtils {
     }
 
     /**
+     * Reserved SQL-alias prefix for result-key-distinct projection of inline reference and
+     * computed fields. Aliasing a duplicate reference selection under its runtime <em>result
+     * key</em> rather than the schema field name lets {@code a: ref { x } b: ref { y }} mint two
+     * distinct SELECT terms instead of two colliding {@code .as(fieldName)} aliases. The prefix
+     * reaches generated code only inside string literals — the write side emits
+     * {@code .as("__rk_" + <entry>.getKey())} in {@code $fields}
+     * ({@link no.sikt.graphitron.rewrite.generators.InlineTableFieldEmitter},
+     * {@link no.sikt.graphitron.rewrite.generators.InlineLookupTableFieldEmitter},
+     * {@link no.sikt.graphitron.rewrite.generators.InlineColumnReferenceFieldEmitter}, and the
+     * {@code ComputedField} arm of {@link no.sikt.graphitron.rewrite.generators.TypeClassGenerator}),
+     * the read side {@code DSL.field("__rk_" + env.getField().getResultKey())}
+     * ({@link no.sikt.graphitron.rewrite.generators.FetcherEmitter}) — so the concatenation happens
+     * at runtime and this constant is the single home both sides drive off, never drifting.
+     *
+     * <p>Prefixing the alias with the reserved {@code __}-lead moves it out of the
+     * client-reachable alias namespace: GraphQL reserves leading-{@code __} names for
+     * introspection in the schema, but document aliases are unrestricted, so a client could
+     * write {@code __src_actor_id__: ref} or {@code __discriminator__: ref}. The prefix keeps a
+     * client-chosen alias from ever colliding with a base-column projection, a
+     * {@link #RESERVED_SRC_ALIAS_PREFIX} full-row alias, the polymorphic discriminator
+     * projection, or another result key (result keys are unique per flattened selection map by
+     * construction; an adversarial {@code __rk_foo} alias mints {@code __rk___rk_foo}, still
+     * distinct). Like {@link #RESERVED_SRC_ALIAS_PREFIX} it is a string literal in generated
+     * output, never a Java identifier, so the dunder-identifier lints do not see it.
+     */
+    static final String RESERVED_RK_ALIAS_PREFIX = "__rk_";
+
+    /**
      * The default source binding for a record-parent key extraction: the fetcher reads its backing
      * object straight off {@code env.getSource()}. The arm-switch substitutes
      * {@code success.value()} here once it has narrowed the {@code Outcome} source to

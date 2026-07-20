@@ -600,9 +600,10 @@ class GraphQLQueryTest {
     void films_languageName_resolvesViaScalarReference() {
         // ColumnReferenceField execution-tier fixture: Direct + FK-only single-hop scalar
         // @reference. TypeClassGenerator.$fields() projects an aliased correlated subquery
-        // (SELECT language.NAME FROM language WHERE language.LANGUAGE_ID = film.LANGUAGE_ID LIMIT 1);
-        // FetcherEmitter wires a ColumnFetcher(DSL.field("languageName")) that reads the alias
-        // off the result Record at request time. All seeded films map to language_id=1 ("English").
+        // (SELECT language.NAME FROM language WHERE language.LANGUAGE_ID = film.LANGUAGE_ID LIMIT 1)
+        // aliased by the runtime result key (__rk_languageName here, unaliased); FetcherEmitter wires
+        // an env-dependent read that picks the value off the result Record by
+        // "__rk_" + env.getField().getResultKey(). All seeded films map to language_id=1 ("English").
         // The Sakila language.name column is char(20), so PostgreSQL pads — strip before compare.
         Map<String, Object> data = execute("{ films { title languageName } }");
         var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
@@ -613,13 +614,113 @@ class GraphQLQueryTest {
     @Test
     void films_isEnglish_resolvesViaExternalFieldExpression() {
         // ComputedField execution-tier fixture: @externalField(reference: ...) inlines
-        // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$fields().
-        // ColumnFetcher reads the projected alias from the result Record at request time.
+        // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$fields(),
+        // aliased by the runtime result key. The env-dependent read picks the projected alias off
+        // the result Record by "__rk_" + env.getField().getResultKey() at request time.
         // All seeded films have language_id=1, so the expression resolves to true for each.
         Map<String, Object> data = execute("{ films { title isEnglish } }");
         var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
         films.extracting(f -> f.get("isEnglish")).containsOnly(Boolean.TRUE);
         films.extracting(f -> f.get("title")).doesNotContainNull();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Aliased duplicate reference selections (result-key-aware projection).
+    //
+    // Selecting the same inline reference / computed field twice under different aliases used to
+    // mint two SELECT terms with the same field-named SQL alias (a duplicate-alias jOOQ error),
+    // and the source-only read could not tell two aliases apart. Projections are now aliased by the
+    // runtime result key under the reserved "__rk_" prefix, and the reads are env-dependent
+    // (env.getField().getResultKey()), so each alias resolves independently. execute() already
+    // asserts zero GraphQL errors, so reaching the value assertions proves no duplicate-alias crash.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    void aliasedDuplicateScalarReference_mixedWithUnaliased_bothResolve() {
+        // Direct ColumnReferenceField (languageName) and ComputedField (isEnglish), each selected
+        // once unaliased and once aliased in the same query — the mixed case that kills any
+        // source-only or record-probing read. The unaliased occurrence's result key is the field
+        // name; the aliased one's is the alias. Both must resolve to the same value.
+        Map<String, Object> data = execute("{ films { languageName a: languageName isEnglish x: isEnglish } }");
+        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        films.allSatisfy(f -> {
+            assertThat(((String) f.get("languageName")).strip()).isEqualTo("English");
+            assertThat(((String) f.get("a")).strip()).isEqualTo("English");
+            assertThat(f.get("isEnglish")).isEqualTo(Boolean.TRUE);
+            assertThat(f.get("x")).isEqualTo(Boolean.TRUE);
+        });
+    }
+
+    @Test
+    void aliasedDuplicateLookupTableField_divergentArgsAndSubselections_resolveIndependently() {
+        // Inline LookupTableField (Film.actors) selected twice under two aliases with divergent
+        // @lookupKey arguments AND divergent sub-selections. Film 1's cast is PENELOPE GUINESS (1)
+        // and NICK WAHLBERG (2). Each alias must read its own actor_id argument (a→[1], b→[2]) and
+        // its own sub-selection (a→firstName, b→lastName), proving per-result-key-bucket emission.
+        Map<String, Object> data = execute("""
+            { filmById(film_id: ["1"]) {
+                filmId
+                a: actors(actor_id: [1]) { actorId firstName }
+                b: actors(actor_id: [2]) { actorId lastName }
+            } }
+            """);
+        Map<String, Object> film1 = ((List<Map<String, Object>>) data.get("filmById")).get(0);
+        assertThat(film1).extractingByKey("a", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .satisfies(a -> {
+                assertThat(a.get("actorId")).isEqualTo(1);
+                assertThat(a.get("firstName")).isEqualTo("PENELOPE");
+            });
+        assertThat(film1).extractingByKey("b", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .satisfies(b -> {
+                assertThat(b.get("actorId")).isEqualTo(2);
+                assertThat(b.get("lastName")).isEqualTo("WAHLBERG");
+            });
+    }
+
+    @Test
+    void aliasedDuplicateListTableField_resolveIndependently() {
+        // Inline list-cardinality TableField (Film.Length -> [Inventory!]!) selected twice under two
+        // aliases. Pre-fix this minted two DSL.multiset(...).as("Length") terms (duplicate alias).
+        // The two aliases carry the same sub-selection, so per film they must return equal lists.
+        Map<String, Object> data = execute("{ films { filmId a: Length { inventoryId } b: Length { inventoryId } } }");
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> assertThat(f.get("a")).isEqualTo(f.get("b")));
+    }
+
+    @Test
+    void aliasedDuplicateSingleCardinalityNestedReference_resolveIndependently() {
+        // Single-cardinality inline TableField nested one level down (FilmInlineBundle.language ->
+        // Language), selected twice under two aliases. Exercises both the single-record unwrap read
+        // path and the NestingField-recursion depth. All seeded films map to language "English".
+        Map<String, Object> data = execute("""
+            { films { filmId inlineBundle { a: language { name } b: language { name } } } }
+            """);
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> {
+                Map<String, Object> bundle = (Map<String, Object>) f.get("inlineBundle");
+                // language.name is Sakila char(20) — PostgreSQL pads, so strip before compare.
+                assertThat(((String) ((Map<String, Object>) bundle.get("a")).get("name")).strip()).isEqualTo("English");
+                assertThat(((String) ((Map<String, Object>) bundle.get("b")).get("name")).strip()).isEqualTo("English");
+            });
+    }
+
+    @Test
+    void adversarialClientAlias_reservedPrefixSeparatesNamespaces() {
+        // A client alias that itself starts with the reserved prefix ("__rk_foo") alongside a plain
+        // alias ("foo") of the same field. Document aliases are unrestricted, so this is a legal
+        // query; the write side mints __rk___rk_foo and __rk_foo — still distinct — so both resolve
+        // rather than colliding. Pins that the prefix separates the client and generator namespaces.
+        Map<String, Object> data = execute("{ films { __rk_foo: languageName foo: languageName } }");
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .hasSize(5)
+            .allSatisfy(f -> {
+                assertThat(((String) f.get("__rk_foo")).strip()).isEqualTo("English");
+                assertThat(((String) f.get("foo")).strip()).isEqualTo("English");
+            });
     }
 
     @Test

@@ -18,9 +18,11 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField} emission with
  * {@code CallSiteCompaction.Direct}.
  *
- * <p>Asserts the structural contract: no per-field fetcher method on {@code *Fetchers}, the
- * {@code $fields} switch routes the field, and the {@code DataFetcher} value wires through
- * {@code ColumnFetcher}. Body-level SQL correctness is the compile and execution tiers' job.
+ * <p>Asserts the structural contract: the reified read method on {@code *Fetchers}, the
+ * {@code $fields} switch routes the field, and the {@code DataFetcher} value wires through a bare
+ * env-dependent method reference (the projection is aliased by the runtime result key, so the read
+ * needs {@code env.getField().getResultKey()}). Body-level SQL correctness is the compile and
+ * execution tiers' job.
  */
 @PipelineTier
 class ColumnReferenceFieldPipelineTest {
@@ -43,16 +45,18 @@ class ColumnReferenceFieldPipelineTest {
             .orElseThrow();
         assertThat(filmFetchers.methodSpecs()).extracting(MethodSpec::name)
             .as("R303: Direct ColumnReferenceField projects inline via TypeClassGenerator.$fields; "
-                + "the read of the aliased projection is reified as a named source-only method")
+                + "the read of the result-key-aliased projection is reified as a named env-dependent method")
             .contains("languageName");
     }
 
     @Test
-    void directColumnReference_singleHop_fetcherValueIsColumnFetcher() {
+    void directColumnReference_singleHop_fetcherValueIsEnvDependentReference() {
         var bodies = FetcherRegistrationsEmitter.emit(
             TestSchemaHelper.buildSchema(SINGLE_HOP_SDL), DEFAULT_OUTPUT_PACKAGE);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "Film", "languageName"))
-            .contains(DataFetcherKind.COLUMN_FETCHER);
+            .as("the read is result-key-aware (reads env.getField().getResultKey()), so it binds "
+                + "as a bare env-dependent method reference, not a source-only LightFetcher")
+            .contains(DataFetcherKind.METHOD_REFERENCE);
     }
 
     @Test

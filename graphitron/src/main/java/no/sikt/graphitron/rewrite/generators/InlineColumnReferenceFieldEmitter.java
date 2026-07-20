@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import java.util.List;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_ALIAS_PREFIX;
 
 /**
  * Builds the switch-arm body for one inline {@link ChildField.ColumnReferenceField} in
@@ -44,9 +45,14 @@ public final class InlineColumnReferenceFieldEmitter {
      *                     emit site. Unused by this emitter (a scalar projection has no nested
      *                     selection set) but kept in the signature for symmetry with
      *                     {@link InlineTableFieldEmitter}.
+     * @param entryName    the caller-scope {@code Map.Entry<String, List<SelectedField>>} variable
+     *                     name holding the result-key bucket. The scalar projection is aliased to
+     *                     the runtime result key ({@code RESERVED_RK_ALIAS_PREFIX + entry.getKey()})
+     *                     so aliased duplicate selections of the same reference mint distinct SQL
+     *                     aliases the read side re-derives via {@code env.getField().getResultKey()}.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.ColumnReferenceField crf, String parentAlias,
-            String sfName, String outputPackage) {
+            String sfName, String entryName, String outputPackage) {
         if (crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
             throw new IllegalStateException(
                 "Inline ColumnReferenceField '" + crf.parentTypeName() + "." + crf.name()
@@ -59,7 +65,8 @@ public final class InlineColumnReferenceFieldEmitter {
             // ParentCorrelation.checkCarrierInvariant). No join, correlation, or subquery is needed
             // — project the column directly off the parent alias, aliased to the GraphQL field name.
             var direct = CodeBlock.builder();
-            direct.addStatement("fields.add($L.$L.as($S))", parentAlias, crf.column().javaName(), crf.name());
+            direct.addStatement("fields.add($L.$L.as($S + $L.getKey()))",
+                parentAlias, crf.column().javaName(), RESERVED_RK_ALIAS_PREFIX, entryName);
             return direct.build();
         }
         List<String> aliases = JoinPathEmitter.generateAliases(path, null);
@@ -90,7 +97,8 @@ public final class InlineColumnReferenceFieldEmitter {
         CodeBlock innerSelect = buildInnerSelect(crf, path, aliases, terminalAlias, parentAlias);
 
         // Wrap as a scalar field with DSL.field(<subquery>) — single-column SELECT, not multiset.
-        code.addStatement("fields.add($T.field($L).as($S))", DSL, innerSelect, crf.name());
+        code.addStatement("fields.add($T.field($L).as($S + $L.getKey()))",
+            DSL, innerSelect, RESERVED_RK_ALIAS_PREFIX, entryName);
         return code.build();
     }
 

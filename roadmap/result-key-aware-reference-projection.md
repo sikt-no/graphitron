@@ -202,6 +202,47 @@ preserving result-key buckets, the `SqlGeneratingField` / `MethodBackedField` pr
 membership design fork, and the already-correct claims (scalar arms, DataLoader path-scoped names,
 `ParticipantColumnReferenceField.aliasName()`). Sign-off remains valid; no reopen.
 
+## Implementation notes (deviations recorded during In Progress)
+
+- **Contract item 6 amended: one validator change was required after all.** The Spec asserted "no
+  classification, model, or validator change". Implementation surfaced a validator check the Spec's
+  trace missed: `GraphitronSchemaValidator.validateAliasKeyColumnCollisions` (with helpers
+  `collectBaseNamedKeyColumns`, `checkAliasKeyColumnCollisions`, `parentProjectionAlias`) rejected a
+  sibling reference field whose *field-name* projection alias case-insensitively shadowed a
+  base-named key/correlation column another child reads off the parent record. Once projections are
+  aliased `__rk_<resultKey>` instead of by field name, that shadow is structurally impossible (a
+  reserved-prefixed alias can never equal a base column name), so the check no longer guards a
+  reachable condition; worse, left in place it would *false-positive* reject schemas the fix makes
+  legal (it compares the raw field name, no longer the emitted alias). The four families are the
+  only contributors to `parentProjectionAlias`, so the whole cluster was retired and its enforcer is
+  now the reserved prefix itself. The dedicated `AliasKeyColumnCollisionValidationTest` was
+  repurposed to `ReferenceProjectionAliasNamespaceTest`, pinning that the formerly-rejected
+  shadowing schema now validates clean. This is the only classification/model/validator touch; it is
+  a forced consequence of the reserved-prefix design (contract item 2), not new scope.
+- **Second emit path the trace missed: the single-table `@discriminate` base-slice.** The Design
+  claimed "polymorphic types route through `PolymorphicSelectionSet.restrictTo` into the same loop,
+  so one fix covers plain and polymorphic paths." True for the multi-table union path
+  (`MultiTablePolymorphicEmitter` calls `$fields` with `restrictTo`), but the single-table
+  discriminated interface with `JoinedTableBound` participants
+  (`TypeFetcherGenerator.buildInterfaceFieldsList`) hand-projects each inherited
+  `ColumnReferenceField` off the base under its GraphQL field name rather than going through
+  `$fields`, and it shares the one result-key-aware read. Left unchanged this regressed even the
+  unaliased case (`allSubjects` / `allParties` execution tests: read `__rk_displayName`, projection
+  `displayName`). Fixed by making that base-slice project each inherited reference under the reserved
+  result-key alias per selected result-key bucket (a runtime loop over the interface selection set),
+  so it agrees with the read and supports aliased duplicates on this path too. This is emit-layer,
+  consistent with contract item 6's "pure emit-layer fix".
+- **Membership single-home: taken.** The design fork's recommended path was implemented: a standalone
+  marker capability `ResultKeyAliasedField` (methodless — the alias basis is entirely runtime-keyed,
+  so there is no per-variant value to expose) implemented by the four families, plus a build-time
+  guard on each side's fall-through (`TypeClassGenerator.emitSelectionSwitch`'s `default` arm and
+  `FetcherEmitter.bindRaw`'s method-backed fall-through both throw when a `ResultKeyAliasedField`
+  reaches them unhandled). A future alias-projecting variant that forgets either side is now a loud
+  generation-time failure rather than a silent reincarnation of this defect. The
+  `ColumnReferenceField` `NodeIdEncodeKeys` compaction is a validate-time deferred rejection
+  (`validateColumnReferenceField`), so the record-level marker's "aliased on every emittable
+  instance" semantics never faces an emittable-but-unaliased column reference.
+
 ## Out of scope
 
 - **R499** (within-bucket occurrence merge and argument-divergence guard); same loop, orthogonal

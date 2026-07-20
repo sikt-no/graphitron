@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_ALIAS_PREFIX;
 
 /**
  * Builds the switch-arm body for one inline {@link ChildField.TableField} in
@@ -155,7 +156,11 @@ public final class InlineTableFieldEmitter {
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
         // unwraps the Result to its first record (or null). Using DSL.multiset over DSL.row avoids
         // jOOQ's alias-reference-flattening behavior on nested aliased fields inside RowN values.
-        code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, tf.name());
+        // Alias by the runtime result key (RESERVED_RK_ALIAS_PREFIX + entry.getKey()), not the
+        // schema field name, so two aliases of the same reference (a: ref b: ref) mint two distinct
+        // SQL aliases the read side re-derives via env.getField().getResultKey().
+        code.addStatement("fields.add($T.multiset($L).as($S + $L.getKey()))",
+            DSL, innerSelect, RESERVED_RK_ALIAS_PREFIX, entryName);
         return code.build();
     }
 

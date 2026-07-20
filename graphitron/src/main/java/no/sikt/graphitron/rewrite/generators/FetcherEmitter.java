@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -24,6 +25,7 @@ import java.util.List;
 import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_ALIAS_PREFIX;
 
 /**
  * Binds a single classified field to its {@code DataFetcher}: the registration value the
@@ -470,21 +472,24 @@ public final class FetcherEmitter {
             if (single) {
                 var resultClass = ClassName.get("org.jooq", "Result");
                 var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
+                // Env-dependent: the single-record multiset is aliased __rk_<resultKey>, so unwrap
+                // the Result read by the runtime result key (aliased duplicates each read their own).
                 CodeBlock body = CodeBlock.builder()
-                    .add("Object raw = (($T) source).get($S, $T.class);\n", RECORD, field.name(), resultClass)
+                    .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
+                        RECORD, RESERVED_RK_ALIAS_PREFIX, resultClass)
                     .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
                     .build();
-                return sourceOnly(field.name(), fetchersClass, outputPackage, body);
+                return envDependent(field.name(), fetchersClass, body);
             }
-            return columnByAlias(field.name(), fetchersClass, outputPackage);
+            return columnByAlias(field.name(), fetchersClass);
         }
         if (field instanceof ChildField.LookupTableField) {
-            return columnByAlias(field.name(), fetchersClass, outputPackage);
+            return columnByAlias(field.name(), fetchersClass);
         }
         if (field instanceof ChildField.ComputedField) {
             // Wired by name: TypeClassGenerator.$fields() inlines the developer's method call
-            // aliased to the field name; the read picks the result Record up by that alias.
-            return columnByAlias(field.name(), fetchersClass, outputPackage);
+            // aliased to the result key; the read picks the result Record up by that alias.
+            return columnByAlias(field.name(), fetchersClass);
         }
         if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {
             // Cross-table participant field on a TableInterfaceType participant. The interface
@@ -503,7 +508,7 @@ public final class FetcherEmitter {
                 && crf.compaction() instanceof CallSiteCompaction.Direct) {
             // Direct-compaction scalar @reference: TypeClassGenerator.$fields() projects an aliased
             // correlated subquery; the read picks the value out of the parent Record by alias.
-            return columnByAlias(field.name(), fetchersClass, outputPackage);
+            return columnByAlias(field.name(), fetchersClass);
         }
         if (field instanceof ChildField.CompositeColumnReferenceField ccrf && parentTable != null) {
             // Stubbed variant (validator-rejected before generation): keep the throwing lambda
@@ -514,14 +519,33 @@ public final class FetcherEmitter {
                 "Rooted-at-parent composite NodeId reference '" + ccrf.parentTypeName() + "." + ccrf.name()
                     + "' requires JOIN-with-projection emission — not yet implemented."));
         }
+        // A ResultKeyAliasedField reaching here would be an alias-projecting variant with no
+        // env-dependent read binding: it would fall through to a plain method-backed reference and
+        // never read its __rk_ alias, silently mis-resolving aliased duplicates. Fail loudly — the
+        // read half of the membership guard that keeps the write and read alias sets from drifting
+        // (the write half is TypeClassGenerator.emitSelectionSwitch's default arm).
+        if (field instanceof ResultKeyAliasedField) {
+            throw new IllegalStateException(
+                "ResultKeyAliasedField '" + field.name() + "' (" + field.getClass().getSimpleName()
+                    + ") has no result-key-aware read binding; add one that reads by "
+                    + "env.getField().getResultKey(), or drop the ResultKeyAliasedField marker.");
+        }
         // Method-backed variants: TypeFetcherGenerator's switch owns the method; carry the reference.
         return new FetcherBinding.Inline(CodeBlock.of("$T::$L", fetchersClass, field.name()));
     }
 
-    /** Source-only read of an aliased column off the parent record. */
-    private static FetcherBinding columnByAlias(String name, ClassName fetchersClass, String outputPackage) {
-        return sourceOnly(name, fetchersClass, outputPackage,
-            CodeBlock.of("return (($T) source).get($T.field($S));\n", RECORD, DSL, name));
+    /**
+     * Env-dependent read of an aliased projection off the parent record, keyed by the runtime
+     * result key. The projection is aliased {@code __rk_<resultKey>} on the write side
+     * ({@code GeneratorUtils.RESERVED_RK_ALIAS_PREFIX}), so two aliases of the same reference
+     * ({@code a: ref b: ref}) each read their own SELECT term via {@code env.getField().getResultKey()}
+     * rather than colliding on a field-named alias. This is the read half of
+     * {@link ResultKeyAliasedField} — it must move in lockstep with the write arms.
+     */
+    private static FetcherBinding columnByAlias(String name, ClassName fetchersClass) {
+        return envDependent(name, fetchersClass,
+            CodeBlock.of("return (($T) env.getSource()).get($T.field($S + env.getField().getResultKey()));\n",
+                RECORD, DSL, RESERVED_RK_ALIAS_PREFIX));
     }
 
     /**

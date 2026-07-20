@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_ALIAS_PREFIX;
 
 /**
  * Builds the switch-arm body for one inline {@link ChildField.LookupTableField} in
@@ -152,8 +153,8 @@ public final class InlineLookupTableFieldEmitter {
         // by jOOQ, so the branch happens in Java, not SQL.
         code.beginControlFlow("if (rows.length == 0)");
         code.addStatement(
-            "fields.add($T.multiset($T.select($T.$$fields($L.getValue(), $L, env)).from($L).where($T.falseCondition())).as($S))",
-            DSL, DSL, typeClass, entryName, terminalAlias, terminalAlias, DSL, lf.name());
+            "fields.add($T.multiset($T.select($T.$$fields($L.getValue(), $L, env)).from($L).where($T.falseCondition())).as($S + $L.getKey()))",
+            DSL, DSL, typeClass, entryName, terminalAlias, terminalAlias, DSL, RESERVED_RK_ALIAS_PREFIX, entryName);
         code.nextControlFlow("else");
 
         // VALUES derived-table alias: "idx" + one column per lookup key. Labels must match the
@@ -195,7 +196,8 @@ public final class InlineLookupTableFieldEmitter {
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
             parentAlias, onCondition.build(), sfName, entryName, registry, fkTargetAliases);
-        code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
+        code.addStatement("fields.add($T.multiset($L).as($S + $L.getKey()))",
+            DSL, innerSelect, RESERVED_RK_ALIAS_PREFIX, entryName);
         code.endControlFlow();
 
         return code.build();

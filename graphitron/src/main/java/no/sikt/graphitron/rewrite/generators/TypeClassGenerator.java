@@ -18,6 +18,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParentRowDemand;
+import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -407,7 +408,7 @@ public class TypeClassGenerator {
                 }
                 case ChildField.ColumnReferenceField crf -> {
                     builder.addCode("        case $S -> {\n", crf.name());
-                    builder.addCode("$L", InlineColumnReferenceFieldEmitter.buildSwitchArmBody(crf, tableArg, sf, outputPackage));
+                    builder.addCode("$L", InlineColumnReferenceFieldEmitter.buildSwitchArmBody(crf, tableArg, sf, entry, outputPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.TableField tf -> {
@@ -427,11 +428,22 @@ public class TypeClassGenerator {
                 }
                 case ChildField.ComputedField cf -> {
                     var refClass = ClassName.bestGuess(cf.method().className());
-                    builder.addCode("        case $S -> fields.add($T.$L($L).as($S));\n",
-                        cf.name(), refClass, cf.method().methodName(), tableArg, cf.name());
+                    // Alias by the runtime result key so aliased duplicate selections stay distinct.
+                    builder.addCode("        case $S -> fields.add($T.$L($L).as($S + $L.getKey()));\n",
+                        cf.name(), refClass, cf.method().methodName(), tableArg, RESERVED_RK_ALIAS_PREFIX, entry);
                 }
                 default -> {
                     // Unexpected variants in a projection switch are skipped — validator rejects them.
+                    // But a ResultKeyAliasedField reaching here would be an alias-projecting variant
+                    // with no write arm: it would silently drop from the SELECT while the read side
+                    // still tries to read its __rk_ alias. Fail loudly at generation instead — the
+                    // membership guard that keeps the write and read alias sets from drifting.
+                    if (f instanceof ResultKeyAliasedField) {
+                        throw new IllegalStateException(
+                            "ResultKeyAliasedField '" + f.name() + "' (" + f.getClass().getSimpleName()
+                                + ") has no $fields projection arm; add one that aliases by the runtime"
+                                + " result key, or drop the ResultKeyAliasedField marker.");
+                    }
                 }
             }
         }

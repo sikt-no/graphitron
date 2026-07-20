@@ -1147,9 +1147,10 @@ public class TypeFetcherGenerator {
         // detail table). Instead project the base-resident slice off the base here, reading each
         // participant's classified fields (the emitter reads the field variant, never the catalog):
         //   - an inherited field is a ColumnReferenceField whose column resolves on the base; project
-        //     that base column aliased as the GraphQL field name, matching the alias the standalone
-        //     correlated-subquery projection uses, so the one registered fetcher reads it in both
-        //     queries (FetcherEmitter reads a Direct ColumnReferenceField by field-name alias);
+        //     that base column under the runtime result-key reserved alias (__rk_<resultKey>),
+        //     matching the alias the standalone correlated-subquery projection uses, so the one
+        //     registered fetcher reads it in both queries (FetcherEmitter reads a Direct
+        //     ColumnReferenceField by env.getField().getResultKey());
         //   - a shared-key field is a ColumnField whose column is one of the child->parent hop's
         //     columns (the join key, present on both base and detail); project the paired base column
         //     so NULL-through rows (base present, detail absent) still resolve it, aliased to the
@@ -1167,7 +1168,31 @@ public class TypeFetcherGenerator {
                 for (var f : schema.fieldsOf(jtb.typeName())) {
                     if (f instanceof ChildField.ColumnReferenceField crf) {
                         if (seenAliases.add(crf.name())) {
-                            b.addStatement("fields.add($L.$L.as($S))", tableLocal, crf.column().javaName(), crf.name());
+                            // Inherited base-resident @reference. The standalone inline projection
+                            // aliases this by the runtime result key (RESERVED_RK_ALIAS_PREFIX +
+                            // entry.getKey()) and the one registered Direct ColumnReferenceField
+                            // fetcher reads it back by env.getField().getResultKey(); this base-slice
+                            // path must produce the same reserved-key aliases so both queries agree.
+                            // Project the base column once per selected result-key bucket of this
+                            // field (handles aliased duplicates: a: displayName b: displayName each
+                            // get their own __rk_<key> term), off the base so NULL-through rows
+                            // (base present, detail absent) still resolve it.
+                            // Explicit entry type: emitted sources may not use `var`
+                            // (GeneratedSourcesLintTest).
+                            var rkEntryType = ParameterizedTypeName.get(
+                                ClassName.get("java.util", "Map", "Entry"),
+                                ClassName.get(String.class),
+                                ParameterizedTypeName.get(LIST, SELECTED_FIELD));
+                            b.beginControlFlow(
+                                "for ($T rkEntry : env.getSelectionSet().getFieldsGroupedByResultKey().entrySet())",
+                                rkEntryType);
+                            b.beginControlFlow(
+                                "if (!rkEntry.getValue().isEmpty() && rkEntry.getValue().get(0).getName().equals($S))",
+                                crf.name());
+                            b.addStatement("fields.add($L.$L.as($S + rkEntry.getKey()))",
+                                tableLocal, crf.column().javaName(), RESERVED_RK_ALIAS_PREFIX);
+                            b.endControlFlow();
+                            b.endControlFlow();
                         }
                     } else if (f instanceof ChildField.ColumnField cf) {
                         var baseCol = sharedKeyBaseColumn(jtb, cf.column());

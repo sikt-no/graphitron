@@ -306,7 +306,7 @@ public sealed interface ChildField extends OutputField
         List<JoinStep> joinPath,
         CallSiteCompaction compaction,
         ParentCorrelation parentCorrelation
-    ) implements ChildField {
+    ) implements ChildField, ResultKeyAliasedField {
         public ColumnReferenceField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "ColumnReferenceField");
         }
@@ -454,7 +454,7 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField {
+    ) implements TableTargetField, ResultKeyAliasedField {
         public TableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
             // TableField is an implemented leaf, so no validator gate re-checks its
@@ -633,7 +633,7 @@ public sealed interface ChildField extends OutputField
         PaginationSpec pagination,
         LookupMapping lookupMapping,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, LookupField {
+    ) implements TableTargetField, LookupField, ResultKeyAliasedField {
         public LookupTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "LookupTableField");
         }
@@ -1126,7 +1126,7 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method
-    ) implements ChildField, MethodBackedField {
+    ) implements ChildField, MethodBackedField, ResultKeyAliasedField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
         }
