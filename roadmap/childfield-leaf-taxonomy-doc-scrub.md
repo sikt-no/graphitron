@@ -18,7 +18,7 @@ Sibling of R126. R126 scrubbed the deleted *classification-verdict* vocabulary (
 
 **Less is more.** Documentation drifts out of sync with the code and becomes its own source of errors, so the default fix is to delete, not to rewrite longer. Keep (and repoint) only a comment or javadoc line that carries load-bearing information a reader cannot recover from the code itself. A comment that merely names an internal type, restates the signature, or narrates mechanics the reader can already see is better deleted than maintained. When the choice is between a careful rewrite and a deletion, prefer deletion.
 
-Scoped as its own item, not folded into R126, because it is a different vocabulary, ~123 whole-word sites across nine dead names, and it sits next to confusably-similar live names that a blanket replace would corrupt.
+Scoped as its own item, not folded into R126, because it is a different vocabulary, ~80 whole-word sites across nine dead names (sweep below, roadmap prose excluded), and it sits next to confusably-similar live names that a blanket replace would corrupt.
 
 ## Dead leaf vocabulary and its live successors
 
@@ -35,12 +35,14 @@ Word boundaries protect these, but a careless replace would corrupt them: `Recor
 
 ## Surfaces, sites, and method
 
-At filing there are ~123 whole-word mentions of the confirmed-dead names across `graphitron-sakila-example` (SDL comments + `querydb`/`internal` tests), `graphitron/src/test`, and `graphitron` main-source javadoc. Implementer runs the authoritative sweep and confirms only historical residue remains at the end:
+At filing the sweep below finds 70 whole-word mentions (66 lines) of the confirmed-dead names, plus 12 mentions of the three unverified names, across `graphitron-sakila-example` (SDL comments + `querydb`/`internal` tests), `graphitron/src/test`, `graphitron` main-source javadoc, and one `graphitron-sakila-service` fixture comment. Implementer runs the authoritative sweep and confirms only historical residue remains at the end:
 
 ```
 grep -rnE '\b(SingleRecordTableField|RecordTableField|SplitTableField|RecordLookupTableField|SplitLookupTableField|LifterLeafKeyed)\b' \
-  --include=*.java --include=*.graphqls --include=*.md . | grep -v /target/
+  --include=*.java --include=*.graphqls --include=*.md . | grep -v /target/ | grep -v '^\./roadmap/'
 ```
+
+The `roadmap/` exclusion is deliberate, see the scope bullet below; without it the same grep matches ~108 further lines of roadmap prose this item does not own.
 
 Per-site discipline (same as R126):
 
@@ -53,5 +55,6 @@ Per-site discipline (same as R126):
 
 * Comment, javadoc, and identifier scrub only: no production-model, generated-output, or test-behaviour change. Test bodies keep asserting exactly what they assert today; deleting a comment or javadoc line is not a behaviour change.
 * R126's classification-verdict vocabulary is out of scope here (already shipped); this item is the leaf taxonomy and the confusion around it.
+* **`roadmap/` prose is out of scope** and excluded from the sweep. `changelog.md` is permanent historical provenance and legitimately narrates the retired names; other live item bodies are re-anchored by their own items and by the rolling staleness audit under `roadmap/audits/` (the current one already flags the stale `RecordTableField` anchors); this item's own file names the dead vocabulary by necessity. Editing other items' spec bodies from this sweep would collide with those owners.
 * **Co-located factual errors are in scope, that is the goal.** If a comment you are already touching also makes a claim that is stale or misleading (for example an "Invariant #N rejects X until the single-arm ships" line that a later change made false), verify it against the code and then fix or delete it in the same pass; do not repoint only the dead name and leave the falsehood standing. What stays out of scope is a *repo-wide* claim-currency audit of files this sweep does not otherwise touch; that is a separate concern.
 * No roadmap-id citation replaces any comment (`RoadmapReferenceGuardTest`); `.adoc` edits use no em dashes.
