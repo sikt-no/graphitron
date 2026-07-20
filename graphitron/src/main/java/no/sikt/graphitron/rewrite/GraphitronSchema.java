@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ReachableSourceShape;
 import no.sikt.graphitron.rewrite.model.Source;
+import no.sikt.graphitron.rewrite.model.TenantScopes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -56,6 +57,12 @@ import java.util.Set;
  * nesting projection and a producer-backed result); single-reach coordinates are absent and derive
  * their singleton on read. The dispatch emitter and the validator's shape-set rule both read it, so
  * neither re-derives the union. Empty for every single-source schema.
+ *
+ * <p>{@link #tenantScopes} is the catalog-wide tenant-scope classification
+ * ({@link TenantScopeClassifier}), computed once at catalog load from the configured
+ * {@code <tenantColumn>} element. The validator's tenant drain and the tenant-routing emitters
+ * both read this field, so a "single producer" guarantee holds across the consumers.
+ * {@link TenantScopes.None} for single-tenant builds and every test-constructed schema.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -66,8 +73,15 @@ public record GraphitronSchema(
     ContextArgumentClassifier.Classification contextArguments,
     List<ValidationError> diagnostics,
     Map<String, Arrival> arrivals,
-    Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes
+    Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+    TenantScopes tenantScopes
 ) {
+
+    public GraphitronSchema {
+        // Null-tolerant: only catalog-aware builds populate the tenant classification; every
+        // other caller (unit tier, hand-built schemas) defaults to single-tenant.
+        tenantScopes = tenantScopes == null ? TenantScopes.None.INSTANCE : tenantScopes;
+    }
 
     /**
      * Two-arg convenience constructor: groups fields by {@code parentTypeName} automatically,
@@ -77,7 +91,8 @@ public record GraphitronSchema(
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
-            ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of());
+            ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
+            TenantScopes.None.INSTANCE);
     }
 
     /**
@@ -92,9 +107,25 @@ public record GraphitronSchema(
                             List<ValidationError> diagnostics,
                             Map<String, Arrival> arrivals,
                             Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes) {
+        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
+            TenantScopes.None.INSTANCE);
+    }
+
+    /**
+     * The {@link GraphitronSchemaBuilder} constructor: the seven-arg field-grouping form plus
+     * the catalog-derived {@code tenantScopes} classification.
+     */
+    public GraphitronSchema(Map<String, GraphitronType> types,
+                            Map<FieldCoordinates, GraphitronField> fields,
+                            Map<String, EntityResolution> entitiesByType,
+                            List<BuildWarning> warnings,
+                            List<ValidationError> diagnostics,
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
+                            TenantScopes tenantScopes) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
             ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
-            Map.copyOf(reachableSourceShapes));
+            Map.copyOf(reachableSourceShapes), tenantScopes);
     }
 
     /**
@@ -121,7 +152,8 @@ public record GraphitronSchema(
                             List<BuildWarning> warnings,
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
-        this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of());
+        this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
+            TenantScopes.None.INSTANCE);
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {

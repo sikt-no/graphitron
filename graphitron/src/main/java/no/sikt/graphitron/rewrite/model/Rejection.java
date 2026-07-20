@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -266,6 +266,52 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 return new SortEnumMissingOrder(prefix + enumTypeName, missingValues);
             }
         }
+
+        /**
+         * The configured tenant column does not resolve to a single Java type across the
+         * catalog: two or more tables carry the column with disagreeing jOOQ column types. The
+         * tenant type is read off the catalog rather than configured, and every routed
+         * acquisition keys the per-tenant DataSource map with a value of that one type, so
+         * disagreement would make the divined key's type depend on which table a field happens
+         * to bind through.
+         *
+         * <p>Carries the configured column name plus a typed {@link TableSite} list (one per
+         * table carrying the column, in the catalog's stable schema-then-table order);
+         * downstream tooling switches on the arm rather than parsing prose. The rejection fires
+         * from the tenant-scope classification at catalog load.
+         */
+        record TenantColumnTypeDisagreement(String columnName, List<TableSite> tables)
+                implements AuthorError {
+            public TenantColumnTypeDisagreement {
+                tables = List.copyOf(tables);
+            }
+
+            @Override public String message() {
+                var sb = new StringBuilder()
+                    .append("tenant column '").append(columnName)
+                    .append("' has disagreeing Java types across catalog tables:");
+                for (TableSite site : tables) {
+                    sb.append("\n  - ").append(site.qualifiedTable())
+                      .append(" declared ").append(site.declared().toString());
+                }
+                sb.append("\n  Resolve by aligning every table's '").append(columnName)
+                  .append("' column on a single Java type, or point <tenantColumn> at a column the catalog agrees on.");
+                return sb.toString();
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new TenantColumnTypeDisagreement(prefix + columnName, tables);
+            }
+
+            /**
+             * One table carrying the tenant column: its schema-qualified SQL name
+             * ({@code "schema.table"}) and the Java type its column declares.
+             */
+            public record TableSite(
+                String qualifiedTable,
+                no.sikt.graphitron.javapoet.TypeName declared
+            ) {}
+        }
     }
 
     /**
@@ -457,6 +503,17 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      */
     static Rejection sortEnumMissingOrder(String enumTypeName, List<String> missingValues) {
         return new AuthorError.SortEnumMissingOrder(enumTypeName, missingValues);
+    }
+
+    /**
+     * {@link AuthorError.TenantColumnTypeDisagreement} factory. Produced by the tenant-scope
+     * classification at catalog load when the configured {@code <tenantColumn>} resolves to
+     * disagreeing Java types across the tables that carry it. {@code tables} lists every
+     * carrying table in the catalog's stable schema-then-table order.
+     */
+    static Rejection tenantColumnTypeDisagreement(
+            String columnName, List<AuthorError.TenantColumnTypeDisagreement.TableSite> tables) {
+        return new AuthorError.TenantColumnTypeDisagreement(columnName, tables);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

@@ -335,7 +335,7 @@ public class GraphitronSchemaBuilder {
         var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, dedupedFields);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
-            ctx.diagnostics(), arrivals, reachableSourceShapes);
+            ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes);
         return new BuildResult(model, rebuiltAssembled);
     }
 

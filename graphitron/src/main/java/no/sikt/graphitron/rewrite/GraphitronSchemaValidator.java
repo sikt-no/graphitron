@@ -43,8 +43,31 @@ public class GraphitronSchemaValidator {
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
+        validateTenantBindings(schema, errors);
         drainBuildDiagnostics(schema, errors);
         return List.copyOf(errors);
+    }
+
+    /**
+     * Cross-cutting check: drains the cached tenant-scope classification's typed rejections
+     * (the tenant-column type disagreement and the unknown tenant column) into
+     * {@link ValidationError}s, mirroring the validator-mirrors-classifier shape of
+     * {@link #validateContextArgumentTypeAgreement}. The classification runs once at catalog
+     * load ({@link TenantScopeClassifier}); the validator and the tenant-routing emitters read
+     * the identical {@link GraphitronSchema#tenantScopes()} rather than re-walking the catalog.
+     * Like the pom-configured contextArguments, a tenant-column defect has no SDL coordinate,
+     * so the errors surface at {@code <schema>}.
+     */
+    private void validateTenantBindings(GraphitronSchema schema, List<ValidationError> errors) {
+        if (schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configured) {
+            for (Rejection conflict : configured.conflicts()) {
+                errors.add(new ValidationError(
+                    "<schema>",
+                    conflict,
+                    SourceLocation.EMPTY
+                ));
+            }
+        }
     }
 
     /**

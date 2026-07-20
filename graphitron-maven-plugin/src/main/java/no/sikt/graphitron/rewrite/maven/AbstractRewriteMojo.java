@@ -102,6 +102,17 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     SessionStateBinding sessionState;
 
+    /**
+     * Name of the database column that carries the tenant id in a database-per-tenant
+     * deployment. Matched against catalog columns the way column lookups already match (Java
+     * name first, then SQL name, both case-insensitive). Configuring it classifies every
+     * catalog table as tenant-scoped (carries the column) or global (does not) and computes a
+     * per-field tenant binding from the schema's column mappings. Omit for single-tenant
+     * builds; no tenant machinery exists then.
+     */
+    @Parameter
+    String tenantColumn;
+
     @FunctionalInterface
     protected interface GeneratorCall {
         void invoke(GraphQLRewriteGenerator gen);
@@ -174,7 +185,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             codegenLoader,
             resolveCompileSourceRoots(),
             buildLintConfig(),
-            buildSessionStateConfig()
+            buildSessionStateConfig(),
+            tenantColumn
         );
     }
 

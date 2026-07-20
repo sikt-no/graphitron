@@ -266,6 +266,14 @@ class BuildContext {
     private final List<ValidationError> diagnostics = new ArrayList<>();
     private final Map<String, List<String>> typeNamesByTableKey;
     private final NodeIdLeafResolver nodeIdLeafResolver;
+    /**
+     * The catalog-wide tenant-scope classification, computed once at construction from the
+     * configured {@code <tenantColumn>} element. {@link TenantScopes.None} for single-tenant
+     * builds and for tests that construct a {@code BuildContext} without a catalog. Field
+     * classification reads per-table scope through it; {@code GraphitronSchemaBuilder} threads
+     * it onto the {@link GraphitronSchema} for the validator and the emitters.
+     */
+    final no.sikt.graphitron.rewrite.model.TenantScopes tenantScopes;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
@@ -277,6 +285,9 @@ class BuildContext {
         this.ctx = java.util.Objects.requireNonNull(ctx, "ctx");
         this.typeNamesByTableKey = buildTypeNamesByTableKey(schema);
         this.nodeIdLeafResolver = new NodeIdLeafResolver(this);
+        this.tenantScopes = catalog == null
+            ? no.sikt.graphitron.rewrite.model.TenantScopes.None.INSTANCE
+            : TenantScopeClassifier.classify(catalog, ctx.tenantColumn());
     }
 
     /**

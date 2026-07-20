@@ -45,6 +45,12 @@ import java.util.Set;
  *                       for any goal that builds a catalog without a real project, in
  *                       which case source positions stay
  *                       {@link no.sikt.graphitron.rewrite.catalog.CompletionData.SourceLocation#UNKNOWN}.
+ * @param tenantColumn   name of the database column that carries the tenant id in a
+ *                       database-per-tenant deployment, matched against catalog columns the way
+ *                       column lookups already match (Java name first, then SQL name, both
+ *                       case-insensitive). Configured through the Mojo's {@code <tenantColumn>}
+ *                       element. {@code null} (the default) means single-tenant: no table
+ *                       carries a tenant scope and no per-field tenant binding is computed.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
@@ -59,7 +65,8 @@ public record RewriteContext(
     ClassLoader codegenLoader,
     List<Path> compileSourceRoots,
     LintConfig lintConfig,
-    SessionStateConfig sessionStateConfig
+    SessionStateConfig sessionStateConfig,
+    String tenantColumn
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -92,6 +99,9 @@ public record RewriteContext(
         // Session-state config is null-tolerant: only the build mojos populate it from the
         // <sessionState> block; every other caller defaults to no configured hook (SessionHook.NONE).
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
+        // The tenant column is null-tolerant and blank-collapsing: only multi-tenant builds
+        // configure <tenantColumn>; every other caller stays single-tenant (null).
+        tenantColumn = tenantColumn == null || tenantColumn.isBlank() ? null : tenantColumn.trim();
     }
 
     /**
@@ -103,7 +113,7 @@ public record RewriteContext(
     public RewriteContext withLintConfig(LintConfig lintConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig);
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
     }
 
     /**
@@ -115,7 +125,44 @@ public record RewriteContext(
     public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
-            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig);
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
+    }
+
+    /**
+     * Returns a copy of this context with {@code tenantColumn} replaced. The other fields are
+     * shared by reference (all immutable or defensively copied by the canonical constructor). Lets
+     * a caller that built a context through a convenience constructor layer the
+     * {@code <tenantColumn>} declaration on afterwards without re-threading every field.
+     */
+    public RewriteContext withTenantColumn(String tenantColumn) {
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
+    }
+
+    /**
+     * Back-compatible thirteen-arg constructor (pre-{@code tenantColumn}). Defaults
+     * {@code tenantColumn} to {@code null} so callers that predate multi-tenant routing, and every
+     * single-tenant caller, keep building without a tenant axis.
+     */
+    public RewriteContext(
+        List<SchemaInput> schemaInputs,
+        Set<String> schemaFileExtensions,
+        Path basedir,
+        Path outputDirectory,
+        Path outputResourcesDirectory,
+        String outputPackage,
+        String jooqPackage,
+        Map<String, String> namedReferences,
+        List<Path> classpathRoots,
+        ClassLoader codegenLoader,
+        List<Path> compileSourceRoots,
+        LintConfig lintConfig,
+        SessionStateConfig sessionStateConfig
+    ) {
+        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader,
+            compileSourceRoots, lintConfig, sessionStateConfig, null);
     }
 
     /**
