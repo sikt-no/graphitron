@@ -1,7 +1,7 @@
 ---
 id: R503
 title: "Mixed-source nested types: classify both edges, dispatch on source shape"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: codegen-correctness
