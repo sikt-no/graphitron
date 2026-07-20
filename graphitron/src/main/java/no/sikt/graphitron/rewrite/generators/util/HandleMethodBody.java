@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
+import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import java.util.Comparator;
 import java.util.List;
@@ -23,8 +24,16 @@ import java.util.List;
  *       individual rep.</li>
  *   <li>Decode the rep into a column-value row: DIRECT copies rep field values index-by-index;
  *       NODE_ID passes {@code rep.id} through {@code NodeIdEncoder.decodeValues}.</li>
- *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}.</li>
- *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}.</li>
+ *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}. In a
+ *       multi-tenant build over a tenant-scoped entity ({@link TenantRouting#bound()}), the
+ *       grouping widens to {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's
+ *       tenant is read at its alternative's classified decoded position, so one batch spanning
+ *       tenants splits into tenant-homogeneous groups instead of erroring or leaking.</li>
+ *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}
+ *       with the group's own {@code DSLContext}: per-tenant acquisition through
+ *       {@code TenantConnections.dslFor} for a bound entity, the default source for a global
+ *       entity in a multi-tenant build, and the escape-hatch context read in single-tenant
+ *       builds (byte-identical to the pre-tenant emission).</li>
  * </ol>
  *
  * <p>Order preservation: result positions come from the rep's original index in the outer
@@ -43,29 +52,43 @@ final class HandleMethodBody {
 
     private HandleMethodBody() {}
 
+    /**
+     * The dispatch surface's tenant routing for one entity type. {@code null} for a
+     * single-tenant build (the emission is byte-identical to the pre-tenant form).
+     * {@code bound} carries the per-alternative decoded tenant positions for a tenant-scoped
+     * entity, or {@code null} for a global entity (which acquires the default source).
+     */
+    record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound) {}
+
+    /** Single-tenant emission, byte-identical to the pre-tenant form. */
     static CodeBlock emit(EntityResolution entity, ClassName nodeIdEncoder) {
+        return emit(entity, nodeIdEncoder, null);
+    }
+
+    static CodeBlock emit(EntityResolution entity, ClassName nodeIdEncoder, TenantRouting routing) {
         var b = CodeBlock.builder();
-        emitBindingRecord(b);
-        emitGroupingMaps(b);
-        emitPerRepLoop(b, entity, nodeIdEncoder);
-        emitGroupDispatch(b, entity);
+        boolean perTenant = routing != null && routing.bound() != null;
+        emitGroupingMaps(b, perTenant);
+        emitPerRepLoop(b, entity, nodeIdEncoder, routing);
+        emitGroupDispatch(b, entity, routing);
         return b.build();
     }
 
-    private static void emitBindingRecord(CodeBlock.Builder b) {
-        // Inline value type for grouping. JavaPoet doesn't support local records cleanly, so the
-        // grouped bindings are carried via Object[] tuples. No comment in emitted code: the
-        // structure is obvious from the loop.
-    }
-
-    private static void emitGroupingMaps(CodeBlock.Builder b) {
+    private static void emitGroupingMaps(CodeBlock.Builder b, boolean perTenant) {
         var objectArray = no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class));
         var listOfBindings = ParameterizedTypeName.get(LIST, objectArray);
-        var outer = ParameterizedTypeName.get(MAP, ClassName.get(Integer.class), listOfBindings);
-        b.addStatement("$T groups = new $T<>()", outer, LINKED_HASH_MAP);
+        if (perTenant) {
+            var byTenant = ParameterizedTypeName.get(MAP, ClassName.get(Object.class), listOfBindings);
+            var outer = ParameterizedTypeName.get(MAP, ClassName.get(Integer.class), byTenant);
+            b.addStatement("$T groups = new $T<>()", outer, LINKED_HASH_MAP);
+        } else {
+            var outer = ParameterizedTypeName.get(MAP, ClassName.get(Integer.class), listOfBindings);
+            b.addStatement("$T groups = new $T<>()", outer, LINKED_HASH_MAP);
+        }
     }
 
-    private static void emitPerRepLoop(CodeBlock.Builder b, EntityResolution entity, ClassName nodeIdEncoder) {
+    private static void emitPerRepLoop(CodeBlock.Builder b, EntityResolution entity,
+                                       ClassName nodeIdEncoder, TenantRouting routing) {
         b.beginControlFlow("for (int idx : indices)");
         b.addStatement("$T<String, Object> rep = reps.get(idx)", MAP);
         // Most-specific resolvable alternative: emitted as an if-else cascade in priority order.
@@ -81,7 +104,7 @@ final class HandleMethodBody {
                 b.beginControlFlow("if (" + cond + ")", matchArgs(alt));
                 any = true;
             }
-            emitDecodeAndGroup(b, alt, p.declarationIndex(), nodeIdEncoder);
+            emitDecodeAndGroup(b, entity, alt, p.declarationIndex(), nodeIdEncoder, routing);
         }
         if (any) {
             b.endControlFlow();
@@ -103,8 +126,8 @@ final class HandleMethodBody {
     }
 
     private static void emitDecodeAndGroup(
-        CodeBlock.Builder b, KeyAlternative alt, int altIndex,
-        ClassName nodeIdEncoder
+        CodeBlock.Builder b, EntityResolution entity, KeyAlternative alt, int altIndex,
+        ClassName nodeIdEncoder, TenantRouting routing
     ) {
         // Exhaustive sealed switch with no default arm: a future third key shape is a compile
         // error at this fork rather than a silent runtime gap.
@@ -140,14 +163,61 @@ final class HandleMethodBody {
         // rep map is the one the dispatched fetcher's env sees.
         b.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()",
             ENV, ENV_IMPL);
-        b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
-            + ".add(new Object[]{idx, cols, repEnv})",
-            altIndex, ARRAY_LIST);
+        if (routing != null && routing.bound() != null) {
+            // Each rep carries its own tenant at the alternative's classified decoded position;
+            // grouping per (alternative, tenant) keeps every dispatched SELECT tenant-homogeneous.
+            b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
+                + ".computeIfAbsent(cols[$L], k -> new $T<>())"
+                + ".add(new Object[]{idx, cols, repEnv})",
+                altIndex, LINKED_HASH_MAP, tenantPosition(entity, routing.bound(), altIndex), ARRAY_LIST);
+        } else {
+            b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
+                + ".add(new Object[]{idx, cols, repEnv})",
+                altIndex, ARRAY_LIST);
+        }
     }
 
-    private static void emitGroupDispatch(CodeBlock.Builder b, EntityResolution entity) {
+    /** The tenant column's decoded position within {@code altIndex}'s column tuple. */
+    private static int tenantPosition(EntityResolution entity, TenantBinding.EntityRepBound bound, int altIndex) {
+        for (var slot : bound.alternatives()) {
+            if (slot.alternativeIndex() == altIndex) {
+                return slot.decodedPosition();
+            }
+        }
+        // Classification admits an EntityRepBound only when every resolvable alternative carries
+        // a tenant slot, so a miss here means the classifier and this emitter disagree.
+        throw new IllegalStateException(
+            "Entity '" + entity.typeName() + "' is tenant-bound but key alternative #" + altIndex
+                + " carries no decoded tenant position; classification and emission disagree.");
+    }
+
+    private static void emitGroupDispatch(CodeBlock.Builder b, EntityResolution entity, TenantRouting routing) {
         var listOfBindings = ParameterizedTypeName.get(LIST,
             no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
+        boolean perTenant = routing != null && routing.bound() != null;
+        if (perTenant) {
+            var byTenant = ParameterizedTypeName.get(MAP, ClassName.get(Object.class), listOfBindings);
+            var outerEntry = ParameterizedTypeName.get(
+                ClassName.get(java.util.Map.Entry.class),
+                ClassName.get(Integer.class), byTenant);
+            var innerEntry = ParameterizedTypeName.get(
+                ClassName.get(java.util.Map.Entry.class),
+                ClassName.get(Object.class), listOfBindings);
+            b.beginControlFlow("for ($T altEntry : groups.entrySet())", outerEntry);
+            b.addStatement("int altIdx = altEntry.getKey()");
+            b.beginControlFlow("for ($T tenantEntry : altEntry.getValue().entrySet())", innerEntry);
+            b.addStatement("$T bindings = tenantEntry.getValue()", listOfBindings);
+            b.addStatement("Object[] first = bindings.get(0)");
+            b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
+            // One tenant-homogeneous SELECT per group: a null decoded tenant fails loudly in the
+            // divined-key guard rather than routing anywhere.
+            b.addStatement("$T dsl = $T.of(groupEnv).dslFor($T.divinedTenant(tenantEntry.getKey()))",
+                DSL_CONTEXT, routing.tenantConnections(), routing.tenantConnections());
+            emitAltSwitch(b, entity);
+            b.endControlFlow();
+            b.endControlFlow();
+            return;
+        }
         var outerEntry = ParameterizedTypeName.get(
             ClassName.get(java.util.Map.Entry.class),
             ClassName.get(Integer.class), listOfBindings);
@@ -156,7 +226,18 @@ final class HandleMethodBody {
         b.addStatement("$T bindings = altEntry.getValue()", listOfBindings);
         b.addStatement("Object[] first = bindings.get(0)");
         b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
-        b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
+        if (routing != null) {
+            // Multi-tenant build, global entity table: every group reads the default source.
+            b.addStatement("$T dsl = $T.of(groupEnv).dslDefault()",
+                DSL_CONTEXT, routing.tenantConnections());
+        } else {
+            b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
+        }
+        emitAltSwitch(b, entity);
+        b.endControlFlow();
+    }
+
+    private static void emitAltSwitch(CodeBlock.Builder b, EntityResolution entity) {
         // Switch over altIdx; one arm per resolvable alternative. The default arm is an empty
         // block (no trailing semicolon) since arrow-case + statement-vs-block is finicky in
         // JavaPoet's addStatement.
@@ -168,7 +249,6 @@ final class HandleMethodBody {
                 i, entity.typeName(), "Alt" + i);
         }
         b.add("default -> {\n}\n");
-        b.endControlFlow();
         b.endControlFlow();
     }
 

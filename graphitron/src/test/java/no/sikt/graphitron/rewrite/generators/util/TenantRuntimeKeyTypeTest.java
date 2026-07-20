@@ -62,7 +62,12 @@ class TenantRuntimeKeyTypeTest {
             .contains("The tenant binding value is absent")
             .contains("if (key instanceof java.lang.Integer typed)")
             // The build-time-path nested slot read.
-            .contains("static java.lang.Object tenantSlot(java.lang.Object container, java.lang.String... path)");
+            .contains("static java.lang.Object tenantSlot(java.lang.Object container, java.lang.String... path)")
+            // The single loader-naming seam: bare path form plus the tenant-partitioned form
+            // whose opaque segment keeps inherited-tenant batches tenant-homogeneous.
+            .contains("static java.lang.String loaderName(")
+            .contains("static java.lang.String tenantLoaderName(")
+            .contains("loaderName(env) + \" tenant:\"");
     }
 
     @Test

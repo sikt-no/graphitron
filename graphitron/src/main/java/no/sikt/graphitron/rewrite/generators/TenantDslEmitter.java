@@ -173,6 +173,38 @@ final class TenantDslEmitter {
         return new Resolution(divinedKeyDeclaration(ctx, field, bound, tenantConnections), true);
     }
 
+    /**
+     * The DataLoader-name declaration for a batched field's registration site. Single-tenant
+     * builds keep the exact inline path join. Multi-tenant builds route the recipe through the
+     * generated carrier's single naming seam: {@link TenantBinding.Inherited} fields read the
+     * tenant-partitioned name (the handed-down tenant joins the path as an opaque segment, so
+     * every loader batch is tenant-homogeneous and its captured environment routes the right
+     * source), every other arm the bare path name.
+     */
+    static CodeBlock loaderNameDeclaration(TypeFetcherEmissionContext ctx, String fieldName,
+                                           String localName, String outputPackage) {
+        var schema = ctx.graphitronSchema();
+        TenantBinding binding = schema != null
+                && schema.tenantScopes() instanceof TenantScopes.Configured
+                && ctx.parentTypeName() != null
+            ? schema.tenantBindingOf(ctx.parentTypeName(), fieldName)
+            : null;
+        if (binding == null) {
+            return CodeBlock.builder()
+                .addStatement("$T $L = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                    String.class, localName, String.class, "/")
+                .build();
+        }
+        var tenantConnections = tenantConnectionsClass(outputPackage);
+        return binding instanceof TenantBinding.Inherited
+            ? CodeBlock.builder()
+                .addStatement("$T $L = $T.tenantLoaderName(env)", String.class, localName, tenantConnections)
+                .build()
+            : CodeBlock.builder()
+                .addStatement("$T $L = $T.loaderName(env)", String.class, localName, tenantConnections)
+                .build();
+    }
+
     /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.TenantConnections}. */
     static ClassName tenantConnectionsClass(String outputPackage) {
         return ClassName.get(outputPackage + ".schema",

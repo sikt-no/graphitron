@@ -89,6 +89,13 @@ public final class EntityFetcherDispatchClassGenerator {
 
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
+        // Multi-tenant routing for the dispatch surface: each tenant-scoped entity's grouping
+        // widens per tenant at its classified decoded positions; global entities read the
+        // default source. Null in single-tenant builds (byte-identical emission).
+        boolean multiTenant = schema.tenantScopes()
+            instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured;
+        var tenantConnections = ClassName.get(outputPackage + ".schema",
+            ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -103,7 +110,11 @@ public final class EntityFetcherDispatchClassGenerator {
             .addMethod(buildContextHelper(graphitronContext));
 
         for (var entity : entities) {
-            spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder));
+            HandleMethodBody.TenantRouting routing = multiTenant
+                ? new HandleMethodBody.TenantRouting(tenantConnections,
+                    schema.tenantBindings().byEntityType().get(entity.typeName()))
+                : null;
+            spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder, routing));
             for (int i = 0; i < entity.alternatives().size(); i++) {
                 var alt = entity.alternatives().get(i);
                 if (!alt.resolvable()) continue;
@@ -240,9 +251,10 @@ public final class EntityFetcherDispatchClassGenerator {
     // Per-type handle methods and per-alternative select methods are emitted by the helpers
     // below.
     private static MethodSpec buildHandleMethod(
-        EntityResolution entity, String outputPackage, ClassName nodeIdEncoder
+        EntityResolution entity, String outputPackage, ClassName nodeIdEncoder,
+        HandleMethodBody.TenantRouting routing
     ) {
-        return new HandleMethodEmitter(entity, outputPackage, nodeIdEncoder).build();
+        return new HandleMethodEmitter(entity, outputPackage, nodeIdEncoder, routing).build();
     }
 
     private static MethodSpec buildSelectMethod(
@@ -258,11 +270,14 @@ public final class EntityFetcherDispatchClassGenerator {
         final EntityResolution entity;
         final String outputPackage;
         final ClassName nodeIdEncoder;
+        final HandleMethodBody.TenantRouting routing;
 
-        HandleMethodEmitter(EntityResolution entity, String outputPackage, ClassName nodeIdEncoder) {
+        HandleMethodEmitter(EntityResolution entity, String outputPackage, ClassName nodeIdEncoder,
+                            HandleMethodBody.TenantRouting routing) {
             this.entity = entity;
             this.outputPackage = outputPackage;
             this.nodeIdEncoder = nodeIdEncoder;
+            this.routing = routing;
         }
 
         MethodSpec build() {
@@ -279,7 +294,7 @@ public final class EntityFetcherDispatchClassGenerator {
         }
 
         CodeBlock body() {
-            return HandleMethodBody.emit(entity, nodeIdEncoder);
+            return HandleMethodBody.emit(entity, nodeIdEncoder, routing);
         }
     }
 

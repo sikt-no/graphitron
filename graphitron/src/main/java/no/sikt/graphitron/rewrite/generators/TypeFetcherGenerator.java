@@ -6634,9 +6634,11 @@ public class TypeFetcherGenerator {
             keyType, valueType, asyncResultType(valueType),
             registration,
             RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
+            CodeBlock.of(""),
             GeneratorUtils.buildKeyExtraction(sourceKey, prt),
             asyncWrapTail(valueType, outputPackage, errorChannel),
-            dataLoaderSyncCatchBody(valueType, outputPackage, errorChannel));
+            dataLoaderSyncCatchBody(valueType, outputPackage, errorChannel),
+            TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
     }
 
     /**
@@ -6709,25 +6711,6 @@ public class TypeFetcherGenerator {
     // fetcher builder for both source shapes; flat correlated-batch rows methods in
     // SplitRowsMethodEmitter.
     // -----------------------------------------------------------------------
-
-    /**
-     * Emits the DataLoader name construction for the rewrite emitter. The name is path-only —
-     * {@code env.getExecutionStepInfo().getPath().getKeysOnly()} joined by {@code "/"}. The path
-     * is Graphitron-controlled; implementers cannot accidentally produce a colliding name.
-     *
-     * <p>{@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),
-     * so {@code /films/0/actors} and {@code /films/1/actors} map to the same
-     * {@code [films, actors]} key list — the correct batching scope for a per-parent
-     * DataLoader. Aliased uses of the same field get different path segments because
-     * graphql-java records aliases as path keys, so {@code heroes: actors} and
-     * {@code villains: actors} end up in different DataLoaders.
-     */
-    private static CodeBlock buildDataLoaderName(TypeFetcherEmissionContext ctx) {
-        return CodeBlock.builder()
-            .addStatement("$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                String.class, String.class, "/")
-            .build();
-    }
 
     /**
      * The one batched-field DataFetcher builder: both source shapes of the merged
@@ -6824,7 +6807,8 @@ public class TypeFetcherGenerator {
             prelude,
             keyExtraction,
             asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
-            dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()));
+            dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
+            TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
     }
 
     /**
@@ -6848,7 +6832,8 @@ public class TypeFetcherGenerator {
             CodeBlock.of(""),
             GeneratorUtils.buildKeyExtraction(field.sourceKey(), parentTable),
             asyncWrapTail(RECORD, outputPackage, Optional.empty()),
-            dataLoaderSyncCatchBody(RECORD, outputPackage, Optional.empty()));
+            dataLoaderSyncCatchBody(RECORD, outputPackage, Optional.empty()),
+            TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
     }
 
     // -----------------------------------------------------------------------

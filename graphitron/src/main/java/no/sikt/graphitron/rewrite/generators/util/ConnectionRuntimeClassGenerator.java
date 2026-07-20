@@ -834,9 +834,50 @@ public final class ConnectionRuntimeClassGenerator {
             carrier.addMethod(ofEnvironment(self))
                 .addMethod(divinedTenant(tenantKey))
                 .addMethod(divinedTenantAgree())
-                .addMethod(tenantSlot());
+                .addMethod(tenantSlot())
+                .addMethod(loaderName())
+                .addMethod(tenantLoaderName());
         }
         return carrier.build();
+    }
+
+    /**
+     * {@code static String loaderName(DataFetchingEnvironment env)}: the path-derived DataLoader
+     * name every multi-tenant registration site reads, so the naming recipe cannot drift between
+     * sites. Path keys only (list indices stripped), joined by {@code "/"}, exactly the
+     * single-tenant inline form.
+     */
+    private static MethodSpec loaderName() {
+        return MethodSpec.methodBuilder("loaderName")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return String.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())", "/")
+            .addJavadoc("The path-derived DataLoader name: named path segments joined by {@code \"/\"}.\n"
+                + "The single naming seam for every multi-tenant loader registration site.\n")
+            .build();
+    }
+
+    /**
+     * {@code static String tenantLoaderName(DataFetchingEnvironment env)}: the tenant-partitioned
+     * loader name for fields inheriting a divined tenant. Load-bearing, not cosmetic: a batch
+     * loader resolves one {@code DSLContext} from the environment captured at loader creation,
+     * so a tenant-mixed loader would execute every key against the first key's tenant. The
+     * tenant segment is an opaque partition key, never parsed back (the captured environment
+     * carries the typed tenant).
+     */
+    private static MethodSpec tenantLoaderName() {
+        return MethodSpec.methodBuilder("tenantLoaderName")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return loaderName(env) + $S + env.getLocalContext()", " tenant:")
+            .addJavadoc("The tenant-partitioned DataLoader name for a field inheriting a divined tenant:\n"
+                + "{@link #loaderName} plus an opaque tenant segment (never parsed back), so each\n"
+                + "loader batch stays tenant-homogeneous and its captured environment routes the\n"
+                + "right source. The separator contains characters no GraphQL path segment can,\n"
+                + "so the segment cannot collide with a path suffix.\n")
+            .build();
     }
 
     /**

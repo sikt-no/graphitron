@@ -108,6 +108,116 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     @Test
+    void inheritedBatchedChildPartitionsItsLoaderNamePerTenant() {
+        var schema = multiTenant("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertThat(render(schema, "FilmFetchers", "inventories"))
+            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.tenantLoaderName(env);")
+            .doesNotContain("String.join");
+    }
+
+    @Test
+    void untenantedBatchedChildKeepsTheBarePathNameThroughTheSharedSeam() {
+        var schema = multiTenant("""
+            type Customer @table(name: "customer") {
+                email: String
+                address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+            }
+            type Address @table(name: "address") { postalCode: String @field(name: "postal_code") }
+            type Query { customers: [Customer!]! }
+            """);
+
+        assertThat(render(schema, "CustomerFetchers", "address"))
+            .contains("java.lang.String name = fake.code.generated.schema.TenantConnections.loaderName(env);")
+            .doesNotContain("tenantLoaderName");
+    }
+
+    @Test
+    void singleTenantLoaderNameKeepsTheInlinePathJoin() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """, TestConfiguration.testContext());
+
+        assertThat(render(schema, "FilmFetchers", "inventories"))
+            .contains("java.lang.String name = java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly());")
+            .doesNotContain("TenantConnections");
+    }
+
+    private static String renderHandle(GraphitronSchema schema, String typeName) {
+        TypeSpec dispatch = no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator
+            .generate(schema, DEFAULT_OUTPUT_PACKAGE).get(0);
+        return dispatch.methodSpecs().stream()
+            .filter(m -> ("handle" + typeName).equals(m.name()))
+            .findFirst()
+            .map(MethodSpec::toString)
+            .orElseThrow();
+    }
+
+    private static final String FILM_ACTOR_NODE_SDL = """
+        type FilmActor implements Node @table(name: "film_actor")
+                @node(keyColumns: ["actor_id", "film_id"]) {
+            id: ID! @nodeId
+        }
+        type Query {
+            node(id: ID!): Node
+        }
+        """;
+
+    @Test
+    void tenantScopedDispatchGroupsPerTenantAtTheDecodedPosition() {
+        var handle = renderHandle(multiTenant(FILM_ACTOR_NODE_SDL), "FilmActor");
+        assertThat(handle)
+            // Grouping widened to altIndex -> tenantKey -> bindings; the tenant reads at the
+            // classified decoded position (film_id is position 1 of the FilmActor key).
+            .contains("java.util.Map<java.lang.Integer, java.util.Map<java.lang.Object, java.util.List<java.lang.Object[]>>> groups")
+            .contains(".computeIfAbsent(cols[1], k -> new java.util.ArrayList<>())")
+            .contains("dslFor(fake.code.generated.schema.TenantConnections.divinedTenant(tenantEntry.getKey()))")
+            .doesNotContain("getDslContext(groupEnv)");
+    }
+
+    @Test
+    void globalEntityDispatchAcquiresTheDefaultSourceInMultiTenantBuilds() {
+        var handle = renderHandle(multiTenant("""
+            type Language implements Node @table(name: "language") @node {
+                id: ID! @nodeId
+            }
+            type Query {
+                node(id: ID!): Node
+            }
+            """), "Language");
+        assertThat(handle)
+            .contains("fake.code.generated.schema.TenantConnections.of(groupEnv).dslDefault()")
+            .doesNotContain("dslFor")
+            .doesNotContain("getDslContext(groupEnv)");
+    }
+
+    @Test
+    void singleTenantDispatchKeepsTheEscapeHatchGrouping() {
+        var handle = renderHandle(TestSchemaHelper.buildSchema(
+            FILM_ACTOR_NODE_SDL, TestConfiguration.testContext()), "FilmActor");
+        assertThat(handle)
+            .contains("java.util.Map<java.lang.Integer, java.util.List<java.lang.Object[]>> groups")
+            .contains("org.jooq.DSLContext dsl = graphitronContext(groupEnv).getDslContext(groupEnv);")
+            .doesNotContain("TenantConnections");
+    }
+
+    @Test
     void singleTenantEmissionKeepsTheEscapeHatchFormByteForByte() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }

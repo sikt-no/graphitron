@@ -149,12 +149,24 @@ public class QueryNodeFetcherClassGenerator {
                 + "keyed by {@code path} (computed from the per-id DFE's execution-step-info).\n"
                 + "Ids batch into a single {@link #rowsNodes} call, which synthesises\n"
                 + "representations and dispatches through {@code EntityFetcherDispatch.resolveByReps}\n"
-                + "(one SELECT per {@code (type, alternative)} group via the shared dispatcher).\n"
+                + "(one SELECT per {@code (type, alternative)} group via the shared dispatcher;\n"
+                + "a multi-tenant build additionally partitions each group per decoded tenant, so a\n"
+                + "batch of ids spanning tenants issues one SELECT per tenant-homogeneous group).\n"
                 + "Returns {@code null} entries for null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
             .addStatement("if (ids == null || ids.isEmpty()) return $T.completedFuture($T.of())", COMPLETABLE_FUTURE, LIST)
-            .addStatement("$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                String.class, String.class, "/")
+            // Multi-tenant builds read the name off the carrier's single naming seam. No tenant
+            // segment here: ids are undecoded at the loader boundary, and the dispatcher
+            // partitions the batch per decoded tenant downstream, so the batch itself may span
+            // tenants safely.
+            .addCode(schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured
+                ? CodeBlock.builder().addStatement("$T path = $T.loaderName(env)",
+                    String.class,
+                    ClassName.get(outputPackage + ".schema",
+                        ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME)).build()
+                : CodeBlock.builder().addStatement(
+                    "$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                    String.class, String.class, "/").build())
             .addCode("$T futures = ids.stream()\n", listOfCfRecord)
             .addCode("    .map(id -> {\n")
             .addCode("        if (id == null) return $T.completedFuture(($T) null);\n", COMPLETABLE_FUTURE, RECORD)
@@ -177,11 +189,12 @@ public class QueryNodeFetcherClassGenerator {
         // rowsNodes: synthesise a representation per non-null id (peek typeId → recover
         // GraphQL typename via the dispatcher's emitted lookup → build a {__typename, id}
         // map), then dispatch through EntityFetcherDispatch.resolveByReps. The dispatcher's
-        // own (type, alternative, tenantId) grouping issues one SELECT per group, and idx
-        // carried through the SELECT scatters rows back to their original positions in
-        // keys. Replaces the previous per-typeId loop and its encode-canonicalize-scatter
-        // round-trip; the dispatcher's idx-driven scatter handles non-canonical inputs
-        // directly because Base64.getUrlDecoder accepts both padded and unpadded forms.
+        // own grouping — per (type, alternative), widened per decoded tenant in a
+        // multi-tenant build — issues one SELECT per group, and idx carried through the
+        // SELECT scatters rows back to their original positions in keys. Replaces the
+        // previous per-typeId loop and its encode-canonicalize-scatter round-trip; the
+        // dispatcher's idx-driven scatter handles non-canonical inputs directly because
+        // Base64.getUrlDecoder accepts both padded and unpadded forms.
         var listOfMap = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(MAP, STRING_CLASS, ClassName.get(Object.class)));
         var arrayListOfMap = ParameterizedTypeName.get(ARRAY_LIST,

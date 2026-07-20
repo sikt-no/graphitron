@@ -124,6 +124,28 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock keyExtraction,
             CodeBlock asyncWrapTail,
             CodeBlock syncCatchBody) {
+        return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
+            batchLoaderLambda, preRegistrationPrelude, keyExtraction, asyncWrapTail, syncCatchBody,
+            buildDataLoaderName());
+    }
+
+    /**
+     * Canonical form carrying the loader-name declaration. Tenant-aware callers resolve it per
+     * the field's binding ({@code TenantDslEmitter.loaderNameDeclaration}); the other overloads
+     * default to the inline path join, byte-identical to the pre-tenant emission.
+     */
+    public static MethodSpec build(
+            String fieldName,
+            TypeName keyType,
+            TypeName loaderValueType,
+            TypeName outerReturnType,
+            LoaderRegistration registration,
+            CodeBlock batchLoaderLambda,
+            CodeBlock preRegistrationPrelude,
+            CodeBlock keyExtraction,
+            CodeBlock asyncWrapTail,
+            CodeBlock syncCatchBody,
+            CodeBlock loaderNameDeclaration) {
 
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, loaderValueType);
         String factoryMethod = registration.container() == LoaderRegistration.Container.MAPPED_SET
@@ -145,7 +167,7 @@ public final class DataLoaderFetcherEmitter {
             .returns(outerReturnType)
             .addParameter(ENV, "env")
             .addCode(preRegistrationPrelude)
-            .addCode(buildDataLoaderName())
+            .addCode(loaderNameDeclaration)
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.$L($L));\n",

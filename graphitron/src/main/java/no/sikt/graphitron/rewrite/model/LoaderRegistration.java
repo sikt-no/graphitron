@@ -40,7 +40,8 @@ import java.util.Objects;
  *       {@link Dispatch#LOAD_MANY} (accessor-many's loadMany contract).</li>
  * </ul>
  *
- * <p>The path-scoped tenant-qualified DataLoader name is computed at fetcher emit time from
+ * <p>The path-scoped DataLoader name (tenant-partitioned for fields inheriting a divined tenant
+ * in a multi-tenant build) is computed at fetch time from
  * {@code env.getExecutionStepInfo().getPath()}; it is not carried on this record because
  * path-scoping is a runtime fact, not a build-time one.
  */

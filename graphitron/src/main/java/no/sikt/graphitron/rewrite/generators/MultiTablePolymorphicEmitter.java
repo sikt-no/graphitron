@@ -1541,8 +1541,9 @@ public final class MultiTablePolymorphicEmitter {
      * Batched child-connection main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
      * parent's {@link no.sikt.graphitron.rewrite.model.SourceKey} and delegates to a
      * {@code rows<Field>(List<RowN<PK1...PKn>>, env)} batch loader. The body shape mirrors
-     * {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the tenant-scoped DataLoader
-     * name, {@code computeIfAbsent} the loader, extract the parent PK from {@code env.getSource()}
+     * {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the DataLoader name (the
+     * path-derived form, partitioned per inherited tenant in a multi-tenant build),
+     * {@code computeIfAbsent} the loader, extract the parent PK from {@code env.getSource()}
      * via {@link GeneratorUtils#buildRecordParentKeyExtraction}, then return
      * {@code loader.load(key, env).thenApply(...).exceptionally(...)}.
      *
@@ -1582,9 +1583,7 @@ public final class MultiTablePolymorphicEmitter {
             .returns(asyncResultType(valueType))
             .addParameter(ENV, "env");
 
-        builder.addStatement(
-            "$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-            String.class, String.class, "/");
+        builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
@@ -1653,9 +1652,7 @@ public final class MultiTablePolymorphicEmitter {
             .returns(asyncResultType(valueType))
             .addParameter(ENV, "env");
 
-        builder.addStatement(
-            "$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-            String.class, String.class, "/");
+        builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
