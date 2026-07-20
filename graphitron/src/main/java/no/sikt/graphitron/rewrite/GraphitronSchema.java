@@ -6,12 +6,14 @@ import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.ReachableSourceShape;
 import no.sikt.graphitron.rewrite.model.Source;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The parsed representation of a GraphQL schema. Holds all classified types and fields.
@@ -47,6 +49,13 @@ import java.util.Map;
  * a parent-typename-grain fact, so it lives here rather than as a per-leaf component. Empty for
  * test-constructed schemas, which then fold every nested field to the conservative absorbing
  * {@link Arrival#MANY} ({@code Child}).
+ *
+ * <p>{@link #reachableSourceShapes} is the reified per-{@link FieldCoordinates} reachable-source-shape
+ * fact ({@code MixedSourceReachIndex}), computed once post-walk. It carries an entry only for a
+ * coordinate reached through more than one source shape (a directiveless type reached as both a
+ * nesting projection and a producer-backed result); single-reach coordinates are absent and derive
+ * their singleton on read. The dispatch emitter and the validator's shape-set rule both read it, so
+ * neither re-derives the union. Empty for every single-source schema.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -56,7 +65,8 @@ public record GraphitronSchema(
     List<BuildWarning> warnings,
     ContextArgumentClassifier.Classification contextArguments,
     List<ValidationError> diagnostics,
-    Map<String, Arrival> arrivals
+    Map<String, Arrival> arrivals,
+    Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes
 ) {
 
     /**
@@ -67,7 +77,7 @@ public record GraphitronSchema(
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
-            ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of());
+            ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of());
     }
 
     /**
@@ -80,9 +90,11 @@ public record GraphitronSchema(
                             Map<String, EntityResolution> entitiesByType,
                             List<BuildWarning> warnings,
                             List<ValidationError> diagnostics,
-                            Map<String, Arrival> arrivals) {
+                            Map<String, Arrival> arrivals,
+                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals));
+            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics), Map.copyOf(arrivals),
+            Map.copyOf(reachableSourceShapes));
     }
 
     /**
@@ -94,7 +106,7 @@ public record GraphitronSchema(
                             Map<String, EntityResolution> entitiesByType,
                             List<BuildWarning> warnings,
                             List<ValidationError> diagnostics) {
-        this(types, fields, entitiesByType, warnings, diagnostics, Map.of());
+        this(types, fields, entitiesByType, warnings, diagnostics, Map.of(), Map.of());
     }
 
     /**
@@ -109,7 +121,7 @@ public record GraphitronSchema(
                             List<BuildWarning> warnings,
                             ContextArgumentClassifier.Classification contextArguments,
                             List<ValidationError> diagnostics) {
-        this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of());
+        this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of());
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {
@@ -153,6 +165,40 @@ public record GraphitronSchema(
     /** {@link #sourceOf(FieldCoordinates)} keyed by type/field name. */
     public Source sourceOf(String typeName, String fieldName) {
         return sourceOf(FieldCoordinates.coordinates(typeName, fieldName));
+    }
+
+    /**
+     * The set of source shapes proven to reach {@code coord}. Returns the reified union for a
+     * coordinate reached through more than one shape; for a single-reach coordinate (absent from the
+     * stored index) derives the singleton from the parent type's classification. Returns an empty set
+     * for a coordinate that is not a source-shape-dispatched member field (a root field, or a column
+     * on a {@code @table} parent). Never {@code null}.
+     */
+    public Set<ReachableSourceShape> reachableSourceShapes(FieldCoordinates coord) {
+        var stored = reachableSourceShapes.get(coord);
+        if (stored != null) {
+            return stored;
+        }
+        return switch (types.get(coord.getTypeName())) {
+            case GraphitronType.NestingType ignored -> Set.of(ReachableSourceShape.NESTING_RECORD);
+            case GraphitronType.JooqRecordCarrier ignored -> Set.of(ReachableSourceShape.JOOQ_RECORD_CARRIER);
+            case GraphitronType.ResultType ignored -> Set.of(ReachableSourceShape.CLASS_BACKED_ACCESSOR);
+            case null, default -> Set.of();
+        };
+    }
+
+    /** {@link #reachableSourceShapes(FieldCoordinates)} keyed by type/field name. */
+    public Set<ReachableSourceShape> reachableSourceShapes(String typeName, String fieldName) {
+        return reachableSourceShapes(FieldCoordinates.coordinates(typeName, fieldName));
+    }
+
+    /**
+     * Read-only view of the reified index: every coordinate reached through more than one source
+     * shape, keyed to its shape-set union. Single-reach coordinates are absent. Consumed by the
+     * validator's shape-set rule and the mixed-source pipeline tests.
+     */
+    public Map<FieldCoordinates, Set<ReachableSourceShape>> mixedSourceCoordinates() {
+        return reachableSourceShapes;
     }
 
     /**

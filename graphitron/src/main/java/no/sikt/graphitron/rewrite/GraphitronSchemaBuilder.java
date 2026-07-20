@@ -327,9 +327,15 @@ public class GraphitronSchemaBuilder {
         // to read through GraphitronSchema.sourceOf. No generator reads it (emit stays leaf-identity
         // dispatch), so populating OnlyChild changes no generated code.
         var arrivals = ArrivalIndex.compute(ctx.schema).byName();
+        // The reachable-source-shape fold: per-coordinate source-shape union for every type reached
+        // through more than one source shape (a directiveless type reached both as a nesting projection
+        // and as a producer-backed result). Pure fold over the classified types and fields, so it is
+        // computed here and threaded onto the schema for the dispatch emitter and the validator's
+        // shape-set rule to read one fact.
+        var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, dedupedFields);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
-            ctx.diagnostics(), arrivals);
+            ctx.diagnostics(), arrivals, reachableSourceShapes);
         return new BuildResult(model, rebuiltAssembled);
     }
 
@@ -491,7 +497,7 @@ public class GraphitronSchemaBuilder {
             // Fold NestingType registration onto the embedding edge: a NestingField built
             // here establishes its target (and any deeper nested targets) as a NestingType right now,
             // recursing into nested fields, rather than in a post-walk sweep.
-            registerNestingTypesIn(ctx, classified);
+            registerNestingTypesIn(ctx, typeBuilder, classified);
         });
     }
 
@@ -511,16 +517,25 @@ public class GraphitronSchemaBuilder {
      * <p>A directiveless object that no {@code NestingField} embeds is left unclassified (absent from
      * {@code schema.types()}). It is an orphan: the field that returns it already classifies as
      * {@code UnclassifiedField}, so the rejection surfaces at the field edge.
+     *
+     * <p>A {@code NestingField} target that is <em>also</em> a producer-backed result (the mixed-source
+     * reach) is registered by its own visit as that {@code ResultType}, not here: the strict
+     * {@link TypeBuilder#isDirectivelessNestingTarget} gate (registry-free, so walk-order-independent)
+     * is the complementary guard to the {@code contains} idempotency check. Registering a
+     * {@code NestingType} for such a target would race the {@code ResultType} write into
+     * {@link TypeRegistry#register}'s incompatible-repeat demote; gating on the strict predicate means
+     * only a pure nesting target ever registers a {@code NestingType}, in every walk order.
      */
-    private static void registerNestingTypesIn(BuildContext ctx, no.sikt.graphitron.rewrite.model.GraphitronField field) {
+    private static void registerNestingTypesIn(BuildContext ctx, TypeBuilder typeBuilder,
+            no.sikt.graphitron.rewrite.model.GraphitronField field) {
         if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nf)) return;
         String name = nf.returnType().returnTypeName();
-        if (!ctx.typeRegistry.contains(name)) {
+        if (typeBuilder.isDirectivelessNestingTarget(name) && !ctx.typeRegistry.contains(name)) {
             var objType = ctx.schema.getObjectType(name);
             ctx.typeRegistry.register(name, new no.sikt.graphitron.rewrite.model.GraphitronType.NestingType(
                 name, BuildContext.locationOf(objType), objType));
         }
-        nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, child));
+        nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, typeBuilder, child));
     }
 
     /**

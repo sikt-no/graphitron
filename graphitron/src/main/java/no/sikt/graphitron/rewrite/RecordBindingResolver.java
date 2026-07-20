@@ -158,6 +158,17 @@ final class RecordBindingResolver {
         return Optional.ofNullable(resultMemo.get(sdlTypeName));
     }
 
+    /**
+     * The first observed result-axis {@link ProducerBinding} for an SDL type, or empty when none. Used
+     * to name the producer that bound a type class-backed when a mixed-source nesting edge fails
+     * per-child column resolution, so the author who meant "return the produced value" gets intent-level
+     * guidance ({@link ProducerBinding#describe()}).
+     */
+    Optional<ProducerBinding> resultProducer(String sdlTypeName) {
+        var observed = resultObserved.get(sdlTypeName);
+        return observed == null || observed.isEmpty() ? Optional.empty() : Optional.of(observed.get(0));
+    }
+
     /** Returns the resolved input-axis binding for an SDL type, or empty when none. */
     Optional<Class<?>> resolveInput(String sdlTypeName) {
         return Optional.ofNullable(inputMemo.get(sdlTypeName));

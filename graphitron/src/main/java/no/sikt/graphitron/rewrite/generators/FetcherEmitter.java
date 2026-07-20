@@ -204,6 +204,69 @@ public final class FetcherEmitter {
     }
 
     /**
+     * The dual-source-shape dispatch fetcher for a coordinate reached both as a nesting projection of a
+     * {@code @table} parent (source is a generic {@link org.jooq.Record}) and as a field of a class-backed
+     * result (source is the producer's reflected backing object). graphql-java wires one datafetcher per
+     * coordinate, so the two single-arm reads compose into one reified method that dispatches at run time
+     * on {@code source instanceof org.jooq.Record}: the {@code Record} arm is the by-typed-column read
+     * against the representative parent table (the {@code accessorField}'s nesting-arm {@code ColumnField},
+     * {@code columnArm}), the else arm is the record-backed accessor read (the result arm). Statement-form,
+     * Java-17-valid (pattern {@code instanceof} is Java 16+).
+     *
+     * <p>Two invariants a dual-shape coordinate carries that a single-arm one does not: it always
+     * registers its fetcher even where the accessor arm alone would be equivalent to graphql-java's default
+     * {@code PropertyDataFetcher} (the default cannot read a jOOQ {@code Record} column); and it keeps the
+     * env-dependent registration form when the accessor arm injects the environment
+     * ({@link #isEnvDependentAccessorRead}). The result type is always a class-backed
+     * {@code JavaRecordType} / {@code PojoResultType.Backed}: the {@code JooqRecordCarrier} + nesting mix is
+     * a validate-time rejection ({@link no.sikt.graphitron.rewrite.model.ReachableSourceShape#REJECTED}),
+     * so it never reaches this emitter.
+     */
+    public static FetcherBinding bindDualShape(
+            GraphitronField accessorField, ChildField.ColumnField columnArm,
+            ClassName fetchersClass, TableRef nestingParentTable,
+            GraphitronType.ResultType resultType, String outputPackage) {
+        AccessorResolution.Resolved accessor =
+            accessorField instanceof ChildField.RecordField rf ? rf.accessor()
+            : accessorField instanceof ChildField.PropertyField pf ? pf.accessor()
+            : null;
+        String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
+            ? jrt.fqClassName()
+            : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
+        var backingClass = ClassName.bestGuess(fqClassName);
+        boolean envDependent = isEnvDependentAccessorRead(accessorField, resultType);
+        CodeBlock accessorRead = recordBackedAccessorRead(backingClass, accessor, CodeBlock.of("source"));
+        CodeBlock columnRead = dualShapeColumnRead(columnArm, nestingParentTable);
+        var body = CodeBlock.builder();
+        if (envDependent) {
+            body.add("$T source = env.getSource();\n", Object.class);
+        }
+        body.add("if (source instanceof $T rec) {\n", RECORD)
+            .indent().add("return $L;\n", columnRead).unindent()
+            .add("}\n")
+            .add("return $L;\n", accessorRead);
+        return envDependent
+            ? envDependent(accessorField.name(), fetchersClass, body.build())
+            : sourceOnly(accessorField.name(), fetchersClass, outputPackage, body.build());
+    }
+
+    /**
+     * The nesting-arm column read for a dual-shape dispatch, off the pattern-bound {@code rec} record:
+     * {@code rec.get(Tables.X.COL)}, or the NodeId-encoded projection when the column field carries an
+     * encode compaction. Mirrors {@link #bindRaw}'s {@code ColumnField} arm, differing only in the source
+     * subject (the narrowed {@code rec} local rather than {@code ((Record) source)}).
+     */
+    private static CodeBlock dualShapeColumnRead(ChildField.ColumnField cf, TableRef parentTable) {
+        if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
+            return CodeBlock.of("$T.$L(rec.get($T.$L.$L))",
+                enc.encodeMethod().encoderClass(), enc.encodeMethod().methodName(),
+                parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName());
+        }
+        return CodeBlock.of("rec.get($T.$L.$L)",
+            parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName());
+    }
+
+    /**
      * The inline-resolved data-channel shapes that can appear as an immediate child of a
      * class-backed {@code Outcome} payload. Each is resolved here by {@link #bindRaw} as a read of
      * the field's own source; under the wrapper transport that read is repointed at

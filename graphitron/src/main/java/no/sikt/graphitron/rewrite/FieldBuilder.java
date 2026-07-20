@@ -1054,22 +1054,21 @@ class FieldBuilder {
                 parentTableType.table(), parentResultType);
         }
 
-        // NestingField: a plain object type in the schema with no Graphitron domain classification.
-        // Its fields are resolved from the same table context as the parent — classified
-        // recursively so nested scalars reach the model as ColumnField (and future arms as
-        // their respective leaves). class-backed parents cannot reach here; this path is gated
-        // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
+        // NestingField: a plain object type projected off the parent's table row. Its fields are
+        // resolved from the same table context as the parent — classified recursively so nested scalars
+        // reach the model as ColumnField (and future arms as their respective leaves).
         //
-        // "no domain classification" is decided structurally by
-        // TypeBuilder.isDirectivelessNestingTarget (the type pass's null verdict, minus carriers and
-        // multi-producer rejections), not by reading ctx.types here. The former
-        // `elementType == null || elementType instanceof NestingType` guard read the in-progress
-        // registry, so once NestingType registration folds onto this edge a sibling edge embedding the
-        // same target would observe the sibling's NestingType. The structural verdict is independent of
-        // any sibling edge's registration: both Film.details and FilmList.details classify FilmDetails
-        // the same way without either seeing the other.
+        // The gate is the edge-level TypeBuilder.isNestingEdgeTarget: a pure directiveless nesting
+        // target, or a directiveless object that also classifies as a producer-backed ResultType (the
+        // mixed-source reach — reached both as this nesting projection and via its producer). For the
+        // mixed case the embedding edge builds the NestingField here while the type's own visit registers
+        // the ResultType; the per-coordinate legality of the resulting shape-set union is decided
+        // post-walk over GraphitronSchema.reachableSourceShapes (dispatch vs reject), not here. The
+        // verdict is registry-free, so an edge decides independently of any sibling edge's registration:
+        // both Film.details and FilmList.details classify FilmDetails the same way without either seeing
+        // the other.
         if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType
-                && typeBuilder.isDirectivelessNestingTarget(elementTypeName)) {
+                && typeBuilder.isNestingEdgeTarget(elementTypeName)) {
             var wrapper = buildWrapper(fieldDef);
             if (expandingTypes.contains(elementTypeName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("circular type reference detected while expanding '" + elementTypeName + "'"));
@@ -1081,7 +1080,22 @@ class FieldBuilder {
                 var nested = classifyChildFieldOnTableType(nestedDef, elementTypeName, parentTableType, newExpanding);
                 if (nested instanceof UnclassifiedField unc) {
                     String prefix = "nested type '" + elementTypeName + "' field '" + nestedDef.getName() + "': ";
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, unc.rejection().prefixedWith(prefix));
+                    Rejection enriched = unc.rejection().prefixedWith(prefix);
+                    // Mixed-source guidance: when the nesting target is also a producer-backed result, a
+                    // child that will not resolve as a column off the parent row usually means the author
+                    // meant to return the produced value rather than project it. Name the producer that
+                    // bound it (mirrors the accessor-gate near-miss note in
+                    // GraphitronSchemaBuilder.rejectDanglingTypeReferences).
+                    if (elementType instanceof ResultType) {
+                        String note = typeBuilder.resultProducerFor(elementTypeName)
+                            .map(p -> " Type '" + elementTypeName + "' is also produced (" + p.describe()
+                                + "); if the field should return the produced value rather than project it "
+                                + "off '" + parentTypeName + "', add @service, @reference, @tableMethod, or "
+                                + "@externalField on the field.")
+                            .orElse("");
+                        enriched = Rejection.structural(enriched.message() + note);
+                    }
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, enriched);
                 }
                 if (nested instanceof ChildField cf) {
                     nestedFields.add(cf);
@@ -1098,20 +1112,6 @@ class FieldBuilder {
             return new NestingField(parentTypeName, name, location,
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, parentTableType.table(), wrapper),
                 List.copyOf(nestedFields));
-        }
-
-        // A @table parent whose child returns a record-backed/service result type has no way to build that
-        // child from the parent's own row. The former ConstructorField passthrough materialised the
-        // child from the @table parent's Record; that leaf was dissolved as wrong-by-design (no
-        // production schema relies on it, and its only coverage was self-referential), so the clash is
-        // now a build-time rejection that GraphitronSchemaValidator surfaces. The field needs an
-        // explicit producer, or the child type needs a catalog backing.
-        if (elementType instanceof ResultType) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                "field '" + name + "' on @table type '" + parentTypeName + "' returns '" + elementTypeName
-                + "', a record-backed result type, but carries no producer directive to build it: a @table "
-                + "parent cannot construct a record-backed child from its own row. Add @service, @reference, "
-                + "@tableMethod, or @externalField on the field, or back '" + elementTypeName + "' with @table."));
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, record-backed, interface, or union Graphitron type"));

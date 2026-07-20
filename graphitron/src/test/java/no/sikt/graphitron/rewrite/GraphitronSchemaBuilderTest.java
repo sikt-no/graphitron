@@ -2463,8 +2463,10 @@ class GraphitronSchemaBuilderTest {
         // origin-defaulting cases).
 
         // The `@table parent + record-backed child type` shape that used to classify as ConstructorField
-        // is now a build-time rejection (the leaf was dissolved as wrong-by-design). Its coverage lives at
-        // the validator tier in ConstructorFieldValidationTest, not as a clean classification here.
+        // (dissolved as wrong-by-design) is now the mixed-source reach: the child type is projected as a
+        // NestingField off the @table parent and also read through its producer, served by a run-time
+        // source-shape dispatch. Coverage lives in MixedSourceNestedTypeReadsTest (positive) and
+        // MixedSourceNestingReachValidationTest (negatives), not as a clean single-shape classification here.
 
         // @splitQuery on a record-backed parent field is a structural no-op (the record handoff
         // already opens a new DataLoader-backed scope) and should surface as a build warning so

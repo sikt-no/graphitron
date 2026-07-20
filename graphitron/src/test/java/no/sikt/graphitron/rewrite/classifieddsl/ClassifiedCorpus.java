@@ -305,12 +305,15 @@ public final class ClassifiedCorpus {
             type Query { film: Film }
             """),
 
-        // The former "constructor" example (a record-backed child type under a @table parent, Film.details
-        // building the record-backed FilmDetails from the parent's row) left the classified corpus when
-        // ConstructorField was dissolved as wrong-by-design: that table-and-service clash is now a
-        // build-time rejection, asserted at the validator tier by ConstructorFieldValidationTest rather
-        // than as a clean classification here. The Record target shape stays exercised by ErrorsField,
-        // ServiceRecordField, and the DML record carriers.
+        // The former "constructor" example (a record-backed child type under a @table parent) left the
+        // classified corpus when ConstructorField was dissolved. That shape is now the mixed-source reach:
+        // FilmDetails projects as a NestingField off @table Film and is also read through its producer.
+        // Its per-edge field classifications are ordinary (a NestingField on Film.details, a PropertyField
+        // on FilmDetails.rating) and already covered by the "nesting" example and the record-backed cases;
+        // the cross-edge reachable-source-shape union it adds is a type-level fact outside the @classified
+        // per-field dimensions, pinned by MixedSourceNestedTypeReadsTest (positive) and
+        // MixedSourceNestingReachValidationTest (negatives). The Record target shape stays exercised by
+        // ErrorsField, ServiceRecordField, and the DML record carriers.
 
         /*
          * Polymorphic children and roots are catalog-bound over their participant tables: the target shape

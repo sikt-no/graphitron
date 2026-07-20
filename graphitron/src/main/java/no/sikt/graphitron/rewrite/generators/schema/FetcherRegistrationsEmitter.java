@@ -75,12 +75,20 @@ public final class FetcherRegistrationsEmitter {
                       // fall through this filter via the ResultType arm — no NestingType
                       // widening required.
                       || e.getValue() instanceof GraphitronType.ResultType)
-            .forEach(e -> typeBody(schema, e.getKey(), fetchersPackage, outputPackage)
+            .forEach(e -> typeBody(schema, e.getKey(), fetchersPackage, outputPackage, nestedTypeMap.get(e.getKey()))
                 .ifPresent(body -> result.put(e.getKey(), body)));
 
-        nestedTypeMap.values().forEach(ntw ->
+        nestedTypeMap.values().forEach(ntw -> {
+            // A nesting target that also classifies as a producer-backed result is a mixed-source type:
+            // its ResultType body above already emitted every coordinate, dual-shape ones as a run-time
+            // source-shape dispatch. Skip the nested-type body so the name-keyed put does not overwrite
+            // the merged one.
+            if (schema.type(ntw.nestedTypeName()) instanceof GraphitronType.ResultType) {
+                return;
+            }
             nestedBody(ntw, fetchersPackage, outputPackage)
-                .ifPresent(body -> result.put(ntw.nestedTypeName(), body)));
+                .ifPresent(body -> result.put(ntw.nestedTypeName(), body));
+        });
 
         // Connection / Edge wiring is driven by the classifier's first-class type entries
         // (populated for both directive-driven and structural carriers). Iterate the type map
@@ -97,7 +105,7 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static Optional<CodeBlock> typeBody(GraphitronSchema schema, String typeName,
-            String fetchersPackage, String outputPackage) {
+            String fetchersPackage, String outputPackage, NestedTypeWiring dualWiring) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -109,7 +117,8 @@ public final class FetcherRegistrationsEmitter {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         ClassName fetchersClass = ClassName.get(fetchersPackage, typeName + "Fetchers");
-        return Optional.of(buildBody(typeName, fields, fetchersClass, parentTable, resultType, outputPackage));
+        return Optional.of(buildBody(schema, typeName, fields, fetchersClass, parentTable, resultType,
+            outputPackage, dualWiring));
     }
 
     private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage) {
@@ -126,8 +135,11 @@ public final class FetcherRegistrationsEmitter {
         var body = CodeBlock.builder();
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
-            body.add(registrationEntry(ntw.nestedTypeName(), field,
-                nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, sourceIsOutcome));
+            // A nested-only (pure NestingType) coordinate is never dual-shape (a mixed-source type is a
+            // ResultType, emitted via typeBody), so resultType and dualWiring are null and the dispatch
+            // path in registrationEntry short-circuits before reading the schema.
+            body.add(registrationEntry(null, ntw.nestedTypeName(), field,
+                nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, sourceIsOutcome, null));
         }
         body.add(";\n").unindent();
         return Optional.of(body.build());
@@ -173,28 +185,65 @@ public final class FetcherRegistrationsEmitter {
             .build();
     }
 
-    private static CodeBlock buildBody(String typeName, List<GraphitronField> fields,
+    private static CodeBlock buildBody(GraphitronSchema schema, String typeName, List<GraphitronField> fields,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
-            String outputPackage) {
+            String outputPackage, NestedTypeWiring dualWiring) {
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
         var body = CodeBlock.builder().add("codeRegistry").indent();
         for (var field : fields) {
-            body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType,
-                outputPackage, sourceIsOutcome));
+            body.add(registrationEntry(schema, typeName, field, fetchersClass, parentTable, resultType,
+                outputPackage, sourceIsOutcome, dualWiring));
         }
         body.add(";\n").unindent();
         return body.build();
     }
 
-    private static CodeBlock registrationEntry(String typeName, GraphitronField field,
+    private static CodeBlock registrationEntry(GraphitronSchema schema, String typeName, GraphitronField field,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
-            String outputPackage, boolean sourceIsOutcome) {
+            String outputPackage, boolean sourceIsOutcome, NestedTypeWiring dualWiring) {
+        var registrationValue = dispatchRegistrationValue(schema, typeName, field, fetchersClass,
+            resultType, outputPackage, dualWiring);
+        if (registrationValue == null) {
+            registrationValue = FetcherEmitter.bind(field, fetchersClass, parentTable, resultType,
+                outputPackage, sourceIsOutcome).registrationValue();
+        }
         return CodeBlock.builder()
             .add("\n.dataFetcher($T.coordinates($S, $S), ", FIELD_COORDS, typeName, field.name())
-            .add(FetcherEmitter.bind(field, fetchersClass, parentTable, resultType,
-                outputPackage, sourceIsOutcome).registrationValue())
+            .add(registrationValue)
             .add(")")
             .build();
+    }
+
+    /**
+     * The dual-source-shape dispatch registration value for a coordinate whose reified shape set is the
+     * dual {@code {generic Record, class-backed accessor}}, or {@code null} when the coordinate is
+     * single-reach (the caller falls back to {@link FetcherEmitter#bind}). The nesting arm's
+     * {@code ColumnField} is paired from {@code dualWiring}; the accessor arm is {@code field} itself.
+     */
+    private static CodeBlock dispatchRegistrationValue(GraphitronSchema schema, String typeName,
+            GraphitronField field, ClassName fetchersClass, GraphitronType.ResultType resultType,
+            String outputPackage, NestedTypeWiring dualWiring) {
+        if (schema == null || dualWiring == null || resultType == null
+                || !no.sikt.graphitron.rewrite.model.ReachableSourceShape.requiresDispatch(
+                    schema.reachableSourceShapes(typeName, field.name()))) {
+            return null;
+        }
+        var columnArm = dispatchColumnArm(dualWiring, field.name());
+        if (columnArm == null) {
+            return null;
+        }
+        return FetcherEmitter.bindDualShape(field, columnArm, fetchersClass,
+            dualWiring.representativeParentTable(), resultType, outputPackage).registrationValue();
+    }
+
+    /** The nesting-arm {@link ChildField.ColumnField} for {@code fieldName}, or {@code null}. */
+    private static ChildField.ColumnField dispatchColumnArm(NestedTypeWiring dualWiring, String fieldName) {
+        for (var f : dualWiring.fields()) {
+            if (f instanceof ChildField.ColumnField cf && cf.name().equals(fieldName)) {
+                return cf;
+            }
+        }
+        return null;
     }
 
     private static void collectNestedTypes(GraphitronField field, Map<String, NestedTypeWiring> out) {

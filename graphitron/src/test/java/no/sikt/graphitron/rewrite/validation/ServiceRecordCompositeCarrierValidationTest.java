@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Validator-tier coverage for the three near-misses of the {@code @service} record-composite
  * payload carrier. The {@code ClassifiedCorpus} pins the positive classification only (a successful
  * classification); the build-time rejections are asserted here, in the per-shape {@code *ValidationTest}
- * style ({@code ConstructorFieldValidationTest}), so the admitted shape and its near-misses are pinned
+ * style ({@code MixedSourceNestingReachValidationTest}), so the admitted shape and its near-misses are pinned
  * together rather than the rejections riding as unpinned prose.
  *
  * <p>Per <em>Validator mirrors classifier invariants</em>, each near-miss surfaces through an existing

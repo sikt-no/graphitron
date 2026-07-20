@@ -122,6 +122,14 @@ public class TypeFetcherGenerator {
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage, no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
+        // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
+        // mixed-source type's ResultType TypeSpec (pass 1) can pair each dual-shape coordinate with its
+        // nesting-arm column read. Built over the same schema.fields() iteration order
+        // FetcherRegistrationsEmitter uses, so the reference site and the method site agree on the
+        // representative parent.
+        var nestingByType = new LinkedHashMap<String, ChildField.NestingField>();
+        schema.fields().values().forEach(f -> indexNestingByType(f, nestingByType));
+
         var result = new ArrayList<TypeSpec>(schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
@@ -129,13 +137,25 @@ public class TypeFetcherGenerator {
                       || e.getValue() instanceof GraphitronType.ResultType)
             .map(Map.Entry::getKey)
             .sorted()
-            .map(typeName -> generateForType(schema, typeName, assembled, outputPackage, commands))
+            .map(typeName -> generateForType(schema, typeName, assembled, outputPackage, commands,
+                nestingByType.get(typeName)))
             .toList());
 
         // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
         // for each nested plain-object type that contains at least one BatchKeyField leaf.
         // These types are absent from schema.types(), so they cannot reach the stream above.
+        //
+        // Seed the seen-set with every type name pass 1 already emitted a class for (the Table / Node
+        // / Root / Result types). A mixed-source type is a nesting target that also classifies as a
+        // ResultType, so pass 1 emitted its (dispatch-carrying) class; seeding here is the "merged view"
+        // that stops pass 2 emitting a second, same-named class that would overwrite it.
         var seenNestedTypes = new java.util.LinkedHashSet<String>();
+        schema.types().forEach((name, t) -> {
+            if (t instanceof GraphitronType.TableType || t instanceof GraphitronType.NodeType
+                    || t instanceof GraphitronType.RootType || t instanceof GraphitronType.ResultType) {
+                seenNestedTypes.add(name);
+            }
+        });
         schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableBackedType)
             .sorted(Map.Entry.comparingByKey())
@@ -145,6 +165,15 @@ public class TypeFetcherGenerator {
                 }
             }));
         return result;
+    }
+
+    /** First-occurrence-wins index of the {@code NestingField} embedding each nesting-reached type. */
+    private static void indexNestingByType(GraphitronField field, Map<String, ChildField.NestingField> out) {
+        if (!(field instanceof ChildField.NestingField nf)) {
+            return;
+        }
+        out.putIfAbsent(nf.returnType().returnTypeName(), nf);
+        nf.nestedFields().forEach(child -> indexNestingByType(child, out));
     }
 
     private static void collectNestedFetcherClasses(ChildField.NestingField nf,
@@ -161,7 +190,7 @@ public class TypeFetcherGenerator {
                 .sorted(Comparator.comparing(GraphitronField::name))
                 .toList();
             if (FetcherEmitter.nestedTypeOwnsFetchers(nestedFields)) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage, null, commands));
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage, null, commands, null));
             }
         }
         for (var nested : nf.nestedFields()) {
@@ -172,7 +201,7 @@ public class TypeFetcherGenerator {
     }
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
-            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
+            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands, ChildField.NestingField dualWiring) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -180,7 +209,36 @@ public class TypeFetcherGenerator {
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema, commands);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema, commands, dualWiring);
+    }
+
+    /**
+     * The reified source-shape dispatch method for a coordinate whose shape set is the dual
+     * {@code {generic Record, class-backed accessor}}, or {@code null} when single-reach (the caller
+     * falls back to {@link FetcherEmitter#bind}). Pairs the accessor arm ({@code field}) with the nesting
+     * arm's {@code ColumnField} from {@code dualWiring}, via the same {@link FetcherEmitter#bindDualShape}
+     * call {@code FetcherRegistrationsEmitter} uses, so the emitted method and the reference agree.
+     */
+    private static FetcherEmitter.FetcherBinding dualShapeBinding(GraphitronSchema schema, String typeName,
+            GraphitronField field, ClassName fetchersClass, GraphitronType.ResultType resultType,
+            String outputPackage, ChildField.NestingField dualWiring) {
+        if (dualWiring == null || resultType == null || schema == null
+                || !no.sikt.graphitron.rewrite.model.ReachableSourceShape.requiresDispatch(
+                    schema.reachableSourceShapes(typeName, field.name()))) {
+            return null;
+        }
+        ChildField.ColumnField columnArm = null;
+        for (var f : dualWiring.nestedFields()) {
+            if (f instanceof ChildField.ColumnField cf && cf.name().equals(field.name())) {
+                columnArm = cf;
+                break;
+            }
+        }
+        if (columnArm == null) {
+            return null;
+        }
+        return FetcherEmitter.bindDualShape(field, columnArm, fetchersClass,
+            dualWiring.returnType().table(), resultType, outputPackage);
     }
 
     // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
@@ -365,7 +423,7 @@ public class TypeFetcherGenerator {
             graphql.schema.GraphQLSchema assembled,
             String outputPackage) {
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, null,
-            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry());
+            new no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry(), null);
     }
 
     /**
@@ -380,7 +438,8 @@ public class TypeFetcherGenerator {
             graphql.schema.GraphQLSchema assembled,
             String outputPackage,
             GraphitronSchema graphitronSchema,
-            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands) {
+            no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry commands,
+            ChildField.NestingField dualWiring) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
@@ -636,12 +695,20 @@ public class TypeFetcherGenerator {
                 case GraphitronField.UnclassifiedField ignored ->
                     throw new AssertionError("UnclassifiedField in type dispatch: " + ignored.qualifiedName());
             }
-            // Reify the inline / light reads onto this class. bind() returns Reified for
-            // exactly the variants the switch above handles with a no-method arm (column reads,
-            // source passthroughs, the errors transports, the single-record carriers); the
-            // method-backed variants return Inline, so there is no double-emission.
-            if (FetcherEmitter.bind(field, reifiedFetchersClass, parentTable, resultType, outputPackage, sourceIsOutcome)
-                    instanceof FetcherEmitter.FetcherBinding.Reified reified) {
+            // Reify the inline / light reads onto this class. A dual-shape coordinate (reached both as a
+            // nesting projection and a class-backed accessor) reifies the source-shape dispatch method,
+            // paired 1:1 with the reference FetcherRegistrationsEmitter emits from the same bindDualShape
+            // call; every other coordinate reifies through bind(), which returns Reified for exactly the
+            // variants the switch above handles with a no-method arm (column reads, source passthroughs,
+            // the errors transports, the single-record carriers) and Inline for the method-backed ones,
+            // so there is no double-emission.
+            var binding = dualShapeBinding(graphitronSchema, typeName, field, reifiedFetchersClass,
+                resultType, outputPackage, dualWiring);
+            if (binding == null) {
+                binding = FetcherEmitter.bind(field, reifiedFetchersClass, parentTable, resultType,
+                    outputPackage, sourceIsOutcome);
+            }
+            if (binding instanceof FetcherEmitter.FetcherBinding.Reified reified) {
                 builder.addMethod(reified.method());
             }
         }

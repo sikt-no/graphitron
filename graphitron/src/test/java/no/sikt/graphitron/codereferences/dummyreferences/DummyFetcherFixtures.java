@@ -30,10 +30,19 @@ public final class DummyFetcherFixtures {
 
     /**
      * Backs {@code type FilmDetails { rating: String }} as a {@code @service} return, making
-     * {@code FilmDetails} record-backed. The {@code @table}-parent ConstructorField that
-     * used to classify cleanly from this shape was retired; it now backs {@code ConstructorFieldValidationTest}'s
-     * table-and-service clash rejection fixture (the child has no producer to build it from the
-     * {@code @table} parent's row).
+     * {@code FilmDetails} class-backed. When {@code FilmDetails} is also embedded as a plain field of a
+     * {@code @table} parent it is reached through two source shapes at once (the mixed-source reach): the
+     * nesting projection reads {@code film.rating} off the parent {@code Record}, the class-backed reach
+     * reads the {@code rating()} accessor. {@code MixedSourceNestingReachValidationTest} pins the
+     * negatives; the positive is a run-time source-shape dispatch.
      */
     public record FilmDetailsRating(String rating) {}
+
+    /**
+     * Backs a two-hop mixed-source chain: a parent whose {@code details} accessor returns
+     * {@link FilmDetailsRating}, so an SDL {@code FilmDetails} field on the parent binds class-backed
+     * through the parent accessor ({@code propagateResultChildren}) while the same {@code FilmDetails} also
+     * nests off a {@code @table} parent.
+     */
+    public record FilmHolder(FilmDetailsRating details) {}
 }

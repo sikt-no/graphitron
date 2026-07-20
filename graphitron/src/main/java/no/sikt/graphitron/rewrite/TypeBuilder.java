@@ -409,6 +409,30 @@ class TypeBuilder {
     }
 
     /**
+     * The nesting-<em>edge</em> verdict: whether an SDL object reached at an embedding edge is projected
+     * as a {@code NestingField} from the parent's table context, whether or not it also classifies as a
+     * producer-backed result. This is the broader relation {@link #isDirectivelessNestingTarget} is a
+     * subset of: it additionally admits a directiveless object whose only competing type-level verdict is
+     * a {@link GraphitronType.ResultType} (a class-backed accessor result, or a jOOQ-record carrier). Such
+     * a type is reached both as a nesting projection and via its producer; the embedding edge builds the
+     * {@code NestingField} (children classified against the parent table) while the type's own visit
+     * registers the {@code ResultType}, so {@link GraphitronSchemaBuilder} does <em>not</em> register a
+     * {@code NestingType} for it (the registration gate stays {@link #isDirectivelessNestingTarget}). The
+     * per-coordinate legality of the resulting shape-set union (dispatch vs reject) is decided post-walk
+     * over {@link GraphitronSchema#reachableSourceShapes}, not here. Registry-free, so the edge decides
+     * independently of any sibling edge's registration.
+     */
+    boolean isNestingEdgeTarget(String name) {
+        if (isDirectivelessNestingTarget(name)) return true;
+        return lookAheadVerdict(name) instanceof GraphitronType.ResultType;
+    }
+
+    /** The first observed result-axis producer binding for an SDL type; see {@code RecordBindingResolver.resultProducer}. */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding> resultProducerFor(String name) {
+        return bindings.resultProducer(name);
+    }
+
+    /**
      * Registry-free look-ahead at a field's target type. Returns the verdict the
      * target type name resolves to, computed from SDL + reflection bindings + catalog
      * ({@link #classifyType}) plus the producer-bound single-record carrier fixed point

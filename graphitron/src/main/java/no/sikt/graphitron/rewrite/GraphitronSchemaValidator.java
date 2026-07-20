@@ -38,6 +38,7 @@ public class GraphitronSchemaValidator {
         types.values().forEach(type -> validateType(type, types, errors));
         schema.fields().values().forEach(field -> validateField(field, schema, types, errors));
         validateNestingParentCompat(schema, errors);
+        validateReachableSourceShapes(schema, errors);
         validateLocalContextErrorsFieldGuards(schema, errors);
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
@@ -919,6 +920,36 @@ public class GraphitronSchemaValidator {
                 compareNestedFieldsShape(rep, group.get(i), errors);
             }
         }
+    }
+
+    /**
+     * Rejects any mixed-source coordinate whose reified shape-set union
+     * ({@link GraphitronSchema#reachableSourceShapes}) is a combination no emitter arm serves. Reads the
+     * same reified fact the dispatch emitter dispatches on, so emitter and validator cannot drift on which
+     * combinations are supported. The {@code JooqRecordCarrier} + nesting mix
+     * ({@link no.sikt.graphitron.rewrite.model.ReachableSourceShape#REJECTED}) is the first such
+     * combination: it re-lands the narrowed remainder of the former fused type-level rejection (a
+     * {@code @table} parent embedding a jOOQ-record-carrier result), now over the reified fact rather than
+     * a type-level {@code instanceof ResultType} check.
+     */
+    private void validateReachableSourceShapes(GraphitronSchema schema, List<ValidationError> errors) {
+        schema.mixedSourceCoordinates().forEach((coord, shapes) -> {
+            if (no.sikt.graphitron.rewrite.model.ReachableSourceShape.isEmittable(shapes)) {
+                return;
+            }
+            var field = schema.fields().get(coord);
+            SourceLocation location = field == null ? null : field.location();
+            errors.add(new ValidationError(
+                coord.getTypeName() + "." + coord.getFieldName(),
+                Rejection.structural("Field '" + coord.getTypeName() + "." + coord.getFieldName()
+                    + "' is reached through source shapes " + shapes + ", a combination no fetcher serves. "
+                    + "A directiveless type reached as both a nesting projection of a @table parent and a "
+                    + "jOOQ-record-carrier result cannot be served by one datafetcher: both arms would read "
+                    + "a jOOQ Record with independently derived read names. Split '" + coord.getTypeName()
+                    + "' into two type names, or back it with @table so the nesting projection and the "
+                    + "carrier agree on the row shape."),
+                location));
+        });
     }
 
     private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
