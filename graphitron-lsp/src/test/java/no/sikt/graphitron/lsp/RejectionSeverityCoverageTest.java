@@ -159,6 +159,21 @@ class RejectionSeverityCoverageTest {
             return new Rejection.AuthorError.SortEnumMissingOrder(
                 "ActorOrderField", List.of("LAST_NAME", "LAST_UPDATE"));
         }
+        if (permit == Rejection.AuthorError.TenantColumnTypeDisagreement.class) {
+            // Tenant-scope classification rejection: the configured tenant column resolves to
+            // disagreeing Java types across catalog tables. Two sites exercise the multi-line
+            // message shape; Diagnostics.compute's switch on Rejection.AuthorError catches it
+            // uniformly (Error severity).
+            return new Rejection.AuthorError.TenantColumnTypeDisagreement(
+                "eier_organisasjon",
+                List.of(
+                    new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
+                        "public.emne",
+                        no.sikt.graphitron.javapoet.ClassName.get(Integer.class)),
+                    new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
+                        "public.person",
+                        no.sikt.graphitron.javapoet.ClassName.get(String.class))));
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

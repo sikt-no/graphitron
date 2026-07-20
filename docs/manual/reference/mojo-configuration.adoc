@@ -78,6 +78,11 @@ The following parameters apply to every goal:
 | (none)
 | Session identity (R429). A `<sessionState>` block naming how per-request identity is mounted on the pinned connection: either consumer-authored database callables (`<connect call>` / `<disconnect call>`, with an optional OUT `handle`, plus the optional `<stateSurvivesTransactions>` survival declaration) or the Postgres `<variables>` sugar (`<variable name claim>`) that generates both hook halves. Graphitron emits a `SessionHook` from the block that runs at connection acquisition and release; an undeclared function-hook pair is additionally re-fired after each mutation-field transaction settle. An unpaired or handle-inconsistent block fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
 
+| `tenantColumn`
+| `String` (database column name)
+| (none)
+| Name of the database column that carries the tenant id in a database-per-tenant deployment, matched against catalog columns the way column lookups already match (Java name first, then SQL name, both case-insensitive). Configuring it classifies every catalog table as tenant-scoped (carries the column) or global (does not); the tenant Java type is read off the jOOQ catalog's column type, and all carrying tables must agree on that type or the build fails. A configured column no table carries also fails the build, because silently classifying every table as global would route tenant data through the default connection. Omit for single-tenant builds; none of the tenant machinery exists then.
+
 | `devDatabase`
 | `DevDatabaseBinding`
 | (none)
