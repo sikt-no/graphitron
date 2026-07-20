@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R501` | @pivot: discriminator-keyed aggregate projections | Ready | 2026-07-19 <sub>created 2026-07-17</sub> | [plan](pivot-projection-directive.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-14 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R499` | Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence) | In Review | 2026-07-17 | [plan](connection-fields-shared-result-key-projection.md) · [explainer](concepts/flattened-selection-result-keys.html) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R500` | Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key) | Ready | 2026-07-17 | [plan](result-key-aware-reference-projection.md) · [explainer](concepts/flattened-selection-result-keys.html) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -312,7 +311,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R501` [**@pivot: discriminator-keyed aggregate projections**](pivot-projection-directive.md) — Ready, feature
 - `R472` [**Generated condition filters on nested fields reference a conditions method that is never emitted**](nested-generated-condition-filters-never-emitted.md) — Backlog, bug
 - `R503` [**Mixed-source nested types: first-wins classification leaves single-arm child reads**](mixed-source-nested-type-reads.md) — Backlog, architecture
-- `R499` [**Relay connection $fields projects only the first occurrence of a shared result key (edges.node vs nodes divergence)**](connection-fields-shared-result-key-projection.md) — In Review, bug
 - `R500` [**Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key)**](result-key-aware-reference-projection.md) — Ready, bug
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
@@ -378,7 +376,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 _Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. Authored with the `explainer` skill; this listing derives from `concepts/*.html`, never by hand._
 
-- [Flattened selection sets and shared result keys](concepts/flattened-selection-result-keys.html) (backs [R499](connection-fields-shared-result-key-projection.md), [R500](result-key-aware-reference-projection.md))
+- [Flattened selection sets and shared result keys](concepts/flattened-selection-result-keys.html) (backs R499, [R500](result-key-aware-reference-projection.md))
 - [Multi-tenant fan-out](concepts/multi-tenant-fanout.html) (backs [R46](service-multi-tenant-fanout.md))
 - [Operation-divined tenant routing](concepts/operation-divined-tenant-routing.html) (backs [R45](tenant-routing-and-execution-input.md))
 - [Per-participant join paths for polymorphic child fields](concepts/per-participant-child-join-paths.html) (backs R458)
