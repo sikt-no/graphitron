@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-14
+last-updated: 2026-07-20
 ---
 
 # The Graphitron data model
@@ -708,7 +708,7 @@ are orthogonal, a 2x2:
 | **Table** | `Single(Table)`, e.g. `film.language` | `List(Table)`, e.g. `actor.films` |
 
 Today's `ColumnReferenceField` is only the top-left corner (`OutputField.single(Column)`,
-`ChildField.java:142`); **`List(Column)` is the missing corner**, a list of one scalar drawn from the
+`ChildField.java:140`); **`List(Column)` is the missing corner**, a list of one scalar drawn from the
 to-many child rows. With it, column-ref and table-ref differ *only* in `target.shape`, and `Single` / `List`
 differ *only* in direction; `resolvedTable` is the destination table B in every cell. A `List(Column)` child
 reference is not a cheap scalar variant: being to-many it needs the same machinery as a to-many table field
@@ -818,7 +818,7 @@ owns the path and ON predicate (parent columns + the class's FK metadata), termi
 `tableExpr` renders `resolvedTable` wherever it enters, the FROM at a root field, or the terminal join step's
 table at a child. Disjoint inputs (FK / parent columns versus field arguments), disjoint pieces of the query.
 The classifier already builds the child case this way: `@tableMethod` reuses the `@reference` path parser and
-then asserts the path's terminus equals the method's return table (`FieldBuilder.java:5634`). That
+then asserts the path's terminus equals the method's return table (`FieldBuilder.java:6892`). That
 assertion is the composition, a referential-integrity constraint of the same family as `resolvedTable`'s
 coincidence invariant:
 
@@ -891,7 +891,7 @@ own provenance, gated by the **source object** shape (*Reading the source object
 `Lift` changes only *where the source-side values come from*, not the path or the evidence: the lifted columns
 are real catalog columns (the first FK hop's source-side columns, or the leaf PK when there is no
 `@reference`), so the FK chain navigates from them exactly as for a jOOQ parent, and the resolver reuses
-`parsePath` with a null start (`SourceRowDirectiveResolver.java:266`). The lift's `RowN` arity and column types
+`parsePath` with a null start (`SourceRowDirectiveResolver.java:278`). The lift's `RowN` arity and column types
 must equal that derived tuple, the same integrity-check family. The no-`@reference` case is the trivial path
 where the lifted tuple *is* the leaf PK (fetch the child directly); `@reference` present walks the FK chain
 from the lifted columns. Unlike `@enum`, `@sourceRow` cannot be retired, a DTO's key extraction is opaque Java,
@@ -902,7 +902,9 @@ So the `@reference` path *is* the join graph. The old flat `JoinStep` variants c
 (`FkJoin` = `Catalog` target + `ColumnPairs` from FK; `ConditionJoin` = target + `Predicate`); R438 shipped
 the decomposition as `JoinStep.Hop(TableExpr target, On on)` and deleted the flat variants, and R435 added
 `On.Lateral` and the name-matched key for hops adjacent to a routine result, so this part of the model is
-now the code's shape, not a proposal. `TableExpr.MethodCall` (`@tableMethod`) is the arm not yet built.
+now the code's shape, not a proposal. `TableExpr.MethodCall` has since shipped too (R314 built it to
+carry the dissolved `RecordTableMethodField`'s developer method); the residue is that the inline
+`@tableMethod` leaf (`TableMethodField`) has not yet migrated onto it.
 New capability is a new
 *target* arm (`RoutineCall`), a new *source-side* provenance (`Lift`), or a new `on` derivation (PK/UK
 name-match), not a new step type. A routine node
@@ -1761,8 +1763,9 @@ outbound `$fields` edges. That split is the evidence for E and F.
 > (`ParentProjectionContainmentCheck`, keyed on `BatchKeyField` + `sourceShape()`). Generated
 > output stayed byte-identical across the sakila corpus in both merge slices. Leaf mentions of
 > the four retired names below this point are historical design narrative; the live names are the
-> two `Batched*` leaves. The fetcher fork survives inside one seam gated on `sourceShape` — its
-> unification is R314's re-platforming.
+> two `Batched*` leaves. The fetcher fork initially survived inside one seam gated on `sourceShape`;
+> R314 then unified it into the one source-shape-gated batched fetcher (see the R314 shipped-note
+> under *Relationships*).
 
 `SplitTableField` / `RecordTableField` is the cheapest honest demonstration of the cut. Both child sides
 lower to the same `load<X>` rows-method and the same fetcher; Split's only extra is the key projection,
@@ -1781,9 +1784,10 @@ contribution.
   this does not reopen its slices.
 - **R314** (dissolve-reentry-leaves-dimensional-emit): this is the structural enabler, and the sequence
   is now decided (2026-07-04). R314 stays the *reentry slice* of the emit re-platforming, re-specced
-  onto this model's vocabulary; it does not widen into an umbrella. The run-up is R431
+  onto this model's vocabulary; it does not widen into an umbrella. The run-up was R431
   (`decompose-sourcekey`, eager, first) then R432 (`collapse-split-and-record-table-leaves`, the
-  beachhead), then R314 emits the reentry family off the model and retires `dispatchPerformsReFetch`.
+  beachhead), then R314 emitting the reentry family off the model and retiring
+  `dispatchPerformsReFetch`; all three are Done.
 
   > **Shipped (R314, 2026-07-16).** The reentry slice landed across five implementation commits
   > (`d1f13a2` site-level fact + command registry + bidirectional oracle; `7137d1e` the one
@@ -1899,8 +1903,9 @@ The gaps, in resolution order:
   and the pre-R435 `@routine` code allowed only the projected-result shape, with no composition.) **R435 has
   since shipped (Done; see `changelog.md`)**, landing the composition on this model's own vocabulary
   (`TableExpr.RoutineCall`, `JoinStep.Hop`, `On.Lateral`, the name-matched key), with follow-ups R449
-  (classification edges), R450 (split-path hop-0 filter binding), and R451 (routine writes) also Done;
-  `@tableMethod`'s `MethodCall` arm remains the unbuilt residue.
+  (classification edges), R450 (split-path hop-0 filter binding), and R451 (routine writes) also Done.
+  **R314 has since built `TableExpr.MethodCall`** (carrying the dissolved `RecordTableMethodField`'s
+  developer method); the remaining residue is migrating the inline `TableMethodField` leaf onto it.
 - **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
   pair per *whole emitted method*; arm-renderers fold into a pair. *Which* methods exist in the target is
   governed by the seam-placement rule, not by a fixed count.
@@ -2002,8 +2007,9 @@ TypeSpecs, collects declared method names and intra-generated call references, a
 callee resolves to an emitted method (R410's `TypeSpecReferenceWalk` is the same walking pattern at
 file granularity). Level 1 is valid before any re-platforming and survives it as the harness. The
 **bidirectional** form (every emitted method is exactly one command's output; every callee name
-resolves to a committed command) needs the command/name registry and lands with the emit slices,
-first populated for the reentry family by R314.
+resolves to a committed command) needed the command/name registry; R314 (Done) landed the registry in
+main source and populated it for the whole reentry family (`ReentryCommandClosureTest`), and later
+emit slices extend it family by family.
 
 **Landed (2026-07-14):** `EmittedMethodClosure` (the walk: node relation = declared methods keyed by
 unit + nested-type path; edge relation = statically-qualified generated-to-generated callee

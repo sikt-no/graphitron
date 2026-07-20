@@ -7,12 +7,12 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-07-14
+last-updated: 2026-07-20
 ---
 
 # Dimensional model pivot: slots over cross-product permits
 
-R222 is the umbrella for the rewrite's dimensional pivot. Three sealed hierarchies pack multi-dimensional information onto single permit sets — input-side classification (`GraphitronType.InputType` + `TableInputType`), field-side classification (`QueryField` / `MutationField` / `ChildField` with 57 cross-product leaf permits at the 2026-07-14 count; re-measure at pickup), and classification-failure encoding (`UnclassifiedType` / `UnclassifiedField` riding as permits alongside legitimate carriers). The same disease in three organs. R222 absorbs R164 (field-model three-dimension pivot) and R226 (type-level classification failure pivot) and unifies them as one architectural shift, landing the target architecture stage-by-stage through independent spin-out slices.
+R222 is the umbrella for the rewrite's dimensional pivot. Three sealed hierarchies pack multi-dimensional information onto single permit sets — input-side classification (`GraphitronType.InputType` + `TableInputType`), field-side classification (`QueryField` / `MutationField` / `ChildField` with 51 cross-product leaf permits at the 2026-07-20 count; re-measure at pickup), and classification-failure encoding (`UnclassifiedType` / `UnclassifiedField` riding as permits alongside legitimate carriers). The same disease in three organs. R222 absorbs R164 (field-model three-dimension pivot) and R226 (type-level classification failure pivot) and unifies them as one architectural shift, landing the target architecture stage-by-stage through independent spin-out slices.
 
 ## Direction, not contract
 
@@ -24,6 +24,20 @@ conditions become operation rows minted from input coordinates; ordering is `ope
 payload; the lookup partition is the `Lookup` operation) — R333 governs. This file is being aligned
 incrementally rather than rewritten wholesale.
 
+**Status re-baseline (2026-07-20).** The current-state inventory below mixes vintages; passages
+researched 2026-06-16 predate three items that have since executed against this umbrella's direction
+and are all Done: **R431** decomposed `SourceKey` (now the residue record `(columns, wrap)`, with
+`KeyLift` / `LifterRef` carrying the separated facts), **R432** merged the four batched keyed-re-query
+leaves onto two source-gated ones (`SplitTableField` + `RecordTableField` → `BatchedTableField`,
+`SplitLookupTableField` + `RecordLookupTableField` → `BatchedLookupTableField`), and **R314**
+dissolved `RecordTableMethodField` onto the record-sourced `BatchedTableField` carrying
+`TableExpr.MethodCall` and re-platformed the reentry emit family onto the R333 model. **R503** (Done
+2026-07-20) then replaced the mixed-source nested-type rejection with run-time source-shape dispatch.
+Where a passage below names a `Record*` / `Split*` leaf or the six-component `SourceKey` as live, read
+it as the dated snapshot it declares; the umbrella direction is unchanged and these landings are its
+first executed proofs. Slice statuses as of this note: R238, R244, R279, R290, R299, R305, R316,
+R425, R426, R431, R432, R314 Done; R335 Spec.
+
 The model sketched in this umbrella is the *target direction* — where the rewrite is heading. Specific slot names, carrier shapes, the boundary between walker carriers and dimensional slots, and the vocabulary itself are expected to shift as implementation slices land and surface new understanding. Each spin-out slice gets its own spec item where the specifics for that scope get pinned; the slice is free to redraw the diagram so long as it doesn't break the load-bearing claim (cross-product permits dissolve into dimensional slots; producers read graphql-java primitives directly; validity rides on the wrapper). What's stable is the *shape*: slots on a single unified field type, one per consumer concern, populated by thin layers over the SDL substrate. Read the sketches below as illustrative of that shape, not as a frozen contract.
 
 ## What is
@@ -32,7 +46,7 @@ Three cross-product encodings, three sets of permit-identity-driven discriminati
 
 **Input-side classification.** `GraphitronType.InputType` permits four backing-class variants (`JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`); `GraphitronType.TableInputType` is a separate sibling root for table-bound inputs. Nine consumer sites discriminate by permit identity: `GraphitronSchemaValidator`, `MutationInputResolver`, `EnumMappingResolver`, `CatalogBuilder` (four sites), `FieldBuilder`, `TypeBuilder`. `TypeBuilder.findReturnTablesForInput` already proves "table-bound" is a property of the consumer, not the input — derived by O(N) back-scan over schema fields. R215's lift admitted `InputField.UnboundField` into `TableInputType.inputFields()`, collapsing the eager-classification axis ahead of this pivot.
 
-**Field-side classification.** 57 leaf permits across `QueryField` (13), `MutationField` (15), `ChildField` (29) at the 2026-07-14 count; the set has grown as source/operation/target slices landed, so re-measure at pickup. `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, and `TableTargetField`, the last now nested as `ChildField.TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `RecordLookupTableField` collapses four of these onto one identifier; `QueryServiceRecordField` collapses three. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
+**Field-side classification.** 51 leaf permits across `QueryField` (13), `MutationField` (15), `ChildField` (23) at the 2026-07-20 count; the set grew as source/operation/target slices landed, then shrank as the R431/R432/R314 batched merge retired leaves, so re-measure at pickup. `TypeFetcherGenerator` dispatches per-leaf with one arm per permit. A mixin-interface overlay (`BatchKeyField`, `SqlGeneratingField`, `MethodBackedField`, `LookupField`, and `TableTargetField`, the last now nested as `ChildField.TableTargetField`) carries cross-cutting traits. Each permit name packs several decisions: where source comes from (root, parent-keyed, list-parent), what the fetcher does (no I/O, `@service` invocation, generated jOOQ), the field's output shape (single, list, connection), the jOOQ contribution (none, inlined column, own SELECT, UNION ALL, DML), modifiers (lookup mapping, error channel, splitQuery). `QueryServiceRecordField` collapses three of these onto one identifier; the former `RecordLookupTableField` collapsed four, and its merge into the source-gated `BatchedLookupTableField` (R432, Done) is the first executed proof that storing an axis as a fact beats splitting a permit on it. The cross product is the permit set; adding a value to any axis multiplies the permits below it.
 
 **Classification-failure encoding.** `GraphitronType.UnclassifiedType` and `GraphitronField.UnclassifiedField` ride as permits alongside legitimate types and fields, carrying typed `Rejection` payloads. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` translate-then-project — the validator does a half-job (walk Unclassified carriers; project payloads to ValidationError) on top of its real job (cross-type invariants).
 
@@ -56,7 +70,7 @@ Subsequent slices for `Pagination`, `Ordering`, `PredicateCarrier`, `ValidationS
 
 | Carrier | Slot home | Status |
 |---|---|---|
-| `ServiceMethodCall` | `ServiceField` (new sibling of `MethodBackedField`) | R238 (Spec) |
+| `ServiceMethodCall` | `ServiceField` (new sibling of `MethodBackedField`) | R238 (Done) |
 | `ConditionCall` / `TableMethodCall` / `ExternalFieldCall` | per-directive siblings | future slices; collectively retire `MethodBackedField` |
 | `ValidationShape` | TBD (narrow interface or existing marker) | future slice |
 | `Pagination` | TBD | future slice |
@@ -73,7 +87,7 @@ Within each sub-seal, R164's permit consolidation collapses the cross-product pe
 
 `Diagnostic` is an LSP-aligned sealed family — `severity` (`Error` / `Warning` / `Information` / `Hint`, mirroring LSP `DiagnosticSeverity`), `code` (stable string id), `source` (`"graphitron"`), `message`, `tags` (`Unnecessary`, `Deprecated`), `relatedInformation`. Arms keep type-safe pattern matching on the producer side; the LSP wire-format adapter reads the LSP fields and projects mechanically. `AuthorError` (the existing `Rejection.AuthorError` sealed family) carries on `WalkerResult.Err.errors`; the wire-format adapter projects each leaf to severity=Error LSP `Diagnostic` records with a code derived per leaf type.
 
-`ValidationReport` carries `errors: List<ValidationError>` and `warnings: List<BuildWarning>` today; a later slice adds a `walkerDiagnostics: List<Diagnostic>` slot alongside them (the foundation slice, R238, shipped `WalkerResult` and the `Diagnostic` record but not this slot — as of 2026-07-04 it is still to come, and the shipped `Diagnostic` does not yet carry `tags`), and once every producer migrates the three slots collapse into one diagnostic stream. From that slice forward, walker output reaches the editor through the same channel today's validator output does — `Workspace.setBuildOutput(BuildArtifacts, ValidationReport)` is the seam, the rest of the wire (`recalculateListener` → `Diagnostics.compute` → `LanguageClient.publishDiagnostics`) is already live, and `Diagnostics.validatorDiagnostics` gains an arm projecting the walker `Diagnostic` family.
+`ValidationReport` carries `errors: List<ValidationError>` and `warnings: List<BuildWarning>` today; a later slice adds a `walkerDiagnostics: List<Diagnostic>` slot alongside them (the foundation slice, R238, shipped `WalkerResult` and the `Diagnostic` record but not this slot — re-verified 2026-07-20, it is still to come, and the shipped `Diagnostic` does not yet carry `tags`), and once every producer migrates the three slots collapse into one diagnostic stream. From that slice forward, walker output reaches the editor through the same channel today's validator output does — `Workspace.setBuildOutput(BuildArtifacts, ValidationReport)` is the seam, the rest of the wire (`recalculateListener` → `Diagnostics.compute` → `LanguageClient.publishDiagnostics`) is already live, and `Diagnostics.validatorDiagnostics` gains an arm projecting the walker `Diagnostic` family.
 
 ### Single field namespace, no failure permit
 
@@ -238,9 +252,13 @@ not two free enums.
 
 ### What `SourceKey` decomposes into (researched 2026-06-16)
 
-`SourceKey` is `(target, columns, path, wrap, cardinality, reader)`, but under the source-object /
-source-field vocabulary it bundles three separable concerns, only one of which is a source *key*. The
-mechanical simplification is R431 (`decompose-sourcekey`, Spec); the model claim is here.
+*(Snapshot preserved as dated evidence; R431 has since executed it, see the 2026-07-20 re-baseline
+note above. `SourceKey` today is the residue record `(columns, wrap)`; the reads live on `KeyLift` /
+`LifterRef`.)*
+
+`SourceKey` was `(target, columns, path, wrap, cardinality, reader)`, but under the source-object /
+source-field vocabulary it bundled three separable concerns, only one of which is a source *key*. The
+mechanical simplification was R431 (`decompose-sourcekey`, Done); the model claim is here.
 
 - **Target reach (already slotted elsewhere).** `target` is the target table, the table the
   rows-method reads `FROM`, the element type an accessor returns, the leaf of the join path, not the
@@ -276,8 +294,11 @@ parent"); it belongs with the source-object descriptor, not a field key.
 
 - **`ConstructorField` dissolves.** Dead since the `@record`-on-types ban; its only path was an
   edge case not in use. **Done in R290:** the leaf, its leaf-to-tuple adapter arm, and its generator
-  dispatch were deleted, and the table-and-service clash that used to classify it is now a build-time
-  rejection.
+  dispatch were deleted, and the table-and-service clash that used to classify it became a build-time
+  rejection. **R503 (Done 2026-07-20)** then replaced that rejection for the supported mixed reach:
+  a directiveless type reached both as a nesting projection of a `@table` parent and as a field of a
+  class-backed producer result now classifies both edges, served by one datafetcher per coordinate
+  dispatching at run time on the source's shape.
 - **`SingleRecordTableField` collapses into `RecordTableField`.** SRTF is `RecordTableField` (RTF) at
   arrival `OnlyChild`: same operation (re-project a `@table` from a held domain record), differing only in
   how many source records arrive. Its operation stays what the target dictates (`Fetch`); re-fetch is the
@@ -290,7 +311,7 @@ parent"); it belongs with the source-object descriptor, not a field key.
   `@service`-batched `ServiceTableField`) re-fetches; `OnlyChild` re-projects inline (no DataLoader), `Child`
   batches. Because the source record and the target table are the same entity, **the source key is the target
   key**: the re-fetch key carries the target table plus its identifying columns once, not a source/target
-  column duality. No distinct leaf survives; R305 has landed and `SingleRecordTableField` is gone from the model.
+  column duality. No distinct leaf survives; R305 has landed and `SingleRecordTableField` is gone from the model. The rest of the re-fetch family named above has since dissolved too (see the 2026-07-20 re-baseline note): R432 merged `RecordTableField` and `RecordLookupTableField` into the source-gated `Batched*` leaves, and R314 dissolved `RecordTableMethodField`; of the family only `ServiceTableField` survives as a distinct leaf.
 
 ### Leaf reconstruction: where each slot lands
 
@@ -389,7 +410,7 @@ Each stage is a work-stream; spin-out roadmap items file as slices get picked up
 
 ### Stage 1 — Foundation slice
 
-One vertical slice, end-to-end: one slot on a carrier-bearing interface, one producer that fills it, one consumer migration, one LSP wire arm. The slot's home (existing narrow interface vs. introduced one), the producer's implementation shape (sealed `Walker<S, C>` vs another), and the first consumer to migrate are the foundation slice's call. The point is that the slot pattern lands once, in tree, demonstrating the pivot's structural shift end-to-end. The foundation slice fixes the wire-format conventions (source attribution, code namespace, per-walker `AuthorError` sub-seal) and the slot-home convention (narrow interface, not universal parent; interface-gated absence rather than `No<Family>` when directive-gated) that subsequent slices inherit. R238 ships the foundation slice as `ServiceMethodCall` on a new `ServiceField` sibling of `MethodBackedField`.
+One vertical slice, end-to-end: one slot on a carrier-bearing interface, one producer that fills it, one consumer migration, one LSP wire arm. The slot's home (existing narrow interface vs. introduced one), the producer's implementation shape (sealed `Walker<S, C>` vs another), and the first consumer to migrate are the foundation slice's call. The point is that the slot pattern lands once, in tree, demonstrating the pivot's structural shift end-to-end. The foundation slice fixes the wire-format conventions (source attribution, code namespace, per-walker `AuthorError` sub-seal) and the slot-home convention (narrow interface, not universal parent; interface-gated absence rather than `No<Family>` when directive-gated) that subsequent slices inherit. R238 (Done) shipped the foundation slice as `ServiceMethodCall` on a new `ServiceField` sibling of `MethodBackedField`.
 
 ### Stage 2 — Walker carrier slots
 
@@ -401,7 +422,7 @@ R164's content. `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder` dimens
 
 ### Stage 4 — Failure at the wrapper everywhere
 
-R226's content. `UnclassifiedType` and `UnclassifiedField` retire. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` retire. Type-level classification (`GraphitronSchemaBuilder`'s type-classification step) lifts into `WalkerResult<C>`. The validator's surface narrows to cross-type invariant checks. `ValidationReport`'s `errors` / `warnings` slots collapse into the unified `Diagnostic` stream. R279 (`field-first-classification-driver`, supersedes R166) restructures that classification driver ahead of this lift, into a single reachability-driven field-first walk; it preserves the `Unclassified*` carriers and the classify → validate split, so this Stage 4 lift rides on its walk rather than the eager type pass.
+R226's content. `UnclassifiedType` and `UnclassifiedField` retire. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` retire. Type-level classification (`GraphitronSchemaBuilder`'s type-classification step) lifts into `WalkerResult<C>`. The validator's surface narrows to cross-type invariant checks. `ValidationReport`'s `errors` / `warnings` slots collapse into the unified `Diagnostic` stream. R279 (`field-first-classification-driver`, supersedes R166, Done) restructured that classification driver ahead of this lift, into a single reachability-driven field-first walk; it preserved the `Unclassified*` carriers and the classify → validate split, so this Stage 4 lift rides on its walk rather than the eager type pass.
 
 ### Stage 5 — Legacy permit deletion
 
@@ -443,7 +464,7 @@ Adjacent but not absorbed:
 - **R220 / R193** (`ServiceCatalog` predicate consolidation, sealed `UnresolvedParam`): same disease in a different file. R222 primes the pattern; those items apply it on the consumer-side surface independently.
 - **R122** (compound-entity-mutations): contract partner. R122 owns `InsertRowsWalker`'s tree shape and FK threading; R222 names the slot the producer fills.
 - **R200 / R195** (honor `@field(name:)` in `InputBeanResolver`): naming binding between SDL fields and Java members, orthogonal to the pivot.
-- **R279** (`field-first-classification-driver`): a slice under this umbrella that restructures `GraphitronSchemaBuilder`'s classification *driver* into a single reachability-driven, field-first walk, and supersedes R166. Orthogonal to the slot/carrier work here, the dimensional-slot producers run on reachable fields regardless, but it is where the umbrella's reachability prune (the old R166 Phase 1 reachability slot) actually lands, and the Stage 4 failure-at-the-wrapper lift rides on its walk.
+- **R279** (`field-first-classification-driver`, Done): a slice under this umbrella that restructured `GraphitronSchemaBuilder`'s classification *driver* into a single reachability-driven, field-first walk, and superseded R166. Orthogonal to the slot/carrier work here, the dimensional-slot producers run on reachable fields regardless, but it is where the umbrella's reachability prune (the old R166 Phase 1 reachability slot) actually lands, and the Stage 4 failure-at-the-wrapper lift rides on its walk.
 
 ## Dependencies and sequencing
 
