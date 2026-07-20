@@ -1,7 +1,7 @@
 ---
 id: R45
 title: "Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: runtime-connection
@@ -74,7 +74,7 @@ Classification rules:
 - An argument or input-object field whose column mapping (the same resolution filters and conditions already use) lands on a tenant column yields `ArgumentBound`. This is the `emner(filter: { eierOrganisasjon })` case, and it covers mutations too: an insert/update input field mapping to the tenant column divines the routing for that mutation field. When several such bindings occur on one field, the classifier resolves the full set into the arm (deterministic precedence picks the primary) so the emitter reads the runtime-equality guard off the model rather than re-walking the arguments.
 - A field resolved by node id whose decoded key columns include the tenant column yields `NodeIdBound`; each id in a batch carries its own tenant.
 - A federation `_entities` resolution whose representation carries the tenant column yields `EntityRepBound`; each rep carries its own tenant.
-- A field below a bound ancestor yields `Inherited`: the divined tenant flows down the subtree. Within any execution context made tenant-homogeneous by the partitioning below, inheritance is a value hand-down, not a per-row re-read; the exact runtime carrier is an implementation choice against the `SourceKey.Reader` surfaces.
+- A field below a bound ancestor yields `Inherited`: the divined tenant flows down the subtree. Within any execution context made tenant-homogeneous by the partitioning below, inheritance is a value hand-down, not a per-row re-read; the exact runtime carrier is an implementation choice against the live batch-key surfaces (`KeyLift`, `SourceEnvelope`, the `SourceKey` residue; the seven-arm `SourceKey.Reader` this section once named is retired).
 - A field touching only global tables yields `Untenanted`.
 - A field reaching a tenant-scoped table with **no binding in scope** is a rejection (`noTenantBinding`), not a silent fallback: routing tenant data through a default connection because nothing named the tenant is exactly the cross-tenant leak this item exists to prevent. The *deliberate* no-binding case, fan out across every tenant and union the results, is R46's: an explicit schema marker classifies into a fan-out arm that lands there together with its emitters (an arm without emitters would violate the validate-time guarantee). Unmarked unroutable fields keep rejecting.
 
@@ -134,7 +134,7 @@ Retirement criterion: with R45 (and R46 for the fan-out shapes) live, the consum
 2. **Multiple bindings on one field: resolved into the model.** `ArgumentBound` carries the full co-binding set with a documented-precedence primary; the emitter emits a runtime equality guard across the set and errors on disagreement. A validate-time rejection would forbid legitimate schemas, and build time cannot know the values agree.
 3. **Explicit override.** Is a directive escape hatch (`@tenantId` on an argument) needed for schemas where inference picks the wrong binding? Deferred until a real schema demonstrates the misfire; inference-only keeps the surface clean. Two shape notes for whoever picks this up: if the concern is SDL legibility (an author cannot see that a filter field routes databases), the mitigation is surfacing, not a directive (validation output, generated docs, or LSP hover naming each field's binding); and if a genuine single-connection cross-tenant read ever needs an escape hatch, it enters as an explicit positively-classified arm (`CrossTenant`) the validator and dispatcher both read, never a flag that suppresses the `noTenantBinding` rejection.
 4. **Request-scope fallback.** Consumers who do know the tenant up front are covered by R429's contextArgument path; whether that should also surface as a `TenantBinding` arm (a request-bound sibling to `ArgumentBound`) is deferred until a schema needs both styles at once.
-5. **Inherited carrier.** The exact shape of `Inherited`'s value hand-down; resolve against the live `SourceKey.Reader` / `ColumnRef` surfaces at implementation time. (The `ParentRowBound` half of this question moved to R505 with the arm.)
+5. **Inherited carrier.** The exact shape of `Inherited`'s value hand-down; resolve against the live `KeyLift` / `SourceEnvelope` / `ColumnRef` surfaces at implementation time. (The `ParentRowBound` half of this question moved to R505 with the arm.)
 6. **Tenant-index declaration form: moved to R505.** The tenant-index scope, its declaration surface (a 2026-07-20 principles consult leaned toward a directive on the `@table` type over a Mojo list; the analysis is summarised there), and the `ParentRowBound` arm were extracted to R505 to keep this item's first iteration two-way.
 
 ## Lineage
