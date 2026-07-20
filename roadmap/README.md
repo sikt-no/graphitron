@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R501` | @pivot: discriminator-keyed aggregate projections | Ready | 2026-07-19 <sub>created 2026-07-17</sub> | [plan](pivot-projection-directive.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R501` | @pivot: discriminator-keyed aggregate projections | In Progress | 2026-07-20 <sub>created 2026-07-17</sub> | [plan](pivot-projection-directive.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Spec | 2026-07-14 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
@@ -306,7 +306,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### codegen-correctness
 
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
-- `R501` [**@pivot: discriminator-keyed aggregate projections**](pivot-projection-directive.md) — Ready, feature
+- `R501` [**@pivot: discriminator-keyed aggregate projections**](pivot-projection-directive.md) — In Progress, feature
 - `R472` [**Generated condition filters on nested fields reference a conditions method that is never emitted**](nested-generated-condition-filters-never-emitted.md) — Backlog, bug
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture

@@ -1,13 +1,13 @@
 ---
 id: R501
 title: "@pivot: discriminator-keyed aggregate projections"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-17
-last-updated: 2026-07-19
+last-updated: 2026-07-20
 ---
 
 # @pivot: discriminator-keyed aggregate projections
