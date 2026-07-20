@@ -1,13 +1,13 @@
 ---
 id: R500
 title: "Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key)"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: codegen-correctness
 depends-on: []
 created: 2026-07-17
-last-updated: 2026-07-17
+last-updated: 2026-07-20
 ---
 
 # Aliased duplicate reference selections mint duplicate SQL aliases ($fields projects by field name, not result key)
