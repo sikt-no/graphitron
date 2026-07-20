@@ -1,7 +1,7 @@
 ---
 id: R504
 title: "Remove factual errors and confusion from ChildField leaf-taxonomy comments and javadoc"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 9
 theme: docs
