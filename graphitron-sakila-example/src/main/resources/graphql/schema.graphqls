@@ -402,6 +402,13 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService",
             method: "byId"
         })
+    # R503 mixed-source nested type fixture (producer edge). Returns a POJO carrying FilmBlurb, so
+    # FilmBlurb binds class-backed through the parent accessor while also nesting off @table Film.
+    filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService",
+            method: "byId"
+        })
     # R370 compilation-tier fixture (producer #2): the photo-negative of addressOccupantCarrier.
     # The service returns a NESTED record (NestedOccupantCarrierHolder.Carrier), whose binary name
     # carries a $ segment, so NestedOccupantCarrier binds as a PojoResultType with a $-qualified
@@ -1002,6 +1009,20 @@ type AddressOccupantCarrier {
     firstOccupant: AddressOccupant @field(name: "address")
 }
 
+# R503 mixed-source nested type fixture. FilmBlurb is a directiveless value type reached two ways:
+# as a nesting projection of @table Film (Film.blurb; description reads film.DESCRIPTION off the parent
+# jOOQ Record) and as the field of a producer-backed result (FilmBlurbHolder.blurb; description reads the
+# FilmBlurb.description() accessor). The generator serves both reaches from one datafetcher per
+# coordinate that dispatches on `source instanceof org.jooq.Record`. description is fully readable in
+# both shapes (a real film column and a matching record accessor), so the reach is admitted, not rejected.
+type FilmBlurb {
+    description: String
+}
+
+type FilmBlurbHolder {
+    blurb: FilmBlurb
+}
+
 # R370 fixture: the nested-carrier counterpart of AddressOccupantCarrier. Produced by
 # Query.nestedOccupantCarrier, which returns NestedOccupantCarrierHolder.Carrier (a NESTED Java
 # record holding an AddressRecord), so this type binds as a PojoResultType whose fqClassName has a
@@ -1382,6 +1403,8 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # multi-table fetcher can return either through the shared interface contract.
     name:        String!      @field(name: "TITLE")
     description: String       @field(name: "DESCRIPTION")
+    # R503 mixed-source nested type fixture (nesting edge): FilmBlurb projected off the film row.
+    blurb: FilmBlurb
     rentalRate:     Float!       @field(name: "RENTAL_RATE")
     # R77 Phase B fixture: smallint NOT NULL DEFAULT 3 in Sakila. Read-back column for the
     # createFilm_omittedFieldUsesColumnDefault execution test (DSL.defaultValue lands the 3).

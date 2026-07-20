@@ -693,6 +693,14 @@ public class GraphitronSchemaBuilder {
             }
             if (byDomain.size() < 2) continue;
 
+            // Mixed-source reach: a type embedded as a nesting projection of a @table parent (a nesting
+            // producer putting a generic jOOQ Record at env.getSource()) and also read through a class-
+            // backed producer (an accessor producer putting the backing object there) legitimately
+            // disagrees on the domain type. The per-coordinate source-shape dispatch handles both shapes,
+            // so this is not a conflict; the unsupported jOOQ-record-carrier + nesting combination is
+            // rejected separately by the validator's shape-set rule over the same reified fact.
+            if (isSupportedMixedSourceReach(ctx, sdlReturn)) continue;
+
             List<Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant> participants =
                 new ArrayList<>(coords.size());
             for (var coord : coords) {
@@ -704,6 +712,36 @@ public class GraphitronSchemaBuilder {
                 new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(sdlReturn, participants),
                 SourceLocation.EMPTY));
         }
+    }
+
+    /**
+     * True when {@code typeName} is the supported mixed-source dual reach: a class-backed
+     * {@link GraphitronType.ResultType} ({@code JavaRecordType} / {@code PojoResultType}) that is also
+     * embedded as a {@code NestingField} projection of a {@code @table} parent. Such a type is reached
+     * through both a generic jOOQ {@code Record} source and its backing object; the per-coordinate
+     * source-shape dispatch serves both, so a {@link DomainReturnType} disagreement between the two
+     * producers is expected rather than a conflict. The jOOQ-record-carrier variant is deliberately not
+     * matched here (it is not class-backed), so it still reaches the validator's shape-set rejection.
+     */
+    private static boolean isSupportedMixedSourceReach(BuildContext ctx, String typeName) {
+        var type = ctx.types.get(typeName);
+        boolean classBacked = type instanceof no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType
+            || type instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
+        if (!classBacked) return false;
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            if (nestingReaches(field, typeName)) return true;
+        }
+        return false;
+    }
+
+    /** Whether {@code field} is (or recursively contains) a {@code NestingField} embedding {@code typeName}. */
+    private static boolean nestingReaches(no.sikt.graphitron.rewrite.model.GraphitronField field, String typeName) {
+        if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nf)) return false;
+        if (nf.returnType().returnTypeName().equals(typeName)) return true;
+        for (var child : nf.nestedFields()) {
+            if (nestingReaches(child, typeName)) return true;
+        }
+        return false;
     }
 
     /**

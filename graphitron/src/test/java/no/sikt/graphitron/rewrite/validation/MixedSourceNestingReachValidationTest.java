@@ -112,4 +112,25 @@ class MixedSourceNestingReachValidationTest {
             .extracting(ValidationError::message)
             .anyMatch(m -> m.contains("FilmThing.title") && m.contains("combination no fetcher serves"));
     }
+
+    // The two-hop supported reach: FilmDetails is embedded off @table Film and carried by a POJO holder.
+    // Its two producers put a generic Record (nesting) and the backing object (accessor) at
+    // env.getSource(); the source-shape dispatch serves both, so the domain-return-type disagreement is
+    // suppressed rather than reported as a multi-producer conflict.
+    private static final String TWO_HOP_SUPPORTED_REACH = """
+        type Holder { details: FilmDetails }
+        type FilmDetails { rating: String }
+        type Film @table(name: "film") { details: FilmDetails }
+        type Query {
+            film: Film
+            holder: Holder @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmHolder"})
+        }
+        """;
+
+    @Test
+    void twoHopSupportedReach_validatesCleanly() {
+        GraphitronSchema schema = TestSchemaHelper.buildSchema(TWO_HOP_SUPPORTED_REACH);
+
+        assertThat(validate(schema)).isEmpty();
+    }
 }
