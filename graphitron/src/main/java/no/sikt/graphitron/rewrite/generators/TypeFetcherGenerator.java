@@ -963,10 +963,10 @@ public class TypeFetcherGenerator {
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
         if (isList) {
             builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
-            builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+            builder.addCode(tenantDsl.declaration());
             builder.addCode(CodeBlock.builder()
                 .add("$T payload = dsl\n", valueType)
                 .indent()
@@ -978,7 +978,7 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         } else {
-            builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+            builder.addCode(tenantDsl.declaration());
             builder.addCode(CodeBlock.builder()
                 .add("$T payload = dsl\n", valueType)
                 .indent()
@@ -989,7 +989,7 @@ public class TypeFetcherGenerator {
                 .unindent()
                 .build());
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -1038,8 +1038,8 @@ public class TypeFetcherGenerator {
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, qtif, outputPackage);
+        builder.addCode(tenantDsl.declaration());
         // Shared discriminator-filter + projection + join assembly, ending with the
         // `step` local. The service single-table-interface fetcher reuses the same helper with a
         // by-PK condition (see MultiTablePolymorphicEmitter).
@@ -1052,7 +1052,7 @@ public class TypeFetcherGenerator {
         } else {
             builder.addStatement("$T payload = step.where(condition).fetchOne()", valueType);
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -1101,8 +1101,7 @@ public class TypeFetcherGenerator {
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        builder.addCode(TenantDslEmitter.resolve(ctx, tif, outputPackage).declaration());
 
         // Build join-path condition. Only the single-hop FK-derived shape is supported;
         // multi-hop and condition-join paths are caught at classification time.
@@ -1590,7 +1589,6 @@ public class TypeFetcherGenerator {
         boolean isList = qtmtf.returnType().wrapper().isList();
 
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         var methodClass = ClassName.bestGuess(qtmtf.method().className());
         String conditionsClassName = outputPackage + ".conditions."
@@ -1613,7 +1611,8 @@ public class TypeFetcherGenerator {
             qtmtf.method().methodName(),
             ArgCallEmitter.buildMethodBackedCallArgs(ctx, qtmtf.method(), null, conditionsClassName));
 
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, qtmtf, outputPackage);
+        builder.addCode(tenantDsl.declaration());
         builder.addCode(CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
@@ -1622,7 +1621,7 @@ public class TypeFetcherGenerator {
             .add(isList ? ".fetch();\n" : ".fetchOne();\n")
             .unindent()
             .build());
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, qtmtf.errorChannel()));
         builder.endControlFlow();
@@ -1706,8 +1705,8 @@ public class TypeFetcherGenerator {
         }
         String terminalLocal = hops.isEmpty() ? startLocal : ((JoinStep.Hop) hops.getLast()).alias();
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, qrtf, outputPackage);
+        builder.addCode(tenantDsl.declaration());
         var sel = CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
@@ -1737,7 +1736,7 @@ public class TypeFetcherGenerator {
         }
         sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
         builder.addCode(sel.build());
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -1830,8 +1829,8 @@ public class TypeFetcherGenerator {
         String anchorLocal = hop0.alias();
         String terminalLocal = ((JoinStep.Hop) hops.getLast()).alias();
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, mrwf, outputPackage);
+        builder.addCode(tenantDsl.declaration());
 
         // Step 1 — the write. The routine executes inside the per-field transaction; the SELECT
         // captures hop 0's source-side key columns off the routine's result rows, and the commit
@@ -1900,7 +1899,7 @@ public class TypeFetcherGenerator {
         sel.add(".where($L)\n", where);
         sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
         builder.addCode(sel.build());
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, mrwf.errorChannel()));
         builder.endControlFlow();
@@ -1933,7 +1932,6 @@ public class TypeFetcherGenerator {
         boolean isList = tmf.returnType().wrapper().isList();
 
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         var methodClass = ClassName.bestGuess(tmf.method().className());
         String conditionsClassName = outputPackage + ".conditions."
@@ -1977,7 +1975,7 @@ public class TypeFetcherGenerator {
             tmf.method().methodName(),
             ArgCallEmitter.buildMethodBackedCallArgs(ctx, tmf.method(), null, conditionsClassName));
 
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        builder.addCode(TenantDslEmitter.resolve(ctx, tmf, outputPackage).declaration());
 
         // Parent-row correlation. For each slot in the single FK hop, target-side column on the
         // developer's table equals source-side column from the parent record. AND across composite FKs.
@@ -2219,7 +2217,8 @@ public class TypeFetcherGenerator {
         // emitter generates unqualified calls and relies on the *Fetchers-class helper that
         // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
         ctx.graphitronContextCall();
-        ServiceMethodCallEmitter.emit(carrier, outputPackage, valueType, ctx.jooqRecordHelperNames())
+        ServiceMethodCallEmitter.emit(carrier, valueType, ctx.jooqRecordHelperNames(),
+                TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage))
             .forEach(builder::addStatement);
         if (wrap) {
             builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, "result"));
@@ -4870,7 +4869,6 @@ public class TypeFetcherGenerator {
             DialectRequirement dialectRequirement,
             CodeBlock postInGuard,
             boolean listInput) {
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         TypeName valueType = switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es -> ClassName.get(String.class);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
@@ -4888,7 +4886,8 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
+        builder.addCode(tenantDsl.declaration());
         emitDialectGuard(builder, dialectRequirement);
         if (listInput) {
             builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
@@ -4912,7 +4911,7 @@ public class TypeFetcherGenerator {
 
         builder.addCode(emitDmlReturnExpression(ctx, field, rex, valueType, tableRef, tablesOnly,
             outputPackage, tableLocal, dmlChain));
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel));
         builder.endControlFlow();
@@ -5078,7 +5077,7 @@ public class TypeFetcherGenerator {
             .add(isList ? "    .fetch(r -> r);\n" : "    .fetchOne(r -> r);\n")
             .build();
         ctx.addCompanionMethod(buildDmlReentryRowsMethod(
-            ctx, rowsName, valueType, tableRef, isList, followUp));
+            ctx, field, outputPackage, rowsName, valueType, tableRef, isList, followUp));
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
@@ -5106,6 +5105,8 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildDmlReentryRowsMethod(
             TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
+            String outputPackage,
             String rowsName, TypeName valueType, TableRef tableRef,
             boolean isList, CodeBlock body) {
         var pkCols = tableRef.primaryKeyColumns();
@@ -5114,13 +5115,14 @@ public class TypeFetcherGenerator {
         TypeName keysType = isList
             ? ParameterizedTypeName.get(RESULT, keyRowType)
             : keyRowType;
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        // The unit re-resolves the field's own DSL: the caller passes the fetcher's env through,
+        // so a routed mutation re-divines the same key and dslFor reuses the pinned connection.
         return MethodSpec.methodBuilder(rowsName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(valueType)
             .addParameter(keysType, "keys")
             .addParameter(ENV, "env")
-            .addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall())
+            .addCode(TenantDslEmitter.resolve(ctx, field, outputPackage).declaration())
             .addCode(body)
             .build();
     }
@@ -5258,7 +5260,7 @@ public class TypeFetcherGenerator {
             .addStatement("return step.where(condition)$L", isList ? ".fetch()" : ".fetchOne()")
             .build();
         ctx.addCompanionMethod(buildDmlReentryRowsMethod(
-            ctx, rowsName, valueType, tableRef, isList, followUp));
+            ctx, field, outputPackage, rowsName, valueType, tableRef, isList, followUp));
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
@@ -5323,8 +5325,8 @@ public class TypeFetcherGenerator {
                 + "$T.$$fields(env.getSelectionSet(), $L, env))",
             pageRequestClass, connectionHelperClass, conn.defaultPageSize(), names.typeClass(), tableLocal);
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, qtf, outputPackage);
+        builder.addCode(tenantDsl.declaration());
 
         // Single-expression paginated query : seek is a no-op when page.seekFields() are noField()
         var resultOfRecord = ParameterizedTypeName.get(
@@ -5388,7 +5390,7 @@ public class TypeFetcherGenerator {
                 "$T payload = new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs)",
                 valueType, connectionResultClass, tableLocal);
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -5715,8 +5717,12 @@ public class TypeFetcherGenerator {
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
+        // The rows method resolves its own routed dsl; a divined-tenant lookup additionally
+        // declares the key here so the success return hands it down the subtree.
+        var handDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        builder.addCode(handDown.declaration());
         builder.addStatement("$T payload = $L(env)", valueType, field.lookupMethodName());
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", handDown.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -5785,7 +5791,7 @@ public class TypeFetcherGenerator {
 
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",
             names.typeClass(), tableLocal);
-        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(ctx, field, typeFieldsCall, tableLocal));
+        builder.addCode(LookupValuesJoinEmitter.buildFetcherBody(ctx, field, typeFieldsCall, tableLocal, outputPackage));
         return builder.build();
     }
 
@@ -5866,7 +5872,7 @@ public class TypeFetcherGenerator {
         // DML chain per kind. Each branch produces a CodeBlock starting with `.<verb>(...)`
         // suitable for chaining off `DSL.using(tx)` inside transactionResult.
         return buildSingleRecordTwoStepFetcher(
-            ctx, f.name(), tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal) -> buildDmlChainForRecord(f, tia, tia.inputTable(), tablesOnly, tableLocal),
             outputPackage);
     }
@@ -5883,7 +5889,7 @@ public class TypeFetcherGenerator {
      * resolved table names rather than threading a {@code DmlKind} that re-switches internally.
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
-            TypeFetcherEmissionContext ctx, String fieldName, String argName,
+            TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
             TableRef tableRef, Optional<ErrorChannel> errorChannel, String qualifiedName,
             java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
             String outputPackage) {
@@ -5897,14 +5903,14 @@ public class TypeFetcherGenerator {
         }
         TypeName payloadType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
-        var builder = MethodSpec.methodBuilder(fieldName)
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(payloadType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
+        builder.addCode(tenantDsl.declaration());
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
@@ -5924,7 +5930,7 @@ public class TypeFetcherGenerator {
             .add(".fetchOne());\n").unindent();
         builder.addCode(dmlEmit.build());
 
-        builder.addCode(returnSyncSuccess(payloadType, "payload"));
+        builder.addCode(returnSyncSuccess(payloadType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel,
             singleRecordSentinelFor(tableRef, tablesOnly, pkCols)));
@@ -5946,7 +5952,7 @@ public class TypeFetcherGenerator {
         var setGroups = setGroupsOf(f.updateRows().setColumns());
         var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
         return buildSingleRecordTwoStepFetcher(
-            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
                 setGroups, keyGroups, inputArg.table(), tablesOnly, tableLocal),
             outputPackage);
@@ -5965,7 +5971,7 @@ public class TypeFetcherGenerator {
         var inputArg = f.inputArg();
         var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
         return buildSingleRecordTwoStepFetcher(
-            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal) -> buildRecordDeleteChain(
                 whereGroups, inputArg.table(), tablesOnly, tableLocal),
             outputPackage);
@@ -6246,7 +6252,7 @@ public class TypeFetcherGenerator {
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
         var tia = f.tableInputArg();
         return buildBulkRecordTwoStepFetcher(
-            ctx, f.name(), tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal, pkCols, recordRowType) ->
                 buildBulkRecordPerRowBody(f, tia, tia.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
             outputPackage);
@@ -6272,7 +6278,7 @@ public class TypeFetcherGenerator {
      * execution tier.
      */
     private static MethodSpec buildBulkRecordTwoStepFetcher(
-            TypeFetcherEmissionContext ctx, String fieldName, String argName,
+            TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
             TableRef tableRef, Optional<ErrorChannel> errorChannel, String qualifiedName,
             BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
@@ -6289,12 +6295,13 @@ public class TypeFetcherGenerator {
         TypeName resultType = ParameterizedTypeName.get(resultClass, recordRowType);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
-        var builder = MethodSpec.methodBuilder(fieldName)
+        var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(resultType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
-        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
+        builder.addCode(tenantDsl.declaration());
         builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
             LIST, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
@@ -6325,7 +6332,7 @@ public class TypeFetcherGenerator {
             .unindent().add("});\n")
             .build());
 
-        builder.addCode(returnSyncSuccess(resultType, "payload"));
+        builder.addCode(returnSyncSuccess(resultType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel,
             bulkRecordSentinelFor(tableRef, tablesOnly, pkCols)));
@@ -6348,7 +6355,7 @@ public class TypeFetcherGenerator {
         var setGroups = setGroupsOf(f.updateRows().setColumns());
         var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
         return buildBulkRecordTwoStepFetcher(
-            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
                 setGroups, keyGroups, inputArg.table(), tablesOnly, tableLocal, pkCols, recordRowType),
             outputPackage);
@@ -6367,7 +6374,7 @@ public class TypeFetcherGenerator {
         var inputArg = f.inputArg();
         var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
         return buildBulkRecordTwoStepFetcher(
-            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            ctx, f, inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
             (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
                 whereGroups, inputArg.table(), tablesOnly, tableLocal, pkCols, recordRowType),
             outputPackage);
@@ -6691,7 +6698,9 @@ public class TypeFetcherGenerator {
             bkf.rowsMethodName(),
             returnType,
             keysContainerType,
-            ctx.graphitronContextCall(),
+            bkf instanceof no.sikt.graphitron.rewrite.model.OutputField of
+                ? TenantDslEmitter.resolve(ctx, of, outputPackage).declaration()
+                : TenantDslEmitter.singleTenantDeclaration(ctx),
             new RowsMethodBody.Service(body, needsDsl));
     }
 
@@ -7058,8 +7067,18 @@ public class TypeFetcherGenerator {
      * the local first.
      */
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
-        return CodeBlock.of("return $T.<$T>newResult().data($L).build();\n",
-            DATA_FETCHER_RESULT, boxed(valueType), payloadLocal);
+        return returnSyncSuccess(valueType, payloadLocal, CodeBlock.of(""));
+    }
+
+    /**
+     * {@link #returnSyncSuccess(TypeName, String)} with a builder tail: routed tenant sites pass
+     * {@code TenantDslEmitter.Resolution#localContextTail()} so the divined tenant key rides down
+     * the subtree as graphql-java {@code localContext} (empty everywhere else, keeping the
+     * single-tenant form byte-identical).
+     */
+    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, CodeBlock builderTail) {
+        return CodeBlock.of("return $T.<$T>newResult().data($L)$L.build();\n",
+            DATA_FETCHER_RESULT, boxed(valueType), payloadLocal, builderTail);
     }
 
     /**

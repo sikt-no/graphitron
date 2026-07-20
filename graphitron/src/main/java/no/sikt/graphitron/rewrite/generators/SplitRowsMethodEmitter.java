@@ -600,20 +600,20 @@ public final class SplitRowsMethodEmitter {
         String rowsName = ctx.rowsDeclarationName(btf);
         if (btf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
-                ctx, btf.name(), rowsName, btf.returnType(),
+                ctx, btf, rowsName, btf.returnType(),
                 btf.joinPath(), btf.filters(), btf.sourceKey(), btf.orderBy(), conn,
                 btf.parentCorrelation(),
                 outputPackage, permit, registry);
         }
         if (btf.emitsSingleRecordPerKey()) {
             return buildSingleMethod(
-                ctx, btf.name(), rowsName, btf.returnType(),
+                ctx, btf, rowsName, btf.returnType(),
                 btf.joinPath(), btf.filters(), btf.sourceKey(),
                 btf.parentCorrelation(),
                 outputPackage, permit, registry);
         }
         return buildListMethod(
-            ctx, btf.name(), rowsName, btf.returnType(),
+            ctx, btf, rowsName, btf.returnType(),
             btf.joinPath(), btf.filters(), btf.sourceKey(),
             /* lookupMapping */ null,
             btf.parentCorrelation(),
@@ -693,7 +693,7 @@ public final class SplitRowsMethodEmitter {
             ctx.rowsDeclarationName(field),
             listOfRecord,
             keysListType,
-            ctx.graphitronContextCall(),
+            TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
             new RowsMethodBody.SqlBatchedPivot(body.build()));
     }
 
@@ -711,7 +711,7 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         return buildListMethod(
-            ctx, blf.name(), ctx.rowsDeclarationName(blf), blf.returnType(),
+            ctx, blf, ctx.rowsDeclarationName(blf), blf.returnType(),
             blf.joinPath(), blf.filters(), blf.sourceKey(),
             blf.lookupMapping(),
             blf.parentCorrelation(),
@@ -727,7 +727,7 @@ public final class SplitRowsMethodEmitter {
      */
     private static MethodSpec buildListMethod(
             TypeFetcherEmissionContext ctx,
-            String fieldName,
+            no.sikt.graphitron.rewrite.model.OutputField field,
             String rowsMethodName,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
@@ -738,6 +738,7 @@ public final class SplitRowsMethodEmitter {
             String outputPackage,
             java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
             CompositeDecodeHelperRegistry registry) {
+        String fieldName = field.name();
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -855,7 +856,7 @@ public final class SplitRowsMethodEmitter {
             rowsMethodName,
             listOfListOfRecord,
             keysListType,
-            ctx.graphitronContextCall(),
+            TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
             permitFactory.apply(body.build()));
     }
 
@@ -883,7 +884,7 @@ public final class SplitRowsMethodEmitter {
      */
     private static MethodSpec buildSingleMethod(
             TypeFetcherEmissionContext ctx,
-            String fieldName,
+            no.sikt.graphitron.rewrite.model.OutputField field,
             String rowsMethodName,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
@@ -893,6 +894,7 @@ public final class SplitRowsMethodEmitter {
             String outputPackage,
             java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
             CompositeDecodeHelperRegistry registry) {
+        String fieldName = field.name();
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -940,7 +942,7 @@ public final class SplitRowsMethodEmitter {
             rowsMethodName,
             listOfRecord,
             keysListType,
-            ctx.graphitronContextCall(),
+            TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
             permitFactory.apply(body.build()));
     }
 
@@ -973,7 +975,7 @@ public final class SplitRowsMethodEmitter {
      */
     private static MethodSpec buildConnectionMethod(
             TypeFetcherEmissionContext ctx,
-            String fieldName,
+            no.sikt.graphitron.rewrite.model.OutputField field,
             String rowsMethodName,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
@@ -986,6 +988,7 @@ public final class SplitRowsMethodEmitter {
             java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
             CompositeDecodeHelperRegistry registry) {
 
+        String fieldName = field.name();
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -1134,7 +1137,7 @@ public final class SplitRowsMethodEmitter {
             rowsMethodName,
             listOfConnectionResult,
             keysListType,
-            ctx.graphitronContextCall(),
+            TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
             permitFactory.apply(body.build()));
     }
 
@@ -1486,7 +1489,7 @@ public final class SplitRowsMethodEmitter {
             ctx.rowsDeclarationName(stf),
             methodReturn,
             keysContainer,
-            ctx.graphitronContextCall(),
+            TenantDslEmitter.resolve(ctx, stf, outputPackage).declaration(),
             new RowsMethodBody.Service(body.build(), true));
     }
 }

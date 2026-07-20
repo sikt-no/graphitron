@@ -298,12 +298,17 @@ public class GraphQLRewriteGenerator {
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         EmissionLog emittedThisRun = new EmissionLog();
+        // The tenant key type read off the catalog's tenant column types every tenant-keyed
+        // runtime surface when <tenantColumn> is configured; null keeps the erased Object shape.
+        var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
+            ? configuredTenancy.tenantType()
+            : null;
         write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
         write(LightFetcherClassGenerator.generate(outputPackage),                                 "util",       emittedThisRun);
         write(NodeIdEncoderClassGenerator.generate(schema),                                       "util",       emittedThisRun);
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
-        write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
+        write(ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null),      "util",       emittedThisRun);
         // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
         // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
         // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to
@@ -316,11 +321,6 @@ public class GraphQLRewriteGenerator {
         write(SelectionOccurrencesClassGenerator.generate(outputPackage),                         "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
-        // The tenant key type read off the catalog's tenant column types every tenant-keyed
-        // runtime surface when <tenantColumn> is configured; null keeps the erased Object shape.
-        var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
-            ? configuredTenancy.tenantType()
-            : null;
         write(ConnectionRuntimeClassGenerator.generate(outputPackage, ctx.sessionStateConfig(), tenantKeyType), "schema", emittedThisRun);
         write(GraphitronTransactionProviderGenerator.generate(outputPackage),                       "schema",     emittedThisRun);
         write(GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType != null), "schema", emittedThisRun);

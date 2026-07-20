@@ -391,7 +391,8 @@ final class LookupValuesJoinEmitter {
      * @param field                the lookup field
      * @param typeFieldsCallStatic the JavaPoet expression for {@code <TypeName>.$fields(env.getSelectionSet(), table, env)}.
      */
-    static CodeBlock buildFetcherBody(TypeFetcherEmissionContext ctx, LookupField field, CodeBlock typeFieldsCall, String srcAlias) {
+    static CodeBlock buildFetcherBody(TypeFetcherEmissionContext ctx, LookupField field, CodeBlock typeFieldsCall,
+            String srcAlias, String outputPackage) {
         ColumnMapping cm = (ColumnMapping) field.lookupMapping();
         List<Slot> slots = flattenSlots(cm);
         String alias = inputTableAlias(field);
@@ -403,12 +404,17 @@ final class LookupValuesJoinEmitter {
         // USING column arguments — references to target-table field constants.
         CodeBlock usingArgs = ValuesJoinRowBuilder.usingArgs(slots, Slot::targetColumn, srcAlias);
 
+        // Every LookupField permit is an OutputField; the instanceof keeps the seam total if a
+        // non-field permit ever appears (it would fall back to the escape-hatch read).
+        CodeBlock dslDeclaration = field instanceof no.sikt.graphitron.rewrite.model.OutputField of
+            ? TenantDslEmitter.resolve(ctx, of, outputPackage).declaration()
+            : TenantDslEmitter.singleTenantDeclaration(ctx);
+
         return CodeBlock.builder()
             .addStatement("$T rows = $L(env, $L)",
                 ValuesJoinRowBuilder.rowArrayType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT),
                 inputRowsMethodName(field), srcAlias)
-            .addStatement("$T dsl = $L.getDslContext(env)",
-                ClassName.get("org.jooq", "DSLContext"), ctx.graphitronContextCall())
+            .add(dslDeclaration)
             .add("if (rows.length == 0) return dsl.newResult();\n")
             .addStatement("$T input = $T.values(rows).as($L)",
                 ValuesJoinRowBuilder.inputTableType(slots, Slot::targetColumn, DIRECTIVE_CONTEXT), DSL, aliasArgs)

@@ -29,9 +29,11 @@ import java.util.StringJoiner;
  * <p>Emitted (not shipped as a graphitron artifact) so it follows the {@code GraphitronContext}
  * precedent: the bodies depend only on the JDK ({@code javax.sql.DataSource},
  * {@code java.sql.Connection}, {@code java.util.concurrent.Executor}) and jOOQ
- * ({@code org.jooq.SQLDialect}); no auth-framework type and no graphitron type ever appears. The
- * bodies must be valid Java 17 (verified by the {@code graphitron-sakila-example}
- * {@code <release>17</release>} compile).
+ * ({@code org.jooq.SQLDialect}); no auth-framework type and no graphitron type ever appears. In a
+ * multi-tenant build the {@code TenantConnections} carrier additionally references graphql-java's
+ * {@code DataFetchingEnvironment} (its routing statics resolve the carrier off the GraphQL
+ * context), which every generated consumer already has on the classpath. The bodies must be valid
+ * Java 17 (verified by the {@code graphitron-sakila-example} {@code <release>17</release>} compile).
  *
  * <h2>The two lifecycles</h2>
  * Connection setup is application-scoped ({@code GraphitronRuntime}, built once at wiring time via
@@ -151,6 +153,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
     private ConnectionRuntimeClassGenerator() {}
 
@@ -194,7 +197,8 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(sessionHook(sessionHook));
         units.add(pinnedConnection(pinnedConnection, sessionHook));
         units.add(runtime(sessionHook, pinnedConnection, instrumentation, projection, tenantKey));
-        units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey));
+        units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
+            tenantKeyType != null));
         TypeSpec impl = sessionHookImpl(sessionHook, sessionState);
         if (impl != null) {
             units.add(impl);
@@ -708,7 +712,8 @@ public final class ConnectionRuntimeClassGenerator {
      * rewire the instrumentation.
      */
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
-                                              ClassName provider, ClassName commitPolicy, TypeName tenantKey) {
+                                              ClassName provider, ClassName commitPolicy, TypeName tenantKey,
+                                              boolean multiTenant) {
         var pinnedMapType = ParameterizedTypeName.get(MAP, tenantKey, pinnedConnection);
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -812,7 +817,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "attempting them all.\n")
             .build();
 
-        return TypeSpec.classBuilder(TENANT_CONNECTIONS_CLASS_NAME)
+        var carrier = TypeSpec.classBuilder(TENANT_CONNECTIONS_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Per-operation carrier of the tenant-keyed pinned connections for one request. See\n"
                 + "{@code ConnectionRuntimeClassGenerator} for the full contract.\n")
@@ -824,7 +829,142 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(constructor)
             .addMethod(dslFor)
             .addMethod(dslDefault)
-            .addMethod(releaseAll)
+            .addMethod(releaseAll);
+        if (multiTenant) {
+            carrier.addMethod(ofEnvironment(self))
+                .addMethod(divinedTenant(tenantKey))
+                .addMethod(divinedTenantAgree())
+                .addMethod(tenantSlot());
+        }
+        return carrier.build();
+    }
+
+    /**
+     * {@code static TenantConnections of(DataFetchingEnvironment env)}: resolves the per-operation
+     * carrier the execution instrumentation stashed in the GraphQL context. Multi-tenant builds
+     * only; emitted fetchers route every acquisition through this, so an operation that did not
+     * run through graphitron-owned acquisition fails loudly before any SQL instead of silently
+     * targeting the wrong database.
+     */
+    private static MethodSpec ofEnvironment(ClassName self) {
+        return MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("$T tenants = env.getGraphQlContext().get($T.class)", self, self)
+            .beginControlFlow("if (tenants == null)")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "No " + TENANT_CONNECTIONS_CLASS_NAME + " in the GraphQL context: a multi-tenant build routes"
+                    + " connections per divined tenant, so the operation must run through graphitron-owned"
+                    + " acquisition (newOwnedExecutionInput / GraphitronRuntime.newGraphQL).")
+            .endControlFlow()
+            .addStatement("return tenants")
+            .addJavadoc("The per-operation carrier the execution instrumentation stashed in the GraphQL\n"
+                + "context. Fails loudly when the operation did not run through graphitron-owned\n"
+                + "acquisition; routed fetchers never fall back to an unrouted connection.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
+     * {@code static T divinedTenant(Object... candidates)}: folds every runtime value of a field's
+     * tenant bindings into the one divined key. Collections flatten (a list-valued binding
+     * contributes each element); all non-null values must agree; an all-null/absent fold is a
+     * request-level error before any SQL, as is a value of the wrong Java type.
+     */
+    private static MethodSpec divinedTenant(TypeName tenantKey) {
+        return MethodSpec.methodBuilder("divinedTenant")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(tenantKey)
+            .addParameter(Object[].class, "candidates")
+            .varargs()
+            .addStatement("Object key = null")
+            .beginControlFlow("for (Object candidate : candidates)")
+            .addStatement("key = agreeOnTenant(key, candidate)")
+            .endControlFlow()
+            .beginControlFlow("if (key == null)")
+            .addComment("Absent binding value: a request-level error before any SQL, same family as the")
+            .addComment("unknown-tenant acquisition failure.")
+            .addStatement("throw new $T($S)", NO_SUCH_ELEMENT,
+                "The tenant binding value is absent; cannot route the operation to a tenant database.")
+            .endControlFlow()
+            .beginControlFlow("if (key instanceof $T typed)", tenantKey)
+            .addStatement("return typed")
+            .endControlFlow()
+            .addStatement("throw new $T($S + key + $S)", IllegalArgumentException.class,
+                "Divined tenant value '", "' does not have the tenant column's Java type.")
+            .addJavadoc("Folds the runtime values of a field's tenant bindings into the one divined key:\n"
+                + "collections flatten, all non-null values must agree, and an absent or wrongly-typed\n"
+                + "value is a request-level error before any SQL.\n"
+                + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
+            .build();
+    }
+
+    /** The recursive agree-fold behind {@code divinedTenant}: flattens collections, rejects disagreement. */
+    private static MethodSpec divinedTenantAgree() {
+        var collection = ClassName.get("java.util", "Collection");
+        return MethodSpec.methodBuilder("agreeOnTenant")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "current")
+            .addParameter(Object.class, "candidate")
+            .beginControlFlow("if (candidate == null)")
+            .addStatement("return current")
+            .endControlFlow()
+            .beginControlFlow("if (candidate instanceof $T<?> values)", collection)
+            .beginControlFlow("for (Object value : values)")
+            .addStatement("current = agreeOnTenant(current, value)")
+            .endControlFlow()
+            .addStatement("return current")
+            .endControlFlow()
+            .beginControlFlow("if (current != null && !current.equals(candidate))")
+            .addStatement("throw new $T($S + current + $S + candidate)", IllegalArgumentException.class,
+                "Tenant bindings disagree within one operation: '", "' vs '")
+            .endControlFlow()
+            .addStatement("return candidate")
+            .build();
+    }
+
+    /**
+     * {@code static Object tenantSlot(Object container, String... path)}: reads a nested
+     * input-object slot by the exact key path computed at build time from the slot's column
+     * mapping (never a name search). Null-safe at every step; a list-shaped level maps the
+     * remaining path over its elements (the divined-tenant fold flattens the result).
+     */
+    private static MethodSpec tenantSlot() {
+        var list = ClassName.get("java.util", "List");
+        var arrayList = ClassName.get("java.util", "ArrayList");
+        var arrays = ClassName.get("java.util", "Arrays");
+        var collection = ClassName.get("java.util", "Collection");
+        return MethodSpec.methodBuilder("tenantSlot")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "container")
+            .addParameter(String[].class, "path")
+            .varargs()
+            .addStatement("Object current = container")
+            .beginControlFlow("for (int i = 0; i < path.length; i++)")
+            .beginControlFlow("if (current instanceof $T<?> values)", collection)
+            .addComment("List-shaped level (e.g. a batch input): read the remaining path off every element;")
+            .addComment("the divined-tenant fold flattens and equality-guards the results.")
+            .addStatement("$T<Object> out = new $T<>()", list, arrayList)
+            .addStatement("String[] rest = $T.copyOfRange(path, i, path.length)", arrays)
+            .beginControlFlow("for (Object value : values)")
+            .addStatement("out.add(tenantSlot(value, rest))")
+            .endControlFlow()
+            .addStatement("return out")
+            .endControlFlow()
+            .beginControlFlow("if (!(current instanceof $T<?, ?> map))", MAP)
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("current = map.get(path[i])")
+            .endControlFlow()
+            .addStatement("return current")
+            .addJavadoc("Reads a nested input-object slot by the exact key path the build computed from the\n"
+                + "slot's column mapping. Null-safe at every step; a list-shaped level maps the remaining\n"
+                + "path over its elements.\n"
+                + "@param container the outer argument value (a {@code Map}, a {@code List} of maps, or {@code null})\n"
+                + "@param path the build-time key path from the container down to the bound slot\n")
             .build();
     }
 

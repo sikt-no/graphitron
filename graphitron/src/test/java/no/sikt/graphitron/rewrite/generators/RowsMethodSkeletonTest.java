@@ -29,7 +29,11 @@ class RowsMethodSkeletonTest {
     private static final TypeName  LIST_OF_KEY = ParameterizedTypeName.get(LIST, KEY);
     private static final TypeName  SET_OF_KEY  = ParameterizedTypeName.get(SET, KEY);
 
-    private static final CodeBlock CTX_CALL = CodeBlock.of("graphitronContext(env)");
+    // The caller-resolved declaration (TenantDslEmitter's single-tenant form).
+    private static final CodeBlock DSL_DECLARATION = CodeBlock.builder()
+        .addStatement("$T dsl = graphitronContext(env).getDslContext(env)",
+            ClassName.get("org.jooq", "DSLContext"))
+        .build();
     private static final CodeBlock SQL_BODY = CodeBlock.builder()
         .addStatement("return $T.of()", LIST)  // body content placeholder
         .build();
@@ -40,7 +44,7 @@ class RowsMethodSkeletonTest {
             "rowsFilms",
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
-            CTX_CALL,
+            DSL_DECLARATION,
             new RowsMethodBody.SqlBatchedTable(SQL_BODY));
 
         String src = spec.toString();
@@ -58,7 +62,7 @@ class RowsMethodSkeletonTest {
             "rowsFilms",
             LIST_OF_LIST_OF_RECORD,
             LIST_OF_KEY,
-            CTX_CALL,
+            DSL_DECLARATION,
             new RowsMethodBody.SqlBatchedLookupTable(SQL_BODY));
 
         String src = spec.toString();
@@ -72,7 +76,7 @@ class RowsMethodSkeletonTest {
             "loadFilms",
             LIST_OF_LIST_OF_RECORD,
             SET_OF_KEY,
-            CTX_CALL,
+            DSL_DECLARATION,
             new RowsMethodBody.Service(
                 CodeBlock.of("return com.example.Service.loadFilms(keys, dsl);\n"),
                 /* needsDsl */ true));
@@ -93,7 +97,7 @@ class RowsMethodSkeletonTest {
             "loadFilms",
             LIST_OF_LIST_OF_RECORD,
             SET_OF_KEY,
-            CTX_CALL,
+            DSL_DECLARATION,
             new RowsMethodBody.Service(
                 CodeBlock.of("return com.example.Service.loadFilms(keys);\n"),
                 /* needsDsl */ false));

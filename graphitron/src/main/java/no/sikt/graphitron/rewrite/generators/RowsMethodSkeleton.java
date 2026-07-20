@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -28,9 +27,11 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
  *       {@link no.sikt.graphitron.rewrite.model.RowsMethodShape#outerRowsReturnType}</li>
  *   <li>empty-input short-circuit (SQL permits only — the service-path gate is out of
  *       scope)</li>
- *   <li>{@code DSLContext dsl = <graphitronContextCall>.getDslContext(env)} line — always for
- *       SQL permits; conditional on {@link RowsMethodBody.Service#needsDsl()} for the service
- *       permit</li>
+ *   <li>the caller-resolved {@code DSLContext dsl = ...;} declaration — always for SQL permits;
+ *       conditional on {@link RowsMethodBody.Service#needsDsl()} for the service permit. The
+ *       declaration comes from {@code TenantDslEmitter}, so a routed build acquires per the
+ *       field's tenant binding while single-tenant builds keep the
+ *       {@code graphitronContext(env).getDslContext(env)} form</li>
  * </ul>
  *
  * <p>Body content is opaque to the skeleton: each permit carries its own
@@ -40,36 +41,32 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
  */
 public final class RowsMethodSkeleton {
 
-    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
-
     private RowsMethodSkeleton() {}
 
     /**
      * Builds a rows-method {@link MethodSpec} for the given body permit.
      *
-     * @param methodName            the rows-method name (today produced by
-     *                              {@link no.sikt.graphitron.rewrite.model.BatchKeyField#rowsMethodName()};
-     *                              service-backed leaves override to {@code load<X>}).
-     * @param outerReturnType       the rows-method's outer return type (e.g.
-     *                              {@code List<List<Record>>}, {@code Map<K, V>}); produced via
-     *                              {@link no.sikt.graphitron.rewrite.model.RowsMethodShape#outerRowsReturnType}.
-     * @param keysContainerType     {@code List<K>} for positional-list registrations,
-     *                              {@code Set<K>} for mapped-set registrations.
-     * @param graphitronContextCall the call expression for the per-class
-     *                              {@code graphitronContext(env)} helper (e.g.
-     *                              {@code CodeBlock.of("graphitronContext(env)")}); used to
-     *                              emit the {@code DSLContext dsl = ...} line. Callers in
-     *                              {@code TypeFetcherGenerator} pass
-     *                              {@code ctx.graphitronContextCall()} so the helper-emission
-     *                              dependency is recorded.
-     * @param body                  the per-shape body permit; carries the SELECT / scatter /
-     *                              service-call content the skeleton pastes after the framing.
+     * @param methodName        the rows-method name (today produced by
+     *                          {@link no.sikt.graphitron.rewrite.model.BatchKeyField#rowsMethodName()};
+     *                          service-backed leaves override to {@code load<X>}).
+     * @param outerReturnType   the rows-method's outer return type (e.g.
+     *                          {@code List<List<Record>>}, {@code Map<K, V>}); produced via
+     *                          {@link no.sikt.graphitron.rewrite.model.RowsMethodShape#outerRowsReturnType}.
+     * @param keysContainerType {@code List<K>} for positional-list registrations,
+     *                          {@code Set<K>} for mapped-set registrations.
+     * @param dslDeclaration    the full {@code DSLContext dsl = ...;} declaration statement(s),
+     *                          resolved per the field's tenant binding by
+     *                          {@code TenantDslEmitter.resolve(...).declaration()} (which yields
+     *                          the {@code graphitronContext(env).getDslContext(env)} form in
+     *                          single-tenant builds and records the helper dependency).
+     * @param body              the per-shape body permit; carries the SELECT / scatter /
+     *                          service-call content the skeleton pastes after the framing.
      */
     public static MethodSpec build(
             String methodName,
             TypeName outerReturnType,
             TypeName keysContainerType,
-            CodeBlock graphitronContextCall,
+            CodeBlock dslDeclaration,
             RowsMethodBody body) {
 
         var b = MethodSpec.methodBuilder(methodName)
@@ -79,10 +76,10 @@ public final class RowsMethodSkeleton {
             .addParameter(ENV, "env");
 
         switch (body) {
-            case RowsMethodBody.SqlBatchedTable s      -> emitSqlBody(b, s.content(), graphitronContextCall);
-            case RowsMethodBody.SqlBatchedLookupTable s -> emitSqlBody(b, s.content(), graphitronContextCall);
-            case RowsMethodBody.SqlBatchedPivot s      -> emitSqlBody(b, s.content(), graphitronContextCall);
-            case RowsMethodBody.Service s              -> emitServiceBody(b, s, graphitronContextCall);
+            case RowsMethodBody.SqlBatchedTable s      -> emitSqlBody(b, s.content(), dslDeclaration);
+            case RowsMethodBody.SqlBatchedLookupTable s -> emitSqlBody(b, s.content(), dslDeclaration);
+            case RowsMethodBody.SqlBatchedPivot s      -> emitSqlBody(b, s.content(), dslDeclaration);
+            case RowsMethodBody.Service s              -> emitServiceBody(b, s, dslDeclaration);
         }
         return b.build();
     }
@@ -92,11 +89,11 @@ public final class RowsMethodSkeleton {
      * DSL local resolution, then the permit's body content. The body content references both
      * {@code keys} and {@code dsl}.
      */
-    private static void emitSqlBody(MethodSpec.Builder b, CodeBlock content, CodeBlock graphitronContextCall) {
+    private static void emitSqlBody(MethodSpec.Builder b, CodeBlock content, CodeBlock dslDeclaration) {
         b.beginControlFlow("if (keys.isEmpty())")
          .addStatement("return $T.of()", LIST)
          .endControlFlow();
-        b.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, graphitronContextCall);
+        b.addCode(dslDeclaration);
         b.addCode(content);
     }
 
@@ -106,9 +103,9 @@ public final class RowsMethodSkeleton {
      * then the permit's body content. The empty-input gate is intentionally omitted: adding the
      * gate to service rows methods is a behaviour change tracked as a separate Backlog item.
      */
-    private static void emitServiceBody(MethodSpec.Builder b, RowsMethodBody.Service service, CodeBlock graphitronContextCall) {
+    private static void emitServiceBody(MethodSpec.Builder b, RowsMethodBody.Service service, CodeBlock dslDeclaration) {
         if (service.needsDsl()) {
-            b.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, graphitronContextCall);
+            b.addCode(dslDeclaration);
         }
         b.addCode(service.content());
     }

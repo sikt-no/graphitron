@@ -79,11 +79,24 @@ public final class ServiceMethodCallEmitter {
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType,
             JooqRecordHelperNames jooqRecordHelperNames) {
+        return emit(call, resultLocalType, jooqRecordHelperNames,
+            CodeBlock.of("graphitronContext(env).getDslContext(env)"));
+    }
+
+    /**
+     * Canonical form carrying the {@code dsl} local's source expression, resolved per the
+     * field's tenant binding by {@code TenantDslEmitter.dslExpression} (which yields the
+     * {@code graphitronContext(env).getDslContext(env)} form in single-tenant builds, the shape
+     * every other overload defaults to). {@code outputPackage} disappeared with the hardcoded
+     * expression: the tenant-aware caller resolves package-qualified references itself.
+     */
+    public static List<CodeBlock> emit(ServiceMethodCall call, TypeName resultLocalType,
+            JooqRecordHelperNames jooqRecordHelperNames, CodeBlock dslExpression) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = anyFromDsl(allEntries(call));
         if (needsDsl) {
-            out.add(CodeBlock.of("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT));
+            out.add(CodeBlock.of("$T dsl = $L", DSL_CONTEXT, dslExpression));
         }
 
         if (call instanceof ServiceMethodCall.Instance inst) {
