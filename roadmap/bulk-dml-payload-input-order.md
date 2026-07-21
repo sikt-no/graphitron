@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: classification-model
-depends-on: [dml-reentry-values-join-rendering]
+depends-on: []
 created: 2026-07-21
 last-updated: 2026-07-21
 ---

@@ -1797,7 +1797,10 @@ contribution.
   > for the reentry implementedness guard). Thread I's level-2 command/name registry exists in
   > main source (`no.sikt.graphitron.rewrite.methodgraph`), populated for the whole reentry
   > family and joined bidirectionally by `ReentryCommandClosureTest`. The DML correlation
-  > rendering (keys-IN vs the VALUES-join primitive) is recorded residue owned by R489.
+  > rendering residue (keys-IN vs the VALUES-join primitive) shipped 2026-07-21 (R489,
+  > `0ef2353` + rework `1f8340e`, see `changelog.md`): the companion renders the VALUES-join
+  > primitive at bulk cardinality and plain key equality at single, with the correlation
+  > carried on the `DmlReturnExpression` reentry arms.
   Acceptance across the run-up is **execution-tier equivalence** (same rows, same order, error paths
   intact), not byte-for-byte generated-output equality: the goal is gradual improvement toward this
   model, and slices may normalize generated-code shape as they go.
