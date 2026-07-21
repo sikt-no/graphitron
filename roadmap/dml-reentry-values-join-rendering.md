@@ -1,7 +1,7 @@
 ---
 id: R489
 title: "Normalize the DML reentry correlation onto the VALUES-join primitive"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: classification-model
