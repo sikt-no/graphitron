@@ -97,13 +97,26 @@ single `ColumnRef column` slot widens to `List<ColumnRef> columns`, arity 1..N:
 
 | Axis | Retiring pair | Arity-1 sibling | Merged leaf (working name) |
 |---|---|---|---|
-| output | `ChildField.CompositeColumnField` / `CompositeColumnReferenceField` | `ColumnField` / `ColumnReferenceField` | `ChildField.ColumnTupleField` / `ColumnTupleReferenceField` |
-| input | `InputField.CompositeColumnField` / `CompositeColumnReferenceField` | `ColumnField` / `ColumnReferenceField` | `InputField.ColumnTupleField` / `ColumnTupleReferenceField` |
-| argument | `ScalarArg.CompositeColumnArg` / `CompositeColumnReferenceArg` | `ColumnArg` / `ColumnReferenceArg` | `ScalarArg.ColumnTupleArg` / `ColumnTupleReferenceArg` |
+| output | `ChildField.CompositeColumnField` / `CompositeColumnReferenceField` | `ColumnField` / `ColumnReferenceField` | `ChildField.ColumnBackedField` / `ColumnBackedReferenceField` |
+| input | `InputField.CompositeColumnField` / `CompositeColumnReferenceField` | `ColumnField` / `ColumnReferenceField` | `InputField.ColumnBackedField` / `ColumnBackedReferenceField` |
+| argument | `ScalarArg.CompositeColumnArg` / `CompositeColumnReferenceArg` | `ColumnArg` / `ColumnReferenceArg` | `ScalarArg.ColumnBackedArg` / `ColumnBackedReferenceArg` |
 
-"Tuple" is the working vocabulary because a 1-tuple is the arity-1 case and the validator's 22-slot
-ceiling is exactly jOOQ's `RecordN` / `RowN` tuple-width cap; the name is reviewable at the
-Spec → Ready gate.
+Naming rationale (architect-reviewed): the merged leaf absorbs the single most common leaf in the
+model (every plain scalar `@field` column), so the name must read naturally for the arity-1
+majority, not borrow vocabulary from the rare composite case. "Backed" already lives in the model's
+vocabulary ("table-backed parent", `TypeBackingShape`); "a column-backed field" degrades gracefully
+to "backed by columns" at arity N. A `ColumnTuple*` alternative was considered and dropped: it
+names the exceptional case and "tuple" is foreign to both R333's vocabulary (column QueryParts,
+arity, select operations) and the model's. The name stays reviewable at the Spec → Ready gate; the
+load-bearing property is only that it is fresh on all six positions.
+
+**The R333 fork, pinned.** R333 leaves open whether composite realizes as `N` independent column
+QueryParts or one `N`-ary operation. This item pins **one arity-`N` carrier producing one
+`NodeIdEncodeKeys` encode call over the columns positionally** (the `encode<TypeName>(c1..cN)`
+reality in `FetcherEmitter` today): the node codec consumes the columns as one ordered key, so one
+`N`-ary unit is the honest shape, and the 22-slot ceiling is jOOQ's `RecordN` / `RowN` width cap.
+The columns list survives as an ordinary multi-valued fact on one leaf per axis, the same landing
+R432 chose for `SourceShape` (stored fact over leaf split).
 
 **Compact-constructor invariants** (the R432 checked-not-structural discipline, each documented at
 the constructor):
@@ -113,8 +126,18 @@ the constructor):
    `NodeIdDecodeKeys` (input, argument). This is today's type-level narrowing restated as a checked
    invariant: no plain composite projection exists; a multi-column carrier is always a node-key
    codec call. Corollary: `Direct` implies arity 1, so every `Direct` read stays single-column.
+   **This invariant is a deferred-generalization seam, not a modeling truth**: it encodes the
+   incidental fact that `@nodeId` is currently the only multi-column trigger, and it relaxes the
+   day R333's plain multi-column projection (arity-`N` `Direct`) arrives. Document it as such at
+   the constructor so a future reader loosens it instead of building on it.
 3. Output reference arm: `ParentCorrelation.checkCarrierInvariant` runs unconditionally (see the
    asymmetry table).
+
+**Arity is classified once, on the leaf.** The merged leaves expose one derived accessor (working
+name `isComposite()`, defined as `columns.size() > 1`) and every consumer reads it: the projection
+switch, the INSERT carve-out, the emitter arms. No consumer re-evaluates the size predicate
+independently ("decide once, carry the decision"; two consumers evaluating the same predicate over
+a model field is the branch-belongs-in-the-model smell).
 
 The `String columnName` component on the arity-1 leaves is redundant with `column.javaName()` and
 drops; consumers derive it from `columns.get(0)` where they need the single-column name.
@@ -132,17 +155,37 @@ silently widen behavior. Pinned one by one:
   over unchanged: `NodeIdEncodeKeys` compaction is a validate-time deferral on the merged leaf at
   every arity (next bullet), so only `Direct` instances reach emission, and by invariant 2's
   corollary those are arity-1, exactly today's aliased-subquery population. No composite instance
-  can reach the write-arm / read-binding agreement the marker enforces. Caution: R499/R500 (In
-  Review / Ready) work this exact seam; slice 1 rebases over whatever they land.
-- **The R24 deferral has two encodings today, and the merge unifies them.** Arity-1:
-  `ColumnReferenceField` sits in `PROJECTED_LEAVES` and `validateColumnReferenceField` emits
-  `Rejection.deferred(..., ColumnReferenceField.class)` on `NodeIdEncodeKeys` ahead of generation.
-  Composite: `CompositeColumnReferenceField` sits in `STUBBED_VARIANTS` with a `deferredFor(...)`
-  map entry and a `stub(f)` switch arm in `TypeFetcherGenerator`. Post-merge there is **one**
-  compaction-gated validate-time deferral on the merged leaf (any arity); the stub arm and map
-  entry delete, following the R314 precedent of upgrading stub surfaces to classification/validate
-  rejections. The `Rejection.StubKey.VariantClass` anchor re-keys to the merged class; R24
-  re-anchors in slice 4. Pipeline-tier coverage asserts the deferral still fires for both arities.
+  can reach the write-arm / read-binding agreement the marker enforces (whose throw guards in
+  `FetcherEmitter` are protective: a leaked composite instance fails loud, not silently). The
+  soundness is load-bearing on the validator: the arity-independent `NodeIdEncodeKeys` deferral and
+  the stub removal must land in the **same commit**, with no window where a composite reference
+  instance is neither stubbed nor rejected. Sequencing: R499/R500 (In Review / Ready) actively
+  rewrite this same result-key seam; slice 1 starts only after both land, or explicitly rebases
+  over them, never interleaved.
+- **The dispatch partition is class-keyed, and the merged leaves cross its cells.** The four
+  output leaves occupy three cells of `TypeFetcherGenerator`'s four-way partition (enforced by
+  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`): `ColumnField` is in
+  `IMPLEMENTED_LEAVES` (a real switch arm whose body is an invariant throw plus a
+  `FetcherEmitter.bind`-collected read), `ColumnReferenceField` and `CompositeColumnField` are
+  `PROJECTED_LEAVES` no-op arms, `CompositeColumnReferenceField` is the sole `STUBBED_VARIANTS`
+  entry. A merged class occupies exactly one cell, so the landings are pinned here rather than
+  invented by the implementer: the merged **non-reference** leaf lands in `IMPLEMENTED_LEAVES`,
+  keeping the arity-1 arm's classifier-invariant throw and folding the composite's no-op behavior
+  (both reads are `FetcherEmitter.bind`-collected already); the merged **reference** leaf lands in
+  `PROJECTED_LEAVES`, and the `STUBBED_VARIANTS` map entry plus the `stub(f)` arm delete. The
+  deletion is compiler-forced, not silent: the map entry and switch arm reference the retiring
+  class literal, so removing the class breaks the build until they go.
+- **The R24 deferral changes enforcer, and the merged validator gains a new rejection.** Today the
+  deferral has two encodings: arity-1 fires in `validateColumnReferenceField` on `NodeIdEncodeKeys`
+  ahead of generation, while the composite leans entirely on the `STUBBED_VARIANTS` stub;
+  `validateCompositeColumnReferenceField` emits **no** deferral of its own. Post-merge there is one
+  compaction-gated validate-time deferral on the merged reference leaf **regardless of arity**;
+  the arity-N half of that rule is a new rejection the generalized validator gains, not a merge of
+  two existing ones (following the R314 precedent of upgrading stub surfaces to validate-time
+  rejections). Disposition stays `Deferred`; the `Rejection.StubKey.VariantClass` anchor re-keys
+  to the merged class (unavoidable, the old class retires); the rejection's provenance moves from
+  the generator-stub path to the validator path, an accepted and pinned delta (see Coverage). R24
+  re-anchors in slice 4.
 - **`ParentCorrelation`** (output reference): the composite constructor skips it today only
   because the arity-1 arm derives it via `ctx.buildParentCorrelation(joinPath, parentTable)`, an
   arity-independent derivation (`FieldBuilder.buildNodeIdReferenceCarrier`). The merged
@@ -164,17 +207,23 @@ silently widen behavior. Pinned one by one:
 ## Projections stay wire-stable
 
 `FieldClassification.CompositeColumn` / `CompositeColumnReference` are **kept** as projection
-variants, derived by an arity predicate inside `CatalogBuilder.projectFieldClassification`'s
-compile-checked switch (the classification wire surface the LSP and model-context server consume
-does not churn). This satisfies R333's projection-seam invariant, re-sourcing the projection from
+variants, derived inside `CatalogBuilder.projectFieldClassification`'s compile-checked switch by
+reading the leaf's `isComposite()` accessor, never by re-evaluating the size predicate (the
+classification wire surface the LSP and model-context server consume does not churn). This satisfies R333's projection-seam invariant, re-sourcing the projection from
 the merged leaves with compile-time coverage; the projection layer is explicitly allowed to be a
 denormalized view. Collapsing the projection variants themselves is out of scope.
 
 ## Slices
 
-Each slice lands independently, trunk-green, with the R431/R432/R314 acceptance gates: generated
-sakila output byte-identical (`diff -r` empty) where the slice is pure re-plumbing, `@classified`
-corpus renames-only (no verdict delta), `GeneratorCoverageTest` partition exhaustive-and-disjoint.
+Each slice lands independently, trunk-green, with the R431/R432/R314 acceptance gates, stated
+per axis because they do not hold uniformly: generated sakila output is byte-identical (`diff -r`
+empty) on **every** axis (composite references never reached emission, so even the reference merge
+leaves output untouched); `@classified` corpus verdicts are renames-only on every axis; but the
+output **reference** axis is not pure re-plumbing on the rejection surface — the composite
+deferral changes provenance (generator stub to validator rejection, per the asymmetry table), so
+byte-identical output is necessary but not sufficient there and the validate-tier gate below is
+the additional acceptance. `GeneratorCoverageTest`'s partition stays exhaustive-and-disjoint
+throughout.
 
 1. **Output axis.** Merge the `ChildField` pair; re-plumb `TypeClassGenerator` (the
    `compositeColumnFields` threading becomes an arity-gated walk of the merged leaf),
@@ -203,8 +252,10 @@ must hold the byte-identical gate on its own before the next starts.
   leaf-set updates (the composite `NO_CASE_REQUIRED` / `NO_PROJECTION_REQUIRED` entries retire
   with the leaves); `GeneratorCoverageTest` partition update.
 - Pipeline tier: `NodeIdPipelineTest` cases re-anchor to the merged names (renames-only for the
-  live shapes); a deferral assertion pins that the composite non-mirror reference still rejects
-  at build time post-unification (both arities, same `StubKey` anchor).
+  live shapes). Slice 1 **adds** a validate-tier assertion that a composite-key `@nodeId`
+  reference schema is rejected at build time with disposition `Deferred` — the arity-N analogue
+  of the existing arity-1 `NodeIdEncodeKeys` rejection, and the pin that the deferral survived
+  its enforcer move. Both arities are asserted against the merged leaf's `StubKey` anchor.
 - Execution tier: the nodeid fixture's 2-column-key execution proofs stay green unchanged.
 - No code-string assertions on generated method bodies.
 
@@ -213,15 +264,16 @@ must hold the byte-identical gate on its own before the next starts.
 - Implementing the R24 JOIN-with-projection emission (the deferral moves house; it does not close).
 - Collapsing the `FieldClassification.CompositeColumn*` projection variants.
 - The full R333 normalization of the columns list into per-column `select` operation rows; this
-  item retires arity-as-a-leaf-**type**. The list survives as an ordinary multi-valued fact on one
-  leaf per axis, which is the same landing R432 chose for `SourceShape` (stored fact over leaf
-  split) and what R314's emit re-platforming consumes.
+  item retires arity-as-a-leaf-**type** and pins the one-`N`-ary-carrier form (see "The R333
+  fork, pinned" above).
 - Retiring the R27 synthesis shims (their construction sites re-target mechanically here).
 
 ## Interactions
 
-- **R24** (Backlog): deferral anchor and title symbols re-anchor in slice 4; the item's scope is
-  unchanged (implement the emission for the merged reference leaf, both arities, one rule).
+- **R24** (Backlog): its deferral changes mechanism here (generator stub to validator rejection;
+  see the asymmetry table) and its anchor re-keys to the merged class; slice 4 rewrites the item's
+  title symbols and mechanism sentence. The item's scope is unchanged (implement the emission for
+  the merged reference leaf, both arities, one rule).
 - **R27** (Backlog): shim construction sites re-target in slice 2; shim retirement stays R27's.
 - **R419** (Backlog): the INSERT carve-out it names becomes arity-gated; premise intact.
 - **R462** (Spec): its leaf enumerations pick up the merged names; one fewer edge-kind to model.
@@ -230,3 +282,12 @@ must hold the byte-identical gate on its own before the next starts.
 - **R222** (Spec, umbrella): this is the next executed proof of the dimensional pivot; the leaf
   count drops by six.
 - **R302** (Backlog, `ChildField` rename): orthogonal; whichever lands second re-anchors names.
+
+---
+
+Principles-architect consulted 2026-07-21 during Backlog → Spec drafting; findings folded in:
+dispatch-partition landings pinned per merged leaf, the R24 deferral's enforcer move named with
+the new arity-N validator rejection, the arity classification single-sourced on `isComposite()`,
+constructor invariant 2 marked as a deferred-generalization seam, the acceptance gates split per
+axis, the R333 N-ary fork pinned explicitly, and the working names re-derived for the arity-1
+majority (`ColumnBacked*` over `ColumnTuple*`).
