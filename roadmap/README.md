@@ -21,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R507` | Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard | Ready | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](documentation-staleness-prevention.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
-| `R489` | Normalize the DML reentry correlation onto the VALUES-join primitive | Spec | 2026-07-21 <sub>created 2026-07-16</sub> | [plan](dml-reentry-values-join-rendering.md) |
+| `R489` | Normalize the DML reentry correlation onto the VALUES-join primitive | Ready | 2026-07-21 <sub>created 2026-07-16</sub> | [plan](dml-reentry-values-join-rendering.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | In Review | 2026-07-21 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
@@ -190,7 +190,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
-- `R489` [**Normalize the DML reentry correlation onto the VALUES-join primitive**](dml-reentry-values-join-rendering.md) — Spec, architecture
+- `R489` [**Normalize the DML reentry correlation onto the VALUES-join primitive**](dml-reentry-values-join-rendering.md) — Ready, architecture
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md) — Backlog, cleanup
 - `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Backlog, tech-debt
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
