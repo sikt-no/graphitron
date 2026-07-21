@@ -1,12 +1,12 @@
 ---
 id: R45
 title: "Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: runtime-connection
 depends-on: []
-last-updated: 2026-07-20
+last-updated: 2026-07-21
 ---
 
 # Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource
