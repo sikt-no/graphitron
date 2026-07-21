@@ -213,10 +213,11 @@ public sealed interface ArgumentRef {
          * via {@link #of} so the partition has a single derivation path.
          *
          * <p>{@code fieldBindings} is {@code List<InputColumnBindingGroup>}: one group per
-         * WHERE-bound input field. {@link InputColumnBindingGroup.MapGroup} for a
-         * {@code ColumnField} carrier, {@link InputColumnBindingGroup.DecodedRecordGroup} for a
-         * {@code CompositeColumnField} carrier (the composite-PK NodeId case where decode runs
-         * once per row at the arg layer into a {@code Record<N>}).
+         * WHERE-bound input field. {@link InputColumnBindingGroup.MapGroup} for an arity-1
+         * {@link InputField.ColumnBackedField} carrier,
+         * {@link InputColumnBindingGroup.DecodedRecordGroup} for a composite one (the
+         * composite-PK NodeId case where decode runs once per row at the arg layer into a
+         * {@code Record<N>}).
          */
         record TableInputArg(
             String name,

@@ -634,7 +634,7 @@ class MutationDmlNodeIdClassificationTest {
     @Test
     void fkTargetNodeIdRef_compositeKey_delete_admitted() {
         // Composite-key FK-target arm: reordered_fk_child FKs into reordered_pk_parent which is
-        // a 3-column-PK NodeType. Carrier: CompositeColumnReferenceField with
+        // a 3-column-PK NodeType. Carrier: composite InputField.ColumnBackedReferenceField with
         // liftedSourceColumns = (fk_a, fk_b, fk_c) permuted into __NODE_KEY_COLUMNS order. The
         // resolver builds one DecodedRecordGroup with 3 RecordBinding slots.
         var schema = TestSchemaHelper.buildSchema("""
@@ -670,7 +670,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_compositeKey_insert_admitted() {
-        // Composite-key INSERT through CompositeColumnReferenceField. INSERT does not need PK
+        // Composite-key INSERT through a composite ColumnBackedReferenceField. INSERT does not need PK
         // coverage (the carve-out spans both same-table and FK-target composite arms); fields
         // flow into the column list / values walk on tia.fields(), not fieldBindings. Verify
         // the carrier classifies and INSERT admits.
@@ -791,13 +791,14 @@ class MutationDmlNodeIdClassificationTest {
     void selfFkNodeIdReference_insert_admitsAsCompositeColumnReference_surfacingSharedColumn() {
         // The neutral CAMPUS shape on a Graphitron-owned INSERT. `email` has composite PK
         // (mailbox_id, message_no). `inReplyTo` is a same-table @nodeId(typeName: "Email") @reference
-        // naming the self-FK email_in_reply_to_fk, admitted as a CompositeColumnReferenceField whose
-        // liftedSourceColumns are the self-FK's child columns (mailbox_id, in_reply_to_no), NOT the
-        // row's own PK. `mailboxRef` is the cross-table FK to mailbox (ColumnReferenceField over
-        // mailbox_id). The two reference carriers BOTH write mailbox_id; the shared-column overlap
-        // is deduped and agreement-checked at runtime (not a classify-time reject, because both writers
-        // carry a @nodeId decode). INSERT admits the composite reference carrier (the carve-out
-        // gates only CompositeColumnField, never the reference carriers).
+        // naming the self-FK email_in_reply_to_fk, admitted as a composite ColumnBackedReferenceField
+        // whose liftedSourceColumns are the self-FK's child columns (mailbox_id, in_reply_to_no), NOT
+        // the row's own PK. `mailboxRef` is the cross-table FK to mailbox (an arity-1
+        // ColumnBackedReferenceField over mailbox_id). The two reference carriers BOTH write
+        // mailbox_id; the shared-column overlap is deduped and agreement-checked at runtime (not a
+        // classify-time reject, because both writers carry a @nodeId decode). INSERT admits the
+        // composite reference carrier (the carve-out gates only the composite non-reference
+        // ColumnBackedField, never the reference carriers).
         var schema = TestSchemaHelper.buildSchema("""
             type Mailbox implements Node @table(name: "mailbox") @node { id: ID! @nodeId }
             type Email implements Node @table(name: "email") @node { id: ID! @nodeId }

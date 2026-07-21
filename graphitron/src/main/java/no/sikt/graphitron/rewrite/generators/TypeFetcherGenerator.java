@@ -3345,14 +3345,17 @@ public class TypeFetcherGenerator {
      * the SDL field name. The walk is uniform across the four admissible SetField shapes:
      *
      * <ul>
-     *   <li>Direct ColumnField — one {@code put}; value reads {@code mapLocal.get(name)}.</li>
-     *   <li>NodeId-decoded ColumnField — one {@code put}; declares a per-field decode local
-     *       inside the conditional and reads {@code decodeLocal.value1()}.</li>
-     *   <li>CompositeColumnField — N {@code put}s (one per slot); declares a per-field decode
-     *       local and reads {@code decodeLocal.value<i+1>()} for slot i.</li>
-     *   <li>ColumnReferenceField / CompositeColumnReferenceField — same as the same-table NodeId
-     *       arms but target columns are {@code liftedSourceColumns()} (FK columns on the input's
-     *       own table) rather than {@code column() / columns()}.</li>
+     *   <li>Direct {@link InputField.ColumnBackedField} — one {@code put}; value reads
+     *       {@code mapLocal.get(name)}.</li>
+     *   <li>NodeId-decoded arity-1 {@link InputField.ColumnBackedField} — one {@code put};
+     *       declares a per-field decode local inside the conditional and reads
+     *       {@code decodeLocal.value1()}.</li>
+     *   <li>Composite {@link InputField.ColumnBackedField} — N {@code put}s (one per slot);
+     *       declares a per-field decode local and reads {@code decodeLocal.value<i+1>()} for
+     *       slot i.</li>
+     *   <li>{@link InputField.ColumnBackedReferenceField} (either arity) — same as the
+     *       same-table NodeId arms but target columns are {@code liftedSourceColumns()} (FK
+     *       columns on the input's own table) rather than {@code columns()}.</li>
      * </ul>
      *
      * <p>{@code presenceLocal} is the local consulted by {@code containsKey} / {@code contains}

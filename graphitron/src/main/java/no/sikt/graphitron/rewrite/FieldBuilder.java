@@ -2252,9 +2252,9 @@ class FieldBuilder {
      * reference carrier is a plain {@code @reference} ({@link CallSiteExtraction.Direct} extraction)
      * reaching a column on a <em>joined</em> table; otherwise returns {@code inner} unchanged.
      *
-     * <p>The discrimination is load-bearing. {@code ColumnReferenceField} /
-     * {@code CompositeColumnReferenceField} are produced for two cases whose
-     * {@code liftedSourceColumns} mean different tables:
+     * <p>The discrimination is load-bearing. {@link InputField.ColumnBackedReferenceField} is
+     * produced (at either arity) for two cases whose {@code liftedSourceColumns} mean different
+     * tables:
      * <ul>
      *   <li><b>{@code @nodeId} FK-target (DirectFk)</b> — {@link CallSiteExtraction.NodeIdDecodeKeys}
      *       extraction; the lifted columns are FK-child columns on the parent's <em>own</em> table,
