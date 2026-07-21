@@ -24,9 +24,9 @@ import java.util.List;
  * <p>Three {@code ColumnMapping.LookupArg} arms are produced:
  * <ul>
  *   <li>{@link ColumnMapping.LookupArg.ScalarLookupArg} — single-column scalar
- *       {@code @lookupKey} args ({@link ArgumentRef.ScalarArg.ColumnArg}).</li>
+ *       {@code @lookupKey} args (single-column {@link ArgumentRef.ScalarArg.ColumnBackedArg}).</li>
  *   <li>{@link ColumnMapping.LookupArg.DecodedRecord} — composite-PK NodeId scalar
- *       {@code @lookupKey} args ({@link ArgumentRef.ScalarArg.CompositeColumnArg}). Decode runs
+ *       {@code @lookupKey} args (composite {@link ArgumentRef.ScalarArg.ColumnBackedArg}). Decode runs
  *       once per row at the arg layer; positional {@link InputColumnBinding.RecordBinding}s
  *       index the resulting {@code Record<N>}. Failure mode is
  *       {@link CallSiteExtraction.ThrowOnMismatch} — null returns surface as
@@ -59,26 +59,26 @@ final class LookupMappingResolver {
         var args = new ArrayList<ColumnMapping.LookupArg>();
         for (var ref : refs) {
             switch (ref) {
-                case ArgumentRef.ScalarArg.ColumnArg ca when ca.isLookupKey() ->
+                case ArgumentRef.ScalarArg.ColumnBackedArg ca when ca.isLookupKey() && !ca.isComposite() ->
                     args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
-                        ca.name(), ca.column(), ca.extraction(), ca.list()));
-                case ArgumentRef.ScalarArg.CompositeColumnArg cca when cca.isLookupKey() -> {
+                        ca.name(), ca.columns().get(0), ca.extraction(), ca.list()));
+                case ArgumentRef.ScalarArg.ColumnBackedArg cca when cca.isLookupKey() -> {
+                    // Composite arm: decode once per row into a Record<N>; bindings index it
+                    // positionally. The NodeIdDecodeKeys extraction is guaranteed by the
+                    // carrier's constructor invariant.
                     var bindings = new ArrayList<InputColumnBinding.RecordBinding>();
                     for (int i = 0; i < cca.columns().size(); i++) {
                         bindings.add(new InputColumnBinding.RecordBinding(i, cca.columns().get(i)));
                     }
-                    if (!(cca.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nodeIdExtraction)) {
-                        throw new IllegalStateException(
-                            "CompositeColumnArg @lookupKey arg '" + cca.name() + "' must carry a"
-                            + " NodeIdDecodeKeys extraction; got " + cca.extraction().getClass().getSimpleName());
-                    }
                     args.add(new ColumnMapping.LookupArg.DecodedRecord(
-                        cca.name(), cca.list(), nodeIdExtraction, bindings));
+                        cca.name(), cca.list(),
+                        (CallSiteExtraction.NodeIdDecodeKeys) cca.extraction(), bindings));
                 }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // The TIA's groups may be a mix of MapGroup (scalar @lookupKey on
-                    // ColumnField, possibly NodeIdDecodeKeys-extracted) and DecodedRecordGroup
-                    // (composite-PK @lookupKey on CompositeColumnField). MapGroups flatten into
+                    // The TIA's groups may be a mix of MapGroup (scalar @lookupKey on a
+                    // single-column ColumnBackedField, possibly NodeIdDecodeKeys-extracted) and
+                    // DecodedRecordGroup (composite-PK @lookupKey on a composite
+                    // ColumnBackedField). MapGroups flatten into
                     // one MapInput rooted at the outer arg name (slot order = group order, then
                     // binding order within each group); each DecodedRecordGroup becomes its own
                     // DecodedRecord LookupArg sharing the same outer arg name and list flag.

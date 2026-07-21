@@ -57,13 +57,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * {@link FieldBuilder#classifyArgument} (for top-level argument-level {@code @nodeId} leaves of
  * either arity). The resolver itself is arity-agnostic; callers wrap the result into the
  * appropriate carrier ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField} /
- * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField} /
- * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField} /
  * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField} on the
- * input-field side; {@link ArgumentRef.ScalarArg.ColumnArg} /
- * {@link ArgumentRef.ScalarArg.CompositeColumnArg} /
- * {@link ArgumentRef.ScalarArg.ColumnReferenceArg} /
- * {@link ArgumentRef.ScalarArg.CompositeColumnReferenceArg} on the argument side).
+ * input-field side; {@link ArgumentRef.ScalarArg.ColumnBackedArg} /
+ * {@link ArgumentRef.ScalarArg.ColumnBackedReferenceArg} on the argument side).
  *
  * <p>Failure mode is fixed at {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}:
  * malformed ids drop silently to "no match". The implicit scalar-{@code ID} arm in

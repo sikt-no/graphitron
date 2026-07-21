@@ -309,7 +309,7 @@ class NodeIdPipelineTest {
 
     enum InputCase {
         IMPLICIT_ID(
-            "input `id: ID!` on a composite-PK node-type table → CompositeColumnField with NodeIdDecodeKeys.SkipMismatchedElement",
+            "input `id: ID!` on a composite-PK node-type table → composite ColumnBackedField with NodeIdDecodeKeys.SkipMismatchedElement",
             """
             input Foo @table(name: "bar") { id: ID! }
             type Query { x: String }
@@ -325,7 +325,7 @@ class NodeIdPipelineTest {
             }),
 
         EXPLICIT_PERSON_ID(
-            "input `personId: ID! @field(name: \"PERSON_ID\")` on a composite-PK node-type table → CompositeColumnField with NodeIdDecodeKeys (PERSON_ID has no column, nodeId metadata wins)",
+            "input `personId: ID! @field(name: \"PERSON_ID\")` on a composite-PK node-type table → composite ColumnBackedField with NodeIdDecodeKeys (PERSON_ID has no column, nodeId metadata wins)",
             """
             input Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
             type Query { x: String }
@@ -341,7 +341,7 @@ class NodeIdPipelineTest {
 
         EXPLICIT_NODE_ID_DIRECTIVE(
             "R131 four-corners: singular `id: ID! @nodeId` on a @table input whose table is the"
-                + " same as the inferred NodeType's table, composite-PK → CompositeColumnField"
+                + " same as the inferred NodeType's table, composite-PK → composite ColumnBackedField"
                 + " (same-table filter against the parent's own PK columns; not a reference)",
             """
             type Bar @table(name: "bar") @node { id: ID! @nodeId }
@@ -540,7 +540,7 @@ class NodeIdPipelineTest {
         REFERENCE_TO_COMPOSITE_PK_NODE_TYPE(
             "R131 four-corners: singular `parentId: ID! @nodeId(typeName: 'LevelA')` on"
                 + " level_b table (FK level_b.(k1,k2) -> level_a.(k1,k2), composite-PK target) →"
-                + " CompositeColumnReferenceField with joinPath length 1 and the lifted source"
+                + " composite ColumnBackedReferenceField with joinPath length 1 and the lifted source"
                 + " columns positionally aligned with the NodeType key",
             """
             type LevelA implements Node @table(name: "level_a") @node(typeId: "LevelA", keyColumns: ["k1", "k2"]) { id: ID! @nodeId }
@@ -690,7 +690,7 @@ class NodeIdPipelineTest {
             }),
 
         SHIM_BARE_ID_FALLS_THROUGH(
-            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to CompositeColumnField with NodeIdDecodeKeys",
+            "bare id: ID on a KjerneJooqGenerator composite-PK table — qualifier map miss → falls through to a composite ColumnBackedField with NodeIdDecodeKeys",
             """
             input Foo @table(name: "bar") {
               id: ID
@@ -729,7 +729,7 @@ class NodeIdPipelineTest {
      */
     enum InputSameTableNodeIdCase {
         SAME_TABLE_COMPOSITE_PK(
-            "input `[ID!] @nodeId(typeName: \"Bar\")` on a `bar`-bound input → CompositeColumnField "
+            "input `[ID!] @nodeId(typeName: \"Bar\")` on a `bar`-bound input → composite ColumnBackedField "
                 + "with NodeIdDecodeKeys over composite PK columns",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
@@ -787,7 +787,7 @@ class NodeIdPipelineTest {
 
         BARE_LIST_NODE_ID_INFERS_TYPE_NAME(
             "bare `[ID!] @nodeId` infers typeName from the unique @table-matching object type → "
-                + "CompositeColumnField (same as explicit typeName)",
+                + "composite ColumnBackedField (same as explicit typeName)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             input BarFilterInput @table(name: "bar") {
@@ -919,7 +919,7 @@ class NodeIdPipelineTest {
     enum LookupKeyCase {
         SCALAR_NODEID_LOOKUP_COMPOSITE_PK(
             "scalar `id: ID @lookupKey` arg on a composite-PK NodeType-backed lookup → "
-                + "CompositeColumnArg(ThrowOnMismatch) → projectForLookup lifts to DecodedRecord "
+                + "composite ColumnBackedArg(ThrowOnMismatch) → projectForLookup lifts to DecodedRecord "
                 + "with positional RecordBindings over the composite key columns",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
@@ -1094,11 +1094,11 @@ class NodeIdPipelineTest {
     //
     // Top-level argument @nodeId leaves classify into one of two shapes per NodeIdLeafResolver:
     //   - Same-table (T.table() == field.backingTable()) — lookup-by-id semantics; projects to
-    //     ColumnArg/CompositeColumnArg with isLookupKey=true so LookupMappingResolver picks it
+    //     ColumnBackedArg with isLookupKey=true so LookupMappingResolver picks it
     //     up identically to @lookupKey-synthesised carriers (extraction is ThrowOnMismatch to
     //     match the existing lookup-key dispatch contract).
     //   - FK-target (T.table() reachable via single-hop FK) — filter semantics; projects to
-    //     ColumnReferenceArg/CompositeColumnReferenceArg with the resolved joinPath. Today's
+    //     ColumnBackedReferenceArg with the resolved joinPath. Today's
     //     emitter shipping subset is the simple direct-FK case (FK targetColumns positionally
     //     equal NodeType keyColumns); pathological cases are rejected at classify time with a
     //     pointed deferred-emission hint, parallel to the still-deferred output-side
@@ -1338,7 +1338,7 @@ class NodeIdPipelineTest {
     enum ArgumentFkTargetNodeIdCase {
         FK_TARGET_LIST_SINGLE_PK(
             "list `bazIds: [ID!]! @nodeId(typeName: \"Baz\")` on a Bar-returning field where "
-                + "bar.id_1 → baz.id is a unique FK → ColumnReferenceArg projects to BodyParam.In "
+                + "bar.id_1 → baz.id is a unique FK → ColumnBackedReferenceArg projects to BodyParam.In "
                 + "against bar.id_1 (the FK source column on the field's own table)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
@@ -1403,7 +1403,7 @@ class NodeIdPipelineTest {
 
         MULTI_HOP_IDENTITY_CARRYING(
             "R114: 2-hop @reference path from level_c to level_a via level_b. Both adjacent hops "
-                + "satisfy the lift predicate, so the carrier ships a CompositeColumnReferenceArg "
+                + "satisfy the lift predicate, so the carrier ships a composite ColumnBackedReferenceArg "
                 + "whose joinPath has size 2 and whose liftedSourceColumns lives on level_c (the "
                 + "parent's own table) and aligns positionally with LevelA's NodeType keys. The "
                 + "emitted BodyParam.RowIn binds against level_c.(K1, K2), not joinPath[0].",

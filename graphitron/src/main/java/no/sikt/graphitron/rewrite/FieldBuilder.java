@@ -1504,15 +1504,9 @@ class FieldBuilder {
                     // decode helper's two-branch message.
                     boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
-                    var keys = st.keyColumns();
-                    if (keys.size() == 1) {
-                        return new ArgumentRef.ScalarArg.ColumnArg(
-                            name, typeName, nonNull, list, keys.get(0), extraction,
-                            argCondition, fieldOverride, isLookupKey, List.of());
-                    }
-                    return new ArgumentRef.ScalarArg.CompositeColumnArg(
-                        name, typeName, nonNull, list, keys, extraction,
-                        argCondition, fieldOverride, isLookupKey);
+                    return new ArgumentRef.ScalarArg.ColumnBackedArg(
+                        name, typeName, nonNull, list, st.keyColumns(), extraction,
+                        argCondition, fieldOverride, isLookupKey, List.of());
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                     // FK-target @nodeId arg = filter semantics. Throw extraction (malformed or
@@ -1526,15 +1520,8 @@ class FieldBuilder {
                             + " @nodeId is a filter, not a lookup"));
                     }
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
-                    var keys = direct.keyColumns();
-                    if (keys.size() == 1) {
-                        return new ArgumentRef.ScalarArg.ColumnReferenceArg(
-                            name, typeName, nonNull, list, keys.get(0), direct.joinPath(),
-                            direct.liftedSourceColumns(),
-                            extraction, argCondition, fieldOverride);
-                    }
-                    return new ArgumentRef.ScalarArg.CompositeColumnReferenceArg(
-                        name, typeName, nonNull, list, keys, direct.joinPath(),
+                    return new ArgumentRef.ScalarArg.ColumnBackedReferenceArg(
+                        name, typeName, nonNull, list, direct.keyColumns(), direct.joinPath(),
                         direct.liftedSourceColumns(),
                         extraction, argCondition, fieldOverride);
                 }
@@ -1548,10 +1535,10 @@ class FieldBuilder {
             }
         }
 
-        // Scalar ID arg on a node-type table folds onto a column-shaped
-        // carrier with NodeIdDecodeKeys.ThrowOnMismatch. Arity-1 → ColumnArg (single key column);
-        // arity ≥ 2 → CompositeColumnArg (per-row decode produces a Record<N>; bindings index
-        // positionally). Both arms carry the per-NodeType decode<TypeName> helper.
+        // Scalar ID arg on a node-type table folds onto a ColumnBackedArg carrier with
+        // NodeIdDecodeKeys.ThrowOnMismatch (arity 1..N; a composite carrier's per-row decode
+        // produces a Record<N> and bindings index positionally), carrying the per-NodeType
+        // decode<TypeName> helper.
         //
         // Today's classifier only emits the lookup-key path for both arms (consumed by
         // LookupMappingResolver → ScalarLookupArg / DecodedRecord). Non-lookup-key composite-PK
@@ -1565,7 +1552,7 @@ class FieldBuilder {
                 var keyColumns = nodeIdMeta.get().keyColumns();
                 // Composite-PK + non-list non-@lookupKey: only the @lookupKey path is wired;
                 // mutation-key and top-level filter paths are not yet supported. Non-list arity-1
-                // falls through to ColumnArg below.
+                // falls through to the single-column carrier below.
                 if (keyColumns.size() > 1 && !isLookupKey) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                         Rejection.structural("scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
@@ -1583,14 +1570,9 @@ class FieldBuilder {
                             Rejection.structural("@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'"));
                     }
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(decodeMethod);
-                    if (keyColumns.size() == 1) {
-                        return new ArgumentRef.ScalarArg.ColumnArg(
-                            name, typeName, nonNull, list, keyColumns.get(0), extraction,
-                            argCondition, fieldOverride, isLookupKey, List.of());
-                    }
-                    return new ArgumentRef.ScalarArg.CompositeColumnArg(
+                    return new ArgumentRef.ScalarArg.ColumnBackedArg(
                         name, typeName, nonNull, list, keyColumns, extraction,
-                        argCondition, fieldOverride, isLookupKey);
+                        argCondition, fieldOverride, isLookupKey, List.of());
                 }
             }
         }
@@ -1642,8 +1624,8 @@ class FieldBuilder {
             }
             CallSiteExtraction refExtraction = enumMappingResolver.deriveExtraction(typeName, refColumnRef, refEnumClassName);
             boolean refIsLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
-            return new ArgumentRef.ScalarArg.ColumnArg(
-                name, typeName, nonNull, list, refColumnRef, refExtraction,
+            return new ArgumentRef.ScalarArg.ColumnBackedArg(
+                name, typeName, nonNull, list, List.of(refColumnRef), refExtraction,
                 argCondition, fieldOverride, refIsLookupKey, refPath.elements());
         }
 
@@ -1672,8 +1654,8 @@ class FieldBuilder {
         }
         CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName);
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
-        return new ArgumentRef.ScalarArg.ColumnArg(
-            name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey, List.of());
+        return new ArgumentRef.ScalarArg.ColumnBackedArg(
+            name, typeName, nonNull, list, List.of(columnRef), extraction, argCondition, fieldOverride, isLookupKey, List.of());
     }
 
     /**
@@ -1900,45 +1882,43 @@ class FieldBuilder {
                     errors.add(Rejection.structural("argument '" + u.name() + "': " + u.reason()));
                     hadError = true;
                 }
-                case ArgumentRef.ScalarArg.ColumnArg ca -> {
+                case ArgumentRef.ScalarArg.ColumnBackedArg ca -> {
                     boolean autoSuppressed = ca.suppressedByFieldOverride()
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
                     // Lookup-key args are consumed by LookupMappingResolver → LookupMapping and
                     // emitted via VALUES+JOIN by LookupValuesJoinEmitter. They must not appear
                     // as GeneratedConditionFilter bodyParams.
                     if (!autoSuppressed && !ca.isLookupKey()) {
-                        String javaType = javaTypeFor(ca.extraction(), ca.column());
-                        BodyParam.ColumnPredicate inner = ca.list()
-                            ? new BodyParam.In(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction())
-                            : new BodyParam.Eq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction());
-                        // A non-empty joinPath means @reference reached the terminal column on
-                        // a joined table — wrap the predicate in a correlated EXISTS. Empty path is
-                        // the local-column case (today's behavior); the column already binds to the
-                        // field's own table.
-                        bodyParams.add(ca.joinPath().isEmpty()
-                            ? inner
-                            : new BodyParam.RemoteColumnPredicate(ca.joinPath(), inner));
+                        if (ca.isComposite()) {
+                            // Composite-PK NodeId scalar args reach this branch with
+                            // isLookupKey == false when @nodeId targets the field's own table
+                            // without an explicit @lookupKey. Project to BodyParam.RowEq
+                            // (scalar) / RowIn (list) using the carrier's column tuple and its
+                            // NodeIdDecodeKeys extraction (guaranteed by the constructor
+                            // invariant); LookupMappingResolver consumes the isLookupKey branch
+                            // separately.
+                            var rowExtraction = (CallSiteExtraction.NodeIdDecodeKeys) ca.extraction();
+                            bodyParams.add(ca.list()
+                                ? new BodyParam.RowIn(ca.name(), ca.columns(), ca.nonNull(), rowExtraction)
+                                : new BodyParam.RowEq(ca.name(), ca.columns(), ca.nonNull(), rowExtraction));
+                        } else {
+                            var caColumn = ca.columns().get(0);
+                            String javaType = javaTypeFor(ca.extraction(), caColumn);
+                            BodyParam.ColumnPredicate inner = ca.list()
+                                ? new BodyParam.In(ca.name(), caColumn, javaType, ca.nonNull(), ca.extraction())
+                                : new BodyParam.Eq(ca.name(), caColumn, javaType, ca.nonNull(), ca.extraction());
+                            // A non-empty joinPath means @reference reached the terminal column on
+                            // a joined table — wrap the predicate in a correlated EXISTS. Empty path is
+                            // the local-column case (today's behavior); the column already binds to the
+                            // field's own table.
+                            bodyParams.add(ca.joinPath().isEmpty()
+                                ? inner
+                                : new BodyParam.RemoteColumnPredicate(ca.joinPath(), inner));
+                        }
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
-                case ArgumentRef.ScalarArg.CompositeColumnArg cca -> {
-                    boolean autoSuppressed = cca.suppressedByFieldOverride()
-                        || (cca.argCondition().isPresent() && cca.argCondition().get().override());
-                    // Composite-PK NodeId scalar args reach this branch with isLookupKey == false
-                    // when @nodeId(typeName: T) targets the field's own table without an explicit
-                    // @lookupKey (the same-table arm synthesises isLookupKey: true via
-                    // classifyArgument; non-lookup-key composite-PK args are top-level filter
-                    // args under @condition / @field paths). Project to BodyParam.RowEq (scalar)
-                    // / RowIn (list) using the carrier's column tuple and NodeIdDecodeKeys
-                    // extraction; LookupMappingResolver consumes the isLookupKey branch separately.
-                    if (!autoSuppressed && !cca.isLookupKey()) {
-                        bodyParams.add(cca.list()
-                            ? new BodyParam.RowIn(cca.name(), cca.columns(), cca.nonNull(), cca.extraction())
-                            : new BodyParam.RowEq(cca.name(), cca.columns(), cca.nonNull(), cca.extraction()));
-                    }
-                    cca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
-                }
-                case ArgumentRef.ScalarArg.ColumnReferenceArg cra -> {
+                case ArgumentRef.ScalarArg.ColumnBackedReferenceArg cra when !cra.isComposite() -> {
                     // FK-target arm. The carrier's column is the target NodeType's key column;
                     // joinPath[0] holds the FK whose sourceColumns sit on the field's own
                     // containing table. When the FK targetColumns positionally match the NodeType
@@ -1966,9 +1946,9 @@ class FieldBuilder {
                     }
                     cra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
-                case ArgumentRef.ScalarArg.CompositeColumnReferenceArg ccra -> {
-                    // FK-target composite arm. Analogous to ColumnReferenceArg but with a
-                    // RowEq / RowIn predicate against the lifted source-column tuple on the
+                case ArgumentRef.ScalarArg.ColumnBackedReferenceArg ccra -> {
+                    // FK-target composite arm. Analogous to the single-column arm above but with
+                    // a RowEq / RowIn predicate against the lifted source-column tuple on the
                     // parent's own table. Same direct-FK precondition (terminal hop's target
                     // columns positionally match NodeType keys); intermediate hops, if any, are
                     // constrained by the lift predicate. Pathological cases are rejected at

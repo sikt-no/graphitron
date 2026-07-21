@@ -31,13 +31,11 @@ import java.util.Optional;
  *
  * <h2>Variants</h2>
  * <ul>
- *   <li>{@link ScalarArg.ColumnArg} — scalar arg bound to a jOOQ column.</li>
- *   <li>{@link ScalarArg.CompositeColumnArg} — scalar arg bound to multiple jOOQ columns
- *       through a single per-row decode (composite-PK NodeId carrier; arity ≥ 2).</li>
- *   <li>{@link ScalarArg.ColumnReferenceArg} — FK-target {@code @nodeId(typeName: T)} scalar
- *       arg with a resolved single-hop {@code joinPath} (single-key target NodeType).</li>
- *   <li>{@link ScalarArg.CompositeColumnReferenceArg} — FK-target {@code @nodeId(typeName: T)}
- *       scalar arg whose target NodeType has multiple key columns (arity &ge; 2).</li>
+ *   <li>{@link ScalarArg.ColumnBackedArg} — scalar arg bound to one or more jOOQ columns
+ *       (a multi-column carrier decodes once per row: the composite-PK NodeId case).</li>
+ *   <li>{@link ScalarArg.ColumnBackedReferenceArg} — FK-target {@code @nodeId(typeName: T)}
+ *       scalar arg with a resolved single-hop {@code joinPath}; carries the target NodeType's
+ *       key columns (arity 1..N).</li>
  *   <li>{@link ScalarArg.UnboundArg} — scalar arg whose column could not be resolved;
  *       surfaced as a validation error.</li>
  *   <li>{@link InputTypeArg.TableInputArg} — {@code @table}-backed input type; carries per-field
@@ -62,27 +60,38 @@ public sealed interface ArgumentRef {
     sealed interface ScalarArg extends ArgumentRef {
 
         /**
-         * Scalar arg resolved to a jOOQ column. {@code argCondition} and
-         * {@code suppressedByFieldOverride} drive the four-state projection table; see
-         * {@code docs/architecture/reference/argument-resolution.adoc}.
+         * Scalar arg resolved to one or more jOOQ columns on the field's own table. Arity is a
+         * column count on this one leaf, not a leaf dimension; consumers branch on
+         * {@link #isComposite()}. A multi-column carrier is the composite-PK NodeId case: one
+         * wire-format base64 id (or list of them) decodes once per row at the arg layer into a
+         * {@code Record<N>}, and bindings against {@code columns} index the Record positionally
+         * (carrier-side analogue of {@code LookupArg.DecodedRecord} — {@code projectForLookup}
+         * lifts it into that shape when {@code isLookupKey} is set).
+         *
+         * <p>{@code argCondition} and {@code suppressedByFieldOverride} drive the four-state
+         * projection table; see {@code docs/architecture/reference/argument-resolution.adoc}.
          * {@code isLookupKey} reflects the presence of {@code @lookupKey} at classify time
          * so projections (notably {@code projectForLookup}) never re-read the SDL directive.
+         *
+         * <p>{@code extraction} is {@link CallSiteExtraction.NodeIdDecodeKeys} on every
+         * multi-column instance (the constructor invariant below; the only arms producing a
+         * multi-column tuple), and any single-scalar arm at arity 1.
          *
  * <p>{@code joinPath} is empty for the common local-column case (today's behavior).
          * When the arg carries {@code @reference(path:)} reaching a column on a <em>joined</em>
          * table, it holds the resolved FK join path from the field's own table to the terminal
-         * table that holds {@code column}; {@code projectFilters} then wraps the predicate in a
+         * table that holds the column; {@code projectFilters} then wraps the predicate in a
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.RemoteColumnPredicate} (correlated
-         * EXISTS). This is distinct from {@link ColumnReferenceArg}, whose {@code @nodeId} join
-         * path lifts to local FK columns (no join); here {@code column} is the terminal column and
-         * the join is genuinely emitted.
+         * EXISTS). This is distinct from {@link ColumnBackedReferenceArg}, whose {@code @nodeId}
+         * join path lifts to local FK columns (no join); here the column is the terminal column
+         * and the join is genuinely emitted.
          */
-        record ColumnArg(
+        record ColumnBackedArg(
             String name,
             String typeName,
             boolean nonNull,
             boolean list,
-            ColumnRef column,
+            List<ColumnRef> columns,
             CallSiteExtraction extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride,
@@ -90,56 +99,40 @@ public sealed interface ArgumentRef {
             List<JoinStep> joinPath
         ) implements ScalarArg {
 
-            public ColumnArg {
-                joinPath = List.copyOf(joinPath);
-            }
-        }
-
-        /**
-         * Composite-PK NodeId scalar arg: one wire-format base64 id (or list of them) decodes
-         * once per row at the arg layer into a {@code Record<N>}; bindings against
-         * {@code columns} index the Record positionally. Carrier-side analogue of
-         * {@code LookupArg.DecodedRecord} — {@code projectForLookup} lifts it into that
-         * shape when {@code isLookupKey} is set.
-         *
-         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: the only
-         * arms producing a multi-column tuple. Today's classifier only emits
-         * {@link CallSiteExtraction.ThrowOnMismatch} (lookup-key path). Mutation-key and
-         * top-level filter paths are not yet wired.
-         *
-         * <p>{@code columns.size()} must be ≥ 2; arity-1 NodeId scalar args route to
-         * {@link ColumnArg}.
-         */
-        record CompositeColumnArg(
-            String name,
-            String typeName,
-            boolean nonNull,
-            boolean list,
-            List<ColumnRef> columns,
-            CallSiteExtraction.NodeIdDecodeKeys extraction,
-            Optional<ArgConditionRef> argCondition,
-            boolean suppressedByFieldOverride,
-            boolean isLookupKey
-        ) implements ScalarArg {
-            public CompositeColumnArg {
+            public ColumnBackedArg {
                 requireNonNull(columns, "columns");
-                if (columns.size() < 2) {
-                    throw new IllegalArgumentException(
-                        "CompositeColumnArg requires arity >= 2; arity-1 routes to ScalarArg.ColumnArg");
-                }
                 columns = List.copyOf(columns);
+                joinPath = List.copyOf(joinPath);
+                if (columns.isEmpty()) {
+                    throw new IllegalArgumentException("ColumnBackedArg requires at least one column");
+                }
+                // Deferred-generalization seam, not a modeling truth: @nodeId is currently the
+                // only multi-column trigger, so a multi-column carrier always decodes a node key.
+                // Loosen this when a plain multi-column argument shape arrives instead of
+                // building on it.
+                if (columns.size() > 1 && !(extraction instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
+                    throw new IllegalArgumentException(
+                        "ColumnBackedArg '" + name + "' with arity " + columns.size()
+                        + " requires NodeIdDecodeKeys extraction; got " + extraction);
+                }
             }
+            /**
+             * Arity classified once: {@code true} when this carrier spans more than one column (a
+             * composite node key). Every consumer branches on this accessor rather than
+             * re-evaluating the size predicate.
+             */
+            public boolean isComposite() { return columns.size() > 1; }
         }
 
         /**
          * FK-target {@code @nodeId(typeName: T)} scalar arg: the target's encoded ids decode into
-         * keys of the related NodeType {@code T}, and the predicate filters rows on the FK source
-         * column reachable through {@code joinPath}. Single-key (arity-1) target NodeType; the
-         * arity ≥ 2 variant is {@link CompositeColumnReferenceArg}.
+         * keys of the related NodeType {@code T} (arity 1..N; consumers branch on
+         * {@link #isComposite()}), and the predicate filters rows on the FK source columns
+         * reachable through {@code joinPath}.
          *
          * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
-         * shape-for-shape on the argument side. {@code column} is the target NodeType's key
-         * column; {@code joinPath} resolves the single-hop FK from the field's containing table
+         * shape-for-shape on the argument side. {@code columns} are the target NodeType's key
+         * columns; {@code joinPath} resolves the single-hop FK from the field's containing table
          * to {@code T.table()}. The body emitter pairs the carrier with
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.Eq} (scalar) or
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
@@ -150,45 +143,15 @@ public sealed interface ArgumentRef {
          * decoded parent-key values into a predicate against the FK-target columns via a JOIN or
          * EXISTS subquery) is not yet implemented.
          *
-         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: input
-         * filters are not contract-violation surfaces, so the failure mode is
+         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys} at every
+         * arity: input filters are not contract-violation surfaces, so the failure mode is
          * {@code SkipMismatchedElement} (malformed ids drop silently to "no row matches").
          *
          * <p>No {@code isLookupKey} slot: FK-target is a filter, not a lookup. The carrier flows
          * through {@code projectFilters} into the standard {@code GeneratedConditionFilter}
          * pipeline, not {@code LookupMappingResolver}.
          */
-        record ColumnReferenceArg(
-            String name,
-            String typeName,
-            boolean nonNull,
-            boolean list,
-            ColumnRef column,
-            List<JoinStep> joinPath,
-            List<ColumnRef> liftedSourceColumns,
-            CallSiteExtraction.NodeIdDecodeKeys extraction,
-            Optional<ArgConditionRef> argCondition,
-            boolean suppressedByFieldOverride
-        ) implements ScalarArg {
-
-            public ColumnReferenceArg {
-                joinPath = List.copyOf(joinPath);
-                liftedSourceColumns = List.copyOf(liftedSourceColumns);
-            }
-        }
-
-        /**
-         * FK-target {@code @nodeId(typeName: T)} scalar arg whose target NodeType has multiple
-         * key columns. Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
-         * shape-for-shape on the argument side. {@code columns.size()} must be ≥ 2; arity-1
-         * cases route to {@link ColumnReferenceArg}.
-         *
-         * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: the
-         * only arm producing a multi-column tuple. Failure mode is
-         * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} for the same reason
-         * documented on {@link ColumnReferenceArg}.
-         */
-        record CompositeColumnReferenceArg(
+        record ColumnBackedReferenceArg(
             String name,
             String typeName,
             boolean nonNull,
@@ -201,16 +164,21 @@ public sealed interface ArgumentRef {
             boolean suppressedByFieldOverride
         ) implements ScalarArg {
 
-            public CompositeColumnReferenceArg {
+            public ColumnBackedReferenceArg {
                 requireNonNull(columns, "columns");
-                if (columns.size() < 2) {
-                    throw new IllegalArgumentException(
-                        "CompositeColumnReferenceArg requires arity >= 2; arity-1 routes to ScalarArg.ColumnReferenceArg");
-                }
                 columns = List.copyOf(columns);
                 joinPath = List.copyOf(joinPath);
                 liftedSourceColumns = List.copyOf(liftedSourceColumns);
+                if (columns.isEmpty()) {
+                    throw new IllegalArgumentException("ColumnBackedReferenceArg requires at least one column");
+                }
             }
+            /**
+             * Arity classified once: {@code true} when this carrier spans more than one column (a
+             * composite node key). Every consumer branches on this accessor rather than
+             * re-evaluating the size predicate.
+             */
+            public boolean isComposite() { return columns.size() > 1; }
         }
 
         /**
@@ -240,8 +208,8 @@ public sealed interface ArgumentRef {
          * lookup; for both, {@code setFields} is empty and every admissible input field flows into
          * {@code lookupKeyFields} (the {@code @value} marker that was UPDATE's old SET partition
          * source has been retired). Both lists are sealed on {@link InputField.LookupKeyField} /
-         * {@link InputField.SetField} respectively (admitted-carrier set: {@code ColumnField},
-         * {@code CompositeColumnField}); reference carriers stay outside the permits set. Construct
+         * {@link InputField.SetField} respectively (admitted carrier: {@code ColumnBackedField});
+         * reference carriers stay outside the permits set. Construct
          * via {@link #of} so the partition has a single derivation path.
          *
          * <p>{@code fieldBindings} is {@code List<InputColumnBindingGroup>}: one group per
