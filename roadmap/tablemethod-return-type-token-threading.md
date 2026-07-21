@@ -22,4 +22,4 @@ The sibling service-catalog return-type contract (already structural because `Me
 
 Pre-conditions: none outstanding; R237 has shipped. The pre-lift signature is fine; once the lift lands, the table-token equality is mechanically enforced at construction rather than checked at reflection time.
 
-Out of scope: the (b-cheap) `ColumnField.parentTable` lift (R239's territory). The two are orthogonal axes of the type-system gap R237 surfaced.
+Out of scope: the (b-cheap) `ColumnBackedField.parentTable` lift (R239's territory). The two are orthogonal axes of the type-system gap R237 surfaced.

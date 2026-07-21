@@ -14,7 +14,7 @@ R131's permutation relaxation in `NodeIdLeafResolver.resolve` accepts set-equali
 
 R131's commit message asserts the same logic works for multi-hop `@reference` paths where the terminal hop's target is a permutation of the NodeType keys: the per-hop `validateLift` invariant still requires positional alignment at each intermediate step, the lift back-propagation runs in terminal-source-side order, and the final permute step re-orders into NodeType-keyColumns order. The reasoning is sound but no fixture currently exercises it.
 
-The gap to close: add a multi-hop `nodeidfixture` chain where the terminal hop's `REFERENCES <parent>(<cols>)` declares the parent's PK columns in a permuted order. A natural extension of the `level_a`/`level_b`/`level_c` chain works: add `level_a_alt`-style intermediate(s) whose declared FK target order against `level_a` is `(k2, k1)` rather than `(k1, k2)`, then pin `InputField.CompositeColumnReferenceField.liftedSourceColumns()` ends in `[k1, k2]` order on the parent's own table (matching the NodeType's `[K1, K2]` declaration).
+The gap to close: add a multi-hop `nodeidfixture` chain where the terminal hop's `REFERENCES <parent>(<cols>)` declares the parent's PK columns in a permuted order. A natural extension of the `level_a`/`level_b`/`level_c` chain works: add `level_a_alt`-style intermediate(s) whose declared FK target order against `level_a` is `(k2, k1)` rather than `(k1, k2)`, then pin that the composite `InputField.ColumnBackedReferenceField.liftedSourceColumns()` ends in `[k1, k2]` order on the parent's own table (matching the NodeType's `[K1, K2]` declaration).
 
 Acceptance:
 

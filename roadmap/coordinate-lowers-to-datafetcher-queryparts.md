@@ -1532,7 +1532,12 @@ The address unifies composite and split: composite's column QueryParts are addre
 ## What dissolves
 
 - **Composite columns**: one coordinate, `N` column QueryParts. `CompositeColumnField` /
-  `CompositeColumnReferenceField` and the arity-as-leaf-property retire.
+  `CompositeColumnReferenceField` and the arity-as-leaf-property retire. *(Shipped by R508,
+  2026-07-21, on all three axes — output, input, argument — as the checked-invariant merged
+  carriers `ColumnBackedField` / `ColumnBackedReferenceField` / `ColumnBackedArg` /
+  `ColumnBackedReferenceArg`, each carrying `columns` 1..N with arity read off `isComposite()`.
+  R508 pinned the one-arity-N-carrier form over the N-independent-QueryParts form this item
+  left open; the full per-column QueryPart-row normalization stays with this item.)*
 - **`SplitTableField` vs `RecordTableField`** (the lineage trigger): both project the **same**
   keyed-re-query QueryPart. `SplitTableField` additionally projects a key-projection QueryPart addressed
   to the parent anchor (its enclosing scope is a graphitron-generated SELECT it can impose on);

@@ -149,7 +149,7 @@ type Film @table(name: "film") {
 }
 ----
 
-`Film.languageName` projects `language.name` (joined through `film.language_id`) directly onto the film type. The classifier produces a `ColumnReferenceField`; the emitter joins through the FK and projects the target column under the requested alias. No intermediate `language` object appears; clients see `Film { languageName }` as a flat scalar.
+`Film.languageName` projects `language.name` (joined through `film.language_id`) directly onto the film type. The classifier produces a `ColumnBackedReferenceField`; the emitter joins through the FK and projects the target column under the requested alias. No intermediate `language` object appears; clients see `Film { languageName }` as a flat scalar.
 
 This is useful when the schema wants to expose a foreign column without the indirection cost of nesting through the linked type. The trade-off: every `Film` selection that includes `languageName` triggers the join. A field that already nests through `language` (e.g. `Film { language { name } }`) is preferred when other language columns are also exposed; the `languageName` shortcut is for the "expose exactly one column" case.
 

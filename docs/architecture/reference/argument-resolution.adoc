@@ -10,13 +10,13 @@ override-propagation semantics that tie them together.
 
 - `FieldBuilder.classifyArguments` returns `List<ArgumentRef>` (sealed,
   three top-level arms plus two intermediate sealed sub-groupers):
-  `ScalarArg.{ColumnArg | CompositeColumnArg | ColumnReferenceArg |
-  CompositeColumnReferenceArg | UnboundArg}`,
+  `ScalarArg.{ColumnBackedArg | ColumnBackedReferenceArg | UnboundArg}`,
   `InputTypeArg.{TableInputArg | PlainInputArg}`,
   plus the top-level `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`.
-  The composite/reference scalar arms (R50) carry multi-column or FK-resolved
-  bindings; the sealed sub-groupers let projections pattern-switch on shape
-  axis without enumerating leaves.
+  The column-backed scalar arms carry one or more columns (arity is a column
+  count read off `isComposite()`, not a leaf dimension) with local or
+  FK-resolved bindings; the sealed sub-groupers let projections
+  pattern-switch on shape axis without enumerating leaves.
 - Projection helpers consume that list: `projectFilters`,
   `projectOrderBySpec`, `projectPaginationSpec`, `projectForLookup`.
 - `contextArguments` flow through `ServiceCatalog.reflectTableMethod` into
@@ -54,7 +54,7 @@ not committed to trunk) counted 62 plain inputs carrying inner
 because `@table` inputs on alf rely on *implicit column conditions*
 instead (63 distinct call sites). Implicit column conditions ship
 alongside this Phase 4 work (commit `96e39df`); an un-annotated
-`ColumnField` / `ColumnReferenceField` on a `@table` input contributes
+`ColumnBackedField` / `ColumnBackedReferenceField` on a `@table` input contributes
 a `BodyParam` with `NestedInputField` extraction to the same
 `GeneratedConditionFilter` this phase emits.
 
@@ -66,8 +66,8 @@ Three `InputField` variants
 (`graphitron/.../model/InputField.java`) carry
 `Optional<ArgConditionRef> condition`:
 
-- `InputField.ColumnField`
-- `InputField.ColumnReferenceField`
+- `InputField.ColumnBackedField`
+- `InputField.ColumnBackedReferenceField`
 - `InputField.NestingField`
 
 The same variants cover both resolution sources: `@table`-input fields

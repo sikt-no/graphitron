@@ -35,7 +35,7 @@ nested type's SDL coordinates being populated.
 ## Context, verified 2026-07-13
 
 - **The emitted nested universe is closed.** `GraphitronSchemaValidator.NESTED_WIREABLE_LEAVES` rejects
-  every leaf outside {`ColumnField`, `CompositeColumnField`, `TableField`, `LookupTableField`,
+  every leaf outside {`ColumnBackedField`, `TableField`, `LookupTableField`,
   `NestingField`, `SplitTableField`, `SplitLookupTableField`} at nested depth at validate time, so the
   builder's nested per-field sourcing only ever sees those seven live.
 - **Nested fetcher outgoing references, traced through the emitters.** `SplitTableField` /
@@ -44,8 +44,8 @@ nested type's SDL coordinates being populated.
   `ClassName.bestGuess(filter.className())` = `conditions.<ReturnType>Conditions`
   (`FkTargetConditionEmitter.emitTerm`); a `@nodeId`-decoding filter argument lifts a decode helper
   onto the fetcher class (`CompositeDecodeHelperRegistry.collectInto` in `TypeFetcherGenerator`),
-  referencing `NodeIdEncoder`. Encoded reads (`ColumnField` with `NodeIdEncodeKeys` compaction,
-  `CompositeColumnField`) reference `NodeIdEncoder` via `FetcherEmitter.bindRaw`, uniformly at any
+  referencing `NodeIdEncoder`. Encoded reads (`ColumnBackedField` with `NodeIdEncodeKeys`
+  compaction, any arity) reference `NodeIdEncoder` via `FetcherEmitter.bindRaw`, uniformly at any
   depth. Inline `TableField` / `LookupTableField` and inner `NestingField` reads reference no
   generated unit from the nested fetcher (source pickups); their projections and inline-filter edges
   land on the *outer* type class, already modeled by the R455 projection walk's `NestingField`
@@ -126,8 +126,8 @@ and nothing else (record the verification in the In Review note).
 
 - Unit tier (`CompileDependencyGraphBuilderTest`, hand-built records): nested `SplitTableField` yields
   `fetcher → typeClass` plus, with a `GeneratedConditionFilter`, `fetcher → gcf.className()` and
-  `fetcher → NodeIdEncoder` when its filters decode `@nodeId`; nested encoded `ColumnField` /
-  `CompositeColumnField` yield `fetcher → NodeIdEncoder`; a top-level child split with a
+  `fetcher → NodeIdEncoder` when its filters decode `@nodeId`; a nested encoded `ColumnBackedField`
+  yields `fetcher → NodeIdEncoder`; a top-level child split with a
   `GeneratedConditionFilter` asserts `fetcher → gcf.className()` present *and* the parent-named
   conditions edge absent (pins the re-attribution); root shim edges as designed.
 - `CompileDependencyGraphPipelineTest.rootAndChildFetchersReferenceTargetProjectionsAndConditions`

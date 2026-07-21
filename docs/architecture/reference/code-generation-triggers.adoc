@@ -403,8 +403,8 @@ A discriminated interface may also be a *joined-table* (class-table) inheritance
 declares its own detail `@table` distinct from the discriminated base, with its inherited (base-resident)
 fields carrying a `@reference` back to the base and its own columns living on the detail table. Such a
 participant classifies as a `ParticipantRef.JoinedTableBound` carrying the resolved child-to-parent hop
-(rather than a single-table `TableBound`); its inherited field is a `ColumnReferenceField` resolved on
-the base and its own field a plain `ColumnField` on the detail table. The interface fetcher selects from
+(rather than a single-table `TableBound`); its inherited field is a `ColumnBackedReferenceField` resolved on
+the base and its own field a plain `ColumnBackedField` on the detail table. The interface fetcher selects from
 the base and emits a discriminator-gated `LEFT JOIN` to each participant's detail table, projecting the
 shared fields off the base and each participant's detail-exclusive columns off its detail alias; the same
 concrete type is independently queryable on its own, resolving its inherited fields through the parent
@@ -428,7 +428,9 @@ without declaring its path:
   value through `FetcherEmitter` / `FetcherRegistrationsEmitter`. These are `IMPLEMENTED_LEAVES` leaves with
   an empty dispatch arm.
 * *Deferred stub* ; a throwing stub method standing in for generation that is not built yet, paired with a
-  build-time validator rejection. Only `CompositeColumnReferenceField` is deferred today (`STUBBED_VARIANTS`).
+  build-time validator rejection. The set is empty today (`STUBBED_VARIANTS`): the last stub retired when the
+  rooted-at-parent NodeId reference deferral moved to the validator, which rejects the `NodeIdEncodeKeys`
+  compaction on `ColumnBackedReferenceField` at every arity ahead of generation.
 
 === Query Fields
 
@@ -506,13 +508,11 @@ The four `Mutation*TableField` permits are guaranteed never to carry a class-bac
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Wiring value (`ColumnFetcher`)
-| `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Inline projection in `$fields` + `ColumnFetcher` wiring value
+| `@field(name:)` or matching column name | `ColumnBackedField` (arity 1, `compaction = Direct`) | Wiring value (`ColumnFetcher`)
+| `@reference` on scalar | `ColumnBackedReferenceField` (arity 1, `compaction = Direct`) | Inline projection in `$fields` + `ColumnFetcher` wiring value
 | `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Wiring value ; materialised by the enclosing `TableInterfaceField` fetcher's conditional LEFT JOIN and read back via `FetcherEmitter` (participant-side FK, not the interface-side resolver)
-| `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Wiring value (`ColumnFetcher`); the projected column is wrapped in the per-Node `encode<TypeName>` helper
-| `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | Inline `$fields` projection against the FK-resolved target column, wrapped in `encode<TypeName>`
-| `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Inline `$fields` projection of `RowN<...>` of the parent's PK columns, wrapped in `encode<TypeName>`
-| `@nodeId(typeName:)`, composite PK target | `CompositeColumnReferenceField` | Deferred stub ; rooted-at-parent composite NodeId reference, pending `nodeidreferencefield-join-projection-form`
+| `@nodeId`, no typeName | `ColumnBackedField` (`compaction = NodeIdEncodeKeys`; arity = the node key's column count) | Wiring value (`ColumnFetcher`); the projected column(s) are wrapped positionally in the per-Node `encode<TypeName>` helper
+| `@nodeId(typeName:)`, non-FK-mirror target | `ColumnBackedReferenceField` (`compaction = NodeIdEncodeKeys`; arity = the target key's column count) | Nothing yet ; rooted-at-parent NodeId reference, rejected at validate time as deferred (any arity), pending `nodeidreferencefield-join-projection-form`
 |===
 
 ==== Object return type
@@ -559,10 +559,10 @@ The parent here is a type whose backing class is reflection-derived from its pro
 |===
 | Schema Pattern | `InputField` Variant | Used for
 
-| `@field(name:)` or matching column name | `InputField.ColumnField` | Maps input argument to a table column
-| `@reference` on input scalar | `InputField.ColumnReferenceField` | Maps input argument to a FK column
-| `@nodeId` on input scalar, composite PK | `InputField.CompositeColumnField` | Decodes a composite-PK NodeId into the input's PK columns (carries `NodeIdDecodeKeys` extraction)
-| `@nodeId(typeName:)` on input scalar, composite PK | `InputField.CompositeColumnReferenceField` | Decodes a composite-PK NodeId into FK columns referencing the typeName target
+| `@field(name:)` or matching column name | `InputField.ColumnBackedField` (arity 1) | Maps input argument to a table column
+| `@reference` on input scalar | `InputField.ColumnBackedReferenceField` (arity 1) | Maps input argument to a FK column
+| `@nodeId` on input scalar | `InputField.ColumnBackedField` (`NodeIdDecodeKeys` extraction; arity = the node key's column count) | Decodes a NodeId into the input's key columns
+| `@nodeId(typeName:)` on input scalar | `InputField.ColumnBackedReferenceField` (`NodeIdDecodeKeys` extraction; arity = the target key's column count) | Decodes a NodeId into FK columns referencing the typeName target
 | Return plain object (no `@table`) | `InputField.NestingField` | Expands nested input fields inline against parent table
 |===
 
@@ -594,7 +594,7 @@ Not all classification requires directives. The builder also classifies based on
 |===
 | Schema Pattern | Classification Effect
 
-| Field name matches column name (on `@table` type) | `ColumnField` ; direct column mapping
+| Field name matches column name (on `@table` type) | `ColumnBackedField` ; direct column mapping
 | Field returns `*Connection` type (from `@asConnection` transform) | `FieldWrapper.Connection` ; pagination logic
 | GraphQL enum on `@table` field | Enum-to-DB string/int mapping
 |===
@@ -626,7 +626,7 @@ All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. E
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None`
 | Pagination | `PaginationSpec.java` | Relay cursor arguments
 | Argument extraction | `CallSiteExtraction.java` | Direct strategies (`Direct` / `EnumValueOf` / `ContextArg` / `JooqConvert`) plus sealed sub-shapes: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`), `NodeIdDecodeKeys` (`SkipMismatchedElement` / `ThrowOnMismatch`; arity-N NodeId decode at the call site), `NodeIdDecodeRecord` (NodeId decode into a jOOQ-record member), `InputBean` (service input-bean instantiation), and `JooqRecord` (jOOQ record construction from input fields)
-| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnField` / `ColumnReferenceField` / `CompositeColumnField` / `CompositeColumnReferenceField` / `NestingField` for mutation inputs
+| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnBackedField` / `ColumnBackedReferenceField` (each arity 1..N) / `NestingField` for mutation inputs
 | Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views
 |===
 

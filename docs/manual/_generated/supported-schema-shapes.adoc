@@ -41,17 +41,18 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 === ChildField
 
 * *BatchedLookupTableField*: The `@lookupKey` twin of `BatchedTableField`: a DataLoader-batched keyed
+* *BatchedPivotField*: The batched (`@splitQuery`) `@pivot` leaf: the same projection as
 * *BatchedTableField*: A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
-* *ColumnField*: A single-column output carrier on a table-backed parent. The column's value reaches the
-* *ColumnReferenceField*: A single-column output carrier on a table-backed parent reached through a `@reference`
-* *CompositeColumnField*: Composite-key output carrier on a table-backed parent. Carries `columns` of arity
-* _(not yet supported)_ *CompositeColumnReferenceField*: Composite-key output carrier on a table-backed parent reached through a `@reference`
+* *ColumnBackedField*: A column-backed output carrier on a table-backed parent: the field's value is produced
+* *ColumnBackedReferenceField*: A column-backed output carrier on a table-backed parent reached through a
 * *ComputedField*: A child field using `@externalField` — the developer provides a static method
 * *ErrorsField*: The `errors` field on a payload type. Lift target for the payload-side of a
 * *InterfaceField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 * *LookupTableField*
 * *NestingField*: A nesting child field whose value is a fragment of the parent's table-bound projection
 * *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
+* *PivotField*: The inline `@pivot` leaf: a discriminator-keyed aggregate projection folded into the
+* _(not yet supported)_ *PivotSlotField*: One projection slot of a `@pivot` field's return type, carrying exactly one fact: its
 * *PropertyField*
 * *RecordCompositeField*: The single data field on an `@service` record-composite carrier payload. The
 * *RecordField*
@@ -66,16 +67,14 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === InputField
 
-* *ColumnField*: A field in a `@table`-annotated input type, successfully resolved to a SQL column
-* *ColumnReferenceField*: A field in a `@table`-annotated input type that uses `@reference` to reach a
-* *CompositeColumnField*: Composite-key input carrier on a `@table`-annotated input type. Carries
-* *CompositeColumnReferenceField*: Composite-key input reference carrier on a `@table`-annotated input type whose
+* *ColumnBackedField*: A field in a `@table`-annotated input type, successfully resolved to one or more SQL
+* *ColumnBackedReferenceField*: A field in a `@table`-annotated input type that uses `@reference` (or an
 * *NestingField*: A field in a `@table`-annotated input type whose GraphQL type is itself an input
 * *UnboundField*: Input field that does not bind to a SQL column. The defining property is the absence of a
 
 === GraphitronType
 
-* *Backed*: R75 Phase 1: a payload carrier whose backing class was reflected from its
+* *Backed*: A payload carrier whose backing class was reflected from its
 * *ConnectionType*: A Relay connection object type — the outer wrapper whose fields are
 * *EdgeType*: A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
 * *EnumType*: A GraphQL enum type. Classifier records it so `schema.types()` is complete for

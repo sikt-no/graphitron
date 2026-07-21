@@ -301,7 +301,7 @@ The same `ColumnConstraint` carrier serves both validation surfaces:
    `mapping.type(InputBean.class).field(graphqlInputFieldName).constraint(...)`,
    when the input field maps to a column carrying a recognized CHECK.
 
-R12 already classifies `InputField.ColumnField` per (input-arg, column)
+R12 already classifies `InputField.ColumnBackedField` per (input-arg, column)
 pairing; the input-side mapping reuses that. The recognizer runs once per
 (table, column) pair and produces one `ColumnConstraint`; the emitter binds
 each `ColumnConstraint` to as many backing classes as the model knows about.
@@ -659,7 +659,7 @@ database connection never invoked for the violating row.
 
 ### Phase 3: input-side mapping emit
 
-- Walk `InputField.ColumnField` per (input-arg, column) and add a
+- Walk `InputField.ColumnBackedField` per (input-arg, column) and add a
   matching `mapping.type(InputBean.class).field(graphqlFieldName)...` chain
   to `GeneratedConstraintMapping.toMapping(...)`.
 - Execution-tier test that a mutation passing an invalid input value gets

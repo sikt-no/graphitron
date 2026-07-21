@@ -430,7 +430,7 @@ Sync point on Stages 2 + 3 (every consumer reads via slots; every cross-product 
 
 - `GraphitronType.InputType` 4-arm permit + `TableInputType` sibling root
 - `ArgumentRef.InputTypeArg.TableInputArg`, `PlainInputArg`
-- `InputField` sealed family (`ColumnField`, `ColumnReferenceField`, `CompositeColumnField`, `CompositeColumnReferenceField`, `NestingField`, `UnboundField`)
+- `InputField` sealed family (`ColumnBackedField`, `ColumnBackedReferenceField`, `NestingField`, `UnboundField`; the composite pair dissolved into the column-backed leaves in R508)
 - `HasInputRecordShape` capability marker
 - `RootField` intermediate sub-seal between `OutputField` and `QueryField` / `MutationField`
 - Cross-product field permits per R164's consolidation (`RecordLookupTableField`, `QueryServiceRecordField`, etc.)

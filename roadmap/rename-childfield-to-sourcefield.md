@@ -21,7 +21,7 @@ asserts `carrier: Source` for every `ChildField` leaf (R299), so the rename clos
 the model's vocabulary and the code's.
 
 This is **pure mechanical churn**: a type rename with no behavioural, classification, or emit change.
-`ChildField` and its nested leaves (`ColumnField`, `TableField`, `NestingField`, ... the full sealed
+`ChildField` and its nested leaves (`ColumnBackedField`, `TableField`, `NestingField`, ... the full sealed
 set) rename to `SourceField`; the ~940 references across ~100 files (model, generators, validators,
 catalog, and the test corpus) update with them. No leaf is added, removed, or reclassified, and no
 `@classified` verdict changes, so the R281/R299 corpus stays byte-identical.
@@ -44,7 +44,7 @@ for that reason.
 
 - Rename the sealed type `ChildField` -> `SourceField` and update every reference (imports,
   `case` arms, javadoc, switch patterns, fixture references).
-- Keep the nested leaf names as-is (`SourceField.ColumnField`, `SourceField.TableField`, ...); only the
+- Keep the nested leaf names as-is (`SourceField.ColumnBackedField`, `SourceField.TableField`, ...); only the
   enclosing type renames. (If any leaf name independently reads as position-named rather than
   carrier/intent-named, flag it but do not rename it here, that is a separate judgement call.)
 - Update prose references in `graphitron-rewrite/docs/` and the R290 appendix that still say
