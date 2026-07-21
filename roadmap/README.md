@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R507` | Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard | Ready | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](documentation-staleness-prevention.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R489` | Normalize the DML reentry correlation onto the VALUES-join primitive | In Progress | 2026-07-21 <sub>created 2026-07-16</sub> | [plan](dml-reentry-values-join-rendering.md) |
+| `R489` | Normalize the DML reentry correlation onto the VALUES-join primitive | In Review | 2026-07-21 <sub>created 2026-07-16</sub> | [plan](dml-reentry-values-join-rendering.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -189,7 +189,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R466` [**Upgrade jOOQ 3.20.11 -> 3.21.6**](upgrade-jooq-3-21.md) — Backlog, tech-debt
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
-- `R489` [**Normalize the DML reentry correlation onto the VALUES-join primitive**](dml-reentry-values-join-rendering.md) — In Progress, architecture
+- `R489` [**Normalize the DML reentry correlation onto the VALUES-join primitive**](dml-reentry-values-join-rendering.md) — In Review, architecture
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md) — Backlog, cleanup
 - `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Backlog, tech-debt
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
