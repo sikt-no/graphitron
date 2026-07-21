@@ -1,7 +1,7 @@
 ---
 id: R508
 title: "Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 3
 theme: classification-model

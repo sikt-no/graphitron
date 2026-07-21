@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R508` | Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity | Ready | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](composite-column-dissolution.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R508` | Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity | In Progress | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](composite-column-dissolution.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R507` | Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard | Ready | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](documentation-staleness-prevention.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -180,7 +180,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R508` [**Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity**](composite-column-dissolution.md) — Ready, structural
+- `R508` [**Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity**](composite-column-dissolution.md) — In Progress, structural
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Spec, architecture
 - `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture, blocked by [consumer-derived-input-tables](consumer-derived-input-tables.md)
