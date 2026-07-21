@@ -120,6 +120,58 @@ Explicitly *not* byte-identical and *not* plain execution-tier equivalence on th
 order and cardinality change is the point, and it needs its own fixtures rather than equivalence
 against the undefined baseline. Full reactor green under `-Plocal-db`; sakila corpus green.
 
+## Documentation and comment surface
+
+Inventory swept 2026-07-21 (vocabulary grep over main, test, `docs/`, and generated output for
+`PK-IN` / `keys-IN` / `two-step` / the helper names). Each entry updates in the same commit as the
+code it describes; the final slice commit re-runs the grep so nothing names the retired spelling,
+the R126 / R504 scrub discipline applied up front instead of as a later cleanup item.
+
+**In-tree javadoc and comments that name the keys-IN spelling (rot with this change):**
+
+- `TypeFetcherGenerator.buildPkKeysCondition` javadoc: deleted with the method.
+- `TypeFetcherGenerator.buildKeysInCondition` javadoc: currently framed as "generalises the PK-only
+  form"; rewrites to name the routine-write step-2 re-read as its sole sanctioned caller.
+- `emitDiscriminated` javadoc ("keyed by the same PK-IN condition") and its "base PK-IN condition"
+  body comment; `emitProjected` javadoc where it describes the follow-up SELECT's shape.
+- The single-arm "matches the pre-two-step contract" comments survive (the degenerate equality
+  keeps that contract) but are re-verified at cutover.
+
+**Adjacent javadoc that stays true and is deliberately untouched** (describes PK-only RETURNING and
+the two-step shape, which this item does not change): `emitKeysTransaction`, the `MutationField`
+DML-arm javadoc, the routine-write transposition javadoc in `TypeFetcherGenerator`,
+`GraphitronTransactionProviderGenerator` (post-settle read-back), `FetcherEmitter`'s PK-only
+RETURNING comment. Named here so the sweep has an explicit keep-list, not just a delete-list.
+
+**Generated output:** the `rows<Name>` companion emits no javadoc, so there is no consumer-facing
+doc surface and nothing for the string-literal guard.
+
+**User manual:**
+
+- `reference/directives/mutation.adoc`: gains the ordering / cardinality contract sentence (the
+  first-client draft in *The contract*). Pre-existing drift found during this sweep: the page
+  describes a selection-set `RETURNING` wrapped in a `WITH` clause with a one-round-trip claim,
+  while the shipped emit is the two-step (PK-only `RETURNING`, then the `rows<Name>` follow-up
+  SELECT). Reconcile while touching the page; the drift predates this item.
+- `tutorial/05-mutations.adoc`: same pre-existing drift ("There is no follow-up `SELECT` to fetch
+  what was just written", and observed-SQL snippets); re-run the tutorial against the new emit and
+  update the mechanics passage plus snippets to match.
+- `how-to/split-vs-inline.adoc`: unaffected (documents the batched read-side VALUES join); the
+  natural cross-reference once the mutation page speaks the same `VALUES (idx, ...)` vocabulary.
+- `reference/directives/lookupKey.adoc`: the ordering-contract precedent; unchanged.
+
+If the tutorial/reference reconciliation of the pre-existing two-step drift balloons beyond the
+passages above, it splits to its own docs item rather than growing this one; the ordering-contract
+sentence itself stays here regardless.
+
+**Architecture docs:** no page mentions the reentry rendering or the keys-IN vocabulary; nothing to
+update.
+
+**Tests:** no test names or comments reference the spelling (the one grep hit,
+`asconnection-same-table-pk-in` in `LintRuleRegistryCoverageTest`, is an unrelated lint-rule slug).
+Existing bulk-mutation execution fixtures are audited for incidental order assumptions that pass
+today by table-order accident; any found become deliberate assertions under the new contract.
+
 ## Out of scope
 
 - The routine-write step-2 re-read stays keys-IN until `Operation.RoutineWrite` joins the reentry
