@@ -8527,8 +8527,14 @@ class GraphitronSchemaBuilderTest {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
                 assertThat(f.tableInputArg().inputTable().tableName()).isEqualTo("film");
                 assertThat(f.tableInputArg().fieldBindings()).isEmpty();
-                assertThat(f.returnExpression())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle("Film"));
+                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle) f.returnExpression();
+                assertThat(rex.returnTypeName()).isEqualTo("Film");
+                // The classified reentry correlation: PK self-identity over the bound table's
+                // primary key, carried on the arm so the emit never re-derives the key set.
+                assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
+                assertThat(rex.reentryCorrelation().columns())
+                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .containsExactly("film_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
         },
@@ -8959,8 +8965,12 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilms");
                 assertThat(f.tableInputArg().list()).isTrue();
-                assertThat(f.returnExpression())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList) f.returnExpression();
+                assertThat(rex.returnTypeName()).isEqualTo("Film");
+                assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
+                assertThat(rex.reentryCorrelation().columns())
+                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .containsExactly("film_id");
             }),
 
         DML_UPDATE_LIST_LIST_OK(
@@ -8977,8 +8987,12 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilms");
                 assertThat(f.inputArg().list()).isTrue();
-                assertThat(f.returnExpression())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList) f.returnExpression();
+                assertThat(rex.returnTypeName()).isEqualTo("Film");
+                assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
+                assertThat(rex.reentryCorrelation().columns())
+                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .containsExactly("film_id");
             }),
 
         DML_INSERT_DISCRIMINATED_INTERFACE_SINGLE(
@@ -9092,6 +9106,12 @@ class GraphitronSchemaBuilderTest {
                 var dl = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList) f.returnExpression();
                 assertThat(dl.interfaceName()).isEqualTo("Content");
                 assertThat(dl.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
+                // The discriminated arms carry the same classified reentry correlation as the
+                // projected arms: PK self-identity over the shared table's primary key.
+                assertThat(dl.reentryCorrelation().targetTable().tableName()).isEqualTo("content");
+                assertThat(dl.reentryCorrelation().columns())
+                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .containsExactly("content_id");
                 assertThat(f.returnExpression())
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList.class);
             }) {
@@ -9324,8 +9344,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
-                assertThat(f.returnExpression())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle("Film"));
+                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle) f.returnExpression();
+                assertThat(rex.returnTypeName()).isEqualTo("Film");
+                assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
             }),
 
         DML_LIST_LOOKUP_KEY_FIELD_REJECTED(

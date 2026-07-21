@@ -2927,6 +2927,12 @@ type Mutation {
     createContent(in: ContentInput!): Content @mutation(typeName: INSERT)
     updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE)
 
+    # Bulk sibling of createContent: the discriminated bulk payload rides the reentry
+    # companion's VALUES (idx, pk) join and must honor the ordering / cardinality contract
+    # (one payload row per written row, in RETURNING order) through the discriminator
+    # re-projection. Execution-pinned in DmlTableInterfaceReturnExecutionTest.
+    createContents(in: [ContentInput!]!): [Content!]! @mutation(typeName: INSERT)
+
     # R144 execution-tier proof of the multiRow opt-out. Filter column is non-PK
     # (release_year); a single input row can affect many database rows. The
     # response shape is [ID!]! to keep the execution test focused on the
@@ -2958,6 +2964,13 @@ type Mutation {
     # and the buildPerCellValueList NodeIdDecodeKeys arm
     # (`__insertKey_<fi>.value1()` read into the `values(...)` cell).
     createKeyedNode(in: CreateKeyedNodeInput!): ID @mutation(typeName: INSERT)
+
+    # Bulk projected INSERT over a client-supplied (non-SERIAL) primary key. Because the
+    # caller controls the PK values, the input list can be ordered against the key's
+    # natural sort order, which makes this the discriminating execution fixture for the
+    # payload-order contract: the payload must follow the RETURNING (input) order, not
+    # whatever order a scan of keyed_node would produce. See DmlBulkMutationsExecutionTest.
+    createKeyedNodes(in: [CreateKeyedNodeInput!]!): [KeyedNode!]! @mutation(typeName: INSERT)
 
     # Single-record DML carrier mutations (FilmPayload, plain SDL Object with no
     # @record/@table). The structural DML-payload scan (BuildContext.scanStructuralDmlPayload)

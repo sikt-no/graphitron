@@ -367,8 +367,9 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createQux");
-        assertThat(f.returnExpression())
-            .isEqualTo(new DmlReturnExpression.ProjectedSingle("Qux"));
+        var rex = (DmlReturnExpression.ProjectedSingle) f.returnExpression();
+        assertThat(rex.returnTypeName()).isEqualTo("Qux");
+        assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("qux");
     }
 
     // ===== DELETE-payload-carrier admission matrix (cardinality × element) =====

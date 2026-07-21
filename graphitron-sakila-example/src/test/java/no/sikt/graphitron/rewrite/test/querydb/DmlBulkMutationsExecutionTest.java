@@ -2,7 +2,9 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.ExecutionInput;
 import graphql.GraphQL;
+import graphql.GraphQLContext;
 import graphql.schema.DataFetchingEnvironment;
+import graphql.schema.DataFetchingEnvironmentImpl;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -122,10 +124,12 @@ class DmlBulkMutationsExecutionTest {
     // ===== happy path: each verb writes N rows =====
 
     @Test
-    void createFilms_insertsNRowsAndReturnsProjectedList() {
-        // Bulk INSERT emits valuesOfRows(in.stream().map(row -> DSL.row(...)).toList())
-        // and returningResult(...) projects the row tuple list. RETURNING flows back
-        // through graphql-java's selection set as [Film!]!.
+    void createFilms_insertsNRowsAndReturnsProjectedListInReturningOrder() {
+        // Bulk INSERT emits valuesOfRows(...) inside the PK-only RETURNING transaction; the
+        // rows companion re-fetches through the VALUES (idx, pk) join ordered by idx, so the
+        // payload aligns one-to-one, in order, with the RETURNING result (which for
+        // INSERT ... VALUES follows the input row order). containsExactly, not InAnyOrder:
+        // the ordering contract is deliberate, pinned here and in the user manual.
         String m1 = randomMarker("R77F-INSERT-A");
         String m2 = randomMarker("R77F-INSERT-B");
         String m3 = randomMarker("R77F-INSERT-C");
@@ -141,10 +145,127 @@ class DmlBulkMutationsExecutionTest {
                 """.formatted(m1, m2, m3));
             List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("createFilms");
             assertThat(rows).hasSize(3);
-            assertThat(rows).extracting(r -> r.get("title")).containsExactlyInAnyOrder(m1, m2, m3);
+            assertThat(rows).extracting(r -> r.get("title")).containsExactly(m1, m2, m3);
         } finally {
             dsl.deleteFrom(DSL.table("film"))
                 .where(DSL.field("title").in(m1, m2, m3)).execute();
+        }
+    }
+
+    @Test
+    void createKeyedNodes_payloadFollowsInputOrderAgainstKeyOrder() {
+        // The discriminating order fixture: keyed_node's PK is client-supplied, so the input
+        // can be ordered *against* the key's natural sort order ("zz", "aa", "mm"). The payload
+        // must follow the RETURNING (input) order — a scan-order accident (index or heap order)
+        // would return the aa/mm/zz sort instead. This is the contract the companion's
+        // ORDER BY idx makes deterministic.
+        String suffix = "-" + UUID.randomUUID();
+        String kZ = "zz" + suffix, kA = "aa" + suffix, kM = "mm" + suffix;
+        String idZ = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", kZ);
+        String idA = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", kA);
+        String idM = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", kM);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createKeyedNodes(in: [
+                        { id: "%s", label: "first" },
+                        { id: "%s", label: "second" },
+                        { id: "%s", label: "third" }
+                    ]) { label }
+                }
+                """.formatted(idZ, idA, idM));
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("createKeyedNodes");
+            assertThat(rows).extracting(r -> r.get("label"))
+                .as("payload order follows the write (input) order, not the key sort order")
+                .containsExactly("first", "second", "third");
+        } finally {
+            dsl.deleteFrom(DSL.table("keyed_node"))
+                .where(DSL.field("id").in(kZ, kA, kM)).execute();
+        }
+    }
+
+    @Test
+    void updateFilms_missedRowShrinksPayloadToWrittenRows() {
+        // Cardinality half of the contract: one payload row per *written* row. An input row
+        // whose filmId matches nothing writes nothing and reports nothing through RETURNING,
+        // so the payload shrinks to the written set instead of echoing the input cardinality.
+        String orig = randomMarker("R489-UPD-MISS");
+        Integer id = insertFilm(orig);
+        int missingId = 999_901;
+        deleteFilmById(missingId);
+        String updated = randomMarker("R489-UPD-MISS-NEW");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    updateFilms(in: [
+                        { filmId: %d, title: "%s" },
+                        { filmId: %d, title: "x" }
+                    ]) { title }
+                }
+                """.formatted(id, updated, missingId));
+            List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("updateFilms");
+            assertThat(rows).extracting(r -> r.get("title")).containsExactly(updated);
+        } finally {
+            deleteFilmById(id);
+        }
+    }
+
+    // ===== the reentry companion as a directly-assertable seam =====
+    //
+    // rows<Name> is a public static unit keyed by the write's RETURNING result, so its
+    // row-per-write contract is assertable with a hand-built keys Result — which is the only
+    // way to reach duplicate keys today: the GraphQL surfaces cannot produce them (bulk UPDATE
+    // rejects duplicate lookup tuples before SQL, INSERT never repeats a PK, and PostgreSQL
+    // reports each target row at most once through RETURNING). The synthetic environment
+    // carries the two GraphQLContext entries the companion reads (DSLContext + the
+    // GraphitronContext singleton) and an empty selection set (jOOQ renders an empty
+    // projection list as SELECT *).
+
+    private static final graphql.schema.DataFetchingFieldSelectionSet EMPTY_SELECTION =
+        new graphql.schema.DataFetchingFieldSelectionSet() {
+            @Override public boolean contains(String fieldGlobPattern) { return false; }
+            @Override public boolean containsAnyOf(String first, String... rest) { return false; }
+            @Override public boolean containsAllOf(String first, String... rest) { return false; }
+            @Override public List<graphql.schema.SelectedField> getFields() { return List.of(); }
+            @Override public List<graphql.schema.SelectedField> getImmediateFields() { return List.of(); }
+            @Override public List<graphql.schema.SelectedField> getFields(String glob, String... rest) { return List.of(); }
+            @Override public Map<String, List<graphql.schema.SelectedField>> getFieldsGroupedByResultKey() { return Map.of(); }
+            @Override public Map<String, List<graphql.schema.SelectedField>> getFieldsGroupedByResultKey(String glob, String... rest) { return Map.of(); }
+        };
+
+    @Test
+    void rowsUpdateFilms_duplicateKeys_yieldOnePayloadRowPerKeyInKeysOrder() {
+        // Row-per-write, not row-per-distinct-key: keys [B, A, A] must produce payload
+        // [B, A, A]. Under the retired keys-IN spelling the duplicate collapsed (IN dedupes)
+        // and the order was the scan's; the VALUES (idx, pk) join makes both deliberate.
+        String tA = randomMarker("R489-DUP-A");
+        String tB = randomMarker("R489-DUP-B");
+        Integer idA = insertFilm(tA);
+        Integer idB = insertFilm(tB);
+        var film = no.sikt.graphitron.rewrite.test.jooq.Tables.FILM;
+        try {
+            org.jooq.Result<org.jooq.Record1<Integer>> keys = dsl.newResult(film.FILM_ID);
+            keys.add(dsl.newRecord(film.FILM_ID).value1(idB));
+            keys.add(dsl.newRecord(film.FILM_ID).value1(idA));
+            keys.add(dsl.newRecord(film.FILM_ID).value1(idA));
+            DataFetchingEnvironment env = DataFetchingEnvironmentImpl
+                .newDataFetchingEnvironment()
+                .graphQLContext(GraphQLContext.newContext()
+                    .of(DSLContext.class, dsl,
+                        GraphitronContext.class, GraphitronContext.GraphitronContextImpl.INSTANCE)
+                    .build())
+                .selectionSet(EMPTY_SELECTION)
+                .build();
+            List<org.jooq.Record> payload =
+                no.sikt.graphitron.generated.fetchers.MutationFetchers.rowsUpdateFilms(keys, env);
+            // The projection always carries the reserved-alias full parent row (__src_*__), so
+            // the assertion reads titles through it; the empty selection set adds nothing else.
+            assertThat(payload).extracting(r -> r.get("__src_title__", String.class))
+                .as("one payload row per keys row, aligned with keys order")
+                .containsExactly(tB, tA, tA);
+        } finally {
+            deleteFilmById(idA);
+            deleteFilmById(idB);
         }
     }
 

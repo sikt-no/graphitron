@@ -164,6 +164,36 @@ class DmlTableInterfaceReturnExecutionTest {
     }
 
     @Test
+    void createContents_bulkPayloadFollowsReturningOrderThroughDiscriminatorReprojection() {
+        // The bulk discriminated arm rides the same reentry companion as the projected arm:
+        // the follow-up SELECT joins the VALUES (idx, pk) table through the discriminator
+        // re-projection and orders by idx, so the payload aligns one-to-one, in order, with
+        // the RETURNING (input) order — including the per-row __typename routing.
+        Map<String, Object> data = execute("""
+            mutation {
+              createContents(in: [
+                { title: "R406 Bulk Short", contentType: "SHORT", description: "s1" },
+                { title: "R406 Bulk Film", contentType: "FILM", length: 90 },
+                { title: "R406 Bulk Short 2", contentType: "SHORT", description: "s2" }
+              ]) {
+                __typename
+                title
+                ... on FilmContent { length }
+                ... on ShortContent { description }
+              }
+            }
+            """);
+        var rows = (java.util.List<Map<String, Object>>) data.get("createContents");
+        assertThat(rows).extracting(r -> r.get("title"))
+            .as("payload order follows the write order through the discriminated re-projection")
+            .containsExactly("R406 Bulk Short", "R406 Bulk Film", "R406 Bulk Short 2");
+        assertThat(rows).extracting(r -> r.get("__typename"))
+            .containsExactly("ShortContent", "FilmContent", "ShortContent");
+        assertThat(rows.get(0).get("description")).isEqualTo("s1");
+        assertThat(rows.get(1).get("length")).isEqualTo(90);
+    }
+
+    @Test
     void updateContent_reprojectsAndRoutesByLiveDiscriminator() {
         // Seed a FILM content row directly, then UPDATE it and assert the return routes to FilmContent
         // off the live discriminator, re-projected by the RETURNING primary key.

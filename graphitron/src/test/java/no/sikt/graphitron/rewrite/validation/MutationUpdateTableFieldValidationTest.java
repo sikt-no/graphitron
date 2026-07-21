@@ -25,7 +25,9 @@ class MutationUpdateTableFieldValidationTest {
         VALID("update mutation field, well-formed, no validation errors",
             new MutationUpdateTableField(
                 "Mutation", "updateFilm", null,
-                new DmlReturnExpression.ProjectedSingle("Film"),
+                new DmlReturnExpression.ProjectedSingle("Film",
+                    new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots(
+                        TestFixtures.filmTableWithPk(), List.of(TestFixtures.filmIdCol()))),
                 no.sikt.graphitron.rewrite.model.DialectRequirement.None.INSTANCE,
                 new no.sikt.graphitron.rewrite.model.InputArgRef(
                     "in", "FilmInput",

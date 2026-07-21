@@ -685,6 +685,52 @@ class FetcherPipelineTest {
             .contains("keys.value1()");
     }
 
+    // ===== DML reentry companion: correlation rendered through the VALUES-join primitive =====
+    // Body-content assertions (justified as the discriminated tests above): the load-bearing
+    // facts are that the bulk companion keys its follow-up SELECT through the VALUES (idx, key...)
+    // derived table ordered by idx (the structural half of the payload-order contract), that the
+    // keys-IN spelling does not regrow on the reentry path, and that the single arm stays the
+    // legible degenerate (plain key equality, no VALUES table, no ORDER BY). The behavioral
+    // contract itself is pinned at the execution tier (DmlBulkMutationsExecutionTest).
+
+    @Test
+    void dmlBulkProjectedReturn_companionRendersValuesJoinOrderedByIdx() {
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { dummy: String }
+            type Mutation { createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT) }
+            """;
+        var rowsBody = method(findSpec("MutationFetchers", sdl), "rowsCreateFilms").code().toString();
+        assertThat(rowsBody)
+            .as("keys become the VALUES (idx, key...) derived table")
+            .contains(".values(keyRows)")
+            .contains("\"keysInput\", \"idx\", \"film_id\"")
+            .as("the follow-up SELECT joins the target over the carried correlation")
+            .contains(".join(keysInput)")
+            .as("payload aligns with RETURNING order via ORDER BY idx")
+            .contains(".orderBy(keysInput.field(\"idx\"")
+            .as("the keys-IN spelling is retired on the reentry path")
+            .doesNotContain(".in(keys.getValues(");
+    }
+
+    @Test
+    void dmlSingleProjectedReturn_companionKeepsPlainKeyEquality() {
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { dummy: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """;
+        var rowsBody = method(findSpec("MutationFetchers", sdl), "rowsCreateFilm").code().toString();
+        assertThat(rowsBody)
+            .as("single arm renders the degenerate: plain PK equality off the keys record")
+            .contains(".eq(keys.value1())")
+            .as("no VALUES table and no ORDER BY at row-count 1")
+            .doesNotContain(".values(")
+            .doesNotContain(".orderBy(");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test

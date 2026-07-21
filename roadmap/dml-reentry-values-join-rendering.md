@@ -15,173 +15,86 @@ last-updated: 2026-07-21
 ## In one paragraph
 
 R314 named the DML reentry unit (the `rows<Name>` companion holding the projected / discriminated
-mutation's follow-up SELECT, minted through the method-command registry) but kept its correlation
-rendering as recorded residue: the companion keys the SELECT with a keys-IN condition, while R333's
-re-query unification resolution names one primitive for every keyed re-query, a `VALUES(idx, key...)`
-derived table joined to the target over a correlation, with PK self-identity as the degenerate case.
-The two renderings express the same correlation; carrying both is a same-primitive-two-spellings
-residue. This item normalizes the companion onto the primitive and, in doing so, converts two pieces
-of currently *undefined* bulk behavior into a deliberate, execution-tested contract: payload rows
-align one-to-one, in order, with the rows the write reported through RETURNING.
+mutation's follow-up SELECT) but kept its correlation rendering as recorded residue: a keys-IN
+condition, where R333 names one primitive for every keyed re-query (a `VALUES(idx, key...)` derived
+table joined over a correlation, PK self-identity as the degenerate case). This item normalized the
+companion onto the primitive and converted two pieces of undefined bulk behavior into a deliberate,
+execution-tested contract: payload rows align one-to-one, in order, with the rows the write
+reported through RETURNING.
 
-## What is
+## Shipped
 
-- `emitProjected` and `emitDiscriminated` (`TypeFetcherGenerator`; `:4991` / `:5187` at the time of
-  writing) render the companion's follow-up SELECT as `select ... from T where <PK-IN>` through
-  `buildPkKeysCondition`, a thin wrapper over `buildKeysInCondition`. The bulk arm ends in a bare
-  `.fetch()`: no ORDER BY and no Java-side reorder.
-- Two bulk-arm behaviors are therefore undefined today: payload row order is whatever the database
-  returns, and duplicate writes to the same row collapse to one payload row (IN dedupes), so payload
-  cardinality can diverge from the write count. Neither is documented or fixture-pinned anywhere.
-- The batched rows methods already render the primitive: `ValuesJoinRowBuilder` (the shared cells /
-  row-type / alias core, carrying jOOQ's typed `Row22` cap) fed by `SplitRowsMethodEmitter`, with the
-  correlation carried as a classified `ParentCorrelation` fact; its `OnLiftedSlots` arm is documented
-  as the PK-self-identity degenerate case of the FK pairing.
-- The DML classification carries no correlation fact: the emitters recompute the key column set from
-  `TableRef.primaryKeyColumns()` at emit time, at two sites.
-- `emitKeysTransaction` runs the write with a PK-only RETURNING and yields `keys` as
-  `Result<RecordN<...>>` (bulk) or `RecordN<...>` (single); the companion signature is
-  `rows<Name>(keys, env)`.
-- The routine-write step-2 re-read (`TypeFetcherGenerator` `:1846` at the time of writing) is
-  `buildKeysInCondition`'s only other caller and sits outside the reentry family
-  (`Operation.RoutineWrite` is outside `requiresReFetch`'s produced-record set).
+Everything below is implemented; nothing is pending beyond review.
 
-## Design
+- **Carried correlation.** The classifier attaches the PK-self-identity
+  `ParentCorrelation.OnLiftedSlots` fact (over the bound table's primary key) to the four reentry
+  return-shape arms: `DmlReturnExpression.ProjectedSingle` / `ProjectedList` /
+  `DiscriminatedSingle` / `DiscriminatedList` now carry a `reentryCorrelation` component,
+  constructed once in `FieldBuilder.buildDmlReturnExpression`. `emitProjected` /
+  `emitDiscriminated` read the carried fact; no emit site derives the key column set.
+- **VALUES-join rendering.** The bulk companion body renders through the shared primitive: a
+  `keyRows` typed row array plus `keysInput` derived table built through `ValuesJoinRowBuilder`
+  (`TypeFetcherGenerator.emitReentryValuesJoinDecls`), joined to the target over the correlation
+  (`buildReentryValuesJoinOn`), with `ORDER BY idx` (`reentryIdxField`). The single arm renders
+  the legible degenerate, plain key equality (`buildReentryKeyEquality`), byte-identical to the
+  retired spelling. The discriminated bulk arm threads the same primitive through
+  `buildTableInterfaceReprojection` with the discriminator filter starting from `noCondition()`.
+- **Helper retirement.** `buildPkKeysCondition` deleted; `buildKeysInCondition` narrowed to the
+  routine-write step-2 re-read, its javadoc naming that caller as the sole sanctioned one.
+- **Validator.** `GraphitronSchemaValidator.validateDmlReentryKeyArity` (wired from the INSERT /
+  UPDATE / UPSERT DML validators) rejects a list-cardinality reentry key above 21 columns at
+  validate time, mirroring `ValuesJoinRowBuilder`'s Row22 cap; single arms are exempt (no idx
+  slot).
+- **Registry untouched.** The `rows<Name>` unit's identity is unchanged; `MethodCommandRegistry`
+  and `ReentryCommandClosureTest` are untouched.
+- **Tests.** Execution tier (`DmlBulkMutationsExecutionTest`): `createFilms` order pin tightened
+  to `containsExactly`; a new `createKeyedNodes` fixture (client-supplied PK, input ordered
+  against the key's natural order, over a new `createKeyedNodes` schema surface) as the
+  discriminating order proof; a missed-row fixture pinning payload cardinality = written rows;
+  and a direct companion-seam call (`rowsUpdateFilms` with a hand-built duplicate-keys `Result`)
+  pinning row-per-write and keys-order alignment. Discriminated bulk order + `__typename` routing
+  in `DmlTableInterfaceReturnExecutionTest` over a new `createContents` surface. Pipeline tier
+  (`FetcherPipelineTest`): bulk companion renders the VALUES join ordered by idx with no keys-IN;
+  single companion keeps plain equality. Model tier: `GraphitronSchemaBuilderTest` /
+  `MutationDmlNodeIdClassificationTest` assert the carried correlation. Validation tier:
+  `MutationInsertTableFieldValidationTest` gained the Row22-cap rejection and single-arm
+  exemption cases.
+- **Docs.** `reference/directives/mutation.adoc` rewritten to the shipped two-step emit
+  (reconciling the pre-existing WITH-wrap one-round-trip drift) and gained the ordering /
+  cardinality contract sentence; `tutorial/05-mutations.adoc` mechanics passage and SQL snippets
+  updated to the two-step shape. `how-to/split-vs-inline.adoc` untouched (read-side page, still
+  accurate). Stale single-round-trip comments in `GraphQLQueryTest` refreshed.
 
-Three decisions, in dependency order (principles-architect consulted 2026-07-21).
+## Deviations from the Ready spec
 
-**The correlation becomes a carried model fact.** The classifier attaches the PK-self-identity
-correlation (the `ParentCorrelation.OnLiftedSlots` shape over the bound table's primary key) to the
-DML reentry classification at parse time, on whichever carrier the fact naturally keys
-(`MutationField.DmlTableField` or the reentry-side fact R314 introduced). `emitProjected` /
-`emitDiscriminated` read the carried fact instead of recomputing the PK set at emit. This is the
-decide-once rule: the batched re-fetch and the DML reentry consume the same classified correlation,
-and R333's "one primitive `f(keys, correlation)`" is realized as routing a model-carried correlation
-through the shared renderer, not as recomputing the correlation to feed it.
+Recorded for the In Review pass; none changes the design's shape.
 
-**The shared seam is the correlation renderer, not the scatter envelope.** What the companion shares
-with the batched rows methods is `ValuesJoinRowBuilder` plus a join-predicate helper keyed by the
-carried correlation. The envelope stays per-consumer: the companion is RETURNING-keyed, returns the
-payload directly, orders by `idx`, and never scatters (scatter is gated on the arrival axis; the
-single-anchor DML case never fires it), while the DataLoader envelope keeps `keys.get(i)` and
-`scatterByIdx`. Do not thread the DML shapes through `SplitRowsMethodEmitter`'s cardinality entry
-points as flag parameters; follow that emitter's own precedent of sibling cardinality methods
-sharing a prelude.
+- **Carrier choice.** The spec left the carrier as a bounded fork (`MutationField.DmlTableField`
+  or the reentry-side fact); the correlation landed on the `DmlReturnExpression` reentry arms,
+  which is where the reentry fork already lives (`Encoded*` arms carry nothing).
+- **PK-less table-bound returns now reject at classify time.** A non-null carried correlation
+  requires a non-empty key tuple, so `FieldBuilder.buildDmlField` rejects a `@table` return whose
+  table has no primary key (typed AuthorError naming the fix). This replaces `emitProjected`'s
+  fallback branch (a single-round-trip `returningResult($fields)` emit whose guarding rejection
+  the fallback's own comment claimed already existed but did not); no fixture, corpus schema, or
+  sakila surface exercised the fallback.
+- **Duplicate-write fixture is a direct companion call.** The GraphQL surfaces cannot produce
+  duplicate RETURNING keys (bulk UPDATE's duplicate-tuple guard fires before SQL; INSERT never
+  repeats a PK; PostgreSQL reports each target row at most once through RETURNING), so the
+  row-per-write pin calls `rowsUpdateFilms(keys, env)` directly with a hand-built duplicate-keys
+  `Result` and a synthetic environment, the independently-assertable seam framing the companion's
+  javadoc already documents.
 
-**Single-row arms share the seam, not the SQL shape.** At row-count 1 the correlation-resolution
-seam renders the legible degenerate, plain PK equality, with no VALUES table and no ORDER BY; the
-emitted single-arm output stays behavior-identical (generated code is a consumer artifact). The
-honest claim is one correlation seam at two cardinalities, not VALUES-of-one.
+## The contract (as shipped)
 
-## The contract
+Bulk projected / discriminated mutation payloads align one-to-one, in order, with the rows the
+write reported through RETURNING: the companion orders by `idx`, where `idx` indexes the RETURNING
+result, and emits one payload row per written row (row-per-write, not row-per-distinct-key).
+Single-row arms are behavior-identical to the prior emit. The execution-tier fixtures are the
+enforcer; the user-manual sentence ("one entry per written row, in the order the rows were
+written") describes what they pin.
 
-Bulk projected / discriminated mutation payloads align one-to-one, in order, with the rows the write
-reported through RETURNING: the companion orders by `idx`, where `idx` indexes the RETURNING result,
-and emits one payload row per written row (row-per-write, not row-per-distinct-key). The
-execution-tier fixtures are the enforcer; the user-manual sentence describes what they pin.
-
-Docs draft (first-client check), for the mutation reference page, mirroring the `@lookupKey`
-precedent ("returns a list of results in the same order"): "The payload list contains one entry per
-written row, in the order the rows were written."
-
-## Implementation
-
-- Classifier: attach the PK-self-identity `ParentCorrelation` to the DML reentry classification;
-  the emit reads it, never derives it.
-- `TypeFetcherGenerator.emitProjected` / `emitDiscriminated`: build the companion body through the
-  shared correlation renderer; the bulk arm gains `ORDER BY idx`; the single arm renders the
-  degenerate equality.
-- `buildPkKeysCondition` is deleted: its only two callers are the arms above, so it is dead
-  post-migration. `buildKeysInCondition` narrows to its single routine-write caller; pin that
-  single-caller status (visibility, or a comment naming the routine-write re-read as the sole
-  sanctioned caller) so the keys-IN spelling cannot silently regrow callers before
-  `Operation.RoutineWrite` joins the reentry family.
-- Validator: the existing validate-time rejection mirroring `ValuesJoinRowBuilder`'s `Row22` cap
-  (the `GraphitronSchemaValidator` "exceeds jOOQ's typed Row22 cap" rule) extends to the DML reentry
-  key, so a PK whose arity plus the `idx` slot exceeds the cap rejects at validate time, never as an
-  emit-time exception.
-- The `rows<Name>` unit's registry identity does not change; only its body does. The method-command
-  registry and `ReentryCommandClosureTest` stay untouched (the registry is a census of unit
-  identity, not of body content).
-
-## Tests and acceptance
-
-Primary acceptance is the behavioral contract at the execution tier, because the fixtures are the
-contract's enforcer:
-
-- a bulk projected mutation fixture asserting payload order equals RETURNING (input) order, on an
-  input deliberately ordered against the table's natural order;
-- a duplicate-write fixture (bulk update targeting the same row twice) asserting two payload rows;
-- a discriminated bulk fixture asserting the same order contract through the re-projection path;
-- single-row arms behavior-identical (plain equality, no order clause), byte-identical where the
-  rendering permits.
-
-Two non-execution pins, so the new invariants each have an enforcer:
-
-- the validator extension gets its own rejection fixture, mirroring the existing Row22-cap pins in
-  `InterfaceFieldValidationTest` / `UnionFieldValidationTest`: a DML target whose PK arity exceeds
-  the cap rejects at validate time with the reentry-keyed message;
-- the carried correlation is pinned at the pipeline tier: a model assertion that the DML reentry
-  classification carries the `ParentCorrelation.OnLiftedSlots` fact over the bound table's primary
-  key (never a code-string assertion on the emitted body).
-
-Explicitly *not* byte-identical and *not* plain execution-tier equivalence on the bulk arms: the
-order and cardinality change is the point, and it needs its own fixtures rather than equivalence
-against the undefined baseline. Full reactor green under `-Plocal-db`; sakila corpus green.
-
-## Documentation and comment surface
-
-Inventory swept 2026-07-21 (vocabulary grep over main, test, `docs/`, and generated output for
-`PK-IN` / `keys-IN` / `two-step` / the helper names). Each entry updates in the same commit as the
-code it describes; the final slice commit re-runs the grep so nothing names the retired spelling,
-the R126 / R504 scrub discipline applied up front instead of as a later cleanup item.
-
-**In-tree javadoc and comments that name the keys-IN spelling (rot with this change):**
-
-- `TypeFetcherGenerator.buildPkKeysCondition` javadoc: deleted with the method.
-- `TypeFetcherGenerator.buildKeysInCondition` javadoc: currently framed as "generalises the PK-only
-  form"; rewrites to name the routine-write step-2 re-read as its sole sanctioned caller.
-- `emitDiscriminated` javadoc ("keyed by the same PK-IN condition") and its "base PK-IN condition"
-  body comment; `emitProjected` javadoc where it describes the follow-up SELECT's shape.
-- The single-arm "matches the pre-two-step contract" comments survive (the degenerate equality
-  keeps that contract) but are re-verified at cutover.
-
-**Adjacent javadoc that stays true and is deliberately untouched** (describes PK-only RETURNING and
-the two-step shape, which this item does not change): `emitKeysTransaction`, the `MutationField`
-DML-arm javadoc, the routine-write transposition javadoc in `TypeFetcherGenerator`,
-`GraphitronTransactionProviderGenerator` (post-settle read-back), `FetcherEmitter`'s PK-only
-RETURNING comment. Named here so the sweep has an explicit keep-list, not just a delete-list.
-
-**Generated output:** the `rows<Name>` companion emits no javadoc, so there is no consumer-facing
-doc surface and nothing for the string-literal guard.
-
-**User manual:**
-
-- `reference/directives/mutation.adoc`: gains the ordering / cardinality contract sentence (the
-  first-client draft in *The contract*). Pre-existing drift found during this sweep: the page
-  describes a selection-set `RETURNING` wrapped in a `WITH` clause with a one-round-trip claim,
-  while the shipped emit is the two-step (PK-only `RETURNING`, then the `rows<Name>` follow-up
-  SELECT). Reconcile while touching the page; the drift predates this item.
-- `tutorial/05-mutations.adoc`: same pre-existing drift ("There is no follow-up `SELECT` to fetch
-  what was just written", and observed-SQL snippets); re-run the tutorial against the new emit and
-  update the mechanics passage plus snippets to match.
-- `how-to/split-vs-inline.adoc`: unaffected (documents the batched read-side VALUES join); the
-  natural cross-reference once the mutation page speaks the same `VALUES (idx, ...)` vocabulary.
-- `reference/directives/lookupKey.adoc`: the ordering-contract precedent; unchanged.
-
-If the tutorial/reference reconciliation of the pre-existing two-step drift balloons beyond the
-passages above, it splits to its own docs item rather than growing this one; the ordering-contract
-sentence itself stays here regardless.
-
-**Architecture docs:** no page mentions the reentry rendering or the keys-IN vocabulary; nothing to
-update.
-
-**Tests:** no test names or comments reference the spelling (the one grep hit,
-`asconnection-same-table-pk-in` in `LintRuleRegistryCoverageTest`, is an unrelated lint-rule slug).
-Existing bulk-mutation execution fixtures are audited for incidental order assumptions that pass
-today by table-order accident; any found become deliberate assertions under the new contract.
-
-## Out of scope
+## Out of scope (unchanged)
 
 - The routine-write step-2 re-read stays keys-IN until `Operation.RoutineWrite` joins the reentry
   family; if that framing changes, its re-read joins this unit and the surviving keys-IN helper

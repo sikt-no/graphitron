@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
@@ -44,6 +45,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -4978,17 +4980,19 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
                 emitEncoded(el.encode(), valueType, tableRef, tablesOnly, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps ->
-                emitProjected(ctx, field, ps.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
-                    tableLocal, dmlChain, /*isList=*/ false);
+                emitProjected(ctx, field, ps.returnTypeName(), ps.reentryCorrelation(), valueType, tableRef,
+                    tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
-                emitProjected(ctx, field, pl.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
-                    tableLocal, dmlChain, /*isList=*/ true);
+                emitProjected(ctx, field, pl.returnTypeName(), pl.reentryCorrelation(), valueType, tableRef,
+                    tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ds ->
                 emitDiscriminated(ctx, field, ds.discriminatorColumn(), ds.knownDiscriminatorValues(), ds.participants(),
-                    valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ false);
+                    ds.reentryCorrelation(), valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain,
+                    /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
                 emitDiscriminated(ctx, field, dl.discriminatorColumn(), dl.knownDiscriminatorValues(), dl.participants(),
-                    valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ true);
+                    dl.reentryCorrelation(), valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain,
+                    /*isList=*/ true);
         };
     }
 
@@ -5042,43 +5046,43 @@ public class TypeFetcherGenerator {
     private static CodeBlock emitProjected(
             TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
-            String returnTypeName, TypeName valueType,
+            String returnTypeName,
+            ParentCorrelation.OnLiftedSlots correlation,
+            TypeName valueType,
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String outputPackage, String tableLocal,
             CodeBlock dmlChain, boolean isList) {
         var typeClass = ClassName.get(outputPackage + ".types", returnTypeName);
-        var pkCols = tableRef.primaryKeyColumns();
-        if (pkCols.isEmpty()) {
-            // Fallback: no PK metadata, can't do two-step. The classifier rejects DML on
-            // pkless tables ahead of emit, so this branch only runs in degenerate fixtures.
-            var body = CodeBlock.builder()
-                .add("$T payload = dsl\n", valueType).indent()
-                .add(dmlChain)
-                .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
-                    typeClass, tableLocal)
-                .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
-            return body.build();
-        }
 
         // The named reentry query unit: the follow-up SELECT lives in a
         // rows<Name> companion the fetcher calls, minted through the command registry. The
         // write half (the RETURNING-keyed transaction) and the no-match null guard stay in the
         // fetcher — the transaction boundary is the fetcher's contract, the re-projection is
-        // the unit's.
+        // the unit's. The correlation is the classified fact the arm carries; the emit reads
+        // it, never re-derives the key column set.
         String rowsName = ctx.dmlRowsDeclarationName(field);
         var followUp = CodeBlock.builder()
             .add("$T $L = $T.$L;\n",
                 tablesOnly.jooqTableClass(), tableLocal,
-                tablesOnly.tablesClass(), tableRef.javaFieldName())
-            .add("return dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
-                typeClass, tableLocal)
-            .add("    .from($L)\n", tableLocal)
-            .add("    .where(").add(buildPkKeysCondition(tableRef, tablesOnly, isList)).add(")\n")
-            .add(isList ? "    .fetch(r -> r);\n" : "    .fetchOne(r -> r);\n")
-            .build();
+                tablesOnly.tablesClass(), tableRef.javaFieldName());
+        if (isList) {
+            followUp.add(emitReentryValuesJoinDecls(correlation))
+                .add("return dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
+                    typeClass, tableLocal)
+                .add("    .from($L)\n", tableLocal)
+                .add("    .join($L).on($L)\n", REENTRY_KEYS_INPUT, buildReentryValuesJoinOn(correlation))
+                .add("    .orderBy($L)\n", reentryIdxField())
+                .add("    .fetch(r -> r);\n");
+        } else {
+            followUp.add("return dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
+                    typeClass, tableLocal)
+                .add("    .from($L)\n", tableLocal)
+                .add("    .where(").add(buildReentryKeyEquality(correlation)).add(")\n")
+                .add("    .fetchOne(r -> r);\n");
+        }
         ctx.addCompanionMethod(buildDmlReentryRowsMethod(
-            ctx, field, outputPackage, rowsName, valueType, tableRef, isList, followUp));
+            ctx, field, outputPackage, rowsName, valueType, correlation, isList, followUp.build()));
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
@@ -5108,11 +5112,11 @@ public class TypeFetcherGenerator {
             TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             String outputPackage,
-            String rowsName, TypeName valueType, TableRef tableRef,
+            String rowsName, TypeName valueType,
+            ParentCorrelation.OnLiftedSlots correlation,
             boolean isList, CodeBlock body) {
-        var pkCols = tableRef.primaryKeyColumns();
         var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
-            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), correlation.columns());
         TypeName keysType = isList
             ? ParameterizedTypeName.get(RESULT, keyRowType)
             : keyRowType;
@@ -5159,33 +5163,132 @@ public class TypeFetcherGenerator {
         return body.build();
     }
 
+    // ===== DML reentry correlation seam =====
+    //
+    // The rows<Name> companion resolves its correlation (the carried
+    // ParentCorrelation.OnLiftedSlots fact, PK self-identity over the bound table's primary
+    // key) through one seam at two cardinalities: the bulk arm renders the shared VALUES-join
+    // primitive (a VALUES(idx, key...) derived table built through ValuesJoinRowBuilder, joined
+    // to the target over the correlation, ordered by idx so the payload aligns one-to-one and
+    // in order with the RETURNING result); the single arm renders the legible degenerate, plain
+    // key equality, with no VALUES table and no ORDER BY.
+
+    /** Generated-local names for the bulk arm's VALUES-join primitive. */
+    private static final String REENTRY_KEY_ROWS = "keyRows";
+    private static final String REENTRY_KEYS_INPUT = "keysInput";
+
     /**
-     * The PK-IN {@code Condition} expression that keys the follow-up SELECT off the {@code keys}
-     * local declared by {@link #emitKeysTransaction}. Shared by {@link #emitProjected}
-     * (inlined into {@code .where(...)}) and {@link #emitDiscriminated} (the base condition);
-     * a thin wrapper over {@link #buildKeysInCondition} passing the table's PK column
-     * expressions on both sides (the DML {@code RETURNING} captured exactly those fields).
+     * Generation-time context string for {@link ValuesJoinRowBuilder}'s arity-cap diagnostics.
+     * {@code GraphitronSchemaValidator} rejects an over-arity reentry key at validate time
+     * (mirroring this cap), so the row builder's own throw is a backstop for model objects
+     * constructed outside the pipeline.
      */
-    private static CodeBlock buildPkKeysCondition(
-            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, boolean isList) {
-        var pkColExprs = tableRef.primaryKeyColumns().stream()
-            .map(col -> CodeBlock.of("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName()))
-            .toList();
-        return buildKeysInCondition(pkColExprs, pkColExprs, isList);
+    private static final String REENTRY_ROW_CONTEXT = "@mutation @table-return reentry key";
+
+    /**
+     * The bulk arm's correlation resolution: declares the typed {@code keyRows} array (one
+     * {@code Row<N+1>(idx, key...)} per {@code RETURNING} record) and the {@code keysInput}
+     * derived table ({@code DSL.values(keyRows).as("keysInput", "idx", ...)}) the follow-up
+     * SELECT joins. Requires the {@code keys} local ({@code Result<RecordN<...>>}) in scope.
+     * Row typing, cell binds (through each column's registered Converter), and alias args all
+     * come from {@link ValuesJoinRowBuilder}, the same core the batched rows methods render.
+     */
+    private static CodeBlock emitReentryValuesJoinDecls(ParentCorrelation.OnLiftedSlots correlation) {
+        var cols = correlation.columns();
+        var owner = correlation.targetTable();
+        CodeBlock tableExpr = CodeBlock.of("$T.$L", owner.constantsClass(), owner.javaFieldName());
+        var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), cols);
+        var b = CodeBlock.builder();
+        ValuesJoinRowBuilder.emitRowArrayDecl(b, cols, c -> c, REENTRY_ROW_CONTEXT,
+            REENTRY_KEY_ROWS, "keys.size()");
+        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        b.addStatement("$T k = keys.get(i)", keyRowType);
+        b.addStatement("$L[i] = $T.row($L)", REENTRY_KEY_ROWS, DSL,
+            ValuesJoinRowBuilder.cellsCode(cols, c -> c,
+                CodeBlock.of("$T.val(i, $T.class)", DSL, Integer.class), tableExpr,
+                (col, ci) -> CodeBlock.of("k.get($L.$L)", tableExpr, col.javaName())));
+        b.endControlFlow();
+        b.addStatement("$T $L = $T.values($L).as($L)",
+            ValuesJoinRowBuilder.inputTableType(cols, c -> c, REENTRY_ROW_CONTEXT),
+            REENTRY_KEYS_INPUT, DSL, REENTRY_KEY_ROWS,
+            ValuesJoinRowBuilder.aliasArgs(cols, c -> c, REENTRY_KEYS_INPUT));
+        return b.build();
     }
 
     /**
-     * The key-IN {@code Condition} expression that anchors a two-step fetcher's follow-up SELECT
-     * on the {@code keys} local captured in step 1. This was generalized from the PK-only DML
-     * form ({@link #buildPkKeysCondition}) to an arbitrary key-column list so the routine-write
-     * fetcher shares it: {@code conditionCols} are the field expressions the WHERE tests (the
-     * follow-up table's columns), {@code keyCols} the field expressions that read the captured
-     * values back off {@code keys} (the fields step 1 selected — identical to
-     * {@code conditionCols} for DML, the routine result's columns for the write chain).
-     * Composite-safe: a single-column key emits {@code col.eq(keys.value1())} /
-     * {@code col.in(keys.getValues(keyCol))}, a multi-column key the
-     * {@code DSL.row(...).eq(DSL.row(...))} / {@code DSL.row(...).in(...toList())} row-value form.
+     * The bulk arm's join predicate over the carried correlation:
+     * {@code <target>.<COL>.eq(keysInput.field("<sqlName>", <target>.<COL>.getDataType()))} per
+     * column, chained with {@code .and(...)}. Field lookup by SQL name plus the owner column's
+     * {@code DataType} keeps converter-backed columns' type metadata faithful (the same
+     * resolution the batched rows methods use for their {@code parentInput} predicate).
+     */
+    private static CodeBlock buildReentryValuesJoinOn(ParentCorrelation.OnLiftedSlots correlation) {
+        var cols = correlation.columns();
+        var owner = correlation.targetTable();
+        var on = CodeBlock.builder();
+        for (int i = 0; i < cols.size(); i++) {
+            if (i > 0) on.add(".and(");
+            var col = cols.get(i);
+            on.add("$T.$L.$L.eq($L.field($S, $T.$L.$L.getDataType()))",
+                owner.constantsClass(), owner.javaFieldName(), col.javaName(),
+                REENTRY_KEYS_INPUT, col.sqlName(),
+                owner.constantsClass(), owner.javaFieldName(), col.javaName());
+            if (i > 0) on.add(")");
+        }
+        return on.build();
+    }
+
+    /** The bulk arm's ordering field: {@code keysInput.field("idx", Integer.class)}. */
+    private static CodeBlock reentryIdxField() {
+        return CodeBlock.of("$L.field($S, $T.class)", REENTRY_KEYS_INPUT, "idx", Integer.class);
+    }
+
+    /**
+     * The single arm's correlation resolution: plain key equality against the single
+     * {@code RecordN} {@code keys} local — {@code col.eq(keys.value1())} for a one-column key,
+     * the {@code DSL.row(...).eq(DSL.row(keys.get(...), ...))} row-value form for a composite
+     * key. The legible degenerate of the VALUES-join primitive at row-count 1; no VALUES table
+     * and no ORDER BY.
+     */
+    private static CodeBlock buildReentryKeyEquality(ParentCorrelation.OnLiftedSlots correlation) {
+        var owner = correlation.targetTable();
+        var colExprs = correlation.columns().stream()
+            .map(col -> CodeBlock.of("$T.$L.$L",
+                owner.constantsClass(), owner.javaFieldName(), col.javaName()))
+            .toList();
+        var b = CodeBlock.builder();
+        if (colExprs.size() == 1) {
+            b.add("$L.eq(keys.value1())", colExprs.get(0));
+        } else {
+            b.add("$T.row(", DSL);
+            for (int i = 0; i < colExprs.size(); i++) {
+                if (i > 0) b.add(", ");
+                b.add("$L", colExprs.get(i));
+            }
+            b.add(").eq($T.row(", DSL);
+            for (int i = 0; i < colExprs.size(); i++) {
+                if (i > 0) b.add(", ");
+                b.add("keys.get($L)", colExprs.get(i));
+            }
+            b.add("))");
+        }
+        return b.build();
+    }
+
+    /**
+     * The key-IN {@code Condition} expression that anchors the routine-write fetcher's step-2
+     * re-read on the {@code keys} local captured in step 1. The routine-write re-read is this
+     * helper's sole sanctioned caller: the DML reentry arms resolve their correlation through
+     * the VALUES-join seam above ({@link #emitReentryValuesJoinDecls} /
+     * {@link #buildReentryKeyEquality}), and {@code Operation.RoutineWrite} joins that seam if
+     * it ever joins the reentry family — do not grow new keys-IN callers. {@code conditionCols}
+     * are the field expressions the WHERE tests (the follow-up table's columns), {@code keyCols}
+     * the field expressions that read the captured values back off {@code keys} (the fields
+     * step 1 selected — the routine result's columns for the write chain). Composite-safe: a
+     * single-column key emits {@code col.eq(keys.value1())} / {@code col.in(keys.getValues(keyCol))},
+     * a multi-column key the {@code DSL.row(...).eq(DSL.row(...))} /
+     * {@code DSL.row(...).in(...toList())} row-value form.
      */
     private static CodeBlock buildKeysInCondition(
             List<CodeBlock> conditionCols, List<CodeBlock> keyCols, boolean isList) {
@@ -5232,7 +5335,8 @@ public class TypeFetcherGenerator {
      * by {@link #emitKeysTransaction}); only the follow-up SELECT differs. Rather than the
      * concrete-type {@code Type.$fields(...)} projection, it re-projects through the shared
      * read-side re-projection ({@link #buildTableInterfaceReprojection}) keyed by the same
-     * PK-IN condition ({@link #buildPkKeysCondition}). The generated row carries
+     * carried correlation as the projected arm (the VALUES-join primitive at list cardinality,
+     * plain key equality at single). The generated row carries
      * {@code __discriminator__}; the interface's {@code TypeResolver} sets {@code __typename} per
      * row, so no new resolver and no per-typename UNION are emitted. A {@code RETURNING} key whose
      * live row's discriminator is outside the known participant set drops on the read-side
@@ -5243,25 +5347,36 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             String discriminatorColumn, List<String> knownDiscriminatorValues,
             List<ParticipantRef> participants,
+            ParentCorrelation.OnLiftedSlots correlation,
             TypeName valueType, TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String outputPackage, String tableLocal,
             CodeBlock dmlChain, boolean isList) {
-        // Named reentry unit, exactly as emitProjected: the discriminated follow-up (base PK-IN
-        // condition + the re-projection with the discriminator filter) moves into the
-        // rows<Name> companion; the write half and the no-match guard stay in the fetcher.
+        // Named reentry unit, exactly as emitProjected: the discriminated follow-up (the
+        // correlation resolution + the re-projection with the discriminator filter) moves into
+        // the rows<Name> companion; the write half and the no-match guard stay in the fetcher.
         String rowsName = ctx.dmlRowsDeclarationName(field);
         var followUp = CodeBlock.builder()
             .add("$T $L = $T.$L;\n",
                 tablesOnly.jooqTableClass(), tableLocal,
-                tablesOnly.tablesClass(), tableRef.javaFieldName())
-            .addStatement("$T condition = $L", CONDITION, buildPkKeysCondition(tableRef, tablesOnly, isList))
-            .add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
-                knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
-            .addStatement("return step.where(condition)$L", isList ? ".fetch()" : ".fetchOne()")
-            .build();
+                tablesOnly.tablesClass(), tableRef.javaFieldName());
+        if (isList) {
+            // The correlation rides the keysInput join; `condition` starts empty and collects
+            // only the reprojection's discriminator filter.
+            followUp.add(emitReentryValuesJoinDecls(correlation))
+                .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
+                .add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
+                    knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
+                .addStatement("return step.join($L).on($L).where(condition).orderBy($L).fetch()",
+                    REENTRY_KEYS_INPUT, buildReentryValuesJoinOn(correlation), reentryIdxField());
+        } else {
+            followUp.addStatement("$T condition = $L", CONDITION, buildReentryKeyEquality(correlation))
+                .add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
+                    knownDiscriminatorValues, List.of(), tableLocal, outputPackage))
+                .addStatement("return step.where(condition).fetchOne()");
+        }
         ctx.addCompanionMethod(buildDmlReentryRowsMethod(
-            ctx, field, outputPackage, rowsName, valueType, tableRef, isList, followUp));
+            ctx, field, outputPackage, rowsName, valueType, correlation, isList, followUp.build()));
 
         var body = CodeBlock.builder()
             .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));

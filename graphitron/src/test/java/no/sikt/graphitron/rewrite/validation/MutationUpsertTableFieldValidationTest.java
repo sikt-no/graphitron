@@ -27,7 +27,9 @@ class MutationUpsertTableFieldValidationTest {
         VALID("upsert mutation field, well-formed, no validation errors",
             new MutationUpsertTableField(
                 "Mutation", "upsertFilm", null,
-                new DmlReturnExpression.ProjectedSingle("Film"),
+                new DmlReturnExpression.ProjectedSingle("Film",
+                    new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots(
+                        TestFixtures.filmTableWithPk(), List.of(TestFixtures.filmIdCol()))),
                 new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE, "upsert not on oracle"),
                 ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmInput", true, false,

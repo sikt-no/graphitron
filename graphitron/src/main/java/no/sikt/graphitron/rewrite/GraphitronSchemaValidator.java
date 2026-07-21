@@ -690,10 +690,51 @@ public class GraphitronSchemaValidator {
         // Mutation twin of validateQueryServiceTableInterfaceField; same single-table floor.
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
-    private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField field, List<ValidationError> errors) {}
-    private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {}
+    private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField field, List<ValidationError> errors) {
+        validateDmlReentryKeyArity(field, errors);
+    }
+    private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {
+        validateDmlReentryKeyArity(field, errors);
+    }
     private void validateMutationDeleteTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField field, List<ValidationError> errors) {}
-    private void validateMutationUpsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField field, List<ValidationError> errors) {}
+    private void validateMutationUpsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField field, List<ValidationError> errors) {
+        validateDmlReentryKeyArity(field, errors);
+    }
+
+    /**
+     * DML reentry key guard, the sibling of {@link #validateChildMultiTableParentPk} on the
+     * mutation side: a bulk projected / discriminated DML return re-fetches through the
+     * {@code rows<Name>} companion's {@code VALUES (idx, key...)} join, whose typed row tops
+     * out at jOOQ's {@code Row22} ({@code ValuesJoinRowBuilder}'s cap), so the carried reentry
+     * key (the bound table's primary key) is capped at 21 columns on the list-cardinality arms.
+     * Surfaces the constraint as a validate-time rejection instead of the row builder's
+     * codegen-time {@code IllegalStateException}. Single-cardinality arms render plain key
+     * equality with no {@code idx} slot and are exempt; {@code Encoded*} arms carry no reentry
+     * and are skipped. DELETE never carries a reentry arm ({@code MutationInputResolver}
+     * rejects {@code @table} returns on DELETE), so its validator stub does not call this.
+     */
+    private void validateDmlReentryKeyArity(no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
+            List<ValidationError> errors) {
+        no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots correlation =
+            switch (field.returnExpression()) {
+                case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList p -> p.reentryCorrelation();
+                case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList d -> d.reentryCorrelation();
+                default -> null;
+            };
+        if (correlation == null) return;
+        var keyCols = correlation.columns();
+        if (keyCols.size() > 21) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+            Rejection.structural("Field '" + field.qualifiedName() + "': bulk @mutation with a @table "
+                    + "return re-fetches the written rows through a keyed re-query whose key is table '"
+                    + correlation.targetTable().tableName() + "'s primary key; " + keyCols.size()
+                    + " key columns exceeds jOOQ's typed Row22 cap (key + idx must fit in Row<N+1>). "
+                    + "Use a narrower primary key or return ID"),
+                field.location()
+            ));
+        }
+    }
     private void validateMutationServiceTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField field, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).
     }

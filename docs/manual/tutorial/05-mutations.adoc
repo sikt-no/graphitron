@@ -51,19 +51,25 @@ Run it again and you get `filmId: 7`, then `8`, and so on; the `film_id` column 
 
 == What just happened
 
-The generated resolver for `Mutation.createFilm` produced this shape of SQL:
+The generated resolver for `Mutation.createFilm` produced this shape of SQL, in two steps. First the write, committed inside a transaction, with a `RETURNING` clause narrowed to the primary key:
 
 [source,sql]
 ----
 INSERT INTO film (title, language_id)
      VALUES (?, ?)
-  RETURNING film.film_id AS "filmId",
-            film.title   AS "title"
+  RETURNING film.film_id
 ----
 
-The `RETURNING` clause is what makes mutations cheap in Graphitron: PostgreSQL hands the inserted row back in the same statement, with the columns the GraphQL selection set asked for. There is no follow-up `SELECT` to fetch what was just written.
+Then a follow-up `SELECT` keyed on that primary key reads back the columns the GraphQL selection set asked for:
 
-If your mutation selects more fields, the `RETURNING` projection grows. If your mutation also selects through a `@reference`, the resolver wraps the `INSERT` in a `WITH` clause and joins from the inserted row outwards, keeping the round trip count to one.
+[source,sql]
+----
+SELECT film.film_id AS "filmId", film.title AS "title"
+  FROM film
+ WHERE film.film_id = ?
+----
+
+Splitting the write from the read-back keeps the write statement independent of the response shape: selecting more fields grows only the follow-up `SELECT`, and a read error during the response cannot undo the committed insert. For a list-shaped mutation (bulk input, `[Film!]!` return) the follow-up `SELECT` joins the returned keys as a `VALUES` table and orders by their input position, so the payload has one entry per written row, in the order the rows were written.
 
 == Other mutation shapes
 
@@ -78,7 +84,7 @@ type Mutation {
 }
 ----
 
-`UPDATE` requires an input field marked with `@lookupKey` to identify the row to update; `UPSERT` adds an `ON CONFLICT` clause. Both follow the same pattern as `INSERT`: the directive picks the SQL shape, the input's `@table` binds the target, and the `RETURNING` projection narrows to the response selection set. Sample `FilmUpdateInput`:
+`UPDATE` requires an input field marked with `@lookupKey` to identify the row to update; `UPSERT` adds an `ON CONFLICT` clause. Both follow the same pattern as `INSERT`: the directive picks the SQL shape, the input's `@table` binds the target, and the same two-step write-then-read-back serves the response selection set. Sample `FilmUpdateInput`:
 
 [source,graphql]
 ----

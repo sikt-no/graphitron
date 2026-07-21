@@ -3988,6 +3988,18 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
             }
         }
+        // A table-bound DML return re-fetches the written rows by primary key (the rows<Name>
+        // reentry companion keys its follow-up SELECT on the RETURNING-captured PK), so a PK-less
+        // table has no key to correlate on. Reject here, at the single DML chokepoint, so the
+        // reentry arms always carry a non-null PK-self-identity correlation.
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType noPk
+                && !noPk.table().hasPrimaryKey()) {
+            return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(
+                "@mutation field '" + fieldName + "' returns @table type '" + noPk.returnTypeName()
+                + "' backed by table '" + noPk.table().tableName() + "', which has no primary key; "
+                + "the mutation's follow-up SELECT re-fetches the written rows by primary key. "
+                + "Add a primary key to the table or return ID"));
+        }
         // Resolve the return's look-ahead verdict once at this single DML chokepoint. A
         // TableInterfaceType return (single-table @table @discriminate) classifies to a
         // TableBoundReturnType (it is a TableBackedType), so the "is this a discriminated interface?"
@@ -4430,6 +4442,13 @@ class FieldBuilder {
             return isList ? new DmlReturnExpression.EncodedList(enc) : new DmlReturnExpression.EncodedSingle(enc);
         }
         if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            // The reentry correlation, decided once here: the rows<Name> companion keys its
+            // follow-up SELECT on the bound table's primary key, which is PK self-identity —
+            // the hop-less OnLiftedSlots shape (key tuple IS the target-column tuple). The
+            // caller rejected PK-less tables ahead of this constructor (buildDmlField), so the
+            // column tuple is non-empty by construction.
+            var reentryCorrelation = new ParentCorrelation.OnLiftedSlots(
+                tb.table(), tb.table().primaryKeyColumns());
             // A single-table discriminated interface return re-projects through the
             // discriminator path rather than the concrete-type $fields projection; carry the
             // read-side discrimination data (same as the *ServiceTableInterfaceField shapes).
@@ -4437,12 +4456,12 @@ class FieldBuilder {
                 var tit = interfaceVerdict.get();
                 var knownValues = knownDiscriminatorValues(tit);
                 return isList
-                    ? new DmlReturnExpression.DiscriminatedList(tit.name(), tit.discriminatorColumn(), knownValues, tit.participants())
-                    : new DmlReturnExpression.DiscriminatedSingle(tit.name(), tit.discriminatorColumn(), knownValues, tit.participants());
+                    ? new DmlReturnExpression.DiscriminatedList(tit.name(), tit.discriminatorColumn(), knownValues, tit.participants(), reentryCorrelation)
+                    : new DmlReturnExpression.DiscriminatedSingle(tit.name(), tit.discriminatorColumn(), knownValues, tit.participants(), reentryCorrelation);
             }
             return isList
-                ? new DmlReturnExpression.ProjectedList(tb.returnTypeName())
-                : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName());
+                ? new DmlReturnExpression.ProjectedList(tb.returnTypeName(), reentryCorrelation)
+                : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName(), reentryCorrelation);
         }
         throw new AssertionError(
             "DML mutation return type '" + returnType.returnTypeName()

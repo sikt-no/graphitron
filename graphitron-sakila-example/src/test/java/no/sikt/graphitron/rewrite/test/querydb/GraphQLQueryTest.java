@@ -5135,12 +5135,10 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void createFilm_insertsRowAndReturnsProjectedFilm() {
-        // INSERT mutation with @table return: emitter runs
-        // `dsl.insertInto(film, title, language_id).values(...).returningResult($fields).fetchOne(r -> r)`,
-        // and graphql-java walks the returned Record for the selected columns. This is the
-        // first execution-tier coverage for the RETURNING-with-multiset shape on PostgreSQL;
-        // DELETE shipped without one. The test cleans up its inserted row in a finally block
-        // so other tests' film-count assumptions are preserved.
+        // INSERT mutation with @table return: the write commits with a PK-only RETURNING
+        // inside a transaction, the rows companion re-fetches the selected columns by that
+        // key, and graphql-java walks the returned Record. The test cleans up its inserted
+        // row in a finally block so other tests' film-count assumptions are preserved.
         String marker = "R22-PHASE-2-FILM-" + java.util.UUID.randomUUID();
         int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("film"));
         try {
@@ -5597,10 +5595,10 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void updateFilm_updatesRowAndReturnsProjectedFilm() {
-        // UPDATE mutation with @table return: emitter runs
-        // `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult($fields)
-        //  .fetchOne(r -> r)`. Verifies the SET clause writes, the WHERE clause matches, and the
-        // RETURNING projection flows back through graphql-java for the selected columns.
+        // UPDATE mutation with @table return: the write commits with a PK-only RETURNING
+        // inside a transaction and the rows companion re-fetches the selected columns by that
+        // key. Verifies the SET clause writes, the WHERE clause matches, and the re-fetched
+        // row flows back through graphql-java for the selected columns.
         // Pre-inserts a marker row by jOOQ so the test does not depend on (or mutate) any
         // pre-existing Sakila row, and cleans up in finally.
         String originalMarker = "R22-PHASE-4-FILM-" + java.util.UUID.randomUUID();

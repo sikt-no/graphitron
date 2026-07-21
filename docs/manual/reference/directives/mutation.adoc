@@ -2,7 +2,7 @@
 :description: Flip a mutation resolver into INSERT, UPDATE, DELETE, or UPSERT against a @table-bound input.
 :!toc:
 
-Marks a mutation field as fully generated, picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`), and threads the response selection set through `RETURNING` so writes complete in a single round trip.
+Marks a mutation field as fully generated and picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). The write runs inside a transaction with a primary-key-only `RETURNING`; a `@table`-typed response is then read back by a follow-up SELECT keyed on those primary keys, so the response selection set never widens the write statement itself.
 
 == SDL signature
 
@@ -58,17 +58,27 @@ type Mutation {
 }
 ----
 
-The `INSERT` shape produces:
+The `INSERT` shape produces a two-step exchange. The write commits inside a transaction with a primary-key-only `RETURNING`:
 
 [source,sql]
 ----
 INSERT INTO film (title, language_id)
      VALUES (?, ?)
-  RETURNING film.film_id AS "filmId",
-            film.title   AS "title"
+  RETURNING film.film_id
 ----
 
-The `RETURNING` projection narrows to the response selection set: a mutation that asks for `{ filmId title }` retrieves only those columns; asking for `{ filmId title language { name } }` adds a JOIN through `@reference` and the `RETURNING` is wrapped in a `WITH` clause so the round-trip count stays at one.
+and the response selection set is then read back by a follow-up SELECT keyed on the returned primary key:
+
+[source,sql]
+----
+SELECT film.film_id AS "filmId", film.title AS "title"
+  FROM film
+ WHERE film.film_id = ?
+----
+
+The follow-up SELECT narrows to the response selection set: a mutation that asks for `{ filmId title }` retrieves only those columns. Because the write has already committed when the read-back runs, an error during the response SELECT surfaces as a field error and cannot undo the write.
+
+For a bulk mutation (list input, `[Film!]!` return), the follow-up SELECT joins a `VALUES (idx, pk)` table over the returned keys and orders by `idx`. The payload list contains one entry per written row, in the order the rows were written, mirroring xref:lookupKey.adoc[`@lookupKey`]'s ordering contract ("returns a list of results in the same order").
 
 `UPDATE` identifies the target row by which input columns cover a primary key or unique key of the `@table` (inferred from the jOOQ catalog, no directive needed): the matched key's columns become the `WHERE` clause and the remaining input fields populate the `SET` clause. `UPSERT` adds `ON CONFLICT` keyed on the matched key's columns.
 

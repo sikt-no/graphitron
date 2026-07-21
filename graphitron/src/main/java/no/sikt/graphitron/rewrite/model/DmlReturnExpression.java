@@ -47,23 +47,39 @@ public sealed interface DmlReturnExpression {
     /** {@code [ID]} return on a list-cardinality DML. Same encoder helper as {@link EncodedSingle}. */
     record EncodedList(HelperRef.Encode encode) implements DmlReturnExpression {}
 
-    /** {@code T} return where {@code T} is a {@code @table} type. The GraphQL return-type name resolves the {@code <TypeName>Type.$fields(...)} projection class. */
-    record ProjectedSingle(String returnTypeName) implements DmlReturnExpression {}
+    /**
+     * {@code T} return where {@code T} is a {@code @table} type. The GraphQL return-type name
+     * resolves the {@code <TypeName>Type.$fields(...)} projection class.
+     *
+     * <p>{@code reentryCorrelation} is the classified correlation the {@code rows<Name>} reentry
+     * companion keys its follow-up SELECT on: the {@link ParentCorrelation.OnLiftedSlots}
+     * PK-self-identity shape over the bound table's primary key (the same columns the write's
+     * {@code RETURNING} captured). Attached at parse time so the reentry emitters read the carried
+     * fact instead of re-deriving the key column set from {@code TableRef.primaryKeyColumns()} at
+     * each emit site; the classifier rejects a table-bound DML return whose table has no primary
+     * key before constructing this arm, so the correlation is never null.
+     */
+    record ProjectedSingle(String returnTypeName,
+        ParentCorrelation.OnLiftedSlots reentryCorrelation) implements DmlReturnExpression {}
 
-    /** {@code [T]} return where {@code T} is a {@code @table} type. Same projection class as {@link ProjectedSingle}. */
-    record ProjectedList(String returnTypeName) implements DmlReturnExpression {}
+    /** {@code [T]} return where {@code T} is a {@code @table} type. Same projection class and carried correlation as {@link ProjectedSingle}. */
+    record ProjectedList(String returnTypeName,
+        ParentCorrelation.OnLiftedSlots reentryCorrelation) implements DmlReturnExpression {}
 
     /**
      * {@code T} return where {@code T} is a single-table discriminated interface. Carries the
      * read-side single-table discrimination data (sourced verbatim from the {@code TableInterfaceType}
      * verdict) so the emitter can re-project through the shared discriminated re-projection helper
-     * keyed by the DML write's {@code RETURNING} primary key. The DML sibling of the
+     * keyed by the DML write's {@code RETURNING} primary key, plus the same carried
+     * {@code reentryCorrelation} as {@link ProjectedSingle}. The DML sibling of the
      * {@code *ServiceTableInterfaceField} service-return variants.
      */
     record DiscriminatedSingle(String interfaceName, String discriminatorColumn,
-        List<String> knownDiscriminatorValues, List<ParticipantRef> participants) implements DmlReturnExpression {}
+        List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
+        ParentCorrelation.OnLiftedSlots reentryCorrelation) implements DmlReturnExpression {}
 
     /** {@code [T]} return where {@code T} is a single-table discriminated interface. List sibling of {@link DiscriminatedSingle}. */
     record DiscriminatedList(String interfaceName, String discriminatorColumn,
-        List<String> knownDiscriminatorValues, List<ParticipantRef> participants) implements DmlReturnExpression {}
+        List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
+        ParentCorrelation.OnLiftedSlots reentryCorrelation) implements DmlReturnExpression {}
 }
