@@ -166,7 +166,7 @@ public sealed interface FieldClassification
 
     /**
      * A single-column projection on a {@code @table}-backed parent. Covers
-     * the single-column {@code ChildField.ColumnBackedField} and {@code InputField.ColumnField}; the input/output
+     * the single-column {@code ChildField.ColumnBackedField} and {@code InputField.ColumnBackedField}; the input/output
      * label dimension is dispatched by the label switch, not by the record identity.
      */
     record Column(String tableName, String columnName) implements FieldClassification {}
@@ -174,7 +174,7 @@ public sealed interface FieldClassification
     /**
      * A single-column projection reached through a {@code @reference} join path. Covers
      * the single-column {@code ChildField.ColumnBackedReferenceField} and
-     * {@code InputField.ColumnReferenceField}.
+     * {@code InputField.ColumnBackedReferenceField}.
      */
     record ColumnReference(String tableName, String columnName, List<FkStep> joinPath)
         implements FieldClassification {
@@ -187,7 +187,7 @@ public sealed interface FieldClassification
     /**
      * A multi-column projection on a {@code @table}-backed parent. Covers the composite
      * (multi-column) {@code ChildField.ColumnBackedField} and
-     * {@code InputField.CompositeColumnField}. A kept denormalized view: the merged output
+     * {@code InputField.ColumnBackedField}. A kept denormalized view: the merged output
      * leaf carries arity as a column count, and the projection re-derives this variant from
      * its {@code isComposite()} accessor so the wire surface does not churn.
      */
@@ -202,7 +202,7 @@ public sealed interface FieldClassification
     /**
      * A multi-column projection reached through a {@code @reference} join path. Covers the
      * composite (multi-column) {@code ChildField.ColumnBackedReferenceField} and
-     * {@code InputField.CompositeColumnReferenceField}. A kept denormalized view derived from
+     * {@code InputField.ColumnBackedReferenceField}. A kept denormalized view derived from
      * the merged output leaf's {@code isComposite()} accessor, like {@link CompositeColumn}.
      */
     record CompositeColumnReference(

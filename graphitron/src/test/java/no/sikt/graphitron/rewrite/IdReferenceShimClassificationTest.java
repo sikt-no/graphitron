@@ -15,7 +15,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Classification tests for the FK-qualifier synthesis shim. The shim routes arity-1 PK targets
- * to {@link InputField.ColumnReferenceField} carrying
+ * to {@link InputField.ColumnBackedReferenceField} carrying
  * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement} plus the
  * resolved FK joinPath. Uses the {@code idreffixture} jOOQ catalog (studieprogram + studierett)
  * because the shim gate requires {@code nodeIdMetadata(targetTable)} to be present; the
@@ -76,10 +76,10 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
-                assertThat(f.column().sqlName()).isEqualTo("studieprogram_id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("studieprogram_id");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
                 assertThat(f.joinPath()).hasSize(1);
@@ -97,8 +97,8 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
@@ -116,8 +116,8 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isFalse();
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
@@ -142,8 +142,8 @@ class IdReferenceShimClassificationTest {
                 var tit = (TableInputType) schema.type("StudieprogramFilterInput");
                 var f = tit.inputFields().stream()
                     .filter(g -> g.name().equals("id")).findFirst().orElseThrow();
-                assertThat(f).isInstanceOf(InputField.ColumnField.class);
-                var cf = (InputField.ColumnField) f;
+                assertThat(f).isInstanceOf(InputField.ColumnBackedField.class);
+                var cf = (InputField.ColumnBackedField) f;
                 assertThat(cf.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
@@ -162,10 +162,10 @@ class IdReferenceShimClassificationTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
-                assertThat(f.column().sqlName()).isEqualTo("studieprogram_id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("studieprogram_id");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
                 assertThat(f.joinPath()).hasSize(1);

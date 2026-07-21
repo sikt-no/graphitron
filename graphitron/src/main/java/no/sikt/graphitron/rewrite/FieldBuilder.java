@@ -2004,13 +2004,13 @@ class FieldBuilder {
      * Recursively collects explicit {@code @condition} filters and implicit column-equality
      * predicates from a list of {@link InputField}s.
      *
-     * <p><b>Explicit conditions</b> — {@link InputField.ColumnField},
-     * {@link InputField.ColumnReferenceField}, and {@link InputField.NestingField} all carry an
+     * <p><b>Explicit conditions</b> — {@link InputField.ColumnBackedField},
+     * {@link InputField.ColumnBackedReferenceField}, and {@link InputField.NestingField} all carry an
      * optional {@code condition}. When present, the filter is rewrapped with a
      * {@link CallSiteExtraction.NestedInputField} extraction and added to {@code out}.
      *
-     * <p><b>Implicit conditions</b> — every un-annotated {@link InputField.ColumnField} and
-     * {@link InputField.ColumnReferenceField} that carries no {@code @condition} annotation, is
+     * <p><b>Implicit conditions</b> — every un-annotated {@link InputField.ColumnBackedField} and
+     * {@link InputField.ColumnBackedReferenceField} that carries no {@code @condition} annotation, is
      * not already consumed by a {@code @lookupKey} binding, and is not suppressed by an enclosing
      * {@code override: true}, gets an implicit column-equality predicate, a {@link BodyParam}
      * with a {@link CallSiteExtraction.NestedInputField} extraction, added to
@@ -2057,7 +2057,7 @@ class FieldBuilder {
             var leafPath = new ArrayList<>(pathPrefix);
             leafPath.add(f.name());
             switch (f) {
-                case InputField.ColumnField cf -> {
+                case InputField.ColumnBackedField cf -> {
                     cf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     if (!enclosingOverride
                             && cf.condition().isEmpty()
@@ -2065,13 +2065,20 @@ class FieldBuilder {
                         // The leaf extraction (Direct or NodeIdDecodeKeys.*) flows through to the
                         // BodyParam via NestedInputField(outer, path, leaf), so the call-site
                         // emitter applies the per-element decode chain on the Map traversal result.
-                        implicitBodyParams.add(implicitBodyParam(
-                            cf.column(), cf.name(), cf.typeName(),
-                            effectiveNonNull && cf.nonNull(), cf.list(),
-                            cf.extraction(), outerArgName, leafPath));
+                        // Arity forks on the carrier's own isComposite(): the composite shape is a
+                        // NodeIdDecodeKeys tuple (constructor invariant) taking the RowEq/RowIn rail.
+                        implicitBodyParams.add(cf.isComposite()
+                            ? compositeImplicitBodyParam(
+                                cf.columns(), cf.name(),
+                                effectiveNonNull && cf.nonNull(), cf.list(),
+                                (CallSiteExtraction.NodeIdDecodeKeys) cf.extraction(), outerArgName, leafPath)
+                            : implicitBodyParam(
+                                cf.columns().get(0), cf.name(), cf.typeName(),
+                                effectiveNonNull && cf.nonNull(), cf.list(),
+                                cf.extraction(), outerArgName, leafPath));
                     }
                 }
-                case InputField.ColumnReferenceField rf -> {
+                case InputField.ColumnBackedReferenceField rf -> {
                     // An FK-target @nodeId field's @condition method expects the FK-target
                     // table X, not the input's own table, so the plain ConditionFilter (whose Table
                     // slot the emitter fills with the root `table` local) would hand the method the
@@ -2079,14 +2086,17 @@ class FieldBuilder {
                     // carrying the FK correlation so QueryConditionsGenerator emits a correlated
                     // EXISTS that hands the method an alias for X. An empty joinPath means start
                     // table == target table (the column lives on the parent's own table), so `table`
-                    // is genuinely correct and the plain ConditionFilter stands.
+                    // is genuinely correct and the plain ConditionFilter stands. Composite-key
+                    // FK-target @nodeId + @condition is the common consumer shape (composite
+                    // NodeType keys are the norm); the correlated EXISTS ANDs every composite-FK
+                    // slot (JoinPathEmitter.emitCorrelationWhere). The wrap is arity-uniform.
                     rf.condition().ifPresent(c -> {
                         var rewrapped = conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath);
                         out.add(rf.joinPath().isEmpty()
                             ? rewrapped
                             : new FkTargetConditionFilter(rewrapped,
                                 ((JoinStep.HasTargetTable) rf.joinPath().get(rf.joinPath().size() - 1)).targetTable(),
-                                rf.joinPath(), rf.liftedSourceColumns(), List.of(rf.column())));
+                                rf.joinPath(), rf.liftedSourceColumns(), rf.columns()));
                     });
                     if (!enclosingOverride
                             && rf.condition().isEmpty()
@@ -2099,11 +2109,19 @@ class FieldBuilder {
                         // joined table, liftedSourceColumns().get(0) is the *terminal* column, so
                         // wrap the predicate in a RemoteColumnPredicate (correlated EXISTS). The
                         // @nodeId-lift case (NodeIdDecodeKeys extraction) binds locally and stays
-                        // unwrapped — see remoteIfReferenceJoin's discrimination note.
-                        var inner = implicitBodyParam(
-                            rf.liftedSourceColumns().get(0), rf.name(), rf.typeName(),
-                            effectiveNonNull && rf.nonNull(), rf.list(),
-                            rf.extraction(), outerArgName, leafPath);
+                        // unwrapped — see remoteIfReferenceJoin's discrimination note. The wrap is
+                        // applied symmetrically at both arities so that if a composite plain
+                        // @reference ever appears (Direct extraction over a terminal tuple) it
+                        // routes to a RowEq/RowIn-inner RemoteColumnPredicate without re-editing.
+                        var inner = rf.isComposite()
+                            ? compositeImplicitBodyParam(
+                                rf.liftedSourceColumns(), rf.name(),
+                                effectiveNonNull && rf.nonNull(), rf.list(),
+                                (CallSiteExtraction.NodeIdDecodeKeys) rf.extraction(), outerArgName, leafPath)
+                            : implicitBodyParam(
+                                rf.liftedSourceColumns().get(0), rf.name(), rf.typeName(),
+                                effectiveNonNull && rf.nonNull(), rf.list(),
+                                rf.extraction(), outerArgName, leafPath);
                         implicitBodyParams.add(remoteIfReferenceJoin(inner, rf.extraction(), rf.joinPath()));
                     }
                 }
@@ -2115,49 +2133,6 @@ class FieldBuilder {
                         nestOverride, effectiveNonNull && nf.nonNull(),
                         lookupBoundNames, implicitBodyParams, out, walkRejections,
                         resolvingTable, containerSummary);
-                }
-                case InputField.CompositeColumnField ccf -> {
-                    ccf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    if (!enclosingOverride
-                            && ccf.condition().isEmpty()
-                            && !lookupBoundNames.contains(ccf.name())) {
-                        implicitBodyParams.add(compositeImplicitBodyParam(
-                            ccf.columns(), ccf.name(),
-                            effectiveNonNull && ccf.nonNull(), ccf.list(),
-                            ccf.extraction(), outerArgName, leafPath));
-                    }
-                }
-                case InputField.CompositeColumnReferenceField ccrf -> {
-                    // Composite-key FK-target @nodeId + @condition is the common consumer
-                    // shape (composite NodeType keys are the norm). Same lift as the single-column
-                    // ColumnReferenceField arm: a non-empty joinPath means the developer method
-                    // expects the FK-target table X, so wrap in an FkTargetConditionFilter and the
-                    // emitter produces a correlated EXISTS whose correlation ANDs every composite-FK
-                    // slot (JoinPathEmitter.emitCorrelationWhere). Empty joinPath keeps the plain
-                    // ConditionFilter (start table == target table, so `table` is correct).
-                    ccrf.condition().ifPresent(c -> {
-                        var rewrapped = conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath);
-                        out.add(ccrf.joinPath().isEmpty()
-                            ? rewrapped
-                            : new FkTargetConditionFilter(rewrapped,
-                                ((JoinStep.HasTargetTable) ccrf.joinPath().get(ccrf.joinPath().size() - 1)).targetTable(),
-                                ccrf.joinPath(), ccrf.liftedSourceColumns(), ccrf.columns()));
-                    });
-                    if (!enclosingOverride
-                            && ccrf.condition().isEmpty()
-                            && !lookupBoundNames.contains(ccrf.name())) {
-                        // Composite reference is nodeId-only today (per record javadoc), so the
-                        // extraction is always NodeIdDecodeKeys and remoteIfReferenceJoin keeps it
-                        // local (lifted FK-child columns on the parent's own table). The wrap is
-                        // applied symmetrically with the single-column arm so that if a composite
-                        // plain @reference ever appears (Direct extraction over a terminal tuple)
-                        // it routes to a RowEq/RowIn-inner RemoteColumnPredicate without re-editing.
-                        var inner = compositeImplicitBodyParam(
-                            ccrf.liftedSourceColumns(), ccrf.name(),
-                            effectiveNonNull && ccrf.nonNull(), ccrf.list(),
-                            ccrf.extraction(), outerArgName, leafPath);
-                        implicitBodyParams.add(remoteIfReferenceJoin(inner, ccrf.extraction(), ccrf.joinPath()));
-                    }
                 }
                 case InputField.UnboundField uf -> {
                     // UnboundField is the no-column-bound carrier. Per condition-cascade
@@ -2273,8 +2248,8 @@ class FieldBuilder {
     }
 
     /**
-     * Implicit body param for composite-key inputs ({@link InputField.CompositeColumnField}
-     * or {@link InputField.CompositeColumnReferenceField}). Always pairs with a
+     * Implicit body param for composite-key inputs ({@link InputField.ColumnBackedField}
+     * or {@link InputField.ColumnBackedReferenceField}). Always pairs with a
      * {@link CallSiteExtraction.NodeIdDecodeKeys} leaf — the only multi-column extraction
      * arm. Body emission lands on {@link BodyParam.RowEq} (scalar) or
      * {@link BodyParam.RowIn} (list); the parameter type is the typed

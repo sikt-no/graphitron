@@ -91,11 +91,11 @@ class VariantCoverageTest {
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
             + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
             + "rejection sites in FieldBuilder. Add a corpus example when that lift lands."),
-        Map.entry(InputField.CompositeColumnField.class,
+        Map.entry(InputField.ColumnBackedField.class,
             "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter, "
             + "arity > 1) and the synthesized-shim composite path. Lives in NodeIdPipelineTest "
             + "because the standard sakila catalog has no composite-PK NodeType."),
-        Map.entry(InputField.CompositeColumnReferenceField.class,
+        Map.entry(InputField.ColumnBackedReferenceField.class,
             "Composite-key input reference (arity > 1 FK target). The canonical and synthesis-"
             + "shim cases land via the same buildInputNodeIdReference helper for the "
             + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "

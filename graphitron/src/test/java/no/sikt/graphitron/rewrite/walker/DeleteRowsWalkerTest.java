@@ -257,13 +257,13 @@ class DeleteRowsWalkerTest {
         return new ColumnRef(e.sqlName(), e.javaName(), e.columnClass());
     }
 
-    private static InputField.ColumnField columnField(String name, ColumnRef column) {
-        return new InputField.ColumnField("In", name, loc(), "Scalar", true, false,
-            column, Optional.empty(), new CallSiteExtraction.Direct());
+    private static InputField.ColumnBackedField columnField(String name, ColumnRef column) {
+        return new InputField.ColumnBackedField("In", name, loc(), "Scalar", true, false,
+            List.of(column), Optional.empty(), new CallSiteExtraction.Direct());
     }
 
-    private static InputField.CompositeColumnField compositeColumnField(String name, List<ColumnRef> columns) {
-        return new InputField.CompositeColumnField("In", name, loc(), "ID", true, false,
+    private static InputField.ColumnBackedField compositeColumnField(String name, List<ColumnRef> columns) {
+        return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
             columns, Optional.empty(), dummyDecode(columns));
     }
 

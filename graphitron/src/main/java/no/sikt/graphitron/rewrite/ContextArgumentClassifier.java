@@ -158,10 +158,8 @@ public final class ContextArgumentClassifier {
     private static void collectFromInputFieldCondition(GraphitronField field,
             Map<String, List<ConflictSite>> byName) {
         switch (field) {
-            case InputField.ColumnField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
-            case InputField.ColumnReferenceField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
-            case InputField.CompositeColumnField ignored -> { /* no condition slot */ }
-            case InputField.CompositeColumnReferenceField ignored -> { /* no condition slot */ }
+            case InputField.ColumnBackedField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
+            case InputField.ColumnBackedReferenceField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             case InputField.NestingField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             case InputField.UnboundField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             default -> { /* non-input fields handled by collectFromField */ }

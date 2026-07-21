@@ -12,8 +12,8 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
  * Unit tests for {@link JooqCatalog} FK-qualifier helpers used by the {@code @nodeId}
- * input-field classification ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField}
- * and {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField}).
+ * input-field classification ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
+ * and {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}).
  *
  * <p>Sakila-catalog cases ({@code DEFAULT_JOOQ_PACKAGE}) exercise {@link JooqCatalog#findUniqueFkToTable},
  * {@link JooqCatalog#buildQualifierMap}, and {@link JooqCatalog#qualifierForFk} against real FK

@@ -10,27 +10,25 @@ import java.util.Optional;
  * Classifies every field in a GraphQL input object type.
  * The sealed hierarchy mirrors the input-field taxonomy, parallel to {@link ChildField} for output fields.
  *
- * <p>{@link ColumnField}, {@link ColumnReferenceField}, and {@link NestingField} carry an optional
- * {@code condition} — an {@link ArgConditionRef} built from a {@code @condition} directive on the
- * input field definition. When present, the condition method fires as an additional WHERE predicate
- * alongside (or instead of, when {@code override: true}) the auto-generated column predicate.
+ * <p>{@link ColumnBackedField}, {@link ColumnBackedReferenceField}, and {@link NestingField} carry
+ * an optional {@code condition} — an {@link ArgConditionRef} built from a {@code @condition}
+ * directive on the input field definition. When present, the condition method fires as an
+ * additional WHERE predicate alongside (or instead of, when {@code override: true}) the
+ * auto-generated column predicate.
  */
 public sealed interface InputField extends GraphitronField
-        permits InputField.ColumnField, InputField.ColumnReferenceField,
-                InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
+        permits InputField.ColumnBackedField, InputField.ColumnBackedReferenceField,
                 InputField.NestingField, InputField.UnboundField,
                 InputField.LookupKeyField, InputField.SetField {
 
     /**
      * Carriers admissible as filter input fields on a {@code TableInputArg}. Sibling sealed root
-     * to {@link SetField}: both permit value-bearing scalar carriers ({@link ColumnField} /
-     * {@link CompositeColumnField}) and FK-target reference carriers
-     * ({@link ColumnReferenceField} / {@link CompositeColumnReferenceField}) whose
-     * {@code liftedSourceColumns} live on the input's own table. The admissible-carrier shape
-     * is "no JOIN context at the emit site" — value carriers source the column from
-     * {@link ColumnField#column()} / {@link CompositeColumnField#columns()}, reference carriers
-     * from {@link ColumnReferenceField#liftedSourceColumns()} /
-     * {@link CompositeColumnReferenceField#liftedSourceColumns()}.
+     * to {@link SetField}: both permit the value-bearing scalar carrier
+     * ({@link ColumnBackedField}) and the FK-target reference carrier
+     * ({@link ColumnBackedReferenceField}) whose {@code liftedSourceColumns} live on the input's
+     * own table. The admissible-carrier shape is "no JOIN context at the emit site" — the value
+     * carrier sources its column(s) from {@link ColumnBackedField#columns()}, the reference
+     * carrier from {@link ColumnBackedReferenceField#liftedSourceColumns()}.
      *
      * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
  * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate, each
@@ -38,23 +36,24 @@ public sealed interface InputField extends GraphitronField
      * {@code @table} input that introduces a second DML target remains compound-entity-mutation
      * territory.
      */
-    sealed interface LookupKeyField extends InputField permits ColumnField, CompositeColumnField,
-            ColumnReferenceField, CompositeColumnReferenceField {}
+    sealed interface LookupKeyField extends InputField permits ColumnBackedField,
+            ColumnBackedReferenceField {}
 
     /**
      * Carriers admissible as set-side input fields on a {@code TableInputArg} (the INSERT
      * column-list / UPDATE SET / UPSERT INSERT-arm dispatch surface). Same admitted-carrier
-     * set as {@link LookupKeyField}: value-bearing scalar carriers and FK-target reference
-     * carriers whose {@code liftedSourceColumns} live on the input's own table.
+     * set as {@link LookupKeyField}: the value-bearing scalar carrier and the FK-target
+     * reference carrier whose {@code liftedSourceColumns} live on the input's own table.
      */
-    sealed interface SetField extends InputField permits ColumnField, CompositeColumnField,
-            ColumnReferenceField, CompositeColumnReferenceField {}
+    sealed interface SetField extends InputField permits ColumnBackedField,
+            ColumnBackedReferenceField {}
 
     /**
-     * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
-     * on the type's own table.
+     * A field in a {@code @table}-annotated input type, successfully resolved to one or more SQL
+     * columns on the type's own table. Arity is a column count on this one leaf, not a leaf
+     * dimension; consumers branch on {@link #isComposite()}.
      *
-     * <p>The {@link ColumnRef} carries the jOOQ identity of the column: SQL name, Java constant
+     * <p>Each {@link ColumnRef} carries the jOOQ identity of a column: SQL name, Java constant
      * name, and Java class. The GraphQL layer ({@code typeName}, {@code nonNull}, {@code list})
      * describes the shape of the value the caller supplies.
      *
@@ -62,39 +61,68 @@ public sealed interface InputField extends GraphitronField
      * {@link GraphitronType.TableInputType} is replaced by a
      * {@link GraphitronType.UnclassifiedType}.
      *
-     * @param extraction translates the wire-format value to the column's typed Java value at
-     *     the call-site root. Restricted to {@link CallSiteExtraction.Direct} (column-equality
-     *     path) and arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys} (NodeId-encoded filter);
-     *     arity &ge; 2 NodeId tuples route to {@link CompositeColumnField} instead.
+     * @param extraction translates the wire-format value to the columns' typed Java values at
+     *     the call-site root. {@link CallSiteExtraction.Direct} (column-equality path) and the
+     *     other single-scalar shapes imply arity 1 by the constructor invariant;
+     *     {@link CallSiteExtraction.NodeIdDecodeKeys} (NodeId-encoded filter) is the only
+     *     extraction producing a multi-column tuple and is required at arity &ge; 2. The body
+     *     emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} with
+     *     {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or
+     *     {@link BodyParam.RowIn RowIn} (list filter) on the composite shape.
      */
-    record ColumnField(
+    record ColumnBackedField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String typeName,
         boolean nonNull,
         boolean list,
-        ColumnRef column,
+        List<ColumnRef> columns,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction extraction
-    ) implements InputField, LookupKeyField, SetField {}
+    ) implements InputField, LookupKeyField, SetField {
+
+        public ColumnBackedField {
+            columns = List.copyOf(columns);
+            if (columns.isEmpty()) {
+                throw new IllegalArgumentException("InputField.ColumnBackedField requires at least one column");
+            }
+            // Deferred-generalization seam, not a modeling truth: @nodeId is currently the only
+            // multi-column trigger, so a multi-column carrier always decodes a node key (and, by
+            // corollary, every single-scalar extraction is single-column). Loosen this when a
+            // plain multi-column input shape arrives instead of building on it.
+            if (columns.size() > 1 && !(extraction instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
+                throw new IllegalArgumentException(
+                    "InputField.ColumnBackedField '" + name + "' with arity " + columns.size()
+                    + " requires NodeIdDecodeKeys extraction; got " + extraction);
+            }
+        }
+        /**
+         * Arity classified once: {@code true} when this carrier spans more than one column (a
+         * composite node key). Every consumer branches on this accessor rather than re-evaluating
+         * the size predicate.
+         */
+        public boolean isComposite() { return columns.size() > 1; }
+    }
 
     /**
-     * A field in a {@code @table}-annotated input type that uses {@code @reference} to reach a
-     * column on a joined table.
+     * A field in a {@code @table}-annotated input type that uses {@code @reference} (or an
+     * FK-target {@code @nodeId(typeName: T)}) to reach one or more columns on a joined table.
+     * Arity is a column count on this one leaf, not a leaf dimension; consumers branch on
+     * {@link #isComposite()}.
      *
      * <p>{@code joinPath} is the resolved FK join path from the input type's own table to the
-     * terminal table that holds {@code column}. The path is produced by the same reference-path
+     * terminal table that holds {@code columns}. The path is produced by the same reference-path
      * parser as {@link ChildField.ColumnBackedReferenceField}.
      *
      * <p>When generating WHERE predicates against this field, the generator must JOIN through
      * {@code joinPath} before applying the column predicate.
      *
-     * @param extraction translates the wire-format value to the column's typed Java value at the
-     *     call-site root. Restricted to {@link CallSiteExtraction.Direct} (the {@code @reference}-
-     *     resolved column-equality path) and arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys}
-     *     (input-side {@code @nodeId(typeName: T)} reference); arity &ge; 2 routes to
-     *     {@link CompositeColumnReferenceField}.
+     * @param extraction translates the wire-format value to the columns' typed Java values at the
+     *     call-site root. {@link CallSiteExtraction.Direct} (the {@code @reference}-resolved
+     *     column-equality path) implies arity 1 by the constructor invariant;
+     *     {@link CallSiteExtraction.NodeIdDecodeKeys} (input-side {@code @nodeId(typeName: T)}
+     *     reference) is required at arity &ge; 2.
      * @param selfReference {@code true} when this carrier is a <em>self-FK</em> reference — a
      *     same-table {@code @nodeId @reference} whose {@code @reference} names a foreign key back to
  * the carrier's own table. The decoded keys land on the self-FK's child columns, a
@@ -105,14 +133,14 @@ public sealed interface InputField extends GraphitronField
      *     discrimination site ({@link no.sikt.graphitron.rewrite.NodeIdLeafResolver}); every non-self-FK
      *     construction site sets {@code false}.
      */
-    record ColumnReferenceField(
+    record ColumnBackedReferenceField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String typeName,
         boolean nonNull,
         boolean list,
-        ColumnRef column,
+        List<ColumnRef> columns,
         List<JoinStep> joinPath,
         List<ColumnRef> liftedSourceColumns,
         boolean selfReference,
@@ -120,85 +148,27 @@ public sealed interface InputField extends GraphitronField
         CallSiteExtraction extraction
     ) implements InputField, LookupKeyField, SetField {
 
-        public ColumnReferenceField {
-            joinPath = List.copyOf(joinPath);
-            liftedSourceColumns = List.copyOf(liftedSourceColumns);
-        }
-    }
-
-    /**
-     * Composite-key input carrier on a {@code @table}-annotated input type. Carries
-     * {@code columns} of arity &ge; 2 (arity-1 routes to {@link ColumnField} instead) plus
-     * {@code extraction} narrowed at the type level to
-     * {@link CallSiteExtraction.NodeIdDecodeKeys}, which is the only extraction shape producing
-     * a multi-column tuple (Direct, JooqConvert, EnumValueOf, ContextArg are all single-scalar
-     * leaf shapes; NestedInputField is a Map-traversal arm that hosts an inner extraction
-     * rather than producing a tuple).
-     *
-     * <p>The body emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
-     * with {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or
-     * {@link BodyParam.RowIn RowIn} (list filter).
-     */
-    record CompositeColumnField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String typeName,
-        boolean nonNull,
-        boolean list,
-        List<ColumnRef> columns,
-        Optional<ArgConditionRef> condition,
-        CallSiteExtraction.NodeIdDecodeKeys extraction
-    ) implements InputField, LookupKeyField, SetField {
-
-        public CompositeColumnField {
-            columns = List.copyOf(columns);
-            if (columns.size() < 2) {
-                throw new IllegalArgumentException(
-                    "InputField.CompositeColumnField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnField");
-            }
-        }
-    }
-
-    /**
-     * Composite-key input reference carrier on a {@code @table}-annotated input type whose
-     * {@code @nodeId(typeName: T)} target NodeType has multiple key columns. Carries
-     * {@code columns} = the target NodeType's keyColumns plus the resolved {@code joinPath}
-     * from the input's own table to the target table. {@code extraction} is narrowed to
-     * {@link CallSiteExtraction.NodeIdDecodeKeys} at the type level, same rationale as
-     * {@link CompositeColumnField}.
-     *
-     * <p>The arity-1 case lands on the single-column {@link ColumnReferenceField}.
-     *
-     * <p>{@code selfReference} carries the same self-FK fact as {@link ColumnReferenceField#selfReference()}:
-     * {@code true} for a composite same-table {@code @nodeId @reference} (e.g. {@code email}'s
-     * {@code inReplyTo}, whose {@code email_in_reply_to_fk} child columns are
-     * {@code (mailbox_id, in_reply_to_no)}), driving all-SET routing on UPDATE.
-     */
-    record CompositeColumnReferenceField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String typeName,
-        boolean nonNull,
-        boolean list,
-        List<ColumnRef> columns,
-        List<JoinStep> joinPath,
-        List<ColumnRef> liftedSourceColumns,
-        boolean selfReference,
-        Optional<ArgConditionRef> condition,
-        CallSiteExtraction.NodeIdDecodeKeys extraction
-    ) implements InputField, LookupKeyField, SetField {
-
-        public CompositeColumnReferenceField {
+        public ColumnBackedReferenceField {
             columns = List.copyOf(columns);
             joinPath = List.copyOf(joinPath);
             liftedSourceColumns = List.copyOf(liftedSourceColumns);
-            if (columns.size() < 2) {
+            if (columns.isEmpty()) {
+                throw new IllegalArgumentException("InputField.ColumnBackedReferenceField requires at least one column");
+            }
+            // Same deferred-generalization seam as ColumnBackedField: no plain multi-column
+            // input reference exists today, so a multi-column carrier always decodes a node key.
+            if (columns.size() > 1 && !(extraction instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
                 throw new IllegalArgumentException(
-                    "InputField.CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
+                    "InputField.ColumnBackedReferenceField '" + name + "' with arity " + columns.size()
+                    + " requires NodeIdDecodeKeys extraction; got " + extraction);
             }
         }
+        /**
+         * Arity classified once: {@code true} when this carrier spans more than one column (a
+         * composite node key). Every consumer branches on this accessor rather than re-evaluating
+         * the size predicate.
+         */
+        public boolean isComposite() { return columns.size() > 1; }
     }
 
     /**

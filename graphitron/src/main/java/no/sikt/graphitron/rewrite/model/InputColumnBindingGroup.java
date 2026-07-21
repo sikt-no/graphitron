@@ -9,9 +9,9 @@ import java.util.List;
  * inside a {@code TableInputArg} rather than an outer GraphQL argument.
  *
  * <p>One group per {@code @lookupKey}-bearing input field on a {@code TableInputArg}'s
- * {@link GraphitronType.TableInputType}: {@link InputField.ColumnField} (whether
+ * {@link GraphitronType.TableInputType}: {@link InputField.ColumnBackedField} (whether
  * {@link CallSiteExtraction.Direct} or {@link CallSiteExtraction.NodeIdDecodeKeys}) produces a
- * {@link MapGroup} with one {@link InputColumnBinding.MapBinding}; {@link InputField.CompositeColumnField}
+ * {@link MapGroup} with one {@link InputColumnBinding.MapBinding}; {@link InputField.ColumnBackedField}
  * produces a {@link DecodedRecordGroup} with N {@link InputColumnBinding.RecordBinding} slots
  * indexed positionally into the decoded {@code Record<N>}.
  *

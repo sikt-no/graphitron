@@ -137,7 +137,7 @@ public sealed interface ArgumentRef {
          * column reachable through {@code joinPath}. Single-key (arity-1) target NodeType; the
          * arity ≥ 2 variant is {@link CompositeColumnReferenceArg}.
          *
-         * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField}
+         * <p>Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
          * shape-for-shape on the argument side. {@code column} is the target NodeType's key
          * column; {@code joinPath} resolves the single-hop FK from the field's containing table
          * to {@code T.table()}. The body emitter pairs the carrier with
@@ -179,7 +179,7 @@ public sealed interface ArgumentRef {
 
         /**
          * FK-target {@code @nodeId(typeName: T)} scalar arg whose target NodeType has multiple
-         * key columns. Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField}
+         * key columns. Mirrors {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField}
          * shape-for-shape on the argument side. {@code columns.size()} must be ≥ 2; arity-1
          * cases route to {@link ColumnReferenceArg}.
          *

@@ -70,10 +70,10 @@ class ProjectionCoverageTest {
             "A @pivot projection slot rides the consuming leaf's PivotSpec.slots(), never "
             + "schema.fields(), so no coordinate exists for the LSP projection to render. "
             + "Mirrors VariantCoverageTest's allowlist."),
-        Map.entry(InputField.CompositeColumnField.class,
+        Map.entry(InputField.ColumnBackedField.class,
             "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId "
             + "filter). Mirrors VariantCoverageTest."),
-        Map.entry(InputField.CompositeColumnReferenceField.class,
+        Map.entry(InputField.ColumnBackedReferenceField.class,
             "Composite-key input reference; arity > 1 FK target case not exercised "
             + "in pipeline-tier fixtures yet. Mirrors VariantCoverageTest."),
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,

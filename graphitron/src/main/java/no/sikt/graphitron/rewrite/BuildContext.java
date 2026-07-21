@@ -2466,12 +2466,11 @@ class BuildContext {
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
         // ID! / [ID!] with @nodeId(typeName: T), optionally pinned by @reference(path: [{key: K}]):
-        // same-table → ColumnField / CompositeColumnField (filter by the parent's own key columns);
-        // FK-target.DirectFk → ColumnReferenceField / CompositeColumnReferenceField with joinPath;
-        // FK-target.TranslatedFk / Rejected → Unresolved. Both arities share the same resolver and
-        // the same switch shape; the only delta is the list flag baked into the carrier. The
-        // resolver also owns typeName inference for bare @nodeId, so the singular and list branches
-        // see a single sealed result rather than re-deriving the typeName independently.
+        // same-table → ColumnBackedField (filter by the parent's own key columns, arity 1..N);
+        // FK-target.DirectFk → ColumnBackedReferenceField with joinPath;
+        // FK-target.TranslatedFk / Rejected → Unresolved. The resolver also owns typeName
+        // inference for bare @nodeId, so the singular and list branches see a single sealed
+        // result rather than re-deriving the typeName independently.
         if ("ID".equals(typeName) && field.hasAppliedDirective(DIR_NODE_ID)) {
             var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable);
             return inputFieldFromNodeIdResolved(
@@ -2498,9 +2497,9 @@ class BuildContext {
                     // emitter has one slot to read for both nodeId and non-nodeId carriers.
                     // selfReference=false: the self-FK fact (the all-SET routing) is decided only
                     // at the @nodeId discrimination site; a bare @reference is not a self-FK carrier.
-                    return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
+                    return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        col, path.elements(), List.of(col), false, cond,
+                        List.of(col), path.elements(), List.of(col), false, cond,
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
                 })
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
@@ -2637,7 +2636,7 @@ class BuildContext {
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
             // @condition(override: true) on a field collapses to UnboundField regardless
             // of whether the column resolves. The column is unused by construction (the explicit
-            // condition method owns the predicate entirely), so recording it on a ColumnField is
+            // condition method owns the predicate entirely), so recording it on a ColumnBackedField is
             // dead storage. UnboundField is the canonical structural answer; the consumer's switch
             // becomes one-axis exhaustive over enclosingOverride × variant.
             if (cond.isPresent() && cond.get().override()) {
@@ -2645,9 +2644,9 @@ class BuildContext {
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     cond, columnName));
             }
-            return new InputFieldResolution.Resolved(new InputField.ColumnField(
+            return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()), cond,
+                List.of(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType())), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
         // NodeId synthesis shim: scalar ID field with no @nodeId directive whose backing table
@@ -2661,10 +2660,9 @@ class BuildContext {
                     + " without '@nodeId'; declare the directive explicitly. The synthesis shim"
                     + " will be removed in a future release.",
                     parentTypeName, name);
-                // Arity-1 lands on InputField.ColumnField with extraction =
-                // NodeIdDecodeKeys.SkipMismatchedElement; arity > 1 lands on
-                // InputField.CompositeColumnField with the same extraction (narrowed at the type
-                // level). HelperRef.Decode is resolved off the matching NodeType.
+                // Lands on InputField.ColumnBackedField (arity 1..N) with extraction =
+                // NodeIdDecodeKeys.SkipMismatchedElement. HelperRef.Decode is resolved off the
+                // matching NodeType.
                 var keyColumns = nodeIdMeta.get().keyColumns();
                 var decodeMethod = resolveDecodeHelperForTable(tableName, nodeIdMeta.get().typeId(), keyColumns);
                 if (decodeMethod == null) {
@@ -2675,12 +2673,7 @@ class BuildContext {
                 }
                 Optional<ArgConditionRef> shimCond = buildInputFieldCondition(field, name, errors);
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
-                if (keyColumns.size() == 1) {
-                    return new InputFieldResolution.Resolved(new InputField.ColumnField(
-                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        keyColumns.get(0), shimCond, extraction));
-                }
-                return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
+                return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     keyColumns, shimCond, extraction));
             }
@@ -2708,9 +2701,8 @@ class BuildContext {
      * Returns the GraphQL type name for the given SQL table name, or empty when zero or multiple
      * {@code @table}-annotated object types claim that table name (case-insensitive). Used by the
      * id-reference synthesis shim to map the FK's target table back to a GraphQL type name; the
-     * shim then builds an {@link InputField.ColumnReferenceField} or
-     * {@link InputField.CompositeColumnReferenceField} carrying the resolved type's
-     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType} key columns.
+     * shim then builds an {@link InputField.ColumnBackedReferenceField} carrying the resolved
+     * type's {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType} key columns.
      */
     private Optional<String> findGraphQLTypeForTable(String sqlTableName) {
         var candidates = findGraphQLTypesForTable(sqlTableName);
@@ -2745,12 +2737,7 @@ class BuildContext {
                 Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
                 // Authored input-field @nodeId filter throws on malformed/wrong-type ids.
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
-                if (st.keyColumns().size() == 1) {
-                    return new InputFieldResolution.Resolved(new InputField.ColumnField(
-                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        st.keyColumns().get(0), cond, extraction));
-                }
-                return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
+                return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     st.keyColumns(), cond, extraction));
             }
@@ -2758,13 +2745,7 @@ class BuildContext {
                 Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
                 // Authored input-field FK-target @nodeId filter throws on malformed/wrong-type ids.
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
-                if (direct.keyColumns().size() == 1) {
-                    return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
-                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        direct.keyColumns().get(0), direct.joinPath(),
-                        direct.liftedSourceColumns(), direct.selfReference(), cond, extraction));
-                }
-                return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
+                return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     direct.keyColumns(), direct.joinPath(),
                     direct.liftedSourceColumns(), direct.selfReference(), cond, extraction));
@@ -2785,10 +2766,9 @@ class BuildContext {
      * because the shim produces its key columns / join path / typeId from the qualifier map
      * rather than from a resolver call, so it cannot share the resolver's intake shape.
      *
-     * <p>Routes by {@code targetKeyColumns.size()}: arity-1 to a single-column
-     * {@link InputField.ColumnReferenceField} with extraction =
-     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}; arity &gt; 1
-     * to {@link InputField.CompositeColumnReferenceField} narrowed to the same extraction arm.
+     * <p>Builds an {@link InputField.ColumnBackedReferenceField} of arity
+     * {@code targetKeyColumns.size()} with extraction =
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}.
      */
     private InputFieldResolution buildInputNodeIdReference(
             String parentTypeName, String name, graphql.language.SourceLocation location,
@@ -2815,12 +2795,7 @@ class BuildContext {
         var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
         // selfReference=false: this shim resolves the id-reference qualifier-reverse-map to a
         // cross-table FK target; the self-FK case routes through the @nodeId resolver, never here.
-        if (targetKeyColumns.size() == 1) {
-            return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(parentTypeName, name, location,
-                typeName, nonNull, list, targetKeyColumns.get(0), joinPath, liftedSourceColumns, false, cond,
-                extraction));
-        }
-        return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(parentTypeName, name, location,
+        return new InputFieldResolution.Resolved(new InputField.ColumnBackedReferenceField(parentTypeName, name, location,
             typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, false, cond, extraction));
     }
 

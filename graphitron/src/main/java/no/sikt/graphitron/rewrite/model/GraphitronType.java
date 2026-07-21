@@ -421,8 +421,8 @@ public sealed interface GraphitronType
      *
      * <p>{@code table} is the resolved jOOQ table (always present — failure to resolve produces
      * {@link UnclassifiedType}). All {@code inputFields} are fully resolved {@link InputField}
-     * instances ({@link InputField.ColumnField} for fields on the type's own table,
-     * {@link InputField.ColumnReferenceField} for fields that navigate via {@code @reference});
+     * instances ({@link InputField.ColumnBackedField} for fields on the type's own table,
+     * {@link InputField.ColumnBackedReferenceField} for fields that navigate via {@code @reference});
      * any field whose column cannot be matched causes the whole type to be classified as
      * {@link UnclassifiedType}.
      */

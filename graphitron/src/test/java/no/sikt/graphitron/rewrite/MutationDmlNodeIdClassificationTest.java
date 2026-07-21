@@ -190,7 +190,7 @@ class MutationDmlNodeIdClassificationTest {
     @Test
     void compositePkNodeIdLookupKey_delete_admitted() {
         // A composite-PK @nodeId-decoded carrier admits a DELETE: the carrier classifies as
-        // InputField.CompositeColumnField, and the DeleteRowsWalker
+        // InputField.ColumnBackedField, and the DeleteRowsWalker
         // projects it to two whereColumns (id_1, id_2) sharing the SDL field name "id"; since they
         // cover the composite PK, the walker yields a DeleteRows.Identified.
         var schema = TestSchemaHelper.buildSchema("""
@@ -307,7 +307,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void compositePkNodeId_insert_rejected() {
-        // CompositeColumnField on @mutation(typeName: INSERT) is not supported (the same-table
+        // A composite @nodeId column carrier on @mutation(typeName: INSERT) is not supported (the same-table
         // carve-out). The Deferred rejection's summary stands alone.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
@@ -324,7 +324,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "createBar");
         assertThat(f.reason())
-            .contains("CompositeColumnField on @mutation(typeName: INSERT) is not supported");
+            .contains("a composite-key (multi-column) @nodeId column carrier on @mutation(typeName: INSERT) is not supported");
     }
 
     @Test
@@ -521,8 +521,8 @@ class MutationDmlNodeIdClassificationTest {
     //   }
     // is admitted across INSERT, UPDATE, DELETE. UPSERT remains refused outright.
     // The classifier produces:
-    //   arity-1 NodeType key → InputField.ColumnReferenceField (liftedSourceColumns.size() == 1)
-    //   arity ≥ 2 NodeType key → InputField.CompositeColumnReferenceField (.size() == N)
+    //   arity-1 NodeType key → InputField.ColumnBackedReferenceField (liftedSourceColumns.size() == 1)
+    //   arity ≥ 2 NodeType key → InputField.ColumnBackedReferenceField (.size() == N)
     // Validator-side walker (EnumMappingResolver.buildLookupBindings) emits MapGroup / DecodedRecordGroup
     // over liftedSourceColumns() so PK-coverage counts the reference contribution.
 
@@ -550,7 +550,7 @@ class MutationDmlNodeIdClassificationTest {
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createBar");
         var fields = f.tableInputArg().fields();
         assertThat(fields).hasSize(2);
-        var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+        var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("bazRef")).findFirst().orElseThrow();
         assertThat(ref.liftedSourceColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
             .containsExactly("id_1");
@@ -561,7 +561,7 @@ class MutationDmlNodeIdClassificationTest {
     @Test
     void fkTargetNodeIdRef_arity1_delete_admitted_pkCoverage() {
         // DELETE on `bar` with PK (id_1, id_2). The bazRef carrier contributes id_1 via
-        // liftedSourceColumns(); id_2 is contributed directly by an InputField.ColumnField.
+        // liftedSourceColumns(); id_2 is contributed directly by an InputField.ColumnBackedField.
         // Together they cover the PK, so the PK-coverage check passes. This is the load-bearing
         // assertion: previously, the validator dropped reference contributions on the floor and
         // this exact shape would have hit a false "missing PK column id_1" rejection.
@@ -690,7 +690,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createReorderedChild");
-        var ref = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+        var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             f.tableInputArg().fields().stream()
                 .filter(x -> x.name().equals("parentRef"))
                 .findFirst().orElseThrow();
@@ -813,7 +813,7 @@ class MutationDmlNodeIdClassificationTest {
         var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "insertEmailReply");
         var fields = f.tableInputArg().fields();
 
-        var selfRef = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+        var selfRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("inReplyTo")).findFirst().orElseThrow();
         assertThat(selfRef.liftedSourceColumns())
             .as("self-FK reference lifts the FK child columns on email's own table")
@@ -822,7 +822,7 @@ class MutationDmlNodeIdClassificationTest {
         assertThat(selfRef.extraction())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
 
-        var mailboxRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+        var mailboxRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("mailboxRef")).findFirst().orElseThrow();
         assertThat(mailboxRef.liftedSourceColumns())
             .as("cross-table FK reference shares the mailbox_id child column with the self-FK")

@@ -387,9 +387,9 @@ public record TenantBindingIndex(
                                             HashSet<String> seenNames) {
             for (InputField field : fields) {
                 switch (field) {
-                    case InputField.ColumnField cf -> {
-                        if (matchesTenantColumn(cf.column()) && seenNames.add(cf.name())) {
-                            slots.add(new TenantBinding.BoundSlot(cf.name(), cf.column()));
+                    case InputField.ColumnBackedField cf when !cf.isComposite() -> {
+                        if (matchesTenantColumn(cf.columns().get(0)) && seenNames.add(cf.name())) {
+                            slots.add(new TenantBinding.BoundSlot(cf.name(), cf.columns().get(0)));
                         }
                     }
                     // A nested grouping input flattens onto the same table; descend.

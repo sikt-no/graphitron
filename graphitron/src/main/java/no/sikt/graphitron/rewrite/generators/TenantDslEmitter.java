@@ -414,7 +414,7 @@ final class TenantDslEmitter {
                                                List<CodeBlock> reads) {
         for (var field : fields) {
             switch (field) {
-                case no.sikt.graphitron.rewrite.model.InputField.ColumnField cf -> {
+                case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField cf when !cf.isComposite() -> {
                     if (!slotNames.contains(cf.name())) {
                         continue;
                     }

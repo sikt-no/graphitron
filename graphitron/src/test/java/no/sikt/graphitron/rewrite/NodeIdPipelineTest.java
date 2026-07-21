@@ -316,12 +316,12 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.CompositeColumnField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
-                assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction()).decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         EXPLICIT_PERSON_ID(
@@ -332,7 +332,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.CompositeColumnField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.extraction())
@@ -350,13 +350,13 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.CompositeColumnField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
                 assertThat(f.list()).isFalse();
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
-                assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
+                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction()).decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE_SINGLE_PK(
@@ -370,9 +370,9 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("BazSelector");
-                var f = (InputField.ColumnField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
                 assertThat(f.list()).isFalse();
-                assertThat(f.column().sqlName()).isEqualTo("id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
                 var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
@@ -438,8 +438,8 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("SharedSelector");
-                var f = (InputField.ColumnField) t.inputFields().get(0);
-                assertThat(f.column().sqlName()).isEqualTo("id");
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
                 var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeSharedNode");
                 assertThat(skip.decodeMethod().methodName()).isNotEqualTo("decode10154");
@@ -478,7 +478,7 @@ class NodeIdPipelineTest {
                 // node metadata). With no @node SDL type over baz the helper takes the typeId
                 // fallback: baz's __NODE_TYPE_ID is "Baz", so decodeBaz.
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
                 var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
@@ -526,10 +526,10 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnReferenceField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedReferenceField) t.inputFields().get(0);
                 assertThat(f.typeName()).isEqualTo("ID");
                 assertThat(f.list()).isFalse();
-                assertThat(f.column().sqlName()).isEqualTo("id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
@@ -549,7 +549,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("LevelBFilter");
-                var f = (InputField.CompositeColumnReferenceField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedReferenceField) t.inputFields().get(0);
                 assertThat(f.list()).isFalse();
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("k1", "k2");
@@ -558,7 +558,7 @@ class NodeIdPipelineTest {
                     .containsExactly("k1", "k2");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
-                assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeLevelA");
+                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction()).decodeMethod().methodName()).isEqualTo("decodeLevelA");
             }),
 
         TARGET_NOT_A_NODE_TYPE(
@@ -601,9 +601,9 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnField) t.inputFields().get(0);
+                var f = (InputField.ColumnBackedField) t.inputFields().get(0);
                 assertThat(f.list()).isFalse();
-                assertThat(f.column().sqlName()).isEqualTo("name");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("name");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             });
@@ -627,8 +627,8 @@ class NodeIdPipelineTest {
 
     /**
      * Synthesis-shim cases that route the FK-qualifier hit onto
-     * {@link InputField.ColumnReferenceField} (or
-     * {@link InputField.CompositeColumnReferenceField} for composite-PK FK targets) carrying
+     * {@link InputField.ColumnBackedReferenceField} (or
+     * {@link InputField.ColumnBackedReferenceField} for composite-PK FK targets) carrying
      * {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement} plus the resolved FK
      * joinPath. All use the nodeidfixture catalog so that
      * {@code catalog.nodeIdMetadata("baz")} returns present (the shim's gate condition).
@@ -650,9 +650,9 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().get(0);
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().get(0);
                 assertThat(f.list()).isTrue();
-                assertThat(f.column().sqlName()).isEqualTo("id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
                 assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
                 assertThat(f.joinPath()).hasSize(1);
             }),
@@ -668,7 +668,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().get(0);
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().get(0);
                 assertThat(f.list()).isTrue();
                 assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
@@ -684,7 +684,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().get(0);
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().get(0);
                 assertThat(f.list()).isFalse();
                 assertThat(f.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
             }),
@@ -699,7 +699,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
-                assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.CompositeColumnField.class);
+                assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.ColumnBackedField.class);
             });
 
         final String sdl;
@@ -724,7 +724,7 @@ class NodeIdPipelineTest {
      * Semantics: filter rows whose composite primary key matches one of the decoded node IDs;
      * a primary-key IN predicate, not a FK join. The classifier short-circuits before
      * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits
-     * {@link InputField.ColumnField} (arity-1) or {@link InputField.CompositeColumnField}
+     * {@link InputField.ColumnBackedField} (arity-1) or {@link InputField.ColumnBackedField}
      * (arity &gt; 1) carrying {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}.
      */
     enum InputSameTableNodeIdCase {
@@ -740,8 +740,8 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
-                var f = (InputField.CompositeColumnField) tit.inputFields().stream()
-                    .filter(InputField.CompositeColumnField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
@@ -762,10 +762,10 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BazFilterInput");
-                var f = (InputField.ColumnField) tit.inputFields().stream()
-                    .filter(InputField.ColumnField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
-                assertThat(f.column().sqlName()).isEqualTo("id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("id");
                 assertThat(f.extraction())
                     .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
                 var skip = (CallSiteExtraction.ThrowOnMismatch) f.extraction();
@@ -797,8 +797,8 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
-                var f = (InputField.CompositeColumnField) tit.inputFields().stream()
-                    .filter(InputField.CompositeColumnField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
@@ -1495,7 +1495,7 @@ class NodeIdPipelineTest {
         MULTI_HOP_IDENTITY_CARRYING_INPUT(
             "R114: input-field `[ID!] @nodeId(typeName: LevelA) @reference(path: [..., ...])` on a "
                 + "level_c-bound input — 2-hop chain that satisfies the lift predicate. The carrier "
-                + "is InputField.CompositeColumnReferenceField with joinPath.size() == 2, the column "
+                + "is InputField.ColumnBackedReferenceField with joinPath.size() == 2, the column "
                 + "tuple = LevelA's NodeType keys (k1, k2), and liftedSourceColumns lives on the "
                 + "parent's own table (level_c.(k1, k2)). Mirror of the arg-side multi-hop case.",
             """
@@ -1514,8 +1514,8 @@ class NodeIdPipelineTest {
                 var leaf = input.inputFields().stream()
                     .filter(f -> f.name().equals("levelAIds"))
                     .findFirst().orElseThrow();
-                assertThat(leaf).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField.class);
-                var ccrf = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField) leaf;
+                assertThat(leaf).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField.class);
+                var ccrf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField) leaf;
                 assertThat(ccrf.joinPath()).hasSize(2);
                 assertThat(ccrf.columns())
                     .extracting(c -> c.sqlName())
@@ -1545,7 +1545,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var input = (GraphitronType.TableInputType) schema.type("ReorderedChildFilter");
-                var leaf = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+                var leaf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
                     input.inputFields().stream()
                         .filter(f -> f.name().equals("parentIds"))
                         .findFirst().orElseThrow();
@@ -1578,7 +1578,7 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var input = (GraphitronType.TableInputType) schema.type("ReorderedChildSingleFilter");
-                var leaf = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+                var leaf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
                     input.inputFields().stream()
                         .filter(f -> f.name().equals("parentId"))
                         .findFirst().orElseThrow();

@@ -529,21 +529,21 @@ public final class CatalogBuilder {
                     errorChannelName(f.errorChannel()));
 
             // --- InputField permits ---
-            case InputField.ColumnField f ->
-                new FieldClassification.Column(
+            // Same arity fold as the ChildField arms above: the Composite* projection variants
+            // are a kept denormalized view derived from the merged leaves' isComposite().
+            case InputField.ColumnBackedField f -> f.isComposite()
+                ? new FieldClassification.CompositeColumn(parentTableName(f, schema), columnSqlNames(f.columns()))
+                : new FieldClassification.Column(
                     parentTableName(f, schema),
-                    f.column() != null ? f.column().sqlName() : null);
-            case InputField.ColumnReferenceField f ->
-                new FieldClassification.ColumnReference(
-                    terminalTableName(f.joinPath()),
-                    f.column() != null ? f.column().sqlName() : null,
-                    fkSteps(f.joinPath()));
-            case InputField.CompositeColumnField f ->
-                new FieldClassification.CompositeColumn(parentTableName(f, schema), columnSqlNames(f.columns()));
-            case InputField.CompositeColumnReferenceField f ->
-                new FieldClassification.CompositeColumnReference(
+                    !f.columns().isEmpty() && f.columns().get(0) != null ? f.columns().get(0).sqlName() : null);
+            case InputField.ColumnBackedReferenceField f -> f.isComposite()
+                ? new FieldClassification.CompositeColumnReference(
                     terminalTableName(f.joinPath()),
                     columnSqlNames(f.columns()),
+                    fkSteps(f.joinPath()))
+                : new FieldClassification.ColumnReference(
+                    terminalTableName(f.joinPath()),
+                    !f.columns().isEmpty() && f.columns().get(0) != null ? f.columns().get(0).sqlName() : null,
                     fkSteps(f.joinPath()));
             case InputField.NestingField ignored ->
                 new FieldClassification.Nesting();

@@ -56,10 +56,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * {@code [ID!] @nodeId} leaves on {@code @table}-input arguments) and
  * {@link FieldBuilder#classifyArgument} (for top-level argument-level {@code @nodeId} leaves of
  * either arity). The resolver itself is arity-agnostic; callers wrap the result into the
- * appropriate carrier ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnField} /
- * {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField} /
- * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField} /
- * {@link no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField} on the
+ * appropriate carrier ({@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField} /
+ * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField} /
+ * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField} /
+ * {@link no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField} on the
  * input-field side; {@link ArgumentRef.ScalarArg.ColumnArg} /
  * {@link ArgumentRef.ScalarArg.CompositeColumnArg} /
  * {@link ArgumentRef.ScalarArg.ColumnReferenceArg} /

@@ -339,8 +339,8 @@ final class MutationInputResolver {
      * <ul>
      *   <li>UPSERT is refused outright (deferred).</li>
      *   <li>{@code multiRow: true} is rejected on INSERT (no WHERE clause to multiply over).</li>
-     *   <li>Per-input-field structural checks: value carriers ({@link InputField.ColumnField} /
- * {@link InputField.CompositeColumnField}) and FK-target reference carriers are
+     *   <li>Per-input-field structural checks: value carriers ({@link InputField.ColumnBackedField})
+ * and FK-target reference carriers are
      *       admitted. A non-{@code @table} {@link InputField.NestingField} grouping is admitted by
  * recursing on its leaves under the same rules; a list-typed nesting and a nested
      *       {@code @table} input (compound-entity territory) are not. {@code @lookupKey} on
@@ -532,42 +532,38 @@ final class MutationInputResolver {
      * Per-field admission for the INSERT path (UPDATE / DELETE are intercepted upstream by their
      * walkers; UPSERT is refused at the top of {@link #resolveInput}). Recurses into
  * {@link InputField.NestingField} grouping inputs: a nested leaf is admitted under the
-     * same rules as a root leaf, so a buried {@link InputField.CompositeColumnField} still trips the
-     * INSERT carve-out. A list-typed nesting or a nested group carrying {@code @condition}
-     * rejects. Returns the first inadmissible field's rejection, or {@code null}.
+     * same rules as a root leaf, so a buried composite {@link InputField.ColumnBackedField} still
+     * trips the INSERT carve-out. A list-typed nesting or a nested group carrying
+     * {@code @condition} rejects. Returns the first inadmissible field's rejection, or {@code null}.
      */
     private Resolved.Rejected admitMutationInputFields(List<InputField> fields, String typeName, DmlKind kind) {
         for (var f : fields) {
-            // ColumnField admission rule:
+            // ColumnBackedField admission rule:
             //   Direct extraction  → always admitted (canonical mutation-input shape).
-            // NodeIdDecodeKeys → admitted: single-PK NodeId-decoded column write.
-            if (f instanceof InputField.ColumnField) {
-                continue;
-            }
-            // CompositeColumnField is now admissible on every
-            // non-UPSERT verb. The INSERT carve-out stays in place (composite-PK INSERT shape is
-            // architecturally rare; lifting waits for a forcing-function schema). The carve-out fires
-            // for a nested leaf too, since the recursion reaches it.
-            if (f instanceof InputField.CompositeColumnField) {
-                if (kind == DmlKind.INSERT) {
+            //   NodeIdDecodeKeys   → admitted: NodeId-decoded column write.
+            // The INSERT carve-out is arity-gated on the carrier's own isComposite() (the
+            // composite-PK INSERT shape is architecturally rare; lifting waits for a
+            // forcing-function schema) and fires for a nested leaf too, since the recursion
+            // reaches it. Composite carriers admit on every other non-UPSERT verb.
+            if (f instanceof InputField.ColumnBackedField cbf) {
+                if (cbf.isComposite() && kind == DmlKind.INSERT) {
                     return new Resolved.Rejected(Rejection.deferred(
                         "@mutation input '" + typeName + "' field '" + f.name()
-                        + "': CompositeColumnField on @mutation(typeName: INSERT) is not"
-                        + " supported; the composite-PK INSERT shape is structurally valid"
-                        + " but architecturally rare. Route through individual @field columns"
-                        + " if you really need it."));
+                        + "': a composite-key (multi-column) @nodeId column carrier on"
+                        + " @mutation(typeName: INSERT) is not supported; the composite-PK"
+                        + " INSERT shape is structurally valid but architecturally rare."
+                        + " Route through individual @field columns if you really need it."));
                 }
                 continue;
             }
             // FK-target reference carriers ({@code @nodeId(typeName: T)} pointing at
             // another @table's NodeType, classified to DirectFk) admit on INSERT, UPDATE and
-            // DELETE. The carrier's liftedSourceColumns live on the input's own table — no JOIN
-            // at the emit site — and the extraction is narrowed to NodeIdDecodeKeys, so the
-            // emitters bind decoded keys against liftedSourceColumns positionally, the same
-            // shape the same-table NodeId carriers (ColumnField / CompositeColumnField with
-            // NodeIdDecodeKeys) already drive.
-            if (f instanceof InputField.ColumnReferenceField
-                || f instanceof InputField.CompositeColumnReferenceField) {
+            // DELETE at every arity. The carrier's liftedSourceColumns live on the input's own
+            // table — no JOIN at the emit site — and the extraction is narrowed to
+            // NodeIdDecodeKeys, so the emitters bind decoded keys against liftedSourceColumns
+            // positionally, the same shape the same-table NodeId carriers (ColumnBackedField
+            // with NodeIdDecodeKeys) already drive.
+            if (f instanceof InputField.ColumnBackedReferenceField) {
                 continue;
             }
             // UnboundField with @condition(override: true) admits on UPDATE / DELETE; the
@@ -655,7 +651,7 @@ final class MutationInputResolver {
  * recursing into {@link InputField.NestingField} grouping inputs and threading the access-path
      * prefix. Value carriers source columns from {@code column() / columns()}, FK-reference carriers from
      * {@code liftedSourceColumns()}; composite and reference carriers carry a decode by construction, a
-     * {@link InputField.ColumnField} only when its extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.
+     * {@link InputField.ColumnBackedField} only when its extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.
      */
     private void collectSetColumns(List<InputField> fields, List<String> prefix,
             List<ColumnOverlap.ColumnWriter> writers) {
@@ -669,18 +665,13 @@ final class MutationInputResolver {
             List<ColumnRef> columns;
             boolean decode;
             switch (f) {
-                case InputField.ColumnField cf -> {
-                    columns = List.of(cf.column());
+                case InputField.ColumnBackedField cf -> {
+                    columns = cf.columns();
                     decode = cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys;
                 }
-                case InputField.CompositeColumnField ccf -> { columns = ccf.columns(); decode = true; }
-                case InputField.ColumnReferenceField crf -> {
+                case InputField.ColumnBackedReferenceField crf -> {
                     columns = crf.liftedSourceColumns();
                     decode = crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys;
-                }
-                case InputField.CompositeColumnReferenceField ccrf -> {
-                    columns = ccrf.liftedSourceColumns();
-                    decode = true;
                 }
                 default -> { continue; } // UnboundField and other non-column carriers contribute nothing
             }

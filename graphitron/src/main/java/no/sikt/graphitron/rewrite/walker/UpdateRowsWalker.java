@@ -215,13 +215,9 @@ public final class UpdateRowsWalker {
     ) {
         for (var f : fields) {
             switch (f) {
-                case InputField.ColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), List.of(c.column()), wrap(c.extraction(), prefix, c.name(), outerArgName), false, c.condition(), c.location(), errors, contributions);
-                case InputField.CompositeColumnField c -> classifyColumnCarrier(
+                case InputField.ColumnBackedField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), false, c.condition(), c.location(), errors, contributions);
-                case InputField.ColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
-                case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
+                case InputField.ColumnBackedReferenceField c -> classifyColumnCarrier(
                     c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
                 case InputField.UnboundField u -> {
                     if (u.condition().isPresent() && u.condition().get().override()) {

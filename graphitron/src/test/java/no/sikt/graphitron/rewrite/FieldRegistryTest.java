@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.RootField;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,10 +20,10 @@ class FieldRegistryTest {
         return FieldCoordinates.coordinates(parent, name);
     }
 
-    private static InputField.ColumnField simpleColumnField(String parent, String name) {
-        return new InputField.ColumnField(
+    private static InputField.ColumnBackedField simpleColumnField(String parent, String name) {
+        return new InputField.ColumnBackedField(
             parent, name, null, "String", true, false,
-            new ColumnRef("col", "COL", "java.lang.String"),
+            List.of(new ColumnRef("col", "COL", "java.lang.String")),
             Optional.empty(),
             new CallSiteExtraction.Direct());
     }

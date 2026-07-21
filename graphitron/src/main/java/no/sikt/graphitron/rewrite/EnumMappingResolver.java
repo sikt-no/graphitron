@@ -248,14 +248,14 @@ final class EnumMappingResolver {
      * Each admitted carrier produces one group:
      *
      * <ul>
-     *   <li>{@link InputField.ColumnField} (whether {@link CallSiteExtraction.Direct} or
+     *   <li>{@link InputField.ColumnBackedField} (whether {@link CallSiteExtraction.Direct} or
      *       arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys}) — one
      *       {@link InputColumnBindingGroup.MapGroup} carrying one
      *       {@link InputColumnBinding.MapBinding}. The binding's extraction honors the carrier's
      *       {@code cf.extraction()} when non-{@code Direct}; otherwise it is re-derived via
      *       {@link #deriveExtraction} from the column's raw metadata (enum / map / JooqConvert
      *       fallback).</li>
-     *   <li>{@link InputField.CompositeColumnField} (arity &ge; 2 NodeId-decoded, own table) —
+     *   <li>{@link InputField.ColumnBackedField} (arity &ge; 2 NodeId-decoded, own table) —
      *       one {@link InputColumnBindingGroup.DecodedRecordGroup} carrying the per-NodeType
      *       decode helper once on {@code extraction} and N
      *       {@link InputColumnBinding.RecordBinding} slots indexed {@code 0..N-1} into the
@@ -281,15 +281,30 @@ final class EnumMappingResolver {
         for (var sdlField : iot.getFieldDefinitions()) {
             var resolved = byName.get(sdlField.getName());
             switch (resolved) {
-                case InputField.ColumnField cf -> {
+                case InputField.ColumnBackedField cf -> {
                     if (cf.list()) {
                         errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
                             + "': list-typed input field is not supported in this binding position; "
                             + "move list cardinality to the outer argument");
                         continue;
                     }
+                    // The binding-group fork is arity-gated on the carrier's own isComposite():
+                    // a composite carrier is a decoded node-key tuple (NodeIdDecodeKeys by the
+                    // constructor invariant) whose slots pair positionally with the decoded
+                    // record's value<i+1>() accessors; enum filters exist only on the
+                    // single-column shape.
+                    if (cf.isComposite()) {
+                        var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
+                        for (int i = 0; i < cf.columns().size(); i++) {
+                            recordBindings.add(new InputColumnBinding.RecordBinding(i, cf.columns().get(i)));
+                        }
+                        groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
+                            sdlField.getName(), (CallSiteExtraction.NodeIdDecodeKeys) cf.extraction(), recordBindings));
+                        continue;
+                    }
+                    var cfColumn = cf.columns().get(0);
                     String enumClassName;
-                    switch (validateEnumFilter(cf.typeName(), cf.column())) {
+                    switch (validateEnumFilter(cf.typeName(), cfColumn)) {
                         case EnumValidation.NotEnum n -> enumClassName = null;
                         case EnumValidation.Valid v -> enumClassName = v.fqcn();
                         case EnumValidation.Mismatch m -> {
@@ -299,62 +314,41 @@ final class EnumMappingResolver {
                     }
                     CallSiteExtraction extraction;
                     if (cf.extraction() instanceof CallSiteExtraction.Direct) {
-                        extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName);
+                        extraction = deriveExtraction(cf.typeName(), cfColumn, enumClassName);
                     } else {
                         extraction = cf.extraction();
                     }
                     groups.add(new InputColumnBindingGroup.MapGroup(List.of(
-                        new InputColumnBinding.MapBinding(sdlField.getName(), cf.column(), extraction))));
+                        new InputColumnBinding.MapBinding(sdlField.getName(), cfColumn, extraction))));
                 }
-                case InputField.CompositeColumnField ccf -> {
-                    if (ccf.list()) {
-                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                            + "': list-typed input field is not supported in this binding position; "
-                            + "move list cardinality to the outer argument");
-                        continue;
-                    }
-                    var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
-                    for (int i = 0; i < ccf.columns().size(); i++) {
-                        recordBindings.add(new InputColumnBinding.RecordBinding(i, ccf.columns().get(i)));
-                    }
-                    groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
-                        sdlField.getName(), ccf.extraction(), recordBindings));
-                }
-                case InputField.ColumnReferenceField crf -> {
-                    // FK-target @nodeId reference carrier, arity-1. The target column is
-                    // the lifted source column on the input's own table (i.e. the FK column),
-                    // not the joined-table column carried by crf.column(). The extraction is
-                    // narrowed to NodeIdDecodeKeys at the DirectFk arm; the resulting binding
-                    // has the same MapGroup shape an arity-1 NodeId-decoded ColumnField produces.
+                case InputField.ColumnBackedReferenceField crf -> {
+                    // FK-target @nodeId reference carrier. The target columns are the lifted
+                    // source columns on the input's own table (i.e. the FK columns; permuted
+                    // into NodeType key order by the DirectFk classifier), not the joined-table
+                    // columns carried by crf.columns(). Arity-gated on isComposite(): the
+                    // single-column shape produces the same MapGroup an arity-1 NodeId-decoded
+                    // ColumnBackedField does; the composite shape pairs slot-for-slot with the
+                    // decoded record's value<i+1>() accessors, same DecodedRecordGroup as the
+                    // same-table composite arm.
                     if (crf.list()) {
                         errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
                             + "': list-typed input field is not supported in this binding position; "
                             + "move list cardinality to the outer argument");
                         continue;
                     }
+                    if (crf.isComposite()) {
+                        var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
+                        for (int i = 0; i < crf.liftedSourceColumns().size(); i++) {
+                            recordBindings.add(new InputColumnBinding.RecordBinding(i,
+                                crf.liftedSourceColumns().get(i)));
+                        }
+                        groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
+                            sdlField.getName(), (CallSiteExtraction.NodeIdDecodeKeys) crf.extraction(), recordBindings));
+                        continue;
+                    }
                     groups.add(new InputColumnBindingGroup.MapGroup(List.of(
                         new InputColumnBinding.MapBinding(sdlField.getName(),
                             crf.liftedSourceColumns().get(0), crf.extraction()))));
-                }
-                case InputField.CompositeColumnReferenceField ccrf -> {
-                    // FK-target @nodeId reference carrier, arity >= 2. Target columns are
-                    // the lifted source columns on the input's own table (permuted into
-                    // NodeType key order by the DirectFk classifier); pairs slot-for-slot with
-                    // the decoded record's value<i+1>() accessors. Same DecodedRecordGroup
-                    // shape as the same-table CompositeColumnField arm.
-                    if (ccrf.list()) {
-                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                            + "': list-typed input field is not supported in this binding position; "
-                            + "move list cardinality to the outer argument");
-                        continue;
-                    }
-                    var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
-                    for (int i = 0; i < ccrf.liftedSourceColumns().size(); i++) {
-                        recordBindings.add(new InputColumnBinding.RecordBinding(i,
-                            ccrf.liftedSourceColumns().get(i)));
-                    }
-                    groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
-                        sdlField.getName(), ccrf.extraction(), recordBindings));
                 }
                 case InputField.NestingField ignored -> {
                     // Nesting carriers are not admissible binding shapes here; the caller's

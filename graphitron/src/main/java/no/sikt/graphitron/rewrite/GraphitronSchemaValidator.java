@@ -237,10 +237,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ErrorsField f             -> {} // structural; @error type checks already ran at classify time
-            case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
-            case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
-            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField f  -> {} // type-narrowed extraction; arity invariant enforced by record ctor
-            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField f -> validateInputCompositeColumnReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField f     -> {} // column resolution guaranteed by the builder; arity/extraction invariants enforced by the record ctor
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField f -> validateInputColumnBackedReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.UnboundField f          -> validateInputUnboundField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
@@ -444,10 +442,8 @@ public class GraphitronSchemaValidator {
                     validateInputFieldRecursive(nested, errors);
                 }
             }
-            case no.sikt.graphitron.rewrite.model.InputField.ColumnField ignored -> {}
-            case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField crf -> validateInputColumnReferenceField(crf, errors);
-            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField ignored -> {}
-            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField ccrf -> validateInputCompositeColumnReferenceField(ccrf, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField ignored -> {}
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField crf -> validateInputColumnBackedReferenceField(crf, errors);
         }
     }
 
@@ -1241,33 +1237,36 @@ public class GraphitronSchemaValidator {
     private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {
         // See validateRecordField: classifier-side routing leaves nothing for this site to do.
     }
-    private void validateInputColumnField(no.sikt.graphitron.rewrite.model.InputField.ColumnField field, List<ValidationError> errors) {
-        // Column resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
-    }
-    private static void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
+    private static void validateInputColumnBackedReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).
         // An FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
-        // join path (QueryConditionsGenerator.emitFkTargetExists), which requires every hop to be a
-        // resolved FK-derived hop. Mirror that emitter precondition here so a non-FK / unresolved hop fails
-        // at validate time with a directed message rather than as an emitter IllegalStateException.
+        // join path (QueryConditionsGenerator.emitFkTargetExists) whose correlation ANDs every
+        // composite-FK slot (JoinPathEmitter.emitCorrelationWhere walks all slots), so the rule is
+        // arity-uniform: every hop must be a resolved FK-derived hop. Mirror that emitter
+        // precondition here so a non-FK / unresolved hop fails at validate time with a directed
+        // message rather than as an emitter IllegalStateException.
         if (field.condition().isPresent() && !field.joinPath().isEmpty()
                 && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
                 Rejection.structural("Input field '" + field.qualifiedName()
-                    + "': @condition on an FK-target @nodeId field requires a foreign-key join path; "
+                    + "': @condition on " + (field.isComposite()
+                        ? "a composite-key FK-target @nodeId field"
+                        : "an FK-target @nodeId field")
+                    + " requires a foreign-key join path; "
                     + "the resolved path contains a non-foreign-key hop, which is not supported"),
                 field.location()
             ));
         }
-        // A plain @reference (Direct extraction) implicit-predicate field whose terminal
-        // column lives on a joined table emits a correlated EXISTS over the path
-        // (TypeConditionsGenerator.emitRemoteExists), which requires every hop to be a resolved
-        // FK-derived. Mirror that emitter precondition so a non-FK / condition-join hop fails at validate
-        // time with a directed message rather than as an emitter IllegalStateException. (Today the
-        // builder cannot resolve a terminal column through a non-FK hop, so this is a defensive
-        // mirror against future path-resolution changes; the v1 deferral of condition-join reference
-        // filters is the same posture FkTargetConditionEmitter takes.)
+        // A plain @reference (Direct extraction, single-column by the record's constructor
+        // invariant) implicit-predicate field whose terminal column lives on a joined table emits
+        // a correlated EXISTS over the path (TypeConditionsGenerator.emitRemoteExists), which
+        // requires every hop to be a resolved FK-derived. Mirror that emitter precondition so a
+        // non-FK / condition-join hop fails at validate time with a directed message rather than
+        // as an emitter IllegalStateException. (Today the builder cannot resolve a terminal
+        // column through a non-FK hop, so this is a defensive mirror against future
+        // path-resolution changes; the v1 deferral of condition-join reference filters is the
+        // same posture FkTargetConditionEmitter takes.)
         if (field.condition().isEmpty()
                 && field.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct
                 && !field.joinPath().isEmpty()
@@ -1278,28 +1277,6 @@ public class GraphitronSchemaValidator {
                     + "': @reference filter path traverses a condition-join (non-foreign-key) hop, "
                     + "which is not yet supported; reference filters emit a foreign-key correlated "
                     + "subquery and require every hop to resolve to a foreign key"),
-                field.location()
-            ));
-        }
-    }
-
-    /**
- * A composite-key FK-target {@code @nodeId} field carrying a {@code @condition} emits a
-     * correlated EXISTS whose correlation ANDs every composite-FK slot (the same
-     * {@code QueryConditionsGenerator}/{@code FkTargetConditionEmitter} path as the single-column
-     * case, since {@link no.sikt.graphitron.rewrite.generators.JoinPathEmitter#emitCorrelationWhere}
-     * already walks all slots). That requires every hop to be FK-derived; mirror the emitter
-     * precondition here so a non-Fk / unresolved hop fails at validate time with a directed message
-     * rather than as an emitter IllegalStateException.
-     */
-    private static void validateInputCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField field, List<ValidationError> errors) {
-        if (field.condition().isPresent() && !field.joinPath().isEmpty()
-                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-                Rejection.structural("Input field '" + field.qualifiedName()
-                    + "': @condition on a composite-key FK-target @nodeId field requires a foreign-key join path; "
-                    + "the resolved path contains a non-foreign-key hop, which is not supported"),
                 field.location()
             ));
         }

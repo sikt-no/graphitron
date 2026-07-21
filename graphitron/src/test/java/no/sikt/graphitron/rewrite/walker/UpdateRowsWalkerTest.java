@@ -345,38 +345,38 @@ class UpdateRowsWalkerTest {
         return new ColumnRef(e.sqlName(), e.javaName(), e.columnClass());
     }
 
-    private static InputField.ColumnField columnField(String name, ColumnRef column) {
-        return new InputField.ColumnField("In", name, loc(), "Scalar", true, false,
-            column, Optional.empty(), new CallSiteExtraction.Direct());
+    private static InputField.ColumnBackedField columnField(String name, ColumnRef column) {
+        return new InputField.ColumnBackedField("In", name, loc(), "Scalar", true, false,
+            List.of(column), Optional.empty(), new CallSiteExtraction.Direct());
     }
 
     // A single-column @nodeId-decode carrier: a ColumnField whose value is only knowable at runtime, so an
     // overlap involving it is decode-involving (admitted, deferred to agreement) rather than a plain collision.
-    private static InputField.ColumnField decodeColumnField(String name, ColumnRef column) {
-        return new InputField.ColumnField("In", name, loc(), "ID", true, false,
-            column, Optional.empty(), dummyDecode(List.of(column)));
+    private static InputField.ColumnBackedField decodeColumnField(String name, ColumnRef column) {
+        return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
+            List.of(column), Optional.empty(), dummyDecode(List.of(column)));
     }
 
-    private static InputField.CompositeColumnField compositeColumnField(String name, List<ColumnRef> columns) {
-        return new InputField.CompositeColumnField("In", name, loc(), "ID", true, false,
+    private static InputField.ColumnBackedField compositeColumnField(String name, List<ColumnRef> columns) {
+        return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
             columns, Optional.empty(), dummyDecode(columns));
     }
 
-    private static InputField.ColumnReferenceField columnReferenceField(String name, List<ColumnRef> lifted) {
+    private static InputField.ColumnBackedReferenceField columnReferenceField(String name, List<ColumnRef> lifted) {
         // Cross-table FK reference (selfReference = false): partitions by key membership.
-        return new InputField.ColumnReferenceField("In", name, loc(), "ID", true, false,
-            lifted.getFirst(), List.of(), lifted, false, Optional.empty(), new CallSiteExtraction.Direct());
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
+            List.of(lifted.getFirst()), List.of(), lifted, false, Optional.empty(), new CallSiteExtraction.Direct());
     }
 
-    private static InputField.CompositeColumnReferenceField compositeReferenceField(String name, List<ColumnRef> lifted) {
+    private static InputField.ColumnBackedReferenceField compositeReferenceField(String name, List<ColumnRef> lifted) {
         // Cross-table FK reference (selfReference = false): a genuine straddle still rejects.
-        return new InputField.CompositeColumnReferenceField("In", name, loc(), "ID", true, false,
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
             lifted, List.of(), lifted, false, Optional.empty(), dummyDecode(lifted));
     }
 
-    private static InputField.CompositeColumnReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {
+    private static InputField.ColumnBackedReferenceField selfReferenceField(String name, List<ColumnRef> lifted) {
         // Self-FK reference (selfReference = true): routes all lifted columns to SET.
-        return new InputField.CompositeColumnReferenceField("In", name, loc(), "ID", true, false,
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
             lifted, List.of(), lifted, true, Optional.empty(), dummyDecode(lifted));
     }
 

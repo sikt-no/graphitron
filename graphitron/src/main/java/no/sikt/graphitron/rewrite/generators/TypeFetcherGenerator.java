@@ -358,10 +358,8 @@ public class TypeFetcherGenerator {
      */
     public static final Set<Class<? extends GraphitronField>> NOT_DISPATCHED_LEAVES = Set.of(
         GraphitronField.UnclassifiedField.class,
-        InputField.ColumnField.class,
-        InputField.ColumnReferenceField.class,
-        InputField.CompositeColumnField.class,
-        InputField.CompositeColumnReferenceField.class,
+        InputField.ColumnBackedField.class,
+        InputField.ColumnBackedReferenceField.class,
         InputField.NestingField.class,
         InputField.UnboundField.class);
 
@@ -2659,7 +2657,7 @@ public class TypeFetcherGenerator {
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...)
      * .returningResult(<keys or $fields>).fetchOne(...)}.
      *
-     * <p>Column list is every {@code InputField.ColumnField} in {@code tia.fields()} in
+     * <p>Column list is every {@code InputField.ColumnBackedField} in {@code tia.fields()} in
      * declaration order; values list is parallel, with each value bound via
      * {@code DSL.val(in.get("name"), Tables.T.COL.getDataType())} (the two-argument form
      * delegates coercion to the column's registered jOOQ {@code Converter}). {@code @lookupKey}
@@ -2715,22 +2713,18 @@ public class TypeFetcherGenerator {
 
     /**
      * True iff any field on {@code fields} bears a {@link CallSiteExtraction.NodeIdDecodeKeys}
-     * carrier: a {@link InputField.ColumnField} with NodeId extraction, a
-     * {@link InputField.CompositeColumnField}, or either of the FK-target reference carriers
-     * ({@link InputField.ColumnReferenceField} with NodeId extraction,
-     * {@link InputField.CompositeColumnReferenceField}). Drives the bulk-INSERT / bulk-UPSERT
-     * lambda shape choice (single-expression vs block-with-decode-locals).
+     * carrier: a {@link InputField.ColumnBackedField} or {@link InputField.ColumnBackedReferenceField}
+     * with NodeId extraction (which every composite instance carries by construction). Drives the
+     * bulk-INSERT / bulk-UPSERT lambda shape choice (single-expression vs block-with-decode-locals).
      */
     private static boolean anyNodeIdCarrier(List<InputField> fields) {
         // Descend nested grouping inputs; a NodeId leaf anywhere drives the block-lambda shape.
         for (var leaf : flattenInsertLeaves(fields, List.of())) {
             var f = leaf.field();
-            if (f instanceof InputField.ColumnField cf
+            if (f instanceof InputField.ColumnBackedField cf
                 && cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
-            if (f instanceof InputField.CompositeColumnField) return true;
-            if (f instanceof InputField.ColumnReferenceField crf
+            if (f instanceof InputField.ColumnBackedReferenceField crf
                 && crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
-            if (f instanceof InputField.CompositeColumnReferenceField) return true;
         }
         return false;
     }
@@ -2742,16 +2736,15 @@ public class TypeFetcherGenerator {
      * (including explicit null) → {@code DSL.val(map.get("name"), dataType)} (typed bind).
      * Comma-separated, newline-terminated per cell so the formatted output is readable.
      *
- * <p>Dispatches on carrier identity:
+ * <p>Dispatches on carrier identity and extraction:
      * <ul>
-     *   <li>{@link InputField.ColumnField} with {@link CallSiteExtraction.Direct} (or non-NodeId
-     *       extraction) — one cell, value read directly from {@code mapLocal.get(name)}.</li>
-     *   <li>{@link InputField.ColumnField} with {@link CallSiteExtraction.NodeIdDecodeKeys} —
-     *       one cell, value read from the per-record decode local
-     *       ({@code insertKey_<fi>.value1()}). Caller must declare the decode local; see
-     *       {@link #buildInsertDecodeLocals}.</li>
-     *   <li>{@link InputField.CompositeColumnField} — N cells, values read from
-     *       {@code insertKey_<fi>.value1()..value<N>()}.</li>
+     *   <li>{@link InputField.ColumnBackedField} with {@link CallSiteExtraction.Direct} (or
+     *       non-NodeId extraction) — one cell, value read directly from
+     *       {@code mapLocal.get(name)}.</li>
+     *   <li>{@link InputField.ColumnBackedField} with {@link CallSiteExtraction.NodeIdDecodeKeys}
+     *       — N cells (one per column, a single cell at arity 1), values read from the
+     *       per-record decode local ({@code insertKey_<fi>.value1()..value<N>()}). Caller must
+     *       declare the decode local; see {@link #buildInsertDecodeLocals}.</li>
      * </ul>
      */
     private static CodeBlock buildPerCellValueList(
@@ -2778,62 +2771,41 @@ public class TypeFetcherGenerator {
             var path = leaves.get(fi).path();
             var presence = nestedContainsKeyExpr(mapLocal, path, "ic" + fi);
             switch (f) {
-                case InputField.ColumnField cf -> {
-                    if (!first) b.add(",\n");
-                    first = false;
+                case InputField.ColumnBackedField cf -> {
                     if (cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                        // NodeId-decoded write: one cell per column reading the decode local's
+                        // positional accessors — an arity-uniform loop, value1() alone at arity 1.
                         String recLocal = localPrefix + "_" + fi;
-                        b.add("$L ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                            presence,
-                            DSL, recLocal,
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                            DSL,
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+                        for (int ci = 0; ci < cf.columns().size(); ci++) {
+                            var col = cf.columns().get(ci);
+                            if (!first) b.add(",\n");
+                            first = false;
+                            b.add("$L ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                                presence,
+                                DSL, recLocal, ci + 1,
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                                DSL,
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                        }
                     } else {
+                        // Direct implies arity 1 (the carrier's constructor invariant).
+                        if (!first) b.add(",\n");
+                        first = false;
                         b.add("$L ? $T.val($L, $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
                             presence,
                             DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.columns().get(0).javaName(),
                             DSL,
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.columns().get(0).javaName());
                     }
                 }
-                case InputField.CompositeColumnField ccf -> {
+                case InputField.ColumnBackedReferenceField crf -> {
+                    // FK-target reference; same per-slot shape as the NodeId-decoded value
+                    // carrier, but walks liftedSourceColumns() (input's own FK columns, permuted
+                    // into NodeType key order) instead of columns().
                     String recLocal = localPrefix + "_" + fi;
-                    for (int ci = 0; ci < ccf.columns().size(); ci++) {
-                        var col = ccf.columns().get(ci);
-                        if (!first) b.add(",\n");
-                        first = false;
-                        b.add("$L ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                            presence,
-                            DSL, recLocal, ci + 1,
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                            DSL,
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                    }
-                }
-                case InputField.ColumnReferenceField crf -> {
-                    // FK-target arity-1 reference; same single-cell shape as a NodeId-
-                    // decoded ColumnField, but writes the lifted FK column on the input's own
-                    // table from the decoded record's value1() accessor.
-                    if (!first) b.add(",\n");
-                    first = false;
-                    String recLocal = localPrefix + "_" + fi;
-                    var col = crf.liftedSourceColumns().get(0);
-                    b.add("$L ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                        presence,
-                        DSL, recLocal,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                        DSL,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                }
-                case InputField.CompositeColumnReferenceField ccrf -> {
-                    // FK-target arity >= 2 reference; same per-slot shape as
-                    // CompositeColumnField, but walks liftedSourceColumns() (input's own
-                    // FK columns, permuted into NodeType key order) instead of columns().
-                    String recLocal = localPrefix + "_" + fi;
-                    for (int ci = 0; ci < ccrf.liftedSourceColumns().size(); ci++) {
-                        var col = ccrf.liftedSourceColumns().get(ci);
+                    for (int ci = 0; ci < crf.liftedSourceColumns().size(); ci++) {
+                        var col = crf.liftedSourceColumns().get(ci);
                         if (!first) b.add(",\n");
                         first = false;
                         b.add("$L ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
@@ -2854,8 +2826,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Builds the INSERT column list by walking {@code tia.fields()} and dispatching on carrier:
-     * {@link InputField.ColumnField} contributes one column ref; {@link InputField.CompositeColumnField}
-     * contributes N column refs (one per {@code columns()} slot, in declaration order).
+     * {@link InputField.ColumnBackedField} contributes one column ref per {@code columns()} slot
+     * (in declaration order); the reference carrier contributes its lifted FK columns.
      */
     private static CodeBlock buildInsertColumnList(
             List<InputField> fields,
@@ -2873,29 +2845,16 @@ public class TypeFetcherGenerator {
         for (var leaf : flattenInsertLeaves(fields, List.of())) {
             var f = leaf.field();
             switch (f) {
-                case InputField.ColumnField cf -> {
-                    if (!first) b.add(", ");
-                    first = false;
-                    b.add("$T.$L.$L",
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-                }
-                case InputField.CompositeColumnField ccf -> {
-                    for (var col : ccf.columns()) {
+                case InputField.ColumnBackedField cf -> {
+                    for (var col : cf.columns()) {
                         if (!first) b.add(", ");
                         first = false;
                         b.add("$T.$L.$L",
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                     }
                 }
-                case InputField.ColumnReferenceField crf -> {
-                    if (!first) b.add(", ");
-                    first = false;
-                    b.add("$T.$L.$L",
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(),
-                        crf.liftedSourceColumns().get(0).javaName());
-                }
-                case InputField.CompositeColumnReferenceField ccrf -> {
-                    for (var col : ccrf.liftedSourceColumns()) {
+                case InputField.ColumnBackedReferenceField crf -> {
+                    for (var col : crf.liftedSourceColumns()) {
                         if (!first) b.add(", ");
                         first = false;
                         b.add("$T.$L.$L",
@@ -2969,8 +2928,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Builds the per-record NodeId decode locals for an INSERT/UPSERT INSERT-arm. For each
-     * NodeId-bearing carrier ({@link InputField.ColumnField} with
-     * {@link CallSiteExtraction.NodeIdDecodeKeys}, {@link InputField.CompositeColumnField}),
+     * NodeId-bearing carrier ({@link InputField.ColumnBackedField} /
+     * {@link InputField.ColumnBackedReferenceField} with {@link CallSiteExtraction.NodeIdDecodeKeys}),
      * emits one {@code Record<N> insertKey_<fi> = ...} local reading from {@code mapLocal}.
      * Locals are conditional on the source key's presence so an absent key (DEFAULT-resolved
      * cell) does not force a decode; null returns on a present key throw
@@ -2990,10 +2949,8 @@ public class TypeFetcherGenerator {
             var f = leaves.get(fi).field();
             var path = leaves.get(fi).path();
             CallSiteExtraction.NodeIdDecodeKeys nidk = switch (f) {
-                case InputField.ColumnField cf when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
-                case InputField.CompositeColumnField ccf -> ccf.extraction();
-                case InputField.ColumnReferenceField crf when crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
-                case InputField.CompositeColumnReferenceField ccrf -> ccrf.extraction();
+                case InputField.ColumnBackedField cf when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
+                case InputField.ColumnBackedReferenceField crf when crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
                 default -> null;
             };
             if (nidk == null) continue;
@@ -3117,15 +3074,13 @@ public class TypeFetcherGenerator {
 
     /**
  * Target columns a {@code SetField} carrier writes to on the input's own table. The
-     * walk is uniform across all four admissible SetField shapes: value carriers source from
-     * {@code column() / columns()}, reference carriers from {@code liftedSourceColumns()}.
+     * walk is uniform across both admissible SetField shapes: the value carrier sources from
+     * {@code columns()}, the reference carrier from {@code liftedSourceColumns()}.
      */
     private static List<no.sikt.graphitron.rewrite.model.ColumnRef> setFieldColumns(InputField.SetField sf) {
         return switch (sf) {
-            case InputField.ColumnField cf -> List.of(cf.column());
-            case InputField.CompositeColumnField ccf -> ccf.columns();
-            case InputField.ColumnReferenceField crf -> crf.liftedSourceColumns();
-            case InputField.CompositeColumnReferenceField ccrf -> ccrf.liftedSourceColumns();
+            case InputField.ColumnBackedField cf -> cf.columns();
+            case InputField.ColumnBackedReferenceField crf -> crf.liftedSourceColumns();
         };
     }
 
@@ -3137,12 +3092,10 @@ public class TypeFetcherGenerator {
      */
     private static CallSiteExtraction.NodeIdDecodeKeys setFieldNodeIdExtraction(InputField.SetField sf) {
         return switch (sf) {
-            case InputField.ColumnField cf
+            case InputField.ColumnBackedField cf
                 when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
-            case InputField.CompositeColumnField ccf -> ccf.extraction();
-            case InputField.ColumnReferenceField crf
+            case InputField.ColumnBackedReferenceField crf
                 when crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
-            case InputField.CompositeColumnReferenceField ccrf -> ccrf.extraction();
             default -> null;
         };
     }
@@ -4224,7 +4177,7 @@ public class TypeFetcherGenerator {
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...).onConflict(<keys>)
      * .doUpdate().set(col, val)... .returningResult(<keys or $fields>).fetchOne(...)}.
      *
-     * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnField} in
+     * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnBackedField} in
      * declaration order, {@code @lookupKey} fields included so the user-supplied PK lands on the
      * insert branch). Conflict keys come from {@code tia.fieldBindings()}. Conflict action: when
      * {@code tia.setFields()} is non-empty, emit {@code .doUpdate().set(...)} over those fields;

@@ -285,12 +285,12 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("Input");
                 assertThat(it.table().tableName()).isEqualToIgnoringCase("customer");
-                var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) it.inputFields().get(0);
+                var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField) it.inputFields().get(0);
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 var fk = TestFixtures.fkHop(ref.joinPath().get(0));
                 assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("address");
-                assertThat(ref.column().javaName()).isEqualTo("DISTRICT");
+                assertThat(ref.columns().get(0).javaName()).isEqualTo("DISTRICT");
             }),
 
         CONDITION_PATH(
@@ -4103,7 +4103,7 @@ class GraphitronSchemaBuilderTest {
                 + "`id: ID! @nodeId` @table input arg → admitted via the extraction-propagation "
                 + "path. R144 retires @lookupKey on the input field; the arg-level @lookupKey "
                 + "drives the lookup-binding walk over every admissible input field. The carrier "
-                + "classifies as InputField.ColumnField with NodeIdDecodeKeys extraction; "
+                + "classifies as InputField.ColumnBackedField with NodeIdDecodeKeys extraction; "
                 + "buildLookupBindings reads cf.extraction() directly so the resolver-supplied "
                 + "decode method survives the binding-build (R130 fix at source). The MapGroup "
                 + "carries one MapBinding whose extraction is the carrier's NodeIdDecodeKeys.",
@@ -5173,7 +5173,7 @@ class GraphitronSchemaBuilderTest {
      *
      * <p>Pre-fix the consumer arm silently dropped the inner {@code @condition(override: false)}
      * when the cascade resolved the outer override; the fix mirrors the {@link
-     * no.sikt.graphitron.rewrite.model.InputField.ColumnField} arm structure by emitting the
+     * no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField} arm structure by emitting the
      * explicit {@code @condition} unconditionally and deciding rejection separately.
      *
      * <p>Note (pending: a validator walk over {@code PlainInputArg.fields()} for UnboundField rejection): the
@@ -5246,12 +5246,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(it.table()).isInstanceOf(no.sikt.graphitron.rewrite.model.TableRef.class);
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.inputFields()).hasSize(1);
-                assertThat(it.inputFields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnField.class);
-                var f = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) it.inputFields().get(0);
+                assertThat(it.inputFields().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField.class);
+                var f = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField) it.inputFields().get(0);
                 assertThat(f.name()).isEqualTo("customerId");
-                assertThat(f.column().javaName()).isEqualTo("CUSTOMER_ID");
+                assertThat(f.columns().get(0).javaName()).isEqualTo("CUSTOMER_ID");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(TableInputType.class, InputField.ColumnField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(TableInputType.class, InputField.ColumnBackedField.class); }
         },
 
         EXPLICIT_TABLE_UNRESOLVED_COLUMN(
@@ -5293,7 +5293,7 @@ class GraphitronSchemaBuilderTest {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
                 assertThat(it.table().tableName()).isEqualTo("customer");
                 assertThat(it.inputFields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnField.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField.class);
             }),
 
         IMPLICIT_TABLE_CONFLICT(
@@ -5323,15 +5323,15 @@ class GraphitronSchemaBuilderTest {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
                 assertThat(it.inputFields()).hasSize(2);
                 var refField = it.inputFields().stream()
-                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
                     .findFirst().orElseThrow();
-                var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) refField;
+                var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField) refField;
                 assertThat(crf.name()).isEqualTo("languageName");
                 assertThat(crf.joinPath()).hasSize(1);
                 assertThat(crf.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
-                assertThat(crf.column().javaName()).isEqualTo("NAME");
+                assertThat(crf.columns().get(0).javaName()).isEqualTo("NAME");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
         },
 
         COLUMN_REFERENCE_FIELD_UNKNOWN_FK(
@@ -5366,8 +5366,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(nf.typeName()).isEqualTo("TitleInput");
                 assertThat(nf.nonNull()).isTrue();
                 assertThat(nf.fields()).hasSize(1);
-                var inner = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) nf.fields().get(0);
-                assertThat(inner.column().javaName()).isEqualTo("TITLE");
+                var inner = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField) nf.fields().get(0);
+                assertThat(inner.columns().get(0).javaName()).isEqualTo("TITLE");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(InputField.NestingField.class); }
         },
@@ -5443,11 +5443,11 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (TableInputType) schema.type("FilmInput");
-                var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) it.inputFields().get(0);
+                var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField) it.inputFields().get(0);
                 assertThat(cf.condition()).isPresent();
                 assertThat(cf.condition().get().filter().methodName()).isEqualTo("inputColumnCondition");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedField.class); }
         },
 
         COLUMN_REFERENCE_FIELD_WITH_CONDITION(
@@ -5462,13 +5462,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var it = (TableInputType) schema.type("FilmInput");
-                var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) it.inputFields().stream()
-                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+                var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField) it.inputFields().stream()
+                    .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
                     .findFirst().orElseThrow();
                 assertThat(crf.condition()).isPresent();
                 assertThat(crf.condition().get().filter().methodName()).isEqualTo("inputRefCondition");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
         },
 
         NESTING_FIELD_WITH_CONDITION(
@@ -5549,15 +5549,15 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("InventoryFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.list()).isTrue();
-                assertThat(f.column().sqlName()).isEqualTo("film_id");
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("film_id");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(f.joinPath()).hasSize(1);
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnBackedReferenceField.class); }
         },
 
         ID_REFERENCE_NODEID_EXPLICIT(
@@ -5573,9 +5573,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("FilmFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.column().sqlName()).isEqualTo("language_id");
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("language_id");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(f.joinPath()).hasSize(1);
@@ -5630,9 +5630,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("InventoryFilterInput");
-                var f = (InputField.ColumnReferenceField) tit.inputFields().stream()
-                    .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
-                assertThat(f.column().sqlName()).isEqualTo("film_id");
+                var f = (InputField.ColumnBackedReferenceField) tit.inputFields().stream()
+                    .filter(InputField.ColumnBackedReferenceField.class::isInstance).findFirst().orElseThrow();
+                assertThat(f.columns().get(0).sqlName()).isEqualTo("film_id");
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             });
@@ -5656,7 +5656,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor({
         TableInputType.class,
-        InputField.ColumnField.class, InputField.ColumnReferenceField.class
+        InputField.ColumnBackedField.class, InputField.ColumnBackedReferenceField.class
     })
     void tableInputTypeAndColumnInputFieldsProjectionCarryShapes() {
         // TableInputType → TypeClassification.TableInput(tableName). Input fields
@@ -8772,8 +8772,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.tableInputArg().fields()).singleElement()
                     .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.InputField.NestingField.class,
                         nf -> assertThat(nf.fields()).singleElement().satisfies(leaf -> {
-                            var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) leaf;
-                            assertThat(cf.column().sqlName()).isEqualTo("title");
+                            var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField) leaf;
+                            assertThat(cf.columns().get(0).sqlName()).isEqualTo("title");
                         }));
                 // A NestingField is not a LookupKeyField, so the top-level carrier filter is empty;
                 // the nested wire access path lives on the walker carriers (UPDATE/DELETE) and is
