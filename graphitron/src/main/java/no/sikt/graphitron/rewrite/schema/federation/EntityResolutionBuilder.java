@@ -288,14 +288,14 @@ public final class EntityResolutionBuilder {
                     + typeName + "' references field '" + name
                     + "' which is not a column-backed field on this type's table");
             }
-            // A @key whose referenced field is itself an @nodeId-encoded reference
-            // carrier (a ColumnReferenceField wrapping its column in NodeIdEncodeKeys) cannot resolve
+            // A @key whose referenced field is itself an @nodeId-encoded reference carrier
+            // (a ColumnBackedReferenceField wrapping its column in NodeIdEncodeKeys) cannot resolve
             // through the DIRECT _entities path: that path binds the rep's field value verbatim, but
             // the rep carries a base64-encoded global id, so the encoded id is bound undecoded into
             // the VALUES table — a never-matches predicate or a SQL bind/type error at runtime. Reject
             // fatally (not the non-fatal compound-id warning below, which covers the distinct
             // own-column 'id' carrier). Decode-into-rep is a possible follow-on; rejection first.
-            if (field instanceof ChildField.ColumnReferenceField cref
+            if (field instanceof ChildField.ColumnBackedReferenceField cref
                 && cref.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new AltResult.Fatal(ValidationError.forType(typeName, Rejection.invalidSchema(
                     "@key(fields: \"" + fieldsValue + "\") on type '" + typeName + "' references field '"
@@ -344,8 +344,10 @@ public final class EntityResolutionBuilder {
 
     private static ColumnRef columnOf(GraphitronField field) {
         if (field == null) return null;
-        if (field instanceof ChildField.ColumnField cf) return cf.column();
-        if (field instanceof ChildField.ColumnReferenceField cref) return cref.column();
+        // Composite (multi-column) carriers stay null: a rep field binds one column value, so a
+        // composite node-key carrier is "not a column-backed field" for the DIRECT path.
+        if (field instanceof ChildField.ColumnBackedField cf && !cf.isComposite()) return cf.columns().get(0);
+        if (field instanceof ChildField.ColumnBackedReferenceField cref && !cref.isComposite()) return cref.columns().get(0);
         return null;
     }
 }

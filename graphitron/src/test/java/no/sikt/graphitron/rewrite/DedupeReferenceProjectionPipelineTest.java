@@ -57,16 +57,16 @@ class DedupeReferenceProjectionPipelineTest {
             .findFirst().orElseThrow();
 
         assertThat(idField)
-            .as("composite-key @nodeId surfaces as CompositeColumnField")
-            .isInstanceOf(ChildField.CompositeColumnField.class);
-        assertThat(((ChildField.CompositeColumnField) idField).columns())
+            .as("composite-key @nodeId surfaces as a composite ColumnBackedField")
+            .isInstanceOf(ChildField.ColumnBackedField.class);
+        assertThat(((ChildField.ColumnBackedField) idField).columns())
             .extracting(ColumnRef::sqlName)
             .containsExactly("id_1", "id_2");
 
         assertThat(overlapField)
-            .as("sibling @field on a key column surfaces as ColumnField on the same column")
-            .isInstanceOf(ChildField.ColumnField.class);
-        assertThat(((ChildField.ColumnField) overlapField).column().sqlName())
+            .as("sibling @field on a key column surfaces as ColumnBackedField on the same column")
+            .isInstanceOf(ChildField.ColumnBackedField.class);
+        assertThat(((ChildField.ColumnBackedField) overlapField).columns().get(0).sqlName())
             .isEqualTo("id_1");
     }
 

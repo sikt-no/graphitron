@@ -213,11 +213,9 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkUpdatePayloadField f -> {} // Bulk sibling of MutationUpdatePayloadField; same structural pinning, same classifier + walker admission-time checks
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField f   -> {} // Narrow ResultReturnType + non-Optional InputArgRef / DeleteRows slots pin the structural shape; admission-time checks (PK-or-UK coverage, table-equality, DELETE-specific reclassify) live in the @mutation classifier (classifyDeletePayloadField) and the DeleteRowsWalker
             case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField f -> {} // Bulk sibling of MutationDeletePayloadField; same structural pinning, same classifier + walker admission-time checks
-            case no.sikt.graphitron.rewrite.model.ChildField.ColumnField f             -> validateColumnField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField f    -> validateColumnReferenceField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField f       -> validateColumnBackedField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField f -> validateColumnBackedReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField f -> {} // structural; the interface fetcher's LEFT JOIN materialises and aliases the value
-            case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField f    -> validateCompositeColumnField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField f -> validateCompositeColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableField f              -> validateTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField f      -> validateBatchedTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
@@ -745,7 +743,7 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
     }
-    private void validateColumnField(no.sikt.graphitron.rewrite.model.ChildField.ColumnField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+    private void validateColumnBackedField(no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (!(types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType)) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
@@ -753,33 +751,9 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-    }
-    private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
-        if (field.joinPath().isEmpty()) {
-            errors.add(new ValidationError(
-                field.qualifiedName(),
-            Rejection.structural("Field '" + field.qualifiedName() + "': @reference path is required"),
-                field.location()
-            ));
-            return;
-        }
-        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-        // Two shapes are recognised structurally but not yet emitted; surface as build-time
-        // deferred rejections rather than runtime stubs (Validator mirrors classifier invariants).
-        if (field.compaction() instanceof no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys) {
-            emitDeferredError(field,
-                (Rejection.Deferred) Rejection.deferred(
-                    "ColumnReferenceField NodeIdEncodeKeys (rooted-at-parent NodeId reference) not yet implemented"
-                    + " — requires JOIN-with-projection emission",
-                    no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class),
-                errors);
-            return;
-        }
-    }
-    private void validateCompositeColumnField(no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField field, List<ValidationError> errors) {
-        // Arity invariant — composite carriers carry size >= 2; arity-1 routes to ColumnField.
-        // The record's compact constructor enforces the lower bound; the upper bound matches the
-        // RecordN / RowN ceiling (jOOQ's 22-slot cap). Any breach indicates a classifier bug.
+        // The record's compact constructor enforces the arity floor and the composite-implies-
+        // NodeIdEncodeKeys narrowing; the upper bound matches the RecordN / RowN ceiling
+        // (jOOQ's 22-slot cap). Any breach indicates a classifier bug.
         if (field.columns().size() > 22) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
@@ -789,9 +763,16 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    private void validateCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField field, List<ValidationError> errors) {
-        // Arity invariant matches CompositeColumnField — record's compact constructor handles
-        // the lower bound; we cap at the RecordN 22-slot ceiling.
+    private void validateColumnBackedReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField field, List<ValidationError> errors) {
+        if (field.joinPath().isEmpty()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+            Rejection.structural("Field '" + field.qualifiedName() + "': @reference path is required"),
+                field.location()
+            ));
+            return;
+        }
+        // Same RecordN / RowN ceiling as the non-reference carrier.
         if (field.columns().size() > 22) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
@@ -800,10 +781,20 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
-        // joinPath shape is validated downstream by validateReferencePath; the FK-mirror collapse
-        // happens at classification time so a CompositeColumnReferenceField that survives here is
-        // a non-mirror reference (rooted-at-parent, multi-hop, or condition-join).
+        // The FK-mirror collapse happens at classification time, so a NodeIdEncodeKeys carrier
+        // that survives here is a non-mirror reference (rooted-at-parent, multi-hop, or
+        // condition-join).
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        // Recognised structurally but not yet emitted, at every arity; surface as a build-time
+        // deferred rejection rather than a runtime stub (Validator mirrors classifier invariants).
+        if (field.compaction() instanceof no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys) {
+            emitDeferredError(field,
+                (Rejection.Deferred) Rejection.deferred(
+                    "ColumnBackedReferenceField NodeIdEncodeKeys (rooted-at-parent NodeId reference) not yet implemented"
+                    + " — requires JOIN-with-projection emission",
+                    no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField.class),
+                errors);
+        }
     }
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
@@ -945,8 +936,8 @@ public class GraphitronSchemaValidator {
 
     /**
      * Variants wireable at nested depth. Every leaf here is wired through the nested
-     * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads ({@code ColumnField},
-     * {@code CompositeColumnField}, {@code TableField}, {@code LookupTableField},
+     * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads ({@code ColumnBackedField},
+     * {@code TableField}, {@code LookupTableField},
      * {@code NestingField}) are reified onto it by {@code FetcherEmitter.bind}, and the class-backed
      * leaves (the Table-sourced {@code BatchedTableField} / {@code BatchedLookupTableField} arms) carry their
      * heavy methods there. {@code TypeFetcherGenerator} emits that class for any nested type owning
@@ -963,8 +954,7 @@ public class GraphitronSchemaValidator {
      */
     private static boolean isNestedWireableLeaf(GraphitronField field) {
         return switch (field) {
-            case ChildField.ColumnField ignored -> true;
-            case ChildField.CompositeColumnField ignored -> true;
+            case ChildField.ColumnBackedField ignored -> true;
             case ChildField.TableField ignored -> true;
             case ChildField.LookupTableField ignored -> true;
             case ChildField.NestingField ignored -> true;
@@ -994,12 +984,12 @@ public class GraphitronSchemaValidator {
      * parents declare a field of the same plain-object nesting type, each parent independently classifies
      * its own {@code nestedFields} against its own table. The representative is the first parent in SDL
      * order; every subsequent parent's {@code nestedFields} must match the representative's shape field
-     * by field — same name, same kind, and for {@link ChildField.ColumnField} the same SQL column name
+     * by field — same name, same kind, and for {@link ChildField.ColumnBackedField} the same SQL column name
      * and Java column class. jOOQ's name-based fallback in {@code Record.get(Field)} relies on this
      * invariant: a nested-type wiring emitted with the representative parent's typed {@code Field<T>}
      * must resolve against any parent's {@code Record} without silent mismatch.
      *
-     * <p>Non-{@link ChildField.ColumnField} leaves reject at nested depth when the nesting type is
+     * <p>Non-{@link ChildField.ColumnBackedField} leaves reject at nested depth when the nesting type is
      * shared: their resolution depends on per-parent metadata (join paths, FK counts), which is
      * per-field. Multi-parent support for those leaves is a planned follow-up.
      */
@@ -1091,23 +1081,27 @@ public class GraphitronSchemaValidator {
                 ));
                 continue;
             }
-            if (rf instanceof ChildField.ColumnField rcf && of instanceof ChildField.ColumnField ocf) {
-                if (!rcf.column().sqlName().equals(ocf.column().sqlName())) {
+            if (rf instanceof ChildField.ColumnBackedField rcf && of instanceof ChildField.ColumnBackedField ocf) {
+                var repSql = rcf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName).toList();
+                var otherSql = ocf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName).toList();
+                var repClasses = rcf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList();
+                var otherClasses = ocf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList();
+                if (!repSql.equals(otherSql)) {
                     errors.add(new ValidationError(
                         coord,
             Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                             + "' and '" + otherParent + "': field '" + name
-                            + "' resolves to column '" + rcf.column().sqlName() + "' on the first but '"
-                            + ocf.column().sqlName() + "' on the second"),
+                            + "' resolves to column '" + String.join(", ", repSql) + "' on the first but '"
+                            + String.join(", ", otherSql) + "' on the second"),
                         other.location()
                     ));
-                } else if (!rcf.column().columnClass().equals(ocf.column().columnClass())) {
+                } else if (!repClasses.equals(otherClasses)) {
                     errors.add(new ValidationError(
                         coord,
             Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                             + "' and '" + otherParent + "': field '" + name
-                            + "' has Java type '" + rcf.column().columnClass() + "' on the first but '"
-                            + ocf.column().columnClass() + "' on the second"),
+                            + "' has Java type '" + String.join(", ", repClasses) + "' on the first but '"
+                            + String.join(", ", otherClasses) + "' on the second"),
                         other.location()
                     ));
                 }

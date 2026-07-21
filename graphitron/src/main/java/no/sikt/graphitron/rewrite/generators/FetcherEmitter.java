@@ -209,7 +209,7 @@ public final class FetcherEmitter {
      * result (source is the producer's reflected backing object). graphql-java wires one datafetcher per
      * coordinate, so the two single-arm reads compose into one reified method that dispatches at run time
      * on {@code source instanceof org.jooq.Record}: the {@code Record} arm is the by-typed-column read
-     * against the representative parent table (the {@code accessorField}'s nesting-arm {@code ColumnField},
+     * against the representative parent table (the {@code accessorField}'s nesting-arm {@code ColumnBackedField},
      * {@code columnArm}), the else arm is the record-backed accessor read (the result arm). Statement-form,
      * Java-17-valid (pattern {@code instanceof} is Java 16+).
      *
@@ -253,7 +253,7 @@ public final class FetcherEmitter {
     /**
      * The nesting-arm column read for a dual-shape dispatch, off the pattern-bound {@code rec} record:
      * {@code rec.get(Tables.X.COL)}, or the NodeId-encoded projection when the column field carries an
-     * encode compaction. Mirrors {@link #bindRaw}'s {@code ColumnField} arm, differing only in the source
+     * encode compaction. Mirrors {@link #bindRaw}'s {@code ColumnBackedField} arm, differing only in the source
      * subject (the narrowed {@code rec} local rather than {@code ((Record) source)}).
      */
     private static CodeBlock dualShapeRecordArmRead(ChildField recordArm, TableRef parentTable) {
@@ -263,14 +263,20 @@ public final class FetcherEmitter {
         if (recordArm instanceof ChildField.PivotSlotField slot) {
             return CodeBlock.of("rec.get($T.field($T.name($S)))", DSL, DSL, slot.readName());
         }
-        var cf = (ChildField.ColumnField) recordArm;
+        var cf = (ChildField.ColumnBackedField) recordArm;
         if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
-            return CodeBlock.of("$T.$L(rec.get($T.$L.$L))",
-                enc.encodeMethod().encoderClass(), enc.encodeMethod().methodName(),
-                parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName());
+            var encode = CodeBlock.builder()
+                .add("$T.$L(", enc.encodeMethod().encoderClass(), enc.encodeMethod().methodName());
+            for (int i = 0; i < cf.columns().size(); i++) {
+                if (i > 0) encode.add(", ");
+                encode.add("rec.get($T.$L.$L)",
+                    parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+            }
+            return encode.add(")").build();
         }
+        // Direct implies arity 1 (the carrier's constructor invariant).
         return CodeBlock.of("rec.get($T.$L.$L)",
-            parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName());
+            parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(0).javaName());
     }
 
     /**
@@ -500,42 +506,29 @@ public final class FetcherEmitter {
             return propertyOrRecordBinding(rf, rf.columnName(), rf.column(), resultType,
                 rf.accessor(), fetchersClass, outputPackage);
         }
-        if (field instanceof ChildField.ColumnField cf && parentTable != null) {
+        if (field instanceof ChildField.ColumnBackedField cf && parentTable != null) {
             if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
-                // Arity-1 NodeId-encoded projection: read the keyColumn off the source record
-                // and pass it through encode<TypeName>. The HelperRef.Encode reference carries
-                // both the encoder class and the helper method name so we never reconstruct
-                // either from a raw typeId string at emission time.
+                // NodeId-encoded projection: read each keyColumn off the source record and pass
+                // them positionally through encode<TypeName>(c1, ..., cN) — one arity-uniform
+                // loop, a 1-element loop for the single-column case. The HelperRef.Encode
+                // reference carries both the encoder class and the helper method name so we
+                // never reconstruct either from a raw typeId string at emission time.
                 var encoderClass = enc.encodeMethod().encoderClass();
-                CodeBlock body = CodeBlock.builder()
+                var body = CodeBlock.builder()
                     .add("$T r = ($T) source;\n", RECORD, RECORD)
-                    .add("return $T.$L(r.get($T.$L.$L));\n",
-                        encoderClass, enc.encodeMethod().methodName(),
-                        parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName())
-                    .build();
-                return sourceOnly(field.name(), fetchersClass, outputPackage, body);
+                    .add("return $T.$L(", encoderClass, enc.encodeMethod().methodName());
+                for (int i = 0; i < cf.columns().size(); i++) {
+                    if (i > 0) body.add(", ");
+                    body.add("r.get($T.$L.$L)",
+                        parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+                }
+                body.add(");\n");
+                return sourceOnly(field.name(), fetchersClass, outputPackage, body.build());
             }
+            // Direct implies arity 1 (the carrier's constructor invariant): a plain typed-column read.
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
-                    RECORD, parentTable.constantsClass(), parentTable.javaFieldName(), cf.column().javaName()));
-        }
-        if (field instanceof ChildField.CompositeColumnField ccf && parentTable != null) {
-            // Composite-key NodeId projection: read each keyColumn off the source record and
-            // pass them positionally through encode<TypeName>(c1, ..., cN). Compaction is
-            // narrowed to NodeIdEncodeKeys at the type level — no plain composite projection
-            // exists.
-            var enc = ccf.compaction();
-            var encoderClass = enc.encodeMethod().encoderClass();
-            var body = CodeBlock.builder()
-                .add("$T r = ($T) source;\n", RECORD, RECORD)
-                .add("return $T.$L(", encoderClass, enc.encodeMethod().methodName());
-            for (int i = 0; i < ccf.columns().size(); i++) {
-                if (i > 0) body.add(", ");
-                body.add("r.get($T.$L.$L)",
-                    parentTable.constantsClass(), parentTable.javaFieldName(), ccf.columns().get(i).javaName());
-            }
-            body.add(");\n");
-            return sourceOnly(field.name(), fetchersClass, outputPackage, body.build());
+                    RECORD, parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(0).javaName()));
         }
         if (field instanceof ChildField.TableField tf) {
             boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
@@ -598,20 +591,14 @@ public final class FetcherEmitter {
                     RECORD, DSL, DSL, pcrf.aliasName(),
                     pcrf.column().columnType()));
         }
-        if (field instanceof ChildField.ColumnReferenceField crf
+        if (field instanceof ChildField.ColumnBackedReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.Direct) {
             // Direct-compaction scalar @reference: TypeClassGenerator.$fields() projects an aliased
             // correlated subquery; the read picks the value out of the parent Record by alias.
+            // A NodeIdEncodeKeys instance (rooted-at-parent NodeId reference, any arity) never
+            // reaches emission: the validator rejects it as deferred, and one leaking through
+            // falls to the ResultKeyAliasedField guard below and fails loudly.
             return columnByAlias(field.name(), fetchersClass);
-        }
-        if (field instanceof ChildField.CompositeColumnReferenceField ccrf && parentTable != null) {
-            // Stubbed variant (validator-rejected before generation): keep the throwing lambda
-            // inline rather than minting a named method for an unimplemented shape.
-            return new FetcherBinding.Inline(CodeBlock.of(
-                "($T env) -> { throw new $T($S); }",
-                DATA_FETCHING_ENV, UnsupportedOperationException.class,
-                "Rooted-at-parent composite NodeId reference '" + ccrf.parentTypeName() + "." + ccrf.name()
-                    + "' requires JOIN-with-projection emission — not yet implemented."));
         }
         // A ResultKeyAliasedField reaching here would be an alias-projecting variant with no
         // env-dependent read binding: it would fall through to a plain method-backed reference and

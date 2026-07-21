@@ -23,8 +23,8 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 /**
  * SDL → classified-variant pipeline tests for the node-id path. Exercises the input-side
  * (single-column carriers with {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys}
- * and the {@code Composite*} variants), output-side ({@link ChildField.ColumnField} /
- * {@link ChildField.CompositeColumnField} with {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys}),
+ * and the {@code Composite*} variants), output-side ({@link ChildField.ColumnBackedField} /
+ * {@link ChildField.ColumnBackedReferenceField} with {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys}),
  * and type-level {@link GraphitronType.NodeType} synthesis for
  * tables whose jOOQ class exposes {@code __NODE_TYPE_ID} + {@code __NODE_KEY_COLUMNS} constants
  * (synthesized route) as well as the SDL-declared {@code @node} / {@code @nodeId} directive paths.
@@ -859,17 +859,17 @@ class NodeIdPipelineTest {
     enum OutputCase {
         IMPLICIT_ID(
             "output `id: ID!` on a `implements Node @node` parent backed by a metadata-carrying "
-                + "table → CompositeColumnField with NodeIdEncodeKeys (composite-PK Bar uses 2 columns)",
+                + "table → composite ColumnBackedField with NodeIdEncodeKeys (composite-PK Bar uses 2 columns)",
             """
             type Foo implements Node @table(name: "bar") @node { id: ID! }
             type Query { foo: Foo }
             """,
             schema -> {
                 assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
-                var f = (ChildField.CompositeColumnField) schema.field("Foo", "id");
+                var f = (ChildField.ColumnBackedField) schema.field("Foo", "id");
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.compaction().encodeMethod().methodName()).isEqualTo("encodeFoo");
+                assertThat(((CallSiteCompaction.NodeIdEncodeKeys) f.compaction()).encodeMethod().methodName()).isEqualTo("encodeFoo");
             }),
 
         ACCESSOR_MISSING(
@@ -885,7 +885,7 @@ class NodeIdPipelineTest {
             }),
 
         NODE_ID_DIRECTIVE_ON_NODE_TYPE(
-            "`id: ID! @nodeId` on a `implements Node @node` parent → CompositeColumnField via the "
+            "`id: ID! @nodeId` on a `implements Node @node` parent → composite ColumnBackedField via the "
                 + "@nodeId guard (canonical opt-in form; no synthesis from `@table` alone)",
             """
             type Foo implements Node @table(name: "bar") @node { id: ID! @nodeId }
@@ -893,10 +893,10 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
-                var f = (ChildField.CompositeColumnField) schema.field("Foo", "id");
+                var f = (ChildField.ColumnBackedField) schema.field("Foo", "id");
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.compaction().encodeMethod().methodName()).isEqualTo("encodeFoo");
+                assertThat(((CallSiteCompaction.NodeIdEncodeKeys) f.compaction()).encodeMethod().methodName()).isEqualTo("encodeFoo");
             });
 
         final String sdl;
@@ -1016,10 +1016,10 @@ class NodeIdPipelineTest {
             type Query { childRefs: [ChildRef!]! }
             """, FIXTURE_CTX);
 
-        var f = (ChildField.ColumnReferenceField) schema.field("ChildRef", "parentNodeId");
+        var f = (ChildField.ColumnBackedReferenceField) schema.field("ChildRef", "parentNodeId");
         // Projected column is ParentNode's keyColumn (pk_id), not the FK target (alt_key);
         // emitter must read it through the joined parent_node alias.
-        assertThat(f.column().sqlName()).isEqualTo("pk_id");
+        assertThat(f.columns().get(0).sqlName()).isEqualTo("pk_id");
         // Single-hop FK chain — child_ref → parent_node — drives the JOIN-with-projection path.
         assertThat(f.joinPath()).hasSize(1);
         // NodeId encode call: per-type encoder helper resolved at classify time.
@@ -1028,6 +1028,66 @@ class NodeIdPipelineTest {
         assertThat(enc.encodeMethod().paramSignature())
             .extracting(ColumnRef::sqlName)
             .containsExactly("pk_id");
+    }
+
+    // ===== Validate-tier deferral: rooted-at-parent NodeId reference, both arities =====
+    //
+    // The JOIN-with-projection emission is deferred; the validator (not a generator stub)
+    // rejects the shape at build time with disposition Deferred at every arity, keyed by the
+    // merged reference leaf's StubKey anchor. The arity-N case pins that the deferral survived
+    // its move from the generator-stub path to the validator path when the composite leaf
+    // dissolved into ColumnBackedReferenceField.
+
+    @Test
+    void rootedAtParentReference_arity1_deferredAtValidateTime() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type ParentNode implements Node @table(name: "parent_node") @node {
+                id: ID! @nodeId
+            }
+            type ChildRef @table(name: "child_ref") {
+                childId: String! @field(name: "child_id")
+                parentNodeId: ID @nodeId(typeName: "ParentNode")
+                    @reference(path: [{key: "child_ref_parent_alt_key_fkey"}])
+            }
+            type Query { childRefs: [ChildRef!]! }
+            """, FIXTURE_CTX);
+        var f = (ChildField.ColumnBackedReferenceField) schema.field("ChildRef", "parentNodeId");
+        assertThat(f.isComposite()).isFalse();
+        assertDeferredOnMergedReferenceLeaf(schema, "ChildRef.parentNodeId");
+    }
+
+    @Test
+    void rootedAtParentReference_arityN_deferredAtValidateTime() {
+        // reordered_fk_child's FK references the parent PK columns in a permuted order, so the
+        // FK-mirror collapse fails and the classifier produces the composite (arity-3) shape of
+        // the merged reference leaf.
+        var schema = TestSchemaHelper.buildSchema("""
+            type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node {
+                id: ID! @nodeId
+            }
+            type ReorderedChild @table(name: "reordered_fk_child") {
+                childId: String! @field(name: "child_id")
+                parentId: ID @nodeId(typeName: "ReorderedPkParent")
+                    @reference(path: [{key: "reordered_fk_child_parent_fkey"}])
+            }
+            type Query { children: [ReorderedChild!]! }
+            """, FIXTURE_CTX);
+        var f = (ChildField.ColumnBackedReferenceField) schema.field("ReorderedChild", "parentId");
+        assertThat(f.isComposite()).isTrue();
+        assertThat(f.columns()).extracting(ColumnRef::sqlName)
+            .containsExactly("pk_a", "pk_b", "pk_c");
+        assertDeferredOnMergedReferenceLeaf(schema, "ReorderedChild.parentId");
+    }
+
+    private static void assertDeferredOnMergedReferenceLeaf(GraphitronSchema schema, String coordinate) {
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        assertThat(errors)
+            .as("rooted-at-parent NodeId reference '%s' must be rejected at validate time with "
+                + "disposition Deferred, anchored to the merged reference leaf", coordinate)
+            .anyMatch(e -> coordinate.equals(e.coordinate())
+                && e.rejection() instanceof no.sikt.graphitron.rewrite.model.Rejection.Deferred d
+                && d.stubKey() instanceof no.sikt.graphitron.rewrite.model.Rejection.StubKey.VariantClass vc
+                && vc.fieldClass() == ChildField.ColumnBackedReferenceField.class);
     }
 
     // ===== Argument-level @nodeId =====

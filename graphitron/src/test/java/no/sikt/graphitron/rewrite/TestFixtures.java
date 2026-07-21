@@ -435,39 +435,34 @@ public final class TestFixtures {
 
     // ===== ChildField shortcuts =====
 
-    public static ChildField.ColumnField columnField(String parentType, String name, String columnName,
+    public static ChildField.ColumnBackedField columnField(String parentType, String name, String columnName,
                                                       String javaName, String columnClass) {
-        return new ChildField.ColumnField(parentType, name, null, columnName,
-            new ColumnRef(columnName, javaName, columnClass),
+        return new ChildField.ColumnBackedField(parentType, name, null,
+            List.of(new ColumnRef(columnName, javaName, columnClass)),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
     /**
-     * Builds an arity-1 NodeId-encoded {@link ChildField.ColumnField} with a synthetic
+     * Builds an arity-1 NodeId-encoded {@link ChildField.ColumnBackedField} with a synthetic
      * {@code encode<TypeName>} {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} carrier.
      * Tests that need the full classifier shape should run through {@code GraphitronSchemaBuilder}.
      */
-    public static ChildField.ColumnField nodeIdField(String parentType, String name, String nodeTypeName,
+    public static ChildField.ColumnBackedField nodeIdField(String parentType, String name, String nodeTypeName,
                                                      ColumnRef keyColumn) {
-        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get("test.util", "NodeIdEncoder");
-        var enc = new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
-            encoderClass, "encode" + nodeTypeName, java.util.List.of(keyColumn));
-        return new ChildField.ColumnField(parentType, name, null, keyColumn.sqlName(),
-            keyColumn,
-            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc));
+        return compositeNodeIdField(parentType, name, nodeTypeName, List.of(keyColumn));
     }
 
     /**
-     * Builds an arity-{@code keyColumns.size()} NodeId-encoded {@link ChildField.CompositeColumnField}
+     * Builds an arity-{@code keyColumns.size()} NodeId-encoded {@link ChildField.ColumnBackedField}
      * with a synthetic {@code encode<TypeName>} carrier.
      */
-    public static ChildField.CompositeColumnField compositeNodeIdField(String parentType, String name,
+    public static ChildField.ColumnBackedField compositeNodeIdField(String parentType, String name,
                                                                        String nodeTypeName,
                                                                        List<ColumnRef> keyColumns) {
         var encoderClass = no.sikt.graphitron.javapoet.ClassName.get("test.util", "NodeIdEncoder");
         var enc = new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
             encoderClass, "encode" + nodeTypeName, keyColumns);
-        return new ChildField.CompositeColumnField(parentType, name, null, keyColumns,
+        return new ChildField.ColumnBackedField(parentType, name, null, keyColumns,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc));
     }
 

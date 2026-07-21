@@ -85,7 +85,7 @@ public sealed interface InputField extends GraphitronField
      *
      * <p>{@code joinPath} is the resolved FK join path from the input type's own table to the
      * terminal table that holds {@code column}. The path is produced by the same reference-path
-     * parser as {@link ChildField.ColumnReferenceField}.
+     * parser as {@link ChildField.ColumnBackedReferenceField}.
      *
      * <p>When generating WHERE predicates against this field, the generator must JOIN through
      * {@code joinPath} before applying the column predicate.

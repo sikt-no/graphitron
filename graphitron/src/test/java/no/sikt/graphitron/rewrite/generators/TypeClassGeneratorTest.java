@@ -24,7 +24,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class TypeClassGeneratorTest {
 
-    private static final List<ChildField.ColumnField> FILM_COLUMNS = List.of(
+    private static final List<ChildField.ColumnBackedField> FILM_COLUMNS = List.of(
         TestFixtures.columnField("Film", "title", "title", "TITLE", "java.lang.String"),
         TestFixtures.columnField("Film", "filmId", "film_id", "FILM_ID", "java.lang.Integer")
     );
@@ -33,7 +33,6 @@ class TypeClassGeneratorTest {
         return TypeClassGenerator.buildTypeSpec("Film",
             filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
             FILM_COLUMNS,
-            List.of(),
             List.of(),
             List.of(),
             List.of(),
@@ -74,7 +73,7 @@ class TypeClassGeneratorTest {
             .containsExactly("$fields", "$fields", "$fieldsGrouped");
     }
 
-    // ===== NodeId fields (composite arity > 1; arity-1 lands on ColumnField switch arm) =====
+    // ===== NodeId fields (composite arity > 1; arity-1 lands on the single-column switch arm) =====
 
     @Test
     void $fields_compositeNodeIdField_producesSwitchArm() {
@@ -82,7 +81,6 @@ class TypeClassGeneratorTest {
         var idCol2 = col("id_2", "ID_2", "java.lang.Integer");
         var spec = TypeClassGenerator.buildTypeSpec("Bar",
             filmTable(),
-            List.of(),
             List.of(compositeNodeIdField("Bar", "id", "Bar", List.of(idCol1, idCol2))),
             List.of(),
             List.of(),

@@ -55,10 +55,10 @@ class SourceShapeProjectionTest {
      * deliberately small: the goal is for the corpus to demonstrate every schema-reachable leaf.
      */
     private static final Map<Class<?>, String> NOT_CORPUS_COVERED = Map.ofEntries(
-        Map.entry(ChildField.CompositeColumnField.class,
+        Map.entry(ChildField.ColumnBackedField.class,
             "Composite (RowN) column projection; no corpus fixture declares a composite scalar yet. "
             + "Catalog column carrier — SourceShape.Table by the same parent-backing projection."),
-        Map.entry(ChildField.CompositeColumnReferenceField.class,
+        Map.entry(ChildField.ColumnBackedReferenceField.class,
             "Composite (RowN) reference projection; not in the corpus. Catalog reference carrier — "
             + "SourceShape.Table by the parent-backing projection."),
         Map.entry(ChildField.PivotSlotField.class,

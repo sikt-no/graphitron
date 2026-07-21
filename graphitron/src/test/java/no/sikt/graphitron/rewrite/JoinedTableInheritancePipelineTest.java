@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * against real PostgreSQL; this pipeline tier pins the classification shape the emitter relies on:
  * a participant whose own {@code @table} differs from the discriminated base classifies as a
  * {@link ParticipantRef.JoinedTableBound} carrying the resolved child&rarr;parent hop, its inherited
- * (parent-{@code @reference}) field as a {@link ChildField.ColumnReferenceField} and its own column
- * as a plain {@link ChildField.ColumnField}.
+ * (parent-{@code @reference}) field as a {@link ChildField.ColumnBackedReferenceField} and its own column
+ * as a plain {@link ChildField.ColumnBackedField}.
  *
  * <p>Driven by the {@code party} + {@code party_individual} + {@code party_company} single-column
  * shared-PK fixture in {@code graphitron-sakila-db/src/main/resources/init.sql}.
@@ -67,13 +67,13 @@ class JoinedTableInheritancePipelineTest {
         // Residence is read off the field variant: inherited displayName is a ColumnReferenceField
         // (resolved on the base via the reference path), birthDate a plain ColumnField on the detail.
         assertThat(schema.field("Individual", "displayName"))
-            .isInstanceOf(ChildField.ColumnReferenceField.class);
+            .isInstanceOf(ChildField.ColumnBackedReferenceField.class);
         assertThat(schema.field("Individual", "birthDate"))
-            .isInstanceOf(ChildField.ColumnField.class);
+            .isInstanceOf(ChildField.ColumnBackedField.class);
         // The shared single-column PK partyId lives on the detail too, so it carries no @reference
         // and stays a plain ColumnField.
         assertThat(schema.field("Individual", "partyId"))
-            .isInstanceOf(ChildField.ColumnField.class);
+            .isInstanceOf(ChildField.ColumnBackedField.class);
     }
 
     @Test

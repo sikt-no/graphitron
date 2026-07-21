@@ -4,9 +4,8 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
@@ -25,7 +24,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Map;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -43,10 +41,26 @@ class NestingFieldValidationTest {
             nested);
     }
 
-    private static ColumnField titleOn(String parent, String column, String javaType) {
-        return new ColumnField(parent, "title", null, "title",
-            new ColumnRef(column, "TITLE", javaType),
+    private static ColumnBackedField titleOn(String parent, String column, String javaType) {
+        return new ColumnBackedField(parent, "title", null,
+            List.of(new ColumnRef(column, "TITLE", javaType)),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+    }
+
+    /**
+     * An arity-2 NodeId-encoded reference carrier (the merged leaf's composite shape) on a
+     * single FK hop, with the arity-independent parent correlation the construction site derives.
+     */
+    private static ColumnBackedReferenceField compositeLanguageRef(String parentTypeName) {
+        var path = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
+            TestFixtures.joinTarget("language"), List.of(), null, ""));
+        return new ColumnBackedReferenceField(parentTypeName, "languageRef", null,
+            List.of(new ColumnRef("ID_1", "", ""), new ColumnRef("ID_2", "", "")),
+            path,
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(
+                new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
+                    List.of(new ColumnRef("ID_1", "java.lang.Integer", ""), new ColumnRef("ID_2", "java.lang.Integer", "")))),
+            TestFixtures.pcFor(path, TestFixtures.filmTable()));
     }
 
     enum Case implements ValidatorCase {
@@ -67,21 +81,15 @@ class NestingFieldValidationTest {
                 List.of()),
             List.of("Field 'Film.tags': list cardinality on a plain-object nesting field is not supported")),
 
-        STUBBED_NESTED_LEAF_ROLLS_UP("a stubbed variant (CompositeColumnReferenceField) at nested depth surfaces the stubbed error at the nested leaf",
+        DEFERRED_NESTED_COMPOSITE_REFERENCE("a composite NodeId reference at nested depth surfaces the nested-depth deferral at the nested leaf",
             new NestingField("Film", "details", null,
                 new ReturnTypeRef.TableBoundReturnType("FilmDetails",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
-                List.of(new CompositeColumnReferenceField("FilmDetails", "languageRef", null,
-                    List.of(new ColumnRef("ID_1", "", ""), new ColumnRef("ID_2", "", "")),
-                    List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
-                        TestFixtures.joinTarget("language"), List.of(), null, "")),
-                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(
-                        new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
-                            List.of(new ColumnRef("ID_1", "java.lang.Integer", ""), new ColumnRef("ID_2", "java.lang.Integer", ""))))))),
-            List.of(stubbedError("FilmDetails.languageRef", CompositeColumnReferenceField.class))),
+                List.of(compositeLanguageRef("FilmDetails"))),
+            List.of("Field 'FilmDetails.languageRef': ColumnBackedReferenceField is not yet supported under NestingField")),
 
-        STUBBED_NESTED_LEAF_INSIDE_NESTED_NESTING("stubbed variant inside a NestingField inside a NestingField → recursive walk surfaces it",
+        DEFERRED_NESTED_COMPOSITE_INSIDE_NESTED_NESTING("composite NodeId reference inside a NestingField inside a NestingField → recursive walk surfaces it",
             new NestingField("Film", "details", null,
                 new ReturnTypeRef.TableBoundReturnType("FilmDetails",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
@@ -90,14 +98,8 @@ class NestingFieldValidationTest {
                     new ReturnTypeRef.TableBoundReturnType("FilmMeta",
                         TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                         new FieldWrapper.Single(true)),
-                    List.of(new CompositeColumnReferenceField("FilmMeta", "languageRef", null,
-                        List.of(new ColumnRef("ID_1", "", ""), new ColumnRef("ID_2", "", "")),
-                        List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
-                            TestFixtures.joinTarget("language"), List.of(), null, "")),
-                        new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(
-                            new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
-                                List.of(new ColumnRef("ID_1", "java.lang.Integer", ""), new ColumnRef("ID_2", "java.lang.Integer", ""))))))))),
-            List.of(stubbedError("FilmMeta.languageRef", CompositeColumnReferenceField.class)));
+                    List.of(compositeLanguageRef("FilmMeta"))))),
+            List.of("Field 'FilmMeta.languageRef': ColumnBackedReferenceField is not yet supported under NestingField"));
 
         private final String description;
         private final GraphitronField field;
@@ -166,8 +168,8 @@ class NestingFieldValidationTest {
             List.of(titleOn("FilmDetails", "title", "java.lang.String")),
             List.of(
                 titleOn("FilmDetails", "title", "java.lang.String"),
-                new ColumnField("FilmDetails", "extra", null, "extra",
-                    new ColumnRef("extra", "EXTRA", "java.lang.String"),
+                new ColumnBackedField("FilmDetails", "extra", null,
+                    List.of(new ColumnRef("extra", "EXTRA", "java.lang.String")),
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())));
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -205,13 +207,13 @@ class NestingFieldValidationTest {
         // without recursion, class equality (NestingField == NestingField) hides the divergence.
         var filmMeta = new NestingField("FilmDetails", "meta", null,
             new ReturnTypeRef.TableBoundReturnType("FilmMeta", FILM_TABLE, new FieldWrapper.Single(true)),
-            List.of(new ColumnField("FilmMeta", "label", null, "label",
-                new ColumnRef("title", "TITLE", "java.lang.String"),
+            List.of(new ColumnBackedField("FilmMeta", "label", null,
+                List.of(new ColumnRef("title", "TITLE", "java.lang.String")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())));
         var adMeta = new NestingField("FilmDetails", "meta", null,
             new ReturnTypeRef.TableBoundReturnType("FilmMeta", ADVERTISEMENT_TABLE, new FieldWrapper.Single(true)),
-            List.of(new ColumnField("FilmMeta", "label", null, "label",
-                new ColumnRef("headline", "HEADLINE", "java.lang.String"),
+            List.of(new ColumnBackedField("FilmMeta", "label", null,
+                List.of(new ColumnRef("headline", "HEADLINE", "java.lang.String")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct())));
         var schema = twoParentSchema(List.of(filmMeta), List.of(adMeta));
         assertThat(validate(schema))
@@ -224,25 +226,25 @@ class NestingFieldValidationTest {
     void multiParentCompat_nonColumnLeaf_rejectedAcrossParents() {
         var fkFirst = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
             TestFixtures.joinTarget("language"), List.of(), null, ""));
-        var columnRefFirst = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
-            new ColumnRef("NAME", "", ""),
+        var columnRefFirst = new ColumnBackedReferenceField("FilmDetails", "langName", null,
+            List.of(new ColumnRef("NAME", "", "")),
             fkFirst,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
             TestFixtures.pcFor(fkFirst, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
         var fkSecond = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("advertisement_language_id_fkey"), null, List.of(),
             TestFixtures.joinTarget("language"), List.of(), null, ""));
-        var columnRefSecond = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
-            new ColumnRef("NAME", "", ""),
+        var columnRefSecond = new ColumnBackedReferenceField("FilmDetails", "langName", null,
+            List.of(new ColumnRef("NAME", "", "")),
             fkSecond,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
             TestFixtures.pcFor(fkSecond, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
         var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));
         // Shape check reports "not yet supported" for the shared non-column leaf. The per-field
-        // stubbed-variant walk fires twice — once per parent — surfacing the ColumnReferenceField
-        // stubbed reason at each nested location.
+        // nested-depth walk fires twice — once per parent — surfacing the ColumnBackedReferenceField
+        // nested-depth deferral at each nested location.
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .contains(
-                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' classifies as ColumnReferenceField which is not yet supported across multiple parents");
+                "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'langName' classifies as ColumnBackedReferenceField which is not yet supported across multiple parents");
     }
 }

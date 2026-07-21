@@ -24,8 +24,8 @@ import no.sikt.graphitron.javapoet.TypeName;
  * the boundary.
  *
  * <p>Used wherever a column reference is needed — both for output field columns
- * ({@link no.sikt.graphitron.rewrite.model.ChildField.ColumnField},
- * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField}) and for
+ * ({@link no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField},
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField}) and for
  * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType}).
  *
  * <p>When a column cannot be resolved the containing field or type is classified as

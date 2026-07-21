@@ -72,7 +72,7 @@ import java.util.Set;
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fetchers} class in {@code rewrite.fetchers}.
  *
  * <ul>
- *   <li>{@link ChildField.ColumnField} — a reified {@code public static} source-only read method
+ *   <li>{@link ChildField.ColumnBackedField} — a reified {@code public static} source-only read method
  *       (collected from {@link FetcherEmitter#bind}), registered wrapped in
  *       {@code new LightFetcher<>(<Type>Fetchers::column)}. {@code LightFetcher} implements
  *       {@link graphql.schema.LightDataFetcher} so the runtime uses the lighter call path while
@@ -252,7 +252,7 @@ public class TypeFetcherGenerator {
      * The reified source-shape dispatch method for a coordinate whose shape set is the dual
      * {@code {generic Record, class-backed accessor}}, or {@code null} when single-reach (the caller
      * falls back to {@link FetcherEmitter#bind}). Pairs the accessor arm ({@code field}) with the nesting
-     * arm's {@code ColumnField} from {@code dualWiring}, via the same {@link FetcherEmitter#bindDualShape}
+     * arm's {@code ColumnBackedField} from {@code dualWiring}, via the same {@link FetcherEmitter#bindDualShape}
      * call {@code FetcherRegistrationsEmitter} uses, so the emitted method and the reference agree.
      */
     private static FetcherEmitter.FetcherBinding dualShapeBinding(GraphitronSchema schema, String typeName,
@@ -265,7 +265,7 @@ public class TypeFetcherGenerator {
         }
         ChildField columnArm = null;
         for (var f : dualWiring.nestedFields()) {
-            if ((f instanceof ChildField.ColumnField || f instanceof ChildField.PivotSlotField)
+            if ((f instanceof ChildField.ColumnBackedField || f instanceof ChildField.PivotSlotField)
                     && f.name().equals(field.name())) {
                 columnArm = f;
                 break;
@@ -300,7 +300,7 @@ public class TypeFetcherGenerator {
      * when a stub becomes a real implementation.
      */
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
-        ChildField.ColumnField.class,
+        ChildField.ColumnBackedField.class,
         ChildField.ComputedField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
@@ -378,8 +378,7 @@ public class TypeFetcherGenerator {
     public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
-        ChildField.ColumnReferenceField.class,
-        ChildField.CompositeColumnField.class,
+        ChildField.ColumnBackedReferenceField.class,
         ChildField.NestingField.class,
         // The inline pivot projects into $fields (PivotProjectionEmitter arm); its multiset
         // unwrap and its slots' by-name reads are reified by FetcherEmitter.bind.
@@ -413,25 +412,12 @@ public class TypeFetcherGenerator {
      *       The partition test catches an orphan entry as soon as any other set references it.</li>
      * </ul>
      */
+    // Currently empty: the last stub retired when the rooted-at-parent NodeId reference
+    // deferral moved to the validator (GraphitronSchemaValidator.
+    // validateColumnBackedReferenceField rejects NodeIdEncodeKeys compaction at every arity
+    // ahead of generation), so no reachable leaf lacks a real or projected arm.
     public static final Map<Class<? extends GraphitronField>, Rejection.Deferred> STUBBED_VARIANTS =
-        Map.ofEntries(
-            // ChildField stubs — TableTargetField sub-hierarchy
-            // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
-            // inline emission via TypeClassGenerator.$fields)
-            // ChildField stubs — remaining direct permits
-            // (ChildField.ColumnReferenceField is in PROJECTED_LEAVES; per-shape deferrals enforced
-            // by validateColumnReferenceField.)
-            Map.entry(ChildField.CompositeColumnReferenceField.class,
-                deferredFor(ChildField.CompositeColumnReferenceField.class,
-                    "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
-                    + " — requires JOIN-with-projection emission; rooted-at-parent fixture"
-                    + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage"))
-        );
-
-    private static Rejection.Deferred deferredFor(
-            Class<? extends GraphitronField> fieldClass, String summary) {
-        return new Rejection.Deferred(summary, new Rejection.StubKey.VariantClass(fieldClass));
-    }
+        Map.of();
 
     /**
      * Overload for tests and callers that don't need to specify a {@link GraphitronType.ResultType}.
@@ -525,16 +511,17 @@ public class TypeFetcherGenerator {
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry -> {
         for (var field : fields) {
             switch (field) {
-                case ChildField.ColumnField cf -> {
+                case ChildField.ColumnBackedField cf -> {
                     if (parentTable == null) {
-                        // ColumnField requires a table-backed parent — classifier invariant.
+                        // ColumnBackedField requires a table-backed parent — classifier invariant.
                         // The validator rejects this before generation; treat as a bug if reached.
                         throw new IllegalStateException(
-                            "ColumnField '" + cf.qualifiedName()
+                            "ColumnBackedField '" + cf.qualifiedName()
                             + "' classified on a non-table-backed parent — classifier invariant violated");
                     }
-                    // The reified source-only read is collected below via FetcherEmitter.bind
-                    // (registered wrapped in LightFetcher); this arm emits no method itself.
+                    // The reified source-only read (single column, or the composite-key NodeId
+                    // encode) is collected below via FetcherEmitter.bind (registered wrapped in
+                    // LightFetcher); this arm emits no method itself.
                 }
                 case QueryField.QueryLookupTableField qlf -> {
                     var lookupTableRef = qlf.returnType().table();
@@ -662,18 +649,17 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationBulkUpdatePayloadField f -> builder.addMethod(buildMutationBulkUpdatePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDeletePayloadField f -> builder.addMethod(buildMutationDeletePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDeletePayloadField f -> builder.addMethod(buildMutationBulkDeletePayloadFetcher(ctx, f, outputPackage));
-                // ColumnReferenceField: inline projection via TypeClassGenerator.$fields (Direct
-                // compaction); the read of that aliased projection is reified by FetcherEmitter.bind
-                // and collected below. The validator rejects the NodeIdEncodeKeys and condition-join
-                // shapes ahead of generation; no per-shape carve-out is needed here.
-                case ChildField.ColumnReferenceField ignored    -> { }
-                case ChildField.CompositeColumnReferenceField f -> builder.addMethod(stub(f));
-                // ChildField.TableField / LookupTableField / CompositeColumnField: inline projection
-                // via TypeClassGenerator.$fields; the read (alias pickup, or composite-key NodeId
-                // encode) is reified by FetcherEmitter.bind and collected below.
+                // ColumnBackedReferenceField: inline projection via TypeClassGenerator.$fields
+                // (Direct compaction); the read of that aliased projection is reified by
+                // FetcherEmitter.bind and collected below. The validator rejects the
+                // NodeIdEncodeKeys (every arity) and condition-join shapes ahead of generation;
+                // no per-shape carve-out is needed here.
+                case ChildField.ColumnBackedReferenceField ignored -> { }
+                // ChildField.TableField / LookupTableField: inline projection via
+                // TypeClassGenerator.$fields; the alias-pickup read is reified by
+                // FetcherEmitter.bind and collected below.
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
-                case ChildField.CompositeColumnField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(ctx, f, outputPackage));
                 // ParticipantColumnReferenceField: the value is materialised in the parent record by
                 // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN; the read of it
@@ -1266,17 +1252,17 @@ public class TypeFetcherGenerator {
         // table, so we cannot call their $fields against the base (its parameter is typed as the
         // detail table). Instead project the base-resident slice off the base here, reading each
         // participant's classified fields (the emitter reads the field variant, never the catalog):
-        //   - an inherited field is a ColumnReferenceField whose column resolves on the base; project
+        //   - an inherited field is a ColumnBackedReferenceField whose column resolves on the base; project
         //     that base column under the runtime result-key reserved alias (__rk_<resultKey>),
         //     matching the alias the standalone correlated-subquery projection uses, so the one
         //     registered fetcher reads it in both queries (FetcherEmitter reads a Direct
-        //     ColumnReferenceField by env.getField().getResultKey());
-        //   - a shared-key field is a ColumnField whose column is one of the child->parent hop's
+        //     ColumnBackedReferenceField by env.getField().getResultKey());
+        //   - a shared-key field is a ColumnBackedField whose column is one of the child->parent hop's
         //     columns (the join key, present on both base and detail); project the paired base column
         //     so NULL-through rows (base present, detail absent) still resolve it, aliased to the
         //     detail column's name (a no-op when the FK and PK columns share a name) so the
-        //     participant's ColumnField fetcher reads it back by that name even when the two differ.
-        // Detail-exclusive ColumnFields (column not in the hop) are projected against the detail alias
+        //     participant's ColumnBackedField fetcher reads it back by that name even when the two differ.
+        // Detail-exclusive ColumnBackedFields (column not in the hop) are projected against the detail alias
         // by buildJoinedDetailAliasDeclarations. A field projected by more than one participant (every
         // shared/inherited field is) is emitted once: the .as(...) aliases produce fresh Field objects
         // the LinkedHashSet would not dedupe, so we dedupe by output alias explicitly.
@@ -1286,11 +1272,11 @@ public class TypeFetcherGenerator {
             for (var participant : participants) {
                 if (!(participant instanceof ParticipantRef.JoinedTableBound jtb)) continue;
                 for (var f : schema.fieldsOf(jtb.typeName())) {
-                    if (f instanceof ChildField.ColumnReferenceField crf) {
+                    if (f instanceof ChildField.ColumnBackedReferenceField crf) {
                         if (seenAliases.add(crf.name())) {
                             // Inherited base-resident @reference. The standalone inline projection
                             // aliases this by the runtime result key (RESERVED_RK_ALIAS_PREFIX +
-                            // entry.getKey()) and the one registered Direct ColumnReferenceField
+                            // entry.getKey()) and the one registered Direct ColumnBackedReferenceField
                             // fetcher reads it back by env.getField().getResultKey(); this base-slice
                             // path must produce the same reserved-key aliases so both queries agree.
                             // Project the base column once per selected result-key bucket of this
@@ -1310,14 +1296,15 @@ public class TypeFetcherGenerator {
                                 "if (!rkEntry.getValue().isEmpty() && rkEntry.getValue().get(0).getName().equals($S))",
                                 crf.name());
                             b.addStatement("fields.add($L.$L.as($S + rkEntry.getKey()))",
-                                tableLocal, crf.column().javaName(), RESERVED_RK_ALIAS_PREFIX);
+                                tableLocal, crf.columns().get(0).javaName(), RESERVED_RK_ALIAS_PREFIX);
                             b.endControlFlow();
                             b.endControlFlow();
                         }
-                    } else if (f instanceof ChildField.ColumnField cf) {
-                        var baseCol = sharedKeyBaseColumn(jtb, cf.column());
-                        if (baseCol != null && seenAliases.add(cf.column().sqlName())) {
-                            b.addStatement("fields.add($L.$L.as($S))", tableLocal, baseCol.javaName(), cf.column().sqlName());
+                    } else if (f instanceof ChildField.ColumnBackedField cf) {
+                        var cfColumn = cf.columns().get(0);
+                        var baseCol = sharedKeyBaseColumn(jtb, cfColumn);
+                        if (baseCol != null && seenAliases.add(cfColumn.sqlName())) {
+                            b.addStatement("fields.add($L.$L.as($S))", tableLocal, baseCol.javaName(), cfColumn.sqlName());
                         }
                     }
                 }
@@ -1327,7 +1314,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * For a participant {@link ChildField.ColumnField} whose column is a child-&gt;parent hop column
+     * For a participant {@link ChildField.ColumnBackedField} whose column is a child-&gt;parent hop column
      * (a shared-key column present on both base and detail), returns the paired base-side column (the
      * hop slot's target side); {@code null} when the field's column is detail-exclusive. The base side
      * may differ in name from the detail side, so the caller projects {@code base.<returned>} aliased
@@ -1343,18 +1330,18 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The participant's detail-exclusive fields: classified {@link ChildField.ColumnField}s whose
+     * The participant's detail-exclusive fields: classified {@link ChildField.ColumnBackedField}s whose
      * column is not part of the child->parent hop (i.e. not a shared-key column, which lives on the
      * base). These are projected against the participant's detail alias behind a discriminator-gated
      * LEFT JOIN. Empty when no schema is threaded (unit-tier model-only callers).
      */
-    private static List<ChildField.ColumnField> detailExclusiveFields(
+    private static List<ChildField.ColumnBackedField> detailExclusiveFields(
             TypeFetcherEmissionContext ctx, ParticipantRef.JoinedTableBound jtb) {
         var schema = ctx.graphitronSchema();
         if (schema == null) return List.of();
-        var out = new ArrayList<ChildField.ColumnField>();
+        var out = new ArrayList<ChildField.ColumnBackedField>();
         for (var f : schema.fieldsOf(jtb.typeName())) {
-            if (f instanceof ChildField.ColumnField cf && sharedKeyBaseColumn(jtb, cf.column()) == null) {
+            if (f instanceof ChildField.ColumnBackedField cf && sharedKeyBaseColumn(jtb, cf.columns().get(0)) == null) {
                 out.add(cf);
             }
         }
@@ -1366,7 +1353,7 @@ public class TypeFetcherGenerator {
      * {@code fields.add(detailAlias.<col>)} for each detail-exclusive field, mirroring
      * {@link #buildCrossTableAliasDeclarations} but joining the whole detail table once per
      * participant rather than one aliased table per cross-table field. The column is projected under
-     * its natural name (no {@code .as(...)}) so the participant's plain {@code ColumnField} fetcher
+     * its natural name (no {@code .as(...)}) so the participant's plain {@code ColumnBackedField} fetcher
      * reads it back by column name.
      */
     private static CodeBlock buildJoinedDetailAliasDeclarations(
@@ -1385,7 +1372,7 @@ public class TypeFetcherGenerator {
                     jtb.typeName() + "." + cf.name());
                 b.addStatement("$L = $T.$L.as($S)", aliasVar, names.tablesClass(),
                     jtb.detailTable().javaFieldName(), jtb.detailAliasName());
-                b.addStatement("fields.add($L.$L)", aliasVar, cf.column().javaName());
+                b.addStatement("fields.add($L.$L)", aliasVar, cf.columns().get(0).javaName());
                 b.endControlFlow();
             }
         }

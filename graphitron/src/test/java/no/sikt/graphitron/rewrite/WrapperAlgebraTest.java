@@ -76,11 +76,9 @@ class WrapperAlgebraTest {
      * [String!]!}). These are excluded from the SDL-list mirror and instead pinned as always-{@code Single}.
      */
     private static final Set<Class<?>> CARDINALITY_NOT_MODELED = Set.of(
-        no.sikt.graphitron.rewrite.model.ChildField.ColumnField.class,
-        no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class,
+        no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField.class,
+        no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField.class,
         no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class,
-        no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField.class,
-        no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField.class,
         no.sikt.graphitron.rewrite.model.ChildField.PropertyField.class,
         no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 

@@ -5,7 +5,7 @@ package no.sikt.graphitron.rewrite.model;
  * key</em> rather than the schema field name, and whose fetcher reads that value back by the same
  * key. Implemented by the four families that mint an aliased SELECT term per result-key bucket:
  * {@link ChildField.TableField}, {@link ChildField.LookupTableField},
- * {@link ChildField.ComputedField}, and {@link ChildField.ColumnReferenceField}.
+ * {@link ChildField.ComputedField}, and {@link ChildField.ColumnBackedReferenceField}.
  *
  * <p>Result-key aliasing (through the reserved {@code __rk_} prefix,
  * {@code GeneratorUtils.RESERVED_RK_ALIAS_PREFIX}) is what lets two aliases of the same reference
@@ -22,20 +22,21 @@ package no.sikt.graphitron.rewrite.model;
  * {@code ResultKeyAliasedField} reaches them unhandled, so a new alias-projecting variant is a loud
  * build-time failure on whichever side it forgot. The marker carries no method: the alias basis is
  * entirely runtime-keyed (the result key), with no per-variant model value to expose. The scalar
- * {@link ChildField.ColumnField} / {@link ChildField.CompositeColumnField} arms are deliberately
- * <em>not</em> members: they add raw {@code table.COL} instances (alias-independent, deduped by jOOQ
- * {@code Field} identity) and read back through typed column constants.
+ * {@link ChildField.ColumnBackedField} arm is deliberately <em>not</em> a member: it adds raw
+ * {@code table.COL} instances (alias-independent, deduped by jOOQ {@code Field} identity) and
+ * reads back through typed column constants.
  *
  * <p>Intentionally standalone (does not extend {@link GraphitronField}) so it applies as an
  * orthogonal capability without being restricted by the sealed hierarchy, mirroring
  * {@link SqlGeneratingField} / {@link MethodBackedField}. Consumers receive a {@link ChildField} and
  * pattern-match with {@code instanceof ResultKeyAliasedField}.
  *
- * <p>{@link ChildField.ColumnReferenceField} is a member on every emittable instance: only its
+ * <p>{@link ChildField.ColumnBackedReferenceField} is a member on every emittable instance: only its
  * {@code CallSiteCompaction.Direct} compaction projects and reads a scalar aliased subquery, and the
- * {@code NodeIdEncodeKeys} compaction is rejected at validate time
- * ({@code GraphitronSchemaValidator.validateColumnReferenceField}, a deferred rejection), so a
- * {@code NodeIdEncodeKeys} column-reference never reaches emission on a valid schema.
+ * {@code NodeIdEncodeKeys} compaction is rejected at validate time regardless of arity
+ * ({@code GraphitronSchemaValidator.validateColumnBackedReferenceField}, a deferred rejection), so a
+ * {@code NodeIdEncodeKeys} column-reference never reaches emission on a valid schema — and by the
+ * carrier's constructor invariant every {@code Direct} instance is single-column.
  */
 public interface ResultKeyAliasedField {
 }

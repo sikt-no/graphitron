@@ -7,12 +7,11 @@ package no.sikt.graphitron.rewrite.model;
  * typed Java value at the call site; compaction writes a typed Java value back into a wire value
  * at the projection site. Both classify exhaustively at the parse boundary.
  *
- * <p>Carried by single-column output carriers ({@link ChildField.ColumnField},
- * {@link ChildField.ColumnReferenceField}) where both arms genuinely occur, and by composite
- * output carriers ({@link ChildField.CompositeColumnField},
- * {@link ChildField.CompositeColumnReferenceField}) narrowed to {@link NodeIdEncodeKeys} since
- * there is no plain composite-column projection. The projection emitter switches on the slot's
- * sealed arm to decide how to wrap the carrier's column(s).
+ * <p>Carried by the column-backed output carriers ({@link ChildField.ColumnBackedField},
+ * {@link ChildField.ColumnBackedReferenceField}). Both arms genuinely occur at arity 1; a
+ * multi-column carrier is narrowed to {@link NodeIdEncodeKeys} by the carriers' constructor
+ * invariant, since there is no plain composite-column projection. The projection emitter
+ * switches on the slot's sealed arm to decide how to wrap the carrier's column(s).
  *
  * <ul>
  *   <li>{@link Direct} — plain SELECT-term projection. The column's value is the field's value;

@@ -83,9 +83,9 @@ class QualifiedTerminalReferenceColumnPipelineTest {
         assertThat(field)
             .as("scalar @reference read on a cross-schema-colliding FK terminal must resolve, "
                 + "not become UnclassifiedField on a spurious ambiguous-name miss")
-            .isInstanceOf(ChildField.ColumnReferenceField.class);
+            .isInstanceOf(ChildField.ColumnBackedReferenceField.class);
         // The resolved column is A's copy: the classification is not vacuous.
-        assertThat(((ChildField.ColumnReferenceField) field).column().sqlName()).isEqualTo("name");
+        assertThat(((ChildField.ColumnBackedReferenceField) field).columns().get(0).sqlName()).isEqualTo("name");
     }
 
     @Test

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -22,17 +22,17 @@ class ColumnFieldValidationTest {
     enum Case {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name",
-            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
+            new ColumnBackedField("Film", "title", null, List.of(new ColumnRef("TITLE", "", "")), new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             false,
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name",
-            new ColumnField("Film", "title", null, "film_title", new ColumnRef("FILM_TITLE", "", ""), new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
+            new ColumnBackedField("Film", "title", null, List.of(new ColumnRef("FILM_TITLE", "", "")), new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             false,
             List.of()),
 
         NON_TABLE_BACKED_PARENT("@column on a non-table-backed parent type is rejected",
-            new ColumnField("Film", "title", null, "title", new ColumnRef("TITLE", "", ""), new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
+            new ColumnBackedField("Film", "title", null, List.of(new ColumnRef("TITLE", "", "")), new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             true,
             List.of("Field 'Film.title': @column is not valid on a non-table-backed type"));
 

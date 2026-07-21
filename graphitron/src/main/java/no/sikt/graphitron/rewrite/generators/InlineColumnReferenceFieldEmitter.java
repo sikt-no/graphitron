@@ -14,14 +14,14 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_ALIAS_PREFIX;
 
 /**
- * Builds the switch-arm body for one inline {@link ChildField.ColumnReferenceField} in
+ * Builds the switch-arm body for one inline {@link ChildField.ColumnBackedReferenceField} in
  * {@link TypeClassGenerator}'s {@code $fields} method. Emits a correlated subquery projecting a
  * single column on the terminal joined table, wrapped as a scalar {@code DSL.field(<select>)} term.
  *
  * <p>Mirrors {@link InlineTableFieldEmitter}'s shape with the inner SELECT collapsed to a
  * single column — the result is a scalar value, not a row/multiset. Handles both
  * {@link On.ColumnPairs FK-derived} and {@link On.Predicate condition-join} hops; step-0 parent correlation
- * reads {@link ChildField.ColumnReferenceField#parentCorrelation()} via a sealed switch.
+ * reads {@link ChildField.ColumnBackedReferenceField#parentCorrelation()} via a sealed switch.
  *
  * <p>{@link CallSiteCompaction.NodeIdEncodeKeys} (rooted-at-parent NodeId reference) is
  * classifier-validated unreachable here (deferred to
@@ -51,11 +51,11 @@ public final class InlineColumnReferenceFieldEmitter {
      *                     so aliased duplicate selections of the same reference mint distinct SQL
      *                     aliases the read side re-derives via {@code env.getField().getResultKey()}.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.ColumnReferenceField crf, String parentAlias,
+    public static CodeBlock buildSwitchArmBody(ChildField.ColumnBackedReferenceField crf, String parentAlias,
             String sfName, String entryName, String outputPackage) {
         if (crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
             throw new IllegalStateException(
-                "Inline ColumnReferenceField '" + crf.parentTypeName() + "." + crf.name()
+                "Inline ColumnBackedReferenceField '" + crf.parentTypeName() + "." + crf.name()
                 + "' with NodeIdEncodeKeys compaction must be rejected by the validator before emission");
         }
         List<JoinStep> path = crf.joinPath();
@@ -66,7 +66,7 @@ public final class InlineColumnReferenceFieldEmitter {
             // — project the column directly off the parent alias, aliased to the GraphQL field name.
             var direct = CodeBlock.builder();
             direct.addStatement("fields.add($L.$L.as($S + $L.getKey()))",
-                parentAlias, crf.column().javaName(), RESERVED_RK_ALIAS_PREFIX, entryName);
+                parentAlias, crf.columns().get(0).javaName(), RESERVED_RK_ALIAS_PREFIX, entryName);
             return direct.build();
         }
         List<String> aliases = JoinPathEmitter.generateAliases(path, null);
@@ -102,11 +102,11 @@ public final class InlineColumnReferenceFieldEmitter {
         return code.build();
     }
 
-    private static CodeBlock buildInnerSelect(ChildField.ColumnReferenceField crf, List<JoinStep> path,
+    private static CodeBlock buildInnerSelect(ChildField.ColumnBackedReferenceField crf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, String parentAlias) {
         var sel = CodeBlock.builder();
         // SELECT projection: the single terminal column on the terminal alias.
-        sel.add("$T.select($L.$L)", DSL, terminalAlias, crf.column().javaName());
+        sel.add("$T.select($L.$L)", DSL, terminalAlias, crf.columns().get(0).javaName());
 
         // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);
@@ -140,7 +140,7 @@ public final class InlineColumnReferenceFieldEmitter {
                 });
             case ParentCorrelation.OnLateralArgs ignored -> throw new IllegalStateException(
                 "a lateral routine hop cannot head a column-reference path; routine chains do "
-                + "not produce ColumnReferenceField");
+                + "not produce ColumnBackedReferenceField");
             case ParentCorrelation.OnLiftedSlots ignored -> throw new IllegalStateException(
                 "ParentCorrelation.OnLiftedSlots never reaches the inline emitters; the "
                 + "pre-keyed lifted shape is DataLoader-batched through SplitRowsMethodEmitter");

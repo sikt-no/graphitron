@@ -79,19 +79,18 @@ public class TypeClassGenerator {
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, String outputPackage) {
         var type = (GraphitronType.TableBackedType) schema.type(typeName);
+        // Single-column arms before composite arms, each name-sorted: the emission order from
+        // when the two arities were separate collections, kept so generated output stays
+        // byte-stable across the merge.
         var columnFields = schema.fieldsOf(typeName).stream()
-            .filter(f -> f instanceof ChildField.ColumnField)
-            .map(f -> (ChildField.ColumnField) f)
-            .sorted(Comparator.comparing(GraphitronField::name))
-            .toList();
-        var compositeColumnFields = schema.fieldsOf(typeName).stream()
-            .filter(f -> f instanceof ChildField.CompositeColumnField)
-            .map(f -> (ChildField.CompositeColumnField) f)
-            .sorted(Comparator.comparing(GraphitronField::name))
+            .filter(f -> f instanceof ChildField.ColumnBackedField)
+            .map(f -> (ChildField.ColumnBackedField) f)
+            .sorted(Comparator.comparing(ChildField.ColumnBackedField::isComposite)
+                .thenComparing(GraphitronField::name))
             .toList();
         var columnReferenceFields = schema.fieldsOf(typeName).stream()
-            .filter(f -> f instanceof ChildField.ColumnReferenceField)
-            .map(f -> (ChildField.ColumnReferenceField) f)
+            .filter(f -> f instanceof ChildField.ColumnBackedReferenceField)
+            .map(f -> (ChildField.ColumnBackedReferenceField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         var tableFields = schema.fieldsOf(typeName).stream()
@@ -139,7 +138,7 @@ public class TypeClassGenerator {
         // DataLoader key column being absent from the parent row and silently null. Keyed on the
         // BatchKeyField capability + sourceShape(), not leaf identity.
         ParentProjectionContainmentCheck.check(schema, typeName, requiredProjection);
-        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage);
+        return buildTypeSpec(typeName, type.table(), columnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage);
     }
 
     /**
@@ -154,9 +153,8 @@ public class TypeClassGenerator {
      *                        private input-rows helper method on the type class.
      */
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
-            List<ChildField.ColumnField> columnFields,
-            List<ChildField.CompositeColumnField> compositeColumnFields,
-            List<ChildField.ColumnReferenceField> columnReferenceFields,
+            List<ChildField.ColumnBackedField> columnFields,
+            List<ChildField.ColumnBackedReferenceField> columnReferenceFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
@@ -174,7 +172,7 @@ public class TypeClassGenerator {
         // alongside $fields and the lift can never be silently dropped. The registry threads through
         // emitSelectionSwitch's NestingField recursion, so nested inline fields share it.
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry ->
-            builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage, registry)));
+            builder.addMethod(build$FieldsGroupedMethod(tableRef, columnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, pivotFields, requiredProjection, outputPackage, registry)));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -265,9 +263,8 @@ public class TypeClassGenerator {
      * {@code SelectionOccurrences.mergeByResultKey} reproduces for occurrence lists).
      */
     private static MethodSpec build$FieldsGroupedMethod(TableRef tableRef,
-            List<ChildField.ColumnField> columnFields,
-            List<ChildField.CompositeColumnField> compositeColumnFields,
-            List<ChildField.ColumnReferenceField> columnReferenceFields,
+            List<ChildField.ColumnBackedField> columnFields,
+            List<ChildField.ColumnBackedReferenceField> columnReferenceFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
@@ -304,7 +301,6 @@ public class TypeClassGenerator {
 
         var flat = new ArrayList<ChildField>();
         flat.addAll(columnFields);
-        flat.addAll(compositeColumnFields);
         flat.addAll(columnReferenceFields);
         flat.addAll(tableFields);
         flat.addAll(lookupTableFields);
@@ -401,20 +397,20 @@ public class TypeClassGenerator {
         builder.addCode("    switch ($L.getName()) {\n", sf);
         for (var f : fields) {
             switch (f) {
-                case ChildField.ColumnField cf ->
-                    // Compaction (Direct vs NodeIdEncodeKeys) does not affect projection — the
-                    // SELECT term is the same column in both cases. The wrapping happens at the
-                    // fetcher value, not in the SELECT clause; see FetcherEmitter.
+                // Compaction (Direct vs NodeIdEncodeKeys) does not affect projection — the
+                // SELECT terms are the same columns in both cases. The wrapping happens at the
+                // fetcher value, not in the SELECT clause; see FetcherEmitter.
+                case ChildField.ColumnBackedField cf when !cf.isComposite() ->
                     builder.addCode("        case $S -> fields.add($L.$L);\n",
-                        cf.name(), tableArg, cf.column().javaName());
-                case ChildField.CompositeColumnField ccf -> {
-                    builder.addCode("        case $S -> {\n", ccf.name());
-                    for (var col : ccf.columns()) {
+                        cf.name(), tableArg, cf.columns().get(0).javaName());
+                case ChildField.ColumnBackedField cf -> {
+                    builder.addCode("        case $S -> {\n", cf.name());
+                    for (var col : cf.columns()) {
                         builder.addCode("            fields.add($L.$L);\n", tableArg, col.javaName());
                     }
                     builder.addCode("        }\n");
                 }
-                case ChildField.ColumnReferenceField crf -> {
+                case ChildField.ColumnBackedReferenceField crf -> {
                     builder.addCode("        case $S -> {\n", crf.name());
                     builder.addCode("$L", InlineColumnReferenceFieldEmitter.buildSwitchArmBody(crf, tableArg, sf, entry, outputPackage));
                     builder.addCode("        }\n");

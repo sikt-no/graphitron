@@ -188,12 +188,12 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.InterfaceField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             case ChildField.UnionField f -> addParticipantTypeClassEdges(fetcher, f.participants());
             // NodeId-encoded carriers: precise NodeIdEncoder edge (the one per-type-growing singleton).
-            case ChildField.CompositeColumnField ignored -> addNodeIdEncoderEdge(fetcher);
-            case ChildField.CompositeColumnReferenceField ignored -> addNodeIdEncoderEdge(fetcher);
+            // The column-backed leaves gate on their compaction, which subsumes the composite case
+            // (a multi-column carrier always carries NodeIdEncodeKeys by its constructor invariant).
             case ChildField.SingleRecordIdField ignored -> addNodeIdEncoderEdge(fetcher);
             case ChildField.SingleRecordIdFieldFromReturning ignored -> addNodeIdEncoderEdge(fetcher);
-            case ChildField.ColumnField f -> addNodeIdEncoderEdgeIfEncoded(fetcher, f.compaction());
-            case ChildField.ColumnReferenceField f -> addNodeIdEncoderEdgeIfEncoded(fetcher, f.compaction());
+            case ChildField.ColumnBackedField f -> addNodeIdEncoderEdgeIfEncoded(fetcher, f.compaction());
+            case ChildField.ColumnBackedReferenceField f -> addNodeIdEncoderEdgeIfEncoded(fetcher, f.compaction());
             // Scalar / record / passthrough / cross-table-participant leaves: read off the arrived
             // source, no cross-type projection edge. (Frozen runtime helpers reached via the blanket.)
             case ChildField.ParticipantColumnReferenceField ignored -> { }
@@ -388,11 +388,9 @@ public final class CompileDependencyGraphBuilder {
             }
             // Scalar column subquery (InlineColumnReferenceFieldEmitter, no $fields) and the computed
             // arm (external user class via ClassName.bestGuess) reference no generated unit.
-            case ChildField.ColumnField ignored -> { }
-            case ChildField.ColumnReferenceField ignored -> { }
+            case ChildField.ColumnBackedField ignored -> { }
+            case ChildField.ColumnBackedReferenceField ignored -> { }
             case ChildField.ParticipantColumnReferenceField ignored -> { }
-            case ChildField.CompositeColumnField ignored -> { }
-            case ChildField.CompositeColumnReferenceField ignored -> { }
             case ChildField.ComputedField ignored -> { }
             // DataLoader-backed / record-parent / polymorphic / service leaves are not emitted inline
             // into this $fields method (TypeClassGenerator collects only TableField/LookupTableField);

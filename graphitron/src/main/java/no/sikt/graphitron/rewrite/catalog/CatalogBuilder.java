@@ -228,24 +228,25 @@ public final class CatalogBuilder {
     static FieldClassification projectFieldClassification(GraphitronField field, GraphitronSchema schema) {
         return switch (field) {
             // --- ChildField permits ---
-            case ChildField.ColumnField f ->
-                new FieldClassification.Column(parentTableName(f, schema), f.columnName());
-            case ChildField.ColumnReferenceField f ->
-                new FieldClassification.ColumnReference(
-                    terminalTableName(f.joinPath()), f.columnName(), fkSteps(f.joinPath()));
+            // Arity is read off the leaf's isComposite() accessor, never re-derived from the
+            // size predicate; the Composite* projection variants are a kept denormalized view
+            // of the merged column-backed leaves so the wire surface does not churn.
+            case ChildField.ColumnBackedField f -> f.isComposite()
+                ? new FieldClassification.CompositeColumn(parentTableName(f, schema), columnSqlNames(f.columns()))
+                : new FieldClassification.Column(parentTableName(f, schema), f.columns().get(0).sqlName());
+            case ChildField.ColumnBackedReferenceField f -> f.isComposite()
+                ? new FieldClassification.CompositeColumnReference(
+                    terminalTableName(f.joinPath()),
+                    columnSqlNames(f.columns()),
+                    fkSteps(f.joinPath()))
+                : new FieldClassification.ColumnReference(
+                    terminalTableName(f.joinPath()), f.columns().get(0).sqlName(), fkSteps(f.joinPath()));
             case ChildField.ParticipantColumnReferenceField f ->
                 new FieldClassification.ParticipantCrossTable(
                     f.targetTable() != null ? f.targetTable().tableName() : null,
                     f.column().sqlName(),
                     f.hop() != null ? fkSqlNameOrNull(f.pairs()) : null,
                     f.aliasName());
-            case ChildField.CompositeColumnField f ->
-                new FieldClassification.CompositeColumn(parentTableName(f, schema), columnSqlNames(f.columns()));
-            case ChildField.CompositeColumnReferenceField f ->
-                new FieldClassification.CompositeColumnReference(
-                    terminalTableName(f.joinPath()),
-                    columnSqlNames(f.columns()),
-                    fkSteps(f.joinPath()));
             case ChildField.SingleRecordIdFieldFromReturning ignored ->
                 new FieldClassification.SingleRecordIdFromReturning();
             case ChildField.SingleRecordIdField f ->

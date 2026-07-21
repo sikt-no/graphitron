@@ -69,10 +69,10 @@ class LocalContextErrorsFieldValidationTest {
                     java.util.List.of(new ColumnRef("FILM_ID", "", "")))));
     }
 
-    private static ChildField.ColumnField unguardedSibling(String parentTypeName) {
-        return new ChildField.ColumnField(
-            parentTypeName, "title", null, "title",
-            new ColumnRef("TITLE", "", ""),
+    private static ChildField.ColumnBackedField unguardedSibling(String parentTypeName) {
+        return new ChildField.ColumnBackedField(
+            parentTypeName, "title", null,
+            java.util.List.of(new ColumnRef("TITLE", "", "")),
             new CallSiteCompaction.Direct());
     }
 
@@ -95,7 +95,7 @@ class LocalContextErrorsFieldValidationTest {
                 && e.message().contains("Field 'FilmPayload.errors'")
                 && e.message().contains("LocalContext errors transport")
                 && e.message().contains("sibling field 'FilmPayload.title'")
-                && e.message().contains("ColumnField"));
+                && e.message().contains("ColumnBackedField"));
     }
 
     @Test

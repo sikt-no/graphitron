@@ -11,9 +11,8 @@ import java.util.Optional;
  * determined by the parent {@link no.sikt.graphitron.rewrite.model.GraphitronType} at generation time.
  */
 public sealed interface ChildField extends OutputField
-    permits ChildField.ColumnField, ChildField.ColumnReferenceField,
+    permits ChildField.ColumnBackedField, ChildField.ColumnBackedReferenceField,
             ChildField.ParticipantColumnReferenceField,
-            ChildField.CompositeColumnField, ChildField.CompositeColumnReferenceField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
@@ -49,7 +48,7 @@ public sealed interface ChildField extends OutputField
      * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a domain
      * record ({@link SourceShape#Record}). The classifier already projected the parent's backing into
      * this leaf's identity (the {@code BatchedTableField} stored gate, {@code RecordField} vs
-     * {@code ColumnField}, the {@code SingleRecord*} / {@code Errors} payload fields), so the
+     * {@code ColumnBackedField}, the {@code SingleRecord*} / {@code Errors} payload fields), so the
      * leaf-exhaustive switch is that projection; a new leaf forces a source-shape decision the same
      * way {@link #operation()} / {@link #target()} do.
      *
@@ -62,11 +61,9 @@ public sealed interface ChildField extends OutputField
     default SourceShape sourceShape() {
         return switch (this) {
             // Catalog-backed (table) parents: the source is a table row.
-            case ColumnField ignored -> SourceShape.Table;
-            case ColumnReferenceField ignored -> SourceShape.Table;
+            case ColumnBackedField ignored -> SourceShape.Table;
+            case ColumnBackedReferenceField ignored -> SourceShape.Table;
             case ParticipantColumnReferenceField ignored -> SourceShape.Table;
-            case CompositeColumnField ignored -> SourceShape.Table;
-            case CompositeColumnReferenceField ignored -> SourceShape.Table;
             case TableField ignored -> SourceShape.Table;
             case LookupTableField ignored -> SourceShape.Table;
 
@@ -106,11 +103,9 @@ public sealed interface ChildField extends OutputField
         return switch (this) {
             // Catalog column / scalar projections off an already-arrived source: bare reads, no
             // filter surface. The column-ness is a target shape fact, not an operation fact.
-            case ColumnField ignored -> OutputField.bareFetch();
-            case ColumnReferenceField ignored -> OutputField.bareFetch();
+            case ColumnBackedField ignored -> OutputField.bareFetch();
+            case ColumnBackedReferenceField ignored -> OutputField.bareFetch();
             case ParticipantColumnReferenceField ignored -> OutputField.bareFetch();
-            case CompositeColumnField ignored -> OutputField.bareFetch();
-            case CompositeColumnReferenceField ignored -> OutputField.bareFetch();
             // Table targets carrying a filter surface: Paginate when the wrapper is a connection, else Fetch.
             case TableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             case BatchedTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
@@ -149,11 +144,9 @@ public sealed interface ChildField extends OutputField
     @Override default Target target() {
         return switch (this) {
             // Column projections: no return wrapper on the leaf, so Single(Column).
-            case ColumnField ignored -> OutputField.single(new TargetShape.Column());
-            case ColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
+            case ColumnBackedField ignored -> OutputField.single(new TargetShape.Column());
+            case ColumnBackedReferenceField ignored -> OutputField.single(new TargetShape.Column());
             case ParticipantColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
-            case CompositeColumnField ignored -> OutputField.single(new TargetShape.Column());
-            case CompositeColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
             // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
             case TableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case BatchedTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
@@ -284,56 +277,102 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * A single-column output carrier on a table-backed parent. The column's value reaches the
-     * field's value through {@link #compaction()}: {@link CallSiteCompaction.Direct} for plain
-     * SELECT-term projection, {@link CallSiteCompaction.NodeIdEncodeKeys} for arity-1
-     * {@code @nodeId} projections that wrap the column in the per-Node
-     * {@code encode<TypeName>} helper.
+     * A column-backed output carrier on a table-backed parent: the field's value is produced
+     * from {@link #columns()} (arity 1..N) of the parent table, reached without a
+     * {@code @reference} path. The value reaches the field through {@link #compaction()}:
+     * {@link CallSiteCompaction.Direct} for plain SELECT-term projection (single-column by the
+     * constructor invariant below), {@link CallSiteCompaction.NodeIdEncodeKeys} for
+     * {@code @nodeId} projections that wrap the column(s) positionally in the per-Node
+     * {@code encode<TypeName>} helper. Arity is a column count on this one leaf, not a leaf
+     * dimension; consumers branch on {@link #isComposite()}.
      */
-    record ColumnField(
+    record ColumnBackedField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        String columnName,
-        ColumnRef column,
+        List<ColumnRef> columns,
         CallSiteCompaction compaction
     ) implements ChildField {
+        public ColumnBackedField {
+            columns = List.copyOf(columns);
+            if (columns.isEmpty()) {
+                throw new IllegalArgumentException("ColumnBackedField requires at least one column");
+            }
+            // Deferred-generalization seam, not a modeling truth: @nodeId is currently the only
+            // multi-column trigger, so a multi-column carrier is always a node-key codec call
+            // (and, by corollary, a Direct read is always single-column). Loosen this invariant
+            // when a plain multi-column projection (arity-N Direct) arrives instead of building
+            // on it.
+            if (columns.size() > 1 && !(compaction instanceof CallSiteCompaction.NodeIdEncodeKeys)) {
+                throw new IllegalArgumentException(
+                    "ColumnBackedField '" + name + "' with arity " + columns.size()
+                    + " requires NodeIdEncodeKeys compaction; got " + compaction);
+            }
+        }
+        /**
+         * Arity classified once: {@code true} when this carrier spans more than one column (a
+         * composite node key). Every consumer branches on this accessor rather than re-evaluating
+         * the size predicate.
+         */
+        public boolean isComposite() { return columns.size() > 1; }
         @Override public DomainReturnType domainReturnType() {
-            // NodeIdEncodeKeys compaction encodes the column value to a Base64 String at runtime;
-            // the env.getSource() shape downstream is String, not the underlying column class.
+            // NodeIdEncodeKeys compaction encodes the column value(s) to a Base64 String at
+            // runtime; the env.getSource() shape downstream is String, not the column class.
             if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new DomainReturnType.Plain(STRING_CLASS);
             }
-            return new DomainReturnType.Plain(column.columnType());
+            // Direct implies arity 1 (constructor invariant), so the single column's type.
+            return new DomainReturnType.Plain(columns.get(0).columnType());
         }
     }
 
     /**
-     * A single-column output carrier on a table-backed parent reached through a {@code @reference}
-     * path. The terminal column lives on the joined target table; {@link #compaction()} controls
-     * how the value reaches the field — {@link CallSiteCompaction.Direct} for plain projection,
-     * {@link CallSiteCompaction.NodeIdEncodeKeys} for arity-1 {@code @nodeId} references where
-     * the parent table's keyColumns sit on the joined parent (rooted-at-parent single-hop) or
-     * the FK source columns on the child positionally mirror the keyColumns (rooted-at-child).
+     * A column-backed output carrier on a table-backed parent reached through a
+     * {@code @reference} path. The terminal {@link #columns()} (arity 1..N) live on the joined
+     * target table; {@link #compaction()} controls how the value reaches the field —
+     * {@link CallSiteCompaction.Direct} for plain projection (single-column by the constructor
+     * invariant below), {@link CallSiteCompaction.NodeIdEncodeKeys} for {@code @nodeId}
+     * references where the target's keyColumns sit on the joined parent (rooted-at-parent).
+     * (Rooted-at-child references, where the FK source columns on the child positionally mirror
+     * the keyColumns, collapse to {@link ColumnBackedField} at classification time.) Arity is a
+     * column count on this one leaf, not a leaf dimension; consumers branch on
+     * {@link #isComposite()}.
      */
-    record ColumnReferenceField(
+    record ColumnBackedReferenceField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        String columnName,
-        ColumnRef column,
+        List<ColumnRef> columns,
         List<JoinStep> joinPath,
         CallSiteCompaction compaction,
         ParentCorrelation parentCorrelation
     ) implements ChildField, ResultKeyAliasedField {
-        public ColumnReferenceField {
-            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "ColumnReferenceField");
+        public ColumnBackedReferenceField {
+            columns = List.copyOf(columns);
+            if (columns.isEmpty()) {
+                throw new IllegalArgumentException("ColumnBackedReferenceField requires at least one column");
+            }
+            // Same deferred-generalization seam as ColumnBackedField: no plain multi-column
+            // reference projection exists today, so a multi-column carrier is always a node-key
+            // codec call. Loosen when arity-N Direct arrives instead of building on it.
+            if (columns.size() > 1 && !(compaction instanceof CallSiteCompaction.NodeIdEncodeKeys)) {
+                throw new IllegalArgumentException(
+                    "ColumnBackedReferenceField '" + name + "' with arity " + columns.size()
+                    + " requires NodeIdEncodeKeys compaction; got " + compaction);
+            }
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "ColumnBackedReferenceField");
         }
+        /**
+         * Arity classified once: {@code true} when this carrier spans more than one column (a
+         * composite node key). Every consumer branches on this accessor rather than re-evaluating
+         * the size predicate.
+         */
+        public boolean isComposite() { return columns.size() > 1; }
         @Override public DomainReturnType domainReturnType() {
             if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new DomainReturnType.Plain(STRING_CLASS);
             }
-            return new DomainReturnType.Plain(column.columnType());
+            return new DomainReturnType.Plain(columns.get(0).columnType());
         }
     }
 
@@ -345,7 +384,7 @@ public sealed interface ChildField extends OutputField
      * {@link #aliasName}; the per-field DataFetcher reads it back from the result
      * {@code Record} by that alias.
      *
-     * <p>Distinct from {@link ColumnReferenceField} (the broader
+     * <p>Distinct from {@link ColumnBackedReferenceField} (the broader
      * scalar-{@code @reference} story): this variant exists specifically
      * for the {@code TableInterfaceType} cross-table participant-field case where the
      * interface fetcher (not a per-field method) materialises the value.
@@ -371,62 +410,6 @@ public sealed interface ChildField extends OutputField
         public TableRef targetTable() { return hop.targetTable(); }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(column.columnType());
-        }
-    }
-
-    /**
-     * Composite-key output carrier on a table-backed parent reached through a {@code @reference}
-     * path. Carries {@code columns} of arity &ge; 2 plus a single-hop or correlated-subquery
-     * {@code joinPath}. {@code compaction} is narrowed to {@link CallSiteCompaction.NodeIdEncodeKeys}
-     * at the type level: a composite-column reference projection is always a NodeId encode call;
-     * no plain composite-column reference projection exists.
-     */
-    record CompositeColumnReferenceField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        List<ColumnRef> columns,
-        List<JoinStep> joinPath,
-        CallSiteCompaction.NodeIdEncodeKeys compaction
-    ) implements ChildField {
-
-        public CompositeColumnReferenceField {
-            columns = List.copyOf(columns);
-            if (columns.size() < 2) {
-                throw new IllegalArgumentException(
-                    "CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
-            }
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(STRING_CLASS);
-        }
-    }
-
-    /**
-     * Composite-key output carrier on a table-backed parent. Carries {@code columns} of arity
-     * &ge; 2 (arity-1 routes to the single-column {@link ColumnField} sibling) and a
-     * {@link CallSiteCompaction.NodeIdEncodeKeys} compaction whose
-     * {@link HelperRef.Encode#paramSignature() encodeMethod.paramSignature} is positionally
-     * equal to the NodeType's {@code keyColumns}. The slot is narrowed to
-     * {@code NodeIdEncodeKeys} at the type level: no plain composite-column projection exists.
-     */
-    record CompositeColumnField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        List<ColumnRef> columns,
-        CallSiteCompaction.NodeIdEncodeKeys compaction
-    ) implements ChildField {
-
-        public CompositeColumnField {
-            columns = List.copyOf(columns);
-            if (columns.size() < 2) {
-                throw new IllegalArgumentException(
-                    "CompositeColumnField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnField");
-            }
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(STRING_CLASS);
         }
     }
 

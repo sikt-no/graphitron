@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code JooqCatalog.findColumn(String, ...)} hit {@code TableResolution.Ambiguous} on the colliding
  * name; the column resolve came back empty and the field was skipped from the participant's
  * cross-table set. It then fell through to {@code FieldBuilder}'s scalar {@code @reference} path,
- * which silently misclassifies it as a plain {@link ChildField.ColumnReferenceField}
+ * which silently misclassifies it as a plain {@link ChildField.ColumnBackedReferenceField}
  * instead of a {@link ChildField.ParticipantColumnReferenceField} — so the interface fetcher emits
  * no conditional LEFT JOIN / alias projection, and the classification of a participant field comes
  * to depend on whether an unrelated schema happens to hold a same-named table. There is no

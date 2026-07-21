@@ -119,8 +119,8 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * space, one discriminator column) and declares its own detail table via {@code @table}. Its
      * fields split across the two tables, and residence is <em>declared</em> by the author rather
      * than inferred: a field carrying a parent-{@code @reference} back to the base is base-resident
-     * (classifies as {@link ChildField.ColumnReferenceField}, resolved on the base via the existing
-     * reference path); a field without one is detail-resident (a plain {@link ChildField.ColumnField}
+     * (classifies as {@link ChildField.ColumnBackedReferenceField}, resolved on the base via the existing
+     * reference path); a field without one is detail-resident (a plain {@link ChildField.ColumnBackedField}
      * on this detail table). No site recomputes residence; the emitter and validator read the field
      * variant.
      *
@@ -138,7 +138,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * base are the detail's own primary key) is checked by the validator, not encoded here.
      *
      * <p>There is no residence list on this record: the interface fetcher emits a <em>detail-only</em>
-     * projection (the participant's detail-resident {@link ChildField.ColumnField}s against the detail
+     * projection (the participant's detail-resident {@link ChildField.ColumnBackedField}s against the detail
      * alias, parent-references not re-traversed), while the participant's own {@code $fields} stays
      * whole and serves standalone queries (parent-references traversed to the base). The two are
      * distinct projections, never one globally-restricted method.

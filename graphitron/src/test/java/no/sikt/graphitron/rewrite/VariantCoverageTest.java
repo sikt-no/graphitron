@@ -91,17 +91,6 @@ class VariantCoverageTest {
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
             + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
             + "rejection sites in FieldBuilder. Add a corpus example when that lift lands."),
-        Map.entry(ChildField.CompositeColumnField.class,
-            "Covered by NodeIdPipelineTest.OutputCase (the composite-PK NodeId path requires the "
-            + "nodeid fixture's `bar` table with two key columns, not available in the standard "
-            + "sakila catalog); add a GraphitronSchemaBuilderTest case when a composite-PK "
-            + "fixture is made available there."),
-        Map.entry(ChildField.CompositeColumnReferenceField.class,
-            "Composite-key NodeId reference (rooted-at-parent or non-FK-mirror): the only schema "
-            + "shape that produces it is a child table whose FK references a parent NodeType "
-            + "with multiple key columns AND the FK's target columns differ from those keys. The "
-            + "standard sakila catalog has no such shape; add a GraphitronSchemaBuilderTest case "
-            + "when a composite-PK rooted-at-parent fixture exists."),
         Map.entry(InputField.CompositeColumnField.class,
             "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter, "
             + "arity > 1) and the synthesized-shim composite path. Lives in NodeIdPipelineTest "

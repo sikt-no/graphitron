@@ -140,7 +140,7 @@ class PivotClassificationTest {
             """);
         assertThat(schema.field("Film", "titleTexts")).isInstanceOf(ChildField.PivotField.class);
         var nesting = (ChildField.NestingField) schema.field("PivotNestingHost", "texts");
-        assertThat(nesting.nestedFields()).allMatch(f -> f instanceof ChildField.ColumnField);
+        assertThat(nesting.nestedFields()).allMatch(f -> f instanceof ChildField.ColumnBackedField);
         assertThat(schema.type("TranslatedTexts")).isInstanceOf(GraphitronType.NestingType.class);
         assertThat(no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate(schema)).isEmpty();
     }

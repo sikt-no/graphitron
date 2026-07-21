@@ -218,7 +218,7 @@ public final class FetcherRegistrationsEmitter {
      * The dual-source-shape dispatch registration value for a coordinate whose reified shape set is the
      * dual {@code {generic Record, class-backed accessor}}, or {@code null} when the coordinate is
      * single-reach (the caller falls back to {@link FetcherEmitter#bind}). The nesting arm's
-     * {@code ColumnField} is paired from {@code dualWiring}; the accessor arm is {@code field} itself.
+     * {@code ColumnBackedField} is paired from {@code dualWiring}; the accessor arm is {@code field} itself.
      */
     private static CodeBlock dispatchRegistrationValue(GraphitronSchema schema, String typeName,
             GraphitronField field, ClassName fetchersClass, GraphitronType.ResultType resultType,
@@ -238,12 +238,12 @@ public final class FetcherRegistrationsEmitter {
 
     /**
      * The generic-Record-arm leaf for {@code fieldName} — the nesting edge's
-     * {@link ChildField.ColumnField} or the pivot edge's {@link ChildField.PivotSlotField},
+     * {@link ChildField.ColumnBackedField} or the pivot edge's {@link ChildField.PivotSlotField},
      * whichever representative won the wiring — or {@code null}.
      */
     private static ChildField dispatchColumnArm(NestedTypeWiring dualWiring, String fieldName) {
         for (var f : dualWiring.fields()) {
-            if ((f instanceof ChildField.ColumnField || f instanceof ChildField.PivotSlotField)
+            if ((f instanceof ChildField.ColumnBackedField || f instanceof ChildField.PivotSlotField)
                     && f.name().equals(fieldName)) {
                 return f;
             }

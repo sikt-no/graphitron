@@ -13,12 +13,12 @@ import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
@@ -96,7 +96,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 @PipelineTier
 class GraphitronSchemaBuilderTest {
 
-    // ===== ColumnField =====
+    // ===== ColumnBackedField =====
 
     enum ColumnFieldCase implements ClassificationCase {
         IMPLICIT_COLUMN_NAME(
@@ -106,10 +106,10 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var col = (ColumnField) schema.field("Film", "title");
-                assertThat(col).isInstanceOf(ColumnField.class);
-                assertThat(col.columnName()).isEqualTo("title");
-                assertThat(col.column()).isInstanceOf(ColumnRef.class);
+                var col = (ColumnBackedField) schema.field("Film", "title");
+                assertThat(col).isInstanceOf(ColumnBackedField.class);
+                assertThat(col.columns().get(0).sqlName()).isEqualTo("title");
+                assertThat(col.columns().get(0)).isInstanceOf(ColumnRef.class);
             }),
 
         EXPLICIT_FIELD_DIRECTIVE(
@@ -119,8 +119,8 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var col = (ColumnField) schema.field("Film", "movieTitle");
-                assertThat(col.columnName()).isEqualTo("title");
+                var col = (ColumnBackedField) schema.field("Film", "movieTitle");
+                assertThat(col.columns().get(0).sqlName()).isEqualTo("title");
             }),
 
         UNRESOLVED_COLUMN(
@@ -131,12 +131,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "doesNotExist")).isInstanceOf(UnclassifiedField.class)),
 
-        // The pure `enum return type -> ColumnField` verdict (a bare isInstanceOf
+        // The pure `enum return type -> ColumnBackedField` verdict (a bare isInstanceOf
         // assertion, no slot detail) migrated to the spec-by-example corpus, where it is the
         // `enum-column` ClassifiedCorpus example (Film.rating: Rating, asserted via
         // @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)). Corpus-only: it lands on the
         // already-taught inline / Column coordinate; the enum-ness lives in the GraphQL-to-Java conversion, not the
-        // classification. The ColumnField leaf stays covered by the corpus and the slot-asserting
+        // classification. The ColumnBackedField leaf stays covered by the corpus and the slot-asserting
         // ColumnFieldCase rows above.
 
         UNRESOLVED_TABLE(
@@ -153,7 +153,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(ColumnField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ColumnBackedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -164,7 +164,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor(ChildField.ColumnField.class)
+    @ProjectionFor(ChildField.ColumnBackedField.class)
     void columnFieldProjectionCarriesTableAndColumnName() {
         var snapshot = buildSnapshot("""
             type Film @table(name: "film") { movieTitle: String @field(name: "title") }
@@ -175,7 +175,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(p.columnName()).isEqualTo("title");
     }
 
-    // ===== ColumnReferenceField =====
+    // ===== ColumnBackedReferenceField =====
 
     enum ColumnReferenceFieldCase implements ClassificationCase {
         KNOWN_FK_BY_SQL_NAME(
@@ -187,7 +187,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var ref = (ColumnReferenceField) schema.field("Film", "languageName");
+                var ref = (ColumnBackedReferenceField) schema.field("Film", "languageName");
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
@@ -201,7 +201,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var ref = (ColumnReferenceField) schema.field("Film", "languageName");
+                var ref = (ColumnBackedReferenceField) schema.field("Film", "languageName");
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
@@ -224,11 +224,11 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((ColumnReferenceField) schema.field("Film", "name")).columnName())
+            schema -> assertThat(((ColumnBackedReferenceField) schema.field("Film", "name")).columns().get(0).sqlName())
                 .isEqualTo("name")),
 
         EXPLICIT_FIELD_DIRECTIVE(
-            "@field(name:) overrides the column name on a ColumnReferenceField",
+            "@field(name:) overrides the column name on a ColumnBackedReferenceField",
             """
             type Film @table(name: "film") {
               languageName: String @field(name: "name")
@@ -236,7 +236,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(((ColumnReferenceField) schema.field("Film", "languageName")).columnName())
+            schema -> assertThat(((ColumnBackedReferenceField) schema.field("Film", "languageName")).columns().get(0).sqlName())
                 .isEqualTo("name")),
 
         TABLE_PATH(
@@ -248,7 +248,7 @@ class GraphitronSchemaBuilderTest {
             type Query { customer: Customer }
             """,
             schema -> {
-                var ref = (ColumnReferenceField) schema.field("Customer", "district");
+                var ref = (ColumnBackedReferenceField) schema.field("Customer", "district");
                 assertThat(ref.joinPath()).hasSize(1);
                 assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 var fk = TestFixtures.fkHop(ref.joinPath().get(0));
@@ -363,7 +363,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(ColumnReferenceField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ColumnBackedReferenceField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -436,7 +436,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor(ChildField.ColumnReferenceField.class)
+    @ProjectionFor(ChildField.ColumnBackedReferenceField.class)
     void columnReferenceFieldProjectionCarriesJoinPathAndTerminalTable() {
         var snapshot = buildSnapshot("""
             type Film @table(name: "film") {
@@ -488,7 +488,7 @@ class GraphitronSchemaBuilderTest {
         REFERENCE_TO_SAME_TABLE_FALLS_THROUGH(
             "scalar @reference whose target resolves to the participant's own table is NOT a "
             + "ParticipantColumnReferenceField; the classifier reverts to the standard "
-            + "ColumnReferenceField path",
+            + "ColumnBackedReferenceField path",
             """
             interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
               contentId: Int! @field(name: "CONTENT_ID")
@@ -497,7 +497,7 @@ class GraphitronSchemaBuilderTest {
               contentId: Int! @field(name: "CONTENT_ID")
               # Hypothetical self-FK — left as a no-FK fallback to ensure the path doesn't lift to
               # ParticipantColumnReferenceField when no cross-table FK hop exists. The field falls
-              # through to ColumnReferenceField/UnclassifiedField via the existing classifier path.
+              # through to ColumnBackedReferenceField/UnclassifiedField via the existing classifier path.
               titleAlias: String @field(name: "TITLE")
             }
             type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
@@ -595,11 +595,11 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Output-side NodeId carrier (ChildField.ColumnField with NodeIdEncodeKeys compaction) =====
+    // ===== Output-side NodeId carrier (ChildField.ColumnBackedField with NodeIdEncodeKeys compaction) =====
 
     enum NodeIdFieldCase implements ClassificationCase {
         WITH_NODE_DIRECTIVE(
-            "@nodeId on a type that also has @node — classified as ColumnField with NodeIdEncodeKeys compaction",
+            "@nodeId on a type that also has @node — classified as ColumnBackedField with NodeIdEncodeKeys compaction",
             """
             type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
               id: ID! @nodeId
@@ -607,8 +607,8 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var field = (ChildField.ColumnField) schema.field("Film", "id");
-                assertThat(field.column()).isNotNull();
+                var field = (ChildField.ColumnBackedField) schema.field("Film", "id");
+                assertThat(field.columns().get(0)).isNotNull();
                 assertThat(field.compaction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys.class);
             }),
@@ -627,7 +627,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(ChildField.ColumnField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ChildField.ColumnBackedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -641,7 +641,7 @@ class GraphitronSchemaBuilderTest {
 
     enum NodeIdReferenceFieldCase implements ClassificationCase {
         RESOLVED(
-            "typeName pointing to a @node type with a single FK between tables → ColumnField with NodeIdEncodeKeys (FK-mirror collapse: FK source columns ARE the keys)",
+            "typeName pointing to a @node type with a single FK between tables → ColumnBackedField with NodeIdEncodeKeys (FK-mirror collapse: FK source columns ARE the keys)",
             """
             type Country implements Node @table(name: "country") @node(keyColumns: ["country_id"]) {
               id: ID! @nodeId
@@ -652,8 +652,8 @@ class GraphitronSchemaBuilderTest {
             type Query { city: City }
             """,
             schema -> {
-                var ref = (ChildField.ColumnField) schema.field("City", "countryId");
-                assertThat(ref.column()).isNotNull();
+                var ref = (ChildField.ColumnBackedField) schema.field("City", "countryId");
+                assertThat(ref.columns().get(0)).isNotNull();
                 assertThat(ref.compaction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys) ref.compaction())
@@ -682,7 +682,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("Film", "languageId")).isInstanceOf(UnclassifiedField.class)),
 
         WITH_REFERENCE_PATH(
-            "@reference(path:) on a @nodeId field with FK-mirror collapse → ColumnField with NodeIdEncodeKeys",
+            "@reference(path:) on a @nodeId field with FK-mirror collapse → ColumnBackedField with NodeIdEncodeKeys",
             """
             type Language implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
@@ -694,7 +694,7 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var ref = (ChildField.ColumnField) schema.field("Film", "languageId");
+                var ref = (ChildField.ColumnBackedField) schema.field("Film", "languageId");
                 assertThat(ref.compaction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys.class);
             }),
@@ -737,7 +737,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(ChildField.ColumnField.class, UnclassifiedField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(ChildField.ColumnBackedField.class, UnclassifiedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -1620,9 +1620,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var nf = (NestingField) schema.field("Film", "details");
                 assertThat(nf.nestedFields()).singleElement()
-                    .isInstanceOfSatisfying(ColumnField.class, cf -> {
+                    .isInstanceOfSatisfying(ColumnBackedField.class, cf -> {
                         assertThat(cf.name()).isEqualTo("title");
-                        assertThat(cf.column().javaName()).isEqualTo("TITLE");
+                        assertThat(cf.columns().get(0).javaName()).isEqualTo("TITLE");
                     });
             }),
 
@@ -1636,9 +1636,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var nf = (NestingField) schema.field("Film", "details");
                 assertThat(nf.nestedFields()).singleElement()
-                    .isInstanceOfSatisfying(ColumnField.class, cf -> {
+                    .isInstanceOfSatisfying(ColumnBackedField.class, cf -> {
                         assertThat(cf.name()).isEqualTo("alias");
-                        assertThat(cf.column().javaName()).isEqualTo("TITLE");
+                        assertThat(cf.columns().get(0).javaName()).isEqualTo("TITLE");
                     });
             }),
 
@@ -1667,8 +1667,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(outer.nestedFields().get(1)).isInstanceOfSatisfying(NestingField.class, inner -> {
                     assertThat(inner.name()).isEqualTo("meta");
                     assertThat(inner.nestedFields()).singleElement()
-                        .isInstanceOfSatisfying(ColumnField.class, cf -> {
-                            assertThat(cf.column().javaName()).isEqualTo("RELEASE_YEAR");
+                        .isInstanceOfSatisfying(ColumnBackedField.class, cf -> {
+                            assertThat(cf.columns().get(0).javaName()).isEqualTo("RELEASE_YEAR");
                         });
                 });
             }),
@@ -4437,7 +4437,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_INPUT_IMPLICIT_CONDITION_NESTED_TWO_LEVEL(
-            "@table input with NestingField wrapping an un-annotated ColumnField → implicit BodyParam at leaf path",
+            "@table input with NestingField wrapping an un-annotated ColumnBackedField → implicit BodyParam at leaf path",
             """
             input OuterInput @table(name: "film") {
               inner: InnerInput
@@ -5311,7 +5311,7 @@ class GraphitronSchemaBuilderTest {
                 .isInstanceOf(PojoInputType.class)),
 
         COLUMN_REFERENCE_FIELD(
-            "@reference on an input field → ColumnReferenceField with resolved join path and column",
+            "@reference on an input field → ColumnBackedReferenceField with resolved join path and column",
             """
             input FilmInput @table(name: "film") {
               filmId: Int! @field(name: "film_id")
@@ -5433,7 +5433,7 @@ class GraphitronSchemaBuilderTest {
         // ===== Phase 4: @condition on INPUT_FIELD_DEFINITION =====
 
         COLUMN_FIELD_WITH_CONDITION(
-            "@condition on a ColumnField — condition() is populated on the classified field",
+            "@condition on a ColumnBackedField — condition() is populated on the classified field",
             """
             input FilmInput @table(name: "film") {
               filmId: Int! @field(name: "film_id")
@@ -5451,7 +5451,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         COLUMN_REFERENCE_FIELD_WITH_CONDITION(
-            "@condition on a ColumnReferenceField — condition() is populated",
+            "@condition on a ColumnBackedReferenceField — condition() is populated",
             """
             input FilmInput @table(name: "film") {
               filmId: Int! @field(name: "film_id")
@@ -5538,7 +5538,7 @@ class GraphitronSchemaBuilderTest {
         // ===== Canonical [ID!] @nodeId(typeName: T) (successor of IdReferenceField) =====
 
         ID_REFERENCE_NODEID_INFERRED(
-            "[ID!] @nodeId(typeName:) with unique FK → ColumnReferenceField with NodeIdDecodeKeys (FK inferred)",
+            "[ID!] @nodeId(typeName:) with unique FK → ColumnBackedReferenceField with NodeIdDecodeKeys (FK inferred)",
             """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type Inventory @table(name: "inventory") { lastUpdate: String }
@@ -5561,7 +5561,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ID_REFERENCE_NODEID_EXPLICIT(
-            "[ID!] @nodeId + @reference(path: [{key:}]) → ColumnReferenceField with NodeIdDecodeKeys (FK explicit)",
+            "[ID!] @nodeId + @reference(path: [{key:}]) → ColumnBackedReferenceField with NodeIdDecodeKeys (FK explicit)",
             """
             type Language implements Node @table(name: "language") @node { id: ID! @nodeId name: String }
             type Film @table(name: "film") { title: String }
@@ -7680,7 +7680,7 @@ class GraphitronSchemaBuilderTest {
     @Test
     void repeatedReferenceApplicationsComposeOneChainOnScalarField() {
         // Same rule on a scalar carrier: the concatenated chain lands the ordinary
-        // ColumnReferenceField with the terminal column resolved on the composed terminus.
+        // ColumnBackedReferenceField with the terminal column resolved on the composed terminus.
         var schema = build("""
             type Film @table(name: "film") {
               anActorName: String
@@ -7690,9 +7690,9 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """);
-        var f = (ChildField.ColumnReferenceField) schema.field("Film", "anActorName");
+        var f = (ChildField.ColumnBackedReferenceField) schema.field("Film", "anActorName");
         assertThat(f.joinPath()).hasSize(2);
-        assertThat(f.column().sqlName()).isEqualToIgnoringCase("first_name");
+        assertThat(f.columns().get(0).sqlName()).isEqualToIgnoringCase("first_name");
     }
 
     @Test
@@ -8508,7 +8508,7 @@ class GraphitronSchemaBuilderTest {
     // ===== DML mutation classification (Invariants #1, #7-#13 — see DmlReturnExpression and FieldBuilder.buildDmlField) =====
     //
     // Rich assertions for the four DML variants: input-shape invariants (one @table arg, no
-    // listed input, no @condition, only ColumnField entries inside the input), @lookupKey gates
+    // listed input, no @condition, only ColumnBackedField entries inside the input), @lookupKey gates
     // for UPDATE / DELETE / UPSERT, return-type validation, and NodeId metadata resolution for
     // ScalarReturnType(ID) returns.  Each rejection case asserts on the {@code reason} text so
     // a regressed message would surface here, not silently in production.
@@ -8838,7 +8838,7 @@ class GraphitronSchemaBuilderTest {
 
         DML_NESTING_WITH_NODEID_FK_TARGET(
             "R186 composes with R189: a nested @nodeId(typeName:) FK-target leaf produces a "
-                + "ColumnReferenceField under the nesting whose lifted FK column lands in setColumns with a "
+                + "ColumnBackedReferenceField under the nesting whose lifted FK column lands in setColumns with a "
                 + "NestedInputField path wrapping the NodeId decode",
             """
             type Country implements Node @table(name: "country") @node(keyColumns: ["country_id"]) { id: ID! @nodeId }

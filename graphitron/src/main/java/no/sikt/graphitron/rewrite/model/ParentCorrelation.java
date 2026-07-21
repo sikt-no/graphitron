@@ -7,7 +7,7 @@ import java.util.Objects;
  * Pre-resolved shape of the step-0 parent correlation for source-correlated child fields.
  * Lifts the fork between slot-pair correlation, condition-method correlation, lateral-argument
  * correlation, and the pre-keyed lifted correlation out of the emitters into the model — the
- * emitter sites (inline {@code TableField} / {@code LookupTableField} / {@code ColumnReferenceField}
+ * emitter sites (inline {@code TableField} / {@code LookupTableField} / {@code ColumnBackedReferenceField}
  * step-0; split-rows {@code buildListMethod} / {@code buildSingleMethod} /
  * {@code buildConnectionMethod}) all read variant identity from a sealed switch on this carrier
  * rather than inspecting {@code joinPath.get(0)} themselves.

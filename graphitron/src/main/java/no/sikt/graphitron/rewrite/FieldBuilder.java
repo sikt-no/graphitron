@@ -20,8 +20,8 @@ import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
-import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
+import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
@@ -1062,7 +1062,7 @@ class FieldBuilder {
 
         // NestingField: a plain object type projected off the parent's table row. Its fields are
         // resolved from the same table context as the parent — classified recursively so nested scalars
-        // reach the model as ColumnField (and future arms as their respective leaves).
+        // reach the model as ColumnBackedField (and future arms as their respective leaves).
         //
         // The gate is the edge-level TypeBuilder.isNestingEdgeTarget: a pure directiveless nesting
         // target, or a directiveless object that also classifies as a producer-backed ResultType (the
@@ -7245,7 +7245,7 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
             }
             var crfParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) crfPcResolution).correlation();
-            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(),
+            return new ColumnBackedReferenceField(parentTypeName, name, location, List.of(column.get()), refPath.elements(),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
                 crfParentCorrelation);
         }
@@ -7272,15 +7272,14 @@ class FieldBuilder {
                 "column '" + columnName + "' could not be resolved in the jOOQ table",
                 columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
         }
-        return new ColumnField(parentTypeName, name, location, columnName, column.get(),
+        return new ColumnBackedField(parentTypeName, name, location, List.of(column.get()),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
     /**
-     * Builds the output carrier for an {@code @nodeId} (no {@code typeName:}) field.
-     * Routes by {@code nodeType.nodeKeyColumns().size()}: arity-1 to a single-column
-     * {@link ColumnField} carrying {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys},
-     * arity &gt; 1 to a {@link ChildField.CompositeColumnField} narrowed to the same compaction arm.
+     * Builds the output carrier for an {@code @nodeId} (no {@code typeName:}) field: a
+     * {@link ColumnBackedField} carrying the node's {@code nodeKeyColumns} (arity 1..N) and a
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys} compaction.
      * The {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} reference is read from
      * {@code nodeType.encodeMethod()} so encoder-class and helper-method names cannot drift.
      */
@@ -7288,12 +7287,7 @@ class FieldBuilder {
             String parentTypeName, String name, graphql.language.SourceLocation location, NodeType nodeType) {
         var enc = nodeType.encodeMethod();
         var compaction = new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc);
-        var keys = nodeType.nodeKeyColumns();
-        if (keys.size() == 1) {
-            ColumnRef k = keys.get(0);
-            return new ColumnField(parentTypeName, name, location, k.javaName(), k, compaction);
-        }
-        return new ChildField.CompositeColumnField(parentTypeName, name, location, keys, compaction);
+        return new ColumnBackedField(parentTypeName, name, location, nodeType.nodeKeyColumns(), compaction);
     }
 
     /**
@@ -7301,13 +7295,13 @@ class FieldBuilder {
      * <ul>
      *   <li><b>Rooted at child (FK-mirror).</b> The single FK hop's source columns on the parent
      *       table positionally equal the target NodeType's {@code keyColumns}, so the parent
-     *       columns ARE the keys; emit them directly through {@link ColumnField} /
-     *       {@link ChildField.CompositeColumnField} (no joinPath).</li>
+     *       columns ARE the keys; emit them directly through {@link ColumnBackedField}
+     *       (no joinPath).</li>
      *   <li><b>Rooted at parent (non-mirror, including multi-hop / condition-join).</b> The FK
      *       columns differ from the target's keyColumns, or the path has more than one step;
-     *       emit through {@link ColumnReferenceField} / {@link ChildField.CompositeColumnReferenceField}
-     *       carrying the target's keyColumns plus the resolved {@code joinPath}. Multi-hop and
-     *       condition-join paths surface as runtime stubs at the emitter.</li>
+     *       emit through {@link ColumnBackedReferenceField} carrying the target's keyColumns
+     *       plus the resolved {@code joinPath}. These surface as validate-time deferred
+     *       rejections until the JOIN-with-projection emission exists.</li>
      * </ul>
      */
     private ChildField buildNodeIdReferenceCarrier(
@@ -7322,28 +7316,21 @@ class FieldBuilder {
         // directly off the parent without a JOIN. Mirrors the legacy fkMirrorSourceColumns helper.
         List<ColumnRef> fkMirrorColumns = fkMirrorSourceColumns(parentTable, joinPath, keys);
         if (fkMirrorColumns != null) {
-            if (fkMirrorColumns.size() == 1) {
-                ColumnRef c = fkMirrorColumns.get(0);
-                return new ColumnField(parentTypeName, name, location, c.javaName(), c, compaction);
-            }
-            return new ChildField.CompositeColumnField(parentTypeName, name, location, fkMirrorColumns, compaction);
+            return new ColumnBackedField(parentTypeName, name, location, fkMirrorColumns, compaction);
         }
 
         // Non-FK-mirror (rooted-at-parent or multi-hop / condition-join). Carry the target's
         // keyColumns plus the joinPath; emitter resolves the parent alias from joinPath when it
         // implements the JOIN-with-projection form.
-        if (keys.size() == 1) {
-            ColumnRef k = keys.get(0);
-            // parentTable is the @nodeId carrier's parent NodeType.table() — always non-null at
-            // this site, so the buildParentCorrelation AuthorError arm (gated on parentTable
-            // == null when the first hop is a condition join) is unreachable here. The cast is
-            // a structural safety net rather than runtime branching.
-            var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable);
-            var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
-            return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction,
-                nodeRefParentCorrelation);
-        }
-        return new ChildField.CompositeColumnReferenceField(parentTypeName, name, location, keys, joinPath, compaction);
+        // parentTable is the @nodeId carrier's parent NodeType.table() — always non-null at
+        // this site, so the buildParentCorrelation AuthorError arm (gated on parentTable
+        // == null when the first hop is a condition join) is unreachable here. The cast is
+        // a structural safety net rather than runtime branching. The derivation is
+        // arity-independent and runs for every arity.
+        var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable);
+        var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
+        return new ColumnBackedReferenceField(parentTypeName, name, location, keys, joinPath, compaction,
+            nodeRefParentCorrelation);
     }
 
     /**

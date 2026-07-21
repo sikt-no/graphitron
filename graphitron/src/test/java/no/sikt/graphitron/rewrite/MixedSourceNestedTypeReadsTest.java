@@ -74,8 +74,8 @@ class MixedSourceNestedTypeReadsTest {
         var details = schema.field("Film", "details");
         assertThat(details).isInstanceOf(ChildField.NestingField.class);
         var nested = ((ChildField.NestingField) details).nestedFields();
-        assertThat(nested).singleElement().isInstanceOf(ChildField.ColumnField.class);
-        assertThat(((ChildField.ColumnField) nested.get(0)).column().sqlName()).isEqualTo("rating");
+        assertThat(nested).singleElement().isInstanceOf(ChildField.ColumnBackedField.class);
+        assertThat(((ChildField.ColumnBackedField) nested.get(0)).columns().get(0).sqlName()).isEqualTo("rating");
 
         // Result edge: FilmDetails registers as the class-backed JavaRecordType and its own visit resolves
         // the accessor read.

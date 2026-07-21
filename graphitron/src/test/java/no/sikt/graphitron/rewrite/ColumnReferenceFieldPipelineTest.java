@@ -15,7 +15,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline tests for inline
- * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField} emission with
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField} emission with
  * {@code CallSiteCompaction.Direct}.
  *
  * <p>Asserts the structural contract: the reified read method on {@code *Fetchers}, the

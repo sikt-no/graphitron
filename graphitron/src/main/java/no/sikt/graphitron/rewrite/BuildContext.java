@@ -1251,7 +1251,7 @@ class BuildContext {
      * explicit {@code @reference} directive.
      *
      * <p>Returns {@code ParsedPath(List.of(), null)} when both inference preconditions are
-     * unsatisfied (typical for {@code ColumnReferenceField}, service reconnect, and same-table
+     * unsatisfied (typical for {@code ColumnBackedReferenceField}, service reconnect, and same-table
      * {@code @externalField} / {@code @tableMethod} sites).
      *
      * <p>{@code fieldName} is the GraphQL field name and is used to compute per-step aliases

@@ -66,7 +66,7 @@ public final class FieldRegistry {
      * Replace an existing classification for {@code coords}, or admit a first-time write. Used by
      * the @mutation classifier's DELETE arm in {@link no.sikt.graphitron.rewrite.FieldBuilder}: a
      * DELETE-carrier's data field may already be classified by the standard per-field classifier
-     * (e.g. as a ColumnField on the payload SDL) by the time the @mutation classifier visits the
+     * (e.g. as a ColumnBackedField on the payload SDL) by the time the @mutation classifier visits the
      * parent; this method swaps in the DELETE-specific carrier
      * ({@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}).
      *
