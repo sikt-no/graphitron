@@ -1,13 +1,13 @@
 ---
 id: R508
 title: "Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity"
-status: Backlog
+status: Spec
 bucket: structural
 priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-07-20
-last-updated: 2026-07-20
+last-updated: 2026-07-21
 ---
 
 # Dissolve the composite-column leaf family: arity becomes QueryPart multiplicity
