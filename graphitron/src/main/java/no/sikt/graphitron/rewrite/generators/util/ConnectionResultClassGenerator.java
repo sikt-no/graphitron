@@ -41,6 +41,19 @@ public class ConnectionResultClassGenerator {
     private static final ClassName LIST         = ClassName.get(List.class);
 
     public static List<TypeSpec> generate(String outputPackage) {
+        return generate(outputPackage, false);
+    }
+
+    /**
+     * Canonical form carrying the tenancy bit. In a multi-tenant build every constructor gains a
+     * trailing {@code DSLContext dsl} parameter and the carrier exposes {@link #CLASS_NAME}'s
+     * {@code dsl()}: the owning fetcher resolved that context per its classified tenant binding,
+     * and the lazy SQL resolvers ({@code ConnectionHelper.totalCount} / {@code facets}) reuse it,
+     * so the count and facet aggregates run against the same source the page rows came from — the
+     * build-time routing decision, not a runtime re-divination.
+     */
+    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var listOfRecordField = ParameterizedTypeName.get(LIST, RECORD);
         var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -72,11 +85,16 @@ public class ConnectionResultClassGenerator {
         var facetBaseConditionField = FieldSpec.builder(CONDITION, "facetBaseCondition", Modifier.PRIVATE, Modifier.FINAL).build();
         var facetConditionsField = FieldSpec.builder(mapOfCondition, "facetConditions", Modifier.PRIVATE, Modifier.FINAL).build();
         var facetSpecsField = FieldSpec.builder(listOfFacetSpec, "facetSpecs", Modifier.PRIVATE, Modifier.FINAL).build();
+        // Multi-tenant only: the routed DSLContext the owning fetcher resolved per its classified
+        // tenant binding. Operation-scoped (the pinned connection lives until completion), so the
+        // lazy resolvers can reuse it.
+        var dslField = FieldSpec.builder(dslContextClass, "dsl", Modifier.PRIVATE, Modifier.FINAL)
+            .build();
 
         // Assigning constructor — the full component list including the facet plan. Only the
         // facet-carrying convenience below reaches the facet slots; every legacy form delegates
         // with a null plan.
-        var assigningConstructor = MethodSpec.constructorBuilder()
+        var assigningBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")
             .addParameter(int.class, "pageSize")
@@ -88,7 +106,11 @@ public class ConnectionResultClassGenerator {
             .addParameter(CONDITION, "condition")
             .addParameter(CONDITION, "facetBaseCondition")
             .addParameter(mapOfCondition, "facetConditions")
-            .addParameter(listOfFacetSpec, "facetSpecs")
+            .addParameter(listOfFacetSpec, "facetSpecs");
+        if (multiTenant) {
+            assigningBuilder.addParameter(dslContextClass, "dsl");
+        }
+        assigningBuilder
             .addStatement("this.result = result")
             .addStatement("this.pageSize = pageSize")
             .addStatement("this.afterCursor = afterCursor")
@@ -99,13 +121,21 @@ public class ConnectionResultClassGenerator {
             .addStatement("this.condition = condition")
             .addStatement("this.facetBaseCondition = facetBaseCondition")
             .addStatement("this.facetConditions = facetConditions")
-            .addStatement("this.facetSpecs = facetSpecs")
-            .build();
+            .addStatement("this.facetSpecs = facetSpecs");
+        if (multiTenant) {
+            assigningBuilder.addStatement("this.dsl = dsl");
+        }
+        var assigningConstructor = assigningBuilder.build();
+        // Multi-tenant delegation tails: every convenience form threads the routed dsl through.
+        String nullPlanTail = multiTenant ? ", null, null, null, dsl)" : ", null, null, null)";
+        String facetPlanTail = multiTenant
+            ? " facetBaseCondition, facetConditions, facetSpecs, dsl)"
+            : " facetBaseCondition, facetConditions, facetSpecs)";
 
         // Primary constructor (pre-facet shape, no facet plan) — takes List<Record>. Root connection
         // fetcher passes a jOOQ Result<Record> (which is-a List<Record>); split-connection scatter
         // passes a per-parent ArrayList sublist.
-        var constructor = MethodSpec.constructorBuilder()
+        var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")
             .addParameter(int.class, "pageSize")
@@ -114,9 +144,13 @@ public class ConnectionResultClassGenerator {
             .addParameter(boolean.class, "backward")
             .addParameter(listOfField, "orderByColumns")
             .addParameter(tableWildcard, "table")
-            .addParameter(CONDITION, "condition")
+            .addParameter(CONDITION, "condition");
+        if (multiTenant) {
+            constructorBuilder.addParameter(dslContextClass, "dsl");
+        }
+        var constructor = constructorBuilder
             .addStatement("this(result, pageSize, afterCursor, beforeCursor, backward,"
-                + " orderByColumns, table, condition, null, null, null)")
+                + " orderByColumns, table, condition" + nullPlanTail)
             .build();
 
         // Convenience constructor accepting a PageRequest from ConnectionHelper.pageRequest(...).
@@ -126,21 +160,25 @@ public class ConnectionResultClassGenerator {
         // SELECT count(*) using the same source and predicate.
         var pageRequestRef = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
-        var pageWithSourceConstructor = MethodSpec.constructorBuilder()
+        var pageWithSourceBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")
             .addParameter(pageRequestRef, "page")
             .addParameter(tableWildcard, "table")
-            .addParameter(CONDITION, "condition")
+            .addParameter(CONDITION, "condition");
+        if (multiTenant) {
+            pageWithSourceBuilder.addParameter(dslContextClass, "dsl");
+        }
+        var pageWithSourceConstructor = pageWithSourceBuilder
             .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
-                + " page.backward(), page.extraFields(), table, condition, null, null, null)")
+                + " page.backward(), page.extraFields(), table, condition" + nullPlanTail)
             .build();
 
         // Facet-carrying convenience: the faceted root connection fetcher binds the facet plan
         // (base condition, per-facet own predicates keyed by facet label, and the decode specs)
         // alongside the page context, so ConnectionHelper.facets can issue its UNION ALL aggregate
         // with the same source and filter-minus-self predicates as the page query's filter.
-        var pageWithFacetsConstructor = MethodSpec.constructorBuilder()
+        var pageWithFacetsBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")
             .addParameter(pageRequestRef, "page")
@@ -148,10 +186,13 @@ public class ConnectionResultClassGenerator {
             .addParameter(CONDITION, "condition")
             .addParameter(CONDITION, "facetBaseCondition")
             .addParameter(mapOfCondition, "facetConditions")
-            .addParameter(listOfFacetSpec, "facetSpecs")
+            .addParameter(listOfFacetSpec, "facetSpecs");
+        if (multiTenant) {
+            pageWithFacetsBuilder.addParameter(dslContextClass, "dsl");
+        }
+        var pageWithFacetsConstructor = pageWithFacetsBuilder
             .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
-                + " page.backward(), page.extraFields(), table, condition,"
-                + " facetBaseCondition, facetConditions, facetSpecs)")
+                + " page.backward(), page.extraFields(), table, condition," + facetPlanTail)
             .build();
 
         // FacetSpec — the runtime decode entry for one facet: the GraphQL-facing label (the
@@ -276,7 +317,7 @@ public class ConnectionResultClassGenerator {
             .addStatement("return backward ? result.size() > pageSize : afterCursor != null")
             .build();
 
-        var spec = TypeSpec.classBuilder(CLASS_NAME)
+        var specBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
             .addField(resultField)
             .addField(pageSizeField)
@@ -288,7 +329,20 @@ public class ConnectionResultClassGenerator {
             .addField(conditionField)
             .addField(facetBaseConditionField)
             .addField(facetConditionsField)
-            .addField(facetSpecsField)
+            .addField(facetSpecsField);
+        if (multiTenant) {
+            specBuilder.addField(dslField)
+                .addMethod(MethodSpec.methodBuilder("dsl")
+                    .addModifiers(Modifier.PUBLIC)
+                    .returns(dslContextClass)
+                    .addStatement("return dsl")
+                    .addJavadoc("The routed {@code DSLContext} the owning fetcher resolved per its classified\n"
+                        + "tenant binding. The lazy SQL resolvers ({@code ConnectionHelper.totalCount},\n"
+                        + "{@code facets}) reuse it so their aggregates run against the same source the\n"
+                        + "page rows came from.\n")
+                    .build());
+        }
+        var spec = specBuilder
             .addType(facetSpecClass)
             .addMethod(assigningConstructor)
             .addMethod(constructor)

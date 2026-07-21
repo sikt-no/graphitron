@@ -79,7 +79,11 @@ class TenantRuntimeKeyTypeTest {
         assertThat(carrier)
             .doesNotContain("divinedTenant")
             .doesNotContain("tenantSlot")
-            .doesNotContain("DataFetchingEnvironment");
+            .doesNotContain("DataFetchingEnvironment")
+            // The default-source arm is multi-tenant machinery: absent the element, absent the
+            // surface (no dead dslDefault/defaultPinned in single-tenant builds).
+            .doesNotContain("dslDefault")
+            .doesNotContain("defaultPinned");
     }
 
     @Test

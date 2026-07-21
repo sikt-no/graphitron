@@ -1131,7 +1131,8 @@ public final class SplitRowsMethodEmitter {
         count.unindent();
         body.add(count.build());
 
-        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page, countSource)");
+        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page, countSource"
+            + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")");
 
         return RowsMethodSkeleton.build(
             rowsMethodName,
@@ -1249,6 +1250,15 @@ public final class SplitRowsMethodEmitter {
      * selection (same shape as the polymorphic batched path's shared {@code pages} table).
      */
     public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage) {
+        return buildScatterConnectionByIdxHelper(outputPackage, false);
+    }
+
+    /**
+     * Canonical form carrying the tenancy bit: in a multi-tenant build the helper takes the rows
+     * method's routed {@code DSLContext} and binds it onto each per-parent carrier, so the lazy
+     * resolvers aggregate against the source the page rows came from.
+     */
+    public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage, boolean multiTenant) {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
         ClassName connectionResultClass = ClassName.get(
             outputPackage + ".util", "ConnectionResult");
@@ -1258,13 +1268,17 @@ public final class SplitRowsMethodEmitter {
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
-        return MethodSpec.methodBuilder("scatterConnectionByIdx")
+        var helper = MethodSpec.methodBuilder("scatterConnectionByIdx")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfConnectionResult)
             .addParameter(resultRecord, "flat")
             .addParameter(int.class, "keyCount")
             .addParameter(pageRequestClass, "page")
-            .addParameter(tableWildcard, "countSource")
+            .addParameter(tableWildcard, "countSource");
+        if (multiTenant) {
+            helper.addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl");
+        }
+        return helper
             .addCode(CodeBlock.builder()
                 .addStatement("$T buckets = new $T<>(keyCount)", listOfListOfRecord, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
@@ -1277,7 +1291,8 @@ public final class SplitRowsMethodEmitter {
                 .addStatement("$T out = new $T<>(keyCount)", listOfConnectionResult, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
                 .addStatement("out.add(new $T(buckets.get(i), page, countSource,"
-                        + " countSource.field($S, $T.class).eq($T.inline(i))))",
+                        + " countSource.field($S, $T.class).eq($T.inline(i))"
+                        + (multiTenant ? ", dsl" : "") + "))",
                     connectionResultClass, IDX_COLUMN, Integer.class, DSL)
                 .endControlFlow()
                 .addStatement("return out")

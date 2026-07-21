@@ -69,11 +69,11 @@ public class ConnectionHelperClassGenerator {
 
     /**
      * Canonical form carrying the tenancy bit. In a multi-tenant build ({@code multiTenant}) the
-     * two lazy SQL resolvers ({@code totalCount}, {@code facets}) route their acquisition through
-     * the generated {@code TenantConnections} carrier instead of the escape-hatch context read:
-     * the divined tenant an ancestor handed down as {@code localContext} selects {@code dslFor},
-     * and its absence selects the default source. This is a runtime read because the helper is
-     * emitted once per build while the binding varies per connection field.
+     * two lazy SQL resolvers ({@code totalCount}, {@code facets}) read the routed
+     * {@code DSLContext} off the {@code ConnectionResult} carrier, where the owning fetcher bound
+     * the context it resolved per its classified tenant binding; the aggregates therefore run
+     * against the same source the page rows came from, by construction rather than by any
+     * runtime re-divination.
      */
     public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
         var connectionResultClass = ClassName.get(
@@ -333,12 +333,12 @@ public class ConnectionHelperClassGenerator {
         // page, null, null)); every reachable path binds a real pair.
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
-        // The routed acquisition for the two lazy resolvers: the tenant divined by the connection
-        // field's ancestor rides in as localContext (absent means the default source). A runtime
-        // read, not a per-field emit, because ConnectionHelper is generated once per build; the
-        // routedDsl helper below wraps the checked acquisition failure for the plain delegates.
+        // The routed acquisition for the two lazy resolvers: the carrier holds the DSLContext
+        // the owning fetcher resolved per its classified tenant binding, so the count and facet
+        // aggregates run against the same source the page rows came from. Reading it off the
+        // carrier is the build-time decision; no runtime re-divination here.
         CodeBlock lazyDslDeclaration = multiTenant
-            ? CodeBlock.builder().addStatement("$T dsl = routedDsl(env)", dslContextClass).build()
+            ? CodeBlock.builder().addStatement("$T dsl = cr.dsl()", dslContextClass).build()
             : CodeBlock.builder()
                 .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass)
                 .build();
@@ -543,30 +543,7 @@ public class ConnectionHelperClassGenerator {
             .addMethod(graphitronContextShim)
             .addMethod(edgeNodeMethod)
             .addMethod(edgeCursorMethod);
-        if (multiTenant) {
-            builder.addMethod(routedDslHelper(outputPackage, dslContextClass));
-        }
         return List.of(builder.build());
-    }
-
-    /**
-     * The multi-tenant acquisition for the lazy SQL resolvers ({@code totalCount},
-     * {@code facets}): the tenant an ancestor divined and handed down as {@code localContext}
-     * selects the per-tenant source, its absence the default source. The carrier's static
-     * acquisition wrappers surface the checked failure as jOOQ's {@code DataAccessException},
-     * so the plain fetcher delegates (which declare no checked exceptions) stay unchanged.
-     */
-    private static MethodSpec routedDslHelper(String outputPackage, ClassName dslContextClass) {
-        var tenantConnectionsClass = ClassName.get(outputPackage + ".schema",
-            ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
-        return MethodSpec.methodBuilder("routedDsl")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(dslContextClass)
-            .addParameter(ENV, "env")
-            .addStatement("Object tenant = env.getLocalContext()")
-            .addStatement("return tenant != null ? $T.dslFor(env, $T.divinedTenant(tenant)) : $T.dslDefault(env)",
-                tenantConnectionsClass, tenantConnectionsClass, tenantConnectionsClass)
-            .build();
     }
 
     private static TypeSpec buildPageRequestClass(

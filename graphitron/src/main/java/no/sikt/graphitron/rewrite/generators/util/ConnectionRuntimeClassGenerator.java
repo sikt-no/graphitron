@@ -784,18 +784,22 @@ public final class ConnectionRuntimeClassGenerator {
                 + "reusing it thereafter. The untenanted sibling of {@link #dslFor}.\n")
             .build();
 
-        var releaseAll = MethodSpec.methodBuilder("releaseAll")
+        var releaseAllBuilder = MethodSpec.methodBuilder("releaseAll")
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
-            .addStatement("$T failure = null", RuntimeException.class)
-            .beginControlFlow("if (defaultPinned != null)")
-            .beginControlFlow("try")
-            .addStatement("defaultPinned.release()")
-            .nextControlFlow("catch ($T e)", RuntimeException.class)
-            .addStatement("failure = e")
-            .endControlFlow()
-            .addStatement("defaultPinned = null")
-            .endControlFlow()
+            .addStatement("$T failure = null", RuntimeException.class);
+        if (multiTenant) {
+            releaseAllBuilder
+                .beginControlFlow("if (defaultPinned != null)")
+                .beginControlFlow("try")
+                .addStatement("defaultPinned.release()")
+                .nextControlFlow("catch ($T e)", RuntimeException.class)
+                .addStatement("failure = e")
+                .endControlFlow()
+                .addStatement("defaultPinned = null")
+                .endControlFlow();
+        }
+        var releaseAll = releaseAllBuilder
             .beginControlFlow("for ($T pinned : pinnedByTenant.values())", pinnedConnection)
             .beginControlFlow("try")
             .addStatement("pinned.release()")
@@ -826,11 +830,16 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(claimsField)
             .addField(policyField)
             .addField(pinnedField)
-            .addField(defaultPinnedField)
             .addMethod(constructor)
-            .addMethod(dslFor)
-            .addMethod(dslDefault)
-            .addMethod(releaseAll);
+            .addMethod(dslFor);
+        // The default-source arm exists only when <tenantColumn> is configured: absent the
+        // element, none of the routing machinery below exists and the carrier stays the plain
+        // keyed-acquisition surface shipped with the connection lifecycle.
+        if (multiTenant) {
+            carrier.addField(defaultPinnedField)
+                .addMethod(dslDefault);
+        }
+        carrier.addMethod(releaseAll);
         if (multiTenant) {
             carrier.addMethod(ofEnvironment(self))
                 .addMethod(staticDslFor(self, tenantKey))

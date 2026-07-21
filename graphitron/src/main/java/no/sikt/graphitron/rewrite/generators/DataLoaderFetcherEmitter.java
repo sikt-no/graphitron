@@ -99,40 +99,19 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock asyncWrapTail,
             CodeBlock syncCatchBody) {
         return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
-            batchLoaderLambda, CodeBlock.of(""), keyExtraction, asyncWrapTail, syncCatchBody);
-    }
-
-    /**
- * Pre-registration-prelude overload. {@code preRegistrationPrelude} is emitted before
-     * the path-name and {@code computeIfAbsent} loader registration, so a fetcher that is an
-     * immediate child of a flipped {@code Outcome} payload can narrow {@code env.getSource()} to
-     * {@code Outcome.Success} and {@code return CompletableFuture.completedFuture(null)} on the
-     * {@code ErrorList} arm <em>before</em> touching the loader registry. Placing the early return
-     * ahead of registration (rather than after, relying on idempotent {@code computeIfAbsent}) keeps
-     * the generated error-arm code honest: it neither registers nor dispatches the loader. The
-     * caller pairs this with a {@code success.value()} source binding on {@code keyExtraction} so
-     * the key reads come off the unwrapped backing object. An empty prelude is the non-outcome path.
-     */
-    public static MethodSpec build(
-            String fieldName,
-            TypeName keyType,
-            TypeName loaderValueType,
-            TypeName outerReturnType,
-            LoaderRegistration registration,
-            CodeBlock batchLoaderLambda,
-            CodeBlock preRegistrationPrelude,
-            CodeBlock keyExtraction,
-            CodeBlock asyncWrapTail,
-            CodeBlock syncCatchBody) {
-        return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
-            batchLoaderLambda, preRegistrationPrelude, keyExtraction, asyncWrapTail, syncCatchBody,
+            batchLoaderLambda, CodeBlock.of(""), keyExtraction, asyncWrapTail, syncCatchBody,
             buildDataLoaderName());
     }
 
     /**
-     * Canonical form carrying the loader-name declaration. Tenant-aware callers resolve it per
-     * the field's binding ({@code TenantDslEmitter.loaderNameDeclaration}); the other overloads
-     * default to the inline path join, byte-identical to the pre-tenant emission.
+     * Canonical form. {@code preRegistrationPrelude} is emitted before the loader-name and
+     * {@code computeIfAbsent} registration, so a fetcher that is an immediate child of a flipped
+     * {@code Outcome} payload can narrow {@code env.getSource()} to {@code Outcome.Success} and
+     * {@code return CompletableFuture.completedFuture(null)} on the {@code ErrorList} arm
+     * <em>before</em> touching the loader registry (an empty prelude is the non-outcome path).
+     * {@code loaderNameDeclaration} is the loader-name statement, resolved per the field's tenant
+     * binding by {@code TenantDslEmitter.loaderNameDeclaration}; the convenience overload
+     * defaults to the inline path join, byte-identical to the pre-tenant emission.
      */
     public static MethodSpec build(
             String fieldName,

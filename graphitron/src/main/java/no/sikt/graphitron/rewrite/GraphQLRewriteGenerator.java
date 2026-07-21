@@ -307,7 +307,7 @@ public class GraphQLRewriteGenerator {
         write(LightFetcherClassGenerator.generate(outputPackage),                                 "util",       emittedThisRun);
         write(NodeIdEncoderClassGenerator.generate(schema),                                       "util",       emittedThisRun);
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
-        write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
+        write(ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null),      "util",       emittedThisRun);
         write(ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null),      "util",       emittedThisRun);
         // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
         // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if

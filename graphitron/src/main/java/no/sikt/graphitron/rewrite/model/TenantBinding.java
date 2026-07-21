@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * The per-field tenant-binding axis: where a field's divined tenant key comes from, decided
@@ -52,16 +50,14 @@ public sealed interface TenantBinding {
     }
 
     /**
-     * The field resolves by node id; the tenant is a decoded-column position of the batch key.
-     * Node fields are polymorphic, so the position is carried per candidate node type
-     * ({@code positionByTypeName}, in candidate declaration order): each id in a batch carries
-     * its own tenant, read at its type's position.
+     * The field resolves by node id: each id in a batch carries its own tenant, and the batch
+     * partitions per decoded tenant at the dispatch surface. The arm is the verdict alone; the
+     * per-type decoded positions the dispatcher reads live on the entity-side facts
+     * ({@link EntityRepBound}, keyed by type in the binding index), because node dispatch
+     * synthesises representations and resolves through the same surface.
      */
-    record NodeIdBound(Map<String, Integer> positionByTypeName) implements TenantBinding {
-        public NodeIdBound {
-            positionByTypeName = java.util.Collections.unmodifiableMap(
-                new LinkedHashMap<>(positionByTypeName));
-        }
+    record NodeIdBound() implements TenantBinding {
+        public static final NodeIdBound INSTANCE = new NodeIdBound();
     }
 
     /**

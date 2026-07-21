@@ -214,6 +214,28 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     @Test
+    void directKeyEntityDispatchGroupsPerTenantAtTheRepFieldPosition() {
+        // A federation @key entity decodes representation FIELD VALUES (a Direct alternative),
+        // not a synthesised node id; the tenant reads at the classified position of that decode.
+        var schema = multiTenant("""
+            directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+            type FilmActor @table(name: "film_actor") @key(fields: "actorId filmId") {
+                actorId: Int @field(name: "actor_id")
+                filmId: Int @field(name: "film_id")
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            """);
+
+        var handle = renderHandle(schema, "FilmActor");
+        assertThat(handle)
+            .contains("cols[1] = rep.get(\"filmId\")")
+            .contains(".computeIfAbsent(cols[1], ")
+            .contains("dslFor(groupEnv, ")
+            .doesNotContain("getDslContext(groupEnv)");
+    }
+
+    @Test
     void globalEntityDispatchAcquiresTheDefaultSourceInMultiTenantBuilds() {
         var handle = renderHandle(multiTenant("""
             type Language implements Node @table(name: "language") @node {

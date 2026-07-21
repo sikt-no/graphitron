@@ -671,7 +671,10 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        builder.addStatement("$T dsl = $L", DSL_CONTEXT, TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
+        // Routed per the field's classified arm; a polymorphic root whose participant filters
+        // bind the tenant column divines and hands the key down like any ArgumentBound fetcher.
+        var tenantDsl = TenantDslEmitter.resolveByName(ctx, fieldName, outputPackage);
+        builder.addCode(tenantDsl.declaration());
 
         if (participants.isEmpty()) {
             if (isList) {
@@ -679,7 +682,7 @@ public final class MultiTablePolymorphicEmitter {
             } else {
                 builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
             }
-            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
@@ -701,7 +704,7 @@ public final class MultiTablePolymorphicEmitter {
         } else {
             builder.addStatement("$T payload = result.length == 0 ? null : ($T) result[0]", RECORD, RECORD);
         }
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -892,7 +895,9 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        builder.addStatement("$T dsl = $L", DSL_CONTEXT, TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
+        // Routed per the field's classified arm (see buildMainFetcher's non-connection twin).
+        var tenantDsl = TenantDslEmitter.resolveByName(ctx, fieldName, outputPackage);
+        builder.addCode(tenantDsl.declaration());
 
         if (participants.isEmpty()) {
             // Defensive empty path: validator rejects an empty participant set, but emit a
@@ -902,9 +907,10 @@ public final class MultiTablePolymorphicEmitter {
             builder.addStatement("$T page = $T.pageRequest(null, null, null, null, $L,\n"
                 + "        $T.of(), $T.of(), $T.of())",
                 pageRequestClass, connectionHelperClass, defaultPageSize, LIST, LIST, LIST);
-            builder.addStatement("$T payload = new $T($T.of(), page, null, null)",
+            builder.addStatement("$T payload = new $T($T.of(), page, null, null"
+                + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")",
                 valueType, connectionResultClass, LIST);
-            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
             builder.nextControlFlow("catch ($T e)", Exception.class);
             builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
@@ -999,9 +1005,10 @@ public final class MultiTablePolymorphicEmitter {
         // Bind the same UNION-ALL derived table {@code pagesTable} onto ConnectionResult so
         // ConnectionHelper.totalCount can issue {@code SELECT count(*) FROM (UNION ALL) AS pages}
         // lazily on selection.
-        builder.addStatement("$T cr = new $T(payload, page, $L, $T.noCondition())",
+        builder.addStatement("$T cr = new $T(payload, page, $L, $T.noCondition()"
+            + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")",
             valueType, connectionResultClass, CONNECTION_PAGES_LOCAL, DSL);
-        builder.addCode(returnSyncSuccess(valueType, "cr"));
+        builder.addCode(returnSyncSuccess(valueType, "cr", tenantDsl.localContextTail()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -1901,7 +1908,8 @@ public final class MultiTablePolymorphicEmitter {
         // condition __idx__ = i so COUNT(*) restricts to that parent's slice of the union.
         b.addStatement("$T out = new $T<>(keys.size())", listOfConnectionResult, ARRAY_LIST);
         b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        b.addStatement("out.add(new $T(buckets.get(i), page, $L, idxField.eq(i)))",
+        b.addStatement("out.add(new $T(buckets.get(i), page, $L, idxField.eq(i)"
+            + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + "))",
             connectionResultClass, CONNECTION_PAGES_LOCAL);
         b.endControlFlow();
         b.addStatement("return out");
@@ -2358,9 +2366,18 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
+        return returnSyncSuccess(valueType, payloadLocal, CodeBlock.of(""));
+    }
+
+    /**
+     * {@link #returnSyncSuccess(TypeName, String)} with a builder tail: routed tenant sites pass
+     * {@code TenantDslEmitter.Resolution#localContextTail()} so a divined key rides down the
+     * subtree as graphql-java {@code localContext} (empty everywhere else).
+     */
+    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, CodeBlock builderTail) {
         TypeName boxed = valueType.isPrimitive() ? valueType.box() : valueType;
-        return CodeBlock.of("return $T.<$T>newResult().data($L).build();\n",
-            ClassName.get("graphql.execution", "DataFetcherResult"), boxed, payloadLocal);
+        return CodeBlock.of("return $T.<$T>newResult().data($L)$L.build();\n",
+            ClassName.get("graphql.execution", "DataFetcherResult"), boxed, payloadLocal, builderTail);
     }
 
     private static CodeBlock noChannelCatchArm(String outputPackage) {

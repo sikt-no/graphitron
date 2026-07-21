@@ -113,6 +113,74 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
+    // ===== Non-Record-backed shapes: the reach covers every table the SQL touches =====
+
+    @Test
+    void polymorphicRootOverTenantScopedParticipantsWithTenantFilterYieldsArgumentBound() {
+        // Multi-table polymorphic fields return DomainReturnType.Plain; their reach is the
+        // participant set, and the filter surface lives per participant.
+        var schema = build("""
+            type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
+            type Inventory @table(name: "inventory") { filmId: Int @field(name: "film_id") }
+            union Media = Film | Inventory
+            type Query {
+                media(filmId: Int @field(name: "film_id")): [Media!]!
+            }
+            """);
+
+        var binding = schema.tenantBindingOf("Query", "media");
+        assertThat(binding).isInstanceOf(TenantBinding.ArgumentBound.class);
+        assertThat(((TenantBinding.ArgumentBound) binding).primary().slotName()).isEqualTo("filmId");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void polymorphicRootOverTenantScopedParticipantsWithoutBindingRejects() {
+        var schema = build("""
+            type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
+            type Inventory @table(name: "inventory") { filmId: Int @field(name: "film_id") }
+            union Media = Film | Inventory
+            type Query { media: [Media!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "media")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Query.media"));
+    }
+
+    @Test
+    void polymorphicRootMixingTenantAndGlobalParticipantsRejectsAsCrossScope() {
+        // One statement cannot span the per-tenant and default sources, so no binding could
+        // make this routable; it rejects on the scope mix itself.
+        var schema = build("""
+            type Film @table(name: "film") { filmId: Int @field(name: "film_id") }
+            type Language @table(name: "language") { name: String }
+            union Media = Film | Language
+            type Query { media: [Media!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "media")).isNull();
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
+                && r.coordinate().equals("Query.media")
+                && r.detail().contains("cross-scope"));
+    }
+
+    @Test
+    void polymorphicRootOverGlobalParticipantsYieldsUntenanted() {
+        var schema = build("""
+            type Language @table(name: "language") { name: String }
+            type Address @table(name: "address") { postalCode: String @field(name: "postal_code") }
+            union Reference = Language | Address
+            type Query { references: [Reference!]! }
+            """);
+
+        assertThat(schema.tenantBindingOf("Query", "references"))
+            .isEqualTo(TenantBinding.Untenanted.INSTANCE);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
     @Test
     void tenantScopedFieldWithNoBindingInScopeRejects() {
         var schema = build("""
@@ -146,8 +214,10 @@ class TenantBindingClassificationTest {
 
         var binding = schema.tenantBindingOf("Query", "node");
         assertThat(binding).isInstanceOf(TenantBinding.NodeIdBound.class);
-        assertThat(((TenantBinding.NodeIdBound) binding).positionByTypeName())
-            .containsEntry("FilmActor", 1);
+        // The decoded tenant position rides on the entity-side facts the dispatcher reads
+        // (node dispatch synthesises reps and resolves through the entity surface).
+        assertThat(schema.tenantBindings().byEntityType().get("FilmActor").alternatives())
+            .anyMatch(slot -> slot.decodedPosition() == 1);
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 

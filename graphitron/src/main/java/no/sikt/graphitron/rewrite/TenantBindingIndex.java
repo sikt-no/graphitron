@@ -19,8 +19,13 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.ParticipantFilters;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
+import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -149,7 +154,32 @@ public record TenantBindingIndex(
         // ===== Per-field arm assignment =====
 
         private TenantBinding armOf(FieldCoordinates coord, OutputField out) {
+            // Every table the field's own SQL touches, not just a Record-shaped return target:
+            // multi-table polymorphic fields hit their participant tables and pivot fields their
+            // attribute table, so a Plain domain return must not read as "touches nothing".
+            List<TableRef> reach = reachedTables(out);
+            boolean anyTenant = reach.stream().anyMatch(this::tenantScoped);
+            boolean anyGlobal = reach.stream().anyMatch(t -> !tenantScoped(t));
+            if (anyTenant && anyGlobal) {
+                // One statement cannot span the per-tenant and default sources; a binding would
+                // not make this routable, so it rejects ahead of the ArgumentBound arm.
+                rejections.add(new ValidationError(
+                    coord.getTypeName() + "." + coord.getFieldName(),
+                    Rejection.noTenantBinding(
+                        coord.getTypeName() + "." + coord.getFieldName(),
+                        reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
+                        "its SQL touches tenant-scoped and global tables in one statement ("
+                            + reach.stream().map(TableRef::tableName).distinct()
+                                .collect(java.util.stream.Collectors.joining(", "))
+                            + "); database-per-tenant cannot serve a cross-scope read on one"
+                            + " connection."),
+                    graphql.language.SourceLocation.EMPTY));
+                return null;
+            }
             var slots = directSlots(out.operation());
+            if (slots.isEmpty()) {
+                slots = polymorphicFilterSlots(out);
+            }
             if (!slots.isEmpty()) {
                 return new TenantBinding.ArgumentBound(slots);
             }
@@ -160,10 +190,9 @@ public record TenantBindingIndex(
                 // dispatch never leaves the default source.
                 return nodePositions.isEmpty()
                     ? TenantBinding.Untenanted.INSTANCE
-                    : new TenantBinding.NodeIdBound(nodePositions);
+                    : TenantBinding.NodeIdBound.INSTANCE;
             }
-            TableRef target = targetTable(out);
-            if (target == null || !tenantScoped(target)) {
+            if (!anyTenant) {
                 return TenantBinding.Untenanted.INSTANCE;
             }
             if (tenantContextOf(coord.getTypeName())) {
@@ -173,7 +202,7 @@ public record TenantBindingIndex(
                 coord.getTypeName() + "." + coord.getFieldName(),
                 Rejection.noTenantBinding(
                     coord.getTypeName() + "." + coord.getFieldName(),
-                    target.tableName(),
+                    reach.stream().filter(this::tenantScoped).findFirst().orElseThrow().tableName(),
                     "no argument or input field maps to tenant column '"
                         + scopes.columnName() + "', and no ancestor established a tenant"
                         + " context."),
@@ -181,9 +210,61 @@ public record TenantBindingIndex(
             return null;
         }
 
-        /** The field's backing target table, when its domain return type carries one. */
-        private static TableRef targetTable(OutputField out) {
-            return out.domainReturnType() instanceof DomainReturnType.Record r ? r.table() : null;
+        /**
+         * The tables the field's own SQL touches: the Record-shaped return target, a multi-table
+         * polymorphic field's table-backed participants (including a joined participant's detail
+         * table), or a pivot field's attribute table. Empty for fields that execute no SQL of
+         * their own (scalars, node dispatch, plain service returns).
+         */
+        private static List<TableRef> reachedTables(OutputField out) {
+            if (out.domainReturnType() instanceof DomainReturnType.Record r) {
+                return List.of(r.table());
+            }
+            var tables = new ArrayList<TableRef>();
+            switch (out) {
+                case QueryField.QueryInterfaceField f -> addParticipantTables(f.participants(), tables);
+                case QueryField.QueryUnionField f -> addParticipantTables(f.participants(), tables);
+                case QueryField.QueryServicePolymorphicField f -> addParticipantTables(f.participants(), tables);
+                case MutationField.MutationServicePolymorphicField f -> addParticipantTables(f.participants(), tables);
+                case ChildField.InterfaceField f -> addParticipantTables(f.participants(), tables);
+                case ChildField.UnionField f -> addParticipantTables(f.participants(), tables);
+                case ChildField.PivotField f -> tables.add(f.spec().pivotTable());
+                case ChildField.BatchedPivotField f -> tables.add(f.spec().pivotTable());
+                default -> { }
+            }
+            return tables;
+        }
+
+        private static void addParticipantTables(List<ParticipantRef> participants, List<TableRef> out) {
+            for (ParticipantRef participant : participants) {
+                if (participant instanceof ParticipantRef.TableBacked tb) {
+                    out.add(tb.table());
+                }
+            }
+        }
+
+        /**
+         * Direct slots for the multi-table polymorphic roots, whose filter surface lives per
+         * participant ({@code participantFilters}) rather than on the operation: a filter
+         * binding the tenant column on any participant divines the whole dispatch. Deduped by
+         * slot name (the same argument typically binds on every participant).
+         */
+        private List<TenantBinding.BoundSlot> polymorphicFilterSlots(OutputField out) {
+            List<ParticipantFilters> filters = switch (out) {
+                case QueryField.QueryInterfaceField f -> f.participantFilters();
+                case QueryField.QueryUnionField f -> f.participantFilters();
+                default -> List.of();
+            };
+            var slots = new ArrayList<TenantBinding.BoundSlot>();
+            var seenNames = new HashSet<String>();
+            for (ParticipantFilters pf : filters) {
+                for (TenantBinding.BoundSlot slot : slotsFromFilters(pf.filters())) {
+                    if (seenNames.add(slot.slotName())) {
+                        slots.add(slot);
+                    }
+                }
+            }
+            return slots;
         }
 
         private boolean tenantScoped(TableRef table) {

@@ -877,7 +877,8 @@ public class TypeFetcherGenerator {
             f instanceof ChildField.BatchedTableField btf
                 && btf.returnType().wrapper() instanceof FieldWrapper.Connection);
         if (hasConnectionSplitField) {
-            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage));
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage,
+                TenantDslEmitter.isMultiTenant(ctx)));
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time — that is,
@@ -5355,8 +5356,11 @@ public class TypeFetcherGenerator {
         // value binding stays inside the typed conditions boundary. Output is byte-identical to the
         // non-faceted form whenever the connection carries no facets.
         java.util.List<no.sikt.graphitron.rewrite.model.FacetSpec> facets = connectionFacetsFor(ctx, qtf);
+        // Multi-tenant carrier tail: the routed dsl rides on the carrier so the lazy resolvers
+        // (totalCount, facets) aggregate against the same source the page rows came from.
+        String carrierDslTail = TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "";
         if (facets.isEmpty()) {
-            builder.addStatement("$T payload = new $T(result, page, $L, condition)",
+            builder.addStatement("$T payload = new $T(result, page, $L, condition" + carrierDslTail + ")",
                 valueType, connectionResultClass, tableLocal);
         } else {
             var conditionsClass = ClassName.get(outputPackage + ".conditions",
@@ -5387,7 +5391,7 @@ public class TypeFetcherGenerator {
                 ClassName.get("java.util", "List"), facetSpecRuntime,
                 ClassName.get("java.util", "List"), specsArgs.build());
             builder.addStatement(
-                "$T payload = new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs)",
+                "$T payload = new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs" + carrierDslTail + ")",
                 valueType, connectionResultClass, tableLocal);
         }
         builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));

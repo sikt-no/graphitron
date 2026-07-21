@@ -122,6 +122,25 @@ final class TenantDslEmitter {
     }
 
     /**
+     * {@link #resolve} for sites that carry only the field's name: the classified field is
+     * looked up on the schema by coordinate ({@code ctx.parentTypeName()} + name), so a
+     * multi-table polymorphic root whose participant filters bind the tenant column gets the
+     * full {@link TenantBinding.ArgumentBound} emission (slot reads, agreement fold, hand-down)
+     * without threading the carrier through every builder signature. Falls back to the
+     * single-tenant form when the coordinate resolves to no classified {@link OutputField}.
+     */
+    static Resolution resolveByName(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
+        var schema = ctx.graphitronSchema();
+        if (schema == null || ctx.parentTypeName() == null) {
+            return singleTenant(ctx);
+        }
+        return schema.fields().get(graphql.schema.FieldCoordinates.coordinates(
+                ctx.parentTypeName(), fieldName)) instanceof OutputField field
+            ? resolve(ctx, field, outputPackage)
+            : singleTenant(ctx);
+    }
+
+    /**
      * Expression form of {@link #resolve} for sites that splice the {@code DSLContext} source
      * into their own statement and carry only the field's name (the service-call paths). Yields
      * the byte-identical {@code graphitronContext(env).getDslContext(env)} in single-tenant
@@ -205,6 +224,16 @@ final class TenantDslEmitter {
                 .build();
     }
 
+    /**
+     * Whether this emission context is a multi-tenant build (configured tenant scopes on a
+     * classified schema). Sites whose emitted shape forks on tenancy beyond the DSL declaration
+     * (the connection carrier's routed-context slot, its scatter helper) read this one predicate.
+     */
+    static boolean isMultiTenant(TypeFetcherEmissionContext ctx) {
+        var schema = ctx.graphitronSchema();
+        return schema != null && schema.tenantScopes() instanceof TenantScopes.Configured;
+    }
+
     /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.TenantConnections}. */
     static ClassName tenantConnectionsClass(String outputPackage) {
         return ClassName.get(outputPackage + ".schema",
@@ -281,6 +310,33 @@ final class TenantDslEmitter {
             case Operation.Insert i -> collectFromTableInput(i.input(), slotNames, tenantConnections, reads);
             case Operation.Upsert u -> collectFromTableInput(u.input(), slotNames, tenantConnections, reads);
             default -> { }
+        }
+        // Multi-table polymorphic roots carry their filter surface per participant, not on the
+        // operation; mirror the classifier's participantFilters walk. Deduped: the same argument
+        // typically binds on every participant, and one read per slot name suffices for the
+        // agreement fold.
+        var polymorphicFilters = switch (field) {
+            case no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField f -> f.participantFilters();
+            case no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField f -> f.participantFilters();
+            default -> List.<no.sikt.graphitron.rewrite.model.ParticipantFilters>of();
+        };
+        if (reads.isEmpty() && !polymorphicFilters.isEmpty()) {
+            var remaining = new HashSet<>(slotNames);
+            for (var pf : polymorphicFilters) {
+                var partReads = new ArrayList<CodeBlock>();
+                collectFromFilters(ctx, pf.filters(), remaining, tenantConnections, partReads);
+                for (var read : partReads) {
+                    reads.add(read);
+                }
+                // One read per slot name across participants; drop names already read.
+                for (var filter : pf.filters()) {
+                    if (filter instanceof GeneratedConditionFilter gcf) {
+                        for (BodyParam param : gcf.bodyParams()) {
+                            remaining.remove(param.name());
+                        }
+                    }
+                }
+            }
         }
         if (reads.isEmpty()) {
             throw new IllegalStateException(
