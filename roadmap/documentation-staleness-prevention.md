@@ -1,7 +1,7 @@
 ---
 id: R507
 title: "Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: docs

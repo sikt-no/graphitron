@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
-| `R507` | Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard | Ready | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](documentation-staleness-prevention.md) |
+| `R507` | Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard | In Progress | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](documentation-staleness-prevention.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
@@ -329,7 +329,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### docs
 
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
-- `R507` [**Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard**](documentation-staleness-prevention.md) — Ready, architecture
+- `R507` [**Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard**](documentation-staleness-prevention.md) — In Progress, architecture
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
