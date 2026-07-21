@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R507` | Documentation staleness prevention: prose-truth rules, retirement sweep, retired-vocabulary guard | Ready | 2026-07-21 <sub>created 2026-07-20</sub> | [plan](documentation-staleness-prevention.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R489` | Normalize the DML reentry correlation onto the VALUES-join primitive | Spec | 2026-07-21 <sub>created 2026-07-16</sub> | [plan](dml-reentry-values-join-rendering.md) |
+| `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | Ready | 2026-07-21 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource | In Review | 2026-07-21 | [plan](tenant-routing-and-execution-input.md) · [explainer](concepts/operation-divined-tenant-routing.html) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -282,7 +282,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
-- `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — In Review, architecture
+- `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — Ready, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
