@@ -8954,6 +8954,43 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason()).contains("@mutation fields only accept @table input arguments");
             }),
 
+        DML_TABLE_RETURN_PKLESS_TABLE_REJECTED(
+            "R489: @table DML return backed by a PK-less table → UnclassifiedField. The reentry "
+                + "companion re-fetches the written rows by primary key (the carried correlation is "
+                + "PK self-identity), so a PK-less bound table has no key to correlate on; the "
+                + "rejection is the enforcer the DmlReturnExpression arms' non-null correlation "
+                + "javadoc leans on.",
+            """
+            type FilmList @table(name: "film_list") { title: String }
+            input FilmListInput @table(name: "film_list") { title: String }
+            type Query { x: String }
+            type Mutation { createFilmList(in: FilmListInput!): FilmList @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmList");
+                assertThat(f.reason())
+                    .contains("table 'film_list'")
+                    .contains("no primary key")
+                    .contains("return ID");
+            }),
+
+        DML_TABLE_RETURN_PKLESS_TABLE_REJECTED_LIST(
+            "R489: the same PK-less rejection at list cardinality (both cardinalities pass the "
+                + "single buildDmlField chokepoint).",
+            """
+            type FilmList @table(name: "film_list") { title: String }
+            input FilmListInput @table(name: "film_list") { title: String }
+            type Query { x: String }
+            type Mutation { createFilmLists(in: [FilmListInput!]!): [FilmList!]! @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmLists");
+                assertThat(f.reason())
+                    .contains("table 'film_list'")
+                    .contains("no primary key")
+                    .contains("return ID");
+            }),
+
         DML_INSERT_LIST_LIST_OK(
             "DML INSERT with listed input + listed @table return → MutationInsertTableField with tia.list() == true",
             """

@@ -12,32 +12,16 @@ last-updated: 2026-07-21
 
 # Normalize the DML reentry correlation onto the VALUES-join primitive
 
-## Review feedback (In Review -> Ready, 2026-07-21)
+## Review feedback (In Review -> Ready, 2026-07-21) — addressed
 
-Independent review of the shipped implementation (`0ef2353`, full reactor green under
-`mvn install -Plocal-db`). Everything in the Shipped section verified against the diff; one
-finding blocks approval:
-
-- **The classify-time PK-less rejection has no enforcer.** `FieldBuilder.buildDmlField` now
-  rejects a `@table`-typed DML return whose table has no primary key ("the mutation's follow-up
-  SELECT re-fetches the written rows by primary key"), and the javadoc on all four
-  `DmlReturnExpression` reentry arms leans on that guard ("the classifier rejects ... so the
-  correlation is never null"). No test pins the rejection: nothing fails if the guard is
-  relaxed, at which point the arms carry an empty-column correlation and the bulk companion
-  renders a join with no predicate, undetected until a consumer hits it. This is the broad-form
-  failure mode named in development-principles.adoc ("Documentation names only live tests/code"):
-  an invariant claim whose symbols exist but which no test pins. It is also this item's own
-  origin story repeating: the deviation note records that the retired fallback's comment claimed
-  a rejection "already existed but did not". Fix: one model-tier rejection case (a
-  `GraphitronSchemaBuilderTest` enum row or a `MutationDmlNodeIdClassificationTest` case)
-  asserting the `UnclassifiedField` rejection for a `@mutation` returning a type bound to
-  `film_list` (the fixture catalog's no-PK table, already used for exactly this shape in
-  `ValidateListRequiresOrderingPipelineTest`), message asserted to name the table and the
-  return-ID remedy. Both cardinalities pass through the same chokepoint, so one case suffices;
-  a second for list cardinality is welcome but not required.
-
-Everything else stands as shipped; no other change is requested. On the next In Review pass the
-reviewer only needs to verify the new rejection case and re-run the build.
+The one blocking finding (the classify-time PK-less rejection in
+`FieldBuilder.buildDmlField` had no enforcer, while the `DmlReturnExpression` arms' non-null
+correlation javadoc leaned on it) is closed by two model-tier rejection cases in
+`GraphitronSchemaBuilderTest` (`DML_TABLE_RETURN_PKLESS_TABLE_REJECTED` and its list-cardinality
+sibling): a `@mutation` returning a type bound to `film_list` (the fixture catalog's no-PK
+table) classifies to `UnclassifiedField`, with the message asserted to name the table, the
+missing primary key, and the return-ID remedy. Everything else stands as shipped; the next
+In Review pass only needs to verify the rejection cases and re-run the build.
 
 ## In one paragraph
 
