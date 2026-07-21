@@ -88,6 +88,32 @@ class TenantBindingClassificationTest {
     }
 
     @Test
+    void insertInputFieldMappingToTenantColumnYieldsArgumentBound() {
+        // INSERT's TableInputArg carries a structurally empty fieldBindings (VALUES emission
+        // walks fields() directly), so the divining slot must come from the fields() envelope.
+        var schema = build("""
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            input InventoryCreateInput @table(name: "inventory") {
+                filmId: Int! @field(name: "film_id")
+                storeId: Int! @field(name: "store_id")
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+            }
+            """);
+
+        var binding = schema.tenantBindingOf("Mutation", "createInventory");
+        assertThat(binding).isInstanceOf(TenantBinding.ArgumentBound.class);
+        var bound = (TenantBinding.ArgumentBound) binding;
+        assertThat(bound.bindings()).hasSize(1);
+        assertThat(bound.primary().slotName()).isEqualTo("filmId");
+        assertThat(bound.primary().column().sqlName()).isEqualTo("film_id");
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
     void tenantScopedFieldWithNoBindingInScopeRejects() {
         var schema = build("""
             type Film @table(name: "film") { title: String }

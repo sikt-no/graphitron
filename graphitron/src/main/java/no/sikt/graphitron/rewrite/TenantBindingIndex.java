@@ -16,6 +16,7 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.Operation;
@@ -203,8 +204,8 @@ public record TenantBindingIndex(
                 case Operation.Fetch f -> slotsFromFilters(f.filters());
                 case Operation.Paginate p -> slotsFromFilters(p.filters());
                 case Operation.Lookup l -> slotsFromLookup(l.lookupMapping());
-                case Operation.Insert i -> slotsFromTableInput(i.input().fieldBindings());
-                case Operation.Upsert u -> slotsFromTableInput(u.input().fieldBindings());
+                case Operation.Insert i -> slotsFromTableInput(i.input());
+                case Operation.Upsert u -> slotsFromTableInput(u.input());
                 default -> List.of();
             };
         }
@@ -282,17 +283,42 @@ public record TenantBindingIndex(
         }
 
         private List<TenantBinding.BoundSlot> slotsFromTableInput(
-                List<InputColumnBindingGroup> groups) {
+                ArgumentRef.InputTypeArg.TableInputArg input) {
             var slots = new ArrayList<TenantBinding.BoundSlot>();
-            for (InputColumnBindingGroup group : groups) {
+            var seenNames = new HashSet<String>();
+            for (InputColumnBindingGroup group : input.fieldBindings()) {
                 if (!(group instanceof InputColumnBindingGroup.MapGroup mg)) continue;
                 for (InputColumnBinding.MapBinding b : mg.bindings()) {
-                    if (matchesTenantColumn(b.targetColumn())) {
+                    if (matchesTenantColumn(b.targetColumn()) && seenNames.add(b.fieldName())) {
                         slots.add(new TenantBinding.BoundSlot(b.fieldName(), b.targetColumn()));
                     }
                 }
             }
+            // INSERT / UPSERT: fieldBindings is structurally empty (the VALUES emission walks
+            // fields() directly), so the divining slots come from the same envelope — a plain
+            // input field whose column mapping lands on the tenant column routes the mutation.
+            collectFromInputFields(input.fields(), slots, seenNames);
             return slots;
+        }
+
+        private void collectFromInputFields(List<InputField> fields,
+                                            List<TenantBinding.BoundSlot> slots,
+                                            HashSet<String> seenNames) {
+            for (InputField field : fields) {
+                switch (field) {
+                    case InputField.ColumnField cf -> {
+                        if (matchesTenantColumn(cf.column()) && seenNames.add(cf.name())) {
+                            slots.add(new TenantBinding.BoundSlot(cf.name(), cf.column()));
+                        }
+                    }
+                    // A nested grouping input flattens onto the same table; descend.
+                    case InputField.NestingField nf -> collectFromInputFields(nf.fields(), slots, seenNames);
+                    // Composite NodeId tuples and non-column fields never divine a single
+                    // argument value; those shapes belong to the per-row family and the
+                    // deliberate fan-out arm.
+                    default -> { }
+                }
+            }
         }
 
         // ===== Node dispatch =====

@@ -55,8 +55,8 @@ class TenantRoutedFetcherPipelineTest {
 
         var films = render(schema, "QueryFetchers", "films");
         assertThat(films)
-            .contains("var _divinedTenant = fake.code.generated.schema.TenantConnections.divinedTenant(env.getArgument(\"filmId\"))")
-            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.of(env).dslFor(_divinedTenant)")
+            .contains("java.lang.Integer _divinedTenant = fake.code.generated.schema.TenantConnections.divinedTenant(env.<Object>getArgument(\"filmId\"))")
+            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)")
             .contains(".localContext(_divinedTenant)")
             .doesNotContain("getDslContext(env)");
     }
@@ -72,7 +72,7 @@ class TenantRoutedFetcherPipelineTest {
             """);
 
         assertThat(render(schema, "QueryFetchers", "films"))
-            .contains("divinedTenant(env.getArgument(\"filmId\"), env.getArgument(\"altFilm\"))");
+            .contains("divinedTenant(env.<Object>getArgument(\"filmId\"), env.<Object>getArgument(\"altFilm\"))");
     }
 
     @Test
@@ -84,7 +84,7 @@ class TenantRoutedFetcherPipelineTest {
 
         var languages = render(schema, "QueryFetchers", "languages");
         assertThat(languages)
-            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.of(env).dslDefault()")
+            .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslDefault(env)")
             .doesNotContain("localContext")
             .doesNotContain("getDslContext(env)");
     }
@@ -103,7 +103,29 @@ class TenantRoutedFetcherPipelineTest {
             """);
 
         assertThat(render(schema, "FilmFetchers", "rowsInventories"))
-            .contains("dslFor(fake.code.generated.schema.TenantConnections.divinedTenant(env.getLocalContext()))")
+            .contains("dslFor(env, fake.code.generated.schema.TenantConnections.divinedTenant(env.<Object>getLocalContext()))")
+            .doesNotContain("getDslContext(env)");
+    }
+
+    @Test
+    void insertMutationDivinesFromItsInputFieldAndRoutes() {
+        var schema = multiTenant("""
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            input InventoryCreateInput @table(name: "inventory") {
+                filmId: Int! @field(name: "film_id")
+                storeId: Int! @field(name: "store_id")
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+            }
+            """);
+
+        assertThat(render(schema, "MutationFetchers", "createInventory"))
+            .contains("divinedTenant(fake.code.generated.schema.TenantConnections.tenantSlot(env.getArgument(\"in\"), \"filmId\"))")
+            .contains("dslFor(env, _divinedTenant)")
+            .contains(".localContext(_divinedTenant)")
             .doesNotContain("getDslContext(env)");
     }
 
@@ -187,7 +209,7 @@ class TenantRoutedFetcherPipelineTest {
             // classified decoded position (film_id is position 1 of the FilmActor key).
             .contains("java.util.Map<java.lang.Integer, java.util.Map<java.lang.Object, java.util.List<java.lang.Object[]>>> groups")
             .contains(".computeIfAbsent(cols[1], k -> new java.util.ArrayList<>())")
-            .contains("dslFor(fake.code.generated.schema.TenantConnections.divinedTenant(tenantEntry.getKey()))")
+            .contains("dslFor(groupEnv, fake.code.generated.schema.TenantConnections.divinedTenant(tenantEntry.getKey()))")
             .doesNotContain("getDslContext(groupEnv)");
     }
 
@@ -202,7 +224,7 @@ class TenantRoutedFetcherPipelineTest {
             }
             """), "Language");
         assertThat(handle)
-            .contains("fake.code.generated.schema.TenantConnections.of(groupEnv).dslDefault()")
+            .contains("fake.code.generated.schema.TenantConnections.dslDefault(groupEnv)")
             .doesNotContain("dslFor")
             .doesNotContain("getDslContext(groupEnv)");
     }

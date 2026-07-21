@@ -1,0 +1,52 @@
+# Multi-tenant fixture: compiled with <tenantColumn>film_id</tenantColumn> (see the
+# rewrite-generate-multitenant execution in this module's pom), so this is the compile-tier
+# proof that operation-divined tenant routing emits valid Java 17 for every TenantBinding arm.
+# The sakila catalog's film_id plays the tenant id: film, inventory and film_actor classify
+# tenant-scoped; language (no film_id column) classifies global and serves as the default-source
+# reference data. Kept deliberately slim: one field per arm, nothing else.
+
+interface Node { id: ID! }
+
+type Film @table(name: "film") {
+    title: String
+    # Inherited arm: a batched child below the divining root. The DataLoader registration reads
+    # the tenant-partitioned loader name and the rows method re-acquires from the handed-down
+    # tenant, so each batch stays tenant-homogeneous.
+    inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+}
+
+type Inventory @table(name: "inventory") {
+    inventoryId: Int @field(name: "inventory_id")
+}
+
+# Untenanted arm: global reference data on the default source.
+type Language @table(name: "language") {
+    name: String
+}
+
+# NodeIdBound arm: the node id key embeds the tenant column (position 1), so a nodes(ids:) batch
+# spanning tenants partitions per decoded tenant at the dispatch surface.
+type FilmActor implements Node @table(name: "film_actor") @node(keyColumns: ["actor_id", "film_id"]) {
+    id: ID! @nodeId
+    actorId: Int @field(name: "actor_id")
+}
+
+# ArgumentBound mutation arm: the INSERT input's filmId maps to the tenant column and divines
+# the routing for the write (and its follow-up re-read, which reuses the pinned connection).
+input InventoryCreateInput @table(name: "inventory") {
+    filmId: Int! @field(name: "film_id")
+    storeId: Int! @field(name: "store_id")
+}
+
+type Query {
+    # ArgumentBound root: filter argument mapping to the tenant column routes the subtree.
+    films(filmId: Int! @field(name: "film_id")): [Film!]!
+    # Untenanted root: acquires dslDefault(), never consults the divined context.
+    languages: [Language!]!
+    node(id: ID!): Node
+    nodes(ids: [ID!]!): [Node]!
+}
+
+type Mutation {
+    createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
+}

@@ -282,12 +282,11 @@ class FederationEntitiesDispatchTest {
             .doesNotContain("first_name").doesNotContain("last_name");
     }
 
-    // Commented out with the single-tenant baseline: getTenantId override and per-tenant DataLoader
-    // partitioning are to be reintroduced under the operation-divined multi-tenant routing work.
-    // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof that work will
-    // re-anchor on once `<tenantColumn>` is configurable on the @table directive.
-    // @Test
-    // void entities_multiTenancyPartition_oneSelectPerTenant() { ... }
+    // The per-tenant partition proof lives with the multi-tenant fixture now: the dispatcher's
+    // grouping widens per decoded tenant, so one batch spanning tenants issues one SELECT per
+    // tenant-homogeneous group, proven with inferred bindings (no getTenantId override) in
+    // TenantDivinedRoutingExecutionTest.nodes_batchSpanningTenants_partitionsPerDecodedTenant
+    // (Query.nodes rides the same resolveByReps dispatch surface as _entities).
 
     /**
      * Multi-alternative dispatch: Film carries both a synthesised NODE_ID alternative

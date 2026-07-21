@@ -395,6 +395,31 @@
                         that does not exist (root.Keys / root.tables.Widget never resolve under
                         multi-schema codegen) and the maven-compiler-plugin fails the build.
                     -->
+                    <!--
+                        Multi-tenant fixture: the same sakila catalog compiled with
+                        <tenantColumn>film_id</tenantColumn>, writing to its own disjoint
+                        subpackage. Compiling this output is the compile-tier proof for
+                        operation-divined tenant routing: the typed tenant key (Integer, read off
+                        the catalog's film_id) lands on every tenant-keyed runtime surface, and
+                        every TenantBinding arm's routed acquisition emits valid Java 17. The
+                        divined-routing execution tests run against this package.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-multitenant</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/multitenant.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>${jooqPackage}</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.multitenant</outputPackage>
+                            <tenantColumn>film_id</tenantColumn>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>rewrite-generate-multischema</id>
                         <goals>

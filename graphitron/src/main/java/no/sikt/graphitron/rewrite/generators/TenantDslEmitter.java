@@ -99,7 +99,7 @@ final class TenantDslEmitter {
         return switch (binding) {
             case TenantBinding.Untenanted ignored -> new Resolution(
                 CodeBlock.builder()
-                    .addStatement("$T dsl = $T.of(env).dslDefault()", DSL_CONTEXT, tenantConnections)
+                    .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, tenantConnections)
                     .build(),
                 false);
             case TenantBinding.ArgumentBound bound -> argumentBound(ctx, field, bound, tenantConnections);
@@ -143,12 +143,12 @@ final class TenantDslEmitter {
         var tenantConnections = tenantConnectionsClass(outputPackage);
         return switch (binding) {
             case TenantBinding.Untenanted ignored ->
-                CodeBlock.of("$T.of(env).dslDefault()", tenantConnections);
+                CodeBlock.of("$T.dslDefault(env)", tenantConnections);
             case TenantBinding.ArgumentBound ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
                     + "bound-slot reads; route it through TenantDslEmitter.resolve with the field carrier.");
-            default -> CodeBlock.of("$T.of(env).dslFor($T.divinedTenant(env.getLocalContext()))",
+            default -> CodeBlock.of("$T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
                 tenantConnections, tenantConnections);
         };
     }
@@ -223,7 +223,7 @@ final class TenantDslEmitter {
     private static Resolution inheritedRead(ClassName tenantConnections) {
         return new Resolution(
             CodeBlock.builder()
-                .addStatement("$T dsl = $T.of(env).dslFor($T.divinedTenant(env.getLocalContext()))",
+                .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
                     DSL_CONTEXT, tenantConnections, tenantConnections)
                 .build(),
             false);
@@ -234,17 +234,22 @@ final class TenantDslEmitter {
         return new Resolution(
             CodeBlock.builder()
                 .add(divinedKeyDeclaration(ctx, field, bound, tenantConnections))
-                .addStatement("$T dsl = $T.of(env).dslFor($L)", DSL_CONTEXT, tenantConnections, TENANT_KEY_LOCAL)
+                .addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, tenantConnections, TENANT_KEY_LOCAL)
                 .build(),
             true);
     }
 
-    /** The {@code var _divinedTenant = TenantConnections.divinedTenant(<slot reads>);} statement. */
+    /**
+     * The {@code <T> _divinedTenant = TenantConnections.divinedTenant(<slot reads>);} statement,
+     * declared with the catalog-read tenant key type (generated sources never use {@code var}).
+     */
     private static CodeBlock divinedKeyDeclaration(TypeFetcherEmissionContext ctx, OutputField field,
                                                    TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
+        var scopes = (TenantScopes.Configured) ctx.graphitronSchema().tenantScopes();
+        var keyType = scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
         var reads = slotReads(ctx, field, bound, tenantConnections);
         var divined = CodeBlock.builder()
-            .add("var $L = $T.divinedTenant(", TENANT_KEY_LOCAL, tenantConnections);
+            .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, tenantConnections);
         for (int i = 0; i < reads.size(); i++) {
             if (i > 0) {
                 divined.add(", ");
@@ -311,7 +316,7 @@ final class TenantDslEmitter {
             switch (arg) {
                 case LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg s -> {
                     if (slotNames.contains(s.argName())) {
-                        reads.add(CodeBlock.of("env.getArgument($S)", s.argName()));
+                        reads.add(CodeBlock.of("env.<Object>getArgument($S)", s.argName()));
                     }
                 }
                 case LookupMapping.ColumnMapping.LookupArg.MapInput mi -> {
@@ -341,6 +346,37 @@ final class TenantDslEmitter {
                 }
             }
         }
+        // The VALUES envelope (INSERT / UPSERT, whose fieldBindings is structurally empty):
+        // mirror the classifier's fields() walk, accumulating the nested key path for the read.
+        collectFromInputFields(input.fields(), new java.util.ArrayDeque<>(), input.name(),
+            slotNames, tenantConnections, reads);
+    }
+
+    private static void collectFromInputFields(List<no.sikt.graphitron.rewrite.model.InputField> fields,
+                                               java.util.Deque<String> path, String argName,
+                                               Set<String> slotNames, ClassName tenantConnections,
+                                               List<CodeBlock> reads) {
+        for (var field : fields) {
+            switch (field) {
+                case no.sikt.graphitron.rewrite.model.InputField.ColumnField cf -> {
+                    if (!slotNames.contains(cf.name())) {
+                        continue;
+                    }
+                    var read = CodeBlock.builder()
+                        .add("$T.tenantSlot(env.getArgument($S)", tenantConnections, argName);
+                    for (String key : path) {
+                        read.add(", $S", key);
+                    }
+                    reads.add(read.add(", $S)", cf.name()).build());
+                }
+                case no.sikt.graphitron.rewrite.model.InputField.NestingField nf -> {
+                    path.addLast(nf.name());
+                    collectFromInputFields(nf.fields(), path, argName, slotNames, tenantConnections, reads);
+                    path.removeLast();
+                }
+                default -> { }
+            }
+        }
     }
 
     /** One slot's runtime read from its carrier's {@link CallSiteExtraction}. */
@@ -360,7 +396,7 @@ final class TenantDslEmitter {
             // Direct and the coercing leaves (JooqConvert, EnumValueOf, ...) all read the raw
             // top-level argument: the divined key equality/lookup runs on the wire value, whose
             // Java type the generated divinedTenant guard checks against the tenant column type.
-            default -> CodeBlock.of("env.getArgument($S)", name);
+            default -> CodeBlock.of("env.<Object>getArgument($S)", name);
         };
     }
 }

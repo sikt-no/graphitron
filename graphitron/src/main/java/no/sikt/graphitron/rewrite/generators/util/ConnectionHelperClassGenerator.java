@@ -552,29 +552,20 @@ public class ConnectionHelperClassGenerator {
     /**
      * The multi-tenant acquisition for the lazy SQL resolvers ({@code totalCount},
      * {@code facets}): the tenant an ancestor divined and handed down as {@code localContext}
-     * selects the per-tenant source, its absence the default source. Wraps the checked
-     * acquisition failure in jOOQ's {@code DataAccessException} so the plain fetcher delegates
-     * (which declare no checked exceptions) stay unchanged and the failure routes through the
-     * same redaction contract as any other data-access fault.
+     * selects the per-tenant source, its absence the default source. The carrier's static
+     * acquisition wrappers surface the checked failure as jOOQ's {@code DataAccessException},
+     * so the plain fetcher delegates (which declare no checked exceptions) stay unchanged.
      */
     private static MethodSpec routedDslHelper(String outputPackage, ClassName dslContextClass) {
         var tenantConnectionsClass = ClassName.get(outputPackage + ".schema",
             ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
-        var dataAccessException = ClassName.get("org.jooq.exception", "DataAccessException");
-        var sqlException = ClassName.get("java.sql", "SQLException");
         return MethodSpec.methodBuilder("routedDsl")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(dslContextClass)
             .addParameter(ENV, "env")
-            .addStatement("$T tenants = $T.of(env)", tenantConnectionsClass, tenantConnectionsClass)
             .addStatement("Object tenant = env.getLocalContext()")
-            .beginControlFlow("try")
-            .addStatement("return tenant != null ? tenants.dslFor($T.divinedTenant(tenant)) : tenants.dslDefault()",
-                tenantConnectionsClass)
-            .nextControlFlow("catch ($T e)", sqlException)
-            .addStatement("throw new $T($S, e)", dataAccessException,
-                "Acquiring the routed connection for a connection-page resolver failed")
-            .endControlFlow()
+            .addStatement("return tenant != null ? $T.dslFor(env, $T.divinedTenant(tenant)) : $T.dslDefault(env)",
+                tenantConnectionsClass, tenantConnectionsClass, tenantConnectionsClass)
             .build();
     }
 

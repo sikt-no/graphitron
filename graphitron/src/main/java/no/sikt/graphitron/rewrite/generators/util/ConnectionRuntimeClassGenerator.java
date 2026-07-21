@@ -154,6 +154,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
 
     private ConnectionRuntimeClassGenerator() {}
 
@@ -832,6 +833,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(releaseAll);
         if (multiTenant) {
             carrier.addMethod(ofEnvironment(self))
+                .addMethod(staticDslFor(self, tenantKey))
+                .addMethod(staticDslDefault(self))
                 .addMethod(divinedTenant(tenantKey))
                 .addMethod(divinedTenantAgree())
                 .addMethod(tenantSlot())
@@ -839,6 +842,50 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(tenantLoaderName());
         }
         return carrier.build();
+    }
+
+    /**
+     * {@code static DSLContext dslFor(DataFetchingEnvironment env, T tenantKey)}: the one-call
+     * routed acquisition emitted fetcher sites use — resolves the carrier off the GraphQL
+     * context and pins the key's connection, wrapping the checked acquisition failure in jOOQ's
+     * {@code DataAccessException} so batch rows methods and dispatch surfaces (which declare no
+     * checked exceptions) route it through the same redaction contract as any data-access fault.
+     */
+    private static MethodSpec staticDslFor(ClassName self, TypeName tenantKey) {
+        return MethodSpec.methodBuilder("dslFor")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(tenantKey, "tenantKey")
+            .beginControlFlow("try")
+            .addStatement("return of(env).dslFor(tenantKey)")
+            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+            .addStatement("throw new $T($S + tenantKey, e)", DATA_ACCESS_EXCEPTION,
+                "Acquiring the routed connection failed for tenant key: ")
+            .endControlFlow()
+            .addJavadoc("Routed acquisition for emitted fetcher sites: {@link #of} + {@link #dslFor(Object)},\n"
+                + "with the checked acquisition failure wrapped unchecked.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param tenantKey the divined tenant value\n")
+            .build();
+    }
+
+    /** The default-source sibling of {@link #staticDslFor}. */
+    private static MethodSpec staticDslDefault(ClassName self) {
+        return MethodSpec.methodBuilder("dslDefault")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("try")
+            .addStatement("return of(env).dslDefault()")
+            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+            .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION,
+                "Acquiring the default-source connection failed")
+            .endControlFlow()
+            .addJavadoc("Default-source acquisition for emitted fetcher sites: {@link #of} +\n"
+                + "{@link #dslDefault()}, with the checked acquisition failure wrapped unchecked.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n")
+            .build();
     }
 
     /**
@@ -914,7 +961,7 @@ public final class ConnectionRuntimeClassGenerator {
      * request-level error before any SQL, as is a value of the wrong Java type.
      */
     private static MethodSpec divinedTenant(TypeName tenantKey) {
-        return MethodSpec.methodBuilder("divinedTenant")
+        var b = MethodSpec.methodBuilder("divinedTenant")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(tenantKey)
             .addParameter(Object[].class, "candidates")
@@ -931,12 +978,22 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .beginControlFlow("if (key instanceof $T typed)", tenantKey)
             .addStatement("return typed")
-            .endControlFlow()
-            .addStatement("throw new $T($S + key + $S)", IllegalArgumentException.class,
+            .endControlFlow();
+        // Wire-form coercion for numeric tenant columns: decoded node-id segments and ID-typed
+        // arguments arrive as Strings; parse them to the catalog type so per-row keys and typed
+        // keys agree in one map. Non-numeric parses fail loudly (NumberFormatException).
+        if (tenantKey.equals(ClassName.get(Integer.class)) || tenantKey.equals(ClassName.get(Long.class))) {
+            b.beginControlFlow("if (key instanceof String s)")
+                .addStatement("return $T.valueOf(s)", tenantKey)
+                .endControlFlow();
+        }
+        return b.addStatement("throw new $T($S + key + $S)", IllegalArgumentException.class,
                 "Divined tenant value '", "' does not have the tenant column's Java type.")
             .addJavadoc("Folds the runtime values of a field's tenant bindings into the one divined key:\n"
                 + "collections flatten, all non-null values must agree, and an absent or wrongly-typed\n"
-                + "value is a request-level error before any SQL.\n"
+                + "value is a request-level error before any SQL. For a numeric tenant column a\n"
+                + "String candidate parses to the column type (decoded node-id segments arrive in\n"
+                + "wire form).\n"
                 + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
             .build();
     }

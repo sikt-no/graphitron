@@ -3910,12 +3910,10 @@ class GraphQLQueryTest {
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
     }
 
-    // Commented out for the single-tenant baseline: getTenantId override and per-tenant DataLoader
-    // partitioning will be reintroduced with multi-tenant routing.
-    // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof that work will
-    // re-anchor on once `<tenantColumn>` is configurable on the @table directive.
-    // @Test
-    // void nodes_perTenantPartition_separateBatchPerTenant() { ... }
+    // The per-tenant partition proof lives with the multi-tenant fixture now: a nodes(ids:) batch
+    // spanning tenants issues one tenant-homogeneous group per decoded tenant, proven with inferred
+    // bindings (no getTenantId override) in
+    // TenantDivinedRoutingExecutionTest.nodes_batchSpanningTenants_partitionsPerDecodedTenant.
 
     @Test
     void stores_synthesisedConnection_cursorRoundTrip() {

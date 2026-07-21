@@ -211,7 +211,7 @@ final class HandleMethodBody {
             b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
             // One tenant-homogeneous SELECT per group: a null decoded tenant fails loudly in the
             // divined-key guard rather than routing anywhere.
-            b.addStatement("$T dsl = $T.of(groupEnv).dslFor($T.divinedTenant(tenantEntry.getKey()))",
+            b.addStatement("$T dsl = $T.dslFor(groupEnv, $T.divinedTenant(tenantEntry.getKey()))",
                 DSL_CONTEXT, routing.tenantConnections(), routing.tenantConnections());
             emitAltSwitch(b, entity);
             b.endControlFlow();
@@ -228,7 +228,7 @@ final class HandleMethodBody {
         b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
         if (routing != null) {
             // Multi-tenant build, global entity table: every group reads the default source.
-            b.addStatement("$T dsl = $T.of(groupEnv).dslDefault()",
+            b.addStatement("$T dsl = $T.dslDefault(groupEnv)",
                 DSL_CONTEXT, routing.tenantConnections());
         } else {
             b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
