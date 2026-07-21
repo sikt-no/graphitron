@@ -116,6 +116,15 @@ contract's enforcer:
 - single-row arms behavior-identical (plain equality, no order clause), byte-identical where the
   rendering permits.
 
+Two non-execution pins, so the new invariants each have an enforcer:
+
+- the validator extension gets its own rejection fixture, mirroring the existing Row22-cap pins in
+  `InterfaceFieldValidationTest` / `UnionFieldValidationTest`: a DML target whose PK arity exceeds
+  the cap rejects at validate time with the reentry-keyed message;
+- the carried correlation is pinned at the pipeline tier: a model assertion that the DML reentry
+  classification carries the `ParentCorrelation.OnLiftedSlots` fact over the bound table's primary
+  key (never a code-string assertion on the emitted body).
+
 Explicitly *not* byte-identical and *not* plain execution-tier equivalence on the bulk arms: the
 order and cardinality change is the point, and it needs its own fixtures rather than equivalence
 against the undefined baseline. Full reactor green under `-Plocal-db`; sakila corpus green.
