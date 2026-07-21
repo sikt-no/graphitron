@@ -5710,9 +5710,8 @@ class FieldBuilder {
     }
 
     /**
- * The former {@code SingleRecordTableField} payload carriers (DML write and
-     * {@code @service} producer) collapse into a record-sourced {@link ChildField.BatchedTableField} — a
-     * source=target re-fetch. The producer hands back the target table's record on
+     * A payload carrier (DML write or {@code @service} producer) is modeled as a record-sourced
+     * {@link ChildField.BatchedTableField} — a source=target re-fetch. The producer hands back the target table's record on
      * {@code env.getSource()}; the field re-projects the {@code @table} by correlating the record's
      * primary key to the catalog rows. Modeled as the hop-less lifted shape:
      * {@link ParentCorrelation.OnLiftedSlots} over the target PK (the source=target key fact),

@@ -14,8 +14,7 @@ package no.sikt.graphitron.rewrite.model;
  *       IN parameters, then aliased like any table.</li>
  *   <li>{@link MethodCall} — the developer's static {@code @tableMethod} call: the node's rows
  *       come from invoking a consumer-authored method returning a generated jOOQ table, then
- *       aliased like any table (the {@code @tableMethod} rewire, landed when
- *       {@code RecordTableMethodField} dissolved onto the merged batched leaf).</li>
+ *       aliased like any table.</li>
  * </ul>
  */
 public sealed interface TableExpr permits TableExpr.Catalog, TableExpr.RoutineCall, TableExpr.MethodCall {

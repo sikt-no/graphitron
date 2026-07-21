@@ -275,8 +275,9 @@ review-enforced at test-review time.
 An unguarded inventory in this document ; an arm list, a file census, an occurrence count, a
 compliance roster ; reads as authoritative and rots silently. A principle names the rule, one
 canonical exemplar, and the smell; an inventory appears only when a named live test pins it (the
-dispatch partition under "Rejections" is the pattern). Counts and arm lists otherwise belong in
-guarded tests or generated reports; read the type for the current arm set. Exemplars are chosen on
+dispatch partition under "Rejections" is the pattern). Anything enumerable is first a materialized
+view, regenerated and `--verify`-gated on every build (`supported-directives.adoc` is the
+precedent); hand prose is the fallback for rationale only. Exemplars are chosen on
 stable surfaces: an exemplar that needs a forward note about its own demolition is the wrong
 exemplar.
 
@@ -284,16 +285,18 @@ exemplar.
 
 === Documentation names only live tests/code
 
-Two failure modes share one principle: trusted documentation the code does not mechanically pin.
-The narrow form: any named test, method, or class must exist today ; a javadoc citing a
-nonexistent test is worse than no comment, and a plan that anticipates a symbol it will create
-says "C3 adds `X`", never "as asserted by `X`". The broad form: an invariant claim ("the producer
-rejects X so the emitter may assume Y") whose symbols exist but which no test or type pins; when X
-is silently relaxed the claim is silently false. The fix is the same for both: pin the invariant
-mechanically and let documentation describe what's pinned rather than make claims of its own.
+Every prose claim about code takes one of three honest forms: anchored on a checked reference
+(a `{@link}` the reference gate verifies), pinned by a named live test or type, or written at
+intent altitude ; the why and the shape ; so it survives mechanical refactors. Orientation
+javadoc is the blessed intent-altitude case: a class-level on-ramp (scope, entry points, model
+output, doc pointer; `GraphitronSchemaBuilder`'s top comment is the exemplar) orients without
+narrating mechanics. The smell is narrow: line-by-line narration of a body, or prose
+paraphrasing a mechanism ; a hand-maintained caller census ; true when written, silently
+falsified as the code moves. Prefer deletion over rewrite.
 
 *Enforced by:* the reviewer gates (Spec to Ready, In Review to Done); doc-coverage meta-tests
-where the surface is closed (`SealedHierarchyDocCoverageTest` and its siblings).
+where the surface is closed (`SealedHierarchyDocCoverageTest` and its siblings);
+`RetiredVocabularyGuardTest` for prose naming retired vocabulary.
 
 == Generated code is a consumer artifact
 

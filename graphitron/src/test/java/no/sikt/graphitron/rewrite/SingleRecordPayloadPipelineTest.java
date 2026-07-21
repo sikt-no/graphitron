@@ -93,7 +93,7 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
-        // The former SingleRecordTableField carrier collapsed into BatchedTableField — a
+        // The payload data field classifies as a record-sourced BatchedTableField — a
         // source=target re-fetch keyed on the PK read off the produced record(s).
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);
         var btf = (ChildField.BatchedTableField) dataField;
@@ -430,7 +430,7 @@ class SingleRecordPayloadPipelineTest {
     void fetcherEmitter_revertedTwoArms() throws Exception {
         // Source-level structural assertion: FetcherEmitter.dataFetcherValue has reverted the
         // IdentityPassthrough capability arm; NestingField dispatches on its own permit.
-        // (ConstructorField was dissolved; SingleRecordTableField collapsed into BatchedTableField,
+        // (ConstructorField was dissolved; the record-sourced payload carrier is a BatchedTableField,
         // which dispatches through the DataLoader path in TypeFetcherGenerator, not a bind arm here.)
         var src = Files.readString(Path.of(
             "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));

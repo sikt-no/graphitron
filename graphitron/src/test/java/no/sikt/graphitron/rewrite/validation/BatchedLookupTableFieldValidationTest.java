@@ -48,11 +48,11 @@ class BatchedLookupTableFieldValidationTest {
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
         List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
 
-    // Table-sourced arm key/registration (the former SplitLookupTableField shapes).
+    // Table-sourced arm key/registration.
     private static final SourceKey T_SOURCE_KEY_CONN = TestFixtures.splitSourceKey(PARENT_KEY_COLS);
     private static final LoaderRegistration T_LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
-    // Record-sourced arm key/registration (the former RecordLookupTableField shapes).
+    // Record-sourced arm key/registration.
     private static final SourceKey R_SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
     private static final SourceKey R_SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
     private static final SourceKey R_SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);

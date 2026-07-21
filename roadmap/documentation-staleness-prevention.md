@@ -101,7 +101,30 @@ Validated against the principles by principles-architect consults on
    "design doc says X, no test pins X" conformance audit; this item should
    cross-reference it, not duplicate it.
 
-## Implementation
+## Implementation status
+
+All four landing places shipped in one commit; sections below kept as the
+Done reviewer's map of what was agreed. Decisions taken at implementation,
+within the spec's stated latitude:
+
+- The region lexer was extracted to a shared `JavaSourceRegions` class (the
+  scanner's internal state machine tracked code regions but exposed no code
+  view; the reverse-enforcer needed one). `JavaSourceRegionsTest` pins the
+  new code projection; `RoadmapReferenceScannerTest` continues to pin the
+  comment and string projections through the scanner.
+- The module walk scope (in-scope module list + repo-root anchor) was
+  extracted to `GuardScope`, shared by both guards, so a new module cannot
+  silently join one guard's scope and not the other's.
+- Seeding outcome: every one of the 14 surviving lineage mentions (5 main-
+  source, 9 test-source, all comment/javadoc; zero in strings, `.adoc`, or
+  `.graphqls`) was deleted or rewritten to present-tense prose per the
+  deletion-first mandate. **The allowlist ships empty**; the guard's
+  allowlist-hygiene test pins entry shape for future additions.
+- The guard's own javadoc describes the registry without naming any retired
+  token (its comment regions are in its own scan scope); tokens live only in
+  string literals, which are out of test-source scan scope by design.
+
+## Implementation (as specified)
 
 ### `docs/architecture/explanation/development-principles.adoc` (rules 1-2)
 

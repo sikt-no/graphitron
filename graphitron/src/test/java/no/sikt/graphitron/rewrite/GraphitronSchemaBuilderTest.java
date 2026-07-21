@@ -3550,8 +3550,8 @@ class GraphitronSchemaBuilderTest {
      * Classifier coverage for the child {@code @tableMethod} on a record-backed (non-table)
      * parent: the shape classifies to a record-sourced
      * {@link ChildField.BatchedTableField} whose terminal hop carries a
-     * {@link TableExpr.MethodCall} target (the retired {@code RecordTableMethodField}'s
-     * distinguishing datum moved onto the join-path fact). Two admit arms (FK-auto-derive on a
+     * {@link TableExpr.MethodCall} target (the {@code @tableMethod} distinguishing datum is a
+     * join-path fact, not a leaf identity). Two admit arms (FK-auto-derive on a
      * JooqTableRecord-backed parent, explicit {@code @reference} path) and one rejection
      * (free-form DTO without {@code @sourceRow}).
      */

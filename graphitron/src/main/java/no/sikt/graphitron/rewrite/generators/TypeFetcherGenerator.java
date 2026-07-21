@@ -6793,8 +6793,8 @@ public class TypeFetcherGenerator {
      *       transports: under a flipped Outcome payload the fetcher narrows
      *       {@code env.getSource()} to {@code Outcome.Success} before touching the loader
      *       registry, and otherwise short-circuits a null source (the LocalContext errors
-     *       transport fires the data-channel fetcher with {@code data(null)}; the former
-     *       SingleRecordTableField carrier guarded this and the merged arm must too). A table
+     *       transport fires the data-channel fetcher with {@code data(null)}, so the merged
+     *       arm must keep the null-source guard). A table
      *       parent's source is never null mid-query and never Outcome-wrapped: empty prelude.</li>
      * </ul>
      *

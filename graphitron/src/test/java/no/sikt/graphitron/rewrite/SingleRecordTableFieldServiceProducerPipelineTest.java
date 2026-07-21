@@ -19,8 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
  * DML carrier data fields. Verifies that an {@code @service} mutation returning {@code XRecord}
  * (single-record carrier) or {@code List<XRecord>} (list-record carrier) lands a
- * {@link ChildField.BatchedTableField} on the carrier's data field (the former
- * {@code SingleRecordTableField} collapsed into it) keyed on a source=target re-fetch key
+ * {@link ChildField.BatchedTableField} on the carrier's data field, keyed on a source=target re-fetch key
  * ({@link KeyLift.ProducedRecords} + {@link SourceKey.Wrap.Row}, the PK read off the
  * produced record(s)). The {@code DIRECT} / {@code OUTCOME_SUCCESS} source envelope is no longer
  * carried on the SourceKey; the generator derives it at the type level. Rejection cases pin the

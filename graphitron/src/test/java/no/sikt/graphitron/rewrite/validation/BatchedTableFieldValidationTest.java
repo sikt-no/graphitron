@@ -42,7 +42,7 @@ class BatchedTableFieldValidationTest {
 
     private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
 
-    // ===== Table-sourced arm (the former SplitTableField cases) =====
+    // ===== Table-sourced arm =====
 
     private static final ReturnTypeRef.TableBoundReturnType T_RT_SINGLE = actorReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType T_RT_CONN = actorReturn(new FieldWrapper.Connection(false, 100));
@@ -63,7 +63,7 @@ class BatchedTableFieldValidationTest {
             ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.actorTable(), ""));
 
-    // ===== Record-sourced arm (the former RecordTableField cases) =====
+    // ===== Record-sourced arm =====
 
     private static final ReturnTypeRef.TableBoundReturnType R_RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType R_RT_LIST = filmReturn(new FieldWrapper.List(true, true));

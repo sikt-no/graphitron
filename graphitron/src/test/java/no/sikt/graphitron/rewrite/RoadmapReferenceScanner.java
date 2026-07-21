@@ -27,10 +27,9 @@ import java.util.regex.Pattern;
  * table check is: a bare regex over {@code .java} source cannot separate the three
  * habitats the corpus has, (a) javadoc / {@code {@code ...}} citations, (b)
  * {@code //} implementation comments, and (c) string, character, and text-block
- * literals. The lexer projects each habitat onto its own per-line view so the same
- * patterns can be run over exactly one habitat at a time. Comment delimiters and
- * string quotes are never part of a scanned region, so the detector can neither see
- * nor corrupt code.
+ * literals. The shared {@link JavaSourceRegions} lexer projects each habitat onto
+ * its own per-line view so the same patterns can be run over exactly one habitat
+ * at a time.
  *
  * <p>Two projections are exposed:
  * <ul>
@@ -74,7 +73,7 @@ final class RoadmapReferenceScanner {
      * {@link Finding} labelling, so this is directly unit-testable with an in-memory string.
      */
     static List<Finding> scanSource(Path file, String source) {
-        return matchProjection(file, commentProjection(source));
+        return matchProjection(file, JavaSourceRegions.comments(source));
     }
 
     /**
@@ -83,7 +82,7 @@ final class RoadmapReferenceScanner {
      * in-memory string.
      */
     static List<Finding> scanSourceStrings(Path file, String source) {
-        return matchProjection(file, stringProjection(source));
+        return matchProjection(file, JavaSourceRegions.strings(source));
     }
 
     /** Runs both roadmap patterns over an already-projected per-line view. */
@@ -138,88 +137,4 @@ final class RoadmapReferenceScanner {
         return findings;
     }
 
-    /**
-     * Projects {@code source} onto one string per line holding only that line's
-     * comment / javadoc characters, with string, character, and text-block literal
-     * content excluded. Block comments and text blocks carry lexer state across
-     * line boundaries.
-     */
-    private static String[] commentProjection(String source) {
-        return project(source, Habitat.COMMENT);
-    }
-
-    /**
-     * Projects {@code source} onto one string per line holding only that line's
-     * string, character, and text-block literal content, with comment characters
-     * excluded. Text blocks carry lexer state across line boundaries. The mirror
-     * image of {@link #commentProjection}: the same lexer, appending in the opposite
-     * set of states.
-     */
-    private static String[] stringProjection(String source) {
-        return project(source, Habitat.STRING_LITERAL);
-    }
-
-    /** Which lexer states a projection collects. */
-    private enum Habitat { COMMENT, STRING_LITERAL }
-
-    /**
-     * Single lexer over Java source, tracking code / line-comment / block-comment /
-     * string / char / text-block states. Appends a character to its line's projected
-     * view only when the current state belongs to {@code habitat}; every other
-     * character is dropped, so comment delimiters and string quotes never appear in a
-     * scanned region and the two habitats never bleed into each other.
-     */
-    private static String[] project(String source, Habitat habitat) {
-        String[] lines = source.split("\n", -1);
-        StringBuilder[] out = new StringBuilder[lines.length];
-        for (int i = 0; i < out.length; i++) out[i] = new StringBuilder();
-        boolean wantComment = habitat == Habitat.COMMENT;
-        boolean wantString = habitat == Habitat.STRING_LITERAL;
-        final int CODE = 0, LINE = 1, BLOCK = 2, STRING = 3, CHAR = 4, TEXT = 5;
-        int state = CODE, line = 0, n = source.length();
-        for (int i = 0; i < n; i++) {
-            char c = source.charAt(i);
-            char c2 = i + 1 < n ? source.charAt(i + 1) : '\0';
-            char c3 = i + 2 < n ? source.charAt(i + 2) : '\0';
-            if (c == '\n') {
-                // A line comment ends at the newline; string / char literals cannot legally
-                // span lines, so reset those defensively. Block comments and text blocks
-                // carry across the boundary, so leave BLOCK / TEXT state intact.
-                if (state == LINE || state == STRING || state == CHAR) state = CODE;
-                line++;
-                continue;
-            }
-            switch (state) {
-                case CODE:
-                    if (c == '/' && c2 == '/') { state = LINE; i++; }
-                    else if (c == '/' && c2 == '*') { state = BLOCK; i++; }
-                    else if (c == '"' && c2 == '"' && c3 == '"') { state = TEXT; i += 2; }
-                    else if (c == '"') state = STRING;
-                    else if (c == '\'') state = CHAR;
-                    break;
-                case LINE: if (wantComment) out[line].append(c); break;
-                case BLOCK:
-                    if (c == '*' && c2 == '/') { state = CODE; i++; }
-                    else if (wantComment) out[line].append(c);
-                    break;
-                case STRING:
-                    if (c == '\\') { if (wantString && c2 != '\0') out[line].append(c2); i++; }
-                    else if (c == '"') state = CODE;
-                    else if (wantString) out[line].append(c);
-                    break;
-                case CHAR:
-                    if (c == '\\') i++;
-                    else if (c == '\'') state = CODE;
-                    else if (wantString) out[line].append(c);
-                    break;
-                case TEXT:
-                    if (c == '"' && c2 == '"' && c3 == '"') { state = CODE; i += 2; }
-                    else if (wantString) out[line].append(c);
-                    break;
-            }
-        }
-        String[] result = new String[lines.length];
-        for (int i = 0; i < lines.length; i++) result[i] = out[i].toString();
-        return result;
-    }
 }

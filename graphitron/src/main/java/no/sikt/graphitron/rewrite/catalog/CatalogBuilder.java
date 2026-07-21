@@ -258,9 +258,8 @@ public final class CatalogBuilder {
             // pre-merge leaves produced, gated on the stored sourceShape — the LSP/MCP surface
             // and the @classified corpus observe no verdict change from the merge.
             case ChildField.BatchedTableField f -> {
-                // The @tableMethod-terminal shape (the dissolved RecordTableMethodField)
-                // keeps its TableMethod catalog surface: the projection reads the
-                // hop's TableExpr.MethodCall fact, not a leaf identity.
+                // The @tableMethod-terminal shape keeps its TableMethod catalog surface:
+                // the projection reads the hop's TableExpr.MethodCall fact, not a leaf identity.
                 var methodTarget = f.joinPath().stream()
                     .filter(s -> s instanceof JoinStep.Hop h
                         && h.target() instanceof no.sikt.graphitron.rewrite.model.TableExpr.MethodCall)

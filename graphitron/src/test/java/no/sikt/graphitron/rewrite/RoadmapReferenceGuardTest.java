@@ -27,10 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p>See the "Javadoc conventions" rule in {@code CLAUDE.md} for the authoring convention this
- * backs. In-scope is the generator, its runtime/support modules, and the fixtures and tooling
- * around them; the one deliberate exclusion is {@code roadmap-tool}, whose entire domain is
- * roadmap items, so an item id in its sources is a legitimate reference rather than a stale
- * citation.
+ * backs. The walk scope (in-scope modules and the repository-root anchor) is shared with the
+ * retired-vocabulary guard via {@link GuardScope}; {@code roadmap-tool} is excluded there by
+ * design.
  *
  * <p>The scanned-file count is asserted well above zero: this guard lives in one module but
  * reaches its siblings by walking up to the repository root, so a drifted root (a rename, a
@@ -43,20 +42,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class RoadmapReferenceGuardTest {
 
-    /** Module source roots to scan, relative to the repository root. {@code roadmap-tool} is excluded by design. */
-    private static final List<String> IN_SCOPE_MODULES = List.of(
-        "graphitron",
-        "graphitron-javapoet",
-        "graphitron-jakarta-rest",
-        "graphitron-mcp",
-        "graphitron-lsp",
-        "graphitron-maven-plugin",
-        "graphitron-fixtures-codegen",
-        "graphitron-sakila-db",
-        "graphitron-sakila-service",
-        "graphitron-sakila-example"
-    );
-
     /** A floor on scanned files: comfortably below the true count, high enough to catch a walk that reached nothing. */
     private static final int MIN_SCANNED_FILES = 500;
 
@@ -65,10 +50,10 @@ class RoadmapReferenceGuardTest {
 
     @Test
     void noRoadmapReferencesInComments() throws IOException {
-        Path repoRoot = locateRepoRoot();
+        Path repoRoot = GuardScope.locateRepoRoot();
         List<RoadmapReferenceScanner.Finding> findings = new ArrayList<>();
         int scanned = 0;
-        for (String module : IN_SCOPE_MODULES) {
+        for (String module : GuardScope.IN_SCOPE_MODULES) {
             for (String tree : List.of("src/main/java", "src/test/java")) {
                 Path root = repoRoot.resolve(module).resolve(tree);
                 if (!Files.isDirectory(root)) continue;
@@ -94,10 +79,10 @@ class RoadmapReferenceGuardTest {
 
     @Test
     void noRoadmapReferencesInGeneratorStringLiterals() throws IOException {
-        Path repoRoot = locateRepoRoot();
+        Path repoRoot = GuardScope.locateRepoRoot();
         List<RoadmapReferenceScanner.Finding> findings = new ArrayList<>();
         int scanned = 0;
-        for (String module : IN_SCOPE_MODULES) {
+        for (String module : GuardScope.IN_SCOPE_MODULES) {
             // Main sources only: string literals that render to a consumer surface (author-facing
             // rejection messages, invariant-throw messages, documentation emitted into generated
             // output). A test's @DisplayName or assertion description citing an item as provenance
@@ -125,16 +110,4 @@ class RoadmapReferenceGuardTest {
             .isEmpty();
     }
 
-    /**
-     * Walks up from the test working directory to the repository root, identified by the
-     * {@code roadmap/workflow.adoc} anchor. Surefire runs from the module directory, so the
-     * root is one or more parents up.
-     */
-    private static Path locateRepoRoot() {
-        Path cwd = Path.of("").toAbsolutePath();
-        for (Path p = cwd; p != null; p = p.getParent()) {
-            if (Files.isRegularFile(p.resolve("roadmap/workflow.adoc"))) return p;
-        }
-        throw new IllegalStateException("Could not locate the repository root by walking up from " + cwd);
-    }
 }
