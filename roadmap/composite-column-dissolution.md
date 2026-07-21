@@ -159,9 +159,9 @@ silently widen behavior. Pinned one by one:
   `FetcherEmitter` are protective: a leaked composite instance fails loud, not silently). The
   soundness is load-bearing on the validator: the arity-independent `NodeIdEncodeKeys` deferral and
   the stub removal must land in the **same commit**, with no window where a composite reference
-  instance is neither stubbed nor rejected. Sequencing: R499/R500 (In Review / Ready) actively
-  rewrite this same result-key seam; slice 1 starts only after both land, or explicitly rebases
-  over them, never interleaved.
+  instance is neither stubbed nor rejected. Sequencing: R499/R500 rewrote this same result-key
+  seam and both are Done (landed on trunk as of 2026-07-21), so the precondition is satisfied;
+  slice 1 rebases over them as a matter of course.
 - **The dispatch partition is class-keyed, and the merged leaves cross its cells.** The four
   output leaves occupy three cells of `TypeFetcherGenerator`'s four-way partition (enforced by
   `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`): `ColumnField` is in
@@ -194,7 +194,9 @@ silently widen behavior. Pinned one by one:
 - **INSERT admission** (input): `admitMutationInputFields` admits `ColumnField` always and rejects
   `CompositeColumnField` on INSERT with a deferred rejection (the composite-PK INSERT carve-out).
   The arm becomes arity-gated on the merged leaf: `columns.size() > 1 && kind == INSERT` defers,
-  behavior-preserving, same rejection text.
+  behavior-preserving, same rejection text modulo the retired class name (the message names
+  `CompositeColumnField` today; re-word to the merged leaf's name or an arity phrasing, since a
+  consumer-facing message must not cite a class that no longer exists).
 - **Validator**: `validateCompositeColumnField` / `validateCompositeColumnReferenceField` fold
   into the sibling validators; the 22-slot `RecordN` cap becomes a conditional check on
   `columns.size()`, and the reference-path validation is shared already
@@ -277,8 +279,9 @@ must hold the byte-identical gate on its own before the next starts.
 - **R27** (Backlog): shim construction sites re-target in slice 2; shim retirement stays R27's.
 - **R419** (Backlog): the INSERT carve-out it names becomes arity-gated; premise intact.
 - **R462** (Spec): its leaf enumerations pick up the merged names; one fewer edge-kind to model.
-- **R499/R500** (In Review / Ready): active on the `ResultKeyAliasedField` / `$fields` aliasing
-  seam slice 1 touches; slice 1 starts after they land or rebases over them.
+- **R499/R500** (both Done as of 2026-07-21): the `ResultKeyAliasedField` / `$fields` aliasing
+  seam slice 1 touches is now stable; the sequencing precondition is satisfied and slice 1 may
+  start immediately (rebase over trunk as usual).
 - **R222** (Spec, umbrella): this is the next executed proof of the dimensional pivot; the leaf
   count drops by six.
 - **R302** (Backlog, `ChildField` rename): orthogonal; whichever lands second re-anchors names.
