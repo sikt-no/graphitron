@@ -79,14 +79,10 @@ public class TypeClassGenerator {
 
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, String outputPackage) {
         var type = (GraphitronType.TableBackedType) schema.type(typeName);
-        // Single-column arms before composite arms, each name-sorted: the emission order from
-        // when the two arities were separate collections, kept so generated output stays
-        // byte-stable across the merge.
         var columnFields = schema.fieldsOf(typeName).stream()
             .filter(f -> f instanceof ChildField.ColumnBackedField)
             .map(f -> (ChildField.ColumnBackedField) f)
-            .sorted(Comparator.comparing(ChildField.ColumnBackedField::isComposite)
-                .thenComparing(GraphitronField::name))
+            .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         var columnReferenceFields = schema.fieldsOf(typeName).stream()
             .filter(f -> f instanceof ChildField.ColumnBackedReferenceField)
