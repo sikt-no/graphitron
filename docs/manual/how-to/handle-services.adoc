@@ -205,9 +205,14 @@ The classifier picks the variant by inspecting the `Set<E>`'s element type:
 
 * `Row<N>`. Keys carry no value accessors; reconstruct keys with `DSL.row(value)` if you need to read or rebuild them. Use this when the SQL side composes against the row (`DSL.row(FILM_ID).in(filmIds)`).
 * `Record<N>`. Keys expose `.value1()`/`.value2()`/etc. Use this when the body needs to extract column values from each key.
-* `X extends TableRecord`. The framework supplies fully-populated parent records (every column on the parent table), rebuilt column by column from the parent row (which the SELECT projects under reserved aliases so client-selected fields can never collide with it). Use this when the body needs columns beyond the parent's PK; `titleTitlecase` reads `film.getTitle()` straight off the record without a SELECT. Note the cost: choosing the typed-record shape opts the parent SELECT into projecting the full parent row whenever the field is selected, regardless of how narrow the client's selection is.
+* `X extends TableRecord`. The framework supplies a parent record carrying every column on the parent table, and the key extraction reconstructs it per column from whichever shape the parent arrived in. Use this when the body needs columns beyond the parent's PK; `titleTitlecase` reads `film.getTitle()` straight off the record.
 
-The typed-record arm is the most powerful, with one caveat: on a table-backed parent the framework projects the full parent row whenever the field is selected, so every column is present; but if the parent is itself a `@service` returning a hand-rolled record, the framework has no SELECT to widen and the record is only as populated as the producing service made it. Plan accordingly.
+The typed-record arm serves two parent kinds and reads each on its own terms:
+
+* *SQL-projected parent* (the parent came from a framework SELECT, e.g. a `@table` query or a split-query parent). The SELECT projects the full parent row under reserved `__src_<col>__` aliases (so a client-selected field can never collide with it), and the framework rebuilds the record column by column from those aliases. Every column is present. The cost: selecting a typed-record `@service` child opts the parent SELECT into projecting the full parent row whenever the field is selected, regardless of how narrow the client's selection is.
+* *Service-returned parent* (the parent is itself a `@service` handing back a hand-rolled record, e.g. `selectFrom(FILM)` returning `Result<FilmRecord>`). There is no framework SELECT to widen, so the record is copied as the producing service populated it, and is only as complete as that service made it. Plan accordingly.
+
+The framework picks the read at runtime from the parent record's own type, so the same typed-record `@service` child works under both parent kinds without any change to its Java signature.
 
 === One DataLoader per request, per field
 

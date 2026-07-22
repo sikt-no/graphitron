@@ -121,6 +121,20 @@ public final class TypeSpecAssertions {
     }
 
     /**
+     * True when the fetcher method {@code fieldName} in {@code fetcherType} emits the runtime
+     * {@code SourceKey.Wrap.TableRecord} key-extraction fork: both the typed-parent arm
+     * ({@code if (source instanceof XRecord typedSource) … typedSource.get(…)}) and the
+     * reserved-alias arm ({@code source.get("__src_…", …)}). A shape assertion over the two read
+     * families rather than a full code-string pin. See {@code GeneratorUtils.buildKeyExtraction}.
+     */
+    public static boolean serviceChildKeyExtractionForksOnTypedRecord(TypeSpec fetcherType, String fieldName) {
+        String body = methodBody(fetcherType, fieldName).orElse("");
+        boolean typedArm = body.contains("instanceof") && body.contains("typedSource.get(");
+        boolean reservedArm = body.contains(".get(\"__src_");
+        return typedArm && reservedArm;
+    }
+
+    /**
      * True when the {@code $fieldsGrouped} switch arm for {@code fieldName} opens with the
      * occurrence argument-consistency guard
      * ({@code SelectionOccurrences.requireConsistentArguments(...)}). The arm span is taken from

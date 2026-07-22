@@ -539,9 +539,11 @@ class GeneratorUtils {
      *       {@code DSL.row((Record) env.getSource().get(table.col), ...)}</li>
      *   <li>{@link SourceKey.Wrap.Record} →
      *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
-     *   <li>{@link SourceKey.Wrap.TableRecord} → a typed record reconstructed per-column from the
-     *       reserved full-row aliases: {@code XRecord key = new XRecord();
- * key.set(Tables.X.COL, source.get("__src_col__", ColType.class)); …}</li>
+     *   <li>{@link SourceKey.Wrap.TableRecord} → a typed record reconstructed per-column, forked at
+     *       runtime on the source's own type: a typed parent ({@code source instanceof XRecord}) is
+     *       copied field-by-field by jOOQ field-identity, and a generic SQL-projected row is rebuilt
+     *       from the reserved full-row aliases ({@code source.get("__src_col__", ColType.class)}).
+     *       See the {@code TableRecord} arm below for the discriminator's rationale.</li>
      * </ul>
      *
      * <p>The container axis (positional list vs mapped set) is orthogonal and not consulted
@@ -550,16 +552,30 @@ class GeneratorUtils {
      * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
      * table, so the extraction's projection target is the parent table itself.
      *
- * <p>The {@code TableRecord} arm no longer does a whole-record {@code into(Tables.X)}.
-     * That mapped the parent row into the typed record <em>by column name</em>, so a sibling
-     * projection aliased to a name colliding with a physical column (multiset object fields are the
-     * concrete trigger) poisoned the conversion and threw a {@code MappingException}. Instead the
-     * parent {@code $fields} projects the full row under reserved {@code __src_<col>__} aliases
+ * <p>The {@code TableRecord} arm forks at runtime on the source's own type, because the same
+     * {@code (type, field)} fetcher is reached by two parent arrival paths graphql-java cannot
+     * distinguish at classification time: a {@code @service} (or DML) that returns the typed record
+     * straight to graphql-java, and the generic {@code Record} an SQL-projected parent
+     * {@code <Type>.$fields} query builds. The typed arm ({@code source instanceof XRecord}) copies
+     * each column off the record by jOOQ field-identity ({@code get(Tables.X.COL)}), never a
+     * by-name {@code into(Tables.X)} map: that by-name map is what a sibling projection aliased to a
+     * name colliding with a physical column (multiset object fields are the concrete trigger) used
+     * to poison, throwing a {@code MappingException}. The else arm handles the SQL-projected row:
+     * the parent {@code $fields} projects the full row under reserved {@code __src_<col>__} aliases
      * (see {@link #reservedSourceAlias(String)}) and this arm rebuilds the typed record column by
-     * column, reading each value back by its reserved alias with an explicit type. Both sites
-     * enumerate {@link TableRef#allColumns()}, so the projected names and the names read here are
-     * single-homed and cannot drift. The full-parent-row contract is preserved: the reconstructed
-     * record carries every column on the parent table.
+     * column, reading each value back by its reserved alias with an explicit type. Both arms mint a
+     * fresh record over the same {@link TableRef#allColumns()} enumeration, so the produced key is
+     * structurally identical whichever path produced the parent and the live parent object is never
+     * aliased as the DataLoader key; the projected alias names and the names read here are
+     * single-homed on {@code allColumns()} and cannot drift. The full-parent-row contract is
+     * preserved: the reconstructed record carries every column on the parent table.
+     *
+     * <p>The typed arm is what makes the documented "a {@code @service}-returned typed parent is
+     * used as the producing service populated it" combination resolve rather than crash; the
+     * discriminator's basis (the {@code $fields} SELECT never materialises the typed subclass) is
+     * pinned by the graphitron-sakila-example internal-tier test
+     * {@code ServiceParentTableRecordKeyExtractionTest}. It is named in prose rather than by
+     * {@code @link} because it lives in a downstream module not on this module's javadoc classpath.
      */
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
         TypeName keyType = sourceKey.keyElementType();
@@ -592,12 +608,41 @@ class GeneratorUtils {
                 var out = CodeBlock.builder();
                 out.addStatement("$T source = ($T) env.getSource()", RECORD, RECORD);
                 out.addStatement("$T key = new $T()", keyType, keyType);
+                // Runtime fork on the source's own type. The parent row reaches this fetcher by one
+                // of two arrival paths that graphql-java fuses onto the same (type, field) fetcher,
+                // and no classification-time fact can tell them apart:
+                //   - a service (or DML) returning the typed record straight to graphql-java, e.g.
+                //     selectFrom(FILM) yielding a FilmRecord — no framework SELECT to widen, so no
+                //     reserved __src_*__ aliases exist on the row; and
+                //   - the SQL-projected generic row a parent <Type>.$fields query builds, which
+                //     carries the whole parent row re-aliased under __src_<col>__ (see
+                //     reservedSourceAlias) and is a generic Record, never the typed subclass.
+                // The typed arm copies each column off the record by jOOQ field-identity (never a
+                // by-name into(...) map), so the multiset-alias collision the reserved scheme exists
+                // to avoid cannot re-enter here. The else arm rebuilds from the reserved aliases.
+                // Both arms mint a fresh record over the same allColumns() enumeration, so the key
+                // is structurally identical whichever path produced the parent and the live parent
+                // object is never aliased as the DataLoader key.
+                //
+                // The discriminator is sound because the $fields SQL path materialises generic
+                // Record implementations, never the typed subclass; that invariant is pinned by the
+                // graphitron-sakila-example internal-tier test
+                // ServiceParentTableRecordKeyExtractionTest (a downstream module, so the read-site
+                // javadoc below names it in prose rather than by {@link}).
+                out.beginControlFlow("if (source instanceof $T typedSource)", keyType);
+                for (ColumnRef col : parentTable.allColumns()) {
+                    out.addStatement("key.set($T.$L.$L, typedSource.get($T.$L.$L))",
+                        tablesClass, tableField, col.javaName(),
+                        tablesClass, tableField, col.javaName());
+                }
+                out.nextControlFlow("else");
                 for (ColumnRef col : parentTable.allColumns()) {
                     out.addStatement("key.set($T.$L.$L, source.get($S, $T.class))",
                         tablesClass, tableField, col.javaName(),
                         reservedSourceAlias(col.sqlName()),
                         col.columnType());
                 }
+                out.endControlFlow();
                 yield out.build();
             }
         };

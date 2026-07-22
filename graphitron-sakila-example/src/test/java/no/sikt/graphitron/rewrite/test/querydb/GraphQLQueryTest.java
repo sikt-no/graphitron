@@ -558,6 +558,28 @@ class GraphQLQueryTest {
             .isEqualTo(3);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmsByService_titleTitlecase_resolvesOnServiceReturnedTypedParent() {
+        // The service-returned-parent kind for the Wrap.TableRecord key extraction fork.
+        // filmsByService runs its own selectFrom(FILM) and hands back Result<FilmRecord> with no
+        // framework projection, so the parent row carries the real columns and NO reserved
+        // __src_*__ aliases. titleTitlecase is a Wrap.TableRecord @service child whose key
+        // extraction rebuilds a FilmRecord from the parent source. Pre-fix the extraction read
+        // source.get("__src_film_id__", ...) unconditionally and threw
+        // IllegalArgumentException: Field "__src_..." is not contained in row type on every film;
+        // the runtime `source instanceof FilmRecord` fork now copies the typed parent's columns
+        // directly. The SQL-parent kind of the same field stays pinned by
+        // films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException.
+        Map<String, Object> data = execute("{ filmsByService(ids: [1, 2]) { titleTitlecase } }");
+        var films = (java.util.List<Map<String, Object>>) data.get("filmsByService");
+        assertThat(films)
+            .as("titleTitlecase resolves on a service-returned FilmRecord parent — pre-fix this "
+                + "threw IllegalArgumentException on the missing __src_ aliases")
+            .extracting(f -> f.get("titleTitlecase"))
+            .containsExactly("Academy Dinosaur", "Ace Goldfinger");
+    }
+
     private static String expectedTitleCase(String s) {
         StringBuilder out = new StringBuilder(s.length());
         boolean nextUpper = true;

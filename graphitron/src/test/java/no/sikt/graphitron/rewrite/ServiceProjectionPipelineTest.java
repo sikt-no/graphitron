@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
+import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.Test;
 
@@ -221,6 +222,39 @@ class ServiceProjectionPipelineTest {
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
             .as("the Wrap.Row @splitQuery sibling still force-projects its base-named key column "
                 + "(no absorption by the full-row axis)")
+            .isTrue();
+    }
+
+    /**
+     * The consumer side of the typed-record shape: the generated {@code @service}-child fetcher's
+     * key extraction must fork at runtime on the parent source's type, emitting both the typed
+     * arm (a service/DML-returned {@code LanguageRecord}, read by jOOQ field-identity) and the
+     * reserved-alias arm (an SQL-projected generic row, read back by {@code __src_<col>__}). The
+     * two producer-side tests above pin that {@code $fields} projects the reserved full row; this
+     * pins that the reader handles both parent kinds. A shape assertion over the two read
+     * families, not a full code-string pin.
+     */
+    @Test
+    void tableRecordServiceChild_fetcherKeyExtractionForksOnParentSourceType() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { language: Language }
+            extend type Language {
+                films: [Film!]! @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMappedByRecord"}
+                )
+            }
+            """);
+
+        var languageFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("LanguageFetchers"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("LanguageFetchers not generated"));
+
+        assertThat(TypeSpecAssertions.serviceChildKeyExtractionForksOnTypedRecord(languageFetchers, "films"))
+            .as("the TableRecord-sourced @service child fetcher emits both the typed-parent "
+                + "instanceof fork and the reserved-alias read")
             .isTrue();
     }
 
