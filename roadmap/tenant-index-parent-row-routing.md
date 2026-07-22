@@ -12,7 +12,7 @@ last-updated: 2026-07-20
 
 # Tenant-index tables: per-row tenant routing off an index parent
 
-Extracted from R45 ([`tenant-routing-and-execution-input.md`](tenant-routing-and-execution-input.md)) on 2026-07-20 to keep its first iteration to a two-way table classification (tenant-scoped or global). This item adds the third scope: the **tenant-index table**, which carries the tenant column but is *not* partitioned; it lives on the default source and its rows point out into tenants. The canonical case is a student-to-organisation index: the query starts in the index on the default source, and each returned row names the tenant its children must be fetched from, on a different connection per row. Until this lands, that shape is served by R46's fan-out (query every tenant and union); the index makes it targeted (one query per tenant that actually holds data).
+Extracted from R45 (`tenant-routing-and-execution-input`, since Done and recorded in [`changelog.md`](changelog.md)) on 2026-07-20 to keep its first iteration to a two-way table classification (tenant-scoped or global). This item adds the third scope: the **tenant-index table**, which carries the tenant column but is *not* partitioned; it lives on the default source and its rows point out into tenants. The canonical case is a student-to-organisation index: the query starts in the index on the default source, and each returned row names the tenant its children must be fetched from, on a different connection per row. Until this lands, that shape is served by R46's fan-out (query every tenant and union); the index makes it targeted (one query per tenant that actually holds data).
 
 ## Scope sketch (to be developed at Spec)
 
@@ -41,5 +41,5 @@ query {
 
 ## Siblings
 
-- **Depends on R45** ([`tenant-routing-and-execution-input.md`](tenant-routing-and-execution-input.md)): the tenant-column declaration, the two-way classification this item widens, the `TenantBinding` axis this item's arm joins, and the loader-name partition mechanism.
+- **R45** (Done, recorded in [`changelog.md`](changelog.md)): the tenant-column declaration, the two-way classification this item widens, the `TenantBinding` axis this item's arm joins, and the loader-name partition mechanism.
 - **R46** ([`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md)): the no-index fallback, fan out across every tenant and union. An index narrows the fan-out to the tenants that hold data; schemas without one keep using R46's shape.

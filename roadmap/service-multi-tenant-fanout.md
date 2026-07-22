@@ -5,8 +5,8 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: runtime-connection
-depends-on: []
-last-updated: 2026-07-20
+depends-on: [tenant-fanout-parallel-execution]
+last-updated: 2026-07-22
 ---
 
 # Multi-tenant fan-out: run one field across many tenants and union the results
@@ -33,10 +33,11 @@ The previous design here (a `ContextValueRegistration<FanOut>` permit, `DslConte
 1. **Claims extraction seam.** The domain is resolved (map keys intersected with the user's role-bearing tenantIds, above); what remains is how graphitron reads the tenant set out of the claims. Candidates: the consumer derives a collection-typed contextArgument (e.g. `Set<Long> tenantRoles`) from the JWT before calling the factory, keeping graphitron claims-format-agnostic; or graphitron takes a claims-map contextArgument plus a configured extraction. The pre-derived contextArgument is the lighter seam and matches how the hand-written resolver already reads `institusjonsroller`. This seam also owns relevance-scoping: when claims legitimately span more tenants than this subgraph hosts, the consumer narrows the derived set here, which is what keeps the missing-tenant error above meaningful.
 2. **Marker syntax.** Directive vs contextArgument-driven; reconcile with R45's inference posture (fan-out cannot be inferred, it must be asked for).
 3. **Result semantics.** Ordering across the union; pagination and `@asConnection` over a fanned-out field; per-tenant partial failure (null-drop vs error surfacing, composing with the typed-errors plan).
-4. **Parallelism bounds.** Fanning out to dozens of databases per field needs a concurrency cap and a timeout story; likely R429 config.
+4. **Parallelism bounds.** Resolved to R510 ([`tenant-fanout-parallel-execution.md`](tenant-fanout-parallel-execution.md)), which precedes this item: the bounded executor, thread-safe `TenantConnections` pinning, scatter/join helper, concurrency cap, and timeout land there. This item's emitters call that substrate and must not re-open its decisions.
 
 ## Siblings
 
-- **Depends on R45** ([`tenant-routing-and-execution-input.md`](tenant-routing-and-execution-input.md)): the `TenantBinding` axis this item adds its arm to.
+- **Depends on R510** ([`tenant-fanout-parallel-execution.md`](tenant-fanout-parallel-execution.md)): the bounded parallel execution substrate this item's emitters call.
+- **R45** (Done, recorded in [`changelog.md`](changelog.md)): the `TenantBinding` axis this item adds its arm to.
 - **R505** ([`tenant-index-parent-row-routing.md`](tenant-index-parent-row-routing.md)): the tenant-index routing that later narrows this item's fan-out to the tenants that actually hold data, making fan-out the fallback rather than the default.
 - **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): acquisition, transaction demarcation, session state, and the threading rules fan-out must not reimplement.
