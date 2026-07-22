@@ -1,7 +1,7 @@
 ---
 id: R513
 title: "Fetchers helper names collide when two same-named classes come from different schema packages"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness

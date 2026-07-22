@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R512` | Schema-qualify @reference(key:) to escape cross-schema FK-name collisions | Spec | 2026-07-22 | [plan](schema-qualified-reference-key.md) |
-| `R513` | Fetchers helper names collide when two same-named classes come from different schema packages | Ready | 2026-07-22 | [plan](fetchers-helper-name-cross-schema-collision.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R513` | Fetchers helper names collide when two same-named classes come from different schema packages | In Progress | 2026-07-22 | [plan](fetchers-helper-name-cross-schema-collision.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
@@ -309,7 +309,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### codegen-correctness
 
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
-- `R513` [**Fetchers helper names collide when two same-named classes come from different schema packages**](fetchers-helper-name-cross-schema-collision.md) — Ready, bug
+- `R513` [**Fetchers helper names collide when two same-named classes come from different schema packages**](fetchers-helper-name-cross-schema-collision.md) — In Progress, bug
 - `R472` [**Generated condition filters on nested fields reference a conditions method that is never emitted**](nested-generated-condition-filters-never-emitted.md) — Backlog, bug
 - `R512` [**Schema-qualify @reference(key:) to escape cross-schema FK-name collisions**](schema-qualified-reference-key.md) — Spec, feature
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
