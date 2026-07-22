@@ -1,7 +1,7 @@
 ---
 id: R511
 title: "Split-query TableRecord key extraction breaks on @service-returned @table parents"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: service
