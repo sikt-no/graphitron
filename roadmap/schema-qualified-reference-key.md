@@ -1,7 +1,7 @@
 ---
 id: R512
 title: "Schema-qualify @reference(key:) to escape cross-schema FK-name collisions"
-status: Ready
+status: In Review
 bucket: feature
 priority: 3
 theme: codegen-correctness
