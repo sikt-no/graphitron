@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R510` | Bounded parallel execution substrate for tenant fan-out | Spec | 2026-07-22 | [plan](tenant-fanout-parallel-execution.md) |
-| `R511` | Split-query TableRecord key extraction breaks on @service-returned @table parents | In Progress | 2026-07-22 | [plan](service-parent-tablerecord-key-extraction.md) |
+| `R511` | Split-query TableRecord key extraction breaks on @service-returned @table parents | In Review | 2026-07-22 | [plan](service-parent-tablerecord-key-extraction.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -239,7 +239,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
-- `R511` [**Split-query TableRecord key extraction breaks on @service-returned @table parents**](service-parent-tablerecord-key-extraction.md) — In Progress, bug
+- `R511` [**Split-query TableRecord key extraction breaks on @service-returned @table parents**](service-parent-tablerecord-key-extraction.md) — In Review, bug
 - `R11` [**`DSLContext` on `@condition` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
