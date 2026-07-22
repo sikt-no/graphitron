@@ -369,7 +369,7 @@ public final class ArgCallEmitter {
             // than silently emitting the wrong read form; both arms keep the implicit Env read.
             case CallSiteExtraction.InputBean ib -> {
                 requireEnv(source, "InputBean", param.name());
-                yield buildInputBeanCallExtraction(ib, param.name(), isListShaped(param));
+                yield buildInputBeanCallExtraction(ctx, ib, param.name(), isListShaped(param));
             }
             case CallSiteExtraction.JooqRecord jr -> {
                 requireEnv(source, "JooqRecord", param.name());
@@ -454,12 +454,10 @@ public final class ArgCallEmitter {
      * only emits the call expression. The helper name follows the
      * {@code create<TypeName>} / {@code create<TypeName>List} convention.
      */
-    private static CodeBlock buildInputBeanCallExtraction(CallSiteExtraction.InputBean ib,
-            String argName, boolean list) {
-        String simpleName = ib.beanClass().simpleName();
-        String helperName = list
-            ? "create" + simpleName + "List"
-            : "create" + simpleName;
+    private static CodeBlock buildInputBeanCallExtraction(TypeFetcherEmissionContext ctx,
+            CallSiteExtraction.InputBean ib, String argName, boolean list) {
+        var names = ctx.fetchersHelperNames();
+        String helperName = list ? names.createPlural(ib.beanClass()) : names.createSingular(ib.beanClass());
         return CodeBlock.of("$L(env.getArgument($S))", helperName, argName);
     }
 

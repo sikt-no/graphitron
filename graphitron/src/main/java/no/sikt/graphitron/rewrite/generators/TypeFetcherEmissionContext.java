@@ -36,10 +36,11 @@ final class TypeFetcherEmissionContext {
     private final String parentTypeName;
     private final no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema;
 
-    // The shape-aware create<Record> helper-name resolver for this <Type>Fetchers class. Defaults
-    // to the bare resolver so schema-free / unit / out-of-band contexts (which carry at most one shape
-    // per record class) behave exactly as before; TypeFetcherGenerator installs a populated one up front.
-    private JooqRecordHelperNames jooqRecordHelperNames = JooqRecordHelperNames.bare();
+    // The helper-name resolver for this <Type>Fetchers class, covering the create* (jOOQ record +
+    // bean) and decode* method-name namespaces. Defaults to the bare resolver so schema-free / unit /
+    // out-of-band contexts (which carry at most one class per simple name) behave exactly as before;
+    // TypeFetcherGenerator installs a populated one up front.
+    private FetchersHelperNames fetchersHelperNames = FetchersHelperNames.bare();
 
     // The per-run command registry + this class's unit FQCN, installed by TypeFetcherGenerator
     // up front; the throwaway defaults keep out-of-band contexts on the same single code path.
@@ -108,23 +109,32 @@ final class TypeFetcherEmissionContext {
     }
 
     /**
- * The shape-aware {@code create<Record>} helper-name resolver for this class. Consulted by
-     * the two call-site emitters ({@link ArgCallEmitter}, {@link ServiceMethodCallEmitter}) and by the
-     * helper-emission drain in {@link TypeFetcherGenerator}, so a call site and its helper always agree
-     * on the name. Defaults to the bare resolver until {@link #setJooqRecordHelperNames} installs a
-     * populated one.
+     * The helper-name resolver for this class, the single home for the {@code create*} (jOOQ record +
+     * bean) and {@code decode*} method-name decisions. Consulted by the two call-site emitters
+     * ({@link ArgCallEmitter}, {@link ServiceMethodCallEmitter}), the bean / decode helper emitters
+     * ({@link InputBeanInstantiationEmitter}), and the helper-emission drain in
+     * {@link TypeFetcherGenerator}, so a call site and its helper always agree on the name. Defaults
+     * to the bare resolver until {@link #setFetchersHelperNames} installs a populated one.
      */
-    JooqRecordHelperNames jooqRecordHelperNames() {
-        return jooqRecordHelperNames;
+    FetchersHelperNames fetchersHelperNames() {
+        return fetchersHelperNames;
     }
 
     /**
-     * Install the populated {@link JooqRecordHelperNames} resolver for this class. Called once by
+     * The shape-aware {@code create<Record>} jOOQ-record arm of {@link #fetchersHelperNames()}, the
+     * seam the two jOOQ-record call-site emitters read.
+     */
+    JooqRecordHelperNames jooqRecordHelperNames() {
+        return fetchersHelperNames.jooqRecord();
+    }
+
+    /**
+     * Install the populated {@link FetchersHelperNames} resolver for this class. Called once by
      * {@link TypeFetcherGenerator} <em>before</em> any field body emits, so every call site and the
      * helper drain read the same resolver.
      */
-    void setJooqRecordHelperNames(JooqRecordHelperNames names) {
-        this.jooqRecordHelperNames = names;
+    void setFetchersHelperNames(FetchersHelperNames names) {
+        this.fetchersHelperNames = names;
     }
 
     /**

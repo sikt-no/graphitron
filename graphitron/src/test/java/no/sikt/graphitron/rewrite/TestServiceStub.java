@@ -795,6 +795,25 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    // ===== Cross-schema helper-name collision fixtures (multischemafixture catalog) =====
+    //
+    // multischema_a.event and multischema_b.event both generate an EventRecord with an identical
+    // simple name but distinct packages. A @service field binding each on one *Fetchers class forces
+    // the create<Record> helper names to disambiguate cross-schema (createMultischemaAEventRecord /
+    // createMultischemaBEventRecord) instead of colliding on createEventRecord.
+
+    /** multischema_a.event record @service param — one arm of the cross-schema collision pair. */
+    public static String modifyMultischemaAEvent(
+            no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.records.EventRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** multischema_b.event record @service param — the other arm of the cross-schema collision pair. */
+    public static String modifyMultischemaBEvent(
+            no.sikt.graphitron.rewrite.multischemafixture.multischema_b.tables.records.EventRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== @service record-composite payload carrier fixtures =====
 
     /**

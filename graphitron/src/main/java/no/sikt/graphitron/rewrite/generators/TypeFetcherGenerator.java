@@ -494,13 +494,27 @@ public class TypeFetcherGenerator {
         // is the single home so the two sites cannot drift.
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
 
-        // Build the shape-aware create<Record> helper-name resolver from every jOOQ-record
-        // @service carrier on this class (both coordinates) BEFORE any field body emits, then stash it
-        // on ctx. The two call-site emitters and the helper-emission drain all read this one resolver,
-        // so a call site and its helper agree on the name by construction. Keyed by binding shape, not
-        // record class, so two @service fields taking one record through different input shapes get
-        // distinct helpers (and identical shapes still collapse to one).
-        ctx.setJooqRecordHelperNames(JooqRecordHelperNames.of(collectJooqRecordCarriers(fields)));
+        // Build the create* / decode* helper-name resolver from every jOOQ-record @service carrier,
+        // every bean (POJO / @record) class, and every @nodeId record-decode target on this class
+        // (both coordinates) BEFORE any field body emits, then stash it on ctx. Every naming site
+        // (the two call-site emitters, the bean / decode helper emitters, and the helper-emission
+        // drain) reads this one resolver, so a call site and its helper agree on the name by
+        // construction. The bean-class and decode-record collection is hoisted up front here (out of
+        // the drain below) so the resolver can compute a cross-class-collision-free stem for the union
+        // of jOOQ records and beans before any name is emitted; the drain reuses the same collected
+        // maps. The jOOQ arm keys on binding shape, not record class, so two @service fields taking one
+        // record through different input shapes get distinct helpers (and identical shapes collapse).
+        var jooqCarriers = collectJooqRecordCarriers(fields);
+        var beanHelpers = collectBeanHelpers(fields);
+        var scalarDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.NodeIdDecodeRecord>();
+        var listDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.NodeIdDecodeRecord>();
+        InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(),
+            scalarDecoders, listDecoders);
+        var fetchersHelperNames = FetchersHelperNames.of(
+            jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet());
+        ctx.setFetchersHelperNames(fetchersHelperNames);
 
         // One decode-helper registry per <Type>Fetchers class: split rows-method and lookup-rows
         // filter sites that decode a @nodeId argument lift a per-class private static helper through
@@ -759,36 +773,21 @@ public class TypeFetcherGenerator {
         }
 
         // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
-        // extraction on method-backed fields. Dedup by bean class — nested beans are collected
-        // transitively so a single bean class always emits exactly one pair of helpers per
-        // *Fetchers class, regardless of how many distinct service methods reach it. A sibling
-        // walk over ServiceField permits whose carrier holds the equivalent
-        // RecordInput / JavaBeanInput shapes joins in; both walks feed the same dedup map.
-        var beanHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
-            CallSiteExtraction.InputBean>();
-        fields.stream()
-            .filter(f -> f instanceof MethodBackedField)
-            .map(f -> (MethodBackedField) f)
-            .flatMap(f -> f.method().callParams().stream())
-            .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
-            .map(p -> (CallSiteExtraction.InputBean) p.extraction())
-            .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
-        // Walk the four service permits' carriers for composite ValueShape arms.
-        for (var field : fields) {
-            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
-                collectBeanHelpersFromCarrier(sf.serviceMethodCall(), beanHelpers);
-            }
-        }
+        // extraction. The bean-class dedup map was collected up front (collectBeanHelpers) so the
+        // resolver could size the create* stem namespace; the emission here reuses it. A single bean
+        // class always emits exactly one pair of helpers per *Fetchers class, named through the same
+        // resolver every call site consulted.
         for (var ib : beanHelpers.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib));
+            builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib, fetchersHelperNames));
             builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
-                no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className)));
+                no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className),
+                fetchersHelperNames));
         }
         // One create<Record> / create<Record>List pair per distinct binding shape, named through
         // the same resolver every call site consulted (built up front, stashed on ctx). Contended
         // record classes (>1 shape) split into ordinal-suffixed helpers; the common single-shape case
         // stays the bare create<Record> pair.
-        var jooqRecordHelperNames = ctx.jooqRecordHelperNames();
+        var jooqRecordHelperNames = fetchersHelperNames.jooqRecord();
         for (var jr : jooqRecordHelperNames.distinctShapes()) {
             builder.addMethod(JooqRecordInstantiationEmitter.buildSingularHelper(jr, jooqRecordHelperNames));
             builder.addMethod(JooqRecordInstantiationEmitter.buildPluralHelper(jr, jooqRecordHelperNames));
@@ -797,19 +796,15 @@ public class TypeFetcherGenerator {
         // Emit one decode<RecordType>Record helper per jOOQ-record-typed @nodeId input-bean
         // member reached by the collected beans, plus a decode<RecordType>RecordList variant for
         // list-valued members (which delegates to the scalar helper per element). The create<Bean>
-        // helper bodies call these by name. Scalar and list variants dedup independently by record
-        // type; the scalar helper is always emitted because the list variant delegates to it.
-        var scalarDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
-            CallSiteExtraction.NodeIdDecodeRecord>();
-        var listDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
-            CallSiteExtraction.NodeIdDecodeRecord>();
-        InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(),
-            scalarDecoders, listDecoders);
+        // helper bodies call these by name. Scalar and list decode maps were also collected up front
+        // (so the resolver could size the decode* namespace); reuse them here. Scalar and list
+        // variants dedup independently by record type; the scalar helper is always emitted because
+        // the list variant delegates to it.
         for (var rec : scalarDecoders.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec));
+            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec, fetchersHelperNames));
         }
         for (var rec : listDecoders.values()) {
-            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelperList(rec));
+            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelperList(rec, fetchersHelperNames));
         }
 
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
@@ -886,7 +881,35 @@ public class TypeFetcherGenerator {
             builder.addMethod(SplitRowsMethodEmitter.buildParentKeyCellValueHelper());
         }
 
-        return builder.build();
+        var typeSpec = builder.build();
+        assertNoDuplicateHelperSignatures(className, typeSpec);
+        return typeSpec;
+    }
+
+    /**
+     * Generation-time backstop: assert that no two methods on the assembled {@code <Type>Fetchers}
+     * class share a Java signature (name plus parameter-type list). With the {@link FetchersHelperNames}
+     * union-namespace resolver in place this never fires on valid input; it is the invariant's enforcer
+     * against a future naming site that bypasses the resolver, turning silently-uncompilable emitted
+     * output into a loud generator failure. Mirrors the routing-hole throw in
+     * {@link JooqRecordHelperNames} and {@link FetchersHelperNames}, and correctly stays at generation
+     * time (it guards a generator naming decision, not a classifier fact).
+     */
+    private static void assertNoDuplicateHelperSignatures(String className, TypeSpec typeSpec) {
+        var seen = new java.util.HashSet<String>();
+        for (var method : typeSpec.methodSpecs()) {
+            var signature = new StringBuilder(method.name()).append('(');
+            for (var param : method.parameters()) {
+                signature.append(param.type()).append(',');
+            }
+            signature.append(')');
+            if (!seen.add(signature.toString())) {
+                throw new IllegalStateException(
+                    "Two helper methods on generated class '" + className + "' share the signature "
+                    + signature + "; the emitted output would not compile. A create*/decode* naming "
+                    + "site bypassed the FetchersHelperNames resolver, or a stem collision escaped it.");
+            }
+        }
     }
 
     /**
@@ -2205,7 +2228,7 @@ public class TypeFetcherGenerator {
         // emitter generates unqualified calls and relies on the *Fetchers-class helper that
         // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
         ctx.graphitronContextCall();
-        ServiceMethodCallEmitter.emit(carrier, valueType, ctx.jooqRecordHelperNames(),
+        ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(),
                 TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage))
             .forEach(builder::addStatement);
         if (wrap) {
@@ -2450,7 +2473,38 @@ public class TypeFetcherGenerator {
     }
 
     /**
- * Collect every jOOQ-record {@code @service} carrier on this {@code <Type>Fetchers} class,
+     * Collect every bean (POJO / {@code @record}) class reached by an {@code InputBean} extraction on
+     * this {@code <Type>Fetchers} class, across both coordinates, into a dedup map keyed by bean
+     * {@link no.sikt.graphitron.javapoet.ClassName} in first-encounter order. Nested beans are
+     * collected transitively so a single bean class appears exactly once. The child / root-permit
+     * coordinate is the {@link MethodBackedField#method() callParams} walk; the root coordinate is the
+     * {@link no.sikt.graphitron.rewrite.model.ServiceField} carrier's composite {@code ValueShape}
+     * arms. Hoisted out of the drain so the resolver can size the {@code create*} stem namespace over
+     * the union of these bean classes and the jOOQ-record carrier classes before any name is emitted;
+     * the drain reuses the returned map for emission.
+     */
+    private static java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean>
+            collectBeanHelpers(List<GraphitronField> fields) {
+        var beanHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.InputBean>();
+        fields.stream()
+            .filter(f -> f instanceof MethodBackedField)
+            .map(f -> (MethodBackedField) f)
+            .flatMap(f -> f.method().callParams().stream())
+            .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
+            .map(p -> (CallSiteExtraction.InputBean) p.extraction())
+            .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
+        // Walk the four service permits' carriers for composite ValueShape arms.
+        for (var field : fields) {
+            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+                collectBeanHelpersFromCarrier(sf.serviceMethodCall(), beanHelpers);
+            }
+        }
+        return beanHelpers;
+    }
+
+    /**
+     * Collect every jOOQ-record {@code @service} carrier on this {@code <Type>Fetchers} class,
      * across both coordinates, into a flat list (dedup by shape happens in
      * {@link JooqRecordHelperNames#of}). The child / root-permit coordinate is the
      * {@link MethodBackedField#method() callParams} walk (the same walk that fed the earlier helper

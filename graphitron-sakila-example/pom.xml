@@ -435,6 +435,32 @@
                             <outputPackage>no.sikt.graphitron.generated.multischema</outputPackage>
                         </configuration>
                     </execution>
+                    <!--
+                        Cross-schema helper-name collision fixture. Two @service mutations bind
+                        multischema_a.event and multischema_b.event records (identical simple name,
+                        distinct packages) on one generated MutationFetchers class, forcing two
+                        create<Record> helpers whose names must differ. Compiling this output at
+                        -release 17 is the compile-tier proof that the helper-name resolver
+                        disambiguates the names (createMultischemaAEventRecord /
+                        createMultischemaBEventRecord); keying the stem on the simple name alone would
+                        name both createEventRecord and the class would not compile. Disjoint
+                        subpackage so it does not disturb the multischema slice above.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-multischema-mutation</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/multischema-mutation.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>no.sikt.graphitron.rewrite.multischemafixture</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.multischemamutation</outputPackage>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

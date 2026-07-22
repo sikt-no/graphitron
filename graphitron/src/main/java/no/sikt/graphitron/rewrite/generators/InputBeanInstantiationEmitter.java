@@ -45,10 +45,14 @@ final class InputBeanInstantiationEmitter {
      * through its per-field transform.
      */
     static MethodSpec buildSingularHelper(CallSiteExtraction.InputBean ib) {
+        return buildSingularHelper(ib, FetchersHelperNames.bare());
+    }
+
+    static MethodSpec buildSingularHelper(CallSiteExtraction.InputBean ib, FetchersHelperNames names) {
         ClassName bean = ib.beanClass();
         TypeName mapStringObject = ParameterizedTypeName.get(MAP_STRING_OBJECT_RAW,
             ClassName.get(String.class), ClassName.get(Object.class));
-        var b = MethodSpec.methodBuilder("create" + bean.simpleName())
+        var b = MethodSpec.methodBuilder(names.createSingular(bean))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(bean)
             .addParameter(mapStringObject, "raw")
@@ -57,7 +61,7 @@ final class InputBeanInstantiationEmitter {
         // Declare a typed local per field via the per-field extraction expression.
         for (var fb : ib.fields()) {
             b.addStatement("$T $L = $L",
-                fieldLocalType(fb), fb.javaFieldName(), perFieldValueExpr(fb));
+                fieldLocalType(fb), fb.javaFieldName(), perFieldValueExpr(fb, names));
         }
         // Populate the bean: positional ctor for records, no-arg + setters for JavaBeans.
         switch (ib.target()) {
@@ -92,10 +96,15 @@ final class InputBeanInstantiationEmitter {
      * {@code s}, and consumers commonly use such names.
      */
     static MethodSpec buildPluralHelper(CallSiteExtraction.InputBean ib, ClassName enclosingClass) {
+        return buildPluralHelper(ib, enclosingClass, FetchersHelperNames.bare());
+    }
+
+    static MethodSpec buildPluralHelper(CallSiteExtraction.InputBean ib, ClassName enclosingClass,
+            FetchersHelperNames names) {
         ClassName bean = ib.beanClass();
         TypeName listOfBean = ParameterizedTypeName.get(LIST, bean);
-        String pluralName = "create" + bean.simpleName() + "List";
-        String singularName = "create" + bean.simpleName();
+        String pluralName = names.createPlural(bean);
+        String singularName = names.createSingular(bean);
         var b = MethodSpec.methodBuilder(pluralName)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfBean)
@@ -126,7 +135,7 @@ final class InputBeanInstantiationEmitter {
      * extraction: Direct gives a cast; EnumValueOf decodes via {@code valueOf}; nested InputBean
      * delegates to the recursive {@code createNested(...)} helper.
      */
-    private static CodeBlock perFieldValueExpr(CallSiteExtraction.FieldBinding fb) {
+    private static CodeBlock perFieldValueExpr(CallSiteExtraction.FieldBinding fb, FetchersHelperNames names) {
         String sdl = fb.sdlFieldName();
         // Exhaustive over CallSiteExtraction with no default: the classifier (InputBeanResolver)
         // produces only Direct / EnumValueOf / InputBean / NodeIdDecodeRecord on a FieldBinding
@@ -137,8 +146,8 @@ final class InputBeanInstantiationEmitter {
         return switch (fb.leaf()) {
             case CallSiteExtraction.Direct ignored -> directExpr(fb, sdl);
             case CallSiteExtraction.EnumValueOf ev -> enumExpr(fb, ev, sdl);
-            case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl);
-            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(fb, rec, sdl);
+            case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl, names);
+            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(fb, rec, sdl, names);
             case CallSiteExtraction.ContextArg ignored -> throw notALeaf(fb);
             case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
@@ -164,19 +173,20 @@ final class InputBeanInstantiationEmitter {
      * statement-form helper.
      */
     private static CodeBlock recordDecodeExpr(CallSiteExtraction.FieldBinding fb,
-                                              CallSiteExtraction.NodeIdDecodeRecord rec, String sdl) {
-        String helper = fb.list() ? recordDecodeListHelperName(rec) : recordDecodeHelperName(rec);
+                                              CallSiteExtraction.NodeIdDecodeRecord rec, String sdl,
+                                              FetchersHelperNames names) {
+        String helper = fb.list() ? recordDecodeListHelperName(rec, names) : recordDecodeHelperName(rec, names);
         return CodeBlock.of("$L(raw.get($S))", helper, sdl);
     }
 
     /** {@code decode<RecordType>}, e.g. {@code decodeFilmRecord}. Named from the target table's record class. */
-    private static String recordDecodeHelperName(CallSiteExtraction.NodeIdDecodeRecord rec) {
-        return "decode" + rec.table().recordClass().simpleName();
+    private static String recordDecodeHelperName(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
+        return names.decodeSingular(rec.table().recordClass());
     }
 
     /** {@code decode<RecordType>List}, e.g. {@code decodeFilmRecordList}. */
-    private static String recordDecodeListHelperName(CallSiteExtraction.NodeIdDecodeRecord rec) {
-        return recordDecodeHelperName(rec) + "List";
+    private static String recordDecodeListHelperName(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
+        return names.decodeList(rec.table().recordClass());
     }
 
     private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl) {
@@ -204,9 +214,10 @@ final class InputBeanInstantiationEmitter {
     }
 
     private static CodeBlock nestedBeanExpr(CallSiteExtraction.FieldBinding fb,
-                                             CallSiteExtraction.InputBean nested, String sdl) {
-        String singular = "create" + nested.beanClass().simpleName();
-        String plural = singular + "List";
+                                             CallSiteExtraction.InputBean nested, String sdl,
+                                             FetchersHelperNames names) {
+        String singular = names.createSingular(nested.beanClass());
+        String plural = names.createPlural(nested.beanClass());
         if (fb.list()) {
             return CodeBlock.of("$L(raw.get($S))", plural, sdl);
         }
@@ -311,12 +322,16 @@ final class InputBeanInstantiationEmitter {
      * wrong arity) is an authored-input error and throws, mirroring the {@code ThrowOnMismatch} arm.
      */
     static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec) {
+        return buildRecordDecodeHelper(rec, FetchersHelperNames.bare());
+    }
+
+    static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
         ClassName recordType = rec.table().recordClass();
         ClassName tablesClass = rec.table().constantsClass();
         String tableField = rec.table().javaFieldName();
         ClassName graphqlError = ClassName.get("graphql", "GraphqlErrorException");
         int arity = rec.keyColumns().size();
-        var b = MethodSpec.methodBuilder(recordDecodeHelperName(rec))
+        var b = MethodSpec.methodBuilder(recordDecodeHelperName(rec, names))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
             .addParameter(Object.class, "wire")
@@ -361,10 +376,14 @@ final class InputBeanInstantiationEmitter {
      * </pre>
      */
     static MethodSpec buildRecordDecodeHelperList(CallSiteExtraction.NodeIdDecodeRecord rec) {
+        return buildRecordDecodeHelperList(rec, FetchersHelperNames.bare());
+    }
+
+    static MethodSpec buildRecordDecodeHelperList(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
         ClassName recordType = rec.table().recordClass();
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, recordType);
         ClassName arrayList = ClassName.get(java.util.ArrayList.class);
-        return MethodSpec.methodBuilder(recordDecodeListHelperName(rec))
+        return MethodSpec.methodBuilder(recordDecodeListHelperName(rec, names))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfRecord)
             .addParameter(Object.class, "wire")
@@ -373,7 +392,7 @@ final class InputBeanInstantiationEmitter {
             .endControlFlow()
             .addStatement("$T records = new $T<>(nodeIds.size())", listOfRecord, arrayList)
             .beginControlFlow("for (Object element : nodeIds)")
-            .addStatement("records.add($L(element))", recordDecodeHelperName(rec))
+            .addStatement("records.add($L(element))", recordDecodeHelperName(rec, names))
             .endControlFlow()
             .addStatement("return records")
             .build();

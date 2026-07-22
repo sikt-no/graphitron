@@ -92,8 +92,16 @@ final class JooqRecordHelperNames {
      * collected on it (both coordinates). Dedups by structural equality, groups distinct shapes by
      * record class, and assigns bare names to uncontended classes and ordinal-suffixed names (ordered
      * by {@link #canonicalRender}) to contended ones.
+     *
+     * <p>The per-class <em>base stem</em> comes from {@code createStems} (the cross-class
+     * {@code create*}-namespace stem map {@link FetchersHelperNames} computes over the union of jOOQ
+     * records and beans), not from {@link ClassName#simpleName()} directly, so a record class whose
+     * simple name collides across schema packages arrives here already disambiguated. Shape
+     * contention ("which binding shape of this class") then composes an ordinal on top of that base
+     * stem, orthogonal to the cross-class disambiguation ("which class").
      */
-    static JooqRecordHelperNames of(Collection<CallSiteExtraction.JooqRecord> carriers) {
+    static JooqRecordHelperNames of(Collection<CallSiteExtraction.JooqRecord> carriers,
+            Map<ClassName, String> createStems) {
         // Dedup by structural equality; LinkedHashSet preserves first-encounter order.
         var distinct = new LinkedHashSet<>(carriers);
 
@@ -106,18 +114,19 @@ final class JooqRecordHelperNames {
         var stems = new LinkedHashMap<CallSiteExtraction.JooqRecord, String>();
         var javadocs = new LinkedHashMap<CallSiteExtraction.JooqRecord, String>();
         for (var group : byClass.entrySet()) {
-            String simpleName = group.getKey().simpleName();
+            String baseStem = createStems.getOrDefault(group.getKey(), group.getKey().simpleName());
             var shapes = group.getValue();
             if (shapes.size() == 1) {
-                // Uncontended: bare stem, no javadoc. Byte-identical to the previous behaviour.
-                stems.put(shapes.get(0), simpleName);
+                // Uncontended: bare base stem, no javadoc. Byte-identical to the previous behaviour
+                // whenever the base stem is the plain simple name (the single-schema common case).
+                stems.put(shapes.get(0), baseStem);
             } else {
                 // Contended: order by canonical render (stable), 1-based ordinal suffix, legibility javadoc.
                 var ordered = new ArrayList<>(shapes);
                 ordered.sort(Comparator.comparing(JooqRecordHelperNames::canonicalRender));
                 for (int i = 0; i < ordered.size(); i++) {
                     var jr = ordered.get(i);
-                    stems.put(jr, simpleName + (i + 1));
+                    stems.put(jr, baseStem + (i + 1));
                     javadocs.put(jr, bindingSummary(jr));
                 }
             }

@@ -165,6 +165,25 @@ mirror or LSP code is owed).
 - **Full reactor build** pins byte-for-byte stability of every existing
   single-schema output (no stem changes, no churn).
 
+## Implementation notes
+
+Two test-tactic deviations from the Tests plan, neither a design change:
+
+- **Pipeline / compile fixtures bind on `@nodeId`, not `@field`.** Binding a jOOQ-record
+  `@service` param through a plain `@field(name:)` on a multischema record fails an unrelated
+  step: the param's backing-table column lookup resolves the table by bare name, which is
+  ambiguous across the two `event` schemas ("input field 'name' resolves to no column on table
+  'event'"). That is a catalog-lookup concern in the same family as the R512 out-of-scope note,
+  not a helper-naming one, so the fixtures bind on the record's `@nodeId` identity (each `event`
+  table's `event_id` PK) alone, which reaches the same `create<Record>` helper emission.
+- **The bean-family and decode-family collisions are pinned at the unit tier, not the pipeline
+  tier.** All three families (jOOQ record, bean, decode) now name through the one
+  `FetchersHelperNames` resolver, so its unit tests cover the bean-package collision, the
+  cross-family bean-vs-jOOQ-record union, and the independent `decode*` namespace directly; the
+  pipeline tier then pins the jOOQ arm end-to-end against the real catalog. Standing up bean POJOs
+  and record-decode bean members with colliding simple names as separate pipeline fixtures would
+  re-test the shared resolver through a heavier path for no added coverage.
+
 ## Out of scope
 
 - R512 (`schema-qualified-reference-key`): `@reference(key:)` FK-name

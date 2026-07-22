@@ -55,18 +55,18 @@ public final class ServiceMethodCallEmitter {
      * records the dependency on the way out).
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage) {
-        return emit(call, outputPackage, call.javaReturnType(), JooqRecordHelperNames.bare());
+        return emit(call, outputPackage, call.javaReturnType(), FetchersHelperNames.bare());
     }
 
     /**
- * Resolver-aware variant: routes any {@link ValueShape.JooqRecordInput} arg's
-     * {@code create<Record>} call through the class-level {@link JooqRecordHelperNames}, so the root
-     * coordinate names its helper by binding shape exactly as the helper-emission drain and the child
-     * coordinate do. Used by the polymorphic-service emitter, which passes the enclosing class's resolver.
+     * Resolver-aware variant: routes every {@code create<Record>} / {@code create<Bean>} arg call
+     * through the class-level {@link FetchersHelperNames}, so the root coordinate names its helpers
+     * exactly as the helper-emission drain and the child coordinate do. Used by the polymorphic-service
+     * emitter, which passes the enclosing class's resolver.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage,
-            JooqRecordHelperNames jooqRecordHelperNames) {
-        return emit(call, outputPackage, call.javaReturnType(), jooqRecordHelperNames);
+            FetchersHelperNames helperNames) {
+        return emit(call, outputPackage, call.javaReturnType(), helperNames);
     }
 
     /**
@@ -74,12 +74,12 @@ public final class ServiceMethodCallEmitter {
      * instead of the carrier's reflected return type. Used by the root-fetcher emitter, which
      * sometimes declares the local with the GraphQL-side classification (e.g. a table record
      * class) rather than the dev method's reflected return; the actual method return value is
-     * shape-compatible by classifier-time validation. {@code jooqRecordHelperNames} is the
-     * shape-aware {@code create<Record>} resolver for the enclosing class.
+     * shape-compatible by classifier-time validation. {@code helperNames} is the {@code create*} /
+     * {@code decode*} helper-name resolver for the enclosing class.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType,
-            JooqRecordHelperNames jooqRecordHelperNames) {
-        return emit(call, resultLocalType, jooqRecordHelperNames,
+            FetchersHelperNames helperNames) {
+        return emit(call, resultLocalType, helperNames,
             CodeBlock.of("graphitronContext(env).getDslContext(env)"));
     }
 
@@ -91,7 +91,7 @@ public final class ServiceMethodCallEmitter {
      * expression: the tenant-aware caller resolves package-qualified references itself.
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, TypeName resultLocalType,
-            JooqRecordHelperNames jooqRecordHelperNames, CodeBlock dslExpression) {
+            FetchersHelperNames helperNames, CodeBlock dslExpression) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = anyFromDsl(allEntries(call));
@@ -101,11 +101,11 @@ public final class ServiceMethodCallEmitter {
 
         if (call instanceof ServiceMethodCall.Instance inst) {
             for (MappingEntry e : inst.ctorArgs()) {
-                addVarDecl(out, e, jooqRecordHelperNames);
+                addVarDecl(out, e, helperNames);
             }
         }
         for (MappingEntry e : call.methodArgs()) {
-            addVarDecl(out, e, jooqRecordHelperNames);
+            addVarDecl(out, e, helperNames);
         }
 
         out.add(finalAssignment(call, resultLocalType));
@@ -140,14 +140,14 @@ public final class ServiceMethodCallEmitter {
     }
 
     private static void addVarDecl(List<CodeBlock> out, MappingEntry entry,
-            JooqRecordHelperNames jooqRecordHelperNames) {
+            FetchersHelperNames helperNames) {
         switch (entry) {
             case MappingEntry.FromDsl ignored -> { /* shares the prelude's dsl local */ }
             case MappingEntry.FromContext ctx ->
                 out.add(CodeBlock.of("$T $L = ($T) graphitronContext(env).getContextArgument(env, $S)",
                     ctx.javaType(), ctx.javaName(), ctx.javaType(), ctx.contextKey()));
             case MappingEntry.FromArg arg -> {
-                CodeBlock expr = valueShapeExpression(arg.shape(), jooqRecordHelperNames);
+                CodeBlock expr = valueShapeExpression(arg.shape(), helperNames);
                 // A nested-input arg of generic type extracts as `(List<X>) map.get(key)`, where the
                 // map value is statically Object, so the cast is inherently unchecked (top-level args
                 // ride `<T> T env.getArgument` inference and need no cast). Suppress at the narrowest
@@ -174,13 +174,13 @@ public final class ServiceMethodCallEmitter {
      * additive cutover, so the queue still sees them via the legacy {@code method().callParams()}
      * walk).
      */
-    static CodeBlock valueShapeExpression(ValueShape shape, JooqRecordHelperNames jooqRecordHelperNames) {
+    static CodeBlock valueShapeExpression(ValueShape shape, FetchersHelperNames helperNames) {
         return switch (shape) {
             case ValueShape.Scalar s -> scalarExpression(s);
-            case ValueShape.ListOf list -> listExpression(list, jooqRecordHelperNames);
-            case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields());
-            case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields());
-            case ValueShape.JooqRecordInput jr -> jooqRecordHelperCall(jr, jooqRecordHelperNames);
+            case ValueShape.ListOf list -> listExpression(list, helperNames);
+            case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields(), helperNames);
+            case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields(), helperNames);
+            case ValueShape.JooqRecordInput jr -> jooqRecordHelperCall(jr, helperNames.jooqRecord());
         };
     }
 
@@ -336,22 +336,22 @@ public final class ServiceMethodCallEmitter {
             currentExpr, mapClass, mBind, recursed);
     }
 
-    private static CodeBlock listExpression(ValueShape.ListOf list, JooqRecordHelperNames jooqRecordHelperNames) {
+    private static CodeBlock listExpression(ValueShape.ListOf list, FetchersHelperNames helperNames) {
         ValueShape elt = list.elementShape();
         String outerArg = list.sdlPath().outerArgName();
         return switch (elt) {
             case ValueShape.RecordInput rec ->
                 CodeBlock.of("$L(env.getArgument($S))",
-                    pluralHelperName(rec.javaClass()), outerArg);
+                    helperNames.createPlural(rec.javaClass()), outerArg);
             case ValueShape.JavaBeanInput bean ->
                 CodeBlock.of("$L(env.getArgument($S))",
-                    pluralHelperName(bean.javaClass()), outerArg);
+                    helperNames.createPlural(bean.javaClass()), outerArg);
             case ValueShape.JooqRecordInput jr ->
                 // List<Record> param — the plural create<Record>List helper maps the singular
                 // create<Record> over each element; the wire value for a [Input!] arg is a
                 // List<Map<String, Object>>. The plural name resolves by the element carrier's shape.
                 CodeBlock.of("$L(env.getArgument($S))",
-                    jooqRecordHelperNames.pluralName(jr.carrier()), outerArg);
+                    helperNames.jooqRecord().pluralName(jr.carrier()), outerArg);
             case ValueShape.Scalar ignored ->
                 // List of scalars at a top-level path: the walker produces a Scalar directly
                 // for {@code List<X>} args, so this arm is defensive. getArgument is <T> T, so the
@@ -373,17 +373,10 @@ public final class ServiceMethodCallEmitter {
      * The outer arg name is derived from any sibling field's path; the {@code @Nullable}
      * graphql-java argument map is passed through unchanged and the helper handles null.
      */
-    private static CodeBlock compositeHelperCall(ClassName beanClass, List<ValueShape.FieldBinding> fields) {
+    private static CodeBlock compositeHelperCall(ClassName beanClass, List<ValueShape.FieldBinding> fields,
+            FetchersHelperNames helperNames) {
         return CodeBlock.of("$L(env.getArgument($S))",
-            singularHelperName(beanClass), outerArgOf(fields));
-    }
-
-    private static String singularHelperName(ClassName beanClass) {
-        return "create" + beanClass.simpleName();
-    }
-
-    private static String pluralHelperName(ClassName beanClass) {
-        return "create" + beanClass.simpleName() + "List";
+            helperNames.createSingular(beanClass), outerArgOf(fields));
     }
 
     /**
