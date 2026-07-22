@@ -19,6 +19,7 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
@@ -681,15 +682,24 @@ public final class Diagnostics {
     private static void validateCatalogFk(
         Node valueNode, FileSnapshot file, CompletionData catalog, List<Diagnostic> out
     ) {
-        String fkName = Nodes.unquote(Nodes.text(valueNode, file.source()));
-        if (fkName.isEmpty()) return;
+        String rawFk = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (rawFk.isEmpty()) return;
+        // Strip an optional leading schema qualifier ("multischema_a.note_event_fk") off the value
+        // before the bare-name match, re-sourcing the split from JooqCatalog.parseQualifiedForeignKeyName
+        // (the shared parse boundary the generator uses) rather than re-implementing the grammar. A
+        // valid qualified key equals no bare FK name, so without this it would red-squiggle a name the
+        // generator accepts. The bogus-schema arm (flagging a real name under a wrong schema) is
+        // deferred: the LSP snapshot carries no per-FK schema to test against.
+        String fkName = JooqCatalog.parseQualifiedForeignKeyName(rawFk)
+            .map(JooqCatalog.QualifiedForeignKeyName::name)
+            .orElse(rawFk);
         // Match case-insensitively to mirror JooqCatalog.findForeignKey(name, source),
         // which the runtime resolver uses; the LSP must not flag names the
         // generator would accept. Path-step refinement (which step's table we
         // are on) is deferred along with path-aware completion.
         if (collectAllFkNames(catalog).stream().noneMatch(known -> known.equalsIgnoreCase(fkName))) {
             out.add(diagnostic(file, valueNode,
-                "Unknown foreign key '" + fkName + "'. Not present in the jOOQ catalog."));
+                "Unknown foreign key '" + rawFk + "'. Not present in the jOOQ catalog."));
         }
     }
 

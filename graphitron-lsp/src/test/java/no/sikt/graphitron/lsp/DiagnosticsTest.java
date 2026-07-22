@@ -296,6 +296,40 @@ class DiagnosticsTest {
     }
 
     @Test
+    void schemaQualifiedReferenceKeyProducesNoError() {
+        // A valid key: may carry a leading schema qualifier ("multischema_a.note_event_fk").
+        // The mirror strips the qualifier before the bare-name match (re-sourcing the split from the
+        // shared JooqCatalog.parseQualifiedForeignKeyName), so a qualified key naming a real FK is not
+        // red-squiggled — the regression the strip fix removes. The bogus-schema arm (a real name
+        // under a wrong schema) is deferred: the snapshot carries no per-FK schema to test against.
+        var file = file("""
+            type Foo @table(name: "note") {
+                bar: Int @reference(path: [{key: "multischema_a.note_event_fk"}])
+            }
+            """);
+
+        var diags = compute(file, noteCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void schemaQualifiedReferenceKeyWithUnknownBareNameStillProducesError() {
+        // The strip fix must not swallow a genuinely unknown key: stripping the qualifier leaves a
+        // bare name absent from the catalog, which is still flagged (echoing the full author value).
+        var file = file("""
+            type Foo @table(name: "note") {
+                bar: Int @reference(path: [{key: "multischema_a.NOPE"}])
+            }
+            """);
+
+        var diags = compute(file, noteCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("multischema_a.NOPE").contains("foreign key");
+    }
+
+    @Test
     void unknownReferenceTableProducesError() {
         var file = file("""
             type Foo @table(name: "film") {
@@ -1465,6 +1499,24 @@ class DiagnosticsTest {
      * retarget: {@code NAME} exists on {@code language} (the path's terminal) but not
      * on {@code film} (the enclosing type's @table).
      */
+    // A minimal catalog with a `note` table carrying a bare-SQL-name FK (`note_event_fk`), mirroring
+    // the multi-schema fixture's colliding constraint name so the schema-qualified-key diagnostics can
+    // strip the qualifier and match on the bare name.
+    private static CompletionData noteCatalog() {
+        var note = new CompletionData.Table(
+            "note", "", null,
+            List.of(
+                CompletionData.Column.of("NOTE_ID", "Integer", false, ""),
+                CompletionData.Column.of("EVENT_ID", "Integer", true, "")
+            ),
+            List.of(
+                CompletionData.Reference.of("event", "note_event_fk", false)
+            )
+        );
+        var event = new CompletionData.Table("event", "", null, List.of(), List.of());
+        return new CompletionData(List.of(note, event), List.of(), List.of());
+    }
+
     private static CompletionData filmAndLanguageCatalogWithLanguageName() {
         var film = new CompletionData.Table(
             "film", "", null,

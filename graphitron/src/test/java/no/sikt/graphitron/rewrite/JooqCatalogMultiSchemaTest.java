@@ -89,6 +89,50 @@ class JooqCatalogMultiSchemaTest {
         assertThat(JooqCatalog.parseQualifiedTableName(null)).isEmpty();
     }
 
+    // ---- parseQualifiedForeignKeyName (the FK-namespace sibling parser) ----
+
+    @Test
+    void parseQualifiedForeignKeyName_unqualified_carriesNameOnly() {
+        var parsed = JooqCatalog.parseQualifiedForeignKeyName("note_event_fk");
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().schema()).isEmpty();
+        assertThat(parsed.get().name()).isEqualTo("note_event_fk");
+        assertThat(parsed.get().isQualified()).isFalse();
+    }
+
+    @Test
+    void parseQualifiedForeignKeyName_qualified_splitsOnFirstDot() {
+        var parsed = JooqCatalog.parseQualifiedForeignKeyName("multischema_a.note_event_fk");
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().schema()).hasValue("multischema_a");
+        assertThat(parsed.get().name()).isEqualTo("note_event_fk");
+        assertThat(parsed.get().isQualified()).isTrue();
+    }
+
+    @Test
+    void parseQualifiedForeignKeyName_multipleDots_splitsOnFirstAndKeepsRest() {
+        var parsed = JooqCatalog.parseQualifiedForeignKeyName("a.b.c");
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().schema()).hasValue("a");
+        assertThat(parsed.get().name()).isEqualTo("b.c");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "''",                  // empty string
+        "'   '",               // blank
+        "'note_event_fk.'",    // empty name half
+        "'.note_event_fk'"     // empty schema half
+    })
+    void parseQualifiedForeignKeyName_malformed_returnsEmpty(String input) {
+        assertThat(JooqCatalog.parseQualifiedForeignKeyName(input)).isEmpty();
+    }
+
+    @Test
+    void parseQualifiedForeignKeyName_null_returnsEmpty() {
+        assertThat(JooqCatalog.parseQualifiedForeignKeyName(null)).isEmpty();
+    }
+
     // ---- findTable(String) — sealed TableResolution ----
 
     private static JooqCatalog.TableEntry resolved(JooqCatalog.TableResolution r) {
@@ -661,6 +705,126 @@ class JooqCatalogMultiSchemaTest {
     void findForeignKey_unknownName_isNotInCatalog() {
         assertThat(multi().findForeignKey("not_a_fk", null))
             .isInstanceOf(JooqCatalog.ForeignKeyLookup.NotInCatalog.class);
+    }
+
+    // ---- Schema-qualified FK resolution (the three-arg findForeignKey) ----
+    //
+    // The qualifier is the lever an author has when source scoping cannot break a cross-schema
+    // constraint-name collision (source null / non-table-backed / itself ambiguous). Passing the
+    // holder schema as schemaScope narrows the candidate set to that schema's FK before the soft
+    // source-scope runs.
+
+    @Test
+    void findForeignKey_qualifiedNoSource_disambiguatesCollidingNameToNamedSchema() {
+        // (2) The bare name is Ambiguous with no source (pinned above); the schema qualifier resolves
+        // each side without needing a source table.
+        var a = multi().findForeignKey("note_event_fk", null, "multischema_a");
+        assertThat(a).isInstanceOf(JooqCatalog.ForeignKeyLookup.Resolved.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Resolved) a).fk()
+            .getTable().getSchema().getName()).isEqualTo("multischema_a");
+
+        var b = multi().findForeignKey("note_event_fk", null, "multischema_b");
+        assertThat(b).isInstanceOf(JooqCatalog.ForeignKeyLookup.Resolved.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Resolved) b).fk()
+            .getTable().getSchema().getName()).isEqualTo("multischema_b");
+    }
+
+    @Test
+    void findForeignKey_qualifiedSchemaHasNoSuchFk_isNotInCatalog() {
+        // (3) A qualifier naming a schema that holds no such FK is NotInCatalog (not a silent
+        // fall-through to the unscoped set). 'signal_widget_id_fkey' is held only in multischema_a.
+        assertThat(multi().findForeignKey("signal_widget_id_fkey", null, "multischema_b"))
+            .isInstanceOf(JooqCatalog.ForeignKeyLookup.NotInCatalog.class);
+    }
+
+    @Test
+    void findForeignKey_qualifiedUniqueName_resolvesUnchanged() {
+        // (4) A qualifier on an already-unique name resolves to the same FK the unqualified lookup
+        // would; the filter is a no-op when there is nothing to disambiguate.
+        var qualified = multi().findForeignKey("signal_widget_id_fkey", null, "multischema_a");
+        assertThat(qualified).isInstanceOf(JooqCatalog.ForeignKeyLookup.Resolved.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Resolved) qualified).fk())
+            .isSameAs(fkByName("signal_widget_id_fkey"));
+    }
+
+    @Test
+    void findForeignKey_qualifierHardSourceScopeSoft_resolvesWhenFkDoesNotTouchSource() {
+        // (5) Qualifier is hard, source-scope soft: a qualified key whose FK does not touch a supplied
+        // source still Resolves (the soft scope narrows only when it leaves something). The connection
+        // verdict is left to the caller. Source is note (a.note), FK is the a-schema signal FK.
+        var lookup = multi().findForeignKey("signal_widget_id_fkey", "multischema_a.note", "multischema_a");
+        assertThat(lookup).isInstanceOf(JooqCatalog.ForeignKeyLookup.Resolved.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Resolved) lookup).fk()
+            .getTable().getName()).isEqualToIgnoringCase("signal");
+    }
+
+    @Test
+    void findForeignKey_qualifiedByHolderSchema_resolvesCrossSchemaFk_targetSchemaIsNotInCatalog() {
+        // (6) The genuinely cross-schema FK: gadget (multischema_b) -> widget (multischema_a). This is
+        // the only topology in the fixture where holder != target, so it is the case that falsifies a
+        // target-schema implementation of the filter. Qualify with the HOLDER schema -> Resolved;
+        // qualify with the FK-TARGET schema -> NotInCatalog.
+        var holder = multi().findForeignKey("gadget_widget_id_fkey", null, "multischema_b");
+        assertThat(holder).isInstanceOf(JooqCatalog.ForeignKeyLookup.Resolved.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Resolved) holder).fk()
+            .getTable().getSchema().getName()).isEqualTo("multischema_b");
+
+        assertThat(multi().findForeignKey("gadget_widget_id_fkey", null, "multischema_a"))
+            .isInstanceOf(JooqCatalog.ForeignKeyLookup.NotInCatalog.class);
+    }
+
+    @Test
+    void findForeignKey_qualifiedWithinSchemaDuplicate_isAmbiguousUntilSourceNarrows() {
+        // (7) PostgreSQL scopes constraint names per TABLE, so (schema, name) is not unique: dup_one
+        // and dup_two in multischema_a both hold 'dup_gizmo_fk'. The qualifier narrows to one schema
+        // but two FKs remain, so with no source the lookup stays Ambiguous (naming the schema once);
+        // supplying one holder table as source narrows it to Resolved through the soft source-scope.
+        var noSource = multi().findForeignKey("dup_gizmo_fk", null, "multischema_a");
+        assertThat(noSource).isInstanceOf(JooqCatalog.ForeignKeyLookup.Ambiguous.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Ambiguous) noSource).schemas())
+            .containsExactly("multischema_a");
+
+        var withSource = multi().findForeignKey("dup_gizmo_fk", "multischema_a.dup_one", "multischema_a");
+        assertThat(withSource).isInstanceOf(JooqCatalog.ForeignKeyLookup.Resolved.class);
+        assertThat(((JooqCatalog.ForeignKeyLookup.Resolved) withSource).fk()
+            .getTable().getName()).isEqualToIgnoringCase("dup_one");
+    }
+
+    // ---- The explicit record-FK author site (resolveRecordFkTargetColumns) ----
+    //
+    // The second author-facing @reference(key:) site. Enforcer-symmetry lifts the "does not connect"
+    // check here too, so a schema-qualified key naming an FK in the wrong schema rejects cleanly
+    // rather than degrading to a worse column-reconciliation-miss message.
+
+    private static no.sikt.graphitron.rewrite.model.TableRef tableRef(String qualifiedName) {
+        return multi().findTable(qualifiedName).asEntry().orElseThrow().toTableRef(qualifiedName);
+    }
+
+    @Test
+    void resolveRecordFkTargetColumns_qualifiedKey_correctSchema_resolves() {
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var eventKeys = tableRef("multischema_a.event").primaryKeyColumns();
+        var result = ctx.resolveRecordFkTargetColumns(
+            tableRef("multischema_a.note"), "multischema_a.event", eventKeys,
+            Optional.of("multischema_a.note_event_fk"));
+        assertThat(result).isInstanceOf(BuildContext.RecordFkTargets.Resolved.class);
+        assertThat(((BuildContext.RecordFkTargets.Resolved) result).targetColumns())
+            .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+            .containsExactly("event_id");
+    }
+
+    @Test
+    void resolveRecordFkTargetColumns_qualifiedKey_wrongSchema_rejectsWithDoesNotConnect() {
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var eventKeys = tableRef("multischema_a.event").primaryKeyColumns();
+        // multischema_b.note_event_fk resolves (hard qualifier) but does not touch multischema_a.note;
+        // the lifted connection check rejects it here, symmetric to the {key:} path element.
+        var result = ctx.resolveRecordFkTargetColumns(
+            tableRef("multischema_a.note"), "multischema_a.event", eventKeys,
+            Optional.of("multischema_b.note_event_fk"));
+        assertThat(result).isInstanceOf(BuildContext.RecordFkTargets.Rejected.class);
+        assertThat(((BuildContext.RecordFkTargets.Rejected) result).message())
+            .contains("does not connect to table 'multischema_a.note'");
     }
 
     @Test

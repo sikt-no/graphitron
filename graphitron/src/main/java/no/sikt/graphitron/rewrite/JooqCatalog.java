@@ -374,6 +374,50 @@ public class JooqCatalog {
     }
 
     /**
+     * Parses a {@code @reference(key:)} directive value into schema and constraint-name components,
+     * the FK-namespace sibling of {@link #parseQualifiedTableName(String)}. Splits on the first
+     * {@code .}: {@code "multischema_a.note_event_fk"} → schema {@code "multischema_a"}, name
+     * {@code "note_event_fk"}; {@code "note_event_fk"} → schema empty, name {@code "note_event_fk"}.
+     *
+     * <p>Returns empty for malformed input: {@code null}, blank, {@code "note_event_fk."}, or
+     * {@code ".note_event_fk"} (both halves must be non-empty when a {@code .} is present). Author
+     * sites treat a malformed value as unqualified (they pass the raw string on as the bare name),
+     * so a stray-dot value still degrades to the same {@code NotInCatalog} rejection it produced
+     * before the grammar existed.
+     *
+     * <p>A quoted PostgreSQL identifier can technically carry a {@code .} in a constraint name, but
+     * the {@code @table} dot-grammar already accepts that same edge for table names and the jOOQ
+     * Java-constant namespace uses {@code __}; so a dot signals a schema qualifier in both
+     * namespaces, the trade-off the {@code @table} precedent settled. A distinct record (not
+     * reusing {@link QualifiedTableName}) documents intent and keeps the two grammars independently
+     * evolvable.
+     */
+    public static Optional<QualifiedForeignKeyName> parseQualifiedForeignKeyName(String value) {
+        if (value == null || value.isBlank()) return Optional.empty();
+        int dotIdx = value.indexOf('.');
+        if (dotIdx < 0) {
+            return Optional.of(new QualifiedForeignKeyName(Optional.empty(), value));
+        }
+        String schema = value.substring(0, dotIdx);
+        String name = value.substring(dotIdx + 1);
+        if (schema.isBlank() || name.isBlank()) return Optional.empty();
+        return Optional.of(new QualifiedForeignKeyName(Optional.of(schema), name));
+    }
+
+    /**
+     * A {@code @reference(key:)} directive value parsed into its (optional schema, constraint name)
+     * pair. {@code schema} is empty for unqualified values; both halves are case-preserved from the
+     * input so error messages can echo what the author wrote. The qualifier binds the FK-holder
+     * (child / referencing) schema, which is where jOOQ's generated {@code Keys} class declares the
+     * constraint; see {@link #findForeignKey(String, String, String)}.
+     */
+    public record QualifiedForeignKeyName(Optional<String> schema, String name) {
+        public boolean isQualified() {
+            return schema.isPresent();
+        }
+    }
+
+    /**
      * Returns the SQL names of all tables known to the catalog, in the order they appear in the
      * generated {@code Tables} class. Used to build candidate hints in error messages.
      */
@@ -484,9 +528,47 @@ public class JooqCatalog {
      * When {@code sourceSqlName} is {@code null}, does not resolve, or a genuine residual collision
      * survives scoping, more than one distinct FK still matches and {@link ForeignKeyLookup.Ambiguous}
      * is returned naming the colliding schemas.
+     *
+     * <p>Two-arg form: no author schema qualifier. Delegates to
+     * {@link #findForeignKey(String, String, String)} with a {@code null} scope. This is the form the
+     * non-author-facing internal callers use ({@code qualifierForFk}, the IdReference synthesis
+     * shim), which never carry a qualifier.
+     */
+    public ForeignKeyLookup findForeignKey(String name, String sourceSqlName) {
+        return findForeignKey(name, sourceSqlName, null);
+    }
+
+    /**
+     * Schema-scoped form of {@link #findForeignKey(String, String)}: adds an author-supplied
+     * {@code schemaScope} that a schema-qualified {@code @reference(key:)} value
+     * ({@code "multischema_a.note_event_fk"}) feeds after
+     * {@link #parseQualifiedForeignKeyName(String)} splits it. The scope binds the FK-holder
+     * (child / referencing) schema, matched case-insensitively against
+     * {@code fk.getTable().getSchema().getName()}, exactly as the two-arg {@link #findTable(String, String)}
+     * matches its schema half.
+     *
+     * <p>Scoping precedence is <em>qualifier hard, source-scope soft</em>. The two facts have
+     * different provenance: an author {@code schema.} qualifier is <em>stated intent</em>, so if it
+     * eliminates every candidate the result is {@link ForeignKeyLookup.NotInCatalog} for that schema,
+     * not a fallback; source-scoping is <em>derived context</em> ("I'm standing on table T") and
+     * narrows only when it leaves something. The qualifier is applied first over the bare-name
+     * candidates, then the source scope over the remainder.
+     *
+     * <p>Outcomes:
+     * <ul>
+     *   <li>a qualified key that collides across schemas resolves to the one FK in the named schema;
+     *   <li>a qualified key naming a schema with no such FK is {@link ForeignKeyLookup.NotInCatalog}
+     *       (never a silent first-hit);
+     *   <li>a qualified key matching two or more same-named FKs <em>within</em> the named schema
+     *       (legal in PostgreSQL, constraint names are table-scoped) proceeds through the soft
+     *       source-scope and, when that fails to narrow, lands in {@link ForeignKeyLookup.Ambiguous}
+     *       naming the single schema once;
+     *   <li>an unqualified key ({@code schemaScope == null}) skips the filter entirely, byte-for-byte
+     *       unchanged from the two-arg form.
+     * </ul>
      */
     @SuppressWarnings("unchecked")
-    public ForeignKeyLookup findForeignKey(String name, String sourceSqlName) {
+    public ForeignKeyLookup findForeignKey(String name, String sourceSqlName, String schemaScope) {
         if (catalog == null) return new ForeignKeyLookup.NotInCatalog();
         List<ForeignKey<?, ?>> bySql = (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
@@ -503,6 +585,15 @@ public class JooqCatalog {
                 .toList()
             : bySql;
         if (candidates.isEmpty()) return new ForeignKeyLookup.NotInCatalog();
+        if (schemaScope != null) {
+            // Qualifier is hard: an author scope that eliminates every candidate is NotInCatalog for
+            // that schema, not a fallback to the unscoped set. Schema names are unique in the catalog
+            // by construction, so this is an exact filter on a non-colliding namespace.
+            candidates = candidates.stream()
+                .filter(fk -> fk.getTable().getSchema().getName().equalsIgnoreCase(schemaScope))
+                .toList();
+            if (candidates.isEmpty()) return new ForeignKeyLookup.NotInCatalog();
+        }
         if (sourceSqlName != null) {
             var scoped = candidates.stream()
                 .filter(fk -> foreignKeyTouchesTable(fk, sourceSqlName))

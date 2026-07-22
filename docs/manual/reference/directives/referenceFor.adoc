@@ -31,7 +31,7 @@ input ReferenceElement {
 | `path` | `[ReferenceElement!]!` | (required) | Join path from the parent type's table to this participant's table, read from parent toward participant. Same element grammar as `@reference`: `{table:}`, `{key:}`, `{condition:}`.
 |===
 
-`ReferenceElement` fields are identical to xref:reference.adoc[`@reference`]'s: `table` (jOOQ table identifier for the hop's destination), `key` (foreign-key constraint name), `condition` (external join condition).
+`ReferenceElement` fields are identical to xref:reference.adoc[`@reference`]'s: `table` (jOOQ table identifier for the hop's destination), `key` (foreign-key constraint name, optionally schema-qualified as `schema.constraint`; see xref:reference.adoc#schema-qualified-keys[Schema-qualified keys]), `condition` (external join condition).
 
 == Example
 

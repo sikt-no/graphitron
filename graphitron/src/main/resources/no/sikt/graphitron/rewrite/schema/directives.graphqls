@@ -405,7 +405,14 @@ input ExternalCodeReference {
 input ReferenceElement {
   """The jOOQ table to connect to."""
   table: String,
-  """The key to use to create this reference."""
+  """
+  The foreign-key constraint name to use to create this reference (matching jOOQ's Keys class).
+  Accepts a leading schema qualifier (`schema.constraint`, e.g. `multischema_a.note_event_fk`) that
+  scopes the lookup to foreign keys held in that schema, the sibling of the `schema.table` form on
+  `@table(name:)`. The qualifier binds the FK-holder (child / referencing) schema. Use it only when
+  the same constraint name exists in more than one schema and no source table breaks the tie;
+  unqualified names resolve unchanged.
+  """
   key: String,
   """Extra condition for this reference. Available values are set in the plugin configuration."""
   condition: ExternalCodeReference

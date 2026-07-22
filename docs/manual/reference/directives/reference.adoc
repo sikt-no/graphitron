@@ -35,7 +35,7 @@ input ReferenceElement {
 |===
 | Name | Type | Default | Description
 | `table` | `String` | inferred from the field's target type | The jOOQ table identifier for this hop's destination. Overrides the type-level `@table` if both are present.
-| `key` | `String` | inferred when unique | The foreign-key constraint name (matching jOOQ's `Keys` class). Required when more than one foreign key exists between the source and destination tables for a hop.
+| `key` | `String` | inferred when unique | The foreign-key constraint name (matching jOOQ's `Keys` class). Required when more than one foreign key exists between the source and destination tables for a hop. Accepts a leading schema qualifier (`schema.constraint`) for cross-schema constraint-name collisions; see <<Schema-qualified keys>>.
 | `condition` | `ExternalCodeReference` | none | An external Java method that returns a `org.jooq.Condition` to add to the join. Acts as an `ON` condition when neither `table` nor `key` is set, otherwise as an extra `WHERE` constraint on the joined hop.
 |===
 
@@ -110,6 +110,19 @@ On its own this form is a stylistic choice. It exists for composition with xref:
 * When more than one foreign key exists between the source and destination tables for a given hop, `key` is required. The build fails with an ambiguous-reference error otherwise.
 * When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
 * A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
+
+== Schema-qualified keys
+
+On a database with more than one schema, two schemas can carry a foreign key under the same constraint name (PostgreSQL scopes constraint names per table, so this is legal). When the generator cannot tell which one a bare `{key:}` means, and the source table does not resolve the tie, the build fails with an ambiguous-key error.
+
+A `{key:}` value may carry a leading `schema.` qualifier to scope the lookup to foreign keys held in that schema, the sibling of the `schema.table` form on xref:table.adoc[`@table`]:
+
+[source,graphql]
+----
+event: Event @reference(path: [{key: "multischema_a.note_event_fk"}])
+----
+
+The qualifier binds the *FK-holder* (child / referencing) side, the schema whose generated `Keys` class declares the constraint, not the FK target's schema. A qualifier naming a schema that holds no such foreign key is rejected as unresolved; a qualifier that resolves to a foreign key not connected to the current source table is rejected with the same "does not connect" error a wrong bare key gets. Unqualified keys resolve exactly as before; reach for the qualifier only on an actual cross-schema collision.
 
 == See also
 

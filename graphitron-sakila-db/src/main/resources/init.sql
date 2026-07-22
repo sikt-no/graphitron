@@ -1047,7 +1047,9 @@ CREATE TABLE multischema_b.event (
 -- OWN schema's 'event'. This yields the two collisions the earlier fixture lacked: (1) the FK
 -- target is 'event', a bare table name that collides across schemas and is reached via FK
 -- synthesis, and (2) the FK CONSTRAINT name 'note_event_fk' is identical in both schemas. Postgres
--- constraint names are schema-scoped, so the duplicate name is legal. Before R440 the bare-name
+-- scopes constraint names per TABLE (not per schema), so a name shared by one table in each schema
+-- is trivially legal, and even two tables in the SAME schema may reuse a name (see the dup_gizmo_fk
+-- pair below). Before R440 the bare-name
 -- endpoint lookup returned Ambiguous (join fails) and the bare-name FK lookup silently returned the
 -- first schema's FK (wrong-join hazard). Class-identity / reference-identity resolution fixes both.
 CREATE TABLE multischema_a.note (
@@ -1062,6 +1064,31 @@ CREATE TABLE multischema_b.note (
     event_id   int,
     body       varchar(50) NOT NULL,
     CONSTRAINT note_event_fk FOREIGN KEY (event_id) REFERENCES multischema_b.event(event_id)
+);
+
+-- R512: within-schema duplicate constraint name. 'gizmo' plus two holder tables (dup_one, dup_two)
+-- in the SAME schema (multischema_a), each carrying an FK named 'dup_gizmo_fk' into 'gizmo'. Postgres
+-- scopes constraint names per table, so two tables in one schema reusing a name is legal. This is the
+-- topology a (schema, constraint-name) pair does NOT uniquely identify: a schema-qualified key:
+-- 'multischema_a.dup_gizmo_fk' narrows to multischema_a but still matches two FKs, so it flows into
+-- findForeignKey's existing distinct-then-Ambiguous ending (with the source table breaking the tie
+-- through the soft source-scope). Isolated from the note_event_fk collision so those assertions stay
+-- untouched; gizmo/dup_one/dup_two are referenced by nothing else in the fixture.
+CREATE TABLE multischema_a.gizmo (
+    gizmo_id   serial      PRIMARY KEY,
+    label      varchar(50) NOT NULL
+);
+
+CREATE TABLE multischema_a.dup_one (
+    dup_one_id serial      PRIMARY KEY,
+    gizmo_id   int,
+    CONSTRAINT dup_gizmo_fk FOREIGN KEY (gizmo_id) REFERENCES multischema_a.gizmo(gizmo_id)
+);
+
+CREATE TABLE multischema_a.dup_two (
+    dup_two_id serial      PRIMARY KEY,
+    gizmo_id   int,
+    CONSTRAINT dup_gizmo_fk FOREIGN KEY (gizmo_id) REFERENCES multischema_a.gizmo(gizmo_id)
 );
 
 -- R83 execution-tier seed: minimal rows so a query that traverses the cross-schema

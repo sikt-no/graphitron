@@ -1222,8 +1222,29 @@ class BuildContext {
             .collect(Collectors.joining(", "));
         return Rejection.structural(
             "foreign key '" + fkName + "' is ambiguous: the constraint name is defined in schemas "
-            + schemas + "; scope the source @table(name:) so the FK resolves within one schema"
-            + " (qualified forms: " + qualifiedHints + ")");
+            + schemas + "; scope the source @table(name:) so the FK resolves within one schema, or"
+            + " schema-qualify the key itself (qualified forms: " + qualifiedHints + ")");
+    }
+
+    /**
+     * The connection invariant both author-facing {@code @reference(key:)} sites share: a resolved
+     * FK must have an endpoint on the table the author is standing on. Now that a {@code key:} value
+     * can schema-qualify to an FK in a <em>different</em> schema than the source (see
+     * {@link JooqCatalog#findForeignKey(String, String, String)}), "the FK resolves but does not
+     * touch this table" is reachable at both the {@code {key:}} path element and the explicit
+     * record-FK site, so the check lives here as the single enforcer rather than as two half-copies.
+     *
+     * <p>Returns the "does not connect" rejection message when {@code fk} misses
+     * {@code sourceSqlName}; empty when it connects, or when {@code sourceSqlName} is {@code null}
+     * (source not table-backed, where connectivity cannot be asserted).
+     */
+    private Optional<String> foreignKeyConnectionRejection(ForeignKey<?, ?> fk, String sourceSqlName) {
+        if (sourceSqlName == null || catalog.foreignKeyTouchesTable(fk, sourceSqlName)) {
+            return Optional.empty();
+        }
+        return Optional.of("key '" + fk.getName() + "' does not connect to table '" + sourceSqlName + "'"
+            + candidateHint(sourceSqlName,
+                List.of(fk.getTable().getName(), fk.getKey().getTable().getName())));
     }
 
     /**
@@ -1854,10 +1875,16 @@ class BuildContext {
         String alias = fieldName + "_" + stepIndex;
 
         if (keyName.isPresent()) {
-            // Scope the FK-name lookup by the current source so a constraint name colliding
-            // across schemas resolves to this position's table; a genuine unresolved collision
-            // (null / unresolvable scope) surfaces as a typed Ambiguous rejection, not a silent hit.
-            var fkLookup = catalog.findForeignKey(keyName.get(), currentSourceSqlName);
+            // Split an optional leading schema qualifier ("multischema_a.note_event_fk") off the
+            // author value; a malformed (stray-dot) value falls back to unqualified, degrading to the
+            // same NotInCatalog rejection it produced before the grammar existed.
+            var qfk = JooqCatalog.parseQualifiedForeignKeyName(keyName.get())
+                .orElseGet(() -> new JooqCatalog.QualifiedForeignKeyName(Optional.empty(), keyName.get()));
+            // Scope the FK-name lookup by the qualifier (hard, stated intent) and the current source
+            // (soft, derived context) so a constraint name colliding across schemas resolves to this
+            // position's table; a genuine unresolved collision surfaces as a typed Ambiguous
+            // rejection, not a silent hit.
+            var fkLookup = catalog.findForeignKey(qfk.name(), currentSourceSqlName, qfk.schema().orElse(null));
             if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog) {
                 errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
                     + candidateHint(keyName.get(), fkCandidateNames(currentSourceSqlName, keyName.get())));
@@ -1869,11 +1896,9 @@ class BuildContext {
             }
             var f = ((JooqCatalog.ForeignKeyLookup.Resolved) fkLookup).fk();
             String fkSideTable  = f.getTable().getName();
-            String keySideTable = f.getKey().getTable().getName();
-            if (currentSourceSqlName != null
-                && !catalog.foreignKeyTouchesTable(f, currentSourceSqlName)) {
-                errors.add("key '" + f.getName() + "' does not connect to table '" + currentSourceSqlName + "'"
-                    + candidateHint(currentSourceSqlName, List.of(fkSideTable, keySideTable)));
+            var connectionRejection = foreignKeyConnectionRejection(f, currentSourceSqlName);
+            if (connectionRejection.isPresent()) {
+                errors.add(connectionRejection.get());
                 return;
             }
             String effectiveSourceSqlName = currentSourceSqlName != null ? currentSourceSqlName : fkSideTable;
@@ -3004,9 +3029,13 @@ class BuildContext {
             List<ColumnRef> nodeKeyColumns, Optional<String> explicitFkKey) {
         ForeignKey<?, ?> fk;
         if (explicitFkKey.isPresent()) {
-            // Scope by the record's own table so a colliding constraint name resolves to this
-            // record's schema; an unresolved collision surfaces as a typed Ambiguous rejection.
-            var fkLookup = catalog.findForeignKey(explicitFkKey.get(), recordTable.tableName());
+            // Split an optional schema qualifier off the author value, then scope by both the
+            // qualifier (hard) and the record's own table (soft) so a colliding constraint name
+            // resolves to this record's schema; an unresolved collision surfaces as a typed
+            // Ambiguous rejection. A malformed (stray-dot) value falls back to unqualified.
+            var qfk = JooqCatalog.parseQualifiedForeignKeyName(explicitFkKey.get())
+                .orElseGet(() -> new JooqCatalog.QualifiedForeignKeyName(Optional.empty(), explicitFkKey.get()));
+            var fkLookup = catalog.findForeignKey(qfk.name(), recordTable.tableName(), qfk.schema().orElse(null));
             if (fkLookup instanceof JooqCatalog.ForeignKeyLookup.NotInCatalog) {
                 return new RecordFkTargets.Rejected("@reference(key: \"" + explicitFkKey.get()
                     + "\") could not be resolved in the jOOQ catalog"
@@ -3017,6 +3046,13 @@ class BuildContext {
                     ambiguousForeignKeyRejection(explicitFkKey.get(), amb.schemas()).message());
             }
             fk = ((JooqCatalog.ForeignKeyLookup.Resolved) fkLookup).fk();
+            // Same connection invariant as the {key:} path element, lifted here so the enforcer is
+            // uniform: a schema-qualified key can now name an FK in a different schema than the
+            // record's table, making "resolves but does not touch" reachable at this site too.
+            var connectionRejection = foreignKeyConnectionRejection(fk, recordTable.tableName());
+            if (connectionRejection.isPresent()) {
+                return new RecordFkTargets.Rejected(connectionRejection.get());
+            }
         } else {
             var directional = catalog.findForeignKeysBetweenTables(recordTable.tableName(), nodeTableSqlName)
                 .stream()
