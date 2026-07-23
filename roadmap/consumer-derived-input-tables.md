@@ -395,6 +395,11 @@ disposition into the validator-mirror set above.
 
 ### Phase 2b: INSERT/UPSERT write-target migration (a different axis)
 
+> Carved out: R515 (`insert-write-target-from-payload`) is the INSERT slice of this phase
+> (return-derived write target, `@mutation(table:)` admitted on INSERT,
+> `encodedWriteTargetInputTypes` retired), as R457 was the DELETE slice. This phase's residual
+> here is UPSERT, which stays deferred upstream until it un-defers.
+
 Phase 2's consumer-derived resolution covers the *query-side* binding (filters,
 conditions, lookups) and the mutations whose write target *is* derivable from
 the return type. It does **not** cover one mutation shape, and this phase is
