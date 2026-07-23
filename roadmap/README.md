@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R97` | Deprecate @table on input types; consumer-derived tables + argMapping grouping | Spec | 2026-07-23 | [plan](consumer-derived-input-tables.md) |
 | `R46` | Multi-tenant fan-out: run one field across many tenants and union the results | Spec | 2026-07-23 | [plan](multi-tenant-fanout.md) · [explainer](concepts/multi-tenant-fanout.html) |
+| `R97` | Deprecate @table on input types; consumer-derived tables + argMapping grouping | Ready | 2026-07-23 | [plan](consumer-derived-input-tables.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -189,7 +189,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md) — Backlog, cleanup
 - `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Backlog, tech-debt
-- `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Spec, architecture
+- `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Ready, architecture
 - `R485` [**Model-level isFkHop/pairsOf helpers for JoinStep narrowings**](fk-hop-narrowing-helpers.md) — Backlog, structural
 - `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
 - `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
