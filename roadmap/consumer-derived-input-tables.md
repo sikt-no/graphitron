@@ -5,19 +5,20 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: []
+depends-on: [insert-write-target-from-payload]
 ---
 
 # Deprecate `@table` on input types; consumer-derived tables + `argMapping` grouping
 
 The `@table` directive on input types declares "this input maps to columns
 of table X". The classifier consumes it to produce
-`GraphitronType.TableInputType` (`TypeBuilder.buildTableInputType` at
-`TypeBuilder.java:686-718`), and downstream `MutationInputResolver`,
-`EnumMappingResolver.buildLookupBindings`, `FieldBuilder` (line ~697), and
-`GraphitronSchemaValidator.validateTableInputType` all switch on that
-variant. The directive is the structural signal that drives DML emit,
-`@lookupKey` resolution, and condition-input column binding.
+`GraphitronType.TableInputType` (`TypeBuilder.buildTableInputType`), and
+downstream `FieldBuilder.classifyArgument` (the `TableInputType` arm feeding
+`EnumMappingResolver.buildLookupBindings`), the UPDATE walker classifiers,
+and `GraphitronSchemaValidator.validateTableInputType` all switch on that
+variant. The directive is the structural signal that drives the remaining
+non-field-relative DML write targets, arg-level `@lookupKey` resolution, and
+the global input-classification verdict.
 
 This item argues `@table` on input is the same kind of redundant
 metadata as `@record`: the table is always derivable from the consuming
@@ -66,19 +67,57 @@ relation early (the withdrawn R327 attempt that did, branch
 test but produced the meaningless null-class verdict and broke R144's `@lookupKey`
 lookup, the evidence that the entity altitude is wrong for the general case).
 
-## What `@table` on input drives today
+## What has already shipped toward this goal (respec 2026-07-23)
 
-| Consumer                                       | What it does                                                          |
-|------------------------------------------------|-----------------------------------------------------------------------|
-| `MutationInputResolver.classifyDml`            | DML INSERT/UPDATE/DELETE column binding (`MutationInputResolver.java:243`) |
-| `EnumMappingResolver.buildLookupBindings`      | `@lookupKey` resolution against table's unique keys                   |
-| `FieldBuilder` (line ~697)                     | Switches on `TableInputType` to construct `LookupTableField` etc.     |
-| `GraphitronSchemaValidator.validateTableInputType` | Validation invariants on table-bound inputs                       |
+This item predates a line of work that delivered large parts of its original
+Phase 2; the respec re-baselines against it.
 
-Plus the `@table + @record` shadow rule at `TypeBuilder.java:657-664`,
-which papers over the conflict between two sources of truth. R96 takes
-care of the `@record` side; this item takes care of the `@table` side.
-Together they remove the rule.
+- **Query-side plain-input resolution is already field-relative.** A non-`@table`
+  input argument routes through `FieldBuilder.classifyArgument`'s plain-input
+  path into `InputFieldResolver.resolve(typeName, rt, enclosingOverride)`,
+  resolving every field against the *consuming field's* return table (R205
+  restored plain/`@table` filter symmetry; R215 lifted column-miss to
+  `UnboundField` uniformly). The `override` axis is threaded field-relative
+  through the same call (`enclosingOverride`), and the semantics are pinned by
+  the six-row truth table in `argument-resolution.adoc` §Truth table, the R205
+  pipeline test `plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam`,
+  and the execution-tier
+  `projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable`
+  (+ `…Connection` sibling) in `GraphQLQueryTest` (the R330 / opptak shape).
+  The original Phase 2's "validator-mirror obligation" 2x2 is therefore
+  discharged for the filter path; only the `@lookupKey` disposition survives
+  (see Phase 2 below).
+- **Mutation write targets are going field-relative, one verb per item.**
+  R457 shipped DELETE (`@mutation(table:)` on the field, precedence over the
+  input's `@table` bridge, `FieldBuilder.resolveDeleteWriteTarget`,
+  `TypeBuilder.resolveInputFields` shared with `buildTableInputType`, the
+  validator mirror via `GraphitronSchemaValidator.collectInputFieldRejections`).
+  R514 (`dml-emitted-mutation-table-grounding`) grounds
+  `ProducerBinding.DmlEmitted` from `@mutation(table:)` so payload carriers
+  survive `@table`-on-input removal. R515 (`insert-write-target-from-payload`)
+  gives INSERT the return-derived rung (direct `@table` return or the payload
+  scan's `DmlElementKind.Table`), admits `@mutation(table:)` on INSERT, retires
+  `MutationInputResolver.resolveInput` and the
+  `encodedWriteTargetInputTypes` carve-out.
+- **The sibling directive retirements landed.** R96 shipped the
+  reflection-driven `RecordBindingResolver` (`@record` deprecated and ignored;
+  the old `@table + @record` shadow rule survives only as the
+  "Shadowed by `@table`" arm of the directive-ignored warning). R94 shipped the
+  emit-input-records carrier (scoped to class-not-record). R332 shipped the
+  `@table`-on-input deprecation warning, so the user-facing announce is live.
+
+## What `@table` on input still drives today
+
+| Consumer                                                | What it does                                                                    |
+|---------------------------------------------------------|---------------------------------------------------------------------------------|
+| `FieldBuilder.classifyUpdateTableField` / `classifyUpdatePayloadField` | UPDATE write target: a non-`@table` input arg is translated back to the legacy "only accept @table input arguments" rejection (`rawArgUpdateRejection`); UPDATE has no field-relative write-target path |
+| `FieldBuilder.classifyArgument` (`TableInputType` arm)  | Arg-level `@lookupKey` composite lookup: `EnumMappingResolver.buildLookupBindings` runs only for a `TableInputType` arg, so the lookup shape (e.g. `FilmActorKey`) requires `@table` on the input |
+| `TypeBuilder.buildInputType`                            | The global classification verdict: explicit `@table` wins; otherwise the `isUsedWithOverrideCondition` routing gate and the `findReturnTablesForInput` auto-promotion aggregate decide `TableInputType` vs non-table |
+| `GraphitronSchemaValidator.validateTableInputType`      | Registry-walk validation invariants on table-bound inputs                        |
+
+(INSERT's `MutationInputResolver.resolveInput` consumer is being retired by
+R515 and is deliberately absent from this table; if R515 has not shipped when
+this item is picked up, treat it as a blocking dependency, not scope.)
 
 ## Why `@table` on input is redundant
 
@@ -87,7 +126,9 @@ For each fixture pattern in sakila:
 - **INSERT/UPDATE/DELETE mutations.** `Mutation.createFilm(in:
   FilmCreateInput!) @mutation(typeName: INSERT)` returns `Film @table(name:
   "film")`. The mutation's table is derivable from the return type. The
-  input's `@table(name: "film")` says the same thing.
+  input's `@table(name: "film")` says the same thing. (DELETE cannot use the
+  return rung, R287, and instead names the table on the field, R457; INSERT
+  ships the return rung in R515; UPDATE is this item's remaining verb.)
 - **Filter / condition inputs.** `Query.films(filter:
   FilmConditionInput!): [Film]` returns `Film @table(name: "film")`. Same
   derivation; same answer.
@@ -199,13 +240,12 @@ extensions):
 
 ## Interaction with other roadmap items
 
-- **R94 (`emit-input-records`)** — settles Layer 1 (graphitron emits
-  the per-input record) and Layer 2 (`Constructed` binding from
-  graphitron-record components into service params). R97 builds on
-  Layer 2: instead of by-name resolution against the consumer's domain
-  type, the resolution can be `argMapping`-driven for the cases that
-  need it. R94 should land first; R97 piggybacks on its Layer 2
-  carrier.
+- **R94 (`emit-input-records`, shipped)** — settled Layer 1 (graphitron emits
+  the per-input carrier, scoped down to class-not-record) and Layer 2
+  (`Constructed` binding from carrier components into service params). R97
+  builds on Layer 2: instead of by-name resolution against the consumer's
+  domain type, the resolution can be `argMapping`-driven for the cases that
+  need it. The "R94 lands first" gate is satisfied.
 - **R96 (shipped)** — the symmetric directive deprecation on `@record`.
   Same architectural argument: `@record`-on-output is redundant with
   introspection; `@table`-on-input is redundant with consumer-derived
@@ -231,10 +271,17 @@ extensions):
   (constraints true regardless of consumer) and earns a first-class entity. This
   item must not pre-empt that model; it covers the input-as-data era up to that
   point.
-- **R332 (`table-on-input-deprecation-signal`)** — the user-facing announce of
-  the deprecation this item performs. R332 announces; R97 removes. R332's
-  encoded-ID INSERT/UPSERT carve-out is gated on this item's Phase 2b; coordinate
-  so R332's warning fires on those inputs once Phase 2b lands.
+- **R332 (`table-on-input-deprecation-signal`, shipped)** — the user-facing
+  announce of the deprecation this item performs. R332 announced; R97 removes.
+  R332's encoded-ID INSERT/UPSERT carve-out (`encodedWriteTargetInputTypes`) is
+  retired by R515, which also extends the warning's replacement wording; this
+  item's Phase 2b does the same for UPDATE-consumed inputs.
+- **R457 (shipped) / R514 / R515** — the mutation write-target slices of this
+  item's axis, carved out and landed (or landing) item-by-item: R457 the DELETE
+  field-relative write target, R514 the `DmlEmitted` grounding from
+  `@mutation(table:)`, R515 the INSERT return-derived write target plus
+  `resolveInput` retirement. Phase 2b below is the UPDATE residual of that
+  series and should reuse R515's precedence machinery.
 - **R337 (`input-nesting-projection-classification`)** — the honest *surfacing*
   of a nested-grouping projection (the LSP label / `TypeClassification` that today
   reads `PojoInput(null)`). R337 is a redirect parked behind this item; the
@@ -275,15 +322,17 @@ already available through introspection or `argMapping`.
 
 ## Phasing
 
-Three phases, ordered so each is independently shippable.
+Ordered so each phase is independently shippable. Phase 1 (`argMapping`
+grouping) is orthogonal to the rest and can be scheduled freely; Phases 2 and
+2b can land in either order; Phase 3 requires both plus R515.
 
 ### Phase 1: extend `argMapping` with grouping syntax
 
-- Parser change in the `argMapping` value parser (the R84
-  path-expression parser is the existing precedent).
-- Resolver change in the `argMapping` consumer (likely
-  `EnumMappingResolver.enrichArgExtractions` or a new `ArgMapping*`
-  module, depending on where the parsing currently lives).
+- Parser change in the `argMapping` value parser (`PathExpr`, the R84
+  path-expression parser, is the existing precedent).
+- Resolver change in the `argMapping` consumers
+  (`ServiceDirectiveResolver` / `ArgBindingMap`; the old
+  `EnumMappingResolver.enrichArgExtractions` home is retired).
 - Sealed-result extension to `ArgBinding` to carry grouping
   outcomes.
 - Compact-constructor-enforced grouping invariants on the new
@@ -298,149 +347,127 @@ Three phases, ordered so each is independently shippable.
 Acceptance: `argMapping` grouping works end-to-end for at least one
 sakila fixture; existing single-source `argMapping` is unchanged.
 
-### Phase 2: switch table resolution to consumer-derived
+### Phase 2: retire the global input-classification machinery
 
-- New classifier branch in `TypeBuilder` that resolves an input's
-  table from the consuming field's return type. The branch produces
-  the same `TableInputType` model variant as today, just from a
-  different source.
+The original Phase 2 asked for consumer-derived column resolution at the call
+site; that shipped (R205/R215/R330, see "What has already shipped"). What
+remains is making the *last* `TableInputType`-gated call site consumer-derived
+and then deleting the global machinery that only exists to feed it.
+
+- **Route arg-level `@lookupKey` through the consumer-derived table.**
+  `FieldBuilder.classifyArgument` runs `EnumMappingResolver.buildLookupBindings`
+  only on the `TableInputType` arm, so the composite-key lookup shape
+  (`FilmActorKey`) still requires `@table` on the input. Re-derive: when the
+  arg carries `@lookupKey` and the input is plain, resolve the input's fields
+  against the consuming field's `rt` (the `TypeBuilder.resolveInputFields`
+  factoring R457 extracted for exactly this dual use) and build the binding
+  set from that. `@lookupKey` on an input that fails to resolve against `rt`
+  is a classify-time rejection naming the consumer's table, never a silent
+  no-op. (No current fixture exercises a plain-input `@lookupKey` arg, so this
+  is additive, not a regression risk.)
 - **Retire the `findReturnTablesForInput` global aggregate**
   (`TypeBuilder.buildInputType`, the third of its three ordered steps).
   It is the right idea (derive the table from the consumer) at the wrong
   altitude: a global aggregate over *every* consuming field that bails to
   non-table on more than one distinct table (the `> 1` bail), so an input
-  reused across two tables silently classifies non-table everywhere. The
-  consuming field's resolved target (`rt`) is already computed at the call
+  reused across two tables silently classifies non-table everywhere (pinned
+  by the two-call-site `PlainFilter` cases in `GraphitronSchemaBuilderTest`).
+  The consuming field's resolved target (`rt`) is already computed at the call
   site (`lookAheadVerdict` resolves a field's target registry-free at the
   edge since R317), so the aggregate recomputes what each call site already
-  knows. Consumer-derived resolution replaces it per call site; the `> 1`
-  case stops being a silent demotion and becomes two correct per-consumer
-  bindings (the "reuse across consumers" row above), or a classify-time
-  rejection naming the offending consumer's table.
-- **Decouple the override-condition gate from type routing**
-  (`buildInputType` step 2, `isUsedWithOverrideCondition`). Today, if *any*
-  field of an input carries `@condition(override:true)`, the whole input is
-  routed off the table path into a non-table `InputType`. That overloads a
-  *per-field validation modifier* (`override` = "the consumer owns this
-  predicate, skip column-coverage on it") into a *whole-type routing gate*.
-  "Has an override field" and "is table-bound" are orthogonal axes; the
-  override flag is already threaded field-relative at the call site
-  (`FieldBuilder.classifyArgument`, `enclosingOverride`), so it has no
-  business deciding the type's bucket. This conflation is what silently
-  broke R330 (`SoknadsmangeltypeFilterInput` would have resolved to a
-  table by the consumer, but an override field diverted it, and the
-  diverted non-table path skipped the FK-target *structural* check, so an
-  identical schema-author error was rejected at build time on the
-  table-routed path and silently miscompiled on the diverted one). The fix
-  is the consumer-derived resolution above plus the field-relative
-  validation below: `override` only suppresses per-field column-coverage,
-  never the structural check and never the routing.
-- `MutationInputResolver`, `EnumMappingResolver`,
-  `FieldBuilder.classifyChildField`, and
-  `GraphitronSchemaValidator.validateTableInputType` continue to
-  consume `TableInputType`; no change to their internals.
-- Structural invariant: every `TableInputType` field carries either
-  a consumer-derived table or an explicit `argMapping` binding,
-  enforced at the producer site via a non-null typed carrier.
-- Existing `@table` declarations on inputs become a no-op (still
-  parsed, but the directive's value isn't consulted; the
-  consumer-derived value wins). Surfaces as a build warning during
-  this phase: "`@table` on input is redundant; consumer-derived
-  table resolution is in effect. Remove the directive."
-- LSP work: hover on an SDL input type shows the resolved
-  `@table` (per-consumer if multiple consumers).
+  knows, worse. With the `@lookupKey` arm consumer-derived and the mutation
+  verbs field-relative (R457/R515 + Phase 2b), nothing needs the aggregate's
+  auto-promotion; the `> 1` case stops being a silent demotion and becomes
+  per-consumer resolution (the "reuse across consumers" row above).
+- **Retire the `isUsedWithOverrideCondition` routing gate** (`buildInputType`
+  step 2) in the same move. It overloads a per-field validation modifier
+  (`override` = "the consumer owns this predicate, skip column-coverage on
+  it") into a whole-type routing gate that today only decides whether the
+  aggregate may auto-promote. The override flag is already threaded
+  field-relative at the call site (`classifyArgument`'s `enclosingOverride`,
+  the R330 rework), so once the aggregate goes, the gate has nothing left to
+  guard. After this bullet, `buildInputType` is directive-driven only:
+  explicit `@table` → `TableInputType` (the deprecated bridge, Phase 3
+  deletes it), everything else → the plain-input path.
+- `GraphitronSchemaValidator.validateTableInputType` keeps validating the
+  bridge-classified inputs until Phase 3; consumer-derived call sites
+  discharge the validator-mirror obligation the way R457 did
+  (`collectInputFieldRejections` at the field-derived site).
+- LSP work: hover on an SDL input type shows the resolved table
+  (per-consumer if multiple consumers).
 
-Acceptance: every sakila fixture compiles unchanged; the warning
-fires on every `@table`-decorated input; LSP hover shows the
-resolved table.
+Acceptance: every sakila fixture compiles unchanged; a plain-input arg-level
+`@lookupKey` fixture classifies via the consumer's table;
+`findReturnTablesForInput` and `isUsedWithOverrideCondition` are gone; LSP
+hover shows the resolved table.
 
-#### Validator-mirror obligation (gate on Phase 2)
+#### Validator-mirror status (mostly discharged)
 
-Decoupling `override` from routing turns today's 1-D gate into a 2x2:
-`override` (yes/no) x `column-resolves` (yes/no). Per "validator mirrors
-classifier invariants," each cell that implies a generator branch must fail at
-validate time if unimplemented, or the change silently shifts which schemas
-validate. The `InputFieldResolver` already lifts a column-miss to `UnboundField`
-uniformly (R215), so the machinery exists; Phase 2 must pin an explicit truth
-table mirroring `argument-resolution.adoc` §Truth table, with a pipeline-tier
-test per row:
+The original Phase 2 carried a 2x2 `override` x `column-resolves` obligation.
+That table is now live field-relative: `argument-resolution.adoc` §Truth table
+pins the six-row `any-enclosing-override` x `@condition` semantics, enforced by
+the R205 pipeline test
+(`plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam`), the
+`UnboundField` lift (R215), and the execution-tier
+`projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable`
+(+ `…Connection` sibling) in `GraphQLQueryTest` (the override-true /
+column-miss row, the R330 opptak shape). Keep those green rather than
+authoring anew. The one surviving obligation is the `@lookupKey` disposition
+above: its rejection row (plain input, `@lookupKey`, unresolvable against the
+consumer's table) must land in the validator-mirror set with a pipeline-tier
+test.
 
-| override | column resolves | outcome |
-|----------|-----------------|---------|
-| false | true | implicit column predicate emitted (today's table-bound default) |
-| false | false | `UnboundField` → validator rejects (R215: implicit predicate required, no column) |
-| true | true | consumer condition owns the predicate; implicit suppressed |
-| true | false | consumer condition owns the predicate; column-miss admitted (the R330 / opptak shape) |
+### Phase 2b: UPDATE write-target migration (the last verb)
 
-The fourth row is the one the old step-2 gate reached by demoting the whole
-type; Phase 2 must reach it field-relative and prove (execution tier) it
-generates the correct correlated predicate. The execution-tier evidence already
-exists as `projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable`
-(and its `…Connection` sibling) in `GraphQLQueryTest`; keep it green rather than
-authoring it anew. Reconcile this `override` x `column-resolves` table with the
-existing `argument-resolution.adoc` §Truth table (which tabulates
-`any-enclosing-override` x `@condition` presence) under one heading, so a reader
-sees both axes together.
+The mutation half of this item has been landing verb-by-verb: DELETE (R457),
+the grounding substrate (R514), INSERT (R515). UPDATE is the residual: both
+UPDATE classifiers (`classifyUpdateTableField`, `classifyUpdatePayloadField`)
+translate a `DmlWalkerInputArgResolution.RawArg` (a plain input) back to the
+legacy "@mutation fields only accept @table input arguments" rejection via
+`rawArgUpdateRejection`, so after R515 it is the lone verb hard-requiring
+`@table` on its input.
 
-**`@lookupKey` on a now-resolved input.** Removing the `findReturnTablesForInput`
-aggregate means a non-`@table` input previously promoted by the aggregate and
-consumed with arg-level `@lookupKey` must still reach the `@lookupKey` binding
-path (`FieldBuilder.classifyArgument`, `buildLookupBindings`) via the
-consumer-derived table, not silently drop the lookup. No current fixture
-exercises this (every input-object `@lookupKey` arg pairs with an `@table` input
-today, e.g. `FilmActorKey`), so it is not a regression, but Phase 2 must either
-route `@lookupKey` through the consumer-derived table or make `@lookupKey` on an
-unresolved input a validate-time rejection rather than a no-op. Fold the chosen
-disposition into the validator-mirror set above.
+Extend R515's precedence ladder to UPDATE, where the return rung is as natural
+as INSERT's (an UPDATE returns the updated row's `@table` type or a payload
+carrier wrapping it): return-derived table > `@mutation(table:)` (add UPDATE
+to `TABLE_ARG_SUPPORTED_VERBS`, needed for the ID/scalar-return UPDATE) > the
+input's `@table` bridge, with R515's cross-check semantics carried over
+verbatim (same directive pairs must not behave differently across verbs). The
+field-derived path re-derives input fields through
+`TypeBuilder.resolveInputFields` and feeds `UpdateRowsWalker` exactly as the
+`@table`-input path does; the walker itself is already table-driven and needs
+no change.
 
-### Phase 2b: INSERT/UPSERT write-target migration (a different axis)
+When picked up, carve this out as its own item the way R457/R514/R515 were;
+this phase records the scope so the series has a single home. UPSERT stays
+deferred upstream (refused before classification) and inherits the ladder when
+it un-defers.
 
-> Carved out: R515 (`insert-write-target-from-payload`) is the INSERT slice of this phase
-> (return-derived write target, `@mutation(table:)` admitted on INSERT,
-> `encodedWriteTargetInputTypes` retired), as R457 was the DELETE slice. This phase's residual
-> here is UPSERT, which stays deferred upstream until it un-defers.
-
-Phase 2's consumer-derived resolution covers the *query-side* binding (filters,
-conditions, lookups) and the mutations whose write target *is* derivable from
-the return type. It does **not** cover one mutation shape, and this phase is
-that gap: INSERT/UPSERT mutations whose return type is an encoded ID or scalar
-(`createFilm(...): ID`). For those, `@table`-on-input is currently the *only*
-signal naming the write target, because the return type is a bare `ID` with no
-`@table` to derive from. Per `MutationField.DmlTableField`, INSERT/UPSERT
-"carry the `@table` `TableInputArg` that drives the statement directly," while
-UPDATE/DELETE already moved to a field-relative walker carrier (R246/R266).
-
-Extend the UPDATE/DELETE field-relative walker pattern to encoded-ID/scalar-return
-INSERT/UPSERT, so the write target comes from the consuming mutation field's
-resolved target rather than its return type. This is the gate that lets Phase 3
-finally narrow the directive scope: until the INSERT/UPSERT arms are
-field-relative, `@table`-on-input cannot be removed for them. It is also the gate
-R332's carve-out waits on: R332 (`table-on-input-deprecation-signal`) must *not*
-flag these inputs as deprecated until this phase lands, and it tracks the
-`encodedWriteTargetInputTypes(...)` find-usages anchor that this phase retires
-(once the write target is field-relative, encoded INSERT/UPSERT inputs no longer
-need `@table`, so the deprecation warning should fire on them too). Plan note:
-this phase retires `encodedWriteTargetInputTypes`.
-
-Acceptance: an encoded-ID-return INSERT and UPSERT sakila fixture emit correct
-DML with `@table` removed from the input; `encodedWriteTargetInputTypes` is gone;
-R332's deprecation warning fires on the previously-carved-out inputs.
+Acceptance: an UPDATE sakila fixture (direct-return and payload-returning)
+emits byte-identical DML with `@table` removed from the input;
+`rawArgUpdateRejection` is gone; the R332 warning's replacement wording covers
+UPDATE-consumed inputs.
 
 ### Phase 3: remove the directive declaration
 
 - Narrow `directives.graphqls`'s `@table` directive scope from
   `OBJECT | INTERFACE | INPUT_OBJECT` to `OBJECT | INTERFACE`.
-- Remove the `@table`-driven arm in
-  `TypeBuilder.buildNonTableInputType` (now exclusively
-  `buildInputType` after the consumer-derived-only flip in Phase 2).
-- Remove the `@table + @record` shadow rule entirely (R96 takes the
-  `@record` half; this phase takes the `@table` half).
-- Migrate all sakila fixtures: remove `@table(name: "...")` from
-  every `input` declaration. Six in `schema.graphqls` plus any in
-  `graphitron/src/test/`.
-- Migrate any LSP fixtures that reference `@table` on inputs.
-- Update `code-generation-triggers.adoc:112` and any other doc
-  references.
+- Remove the `@table`-driven arm in `TypeBuilder.buildInputType` (the only
+  arm left after Phase 2), collapsing every input to the plain-input path;
+  `buildTableInputType`, `TableInputType`, and
+  `GraphitronSchemaValidator.validateTableInputType` retire with it (their
+  remaining consumers all moved to field-relative resolution in Phase 2/2b).
+- Remove the input half of the "Shadowed by `@table`" directive-ignored
+  warning (the residue of the old `@table + @record` shadow rule; R96 took
+  the `@record` half).
+- Retire the R332 deprecation warning itself
+  (`emitTableOnInputDeprecationWarnings`): once the scope narrows, an
+  `@table`-on-input is a parse error, not a warning.
+- Migrate all fixtures: remove `@table(name: "...")` from every `input`
+  declaration; `schema.graphqls` carries roughly forty at the time of this
+  respec (grep `^input .+@table`), plus inline SDL in `graphitron/src/test/`
+  and any LSP fixtures.
+- Update `code-generation-triggers.adoc` and any other doc references.
 
 Acceptance: directive declaration accepts only `OBJECT | INTERFACE`;
 all fixture SDL is migrated; build green.
@@ -494,13 +521,19 @@ Each phase carries its own test surface; the high-leverage cases:
 
 - Pipeline-tier (Phase 1): `argMapping` grouping → emitted fetcher
   body has correct constructor calls per target.
-- Pipeline-tier (Phase 2): SDL with no `@table` on input + a
-  `@table`-returning consumer → emitted fetcher resolves columns
-  against consumer's table.
-- Pipeline-tier (Phase 2): SDL with no `@table` on input + a
-  consumer that doesn't carry `@table` on its return → classifier
-  rejects with a clear message naming the consumer.
+- Pipeline-tier (Phase 2): plain input + arg-level `@lookupKey` against a
+  `@table`-returning consumer → lookup bindings built from the consumer's
+  table; same input against a consumer whose table lacks the columns →
+  classify-time rejection naming the consumer.
+- Pipeline-tier (Phase 2): the two-call-site reuse shape (today's `> 1`
+  aggregate bail) classifies per-consumer instead of demoting; the
+  `GraphitronSchemaBuilderTest` `PlainFilter` cases are rewritten from
+  pinning the demotion to pinning the per-consumer resolution.
+- Pipeline-tier (Phase 2b): UPDATE fixtures byte-identical with and without
+  `@table` on the input (the `MutationTableArgClassificationTest` pattern).
 - Execution-tier (Phase 1): a sakila multi-target mutation
   exercising grouping end-to-end.
+- Execution-tier (Phase 2b): an UPDATE round-trip with `@table` dropped from
+  the input.
 - LSP-tier (Phase 2): hover on an SDL input type returns the
   resolved table information.
