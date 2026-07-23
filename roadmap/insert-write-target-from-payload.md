@@ -1,7 +1,7 @@
 ---
 id: R515
 title: "INSERT derives write target from the payload's @table data field"
-status: Spec
+status: Ready
 bucket: generator
 theme: mutation-write
 depends-on: [dml-emitted-mutation-table-grounding]
