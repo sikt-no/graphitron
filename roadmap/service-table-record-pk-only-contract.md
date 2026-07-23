@@ -113,6 +113,13 @@ shape is recognized on a parent whose table has empty `primaryKeyColumns()`, fir
 classifier decision point (`classifySourcesType` or its caller) so the classification fact and the
 rejection are single-sourced, not re-derived.
 
+One discriminator to get right: `parentPkColumns` is also empty at a *root* coordinate, where there is
+no parent table at all — and root already has its own handling (`Set<Row>`/`Set<Record>` get the
+dedicated batch-at-root diagnostic, and `List<XRecord>` at root is the legitimate InputBeanResolver
+shape, not an error). The new rejection must fire only when a parent *table exists* but has empty
+`primaryKeyColumns()`, never at root; the caller's coordinate context carries that fact, which is why
+"or its caller" may be the right siting.
+
 ### Node-key columns: union with PK in the required-projection walk
 
 `nodeKeyColumns()` usually equals `primaryKeyColumns()` but can diverge: the column order can differ,
@@ -144,8 +151,12 @@ latent gap or is confirmed a no-op.
    whole-row append entirely; `RequiredProjection` becomes a single `baseColumns` list.
 2. Force-include the union of `primaryKeyColumns()` and `nodeKeyColumns()` (for `@node` table types) in
    the required-projection walk, per the Design section above.
-3. Remove the `__src_<col>__` reserved-alias scheme: `reservedSourceAlias`, the projection append it
-   drives, and the allowlist entry in `GeneratedSourcesLintTest.java:219-236`.
+3. Remove the `__src_<col>__` reserved-alias scheme: `reservedSourceAlias` and the projection append
+   it drives. Note the scheme has *no* allowlist entry in `GeneratedSourcesLintTest`
+   (`EXTERNAL_TOKEN_PREFIXES` carries only `__NODE_`; the aliases are string-literal-only and masked
+   before the scan) — the cleanup surface in tests is the javadoc prose describing the scheme, in
+   `GeneratedSourcesLintTest` (the `EXTERNAL_TOKEN_PREFIXES` and dunder-guard javadocs) and in
+   `DunderFreeEmissionPipelineTest`'s class javadoc.
 4. Remove the runtime `instanceof` parent-shape fork in `GeneratorUtils.buildKeyExtraction`'s
    `TableRecord` arm; replace with the single direct field-identity PK read described above.
 5. Update `ParentProjectionContainmentCheck` accordingly.
@@ -173,6 +184,10 @@ latent gap or is confirmed a no-op.
   (the real federation scenario R425 was protecting).
 - Update `GraphQLQueryTest`'s execution-tier tests pinning service-returned-typed-parent and
   colliding-multiset-sibling resolution for `titleTitlecase` to match the rewritten service body.
+- Update `DmlBulkMutationsExecutionTest.rowsUpdateFilms_duplicateKeys_yieldOnePayloadRowPerKeyInKeysOrder`:
+  it reads payload titles through the reserved alias (`r.get("__src_title__", String.class)`) under an
+  empty selection set and breaks on the revert. Re-anchor the row-count/order assertion on the PK
+  column (force-included under the corrected contract) or on a selected base-named column.
 - Update `ServiceProjectionPipelineTest`'s R426/R511 shape-assertion groups and `TypeSpecAssertions`'s
   `appendsFullParentRow` / `serviceChildKeyExtractionForksOnTypedRecord` helpers to assert the new
   PK-only shape instead (or delete if the assertion no longer has a distinct shape to check once
