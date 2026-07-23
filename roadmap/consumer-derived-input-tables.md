@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 6
 theme: classification-model
-depends-on: [insert-write-target-from-payload]
+depends-on: []
 last-updated: 2026-07-23
 ---
 
