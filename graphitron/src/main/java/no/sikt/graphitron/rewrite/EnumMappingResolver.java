@@ -232,14 +232,12 @@ final class EnumMappingResolver {
     /**
      * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
      * {@link InputColumnBindingGroup} per admissible input field. {@code @lookupKey} on
-     * {@code INPUT_FIELD_DEFINITION} was retired; the directive no longer gates this walk. After
-     * UPDATE and DELETE were routed through their walker carriers, the only callers are:
+     * {@code INPUT_FIELD_DEFINITION} was retired; the directive no longer gates this walk. UPDATE and
+     * DELETE build their WHERE columns directly on their walker carriers, and INSERT builds no binding
+     * set at all (it walks {@code fields()} directly for VALUES emit and carries an empty binding
+     * list), so the sole remaining caller is query-side:
      *
      * <ul>
-     *   <li>Mutation-side: INSERT (via {@code MutationInputResolver.resolveInput}, which then
-     *       discards the bindings — INSERT walks {@code fields()} directly for VALUES emit). UPDATE
-     *       and DELETE no longer call this; their walkers build the WHERE columns directly. The
-     *       {@code @value} marker was retired, so there is no longer an exclude set.</li>
      *   <li>Query-side ({@code @lookupKey} on {@code ARGUMENT_DEFINITION}, with a {@code @table}
      *       input arg): every admissible input field of the input type is a lookup-key binding.
      *       The Query-side derivation reads the binding set as the VALUES-join column list.</li>
@@ -265,8 +263,7 @@ final class EnumMappingResolver {
      * <p>List-typed admissible carriers are rejected: list cardinality must live on the outer
      * argument, not on an individual input-type field. Reference, nesting, and unresolved
      * carriers are silently skipped here; the caller surfaces them through its own structural
-     * rejection path (mutation: {@code MutationInputResolver.resolveInput}'s per-field walk;
-     * query: not currently a binding shape).
+     * rejection path (query-side: not currently a binding shape).
      */
     List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName,

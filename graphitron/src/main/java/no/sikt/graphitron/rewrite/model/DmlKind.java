@@ -13,8 +13,8 @@ package no.sikt.graphitron.rewrite.model;
 public enum DmlKind {
     INSERT, UPDATE, DELETE, UPSERT;
 
-    // Both the @value partition (acceptsValueMarker) and the resolveInput PK-coverage check
+    // Both the legacy @value partition (acceptsValueMarker) and the PK-coverage check
     // (requiresPkCoverage) have been retired: UPDATE and DELETE now identify rows through the
     // UpdateRowsWalker / DeleteRowsWalker's catalog-derived PK-or-UK match, so neither predicate has
-    // a caller. INSERT (the lone verb still completing resolveInput) has no WHERE clause to cover.
+    // a caller. INSERT has no WHERE clause to cover in any case.
 }

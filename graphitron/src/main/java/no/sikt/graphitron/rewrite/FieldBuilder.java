@@ -5509,8 +5509,7 @@ class FieldBuilder {
         // 3. The three rung tables, for the must-agree cross-checks. Rung 1 is read off the resolved
         // return type (authoritative, and equal to the helper's return-derived rung); the payload arm
         // also keeps the DmlElementKind.Table so the rung-1-vs-rung-3 message is byte-identical to the
-        // pre-existing payload path. A @mutation(table:) that named an unresolvable table already rejected
-        // in step 2, so a present rung-2 name resolves here.
+        // pre-existing payload path.
         Optional<TableRef> rung1;
         BuildContext.DmlElementKind.Table payloadTbl = null;
         if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -5523,7 +5522,18 @@ class FieldBuilder {
         } else {
             rung1 = Optional.empty();
         }
-        Optional<TableRef> rung2 = MutationInputResolver.parseMutationTableArg(fieldDef).flatMap(svc::resolveTable);
+        // A @mutation(table:) naming an unresolvable table rejects even when a higher rung already
+        // resolved the write target: the single-producer helper short-circuits at rung 1 and never
+        // validates rung 2's name, so this call site is the only place that unknown name is caught when
+        // rung 1 is present (when rung 1 is absent it already rejected as UnknownTable in step 2). This
+        // mirrors the helper's unknown-table rejection rather than silently ignoring an author-written
+        // directive argument.
+        Optional<String> rung2Named = MutationInputResolver.parseMutationTableArg(fieldDef);
+        Optional<TableRef> rung2 = rung2Named.flatMap(svc::resolveTable);
+        if (rung2Named.isPresent() && rung2.isEmpty()) {
+            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                ctx.unknownTableRejection(rung2Named.get())));
+        }
         Optional<TableRef> rung3 = tit != null ? Optional.of(tit.table()) : Optional.empty();
 
         // Rung 1 vs rung 2: the RETURNING projection reads from the write target, so a @mutation(table:)

@@ -662,8 +662,9 @@ final class RecordBindingResolver {
      * {@code @table}-bound returns (already grounded by {@link ProducerBinding.RootTable}), and
      * unloadable record classes. Each skip is silent: the walk grounds observations, it does not
      * diagnose. The per-mutation diagnostics (the unknown-table rejection, the more-than-one-input
-     * rejection, the no-write-target rejection) live in {@link FieldBuilder} and
-     * {@link MutationInputResolver#resolveInput} and surface there.
+     * rejection, the no-write-target rejection) live in the classify-phase resolvers on
+     * {@link FieldBuilder} (the DELETE / INSERT write-target resolvers and the walker classifiers) and
+     * surface there.
      */
     private void groundDmlMutationField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
         if (!field.hasAppliedDirective(DIR_MUTATION)) return;

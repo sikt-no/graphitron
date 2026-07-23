@@ -464,6 +464,25 @@ class MutationTableArgClassificationTest {
     }
 
     @Test
+    void insertPayload_returnDerivedWithUnresolvableMutationTable_rejects() {
+        // Rung 1 present (return derives 'film') and @mutation(table:) names a table that does not
+        // resolve. The single-producer helper short-circuits at rung 1 and never validates the table:
+        // name, so this is the only site that catches it; an unresolvable table: rejects rather than
+        // being silently ignored (a typo must not slip through where a real-but-different table rejects).
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmInput { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): FilmPayload @mutation(typeName: INSERT, table: "no_such_table") }
+            """);
+        assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(UnclassifiedField.class);
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("no_such_table") && m.contains("could not be resolved"));
+    }
+
+    @Test
     void insertEncoded_mutationTableOutranksInputTable() {
         // Rung 2 vs rung 3 (rung 1 absent, ID return): @mutation(table:) silently outranks the input's
         // deprecated @table, byte-matching the DELETE treatment of the same directive pair.
