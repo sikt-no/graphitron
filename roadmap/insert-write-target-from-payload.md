@@ -4,7 +4,7 @@ title: "INSERT derives write target from the payload's @table data field"
 status: Ready
 bucket: generator
 theme: mutation-write
-depends-on: [dml-emitted-mutation-table-grounding]
+depends-on: []
 created: 2026-07-23
 last-updated: 2026-07-23
 ---

@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
-| `R514` | Ground DmlEmitted from @mutation(table:) so DELETE carrier payloads survive @table-on-input removal | In Review | 2026-07-23 | [plan](dml-emitted-mutation-table-grounding.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
@@ -30,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R515` | INSERT derives write target from the payload's @table data field <sub>blocked by: [dml-emitted-mutation-table-grounding](dml-emitted-mutation-table-grounding.md)</sub> | Ready | 2026-07-23 | [plan](insert-write-target-from-payload.md) |
+| `R515` | INSERT derives write target from the payload's @table data field | Ready | 2026-07-23 | [plan](insert-write-target-from-payload.md) |
 
 ---
 
@@ -251,7 +250,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutation-write
 
-- `R514` [**Ground DmlEmitted from @mutation(table:) so DELETE carrier payloads survive @table-on-input removal**](dml-emitted-mutation-table-grounding.md) — In Review, bug
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
@@ -261,7 +259,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R145` [**Cardinality safety story for UPSERT under the multiRow: regime**](mutation-cardinality-safety-upsert.md) — Backlog, architecture
 - `R490` [**Narrow source-direct payload errors slot to List<Object>**](source-direct-payload-errors-object-slot.md) — Backlog, cleanup
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md) — Spec
-- `R515` [**INSERT derives write target from the payload's @table data field**](insert-write-target-from-payload.md) — Ready, generator, blocked by [dml-emitted-mutation-table-grounding](dml-emitted-mutation-table-grounding.md)
+- `R515` [**INSERT derives write target from the payload's @table data field**](insert-write-target-from-payload.md) — Ready, generator
 - `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md) — Backlog, cleanup
 
 ### error-channel
