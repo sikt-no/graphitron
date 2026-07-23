@@ -1,7 +1,7 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Backlog
+status: Spec
 bucket: correctness
 priority: 2
 theme: service
