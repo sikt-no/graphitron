@@ -1,7 +1,7 @@
 ---
 id: R515
 title: "INSERT derives write target from the payload's @table data field"
-status: Ready
+status: In Progress
 bucket: generator
 theme: mutation-write
 depends-on: []

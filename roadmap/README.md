@@ -29,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-07-14 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
-| `R515` | INSERT derives write target from the payload's @table data field | Ready | 2026-07-23 | [plan](insert-write-target-from-payload.md) |
+| `R515` | INSERT derives write target from the payload's @table data field | In Progress | 2026-07-23 | [plan](insert-write-target-from-payload.md) |
 
 ---
 
@@ -259,7 +259,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R145` [**Cardinality safety story for UPSERT under the multiRow: regime**](mutation-cardinality-safety-upsert.md) — Backlog, architecture
 - `R490` [**Narrow source-direct payload errors slot to List<Object>**](source-direct-payload-errors-object-slot.md) — Backlog, cleanup
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md) — Spec
-- `R515` [**INSERT derives write target from the payload's @table data field**](insert-write-target-from-payload.md) — Ready, generator
+- `R515` [**INSERT derives write target from the payload's @table data field**](insert-write-target-from-payload.md) — In Progress, generator
 - `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md) — Backlog, cleanup
 
 ### error-channel
