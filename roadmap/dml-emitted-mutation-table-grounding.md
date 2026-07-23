@@ -1,7 +1,7 @@
 ---
 id: R514
 title: "Ground DmlEmitted from @mutation(table:) so DELETE carrier payloads survive @table-on-input removal"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: mutation-write
