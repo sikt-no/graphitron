@@ -2870,6 +2870,17 @@ type DeletedFilmsIdPayload {
     deletedIds: [ID!]
 }
 
+# R514 execution-tier fixture: a payload-returning single-row DELETE whose write target is named on
+# the consuming field with @mutation(table: "storage_bin"), with no @table on the input. Before the
+# DmlEmitted @mutation(table:) grounding, the binding grounder read the write target only off the
+# input's @table, so a field-derived payload-returning DELETE grounded no producer binding, the
+# payload never registered as a producer-backed carrier, and the field rejected with the generic
+# "return type not yet supported". It now classifies as MutationDeletePayloadField; deletedId echoes
+# the deleted bin_id through the StorageBin @node encoder. See deleteStorageBinByCodePayload.
+type DeletedStorageBinPayload {
+    deletedId: ID
+}
+
 type Mutation {
     # R365 route (a), the item's headline shape: a @service MUTATION returning a multitable
     # interface. Same record-class dispatch as the Query fields, but exercises the
@@ -2958,6 +2969,16 @@ type Mutation {
     # WHERE filters on `code` while RETURNING projects bin_id for the @node `: ID` encode. See
     # StorageBin / StorageBinDeleteByCodeInput above.
     deleteStorageBinByCode(in: StorageBinDeleteByCodeInput!): ID @mutation(typeName: DELETE, table: "storage_bin")
+
+    # R514 execution-tier proof: the payload-returning analogue of deleteStorageBinByCode. Same
+    # field-named @mutation(table:) write target and UK-covering WHERE, but the carrier wraps the
+    # PK-echo in DeletedStorageBinPayload rather than returning a bare ID. Pins that a field-derived
+    # payload-returning DELETE survives classification (the DmlEmitted @mutation(table:) grounding)
+    # and executes end-to-end. Reuses StorageBinDeleteByCodeInput (no @table; code resolves against
+    # the field-named table).
+    """Delete a storage bin matched by its unique code, returning the deleted bin's NodeId in a payload."""
+    deleteStorageBinByCodePayload(in: StorageBinDeleteByCodeInput!): DeletedStorageBinPayload
+        @mutation(typeName: DELETE, table: "storage_bin")
 
     # R130 single-PK NodeId-decoded INSERT: client supplies the PK as an opaque NodeId.
     # Drives buildInsertDecodeLocals (one decode local per NodeId-bearing carrier)

@@ -1,9 +1,17 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
+import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField;
+import no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField;
 import no.sikt.graphitron.rewrite.model.MutationTableArgError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,6 +25,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @PipelineTier
 class MutationTableArgClassificationTest {
+
+    /**
+     * The payload-returning DELETE cases carry an ID PK-echo data field, whose encoder resolves
+     * against the write target's {@code @node}. The default Sakila catalog is plain jOOQ-generated and
+     * carries no NodeId metadata, so those cases use the {@code nodeidfixture} catalog where {@code Baz}
+     * (single {@code id} PK) and {@code Bar} (composite {@code id_1, id_2} PK) are hand-instrumented,
+     * mirroring {@code MutationDmlNodeIdClassificationTest}.
+     */
+    private static final RewriteContext NODEID_CTX = new RewriteContext(
+        List.of(),
+        Path.of(""),
+        Path.of(""),
+        "fake.code.generated",
+        "no.sikt.graphitron.rewrite.nodeidfixture",
+        Map.of()
+    );
 
     @Test
     void mutationTableArg_classifiesIdenticallyToTableOnInput() {
@@ -169,5 +193,136 @@ class MutationTableArgClassificationTest {
             .extracting(ValidationError::message)
             .as("field-derived path mirrors the identical @condition(override: false) rule")
             .anyMatch(m -> m.contains("syntheticName") && m.contains("@condition(override: false)"));
+    }
+
+    // ===== Payload-returning DELETE (the DmlEmitted @mutation(table:) grounding) =====
+    //
+    // The core of the item: a payload-returning DELETE that names its write target on
+    // @mutation(table:) (with the deprecated @table removed from the input) must survive
+    // classification, not reject for want of a producer binding. Before the fix the binding grounder read the write
+    // target only off the input's @table, so a field-derived DELETE grounded no DmlEmitted, the payload
+    // never registered as a producer-backed carrier, the return classified down the ScalarReturnType
+    // arm, and the generic "return type not yet supported" rejection fired. Equivalence is asserted on
+    // the classified-model verdict (the field variant, the resolved carriers), never a string diff of
+    // generated bodies.
+
+    @Test
+    void payloadDelete_single_mutationTableArg_classifiesLikeTableOnInput() {
+        String common = """
+            type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) { id: ID! @nodeId }
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
+            union DeleteBazError = ValidationErr | DbErr
+            type DeletedBazPayload { deletedId: ID @nodeId(typeName: "Baz") errors: [DeleteBazError] }
+            type Query { x: String }
+            """;
+        var tableOnInput = TestSchemaHelper.buildSchema(common + """
+            input DeleteBazInput @table(name: "baz") { id: ID! @nodeId(typeName: "Baz") }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+        var mutationTableArg = TestSchemaHelper.buildSchema(common + """
+            input DeleteBazInput { id: ID! @nodeId(typeName: "Baz") }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "baz") }
+            """, NODEID_CTX);
+
+        var a = (MutationDeletePayloadField) tableOnInput.field("Mutation", "deleteBaz");
+        var b = (MutationDeletePayloadField) mutationTableArg.field("Mutation", "deleteBaz");
+        assertThat(b.inputArg())
+            .as("@mutation(table:) resolves the same InputArgRef (name, input type, jOOQ table, cardinality)")
+            .isEqualTo(a.inputArg());
+        assertThat(b.deleteRows())
+            .as("@mutation(table:) resolves the same DeleteRows WHERE carrier")
+            .isEqualTo(a.deleteRows());
+        assertThat(b.errorChannel())
+            .as("@mutation(table:) resolves the same DML error channel")
+            .isEqualTo(a.errorChannel());
+
+        var carrierA = (SingleRecordIdFieldFromReturning) tableOnInput.field("DeletedBazPayload", "deletedId");
+        var carrierB = (SingleRecordIdFieldFromReturning) mutationTableArg.field("DeletedBazPayload", "deletedId");
+        assertThat(carrierB.encode().encodeMethod())
+            .as("@mutation(table:) resolves the same PK-echo encoder for the carrier data field")
+            .isEqualTo(carrierA.encode().encodeMethod());
+    }
+
+    @Test
+    void payloadDelete_bulk_mutationTableArg_classifiesLikeTableOnInput() {
+        String common = """
+            type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Bar") }
+            type Query { x: String }
+            """;
+        var tableOnInput = TestSchemaHelper.buildSchema(common + """
+            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId(typeName: "Bar") }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+        var mutationTableArg = TestSchemaHelper.buildSchema(common + """
+            input DeleteBarInput { id: ID! @nodeId(typeName: "Bar") }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE, table: "bar") }
+            """, NODEID_CTX);
+
+        var a = (MutationBulkDeletePayloadField) tableOnInput.field("Mutation", "deleteBars");
+        var b = (MutationBulkDeletePayloadField) mutationTableArg.field("Mutation", "deleteBars");
+        assertThat(b.inputArg())
+            .as("@mutation(table:) resolves the same bulk InputArgRef")
+            .isEqualTo(a.inputArg());
+        assertThat(b.deleteRows())
+            .as("@mutation(table:) resolves the same bulk DeleteRows WHERE carrier")
+            .isEqualTo(a.deleteRows());
+
+        var carrierA = (SingleRecordIdFieldFromReturning) tableOnInput.field("DeletedBarsPayload", "deletedIds");
+        var carrierB = (SingleRecordIdFieldFromReturning) mutationTableArg.field("DeletedBarsPayload", "deletedIds");
+        assertThat(carrierB.encode().encodeMethod())
+            .as("@mutation(table:) resolves the same PK-echo encoder for the bulk carrier data field")
+            .isEqualTo(carrierA.encode().encodeMethod());
+    }
+
+    @Test
+    void payloadDelete_bothPresent_fieldTableWins() {
+        // Both rungs present and disagreeing: input @table names shared_node, @mutation(table:) names
+        // baz (both single "id" PK). The payload's PK-echo pins @nodeId(typeName: "Baz"), so the field
+        // classifies only if the write target is baz (the field rung). Were the input @table to win,
+        // the carrier's Baz-pinned encoder would mismatch shared_node and reject. This is the drift the
+        // shared precedence helper forecloses: the grounder can no longer bind a DmlEmitted on the
+        // input's table while the classifier resolves the field's.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) { id: ID! @nodeId }
+            input DeleteInput @table(name: "shared_node") { key: String! @field(name: "id") }
+            type DeletedPayload { deletedId: ID @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            type Mutation { del(in: DeleteInput!): DeletedPayload @mutation(typeName: DELETE, table: "baz") }
+            """, NODEID_CTX);
+
+        var mut = (MutationDeletePayloadField) schema.field("Mutation", "del");
+        assertThat(mut.inputArg().table().tableName())
+            .as("@mutation(table:) outranks the input's @table as the write target")
+            .isEqualTo("baz");
+        var carrier = (SingleRecordIdFieldFromReturning) schema.field("DeletedPayload", "deletedId");
+        assertThat(carrier.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
+        assertThat(schema.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void payloadDelete_unknownMutationTable_rejectsLoudlyOnPayloadArm() {
+        // Position 4's dispatch pin: a payload-returning DELETE whose @mutation(table:) names an
+        // unknown table must still land in classifyDeletePayloadField (which calls
+        // resolveDeleteWriteTarget), so the loud unknown-table rejection fires rather than a silent
+        // misground. The grounder's silent skip must not swallow the diagnostic.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) { id: ID! @nodeId }
+            input DeleteBazInput { id: ID! @nodeId(typeName: "Baz") }
+            type DeletedBazPayload { deletedId: ID @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE, table: "no_such_table") }
+            """, NODEID_CTX);
+
+        assertThat(schema.field("Mutation", "deleteBaz"))
+            .as("the payload-returning arm rejects rather than silently mis-grounding")
+            .isInstanceOf(UnclassifiedField.class);
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("no_such_table") && m.contains("could not be resolved"));
     }
 }

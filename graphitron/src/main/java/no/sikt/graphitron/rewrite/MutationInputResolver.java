@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.EnumValue;
+import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
@@ -17,12 +19,15 @@ import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
@@ -30,6 +35,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
+import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
 /**
  * Resolves the DML {@code @mutation} concern: walks a mutation field's arguments to find the
@@ -168,6 +174,97 @@ final class MutationInputResolver {
         if (arg == null) return Optional.empty();
         Object value = arg.getValue();
         return value instanceof String s && !s.isBlank() ? Optional.of(s) : Optional.empty();
+    }
+
+    /**
+     * The {@code @mutation} verbs whose {@code @mutation(table:)} argument names a field-relative
+     * write target. A one-element {@code {DELETE}} set today. Single-sourced here so every consumer
+     * agrees on the supported set: the classifier's unsupported-verb guard (which rejects the arg on
+     * any other verb), the write-target precedence helper's verb gate ({@link #resolveDmlWriteTableRef}),
+     * and {@code mvn graphitron:validate} (which runs the classifier). Generalising to another verb is
+     * a single edit here, and it flows to the binding grounder automatically through the helper.
+     */
+    static final Set<DmlKind> TABLE_ARG_SUPPORTED_VERBS = Set.of(DmlKind.DELETE);
+
+    /**
+     * Outcome of {@link #resolveDmlWriteTableRef}: the resolved write-target table, an
+     * {@code @mutation(table:)} name the catalog does not know, or no live source at all.
+     *
+     * <p>The two failure arms exist so the two callers can diverge on diagnostics while sharing the
+     * precedence: the binding grounder ({@code RecordBindingResolver.groundDmlMutationField}) treats
+     * both {@link UnknownTable} and {@link None} as a silent skip (its contract is observation-grounding,
+     * not diagnostics), while the classify-time write-target resolver
+     * ({@code FieldBuilder.resolveDeleteWriteTarget}) turns {@link UnknownTable} into the loud
+     * {@code unknownTableRejection} and {@link None} into the "no write target" rejection.
+     */
+    sealed interface WriteTableRef {
+        /** A live write target resolved from either rung of the precedence. */
+        record Resolved(TableRef table) implements WriteTableRef {}
+        /** {@code @mutation(table:)} named a table the catalog could not resolve. */
+        record UnknownTable(String namedTable) implements WriteTableRef {}
+        /** No {@code @mutation(table:)} (on a supported verb) and no resolvable input {@code @table}. */
+        record None() implements WriteTableRef {}
+    }
+
+    /**
+     * Resolves a DML {@code @mutation} field's write-target table by the shared precedence:
+     * {@code @mutation(table:)} (the preferred, field-relative override, consulted only on a verb in
+     * {@link #TABLE_ARG_SUPPORTED_VERBS}) then the single {@code @table} input argument's table (the
+     * deprecated migration bridge). This is the one producer of the precedence fact, called from both
+     * the binding walk ({@code RecordBindingResolver.groundDmlMutationField}, which grounds the payload's
+     * {@code DmlEmitted} observation) and the classify walk
+     * ({@code FieldBuilder.resolveDeleteWriteTarget}). Two independent precedence copies would be the
+     * "two producers of one fact" drift the design forbids: a grounder that read the input {@code @table}
+     * first would ground a {@code DmlEmitted} on the wrong table whenever the two disagree, and the two
+     * resolvers would then disagree on the write target.
+     *
+     * <p>Phase-portable by construction: it reads only SDL directives ({@code @mutation(table:)},
+     * the input's {@code @table}) and the catalog through {@link ServiceCatalog#resolveTable}, both
+     * available before the classification walk. It does not consume any classified verdict (an
+     * input-object argument's {@code TableInputType} classification is downstream of the binding walk
+     * that calls this), so the input {@code @table} rung resolves the directive's SQL name straight
+     * against the catalog, exactly as {@code @table} on the input object type is grounded elsewhere.
+     *
+     * <p>The verb gate lives here rather than at the call sites: {@code @mutation(table:)} is consulted
+     * only when {@code kind} is in {@link #TABLE_ARG_SUPPORTED_VERBS}, so INSERT / UPDATE / UPSERT
+     * resolve their write target from the input {@code @table} alone (their {@code @mutation(table:)},
+     * if present, is rejected by the classifier's unsupported-verb guard), and a future verb gaining
+     * support flows to every caller through the set.
+     */
+    static WriteTableRef resolveDmlWriteTableRef(GraphQLFieldDefinition fieldDef, DmlKind kind, ServiceCatalog svc) {
+        if (TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
+            var named = parseMutationTableArg(fieldDef);
+            if (named.isPresent()) {
+                return svc.resolveTable(named.get())
+                    .<WriteTableRef>map(WriteTableRef.Resolved::new)
+                    .orElseGet(() -> new WriteTableRef.UnknownTable(named.get()));
+            }
+        }
+        // Input @table rung: the only rung for INSERT / UPDATE / UPSERT, the deprecated bridge for DELETE.
+        GraphQLInputObjectType tableInput = singleTableInputType(fieldDef);
+        if (tableInput == null) return new WriteTableRef.None();
+        String tableSqlName = argString(tableInput, DIR_TABLE, ARG_NAME).orElse(tableInput.getName().toLowerCase());
+        return svc.resolveTable(tableSqlName)
+            .<WriteTableRef>map(WriteTableRef.Resolved::new)
+            .orElse(new WriteTableRef.None());
+    }
+
+    /**
+     * The single {@code @table}-bearing input-object argument of a {@code @mutation} field, or
+     * {@code null} when there is not exactly one. Used by {@link #resolveDmlWriteTableRef} to read the
+     * input {@code @table} rung's SQL name; a multi-{@code @table} shape is left to the classifier's
+     * "more than one @table input argument" rejection rather than resolved to an arbitrary winner.
+     */
+    private static GraphQLInputObjectType singleTableInputType(GraphQLFieldDefinition fieldDef) {
+        GraphQLInputObjectType found = null;
+        for (GraphQLArgument arg : fieldDef.getArguments()) {
+            if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType iot
+                    && iot.hasAppliedDirective(DIR_TABLE)) {
+                if (found != null) return null;
+                found = iot;
+            }
+        }
+        return found;
     }
 
     /**

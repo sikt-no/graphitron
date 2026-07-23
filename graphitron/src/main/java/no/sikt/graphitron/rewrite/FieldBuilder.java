@@ -4774,19 +4774,19 @@ class FieldBuilder {
                 }
             }
             if (kind != null) {
-                // @mutation(table:) is wired only for the verbs in TABLE_ARG_SUPPORTED_VERBS
-                // (a one-element {DELETE} set today). On any other verb it is an unimplemented
-                // classification; silently ignoring an author-written directive argument is the
-                // green-build-wrong-intent failure mode the axioms forbid, so reject loudly with a
-                // typed, sealed rejection (stable LSP code). The classifier and `mvn graphitron:validate`
-                // read the same set (validate runs this classifier), so a future generalisation is a
-                // single edit point here.
+                // @mutation(table:) is wired only for the verbs in
+                // MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS (a one-element {DELETE} set today). On
+                // any other verb it is an unimplemented classification; silently ignoring an
+                // author-written directive argument is the green-build-wrong-intent failure mode the
+                // axioms forbid, so reject loudly with a typed, sealed rejection (stable LSP code). The
+                // classifier, the binding grounder, and `mvn graphitron:validate` read the same set, so
+                // a future generalisation is a single edit point on that set.
                 if (MutationInputResolver.parseMutationTableArg(fieldDef).isPresent()
-                        && !TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
+                        && !MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         new no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb(
                             kind.name(),
-                            TABLE_ARG_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
+                            MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
                 }
 
                 // Every @mutation(typeName: UPDATE) classifies through the
@@ -5045,14 +5045,6 @@ class FieldBuilder {
     }
 
     /**
- * The {@code @mutation} verbs whose classifier reads {@code @mutation(table:)} as a
-     * field-relative write target. A one-element {@code {DELETE}} set today; the classifier's
-     * unsupported-verb guard and `mvn graphitron:validate` (which runs the classifier) both read it,
-     * so generalising the parameter to another verb is a single edit here.
-     */
-    private static final Set<DmlKind> TABLE_ARG_SUPPORTED_VERBS = Set.of(DmlKind.DELETE);
-
-    /**
      * Outcome of {@link #resolveDmlWalkerInputArg}: the resolved {@code @table}-input arg surface, a
      * raw (non-{@code @table}) input arg surface, or a typed rejection.
      *
@@ -5309,32 +5301,28 @@ class FieldBuilder {
             }
         }
 
-        // 2. @mutation(table:) — the preferred, field-relative write target (rung 2).
-        Optional<TableRef> mutationTable = Optional.empty();
-        var tableArg = MutationInputResolver.parseMutationTableArg(fieldDef);
-        if (tableArg.isPresent()) {
-            var resolved = svc.resolveTable(tableArg.get());
-            if (resolved.isEmpty()) {
-                return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    ctx.unknownTableRejection(tableArg.get())));
-            }
-            mutationTable = resolved;
-        }
-
-        // 3. Precedence: @mutation(table:) (preferred) > input @table (deprecated migration bridge).
+        // 2. Write target by the shared precedence: @mutation(table:) (preferred, field-relative)
+        // then the input's @table (deprecated migration bridge). Single-sourced with the binding-walk
+        // grounder (RecordBindingResolver.groundDmlMutationField) through
+        // MutationInputResolver.resolveDmlWriteTableRef so a grounded DmlEmitted and the classifier's
+        // write target cannot disagree. The grounder treats the two failure arms as a silent skip;
+        // here they are the loud DELETE-side rejections (this is the invariant's enforcer).
         TableRef writeTarget;
-        if (mutationTable.isPresent()) {
-            writeTarget = mutationTable.get();
-        } else if (tit != null) {
-            writeTarget = tit.table();
-        } else {
-            // No live source resolved. Lead the message with the preferred replacement.
-            return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                "@mutation(typeName: DELETE) field '" + name + "' has no write target: name the table "
-                + "to delete from with @mutation(table: \"<table>\") on this field (preferred), or "
-                + "annotate the input type '" + argTypeName + "' with @table (deprecated). A DELETE "
-                + "cannot derive its table from the return type — the row is gone after the statement, "
-                + "so a @table return is not supported.")));
+        switch (MutationInputResolver.resolveDmlWriteTableRef(fieldDef, DmlKind.DELETE, svc)) {
+            case MutationInputResolver.WriteTableRef.Resolved r -> writeTarget = r.table();
+            case MutationInputResolver.WriteTableRef.UnknownTable u -> {
+                return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    ctx.unknownTableRejection(u.namedTable())));
+            }
+            case MutationInputResolver.WriteTableRef.None ignored -> {
+                // No live source resolved. Lead the message with the preferred replacement.
+                return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation(typeName: DELETE) field '" + name + "' has no write target: name the table "
+                    + "to delete from with @mutation(table: \"<table>\") on this field (preferred), or "
+                    + "annotate the input type '" + argTypeName + "' with @table (deprecated). A DELETE "
+                    + "cannot derive its table from the return type — the row is gone after the statement, "
+                    + "so a @table return is not supported.")));
+            }
         }
 
         // 4. Input fields against the write target.

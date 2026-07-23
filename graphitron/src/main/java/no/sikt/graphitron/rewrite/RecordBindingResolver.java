@@ -644,17 +644,25 @@ final class RecordBindingResolver {
     /**
  * Grounds a {@link ProducerBinding.DmlEmitted} result-axis observation for the payload
      * SDL type of every DML {@code @mutation} field whose payload is a non-{@code @table} SDL
-     * Object. Reads the {@code @mutation(typeName:)} arg to derive {@link DmlKind}, locates the
-     * single {@code @table}-bearing input argument, resolves the table via the catalog, and
-     * lifts the cardinality from the input arg's list shape (bulk-vs-single dispatch).
+     * Object. Reads the {@code @mutation(typeName:)} arg to derive {@link DmlKind}, resolves the
+     * write-target table by the shared precedence
+     * ({@link MutationInputResolver#resolveDmlWriteTableRef}: {@code @mutation(table:)} preferred on a
+     * supported verb, else the input's {@code @table}), and lifts the cardinality from the field's
+     * single input-object argument's list shape (bulk-vs-single dispatch).
      *
-     * <p>Skipped cases: missing or malformed {@code @mutation(typeName:)}, no {@code @table}
-     * input argument, unresolvable table name, ID/scalar return types, {@code @table}-bound
-     * returns (already grounded by {@link ProducerBinding.RootTable}), and unloadable record
-     * classes. Each skip preserves the build's current handling for that shape.
+     * <p>Single-sourcing the precedence with the classify-time
+     * {@code FieldBuilder.resolveDeleteWriteTarget} is what lets a payload-returning DELETE that names
+     * its table on {@code @mutation(table:)} (with the deprecated {@code @table} removed from the input
+     * type) register as a producer-backed carrier and classify down the {@code ResultReturnType} arm
+     * rather than rejecting for want of a binding. Two independent precedence copies would ground a
+     * {@code DmlEmitted} on the wrong table whenever the two rungs disagree.
      *
-     * <p>Multi-argument {@code @table} mutations and missing-{@code @table} mutations fall
-     * through silently here; the per-mutation diagnostics live in
+     * <p>Skipped cases: missing or malformed {@code @mutation(typeName:)}, no resolvable write target,
+     * an unresolvable {@code @mutation(table:)} name, zero or multiple input-object arguments,
+     * {@code @table}-bound returns (already grounded by {@link ProducerBinding.RootTable}), and
+     * unloadable record classes. Each skip is silent: the walk grounds observations, it does not
+     * diagnose. The per-mutation diagnostics (the unknown-table rejection, the more-than-one-input
+     * rejection, the no-write-target rejection) live in {@link FieldBuilder} and
      * {@link MutationInputResolver#resolveInput} and surface there.
      */
     private void groundDmlMutationField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
@@ -662,17 +670,15 @@ final class RecordBindingResolver {
         DmlKind kind = readDmlKind(field);
         if (kind == null) return;
 
-        GraphQLArgument tableArg = findSingleTableInputArg(field);
-        if (tableArg == null) return;
-
-        GraphQLInputObjectType tableInput = (GraphQLInputObjectType)
-            GraphQLTypeUtil.unwrapAll(tableArg.getType());
-        String tableSqlName = argString(tableInput, DIR_TABLE, ARG_NAME)
-            .orElse(tableInput.getName().toLowerCase());
-
-        Optional<TableRef> tableOpt = svc.resolveTable(tableSqlName);
-        if (tableOpt.isEmpty()) return;
-        TableRef table = tableOpt.get();
+        // Write target by the shared precedence, single-sourced with FieldBuilder.resolveDeleteWriteTarget.
+        // An unresolvable @mutation(table:) name or an absent source is a silent skip here (the loud
+        // rejection is the classifier's).
+        TableRef table;
+        switch (MutationInputResolver.resolveDmlWriteTableRef(field, kind, svc)) {
+            case MutationInputResolver.WriteTableRef.Resolved r -> table = r.table();
+            case MutationInputResolver.WriteTableRef.UnknownTable ignored -> { return; }
+            case MutationInputResolver.WriteTableRef.None ignored -> { return; }
+        }
 
         Class<?> recordClass;
         try {
@@ -690,8 +696,15 @@ final class RecordBindingResolver {
         // grounded as RootTable; don't double-bind.
         if (payloadObj.hasAppliedDirective(DIR_TABLE)) return;
 
+        // Cardinality from the field's single input-object argument's list shape: the @table input on
+        // the deprecated-bridge route, the raw input on the @mutation(table:) field-derived route (the
+        // same argument the classifier's RawArg arm surfaces). Zero or multiple input-object arguments
+        // skip silently — a well-formed DML field has exactly one, and the classifier rejects any other
+        // shape independently.
+        GraphQLArgument inputArg = singleInputObjectArg(field);
+        if (inputArg == null) return;
         Arity arrival =
-            GraphQLTypeUtil.unwrapNonNull(tableArg.getType()) instanceof GraphQLList
+            GraphQLTypeUtil.unwrapNonNull(inputArg.getType()) instanceof GraphQLList
                 ? Arity.MANY
                 : Arity.ONE;
 
@@ -721,13 +734,20 @@ final class RecordBindingResolver {
         }
     }
 
-    private static GraphQLArgument findSingleTableInputArg(GraphQLFieldDefinition field) {
+    /**
+     * The single input-object argument of a {@code @mutation} field, or {@code null} when there is
+     * not exactly one. The grounder lifts the DML arrival cardinality from this argument's list shape.
+     * A well-formed DML mutation carries exactly one input-object argument (the classifier rejects any
+     * non-input-object argument and any second input object), so this coincides with the {@code @table}
+     * input on the deprecated-bridge route and with the raw input on the {@code @mutation(table:)}
+     * field-derived route; zero or multiple leaves the field for the classifier to reject and the
+     * grounder to skip.
+     */
+    private static GraphQLArgument singleInputObjectArg(GraphQLFieldDefinition field) {
         GraphQLArgument found = null;
         for (var arg : field.getArguments()) {
-            GraphQLType unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
-            if (unwrapped instanceof GraphQLInputObjectType iot
-                    && iot.hasAppliedDirective(DIR_TABLE)) {
-                if (found != null) return null;  // multi-table: defer to MutationInputResolver
+            if (GraphQLTypeUtil.unwrapAll(arg.getType()) instanceof GraphQLInputObjectType) {
+                if (found != null) return null;
                 found = arg;
             }
         }

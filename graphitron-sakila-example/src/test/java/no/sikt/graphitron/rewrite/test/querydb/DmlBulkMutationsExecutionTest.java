@@ -1086,4 +1086,36 @@ class DmlBulkMutationsExecutionTest {
                 .where(DSL.field("code").in(code, survivorCode)).execute();
         }
     }
+
+    @Test
+    void deleteStorageBinByCodePayload_fieldTableWriteTarget_roundTrips() {
+        // The payload-returning sibling of deleteStorageBinByCode. The write target is named on
+        // the field (@mutation(table: "storage_bin")); the input carries no @table. This is the shape
+        // that rejected before the DmlEmitted @mutation(table:) grounding — a field-derived
+        // payload-returning DELETE grounded no producer binding, so the carrier never registered and
+        // the field fell through to the generic "return type not yet supported". It must now
+        // classify, delete the UK-matched row, and echo its bin_id as a StorageBin NodeId inside the
+        // payload's deletedId.
+        String code = randomMarker("R514-payload");
+        String survivorCode = randomMarker("R514-payload-KEEP");
+        int targetId = insertStorageBin(code, "target");
+        int survivorId = insertStorageBin(survivorCode, "survivor");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteStorageBinByCodePayload(in: { code: "%s" }) { deletedId }
+                }
+                """.formatted(code));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payload = (Map<String, Object>) data.get("deleteStorageBinByCodePayload");
+            assertThat((String) payload.get("deletedId"))
+                .as("the field-named write target's PK is projected through RETURNING and encoded")
+                .isEqualTo(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("StorageBin", targetId));
+            assertThat(countStorageBin(targetId)).as("row matched by its UK value is deleted").isZero();
+            assertThat(countStorageBin(survivorId)).as("sibling with a different UK survives").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("storage_bin"))
+                .where(DSL.field("code").in(code, survivorCode)).execute();
+        }
+    }
 }
