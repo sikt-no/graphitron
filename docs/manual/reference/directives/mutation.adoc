@@ -20,12 +20,12 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 | Name | Type | Default | Description
 | `typeName` | `MutationType!` | (required) | The SQL shape to emit. `INSERT` writes a row; `UPDATE` modifies the row identified by the input's primary-key-or-unique-key coverage; `DELETE` removes the row(s) identified the same way; `UPSERT` emits `INSERT … ON CONFLICT … DO UPDATE`.
 | `multiRow` | `Boolean` | `false` | On `DELETE`, opts into a broadcast delete when the input covers no primary key or unique key (the filter may match more than one row). Rejected on `INSERT` (no `WHERE` clause), `UPDATE` (no broadcast shape; cover a key), and `UPSERT`.
-| `table` | `String` | (none) | On `DELETE`, names the SQL table to delete from, on the consuming field. The preferred way to give a `DELETE` its write target: a bare `ID` / `Boolean` / count return carries no table, so `@mutation(table: "film")` names it directly (the field-level analogue of xref:service.adoc[`@service(argMapping:)`]). It supersedes the deprecated `@table` on the input type; when both are present the field-level `table:` wins and the input's `@table` is outranked. Wired for `DELETE` only; supplying it on any other verb is rejected.
+| `table` | `String` | (none) | On `DELETE` and `INSERT`, names the SQL table to write to, on the consuming field. It gives a write that carries no table on its return side a field-relative write target: a bare `ID` / `Boolean` / count return names no table, so `@mutation(table: "film")` names it directly (the field-level analogue of xref:service.adoc[`@service(argMapping:)`]). It supersedes the deprecated `@table` on the input type; when both are present the field-level `table:` wins and the input's `@table` is outranked. On `INSERT` it is the fallback for a return that names no table; an `INSERT` whose return *does* name the table (a `@table` return, or a payload's `@table`-element data field) needs neither `table:` nor `@table` on the input. Wired for `DELETE` and `INSERT`; supplying it on `UPDATE` or `UPSERT` is rejected.
 |===
 
 == Input shape
 
-A `@mutation` field takes exactly one `@table` input argument. Its fields bind to columns of that table (`@field(name:)`, or the SDL name by default).
+A `@mutation` field takes exactly one input argument. Its fields bind to columns of the write target's table (`@field(name:)`, or the SDL name by default). The input traditionally carries the write target on its own `@table`, but that directive is xref:table.adoc[deprecated on inputs]: for `INSERT` the write target is derived from the return (see <<_naming_the_insert_write_target>>), and for `DELETE` it is named on the field with `@mutation(table:)` (see <<_naming_the_delete_write_target>>). `UPDATE` and `UPSERT` still read it from the input's `@table` for now.
 
 An input field may also be a plain input object with *no* `@table` directive: a grouping shape whose own fields map onto columns of the *same* table. The grouping carries no DML semantics; the leaves flatten onto the outer table as if declared at the top level, and absent-vs-null is honored independently at every nesting layer (an absent or `null` group skips its whole subtree; a present group descends per leaf). The tutorial's xref:../../tutorial/05-mutations.adoc#_grouping_fields_with_nested_input_types[Grouping fields with nested input types] walks a worked example. A nested input that is itself `@table`-backed (introducing a second DML target) is a separate compound-mutation shape and is not admitted here.
 
@@ -35,7 +35,7 @@ The tutorial's three film mutations cover the three most common shapes:
 
 [source,graphql]
 ----
-input FilmCreateInput @table(name: "film") {
+input FilmCreateInput {                      # no @table: the write target is derived from the Film return
     title:      String! @field(name: "title")
     languageId: Int!    @field(name: "language_id")
 }
@@ -84,9 +84,33 @@ For a bulk mutation (list input, `[Film!]!` return), the follow-up SELECT joins 
 
 `DELETE` identifies rows the same way (primary-key-or-unique-key coverage), but has no `SET` clause: *every* admitted input column is a `WHERE` filter, and the deleted row's primary key is returned through `RETURNING`. Extra input columns beyond the matched key add further `AND`ed predicates (they narrow the match, they don't move to a `SET` side). When the input covers no primary key or unique key, the DELETE is rejected at build time so a non-unique filter cannot silently broadcast; set `multiRow: true` on the `@mutation` directive to opt into a deliberate broadcast (non-key) delete that may remove more than one row.
 
+== Naming the INSERT write target
+
+An `INSERT` usually names its write target on the *return* side: the inserted row's type is the natural return. Graphitron derives the write target by this precedence:
+
+. **The return's own `@table` (preferred).** A direct `@table` return (`createFilm(...): Film`, `Film` carrying `@table`), or a carrier payload whose single data field is a `@table`-element (`createFilms(...): FilmsPayload`, `FilmsPayload { films: [Film!] }`). The input needs no `@table`; its fields resolve against the return's table.
+. **`@mutation(table:)` on the field.** For the encoded-`ID` / scalar-return `INSERT` whose return names no table (`createFilm(in: FilmInput!): ID @mutation(typeName: INSERT, table: "film")`).
+. **`@table` on the input type (deprecated bridge).** Honored for migration, but xref:table.adoc[deprecated] and warned.
+
+Where the return names the table, any `@mutation(table:)` or input `@table` also present must name the *same* table (the `RETURNING` projection reads from the write target, so a disagreement cannot emit a coherent statement) — a mismatch is rejected at build time. An `INSERT` that names its table by none of the three rungs is rejected, with the message leading with the preferred return-derived fix.
+
+[source,graphql]
+----
+input FilmInput {              # no @table: the write target is derived from the return
+    title: String! @field(name: "title")
+}
+type FilmsPayload { films: [Film!] }   # Film is @table(name: "film")
+
+type Mutation {
+    createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT)
+}
+----
+
+`UPDATE` and `UPSERT` still read their write target from the `@table` on the input type.
+
 == Naming the DELETE write target
 
-`INSERT`, `UPDATE`, and `UPSERT` read their write target from the `@table` on the input type. `DELETE` is different: it commonly returns a bare `ID` (the encoded primary key of the deleted row), a `Boolean`, or a delete count, and it can never return the deleted row's `@table` type, because the row is gone after the statement runs. So a `DELETE` names its write target on the consuming field with `@mutation(table:)`:
+`UPDATE` and `UPSERT` read their write target from the `@table` on the input type. `DELETE` is different: it commonly returns a bare `ID` (the encoded primary key of the deleted row), a `Boolean`, or a delete count, and it can never return the deleted row's `@table` type, because the row is gone after the statement runs. So a `DELETE` names its write target on the consuming field with `@mutation(table:)`:
 
 [source,graphql]
 ----
@@ -153,7 +177,7 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 
 == Constraints
 
-* `INSERT`/`UPDATE`/`UPSERT` take their write target from the input type's `@table`. For `DELETE`, prefer `@mutation(table: "…")` on the field: it names the table without the deprecated `@table` on the input type (a `DELETE` cannot derive the table from its return type, since the row is gone after the statement). A `DELETE` that carries neither `@mutation(table:)` nor `@table` on its input is rejected at build time, with the message naming `@mutation(table:)` as the fix.
+* `INSERT` derives its write target from the return (a `@table` return, or a payload's `@table`-element data field), falling back to `@mutation(table:)` for an encoded-`ID` / scalar return; the input's `@table` is the deprecated bridge (see <<_naming_the_insert_write_target>>). `UPDATE`/`UPSERT` take their write target from the input type's `@table`. For `DELETE`, prefer `@mutation(table: "…")` on the field: it names the table without the deprecated `@table` on the input type (a `DELETE` cannot derive the table from its return type, since the row is gone after the statement). A `DELETE` that carries neither `@mutation(table:)` nor `@table` on its input is rejected at build time, with the message naming `@mutation(table:)` as the fix.
 * `UPDATE` and `DELETE` require the input columns to cover a primary key or unique key of the `@table` (inferred from the catalog, no directive needed); otherwise the build fails so a non-unique filter cannot silently broadcast. `DELETE` can opt out with `multiRow: true` for a deliberate broadcast; `UPDATE` has no broadcast shape (cover a key). `@lookupKey` on a mutation input field is no longer supported (it identified rows in the pre-catalog model); remove it.
 * `UPDATE` requires at least one input field outside the matched key (otherwise the `SET` clause is empty). `DELETE` has no such requirement — a key-only DELETE is the canonical single-row delete. `UPSERT` is exempt on the SET side: an upsert with no SET-clause fields is `INSERT … ON CONFLICT DO NOTHING`, which is a legitimate shape.
 * `@mutation` and xref:service.adoc[`@service`] are mutually exclusive on the same field. Pick one: `@mutation` for fully-generated DB operations, `@service` for handing the operation to custom Java.

@@ -2553,6 +2553,16 @@ input FilmCreateInput @table(name: "film") {
     rentalDuration: Int     @field(name: "rental_duration")
 }
 
+# INSERT write-target-from-return fixture: the same columns as FilmCreateInput but with NO @table on
+# the input. The write target is derived from the consuming field's return
+# (createFilmsReturnDerivedPayload : FilmsReturnDerivedPayload, whose data field element is the @table
+# type Film), so no @table on the input is needed.
+input FilmCreateReturnDerivedInput {
+    title:          String! @field(name: "title")
+    languageId:     Int!    @field(name: "language_id")
+    rentalDuration: Int     @field(name: "rental_duration")
+}
+
 # R258 fixture: minimal UPDATE input, partitioned by the UpdateRowsWalker's PK-or-UK
 # matched-key membership. `filmId` covers the single-column PK, so it lands in the WHERE clause;
 # the non-key columns `title` and `description` land in the SET clause. This input type is shared
@@ -2787,6 +2797,14 @@ type FilmPayload {
 # transaction. The data field's @table (film) must equal the input @table (film), enforced
 # structurally by ProducerBinding.DmlEmitted's compact-constructor invariant.
 type FilmsPayload {
+    films: [Film!]
+}
+
+# Execution-tier fixture for the INSERT write target derived from the return (no @table on the
+# input). Structurally identical to FilmsPayload, but consumed by createFilmsReturnDerivedPayload
+# whose input FilmCreateReturnDerivedInput carries no @table: the write target (film) is derived
+# from this payload's @table-element data field. Byte-identical carrier to the @table-on-input form.
+type FilmsReturnDerivedPayload {
     films: [Film!]
 }
 
@@ -3034,6 +3052,12 @@ type Mutation {
     # to R145 under R144's cardinality-safety regime.
     createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
     updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+
+    # INSERT write-target-from-return fixture: same bulk payload shape as createFilmsPayload, but the
+    # input FilmCreateReturnDerivedInput carries no @table. The write target (film) is derived from the
+    # payload's @table-element data field. Round-tripped by DmlBulkMutationsExecutionTest to confirm the
+    # return-derived carrier executes identically to the @table-on-input form.
+    createFilmsReturnDerivedPayload(in: [FilmCreateReturnDerivedInput!]!): FilmsReturnDerivedPayload @mutation(typeName: INSERT)
 
     # R12 + R161 execute-tier fixture: carrier-walk DML mutation that returns a payload with an
     # errors slot binding to ErrorChannel.LocalContext. Happy path mirrors createFilmPayload

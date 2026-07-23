@@ -286,6 +286,47 @@ class SingleRecordPayloadPipelineTest {
     }
 
     @Test
+    void payloadInsert_groundedCarrierTableEqualsClassifiedWriteTarget_returnDerived() {
+        // The divergence enforcer: with @table dropped from the input, the INSERT write target is
+        // derived from the payload's @table-element data field (rung 1). The binding grounder and the
+        // classifier read that single fact through resolveDmlWriteTableRef, so the grounded carrier
+        // table must equal the classified leaf's write target — the drift the shared helper forecloses.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmInput { title: String }
+            type Query { x: String }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT) }
+            """);
+        var carrierType = schema.type("FilmsPayload");
+        assertThat(carrierType)
+            .as("the return-derived payload INSERT still grounds a producer-backed carrier")
+            .isInstanceOf(GraphitronType.JooqTableRecordType.class);
+        var leaf = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "createFilms");
+        assertThat(((GraphitronType.JooqTableRecordType) carrierType).table())
+            .as("the grounded carrier table equals the classified leaf's write target (no divergence)")
+            .isEqualTo(leaf.tableInputArg().inputTable());
+    }
+
+    @Test
+    void payloadInsert_groundedCarrierTableEqualsClassifiedWriteTarget_inputTableBridge() {
+        // The same equality holds on the deprecated input-@table rung (rung 3): grounding it or deriving
+        // it from the return resolves the identical write target.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT) }
+            """);
+        var carrierType = schema.type("FilmsPayload");
+        assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
+        var leaf = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "createFilms");
+        assertThat(((GraphitronType.JooqTableRecordType) carrierType).table())
+            .isEqualTo(leaf.tableInputArg().inputTable());
+    }
+
+    @Test
     void authoredCarrier_atRecordWithClassName_remainsBacked() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }

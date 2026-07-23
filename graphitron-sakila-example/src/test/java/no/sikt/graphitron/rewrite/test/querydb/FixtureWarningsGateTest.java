@@ -140,24 +140,21 @@ class FixtureWarningsGateTest {
      * Pins the {@code @table}-on-input deprecation advisory on the broad example (the minimal-SDL
      * behavior lives in {@code TableOnInputDeprecationWarningTest}). The example keeps {@code @table} on
      * many mutation / lookup inputs, so the category must be present and every entry must be
-     * deprecation-shaped and attributed to the schema. The load-bearing assertion is the carve-out: the
-     * one encoded-ID INSERT the fixture declares ({@code createKeyedNode(in: CreateKeyedNodeInput!): ID},
-     * whose {@code KeyedNode @node} return carries no {@code @table} for a field-relative derivation to
-     * collapse to) must <em>not</em> warn, while a projected consumer like {@code FilmCreateInput} must.
-     * The DELETE cutover made DELETE-consumed inputs warn again (the field-relative {@code @mutation(table:)}
-     * path now exists as the replacement), so {@code FilmDeleteInput} warns and the advisory names
-     * {@code @mutation(table:)}. When a future phase makes the INSERT/UPSERT write target field-relative
-     * and empties the encoded carve-out, the {@code CreateKeyedNodeInput} exclusion here flips, which is
-     * the intended signal.
+     * deprecation-shaped and attributed to the schema. No input is carved out: DELETE and INSERT both
+     * have field-relative write-target paths, so every author-written {@code @table} input warns. A
+     * projected-return INSERT ({@code FilmCreateInput -> Film / FilmPayload}) and the encoded-ID INSERT
+     * ({@code createKeyedNode(in: CreateKeyedNodeInput!): ID}, whose {@code KeyedNode @node} return
+     * carries no {@code @table}) both warn now, and the INSERT-consumed advisory names the return-derived
+     * fix and {@code @mutation(table:)}; the DELETE-consumed advisory names {@code @mutation(table:)}.
      */
     @Test
-    void tableOnInputDeprecationsCarveOutEncodedIdInsert() {
+    void tableOnInputDeprecationsFireForEveryTableInput() {
         List<BuildWarning> deprecations = buildAllWarnings().stream()
             .filter(FixtureWarningsGateTest::isTableOnInputDeprecation)
             .toList();
 
         assertThat(deprecations)
-            .as("the example keeps @table on input types, so the R332 deprecation category must fire")
+            .as("the example keeps @table on input types, so the deprecation category must fire")
             .isNotEmpty();
 
         assertThat(deprecations)
@@ -171,11 +168,19 @@ class FixtureWarningsGateTest {
         assertThat(deprecations).extracting(BuildWarning::message)
             .as("a projected-return INSERT input (FilmCreateInput -> Film / FilmPayload) warns")
             .anyMatch(m -> m.contains("'FilmCreateInput'"))
-            .as("the encoded-ID INSERT input (CreateKeyedNodeInput -> ID) is carved out and must not warn")
-            .noneMatch(m -> m.contains("'CreateKeyedNodeInput'"));
+            .as("the encoded-ID INSERT input (CreateKeyedNodeInput -> ID) now warns too (carve-out retired)")
+            .anyMatch(m -> m.contains("'CreateKeyedNodeInput'"));
 
-        // DELETE cutover: a DELETE @table-on-input now warns, and the advisory names @mutation(table:)
-        // as the replacement (the earlier suppression is retired now that the field-relative path exists).
+        // The encoded-ID INSERT advisory names the field-relative replacement for INSERT.
+        assertThat(deprecations)
+            .filteredOn(w -> w.message().contains("'CreateKeyedNodeInput'"))
+            .as("the encoded-ID INSERT @table-on-input warns, naming the INSERT field-relative replacement")
+            .isNotEmpty()
+            .allSatisfy(w -> assertThat(w.message())
+                .contains("@mutation(typeName: INSERT)")
+                .contains("@mutation(table:"));
+
+        // A DELETE @table-on-input warns, and the advisory names @mutation(table:) as the replacement.
         assertThat(deprecations)
             .filteredOn(w -> w.message().contains("'FilmDeleteInput'"))
             .as("a DELETE @table-on-input (FilmDeleteInput) now warns, naming @mutation(table:)")

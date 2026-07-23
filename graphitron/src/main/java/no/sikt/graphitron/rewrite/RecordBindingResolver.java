@@ -670,11 +670,13 @@ final class RecordBindingResolver {
         DmlKind kind = readDmlKind(field);
         if (kind == null) return;
 
-        // Write target by the shared precedence, single-sourced with FieldBuilder.resolveDeleteWriteTarget.
-        // An unresolvable @mutation(table:) name or an absent source is a silent skip here (the loud
-        // rejection is the classifier's).
+        // Write target by the shared precedence, single-sourced with the classify-phase resolvers
+        // (FieldBuilder.resolveDeleteWriteTarget / resolveInsertWriteTarget). The return-derived rung
+        // (INSERT) grounds a payload carrier off its own @table-element data field; @mutation(table:)
+        // and the input @table are the lower rungs. An unresolvable @mutation(table:) name or an absent
+        // source is a silent skip here (the loud rejection is the classifier's).
         TableRef table;
-        switch (MutationInputResolver.resolveDmlWriteTableRef(field, kind, svc)) {
+        switch (MutationInputResolver.resolveDmlWriteTableRef(field, kind, svc, ctx)) {
             case MutationInputResolver.WriteTableRef.Resolved r -> table = r.table();
             case MutationInputResolver.WriteTableRef.UnknownTable ignored -> { return; }
             case MutationInputResolver.WriteTableRef.None ignored -> { return; }

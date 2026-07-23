@@ -733,6 +733,38 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    void bulkInsertReturnDerivedWriteTarget_roundTrips() {
+        // The write target is derived from the return (createFilmsReturnDerivedPayload :
+        // FilmsReturnDerivedPayload, whose data field element is the @table type Film); the input
+        // FilmCreateReturnDerivedInput carries no @table. The generated statement must execute
+        // identically to the @table-on-input bulk INSERT, preserving input order in the response.
+        String m1 = randomMarker("R515-INSERT-c");
+        String m2 = randomMarker("R515-INSERT-a");
+        String m3 = randomMarker("R515-INSERT-b");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmsReturnDerivedPayload(in: [
+                        { title: "%s", languageId: 1 },
+                        { title: "%s", languageId: 1 },
+                        { title: "%s", languageId: 1 }
+                    ]) { films { title } }
+                }
+                """.formatted(m1, m2, m3));
+            Map<String, Object> payload = (Map<String, Object>) data.get("createFilmsReturnDerivedPayload");
+            List<Map<String, Object>> films = (List<Map<String, Object>>) payload.get("films");
+            assertThat(films).hasSize(3);
+            assertThat(films).extracting(r -> r.get("title")).containsExactly(m1, m2, m3);
+            assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("title").in(m1, m2, m3)))
+                .as("all three return-derived INSERT rows landed in the film table")
+                .isEqualTo(3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("title").in(m1, m2, m3)).execute();
+        }
+    }
+
+    @Test
     void bulkInsertWithSingleRowExercisesBulkLeafPath() {
         // N=1 sanity test confirming the bulk leaf admits and emits correctly when the input
         // list has exactly one element. The classifier admits MutationBulkDmlRecordField for

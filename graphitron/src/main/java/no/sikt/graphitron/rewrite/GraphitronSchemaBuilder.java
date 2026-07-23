@@ -25,7 +25,6 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
@@ -859,9 +858,11 @@ public class GraphitronSchemaBuilder {
      * {@code INPUT_OBJECT} that <em>explicitly declares</em> {@code @table} (read off
      * {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId} — the consumer-derived
      * table branch of {@link TypeBuilder#buildInputType} carries no author-written directive and is
-     * deliberately not flagged) and emits a non-fatal {@link BuildWarning.NoRule} advisory per usage,
-     * except those in the encoded-ID / scalar-return INSERT/UPSERT carve-out
-     * ({@link #encodedWriteTargetInputTypes}).
+     * deliberately not flagged) and emits a non-fatal {@link BuildWarning.NoRule} advisory per usage.
+     * No input is carved out: DELETE ({@code @mutation(table:)}) and INSERT (return-derived, or
+     * {@code @mutation(table:)} for encoded returns) both have field-relative write-target paths now,
+     * so the warning fires on every author-written {@code @table} input and names the per-verb
+     * replacement explicitly.
      *
      * <p>The message names no roadmap ID (D2): it gives the replacement instruction (the write target
      * is derived from the consuming mutation field's resolved table) rather than pointing at the
@@ -873,20 +874,27 @@ public class GraphitronSchemaBuilder {
      * {@link EntityResolutionBuilder}.
      */
     private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
-        Set<String> carveOut = encodedWriteTargetInputTypes(ctx);
-        // DELETE now has a field-relative write-target path (@mutation(table:)), so its
-        // inputs are no longer carved out of the warning; instead the warning names that replacement
-        // explicitly. The commit-1 suppression set is gone (additive-then-cutover): the warning fires
-        // on DELETE inputs too, driving migration.
+        // Both DELETE and INSERT have field-relative write-target paths, so no input is carved out of
+        // the warning; instead it names the field-relative replacement per verb. The encoded-ID INSERT
+        // carve-out retired once the INSERT write target became field-relative, so those inputs warn too.
         Set<String> deleteConsumed = deleteConsumedInputTypes(ctx);
+        Set<String> insertConsumed = insertConsumedInputTypes(ctx);
         for (var type : ctx.schema.getAllTypesAsList()) {
             if (!(type instanceof GraphQLInputObjectType input)) continue;
             if (!input.hasAppliedDirective(DIR_TABLE)) continue;
-            if (carveOut.contains(input.getName())) continue;
-            String replacement = deleteConsumed.contains(input.getName())
-                ? " For the consuming `@mutation(typeName: DELETE)` field, set the write target with "
-                  + "`@mutation(table: \"…\")` on the field, not with `@table` on the input type."
-                : "";
+            String replacement;
+            if (deleteConsumed.contains(input.getName())) {
+                replacement = " For the consuming `@mutation(typeName: DELETE)` field, set the write "
+                    + "target with `@mutation(table: \"…\")` on the field, not with `@table` on the "
+                    + "input type.";
+            } else if (insertConsumed.contains(input.getName())) {
+                replacement = " For the consuming `@mutation(typeName: INSERT)` field, the write target "
+                    + "is derived from the field's return type (a `@table` return, or a payload's "
+                    + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
+                    + "`@mutation(table: \"…\")` on the field.";
+            } else {
+                replacement = "";
+            }
             ctx.addWarning(new BuildWarning.NoRule(
                 "`@table` on input type '" + input.getName() + "' is deprecated and will be removed "
                 + "in a future release; the write target is derived from the consuming mutation "
@@ -896,43 +904,33 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * The SDL input-type names in the encoded-ID / scalar-return INSERT/UPSERT carve-out (D3).
-     * These are the {@link MutationField.MutationInsertTableField} /
-     * {@link MutationField.MutationUpsertTableField} whose {@link MutationField.DmlTableField#returnExpression()}
-     * is an {@code Encoded*} arm: their return type carries no {@code @table}, so there is nothing for
-     * the field-relative derivation to collapse to, and the input's {@code @table} is currently the
-     * only signal naming the write target. Every part is pre-resolved on the classified model (the
-     * encoded-vs-projected axis is a settled {@link DmlReturnExpression} arm; the leaf names its input
-     * type), so no {@code lookAheadVerdict} or reflection is needed.
+ * The SDL input-type names consumed by a {@code @mutation(typeName: INSERT)} field. Drives the
+     * INSERT-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
+     * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded
+     * return). Every INSERT leaf carries an {@link ArgumentRef.InputTypeArg.TableInputArg} whose
+     * {@code typeName()} is the input type; the record-carrier DML leaves are gated on
+     * {@code kind() == INSERT} (UPSERT is refused upstream, but the leaf type structurally permits it).
      *
-     * <p>Conservative type-level rule (D3): an input reused by both an encoded INSERT/UPSERT and a
-     * projected consumer is suppressed (added to the set once <em>any</em> consumer is an encoded
-     * INSERT/UPSERT), because a false fire tells an author to delete the only signal naming their
-     * write target and breaks their build, whereas a false suppress costs one extra release carrying a
-     * directive. Per-{@code (input, consumer)} precision is a future axis.
-     *
-     * <p>This set is retired once the write target is field-relative: encoded INSERT/UPSERT inputs no
-     * longer need {@code @table} and this set empties, letting the warning fire on them too.
+     * <p>Earlier a sibling set ({@code encodedWriteTargetInputTypes}) suppressed the warning on the
+     * encoded-ID / scalar-return INSERT inputs, because the input's {@code @table} was then the only
+     * signal naming the write target; that set retired when {@code @mutation(table:)} became an INSERT
+     * write-target rung, so the warning now fires on those inputs and this set only selects wording.
      */
-    private static Set<String> encodedWriteTargetInputTypes(BuildContext ctx) {
-        Set<String> carveOut = new LinkedHashSet<>();
+    private static Set<String> insertConsumedInputTypes(BuildContext ctx) {
+        Set<String> consumed = new LinkedHashSet<>();
         for (var field : ctx.fieldRegistry.entries().values()) {
             switch (field) {
-                case MutationField.MutationInsertTableField f -> {
-                    if (isEncoded(f.returnExpression())) carveOut.add(f.tableInputArg().typeName());
+                case MutationField.MutationInsertTableField f -> consumed.add(f.tableInputArg().typeName());
+                case MutationField.MutationDmlRecordField f -> {
+                    if (f.kind() == no.sikt.graphitron.rewrite.model.DmlKind.INSERT) consumed.add(f.tableInputArg().typeName());
                 }
-                case MutationField.MutationUpsertTableField f -> {
-                    if (isEncoded(f.returnExpression())) carveOut.add(f.tableInputArg().typeName());
+                case MutationField.MutationBulkDmlRecordField f -> {
+                    if (f.kind() == no.sikt.graphitron.rewrite.model.DmlKind.INSERT) consumed.add(f.tableInputArg().typeName());
                 }
-                default -> { /* only the two @table-carrying direct-return DML leaves are in scope */ }
+                default -> { /* only the INSERT leaves carry a TableInputArg write target */ }
             }
         }
-        return carveOut;
-    }
-
-    private static boolean isEncoded(DmlReturnExpression expr) {
-        return expr instanceof DmlReturnExpression.EncodedSingle
-            || expr instanceof DmlReturnExpression.EncodedList;
+        return consumed;
     }
 
     /**

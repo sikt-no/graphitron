@@ -34,13 +34,13 @@ type Customer implements Node @table(name: "customer") @node {
 
 A query that selects `customers { firstName }` produces a `SELECT customer.first_name` against this binding. Because the type carries `@table`, every `@field`-annotated column inside resolves against the `customer` table by default; nested types like `Address` re-bind via their own `@table` and join to `Customer` through `@reference`.
 
-For mutations, `@table` is also required on the *input* type so the generator knows which table the `INSERT`, `UPDATE`, or `UPSERT` targets:
+For `UPDATE` and `UPSERT` mutations, `@table` is still read from the *input* type so the generator knows which table the write targets. `INSERT` and `DELETE` no longer need it (see the deprecation note below):
 
 [source,graphql]
 ----
-input FilmCreateInput @table(name: "film") {
-    title:      String! @field(name: "title")
-    languageId: Int!    @field(name: "language_id")
+input FilmUpdateInput @table(name: "film") {
+    filmId: Int!    @field(name: "film_id")
+    title:  String! @field(name: "title")
 }
 ----
 
@@ -53,7 +53,7 @@ A mutation's write/read target is derived from the consuming field's resolved ta
 
 For a `@mutation(typeName: DELETE)` field, set the write target with xref:mutation.adoc[`@mutation(table: "…")`] on the field instead of `@table` on the input type. A `DELETE` cannot derive its table from the return type (the row is gone after the statement, so a `@table` return is not supported), and `@mutation(table:)` supersedes the input directive; a `DELETE` input still carrying `@table` earns this warning, naming `@mutation(table:)` as the replacement.
 
-One `INSERT`/`UPSERT` case still needs the directive for now: a mutation returning an *encoded ID or scalar* (e.g. `createFilm(...): ID`). There the return type carries no `@table`, so the input's `@table` is currently the only signal naming the write target, and the build does not warn on that usage yet. The other write shapes (returning a `@table` type, or a payload wrapping one) already derive the target from the return, so their inputs warn today.
+For a `@mutation(typeName: INSERT)` field, the write target is derived from the return: a `@table` return, or a carrier payload's `@table`-element data field. For the encoded-`ID` / scalar-return `INSERT` whose return names no table (e.g. `createFilm(...): ID`), name it with xref:mutation.adoc[`@mutation(table: "…")`] on the field. Either way the input needs no `@table`, and one still carrying it earns this warning; the advisory names the return-derived fix and `@mutation(table:)`. `UPDATE` and `UPSERT` still read the write target from the input's `@table` for now; those inputs earn the base deprecation warning too, but it names no field-relative replacement (there is none yet).
 ====
 
 == Constraints

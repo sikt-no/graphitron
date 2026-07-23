@@ -187,7 +187,6 @@ class FieldBuilder {
     private final PaginationResolver paginationResolver;
     private final ConditionResolver conditionResolver;
     private final InputFieldResolver inputFieldResolver;
-    private final MutationInputResolver mutationInputResolver;
     private final EnumMappingResolver enumMappingResolver;
     private final SourceRowDirectiveResolver sourceRowResolver;
 
@@ -215,7 +214,6 @@ class FieldBuilder {
         this.paginationResolver = new PaginationResolver();
         this.conditionResolver = new ConditionResolver(ctx, svc);
         this.inputFieldResolver = new InputFieldResolver(ctx);
-        this.mutationInputResolver = new MutationInputResolver(ctx, conditionResolver, enumMappingResolver);
         this.sourceRowResolver = new SourceRowDirectiveResolver(ctx, this);
     }
 
@@ -4762,7 +4760,7 @@ class FieldBuilder {
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
             DmlKind kind;
-            switch (mutationInputResolver.parseDmlKind(fieldDef)) {
+            switch (MutationInputResolver.parseDmlKind(fieldDef)) {
                 case MutationInputResolver.DmlKindResult.Absent a -> kind = null;
                 case MutationInputResolver.DmlKindResult.Kind k -> kind = k.kind();
                 case MutationInputResolver.DmlKindResult.Unknown u -> {
@@ -4775,9 +4773,9 @@ class FieldBuilder {
             }
             if (kind != null) {
                 // @mutation(table:) is wired only for the verbs in
-                // MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS (a one-element {DELETE} set today). On
-                // any other verb it is an unimplemented classification; silently ignoring an
-                // author-written directive argument is the green-build-wrong-intent failure mode the
+                // MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS ({DELETE, INSERT} today). On any
+                // other verb (UPDATE / UPSERT) it is an unimplemented classification; silently ignoring
+                // an author-written directive argument is the green-build-wrong-intent failure mode the
                 // axioms forbid, so reject loudly with a typed, sealed rejection (stable LSP code). The
                 // classifier, the binding grounder, and `mvn graphitron:validate` read the same set, so
                 // a future generalisation is a single edit point on that set.
@@ -4827,138 +4825,35 @@ class FieldBuilder {
                     return classifyDeleteTableField(fieldDef, parentTypeName, name, location, deleteReturnType);
                 }
 
-                ArgumentRef.InputTypeArg.TableInputArg tia;
-                switch (mutationInputResolver.resolveInput(fieldDef, kind)) {
-                    case MutationInputResolver.Resolved.Ok ok -> tia = ok.tia();
-                    case MutationInputResolver.Resolved.Rejected r -> {
-                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(r.message()));
-                    }
+                // @mutation(typeName: UPSERT) is deferred (the conflict-target's uniqueness and the
+                // bulk-UPSERT cardinality story are not yet designed). Refused here at the dispatch,
+                // where the retired resolveInput used to refuse it; UPSERT inherits the INSERT ladder
+                // when it un-defers, since classifyInsert*Field and resolveInsertWriteTarget are the
+                // single edit points.
+                if (kind == DmlKind.UPSERT) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                        "@mutation(typeName: UPSERT) is not yet supported; the conflict-target's uniqueness "
+                        + "and the bulk-UPSERT cardinality story are not yet designed."));
                 }
 
-                String rawReturn = baseTypeName(fieldDef);
-                ReturnTypeRef returnType = ctx.resolveReturnType(rawReturn, buildWrapper(fieldDef));
-
-                String returnTypeError = MutationInputResolver.validateReturnType(returnType, kind, tia.list(), ctx);
-                if (returnTypeError != null) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+                // Every @mutation(typeName: INSERT) classifies through the INSERT write-target lattice,
+                // intercepted before the retired resolveInput exactly as UPDATE and DELETE are. Branch
+                // on leaf identity: the payload-returning shape (ResultReturnType) to
+                // classifyInsertPayloadField, the direct-@table / ID-return shape to
+                // classifyInsertTableField. Both resolve the write target through the shared
+                // resolveInsertWriteTarget (return-derived rung preferred, then @mutation(table:), then
+                // the deprecated input @table bridge). multiRow has no meaning for INSERT (no WHERE
+                // clause to multiply over) and is rejected up front, as resolveInput did.
+                if (MutationInputResolver.parseMultiRow(fieldDef)) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                        "@mutation(typeName: INSERT) does not accept multiRow: true; INSERT has no WHERE "
+                        + "clause to multiply over"));
                 }
-
-                // Payload-returning DML mutations classify through structural
-                // detection of the payload SDL (single non-errors-shaped data field; element
-                // kind: @table / record-backed / ID), dispatching on the DmlElementKind permit returned
-                // by scanStructuralDmlPayload. Only INSERT / UPSERT reach here: UPDATE
-                // and DELETE are intercepted before resolveInput and classify through their
-                // walker-driven payload classifiers (classifyUpdatePayloadField /
-                // classifyDeletePayloadField), which own the DELETE-specific IdElement / Table
-                // reclassify the walkers cannot re-derive.
-                if (returnType instanceof ReturnTypeRef.ResultReturnType rrt) {
-                    var scan = ctx.scanStructuralDmlPayload(rrt.returnTypeName());
-                    if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
-                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
-                    }
-                    if (scan instanceof BuildContext.DmlPayloadScan.Admit admit) {
-                        // INSERT / UPSERT. UPDATE and DELETE are intercepted
-                        // before resolveInput, so the only kinds reaching this scan are INSERT and
-                        // UPSERT, whose payload data field must be @table-element (the ID-element
-                        // PK-echo permit is DELETE-only; record-element needs @service).
-                        {
-                            switch (admit.element()) {
-                                case BuildContext.DmlElementKind.Table tbl -> {
-                                    String tableMismatch = requireDmlDataTableMatchesInputTable(
-                                        tia.inputTable(), tbl, kind, name, rrt.returnTypeName());
-                                    if (tableMismatch != null) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
-                                    }
-                                    var dmlChannelResult = detectStructuralDmlErrorChannel(rrt.returnTypeName());
-                                    if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
-                                    }
-                                    Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
-                                        ? Optional.of(p.channel()) : Optional.empty();
-                                    if (tia.list()) {
-                                        if (kind == DmlKind.UPSERT) {
-                                            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                                "@mutation(typeName: UPSERT) with bulk @table input and a list-"
-                                                + "shaped data field on the carrier is not yet supported; use "
-                                                + "INSERT or UPDATE, or use a single-record carrier with single "
-                                                + "@table input"));
-                                        }
-                                        return new MutationField.MutationBulkDmlRecordField(
-                                            parentTypeName, name, location, rrt, tia, kind, dmlChannel);
-                                    }
-                                    return new MutationField.MutationDmlRecordField(
-                                        parentTypeName, name, location, rrt, tia, kind, dmlChannel);
-                                }
-                                case BuildContext.DmlElementKind.RecordElement re -> {
-                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                        "@mutation(typeName: " + kind + ") field '" + name
-                                        + "' returns single-record carrier '" + rrt.returnTypeName()
-                                        + "' with a record-element data field ('" + re.fieldName()
-                                        + "'); DML mutations require an @table-element or ID-scalar data field. Use a "
-                                        + "@service mutation for record-element carriers, or change the data field's element "
-                                        + "type to the input table's @table type / ID"));
-                                }
-                                case BuildContext.DmlElementKind.IdElement ignored -> {
-                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                        "single-record carrier '" + rrt.returnTypeName()
-                                        + "' has data field of element type ID, which is the PK-echo permit "
-                                        + "(post-image == primary key) and is admitted only on "
-                                        + "@mutation(typeName: DELETE) carriers. On @mutation(typeName: "
-                                        + kind + ") the post-image is richer; use a @table-element data field "
-                                        + "or a record-backed element data field instead."));
-                                }
-                            }
-                        }
-                    }
+                ReturnTypeRef insertReturnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+                if (insertReturnType instanceof ReturnTypeRef.ResultReturnType rrt) {
+                    return classifyInsertPayloadField(fieldDef, parentTypeName, name, location, rrt);
                 }
-
-                Optional<HelperRef.Encode> encodeReturn = Optional.empty();
-                if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
-                    String tableSqlName = tia.inputTable().tableName();
-                    // The one-to-many by-table node index in place of the registry
-                    // scan; the implicit ID encoder is well-defined only for a single-node table.
-                    var nodesOnTable = ctx.nodes.forTable(tableSqlName);
-                    if (nodesOnTable.isEmpty()) {
-                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@mutation field '" + name + "' returns ID but no @node type is declared for table '"
-                                + tableSqlName + "'; annotate the type with @node or use a @table return type"));
-                    }
-                    if (nodesOnTable.size() > 1) {
-                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                            ambiguousImplicitNodeError("@mutation field '" + name + "'", tableSqlName, nodesOnTable)));
-                    }
-                    encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
-                }
-
-                Optional<HelperRef.Encode> enc = encodeReturn;
-                return switch (kind) {
-                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                        (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex,
-                            DialectRequirement.None.INSTANCE, tia, ch),
-                        enc);
-                    case UPDATE -> throw new IllegalStateException(
-                        "every UPDATE is intercepted before resolveInput — the "
-                        + "direct-@table/ID-return shape by classifyUpdateTableField, the payload-"
-                        + "returning shape by classifyUpdatePayloadField; the final-switch UPDATE arm "
-                        + "is unreachable for field '" + name + "'");
-                    case DELETE -> throw new IllegalStateException(
-                        "every DELETE is intercepted before resolveInput — the "
-                        + "direct-@table/ID-return shape by classifyDeleteTableField, the payload-"
-                        + "returning shape by classifyDeletePayloadField; the final-switch DELETE arm "
-                        + "is unreachable for field '" + name + "'");
-                    // UPSERT rejects only the Oracle family. jOOQ silently translates
-                    // INSERT ... ON CONFLICT to Oracle MERGE INTO, whose concurrency and RETURNING
-                    // semantics differ from PostgreSQL; other dialects throw their own error rather
-                    // than mistranslate, so only Oracle needs gating. The reason string is the
-                    // request-time message the emitter renders into the guard.
-                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                        (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex,
-                            new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
-                                "@mutation(typeName: UPSERT) is not supported on Oracle: jOOQ would translate "
-                                    + "INSERT ... ON CONFLICT to MERGE INTO, whose concurrency and RETURNING "
-                                    + "semantics differ from PostgreSQL. Graphitron targets PostgreSQL."),
-                            tia, ch),
-                        enc);
-                };
+                return classifyInsertTableField(fieldDef, parentTypeName, name, location, insertReturnType);
             }
         }
 
@@ -5308,7 +5203,7 @@ class FieldBuilder {
         // write target cannot disagree. The grounder treats the two failure arms as a silent skip;
         // here they are the loud DELETE-side rejections (this is the invariant's enforcer).
         TableRef writeTarget;
-        switch (MutationInputResolver.resolveDmlWriteTableRef(fieldDef, DmlKind.DELETE, svc)) {
+        switch (MutationInputResolver.resolveDmlWriteTableRef(fieldDef, DmlKind.DELETE, svc, ctx)) {
             case MutationInputResolver.WriteTableRef.Resolved r -> writeTarget = r.table();
             case MutationInputResolver.WriteTableRef.UnknownTable u -> {
                 return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -5524,6 +5419,293 @@ class FieldBuilder {
         }
         return new MutationField.MutationDeletePayloadField(
             parentTypeName, name, location, returnType, inputArg, deleteRows, dmlChannel);
+    }
+
+    /**
+     * Outcome of {@link #resolveInsertWriteTarget}: the resolved INSERT write target (the jOOQ table,
+     * the input fields resolved and admitted against it, and the byte-identical
+     * {@link ArgumentRef.InputTypeArg.TableInputArg} the INSERT leaves carry) or a typed rejection.
+     */
+    private sealed interface InsertWriteTarget {
+        record Resolved(TableRef writeTarget, List<InputField> inputFields,
+                        ArgumentRef.InputTypeArg.TableInputArg tableInputArg) implements InsertWriteTarget {}
+        record Rejected(GraphitronField field) implements InsertWriteTarget {}
+    }
+
+    /**
+     * Resolves a {@code @mutation(typeName: INSERT)} field's write target, input fields, and
+     * {@code TableInputArg} carrier by the INSERT precedence lattice, symmetric with DELETE's
+     * ({@link #resolveDeleteWriteTarget}) but with the return-derived rung DELETE cannot have:
+     *
+     * <ol>
+     *   <li><b>Rung 1 (preferred): the return's own {@code @table}</b> — a direct {@code @table}
+     *       return's table, or a carrier payload's single {@code @table}-element data field's table.</li>
+     *   <li><b>Rung 2: {@code @mutation(table:)}</b> on the field (the encoded-ID / scalar-return
+     *       shape, whose return names no table).</li>
+     *   <li><b>Rung 3 (deprecated bridge): the input type's {@code @table}</b>.</li>
+     * </ol>
+     *
+     * The winning table is the single-producer helper's
+     * ({@link MutationInputResolver#resolveDmlWriteTableRef}), so the classified write target and the
+     * binding grounder's {@code DmlEmitted} cannot diverge. The must-agree cross-checks live here: where
+     * rung 1 is present, a present rung 2 or rung 3 must agree with it (rejection on disagreement); a
+     * rung-1 vs rung-3 disagreement on a payload return reuses the pre-existing
+     * {@link #requireDmlDataTableMatchesInputTable} wording verbatim. Rung 2 silently outranks rung 3
+     * (the deprecated bridge), byte-matching {@link #resolveDeleteWriteTarget}.
+     *
+     * <p>On the field-derived path (write target not from the input's own {@code @table}), the input
+     * fields are re-resolved through {@link TypeBuilder#resolveInputFields} and the
+     * {@code validateTableInputType} input-field rejections are mirrored via
+     * {@link GraphitronSchemaValidator#collectInputFieldRejections} (the validator-mirror obligation).
+     * The complete INSERT per-field admission set
+     * ({@link MutationInputResolver#rejectInputFieldDirectives},
+     * {@link MutationInputResolver#admitMutationInputFields},
+     * {@link MutationInputResolver#rejectPlainColumnCollision}) then runs over the resolved field list
+     * regardless of path, so both paths share one admission call.
+     */
+    private InsertWriteTarget resolveInsertWriteTarget(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef returnType) {
+        // 1. Arg surface. A @table input arrives as Resolved (tit); a non-@table input as RawArg.
+        GraphitronType.TableInputType tit = null;
+        GraphitronType.InputType rawInput = null;
+        String argName;
+        String argTypeName;
+        boolean list;
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return new InsertWriteTarget.Rejected(r.field()); }
+            case DmlWalkerInputArgResolution.Resolved ok -> {
+                tit = ok.tit();
+                argName = ok.inputArg().name();
+                argTypeName = ok.inputArg().inputTypeName();
+                list = ok.inputArg().list();
+            }
+            case DmlWalkerInputArgResolution.RawArg raw -> {
+                rawInput = raw.inputType();
+                argName = raw.argName();
+                argTypeName = raw.argTypeName();
+                list = raw.list();
+            }
+        }
+
+        // 2. Winning write target from the single-producer helper (rung 1 > rung 2 > rung 3).
+        TableRef writeTarget;
+        switch (MutationInputResolver.resolveDmlWriteTableRef(fieldDef, DmlKind.INSERT, svc, ctx)) {
+            case MutationInputResolver.WriteTableRef.Resolved r -> writeTarget = r.table();
+            case MutationInputResolver.WriteTableRef.UnknownTable u -> {
+                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    ctx.unknownTableRejection(u.namedTable())));
+            }
+            case MutationInputResolver.WriteTableRef.None ignored -> {
+                // No live source resolved. Lead the message with the preferred (return-derived) fix.
+                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation(typeName: INSERT) field '" + name + "' has no write target: return the "
+                    + "inserted row's @table type or a carrier payload whose data field is that @table "
+                    + "type (preferred), name the table with @mutation(table: \"<table>\") on this field, "
+                    + "or annotate the input type '" + argTypeName + "' with @table (the deprecated bridge).")));
+            }
+        }
+
+        // 3. The three rung tables, for the must-agree cross-checks. Rung 1 is read off the resolved
+        // return type (authoritative, and equal to the helper's return-derived rung); the payload arm
+        // also keeps the DmlElementKind.Table so the rung-1-vs-rung-3 message is byte-identical to the
+        // pre-existing payload path. A @mutation(table:) that named an unresolvable table already rejected
+        // in step 2, so a present rung-2 name resolves here.
+        Optional<TableRef> rung1;
+        BuildContext.DmlElementKind.Table payloadTbl = null;
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            rung1 = Optional.of(tb.table());
+        } else if (returnType instanceof ReturnTypeRef.ResultReturnType rrt
+                && ctx.scanStructuralDmlPayload(rrt.returnTypeName()) instanceof BuildContext.DmlPayloadScan.Admit admit
+                && admit.element() instanceof BuildContext.DmlElementKind.Table tbl) {
+            payloadTbl = tbl;
+            rung1 = Optional.of(tbl.table());
+        } else {
+            rung1 = Optional.empty();
+        }
+        Optional<TableRef> rung2 = MutationInputResolver.parseMutationTableArg(fieldDef).flatMap(svc::resolveTable);
+        Optional<TableRef> rung3 = tit != null ? Optional.of(tit.table()) : Optional.empty();
+
+        // Rung 1 vs rung 2: the RETURNING projection reads from the write target, so a @mutation(table:)
+        // naming a different table than the return cannot emit a coherent statement.
+        if (rung1.isPresent() && rung2.isPresent() && !rung1.get().equals(rung2.get())) {
+            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@mutation(typeName: INSERT) field '" + name + "' derives write target '"
+                + rung1.get().tableName() + "' from its return type, but @mutation(table:) names a "
+                + "different table '" + rung2.get().tableName() + "'; the RETURNING projection reads from "
+                + "the write target, so the two cannot emit a coherent statement. Remove @mutation(table:) "
+                + "(the return names the table) or align them.")));
+        }
+        // Rung 1 vs rung 3: the return table and the input's deprecated @table bridge must agree.
+        if (rung1.isPresent() && rung3.isPresent() && !rung1.get().equals(rung3.get())) {
+            String message = payloadTbl != null
+                ? requireDmlDataTableMatchesInputTable(rung3.get(), payloadTbl, DmlKind.INSERT, name, returnType.returnTypeName())
+                : "@mutation(typeName: INSERT) field '" + name + "' returns @table type '"
+                    + returnType.returnTypeName() + "' bound to table '" + rung1.get().tableName()
+                    + "', which does not match @table input table '" + rung3.get().tableName()
+                    + "'; the input's @table (the deprecated bridge) must name the same table as the "
+                    + "return. Remove @table from the input (the return names the write target).";
+            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(message)));
+        }
+
+        // 4. Input fields against the write target. Reuse the input's already-resolved fields when the
+        // write target is its own @table (the registry TableInputType walk covers the validator
+        // rejections); otherwise re-derive against the field-named table and mirror the validator's
+        // input-field rejections here (a field-derived input never lands in validateTableInputType).
+        var schemaInput = tit != null ? tit.schemaType() : rawInput.schemaType();
+        List<InputField> inputFields;
+        if (tit != null && writeTarget.equals(tit.table())) {
+            inputFields = tit.inputFields();
+        } else {
+            var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
+            if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
+                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural(failed.reason())));
+            }
+            inputFields = ((TypeBuilder.InputFieldsResolution.Resolved) fieldsResolution).fields();
+            var mirrored = GraphitronSchemaValidator.collectInputFieldRejections(inputFields);
+            if (!mirrored.isEmpty()) {
+                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    mirrored.getFirst().rejection()));
+            }
+        }
+
+        // 5. The complete INSERT admission set, over the resolved field list regardless of path.
+        var directiveRejection = MutationInputResolver.rejectInputFieldDirectives(schemaInput, argTypeName);
+        if (directiveRejection != null) {
+            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, directiveRejection));
+        }
+        var admissionRejection = MutationInputResolver.admitMutationInputFields(inputFields, argTypeName, DmlKind.INSERT);
+        if (admissionRejection != null) {
+            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, admissionRejection));
+        }
+        var collisionRejection = MutationInputResolver.rejectPlainColumnCollision(inputFields, argTypeName);
+        if (collisionRejection != null) {
+            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, collisionRejection));
+        }
+
+        // 6. The byte-identical TableInputArg the INSERT leaves carry. For INSERT the binding set is
+        // structurally empty (VALUES emission walks fields() directly, never fieldBindings()), the
+        // arg condition is empty (a @condition on the @mutation arg rejects in resolveDmlWalkerInputArg),
+        // and setFields is empty.
+        boolean nonNull = fieldDef.getArgument(argName).getType() instanceof GraphQLNonNull;
+        var tableInputArg = ArgumentRef.InputTypeArg.TableInputArg.of(
+            argName, argTypeName, nonNull, list, writeTarget, List.of(), Optional.empty(), inputFields);
+        return new InsertWriteTarget.Resolved(writeTarget, inputFields, tableInputArg);
+    }
+
+    /**
+     * Classifies a direct-{@code @table} / ID-return {@code @mutation(typeName: INSERT)} field into a
+     * {@link MutationField.MutationInsertTableField}. The INSERT analogue of
+     * {@link #classifyDeleteTableField}: resolves the write target and input fields through the INSERT
+     * lattice ({@link #resolveInsertWriteTarget}), validates the return type, then resolves the
+     * ID-return encoder against the resolved write target.
+     */
+    private GraphitronField classifyInsertTableField(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef returnType) {
+        TableRef writeTarget;
+        ArgumentRef.InputTypeArg.TableInputArg tia;
+        switch (resolveInsertWriteTarget(fieldDef, parentTypeName, name, location, returnType)) {
+            case InsertWriteTarget.Rejected r -> { return r.field(); }
+            case InsertWriteTarget.Resolved ok -> { writeTarget = ok.writeTarget(); tia = ok.tableInputArg(); }
+        }
+
+        // Invariant #14/#15 return-type validation (shared with the payload path).
+        String returnTypeError = MutationInputResolver.validateReturnType(returnType, DmlKind.INSERT, tia.list(), ctx);
+        if (returnTypeError != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+        }
+
+        // ID-return encode resolution against the resolved write target (mirrors the DELETE path).
+        Optional<HelperRef.Encode> encodeReturn = Optional.empty();
+        if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
+            String tableSqlName = writeTarget.tableName();
+            var nodesOnTable = ctx.nodes.forTable(tableSqlName);
+            if (nodesOnTable.isEmpty()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
+                    + tableSqlName + "'; annotate the type with @node or use a @table return type"));
+            }
+            if (nodesOnTable.size() > 1) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    ambiguousImplicitNodeError("@mutation field '" + name + "'", tableSqlName, nodesOnTable)));
+            }
+            encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
+        }
+
+        var enc = encodeReturn;
+        return buildDmlField(returnType, parentTypeName, name, location, fieldDef,
+            (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex,
+                DialectRequirement.None.INSTANCE, tia, ch),
+            enc);
+    }
+
+    /**
+     * Classifies a payload-returning {@code @mutation(typeName: INSERT)} field into a
+     * {@link MutationField.MutationDmlRecordField} (single) or
+     * {@link MutationField.MutationBulkDmlRecordField} (bulk). The INSERT analogue of
+     * {@link #classifyDeletePayloadField}. The record-element and ID-element rejections fire before
+     * write-target resolution (the ID PK-echo permit is DELETE-only; record-element needs
+     * {@code @service}); the {@code @table}-element case resolves the write target through the INSERT
+     * lattice ({@link #resolveInsertWriteTarget}, which owns the rung-1-vs-rung-3 table-match check) and
+     * builds the record carrier.
+     */
+    private GraphitronField classifyInsertPayloadField(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef.ResultReturnType returnType) {
+        // Structural DML-payload scan. Id/Record-element rejections fire first, independent of the
+        // write target (matching the pre-existing "before write-target resolution needs to care" ordering).
+        var scan = ctx.scanStructuralDmlPayload(returnType.returnTypeName());
+        if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
+        }
+        var admit = (BuildContext.DmlPayloadScan.Admit) scan;
+        if (admit.element() instanceof BuildContext.DmlElementKind.RecordElement re) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@mutation(typeName: " + DmlKind.INSERT + ") field '" + name
+                + "' returns single-record carrier '" + returnType.returnTypeName()
+                + "' with a record-element data field ('" + re.fieldName()
+                + "'); DML mutations require an @table-element or ID-scalar data field. Use a "
+                + "@service mutation for record-element carriers, or change the data field's element "
+                + "type to the input table's @table type / ID"));
+        }
+        if (admit.element() instanceof BuildContext.DmlElementKind.IdElement) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "single-record carrier '" + returnType.returnTypeName()
+                + "' has data field of element type ID, which is the PK-echo permit "
+                + "(post-image == primary key) and is admitted only on "
+                + "@mutation(typeName: DELETE) carriers. On @mutation(typeName: "
+                + DmlKind.INSERT + ") the post-image is richer; use a @table-element data field "
+                + "or a record-backed element data field instead."));
+        }
+
+        // @table-element data field: resolve the write target (and the rung-1-vs-rung-3 table-match).
+        ArgumentRef.InputTypeArg.TableInputArg tia;
+        switch (resolveInsertWriteTarget(fieldDef, parentTypeName, name, location, returnType)) {
+            case InsertWriteTarget.Rejected r -> { return r.field(); }
+            case InsertWriteTarget.Resolved ok -> { tia = ok.tableInputArg(); }
+        }
+
+        // Invariant #14/#15 return-type validation (shared with the direct-return path).
+        String returnTypeError = MutationInputResolver.validateReturnType(returnType, DmlKind.INSERT, tia.list(), ctx);
+        if (returnTypeError != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+        }
+
+        var dmlChannelResult = detectStructuralDmlErrorChannel(returnType.returnTypeName());
+        if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
+        }
+        Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+            ? Optional.of(p.channel()) : Optional.empty();
+
+        if (tia.list()) {
+            return new MutationField.MutationBulkDmlRecordField(
+                parentTypeName, name, location, returnType, tia, DmlKind.INSERT, dmlChannel);
+        }
+        return new MutationField.MutationDmlRecordField(
+            parentTypeName, name, location, returnType, tia, DmlKind.INSERT, dmlChannel);
     }
 
     /**

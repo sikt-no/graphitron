@@ -8941,8 +8941,10 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason()).contains("more than one @table input argument");
             }),
 
-        DML_PLAIN_INPUT_ARG_REJECTED(
-            "DML mutation with a plain (non-@table) input arg → UnclassifiedField (Invariant #13)",
+        DML_PLAIN_INPUT_ARG_FIELD_DERIVED_UNBINDABLE_FIELD_REJECTED(
+            "INSERT with a plain (non-@table) input arg is admitted (write target derived from the @table "
+                + "return); the rejection is now the precise unbindable-field diagnostic on 'reason' "
+                + "(no film column), not the blanket 'only accept @table' refusal",
             """
             type Film @table(name: "film") { title: String }
             input PlainOptions { reason: String }
@@ -8951,7 +8953,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
-                assertThat(f.reason()).contains("@mutation fields only accept @table input arguments");
+                assertThat(f.reason())
+                    .contains("reason")
+                    .contains("has no column binding");
             }),
 
         DML_TABLE_RETURN_PKLESS_TABLE_REJECTED(
