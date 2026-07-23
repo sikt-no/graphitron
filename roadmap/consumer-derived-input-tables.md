@@ -1,11 +1,12 @@
 ---
 id: R97
 title: "Deprecate @table on input types; consumer-derived tables + argMapping grouping"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 6
 theme: classification-model
 depends-on: [insert-write-target-from-payload]
+last-updated: 2026-07-23
 ---
 
 # Deprecate `@table` on input types; consumer-derived tables + `argMapping` grouping
@@ -114,10 +115,17 @@ Phase 2; the respec re-baselines against it.
 | `FieldBuilder.classifyArgument` (`TableInputType` arm)  | Arg-level `@lookupKey` composite lookup: `EnumMappingResolver.buildLookupBindings` runs only for a `TableInputType` arg, so the lookup shape (e.g. `FilmActorKey`) requires `@table` on the input |
 | `TypeBuilder.buildInputType`                            | The global classification verdict: explicit `@table` wins; otherwise the `isUsedWithOverrideCondition` routing gate and the `findReturnTablesForInput` auto-promotion aggregate decide `TableInputType` vs non-table |
 | `GraphitronSchemaValidator.validateTableInputType`      | Registry-walk validation invariants on table-bound inputs                        |
+| `CatalogBuilder` projection seams                       | The LSP/catalog views: `projectTypeClassification` maps `TableInputType` to `TypeClassification.TableInput`, `projectFieldClassifications` is the sole producer of input-field-level `FieldClassification` entries (it walks `tit.inputFields()`), and the `TypeBackingShape.TableBacking` / `parentTableName` arms read the same variant |
 
 (INSERT's `MutationInputResolver.resolveInput` consumer is being retired by
 R515 and is deliberately absent from this table; if R515 has not shipped when
 this item is picked up, treat it as a blocking dependency, not scope.)
+
+The `CatalogBuilder` row is the easy one to miss: those seams do not "move to
+field-relative resolution", they *lose their data source* when every input
+collapses to the plain path (plain inputs classify per call site and store
+nothing on the type). Phase 3 owns that decision explicitly; see its
+acceptance.
 
 ## Why `@table` on input is redundant
 
@@ -326,6 +334,12 @@ Ordered so each phase is independently shippable. Phase 1 (`argMapping`
 grouping) is orthogonal to the rest and can be scheduled freely; Phases 2 and
 2b can land in either order; Phase 3 requires both plus R515.
 
+Phase 1 shares no code path, dependency, or gate with the directive-retirement
+axis; its only tie is the "convention + `argMapping` escape valve" rationale.
+When it is picked up, split it into its own item (as R457/R514/R515 were split
+off the mutation axis) and let R97 be purely the `@table`-on-input retirement;
+until then this body is its home so the rationale stays in one place.
+
 ### Phase 1: extend `argMapping` with grouping syntax
 
 - Parser change in the `argMapping` value parser (`PathExpr`, the R84
@@ -360,11 +374,17 @@ and then deleting the global machinery that only exists to feed it.
   (`FilmActorKey`) still requires `@table` on the input. Re-derive: when the
   arg carries `@lookupKey` and the input is plain, resolve the input's fields
   against the consuming field's `rt` (the `TypeBuilder.resolveInputFields`
-  factoring R457 extracted for exactly this dual use) and build the binding
-  set from that. `@lookupKey` on an input that fails to resolve against `rt`
-  is a classify-time rejection naming the consumer's table, never a silent
-  no-op. (No current fixture exercises a plain-input `@lookupKey` arg, so this
-  is additive, not a regression risk.)
+  factoring R457 extracted for exactly this dual use) and construct the same
+  `ArgumentRef.InputTypeArg.TableInputArg` the `@table` path produces, with
+  the rt-derived `TableRef`. The fact is identical (input fields resolved
+  against a table, plus a lookup binding set), so no arm grows a mostly-empty
+  `fieldBindings` slot and `projectForLookup` / `LookupValuesJoinEmitter`
+  consume the existing carrier unchanged; `EnumMappingResolver.buildLookupBindings`
+  widens from taking a `TableInputType` to `(TableRef, List<InputField>)` so
+  the plain path reaches it without synthesizing one. `@lookupKey` on an input
+  that fails to resolve against `rt` is a classify-time rejection naming the
+  consumer's table, never a silent no-op. (No current fixture exercises a
+  plain-input `@lookupKey` arg, so this is additive, not a regression risk.)
 - **Retire the `findReturnTablesForInput` global aggregate**
   (`TypeBuilder.buildInputType`, the third of its three ordered steps).
   It is the right idea (derive the table from the consumer) at the wrong
@@ -388,7 +408,11 @@ and then deleting the global machinery that only exists to feed it.
   the R330 rework), so once the aggregate goes, the gate has nothing left to
   guard. After this bullet, `buildInputType` is directive-driven only:
   explicit `@table` → `TableInputType` (the deprecated bridge, Phase 3
-  deletes it), everything else → the plain-input path.
+  deletes it), everything else → the plain-input path. Update
+  `argument-resolution.adoc` (which documents `isUsedWithOverrideCondition`
+  in its §Pipeline shape and §Validator sections) in the same commit that
+  deletes the symbol; a dangling doc reference across the Phase 2 → 3
+  interval violates "documentation names only live code".
 - `GraphitronSchemaValidator.validateTableInputType` keeps validating the
   bridge-classified inputs until Phase 3; consumer-derived call sites
   discharge the validator-mirror obligation the way R457 did
@@ -444,9 +468,11 @@ deferred upstream (refused before classification) and inherits the ladder when
 it un-defers.
 
 Acceptance: an UPDATE sakila fixture (direct-return and payload-returning)
-emits byte-identical DML with `@table` removed from the input;
-`rawArgUpdateRejection` is gone; the R332 warning's replacement wording covers
-UPDATE-consumed inputs.
+classifies to an identical model carrier with and without `@table` on the
+input (the `MutationTableArgClassificationTest` pattern; carrier equality,
+never code-string assertions on emitted bodies) and round-trips at the
+execution tier with `@table` dropped; `rawArgUpdateRejection` is gone; the
+R332 warning's replacement wording covers UPDATE-consumed inputs.
 
 ### Phase 3: remove the directive declaration
 
@@ -469,8 +495,20 @@ UPDATE-consumed inputs.
   and any LSP fixtures.
 - Update `code-generation-triggers.adoc` and any other doc references.
 
+- Decide the LSP projection story *affirmatively*, not by deletion: the
+  `CatalogBuilder` seams (see the "still drives" table) lose their data
+  source when `TableInputType` goes. Either the per-consumer resolution
+  feeds the input-type hover / input-field `FieldClassification`
+  coordinates Phase 2 promises, or this phase states that the input-field
+  LSP coordinates are dropped and R337 owns their re-surfacing. "Build
+  green" cannot catch this regression (the exhaustive switches force code
+  edits, but deleting the arms compiles fine), so it is an acceptance
+  clause, not an implementation detail.
+
 Acceptance: directive declaration accepts only `OBJECT | INTERFACE`;
-all fixture SDL is migrated; build green.
+all fixture SDL is migrated; the LSP projection replacement (or its
+deliberate drop + R337 handoff) is named in the shipped plan body; build
+green.
 
 ### Phase 4: housekeeping
 
@@ -529,8 +567,10 @@ Each phase carries its own test surface; the high-leverage cases:
   aggregate bail) classifies per-consumer instead of demoting; the
   `GraphitronSchemaBuilderTest` `PlainFilter` cases are rewritten from
   pinning the demotion to pinning the per-consumer resolution.
-- Pipeline-tier (Phase 2b): UPDATE fixtures byte-identical with and without
-  `@table` on the input (the `MutationTableArgClassificationTest` pattern).
+- Pipeline-tier (Phase 2b): UPDATE fixtures classify to identical model
+  carriers with and without `@table` on the input (the
+  `MutationTableArgClassificationTest` pattern; carrier equality, not
+  code-string assertions).
 - Execution-tier (Phase 1): a sakila multi-target mutation
   exercising grouping end-to-end.
 - Execution-tier (Phase 2b): an UPDATE round-trip with `@table` dropped from
