@@ -49,6 +49,39 @@ Acceptance:
 
 The sweep is re-runnable; if the methodology proves cheap, a recurring cadence can be considered as a follow-on.
 
+## Ledger
+
+Cutoff rule with the tilde resolved, fixed before the worklist was built: a file is on the worklist iff it has >= 100 comment lines or a contiguous comment block of >= 25 lines. Census script counts both trees of the `GuardScope.IN_SCOPE_MODULES` modules; worklist is 241 files, 3 excluded, 238 workable. Every row below is verdict "edited" unless marked otherwise; counts are comment lines before -> after. Each bout's edits passed the adversarial verify stage (prompted to restore deletions) before landing.
+
+Bout 1 (census rows 1-25, verified, reactor green with both guards):
+
+1. `graphitron/.../FieldBuilder.java`: 2896 -> 2822. Two dangling `{@link}`s fixed.
+2. `graphitron/.../generators/TypeFetcherGenerator.java`: 2528 -> 2469. Dead doc paths repointed; partition claims pinned to `GeneratorCoverageTest`. 3 claims routed.
+3. `graphitron-sakila-example/.../GraphQLQueryTest.java`: 1640 -> 1596. Pre-fix narration restated present-tense; one stale claim contradicting its assertion deleted.
+4. `graphitron/.../GraphitronSchemaBuilderTest.java`: 1092 -> 940. Corpus-migration tombstones compressed; dead doc citations repointed; one stale demote-claim fixed.
+5. `graphitron/.../generators/MultiTablePolymorphicEmitter.java`: 781 -> 740.
+6. `graphitron/.../TypeBuilder.java`: 748 -> 629. One contradictory qualifier fixed.
+7. `graphitron/.../JooqCatalog.java`: 713 -> 631. Verify stage restored two `RoutineResolution` arm docs lost in the trim (the one wrongful deletion of the bout).
+8. `graphitron/.../model/ChildField.java`: 624 -> 585. Stale third-arm claim fixed; `sourceShape` pinned to `SourceShapeProjectionTest`.
+9. `graphitron/.../GraphitronSchemaBuilder.java`: 559 -> 457. Exemplar on-ramp preserved; contradictory carve-out claim removed.
+10. `graphitron/.../generators/SplitRowsMethodEmitter.java`: 525 -> 460.
+11. `graphitron/.../ServiceCatalog.java`: 518 -> 422. One wrong slot-position claim deleted.
+12. `graphitron/.../TestServiceStub.java`: 513 -> 508. Fixture-shape docs kept per verdict 5.
+13. `graphitron/.../GraphitronSchemaValidator.java`: 481 -> 439. Stubbed-variant claim repinned to `TypeFetcherGenerator#STUBBED_VARIANTS`; dangling principles-doc cite removed.
+14. `graphitron/.../generators/TypeFetcherGeneratorTest.java`: 429 -> 367. Stale mirrors repointed to live tests.
+15. `graphitron/.../RecordBindingResolver.java`: 411 -> 370. Two verifiably-stale claims deleted.
+16. `graphitron/.../generators/ArgCallEmitter.java`: 393 -> 317. Stale `ParamSource`/registry claims deleted; decode-shape docs single-homed on `CompositeDecodeHelperRegistry`.
+17. `graphitron/.../model/MutationField.java`: 379 -> 313. Worst-case `MutationBulkDmlRecordField` javadoc 60 -> 38 lines; flush-left damage fixed; wrong DELETE-sibling claim fixed.
+18. `graphitron/.../InputBeanResolver.java`: 378 -> 292. Rejection bullet lists reduced to fail-closed pins.
+19. `graphitron/.../classifieddsl/ClassifiedCorpus.java`: 371 -> 362. Spec-by-example commentary kept per verdict 4/5.
+20. `graphitron/.../model/GraphitronType.java`: 369 -> 355. Stale null-`PojoResultType` claim deleted. 2 claims routed.
+21. `graphitron-maven-plugin/.../AbstractRewriteMojo.java`: 362 -> 274. POM config-surface docs kept.
+22. `graphitron/.../generators/util/ConnectionRuntimeClassGenerator.java`: 343 -> 324. The 118-line block judged claim-by-claim; it is contract, kept.
+23. `graphitron/.../generators/FetcherEmitter.java`: 336 -> 280.
+24. `graphitron/.../generators/GeneratorUtils.java`: 315 -> 245. Duplicated javadocs single-homed; one dangling overload link fixed.
+
+Claims routed out of the sweep (follow-ons to file at Done): `GraphitronType.ResultType#fqClassName` null caveat vs non-null construction paths; `GraphitronType` InputType garbled "(or `@table`)" parenthetical; `TypeFetcherGenerator` L2085 comment contradicting `DSL.noCondition()` emission; `TypeFetcherGenerator` stale "Mapped is not produced yet" claims (x2) whose adjacent throw-message string literals repeat the stale claim; `RecordBindingResolver#fromAnyProducer` is dead API (zero callers). Also for the generated-output item: "slice" mentions inside `ConnectionRuntimeClassGenerator` `.addJavadoc` string literals render into generated output.
+
 ## Out of scope
 
 - Adding missing orientation javadoc and `package-info.java` files: [`source-orientation-javadocs.md`](source-orientation-javadocs.md). Rubric verdict 5 and the sequencing note above coordinate the two items; this sweep preserves and tightens on-ramps but never authors new ones.

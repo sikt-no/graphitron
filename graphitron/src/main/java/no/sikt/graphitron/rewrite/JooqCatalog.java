@@ -25,8 +25,8 @@ import java.util.stream.Collectors;
 
 /**
  * Thin wrapper around jOOQ's {@link Catalog}. Loads the catalog once via reflection
- * ({@code DefaultCatalog.DEFAULT_CATALOG}) and provides lazy lookups — no pre-built maps.
- * Each method queries the catalog on demand using the jOOQ API.
+ * ({@code DefaultCatalog.DEFAULT_CATALOG}); each lookup method queries the catalog on demand
+ * through the jOOQ API, with no pre-built maps.
  *
  * <p>When the generated jOOQ package is not on the classpath (e.g. in unit tests that do not
  * depend on jOOQ codegen output), all lookup methods return empty/empty-list rather than
@@ -51,10 +51,8 @@ public class JooqCatalog {
     }
 
     /**
-     * Single-arg back-compat constructor: defaults {@code codegenLoader} to the current thread's
-     * context classloader. Used by unit-tier test sites that reflect against classes on their
-     * own module's classpath (where TCCL = system classloader and bare two-arg
-     * {@code Class.forName} resolves identically).
+     * Defaults {@code codegenLoader} to the current thread's context classloader. For unit-tier
+     * test sites that reflect against classes on their own module's classpath.
      */
     public JooqCatalog(String generatedJooqPackage) {
         this(generatedJooqPackage, Thread.currentThread().getContextClassLoader());
@@ -85,23 +83,11 @@ public class JooqCatalog {
     }
 
     /**
-     * Find a table by its SQL name, with optional schema qualification. Accepts both
-     * unqualified ({@code "film"}) and qualified ({@code "public.film"}) values; the input is
-     * routed through {@link #parseQualifiedTableName(String)} and either the unqualified
-     * resolver below or the two-arg {@link #findTable(String, String)} form.
-     *
-     * <p>Unqualified values fan out into the {@link TableResolution} sub-taxonomy:
-     * {@link TableResolution.Resolved} when exactly one schema carries the name,
-     * {@link TableResolution.Ambiguous} when two or more schemas carry it,
-     * {@link TableResolution.NotInCatalog} otherwise.
-     * Qualified values resolve through the two-arg form and surface as {@code Resolved} or
-     * {@code NotInCatalog} only — qualification eliminates the ambiguity branch by construction.
-     * Schema and table matching is case-insensitive on both halves (consistent with
-     * {@link #findColumn}).
-     *
-     * <p>Single-schema setups never fan out into {@code Ambiguous}; multi-schema setups with
-     * non-colliding table names also stay on the resolved/missing axis. Only collision sites
-     * are forced to qualify.
+     * Find a table by its SQL name, accepting both unqualified ({@code "film"}) and qualified
+     * ({@code "public.film"}) values. Matching is case-insensitive on both halves (consistent
+     * with {@link #findColumn}). Qualified values never surface {@link TableResolution.Ambiguous};
+     * qualification eliminates that branch by construction, so only collision sites are forced
+     * to qualify.
      */
     public TableResolution findTable(String sqlName) {
         return parseQualifiedTableName(sqlName)
@@ -125,14 +111,9 @@ public class JooqCatalog {
     }
 
     /**
-     * Two-arg lookup form: scopes resolution to the named schema directly, never re-parses,
-     * never scans across schemas. Used by callers that already hold a resolved schema (or
-     * that have split a qualified name themselves) and need a stable, case-insensitive
-     * table-within-schema lookup. The single-arg {@link #findTable(String)} delegates here
-     * once parsing is done.
-     *
-     * <p>Returns empty when the schema is not in the catalog or the table-within-schema does
-     * not exist; both halves are matched case-insensitively.
+     * Table-within-schema lookup for callers that already hold a resolved schema name.
+     * Returns empty when the schema is not in the catalog or the table does not exist in it;
+     * both halves are matched case-insensitively.
      */
     public Optional<TableEntry> findTable(String schemaSqlName, String tableSqlName) {
         if (catalog == null) return Optional.empty();
@@ -145,17 +126,11 @@ public class JooqCatalog {
     }
 
     /**
-     * Class-keyed lookup: returns the entry whose generated jOOQ table class matches the given
-     * class. Used by the {@code @reference(path: [{condition:}])} resolver when reflecting on a
-     * condition method's second parameter to find the target table — the parameter type, when
-     * concrete, is a generated jOOQ table class that maps to exactly one catalog entry across
-     * the whole schema set (each table's generated class is uniquely owned by its schema, so
-     * class identity is schema-unique by construction).
-     *
-     * <p>Returns empty when the catalog is unavailable or no entry's table class equals the
-     * given class. Wildcard types ({@code Table<?>}) and non-table classes are caller
-     * responsibility; this accessor compares by exact class identity ({@code ==}), not
-     * assignability.
+     * Class-keyed lookup: returns the entry whose generated jOOQ table class is the given class.
+     * Each table's generated class is uniquely owned by its schema, so class identity maps to
+     * exactly one catalog entry across the whole schema set. Comparison is exact class identity
+     * ({@code ==}), not assignability; wildcard types ({@code Table<?>}) and non-table classes
+     * are caller responsibility. Empty when the catalog is unavailable or nothing matches.
      */
     public Optional<TableEntry> findTableByClass(Class<?> jooqTableClass) {
         if (catalog == null || jooqTableClass == null) return Optional.empty();
@@ -172,23 +147,7 @@ public class JooqCatalog {
      * {@code Routines} class that returns the configured table for use in {@code FROM}. This resolves
      * both: the result table (so the caller binds the existing {@code @table} return-type machinery)
      * and the {@code Routines}-class call surface with the routine's IN parameters in declaration
-     * order.
-     *
-     * <p>Outcomes:
-     * <ul>
-     *   <li>{@link RoutineResolution.Resolved} — the name resolved to a table-valued function and its
-     *       convenience method was found.</li>
-     *   <li>{@link RoutineResolution.NonTableValuedRoutine} — the name resolves to no table, but a
-     *       generated routine class by that name exists in a schema's {@code routines} sub-package:
-     *       a procedure or a scalar / void function (these carry a typed {@code Deferred}
-     *       signposting the non-table-valued call surface's follow-up item).</li>
-     *   <li>{@link RoutineResolution.NotInCatalog} — the name resolves to no table and no generated
-     *       routine at all: genuinely absent (a typo gets this structural rejection).</li>
-     *   <li>{@link RoutineResolution.NotATableValuedFunction} — the name resolves to a catalog object
-     *       that is not a function (a plain table / view).</li>
-     *   <li>{@link RoutineResolution.NoConvenienceMethod} — function table found, but no table-form
-     *       method on the generated {@code Routines} class (degenerate codegen).</li>
-     * </ul>
+     * order. Outcomes are the {@link RoutineResolution} arms, documented there.
      */
     public RoutineResolution resolveTableValuedFunction(String routineName) {
         var resolution = findTable(routineName);
@@ -237,11 +196,10 @@ public class JooqCatalog {
      * Probe behind {@link #resolveTableValuedFunction(String)}'s not-a-table path: looks for a
      * generated routine class matching {@code routineName} in each schema's {@code routines}
      * sub-package (scoped to the named schema when the value is qualified). jOOQ generates one
-     * class per database routine there — procedures and scalar / void functions included — under
-     * its default PascalCase naming strategy; the loaded candidate is verified by instantiating it
-     * and comparing {@link org.jooq.Routine#getName()} against the SQL name, so a naming-strategy
-     * mismatch degrades to a probe miss (the caller falls back to
-     * {@link RoutineResolution.NotInCatalog}), never a false positive.
+     * class per database routine there under its default PascalCase naming strategy; the loaded
+     * candidate is verified by instantiating it and comparing {@link org.jooq.Routine#getName()}
+     * against the SQL name, so a naming-strategy mismatch degrades to a probe miss (the caller
+     * falls back to {@link RoutineResolution.NotInCatalog}), never a false positive.
      *
      * @return the populated {@link RoutineResolution.NonTableValuedRoutine} arm, or {@code null}
      *         when no schema carries a generated routine by that name
@@ -299,7 +257,7 @@ public class JooqCatalog {
      * ({@code TableOptions.function()}). The keying gate: an FK-less routine result cannot
      * key a hop through the FK machinery, so a {@code {table:}} path element whose current source
      * is one derives the name-matched key instead (see
-     * {@code BuildContext.synthesizeNameMatchedJoin}). False for unresolved names — the caller's
+     * {@code BuildContext.synthesizeNameMatchedJoin}). False for unresolved names; the caller's
      * ordinary unknown-table handling fires there.
      */
     public boolean isTableValuedFunction(String sqlName) {
@@ -309,11 +267,9 @@ public class JooqCatalog {
 
     /**
      * Enumerate every table in the catalog as a {@link TableEntry}, in schema-then-table order
-     * (the generated {@code Tables} class field order within each schema). Used by the
-     * {@code CatalogFacts} build pass, which walks every table once while the codegen loader is
-     * open and reduces each to resolved-immutable facts. Returns the live {@link Table} handles;
-     * callers must consume them within the same build pass and never retain them past the loader's
-     * lifetime.
+     * (the generated {@code Tables} class field order within each schema). Returns the live
+     * {@link Table} handles; callers must consume them within the same build pass and never
+     * retain them past the codegen loader's lifetime.
      */
     public List<TableEntry> allTableEntries() {
         if (catalog == null) return List.of();
@@ -382,15 +338,12 @@ public class JooqCatalog {
      * <p>Returns empty for malformed input: {@code null}, blank, {@code "note_event_fk."}, or
      * {@code ".note_event_fk"} (both halves must be non-empty when a {@code .} is present). Author
      * sites treat a malformed value as unqualified (they pass the raw string on as the bare name),
-     * so a stray-dot value still degrades to the same {@code NotInCatalog} rejection it produced
-     * before the grammar existed.
+     * so a stray-dot value degrades to the ordinary {@code NotInCatalog} rejection.
      *
-     * <p>A quoted PostgreSQL identifier can technically carry a {@code .} in a constraint name, but
-     * the {@code @table} dot-grammar already accepts that same edge for table names and the jOOQ
-     * Java-constant namespace uses {@code __}; so a dot signals a schema qualifier in both
-     * namespaces, the trade-off the {@code @table} precedent settled. A distinct record (not
-     * reusing {@link QualifiedTableName}) documents intent and keeps the two grammars independently
-     * evolvable.
+     * <p>A quoted PostgreSQL identifier can technically carry a {@code .} in a constraint name,
+     * but a dot signals a schema qualifier here, matching the {@code @table} dot-grammar (the
+     * jOOQ Java-constant namespace uses {@code __}). A distinct record (not reusing
+     * {@link QualifiedTableName}) keeps the two grammars independently evolvable.
      */
     public static Optional<QualifiedForeignKeyName> parseQualifiedForeignKeyName(String value) {
         if (value == null || value.isBlank()) return Optional.empty();
@@ -482,7 +435,7 @@ public class JooqCatalog {
     /**
      * Returns the jOOQ record class for the table with the given SQL name, or empty when the
      * table cannot be found or the catalog is unavailable. The returned class is whatever
-     * {@link org.jooq.Table#getRecordType()} returns for the matching table — typically the
+     * {@link org.jooq.Table#getRecordType()} returns for the matching table, typically the
      * generated {@code *Record} class.
      */
     public Optional<Class<?>> findRecordClass(String tableSqlName) {
@@ -510,29 +463,25 @@ public class JooqCatalog {
     }
 
     /**
- * Scoped, sealed foreign-key lookup by name. Replaces the {@code Optional}-returning
-     * {@code findForeignKey(String)}: an {@code Optional} could only collapse a cross-schema
-     * constraint-name collision into "not found", erasing exactly the wrong-join hazard this
-     * surfaces. The result is a {@link ForeignKeyLookup} so the {@link ForeignKeyLookup.Ambiguous}
-     * outcome reaches author-facing call sites as a typed rejection instead of a silent first-hit.
+     * Scoped, sealed foreign-key lookup by name. The result is a {@link ForeignKeyLookup} so a
+     * cross-schema constraint-name collision reaches author-facing call sites as a typed
+     * {@link ForeignKeyLookup.Ambiguous} rejection instead of collapsing into "not found" or a
+     * silent first-hit; the collision is exactly the wrong-join hazard this surfaces.
      *
-     * <p>Matching keeps the historical dual namespace: first the SQL constraint name
+     * <p>Matching is dual-namespace: first the SQL constraint name
      * (e.g. {@code "film_language_id_fkey"}), then, only if that finds nothing, the jOOQ-generated
      * Java constant name (e.g. {@code "FILM__FILM_LANGUAGE_ID_FKEY"}) via the {@code Keys} class.
      * Both are case-insensitive.
      *
-     * <p>{@code sourceSqlName} (nullable) scopes the candidate set. When it is non-null and resolves
-     * through {@link #findTable(String)} to a single catalog table, candidates are filtered to the
-     * FKs that touch that table (class identity via {@link #foreignKeyTouchesTable}); a cross-schema
-     * constraint-name collision then disambiguates naturally to the one FK on the author's table.
-     * When {@code sourceSqlName} is {@code null}, does not resolve, or a genuine residual collision
-     * survives scoping, more than one distinct FK still matches and {@link ForeignKeyLookup.Ambiguous}
-     * is returned naming the colliding schemas.
+     * <p>{@code sourceSqlName} (nullable) scopes the candidate set. When it resolves through
+     * {@link #findTable(String)} to a single catalog table, candidates are filtered to the FKs
+     * that touch that table (class identity via {@link #foreignKeyTouchesTable}), so a cross-schema
+     * collision disambiguates naturally to the one FK on the author's table. When it is
+     * {@code null}, does not resolve, or a residual collision survives scoping,
+     * {@link ForeignKeyLookup.Ambiguous} names the colliding schemas.
      *
-     * <p>Two-arg form: no author schema qualifier. Delegates to
-     * {@link #findForeignKey(String, String, String)} with a {@code null} scope. This is the form the
-     * non-author-facing internal callers use ({@code qualifierForFk}, the IdReference synthesis
-     * shim), which never carry a qualifier.
+     * <p>Two-arg form: no author schema qualifier; delegates to
+     * {@link #findForeignKey(String, String, String)} with a {@code null} scope.
      */
     public ForeignKeyLookup findForeignKey(String name, String sourceSqlName) {
         return findForeignKey(name, sourceSqlName, null);
@@ -543,29 +492,15 @@ public class JooqCatalog {
      * {@code schemaScope} that a schema-qualified {@code @reference(key:)} value
      * ({@code "multischema_a.note_event_fk"}) feeds after
      * {@link #parseQualifiedForeignKeyName(String)} splits it. The scope binds the FK-holder
-     * (child / referencing) schema, matched case-insensitively against
-     * {@code fk.getTable().getSchema().getName()}, exactly as the two-arg {@link #findTable(String, String)}
-     * matches its schema half.
+     * (child / referencing) schema, matched case-insensitively.
      *
-     * <p>Scoping precedence is <em>qualifier hard, source-scope soft</em>. The two facts have
-     * different provenance: an author {@code schema.} qualifier is <em>stated intent</em>, so if it
-     * eliminates every candidate the result is {@link ForeignKeyLookup.NotInCatalog} for that schema,
-     * not a fallback; source-scoping is <em>derived context</em> ("I'm standing on table T") and
-     * narrows only when it leaves something. The qualifier is applied first over the bare-name
-     * candidates, then the source scope over the remainder.
-     *
-     * <p>Outcomes:
-     * <ul>
-     *   <li>a qualified key that collides across schemas resolves to the one FK in the named schema;
-     *   <li>a qualified key naming a schema with no such FK is {@link ForeignKeyLookup.NotInCatalog}
-     *       (never a silent first-hit);
-     *   <li>a qualified key matching two or more same-named FKs <em>within</em> the named schema
-     *       (legal in PostgreSQL, constraint names are table-scoped) proceeds through the soft
-     *       source-scope and, when that fails to narrow, lands in {@link ForeignKeyLookup.Ambiguous}
-     *       naming the single schema once;
-     *   <li>an unqualified key ({@code schemaScope == null}) skips the filter entirely, byte-for-byte
-     *       unchanged from the two-arg form.
-     * </ul>
+     * <p>Scoping precedence is <em>qualifier hard, source-scope soft</em>, reflecting provenance:
+     * an author {@code schema.} qualifier is stated intent, so if it eliminates every candidate
+     * the result is {@link ForeignKeyLookup.NotInCatalog} for that schema, never a fallback to the
+     * unscoped set; source-scoping is derived context ("I'm standing on table T") and narrows only
+     * when it leaves something. Two or more same-named FKs <em>within</em> the named schema (legal
+     * in PostgreSQL, constraint names are table-scoped) can therefore still land in
+     * {@link ForeignKeyLookup.Ambiguous} when the soft scope fails to narrow.
      */
     @SuppressWarnings("unchecked")
     public ForeignKeyLookup findForeignKey(String name, String sourceSqlName, String schemaScope) {
@@ -626,22 +561,16 @@ public class JooqCatalog {
     /**
      * Resolves a jOOQ {@link ForeignKey} instance into a typed {@link ForeignKeyRef} carrying the
      * schema-correct {@code Keys} {@link ClassName} together with the Java constant name, by
- * <em>reference identity</em>. Scans only the {@code Keys} class of the FK-holder schema
-     * (the schema of {@code fk.getTable()}, which structurally pins the owning schema) and matches
-     * the constant whose value {@code == fk}. jOOQ's generated {@link Table#getReferences()}
-     * returns the same {@code Keys.FK_*} singletons, so identity holds for every FK that flows out
-     * of the catalog; that singleton assumption is an invariant whose named enforcer is
-     * {@code JooqCatalogMultiSchemaTest.findForeignKeyRef_*}. No name matching anywhere, so a
-     * constraint name colliding across schemas cannot mis-resolve.
+     * <em>reference identity</em>. Scans only the {@code Keys} class of the FK-holder schema
+     * (the schema of {@code fk.getTable()}) and matches the constant whose value {@code == fk}.
+     * jOOQ's generated {@link Table#getReferences()} returns the same {@code Keys.FK_*} singletons,
+     * so identity holds for every FK that flows out of the catalog; that singleton assumption is
+     * an invariant whose named enforcer is {@code JooqCatalogMultiSchemaTest.findForeignKeyRef_*}.
+     * No name matching anywhere, so a constraint name colliding across schemas cannot mis-resolve.
      *
-     * <p>Replaces per-emit-site {@code ClassName.get(jooqPackage, "Keys")} concatenation: the keys
-     * class is read from the live {@link Class} of the matching FK constant, so multi-schema
-     * codegen layouts produce schema-segmented FQNs (e.g. {@code multischema_a.Keys}) without any
-     * caller-side derivation.
-     *
-     * <p>{@link ForeignKeyResolution.Resolved} carries the {@link ForeignKeyRef} when the FK is
-     * found; {@link ForeignKeyResolution.NotInCatalog} when the constant is absent from the holder
-     * schema's {@code Keys} class (a catalog-vs-FK mismatch; defensive).
+     * <p>The keys class is read from the live {@link Class} of the matching FK constant, so
+     * multi-schema codegen layouts produce schema-segmented FQNs (e.g. {@code multischema_a.Keys})
+     * without any caller-side derivation.
      */
     public ForeignKeyResolution findForeignKeyRef(ForeignKey<?, ?> fk) {
         if (catalog == null) return new ForeignKeyResolution.NotInCatalog();
@@ -668,14 +597,14 @@ public class JooqCatalog {
      * through {@link #findTable(String)} to a single catalog table (schema-aware, case-insensitive).
      * Class identity is schema-unique by construction (each table's generated class is owned by one
      * schema), so a schema-qualified or case-mismatched {@code @table(name:)} echo
-     * ({@code "multischema_a.signal"}, {@code "multischema_a.SIGNAL"}) matches the endpoint the bare
-     * {@code equalsIgnoreCase} against jOOQ's always-unqualified endpoint name missed, and it also
-     * tells {@code multischema_a.signal} apart from a same-named {@code multischema_b.signal}.
+     * ({@code "multischema_a.signal"}, {@code "multischema_a.SIGNAL"}) still matches jOOQ's
+     * always-unqualified endpoint, and {@code multischema_a.signal} is told apart from a same-named
+     * {@code multischema_b.signal}.
      *
      * <p>Fallback: when {@code sourceSqlName} does not resolve to a single class ({@code Ambiguous}
-     * or {@code NotInCatalog}), identity cannot fire, so the predicate falls back to the historical
-     * bare {@code equalsIgnoreCase} against the endpoint names — preserving today's diagnostic surface
-     * for genuinely-unknown or unqualified-ambiguous names.
+     * or {@code NotInCatalog}), identity cannot fire, so the predicate falls back to a bare
+     * {@code equalsIgnoreCase} against the endpoint names, keeping the diagnostic surface for
+     * genuinely-unknown or unqualified-ambiguous names.
      */
     public boolean foreignKeyTouchesTable(ForeignKey<?, ?> fk, String sourceSqlName) {
         if (fk == null || sourceSqlName == null) return false;
@@ -691,12 +620,10 @@ public class JooqCatalog {
      * {@link BuildContext#resolveFkSlots} share to decide join/population direction.
      *
      * <p>Self-referential FKs (both endpoints are the same table, hence the same generated class)
-     * cannot be told apart by identity or by name, so the caller's {@code selfRefHint} decides
-     * (mirroring the pre-existing {@code selfRefFkOnSource} contract). For non-self-ref FKs the
-     * decision is by class identity when {@code sourceSqlName} resolves, and by the historical bare
-     * {@code equalsIgnoreCase} against the FK-child endpoint name otherwise. See
-     * {@link #foreignKeyTouchesTable} for why identity fixes the schema-qualified / case-mismatched
-     * {@code @table} echo the bare compare mis-oriented.
+     * cannot be told apart by identity or by name, so the caller's {@code selfRefHint} decides.
+     * For non-self-ref FKs the decision is by class identity when {@code sourceSqlName} resolves,
+     * and by a bare {@code equalsIgnoreCase} against the FK-child endpoint name otherwise; see
+     * {@link #foreignKeyTouchesTable} for the identity-vs-name rationale.
      */
     public boolean foreignKeyOnSource(ForeignKey<?, ?> fk, String sourceSqlName, boolean selfRefHint) {
         if (fk.getTable().getClass() == fk.getKey().getTable().getClass()) {
@@ -727,11 +654,9 @@ public class JooqCatalog {
      * is given, and the empty-path FK inference.
      *
      * <p>Each argument is resolved through {@link #findTable(String)} and matched by jOOQ table
-     * class identity when it resolves to a single catalog table; a non-resolving argument
-     * ({@code Ambiguous} / {@code NotInCatalog}) falls back to the historical bare
-     * {@code equalsIgnoreCase} against the endpoint names. Identity lets a schema-qualified or
-     * case-mismatched {@code @table} echo match, and distinguishes same-named tables in different
-     * schemas; see {@link #foreignKeyTouchesTable}.
+     * class identity when it resolves to a single catalog table, falling back to a bare
+     * {@code equalsIgnoreCase} against the endpoint names otherwise; see
+     * {@link #foreignKeyTouchesTable} for the rationale.
      */
     @SuppressWarnings("unchecked")
     public List<ForeignKey<?, ?>> findForeignKeysBetweenTables(String tableA, String tableB) {
@@ -753,14 +678,13 @@ public class JooqCatalog {
     /**
      * Returns the FK object when exactly one outgoing FK from {@code sourceTableSqlName} references
      * {@code targetTableSqlName}; empty otherwise (zero or many). Returns the resolved jOOQ
- * {@link ForeignKey} rather than its bare constraint name, so the caller can hand it
+     * {@link ForeignKey} rather than its bare constraint name, so the caller can hand it
      * straight to {@link BuildContext#synthesizeFkJoin} by class identity instead of round-tripping
      * through a name re-lookup that would reintroduce cross-schema collision.
      *
      * <p>Directional: only FKs where {@code sourceTableSqlName} is the FK source (not the target)
-     * are counted. Uses {@link #findForeignKeysBetweenTables} and filters to the source side via
-     * {@link #foreignKeyOnSource} (identity-based, so a schema-qualified source is not silently
-     * dropped by the bare endpoint-name compare).
+     * are counted, via the identity-based {@link #foreignKeyOnSource}, so a schema-qualified
+     * source is not silently dropped.
      */
     public Optional<ForeignKey<?, ?>> findUniqueFkToTable(String sourceTableSqlName, String targetTableSqlName) {
         var matches = findForeignKeysBetweenTables(sourceTableSqlName, targetTableSqlName).stream()
@@ -871,7 +795,7 @@ public class JooqCatalog {
     }
 
     /**
- * A candidate row-identifying key on a table: the primary key or a unique key, with its
+     * A candidate row-identifying key on a table: the primary key or a unique key, with its
      * columns resolved in key-declaration order. {@code primary} distinguishes the PK from a unique
      * key (the walker prefers the PK when both are covered). {@code keyName} echoes jOOQ's
      * {@code Key.getName()} for diagnostics.
@@ -935,30 +859,26 @@ public class JooqCatalog {
      * SQL name. Reads two static fields via reflection:
      *
      * <ul>
-     *   <li>{@code public static final String __NODE_TYPE_ID} — the {@code typeId} that identifies
+     *   <li>{@code public static final String __NODE_TYPE_ID}: the {@code typeId} that identifies
      *       the node type in encoded IDs (same value a consumer would write as
      *       {@code @node(typeId:)} in SDL for the same table).</li>
-     *   <li>{@code public static final Field<?>[] __NODE_KEY_COLUMNS} — the underlying
+     *   <li>{@code public static final Field<?>[] __NODE_KEY_COLUMNS}: the underlying
      *       {@link org.jooq.Field} references in positional order. Each is resolved to a
      *       {@link ColumnRef} via the table's column set; any unresolved entry fails the probe.</li>
      * </ul>
      *
-     * <p>Returns {@link Optional#empty()} when:
-     * <ul>
-     *   <li>the catalog is unavailable or the table cannot be found;</li>
-     *   <li>either constant is absent on the table class;</li>
-     *   <li>the constants fail the sanity checks: {@code __NODE_TYPE_ID} non-null and non-empty,
-     *       {@code __NODE_KEY_COLUMNS} non-null, non-empty, and every entry resolvable to a column
-     *       on the same table. Malformed metadata logs a warning keyed on the table SQL name; the
-     *       classifier boundary surfaces this as an {@code UnclassifiedType} once the probe is
-     *       consumed there.</li>
-     * </ul>
+     * <p>Returns {@link Optional#empty()} when the catalog is unavailable, the table cannot be
+     * found, either constant is absent on the table class, or the constants fail validation
+     * ({@code __NODE_TYPE_ID} non-empty String; {@code __NODE_KEY_COLUMNS} non-empty and every
+     * entry resolvable to a column on the same table). Malformed metadata logs a warning keyed on
+     * the table SQL name; the classifier boundary surfaces it as an {@code UnclassifiedType} via
+     * {@link #nodeIdMetadataDiagnostic(String)}.
      *
      * <p>Consumer-side: {@code NodeIdStrategy.createId(typeId, keyFields)} and
      * {@code NodeIdStrategy.hasIds(typeId, ids, keyFields)} both depend on the positional order of
-     * {@code __NODE_KEY_COLUMNS} — reordering between releases would re-encode new IDs in a different
-     * order than decoded IDs produced pre-upgrade, and {@code hasIds} would fail to match. The
-     * probe treats the order as opaque but stable.
+     * {@code __NODE_KEY_COLUMNS}; reordering between releases would encode new IDs in a different
+     * order than IDs produced pre-upgrade, and {@code hasIds} would fail to match. The probe
+     * treats the order as opaque but stable.
      */
     public Optional<NodeIdMetadata> nodeIdMetadata(String tableSqlName) {
         return lookup(tableSqlName) instanceof NodeIdMetadataLookup.Present p
@@ -969,11 +889,11 @@ public class JooqCatalog {
     /**
      * Sibling of {@link #nodeIdMetadata(String)} that surfaces malformed-metadata reasons at the
      * classifier boundary. Returns the reason string (without the {@code "KjerneJooqGenerator
-     * metadata on table 'X' is malformed: "} prefix — the caller prepends it) when the constants
+     * metadata on table 'X' is malformed: "} prefix, which the caller prepends) when the constants
      * are present but fail validation; empty when the constants are absent or well-formed.
      *
-     * <p>Classifier usage: call this first — if present, fail the type as {@code UnclassifiedType}
-     * with the prefixed message; otherwise call {@link #nodeIdMetadata(String)} to get the
+     * <p>Classifier usage: call this first; if present, fail the type as {@code UnclassifiedType}
+     * with the prefixed message, otherwise call {@link #nodeIdMetadata(String)} for the
      * synthesized values. Results share a cache so reflection runs once per table per build.
      */
     public Optional<String> nodeIdMetadataDiagnostic(String tableSqlName) {
@@ -1007,7 +927,7 @@ public class JooqCatalog {
     /**
      * Validation half, factored so tests can exercise each malformed-metadata branch by passing
      * synthetic raw values without having to swap {@code static final} fields on a real table
-     * class. Preserved signature — wraps the three-state {@link #validateLookup}.
+     * class. Wraps the three-state {@link #validateLookup}.
      */
     static Optional<NodeIdMetadata> validateNodeIdMetadata(
             String tableSqlName,
@@ -1114,7 +1034,7 @@ public class JooqCatalog {
     }
 
     /**
- * Full column facts for the catalog-discovery projection: adds the SQL data-type name
+     * Full column facts for the catalog-discovery projection: adds the SQL data-type name
      * ({@code DataType.getTypeName()}) and the column comment ({@code Field.getComment()}) to the
      * {@link ColumnEntry} shape. Reads the same reflective field set {@link #allColumnsOf(String)}
      * does, so column order matches. The comment is empty when jOOQ codegen captured none. All
@@ -1137,7 +1057,7 @@ public class JooqCatalog {
     }
 
     /**
- * Every index on a table as a resolved-immutable (name, SQL-column-names) pair, in index
+     * Every index on a table as a resolved-immutable (name, SQL-column-names) pair, in index
      * declaration order with columns in index-field order. Each index column is resolved through
      * {@link #findColumn(Table, String)} so the SQL name is canonical, falling back to the raw
      * sort-field name when (degenerately) unresolvable.
@@ -1153,7 +1073,7 @@ public class JooqCatalog {
     }
 
     /**
- * The outgoing foreign keys of a table reduced to resolved-immutable facts: the SQL
+     * The outgoing foreign keys of a table reduced to resolved-immutable facts: the SQL
      * constraint name, the schema-qualified source and target table IDs, and the source / target
      * column SQL-name lists. Unlike {@link ForeignKeyRef} (constraint name + {@code Keys}
      * {@link ClassName} + constant, no column pairs), this carries the column pairs the
@@ -1178,21 +1098,21 @@ public class JooqCatalog {
     }
 
     /**
- * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name,
+     * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name,
      * nullability, and comment (empty when codegen captured none). The resolved-immutable superset
      * of {@link ColumnEntry} the {@code CatalogFacts} projection needs; see {@link #columnFactsOf}.
      */
     public record ColumnFacts(String sqlName, String javaName, String sqlType, boolean nullable, String comment) {}
 
     /**
- * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.
+     * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.
      */
     public record IndexFacts(String name, java.util.List<String> columns) {
         public IndexFacts { columns = java.util.List.copyOf(columns); }
     }
 
     /**
- * A foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified
+     * A foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified
      * source / target table IDs, and the source / target column SQL-name lists. See
      * {@link #foreignKeyFactsOf}.
      */
@@ -1339,7 +1259,7 @@ public class JooqCatalog {
      * resolved {@link Table}, so single-schema and multi-schema catalog layouts produce the
      * same call shape with no per-caller derivation.
      *
-     * <p>The catalog reference is intentionally part of the record's identity — within a build
+     * <p>The catalog reference is intentionally part of the record's identity; within a build
      * all entries come from one {@code JooqCatalog} instance, so its presence in {@code equals}
      * is a no-op for normal use; tests that compare entries across separate catalog instances
      * should compare {@link #table()} or {@link #javaFieldName()} explicitly.
@@ -1369,8 +1289,8 @@ public class JooqCatalog {
          * The {@link ClassName} of the schema's {@code Tables} constants class
          * (e.g. {@code multischema_a.Tables}). The catalog-construction precondition
          * (see {@link JooqCatalog#verifyTablesClassPresent}) guarantees every schema in a live
-         * catalog has a generated {@code Tables} class; the {@link Optional} return is retained
-         * as a defence-in-depth wrapper around reflection but in practice is always present for
+         * catalog has a generated {@code Tables} class; the {@link Optional} return is a
+         * defence-in-depth wrapper around reflection and in practice is always present for
          * any {@code TableEntry} produced by {@link JooqCatalog#findTable}.
          */
         public Optional<ClassName> constantsClass() {
@@ -1415,7 +1335,7 @@ public class JooqCatalog {
         /**
          * Materialises a {@link no.sikt.graphitron.rewrite.model.TableRef} from this entry. The
          * {@code sqlName} argument is the directive-supplied form (case-preserved for error
-         * messages), not {@code entry.table().getName()} — the catalog lookup key is preserved
+         * messages), not {@code entry.table().getName()}; the catalog lookup key is preserved
          * from the user-visible name even when jOOQ canonicalises differently.
          *
          * <p>Non-{@link Optional} return: the catalog-construction precondition
@@ -1456,9 +1376,9 @@ public class JooqCatalog {
      * carries a human-readable reason suitable for a classifier-boundary diagnostic; the caller
      * prepends the {@code "KjerneJooqGenerator metadata on table 'X' is malformed: "} prefix.
      *
-     * <p>Not part of the primary public API — callers use {@link #nodeIdMetadata(String)} and
-     * {@link #nodeIdMetadataDiagnostic(String)}. The sum type itself is public so tests and
-     * future classifier helpers can switch over the three cases directly.
+     * <p>Not part of the primary public API; callers use {@link #nodeIdMetadata(String)} and
+     * {@link #nodeIdMetadataDiagnostic(String)}. The sum type itself is public so tests can
+     * switch over the three cases directly.
      */
     public sealed interface NodeIdMetadataLookup {
         record Present(NodeIdMetadata metadata) implements NodeIdMetadataLookup {}
@@ -1477,7 +1397,7 @@ public class JooqCatalog {
      * {@code nullable} reflects the column's nullability as declared in the jOOQ data type.
      * {@code columnType} is the same live {@code Class} decided once via {@code TypeName.get(...)}
      * for codegen, so array columns emit a real {@code ArrayTypeName} rather than crashing
- * {@code ClassName.bestGuess}.
+     * {@code ClassName.bestGuess}.
      */
     public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable, TypeName columnType) {
         /**
@@ -1546,10 +1466,15 @@ public class JooqCatalog {
             public Resolved { params = List.copyOf(params); }
         }
         record NotInCatalog() implements RoutineResolution {}
+        /** The name resolves to a catalog table or view, not a function ({@code TableOptions} is not function-typed). */
         record NotATableValuedFunction() implements RoutineResolution {}
+        /**
+         * The function's table is in the catalog, but the generated {@code Routines} class has no
+         * table-form convenience method for it (degenerate codegen); {@code detail} names what was probed.
+         */
         record NoConvenienceMethod(String detail) implements RoutineResolution {}
         /**
- * The name resolves to a generated database routine that is not table-valued (a
+         * The name resolves to a generated database routine that is not table-valued (a
          * procedure or a scalar / void function). jOOQ does not place these in {@code getTables()},
          * but it does generate a per-routine class in the schema's {@code routines} sub-package;
          * probing that package is what distinguishes "exists but is not table-valued" (this arm,
@@ -1580,13 +1505,12 @@ public class JooqCatalog {
     }
 
     /**
- * Sealed outcome of the scoped name lookup {@link #findForeignKey(String, String)}.
+     * Sealed outcome of the scoped name lookup {@link #findForeignKey(String, String)}.
      * A {@code JooqCatalog}-local result type in the same family as {@link TableResolution},
-     * {@link ForeignKeyResolution}, and {@link RoutineResolution}. Unlike the retired
-     * {@code Optional<ForeignKey>} form, it keeps the raw jOOQ {@link ForeignKey} (a permitted
-     * holder inside the catalog boundary) on {@link Resolved} and surfaces {@link Ambiguous} as a
-     * first-class arm so a cross-schema constraint-name collision reaches author-facing call sites
-     * as a typed rejection instead of a silent first-hit.
+     * {@link ForeignKeyResolution}, and {@link RoutineResolution}. It keeps the raw jOOQ
+     * {@link ForeignKey} (a permitted holder inside the catalog boundary) on {@link Resolved} and
+     * surfaces {@link Ambiguous} as a first-class arm so a cross-schema constraint-name collision
+     * reaches author-facing call sites as a typed rejection instead of a silent first-hit.
      *
      * <p>Not in scope for {@code VariantCoverageTest} (which covers classification leaves) or
      * {@code SealedHierarchyDocCoverageTest} (which walks only the {@code Rejection} hierarchy);

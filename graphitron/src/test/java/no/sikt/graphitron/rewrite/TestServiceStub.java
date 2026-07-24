@@ -33,7 +33,7 @@ class TestServiceStub {
     public static String get() { throw new UnsupportedOperationException(); }
 
     /**
- * No-arg query-side producer for the {@code FilmDetails @record} fixture payload,
+     * No-arg query-side producer for the {@code FilmDetails @record} fixture payload,
      * returning the {@link TestFilmDetailsDto} backing so the payload grounds via reflection
      * (the dangling-type-reference soundness pass rejects unbacked payload returns).
      */
@@ -111,7 +111,7 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilms() { throw new UnsupportedOperationException(); }
 
     /**
- * Returns a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord} — used
+     * Returns a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord}, used
      * by {@code @service} on a single-table discriminated interface ({@code Content}) return, whose
      * shared {@code content} table's record class is {@code ContentRecord}.
      */
@@ -163,10 +163,9 @@ class TestServiceStub {
     // ===== Methods that intentionally violate return-type strictness =====
 
     /**
-     * Service method with a {@code List<Row1<Integer>>} parameter and a String return.
-     * Used to verify the strict-return-type rejection path; if the method also took a Sources
-     * param it would still be the strict-return-type rejection that fires first. For Sources-
-     * specific tests use {@link #getFilmWithSources}.
+     * Service method with a {@code List<Row1<Integer>>} Sources parameter and a String return.
+     * Used to verify the strict-return-type rejection path, which fires before the Sources
+     * check. For Sources-specific tests use {@link #getFilmWithSources}.
      */
     public static String getWithSources(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -511,13 +510,12 @@ class TestServiceStub {
     }
 
     /**
-     * SettKvotesporsmal-shape regression: returns the SDL payload class directly
-     * (legacy passthrough). The payload class exposes a {@code film()} accessor returning the
-     * inner {@code FilmRecord}, but the {@code @service} method's reflected return type is the
-     * payload class itself, not the inner record. The legacy carrier walk would have admitted
-     * the payload shape as a single-record carrier and demanded {@code FilmRecord} as the return
-     * type; the unified path instead classifies the data field through the standard
-     * record-backed parent accessor lookup, with no carrier-walk consultation.
+     * SettKvotesporsmal-shape regression: returns the SDL payload class directly (passthrough).
+     * The payload class exposes a {@code film()} accessor returning the inner {@code FilmRecord},
+     * but the {@code @service} method's reflected return type is the payload class itself, not
+     * the inner record. The data field classifies through the standard record-backed parent
+     * accessor lookup; the payload shape is not admitted as a single-record carrier demanding
+     * {@code FilmRecord} as the return type.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SettKvotesporsmalShapePayload runPassthroughPayload() {
         throw new UnsupportedOperationException();
@@ -552,11 +550,10 @@ class TestServiceStub {
     // ===== child-@service TableBoundReturnType V-narrowing fixtures =====
 
     /**
-     * Migration arm: a list-cardinality {@code @table}-bound child field with a
-     * {@code List<Row1<Integer>>} Sources param now structurally requires
-     * {@code List<List<LanguageRecord>>} (V = {@code tb.table().recordClass()}). It previously
-     * required {@code List<List<Record>>}, so this signature was accepted. Now the
-     * raw {@code Record} on V mismatches the narrowed expectation.
+     * Rejection arm: a list-cardinality {@code @table}-bound child field with a
+     * {@code List<Row1<Integer>>} Sources param structurally requires
+     * {@code List<List<LanguageRecord>>} (V = {@code tb.table().recordClass()}). This stub
+     * declares raw {@code Record} on V, which mismatches the narrowed expectation.
      */
     public static java.util.List<java.util.List<org.jooq.Record>> childServiceRowKeyedRawRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -564,8 +561,7 @@ class TestServiceStub {
 
     /**
      * Acceptance arm: the same list-cardinality child field, declaring
-     * {@code List<List<LanguageRecord>>}. This was previously rejected (expected
-     * {@code List<List<Record>>}); now it is the canonical accepted shape because
+     * {@code List<List<LanguageRecord>>}, the canonical accepted shape because
      * V = {@code tb.table().recordClass() = LanguageRecord}.
      */
     public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord>> childServiceRowKeyedSpecificRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
@@ -575,10 +571,9 @@ class TestServiceStub {
     /**
      * Cross-record regression arm: same list-cardinality {@code Language}-typed child
      * field, but the declared per-key record class is the wrong jOOQ record
-     * ({@code FilmRecord} instead of {@code LanguageRecord}). Always rejected by
-     * {@code TypeName.equals}: previously against {@code List<List<Record>>}, now
-     * against {@code List<List<LanguageRecord>>}. Pins the diagnostic-wording change to
-     * the narrowed expected type without re-litigating the axis.
+     * ({@code FilmRecord} instead of {@code LanguageRecord}); rejected by
+     * {@code TypeName.equals} against {@code List<List<LanguageRecord>>}. Pins the
+     * diagnostic wording on the narrowed expected type.
      */
     public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>> childServiceRowKeyedWrongRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -724,8 +719,8 @@ class TestServiceStub {
      * Child coordinate parity: a child {@code @service} rows-method on a {@code @table} parent,
      * taking the parent key (Sources, {@code List<Row1<Integer>>}) plus a {@link FilmRecord} arg. The
      * arg classifies to {@code CallSiteExtraction.JooqRecord} exactly as the root param does, and the
-     * child rows-method emits {@code createFilmRecord} through {@code ArgCallEmitter} (the real arm,
-     * not a throw) — the binding is coordinate-agnostic because {@code enrich} runs for child
+     * child rows-method emits {@code createFilmRecord} through {@code ArgCallEmitter}; the binding
+     * is coordinate-agnostic because {@code enrich} runs for child
      * {@code @service} too. Returns {@code List<LanguageRecord>} to match a singular {@code Language}
      * child field's rows-method outer shape (V = {@code LanguageRecord}).
      */
@@ -847,7 +842,7 @@ class TestServiceStub {
     }
 
     /**
- * Two declarations sharing the name {@code getOverloaded} (arity 0 and 1). The reflect
+     * Two declarations sharing the name {@code getOverloaded} (arity 0 and 1). The reflect
      * helpers must reject the name as ambiguous rather than silently picking the first
      * declaration-order match.
      */

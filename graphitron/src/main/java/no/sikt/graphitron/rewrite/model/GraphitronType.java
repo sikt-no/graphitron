@@ -54,22 +54,19 @@ public sealed interface GraphitronType
      * A GraphQL object type annotated with both {@code @table} and {@code @node}.
      * Full SQL generation applies, plus Relay Global Object Identification.
      *
-     * <p>{@code typeId} is the resolved NodeId wire prefix: the value of the {@code typeId}
-     * argument on the {@code @node} directive, defaulted to the type name at classify time
-     * ({@code TypeBuilder} resolves {@code sdlTypeId != null ? sdlTypeId : name}) when the
-     * argument is omitted. Never {@code null} on a classified {@code NodeType}.
+     * <p>{@code typeId} is the resolved NodeId wire prefix: the {@code typeId} argument of the
+     * {@code @node} directive, defaulted to the type name when the argument is omitted. Never
+     * {@code null} on a classified {@code NodeType}.
      *
      * <p>{@code nodeKeyColumns} is the resolved list of {@code keyColumns} argument entries.
-     * An empty list means the argument was omitted, in which case the primary key is used
-     * at code-generation time.
+     * An empty list means the argument was omitted; the primary key is used at
+     * code-generation time.
      *
-     * <p>{@code encodeMethod} / {@code decodeMethod} are pre-resolved structural references to the
-     * per-type {@code encode<TypeName>} / {@code decode<TypeName>} helpers emitted by
-     * {@link no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator}. They are the
-     * single source of truth for the helper references; emitters consume them through
-     * {@link HelperRef} rather than reconstructing class + method strings from the typeId. Every
-     * call site that wraps wire-format encode/decode reads from these slots so the encoder
-     * generator and the call-site emitters cannot drift on naming.
+     * <p>{@code encodeMethod} / {@code decodeMethod} are pre-resolved references to the per-type
+     * {@code encode<TypeName>} / {@code decode<TypeName>} helpers emitted by
+     * {@link no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator}. Emitters
+     * consume them through {@link HelperRef} rather than reconstructing class + method strings
+     * from the typeId, so the encoder generator and the call-site emitters cannot drift on naming.
      *
      * <p>A {@code @node} type with an unresolvable key column is classified as
      * {@link UnclassifiedType} instead.
@@ -90,8 +87,7 @@ public sealed interface GraphitronType
      *
      * <p>The sub-type identifies the backing Java representation. The builder reflects on the
      * producer's return type (a {@code @service} method return, {@code @tableMethod} return, or a
-     * parent-accessor chain) at build time. When no backing class can be resolved, the type is
-     * classified as {@link PojoResultType} with a {@code null} backing class.
+     * parent-accessor chain) at build time.
      */
     sealed interface ResultType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
@@ -113,11 +109,8 @@ public sealed interface GraphitronType
 
     /**
      * A result type whose producer's reflected return is a plain Java class (POJO).
-     *
-     * <p>The sole permitted sub-type is {@link Backed}: a payload carrier whose backing class was
-     * reflected from its producer's return type. The {@link ResultType#fqClassName()}
-     * method returns the non-null backing class name. Sites identify the case from the permit
-     * identity ({@code instanceof PojoResultType.Backed}) rather than from a nullable.
+     * Sites identify the case from the permit identity ({@code instanceof PojoResultType.Backed})
+     * rather than from a nullable {@link ResultType#fqClassName()}.
      */
     sealed interface PojoResultType extends ResultType
         permits PojoResultType.Backed {
@@ -437,17 +430,17 @@ public sealed interface GraphitronType
 
     /**
      * A nesting projection: a directiveless SDL object type embedded under a {@code @table}-bound
-     * parent through a {@code ChildField.NestingField}. The nested SDL type inherits the parent's
+     * parent through a {@link ChildField.NestingField}. The nested SDL type inherits the parent's
      * {@code @table} and maps to the same database row; its fields are columns on the embedding
      * table (the same column may appear under several nested names, sharing one SELECT term).
      *
      * <p>This classification is assigned <em>only</em> at the embedding edge, when the field-first walk
-     * builds a {@code NestingField} and registers its element type (see {@code GraphitronSchemaBuilder
-     * .registerNestingTypesIn}); the type pass leaves a directiveless object unclassified because it
-     * cannot yet know whether anything nests it. The invariant {@code NestingType} ⟺ a corresponding
-     * {@code NestingField} therefore holds by construction. A directiveless object that nothing
-     * nests is left unclassified (an orphan) and the field that returns it classifies as
-     * {@code UnclassifiedField}.
+     * builds a {@code NestingField} and registers its element type
+     * ({@code GraphitronSchemaBuilder.registerNestingTypesIn}); the type pass leaves a directiveless
+     * object unclassified because it cannot yet know whether anything nests it. The invariant
+     * {@code NestingType} ⟺ a corresponding {@code NestingField} holds by construction. A
+     * directiveless object that nothing nests stays unclassified (an orphan) and the field that
+     * returns it classifies as {@code UnclassifiedField}.
      *
      * <p>No standalone SQL or fetcher is generated for the type itself: its fields inline into the
      * embedding parent's query and read off the parent row through the {@code NestingField}. The
@@ -464,13 +457,11 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
-     * A GraphQL enum type. Classifier records it so {@code schema.types()} is complete for
-     * emission. {@link #values} is the pre-resolved per-value spec list: at classify time the
-     * classifier walks each {@code GraphQLEnumValueDefinition} once and lifts
+     * A GraphQL enum type, recorded so {@code schema.types()} is complete for emission.
+     * {@link #values} is the pre-resolved per-value spec list: the classifier lifts
      * {@code @field(name:)} into {@link EnumValueSpec#runtimeValue} so the schema emitter and
      * the filter-axis resolver read the runtime string off the same record component.
-     * {@code schemaType} stays for type-level applied-directive emission
-     * ({@code AppliedDirectiveEmitter.emitApplications} on the enum container); per-value
+     * {@code schemaType} serves type-level applied-directive emission; per-value
      * applied directives walk {@link EnumValueSpec#source} instead.
      */
     record EnumType(
@@ -484,18 +475,16 @@ public sealed interface GraphitronType
      * A GraphQL scalar type whose Java type and {@code GraphQLScalarType} constant (or inline
      * synthesised form) have been resolved by
      * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}. Carries the
-     * {@link ScalarResolution.Successful} so emitters (notably
-     * {@code GraphitronSchemaClassGenerator}'s scalar-registration loop) can dispatch on the
-     * variant ({@link ScalarResolution.Resolved} → {@code .additionalType(Owner.FIELD)};
-     * {@link ScalarResolution.Synthesised} → inline {@code GraphQLScalarType.newScalar()...build()})
-     * without re-running reflection.
+     * {@link ScalarResolution.Successful} so emitters can dispatch on the variant
+     * ({@link ScalarResolution.Resolved} vs {@link ScalarResolution.Synthesised}) without
+     * re-running reflection.
      *
      * <p>The classifier produces this variant for:
      * <ul>
      *   <li>The five GraphQL spec built-ins ({@code Int}, {@code Float}, {@code String},
-     *       {@code Boolean}, {@code ID}) — always resolved through the resolver's closed
+     *       {@code Boolean}, {@code ID}), always resolved through the resolver's closed
      *       built-in table to a {@code Resolved} arm.</li>
-     *   <li>Federation-namespace scalars ({@code federation__FieldSet} etc.) — resolved to a
+     *   <li>Federation-namespace scalars ({@code federation__FieldSet} etc.), resolved to a
      *       {@code Synthesised} arm so the schema registers them under their SDL names with
      *       {@code _Any.type.getCoercing()} borrowed, since federation-jvm exposes no
      *       public-static-final constant for the renamed forms.</li>
@@ -505,12 +494,11 @@ public sealed interface GraphitronType
      * </ul>
      *
      * <p>Consumer scalars without {@code @scalarType} (and not federation-namespaced) are not
-     * classified — the classifier returns {@code null} for them, mirroring the behaviour before the
-     * scalar-resolver rework, so
-     * the build stays green for consumers who haven't reached for the directive.
+     * classified; the classifier returns {@code null} for them, keeping the build green for
+     * consumers who have not reached for the directive.
      *
      * <p>{@code schemaType} is the graphql-java object referenced from the assembled schema at
-     * classification time; emitters read directive applications through it (when they need to).
+     * classification time; emitters read directive applications through it.
      */
     record ScalarType(
         String name,
@@ -558,12 +546,10 @@ public sealed interface GraphitronType
      * builds it programmatically; for structural connections the classifier references the
      * already-built value from the assembled schema.
      *
- * <p>{@code facets} is the resolved {@code @asFacet} view for this connection: one
+     * <p>{@code facets} is the resolved {@code @asFacet} view for this connection: one
      * {@link FacetSpec} per marked field on the carrier's filter input, empty when none are marked
-     * (and always empty on the structural path — facet synthesis applies only to directive-driven
-     * carriers whose Connection shape Graphitron owns). This entry is a contained denormalized view
-     * carrier, not the fact's normalized home; when the connection unit is later lowered, it re-sources
-     * onto the facet operation fact with the rest of the view.
+     * (and always empty on the structural path; facet synthesis applies only to directive-driven
+     * carriers whose Connection shape Graphitron owns).
      */
     record ConnectionType(
         String name,
@@ -611,7 +597,7 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
- * The synthesised per-connection facets container, e.g.
+     * The synthesised per-connection facets container, e.g.
      * {@code QueryFilmerConnectionFacets}: one nullable {@code [<Scalar>FacetValue!]} field per
      * {@code @asFacet}-marked filter-input field on the owning connection's carrier. Synthesised by
      * {@code ConnectionPromoter} alongside the Connection / Edge forms whenever the carrier's
@@ -633,13 +619,13 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
- * A synthesised, cross-schema-reusable facet value type, e.g.
+     * A synthesised, cross-schema-reusable facet value type, e.g.
      * {@code MpaaRatingFacetValue { value: MpaaRating! count: Int! }}. One entry per distinct
      * (value scalar, element nullability) pair encountered across the whole schema, named by
      * {@link FacetNaming#facetValueTypeName(String, boolean)}; never SDL-declared.
      *
-     * <p>{@code value} mirrors the annotated filter-input field's element type exactly — same
-     * scalar <em>and</em> same nullability — so a client can feed {@code facetValue.value} straight
+     * <p>{@code value} mirrors the annotated filter-input field's element type exactly (same
+     * scalar <em>and</em> same nullability), so a client can feed {@code facetValue.value} straight
      * back into the filter with no coercion. {@code valueNullable} records the nullability half of
      * the dedup key.
      */

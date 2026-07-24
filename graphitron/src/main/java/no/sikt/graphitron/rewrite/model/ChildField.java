@@ -27,14 +27,12 @@ public sealed interface ChildField extends OutputField
             ChildField.ErrorsField {
 
     /**
-     * Every {@code ChildField} leaf is on a non-root parent type, so the source arrives wrapping this
-     * field's {@link #sourceShape()}. The true ancestor-product arrival is folded in here: when the parent
-     * type's {@code parentArrival} is {@link Arrival#ONE} exactly one source object reaches this field's
-     * fetcher, so the arm is {@link Source.OnlyChild} (single arrival, direct SQL); otherwise it is the
-     * {@link Source.Child} absorbing arm (arrival {@code Many}, DataLoader-batched, always correct as a
-     * one-element batch). The arm is a derived view of a parent-grain fact the caller supplies (every
-     * field on one parent folds the same way), not a stored per-leaf component; see
-     * {@link OutputField#source(Arrival)} and {@link no.sikt.graphitron.rewrite.GraphitronSchema#sourceOf sourceOf}.
+     * The source arrives wrapping this field's {@link #sourceShape()}: {@link Source.OnlyChild}
+     * when exactly one source object reaches the fetcher (direct SQL), else the
+     * {@link Source.Child} absorbing arm (DataLoader-batched, correct as a one-element batch).
+     * The arm is a derived view of a parent-grain fact the caller supplies, not a stored per-leaf
+     * component; see {@link OutputField#source(Arrival)} and
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchema#sourceOf sourceOf}.
      */
     @Override default Source source(Arrival parentArrival) {
         return parentArrival == Arrival.ONE
@@ -43,20 +41,16 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
- * The shape of what arrives at {@code env.getSource()} for this field. A projection of
-     * the parent type's backing: a {@code @table}-backed (catalog) parent puts a table row
-     * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a domain
-     * record ({@link SourceShape#Record}). The classifier already projected the parent's backing into
-     * this leaf's identity (the {@code BatchedTableField} stored gate, {@code RecordField} vs
-     * {@code ColumnBackedField}, the {@code SingleRecord*} / {@code Errors} payload fields), so the
-     * leaf-exhaustive switch is that projection; a new leaf forces a source-shape decision the same
-     * way {@link #operation()} / {@link #target()} do.
+     * The shape of what arrives at {@code env.getSource()} for this field: a projection of the
+     * parent type's backing. A {@code @table}-backed parent puts a table row
+     * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a
+     * domain record ({@link SourceShape#Record}). The classifier already projected the parent's
+     * backing into this leaf's identity, so the leaf-exhaustive switch is that projection; a new
+     * leaf forces a source-shape decision the same way {@link #operation()} / {@link #target()} do.
      *
-     * <p>The invariant is pinned by {@code SourceShapeProjectionTest}: for every classified
-     * {@code ChildField} in the classification corpus, this leaf-derived value is cross-checked
-     * against the parent GraphQL type's independently-classified backing (a {@code TableBackedType}
-     * yields {@link SourceShape#Table}, any other backing {@link SourceShape#Record}), so a leaf
-     * wired to the wrong arm cannot silently diverge from the projection it claims to be.
+     * <p>Pinned by {@code SourceShapeProjectionTest}: every classified {@code ChildField} is
+     * cross-checked against the parent type's independently-classified backing, so a leaf wired
+     * to the wrong arm cannot silently diverge from the projection it claims to be.
      */
     default SourceShape sourceShape() {
         return switch (this) {
@@ -82,10 +76,9 @@ public sealed interface ChildField extends OutputField
             // A projection slot reads off the pivot subselect's graphitron-built jOOQ Record
             // (or, on the batched path, the scattered per-key Record): a record source.
             case PivotSlotField ignored -> SourceShape.Record;
-            // The merged batched re-query leaf: the parent backing is a stored component,
-            // not a leaf identity — read it. SourceShapeProjectionTest's cross-check against the
-            // independently-classified parent backing keeps holding and gets stronger here (a
-            // stored fact checked against a walk, not a tautology of leaf identity).
+            // Batched re-query leaves store the parent backing as a component, not a leaf
+            // identity; SourceShapeProjectionTest cross-checks the stored fact against the
+            // independently-classified parent backing.
             case BatchedTableField f -> f.sourceShape();
             case BatchedLookupTableField f -> f.sourceShape();
             // Record-backed parents (DTO batching, @service / DML payload carriers): the source is a
@@ -122,8 +115,7 @@ public sealed interface ChildField extends OutputField
             case ServiceRecordField f -> OutputField.serviceCall(f.method());
             // Record / passthrough scalar reads.
             case RecordField ignored -> OutputField.bareFetch();
-            // The @service record-composite carrier's data field: a bare source-passthrough
-            // projection of the producer's in-memory composite record(s), no filter surface.
+            // The composite carrier's data field: a bare source passthrough, no filter surface.
             case RecordCompositeField ignored -> OutputField.bareFetch();
             case PropertyField ignored -> OutputField.bareFetch();
             case ComputedField ignored -> OutputField.bareFetch();
@@ -159,9 +151,8 @@ public sealed interface ChildField extends OutputField
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
             case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case RecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
-            // The composite carrier's data field projects the producer's record composite(s):
-            // a Record-shaped, list-or-single target (the element is a record-backed result type,
-            // not a scalar Field and not a @table), distinguishing this leaf from RecordField.
+            // Composite carrier data field: the element is a record-backed result type
+            // (not a scalar Field, not a @table), distinguishing this leaf from RecordField.
             case RecordCompositeField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case PropertyField ignored -> OutputField.single(new TargetShape.Field());
             // The pivot projects one graphitron-built record per parent (never a list; the
@@ -172,7 +163,7 @@ public sealed interface ChildField extends OutputField
             case PivotSlotField ignored -> OutputField.single(new TargetShape.Field());
             // @externalField inlines a jOOQ Field<X> into the parent SELECT; the shape stays Column.
             case ComputedField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
-            // Polymorphic children: catalog-bound (shape payload modeled-but-unpopulated this slice).
+            // Polymorphic children: catalog-bound.
             case InterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case UnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
             // Encoded-PK scalar carriers: Column.
@@ -185,26 +176,23 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
- * The single data field on a payload-returning DELETE carrier whose data field is an
-     * ID-typed scalar encoding the deleted row's primary key. The parent classifies as
+     * The single data field on a payload-returning DELETE carrier: an ID-typed scalar encoding
+     * the deleted row's primary key. The parent classifies as
      * {@code MutationField.MutationDmlRecordField} (single DELETE) or
      * {@code MutationField.MutationBulkDmlRecordField} (bulk DELETE) returning the PK-only
-     * RETURNING rows; this data field's fetcher reads PK column(s) off the source {@code Record}
-     * and runs them through {@link #encode} to produce the encoded NodeId.
+     * RETURNING rows; this field's fetcher reads PK column(s) off the source {@code Record} and
+     * runs them through {@link #encode}.
      *
-     * <p>Sibling of the record-sourced {@code BatchedTableField} carrier re-fetch ("follow-up SELECT,"
-     * load-bearing for INSERT / UPDATE / UPSERT carriers) and {@link SingleRecordIdField} ("encoded
-     * key off an {@code @service} producer's in-memory record"). The three encode genuinely
-     * different invariants — follow-up SELECT vs no-follow-up-encoded-PK-off-RETURNING vs
-     * no-follow-up-encoded-key-off-record — not different values of one knob; the sealed split
-     * pushes the per-carrier emission story into the type system.
+     * <p>Sibling of the record-sourced {@link BatchedTableField} carrier re-fetch (follow-up
+     * SELECT, for INSERT / UPDATE / UPSERT carriers) and {@link SingleRecordIdField} (encoded key
+     * off an {@code @service} producer's in-memory record). The three encode genuinely different
+     * invariants, not different values of one knob; the sealed split pushes the per-carrier
+     * emission story into the type system.
      *
-     * <p>Declines {@link TableTargetField} (element is the {@code ID} scalar, not a table-bound
-     * type) and {@link BatchKeyField} (no DataLoader). The {@link #encode} compaction carries
-     * the resolved per-Node encoder and the column shape, mirroring the
-     * {@link CallSiteCompaction.NodeIdEncodeKeys} slot every other NodeId-encoded projection
-     * uses; the encoder lives on the compaction slot rather than being fused into the element
-     * shape so the "what's the element shape" and "how to project it" axes stay split.
+     * <p>Declines {@link TableTargetField} (element is the {@code ID} scalar, not table-bound)
+     * and {@link BatchKeyField} (no DataLoader). {@link #encode} carries the resolved per-Node
+     * encoder and column shape on the {@link CallSiteCompaction.NodeIdEncodeKeys} slot every
+     * other NodeId-encoded projection uses, keeping the element-shape and projection axes split.
      */
     record SingleRecordIdFieldFromReturning(
         String parentTypeName,
@@ -219,38 +207,33 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
- * The single data field on an {@code @service} source-record carrier whose data
-     * field is an ID-typed scalar encoding the producer record's node-key column(s). The
-     * parent classifies as {@code MutationField.MutationServiceRecordField}; the {@code @service}
-     * method returns the typed jOOQ {@code XRecord} (single) or {@code List<XRecord>} (bulk)
-     * verbatim, optionally wrapped in the typed {@code Outcome} when the payload carries an
-     * errors field. This data field's fetcher reads the key column(s) straight off the
-     * in-memory record(s) and runs them through {@link #encode} — no follow-up SELECT, so the
-     * shape is deletion-safe by construction (the opptak {@code fjernSakTagg} /
-     * {@code fjernSakTagger} delete-then-echo mutations are the driving case: the record the
-     * service returns is already deleted from the database).
+     * The single data field on an {@code @service} source-record carrier: an ID-typed scalar
+     * encoding the producer record's node-key column(s). The parent classifies as
+     * {@code MutationField.MutationServiceRecordField}; the {@code @service} method returns the
+     * typed jOOQ {@code XRecord} (single) or {@code List<XRecord>} (bulk) verbatim, optionally
+     * wrapped in the typed {@code Outcome} when the payload carries an errors field. The fetcher
+     * reads the key column(s) straight off the in-memory record(s) and runs them through
+     * {@link #encode}. No follow-up SELECT, so the shape is deletion-safe by construction: the
+     * record the service returns may already be deleted from the database.
      *
-     * <p>Sibling of the record-sourced {@code BatchedTableField} carrier re-fetch ("follow-up SELECT off the
-     * producer's record") and {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
-     * RETURNING {@code Record}, read by SQL name"). It differs
-     * from {@code SingleRecordIdFieldFromReturning} on the source shape, not just the envelope:
-     * the source is the developer-declared {@code TableRecord} subclass (read through typed
-     * {@code Tables.X.COL} constants), it may arrive wrapped in {@code Outcome}, and the bulk
-     * cardinality is a {@code List<XRecord>}, not a jOOQ {@code Result}.
+     * <p>Sibling of the record-sourced {@link BatchedTableField} carrier re-fetch (follow-up
+     * SELECT off the producer's record) and {@link SingleRecordIdFieldFromReturning} (encoded PK
+     * scalar off the DML RETURNING {@code Record}, read by SQL name). It differs from the latter
+     * on the source shape, not just the envelope: the source is the developer-declared
+     * {@code TableRecord} subclass (read through typed {@code Tables.X.COL} constants), it may
+     * arrive wrapped in {@code Outcome}, and the bulk cardinality is a {@code List<XRecord>},
+     * not a jOOQ {@code Result}.
      *
      * <p>{@link #table()} is the producer's table, whose typed {@code Tables.X.COL} constants
-     * the encode reads (first-class on the leaf, no longer a {@code SourceKey} slot).
-     * The {@link #sourceKey()} carries the node-key columns the encode reads and
-     * {@link SourceKey.Wrap.TableRecord} (the producer's typed record subclass — required by
-     * the compact constructor, which is the named join site for the retired
-     * {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒ {@code TableRecord} invariant: this leaf is the
-     * only {@link #envelope()}-bearing typed-record read, and it requires the typed wrap
-     * unconditionally). {@link #envelope()} ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is the
-     * same axis the table-field sibling's emitter derives at the type level as
+     * the encode reads. {@link #sourceKey()} carries the node-key columns and
+     * {@link SourceKey.Wrap.TableRecord} (the producer's typed record subclass); the compact
+     * constructor requires that wrap unconditionally, this leaf being the only
+     * {@link #envelope()}-bearing typed-record read. {@link #envelope()} ({@code DIRECT} /
+     * {@code OUTCOME_SUCCESS}) is the same axis the table-field sibling's emitter derives as
      * {@code sourceIsOutcome}; the bulk arrival is the field's own wrapper position
-     * ({@code returnType().wrapper().isList()}). The {@link #encode} compaction mirrors the
-     * slot every other NodeId-encoded projection uses. Declines {@link TableTargetField}
-     * (element is the {@code ID} scalar) and {@link BatchKeyField} (no DataLoader).
+     * ({@code returnType().wrapper().isList()}). {@link #encode} mirrors the compaction slot
+     * every other NodeId-encoded projection uses. Declines {@link TableTargetField} (element is
+     * the {@code ID} scalar) and {@link BatchKeyField} (no DataLoader).
      */
     record SingleRecordIdField(
         String parentTypeName,
@@ -298,11 +281,10 @@ public sealed interface ChildField extends OutputField
             if (columns.isEmpty()) {
                 throw new IllegalArgumentException("ColumnBackedField requires at least one column");
             }
-            // Deferred-generalization seam, not a modeling truth: @nodeId is currently the only
+            // Deferred-generalization seam, not a modeling truth: @nodeId is the only
             // multi-column trigger, so a multi-column carrier is always a node-key codec call
-            // (and, by corollary, a Direct read is always single-column). Loosen this invariant
-            // when a plain multi-column projection (arity-N Direct) arrives instead of building
-            // on it.
+            // (and, by corollary, a Direct read is always single-column). A seam to loosen for
+            // a plain multi-column projection (arity-N Direct), not a fact to build on.
             if (columns.size() > 1 && !(compaction instanceof CallSiteCompaction.NodeIdEncodeKeys)) {
                 throw new IllegalArgumentException(
                     "ColumnBackedField '" + name + "' with arity " + columns.size()
@@ -310,9 +292,8 @@ public sealed interface ChildField extends OutputField
             }
         }
         /**
-         * Arity classified once: {@code true} when this carrier spans more than one column (a
-         * composite node key). Every consumer branches on this accessor rather than re-evaluating
-         * the size predicate.
+         * {@code true} when this carrier spans more than one column (a composite node key).
+         * Consumers branch here rather than re-evaluating the size predicate.
          */
         public boolean isComposite() { return columns.size() > 1; }
         @Override public DomainReturnType domainReturnType() {
@@ -329,7 +310,7 @@ public sealed interface ChildField extends OutputField
     /**
      * A column-backed output carrier on a table-backed parent reached through a
      * {@code @reference} path. The terminal {@link #columns()} (arity 1..N) live on the joined
-     * target table; {@link #compaction()} controls how the value reaches the field —
+     * target table; {@link #compaction()} controls how the value reaches the field:
      * {@link CallSiteCompaction.Direct} for plain projection (single-column by the constructor
      * invariant below), {@link CallSiteCompaction.NodeIdEncodeKeys} for {@code @nodeId}
      * references where the target's keyColumns sit on the joined parent (rooted-at-parent).
@@ -353,8 +334,8 @@ public sealed interface ChildField extends OutputField
                 throw new IllegalArgumentException("ColumnBackedReferenceField requires at least one column");
             }
             // Same deferred-generalization seam as ColumnBackedField: no plain multi-column
-            // reference projection exists today, so a multi-column carrier is always a node-key
-            // codec call. Loosen when arity-N Direct arrives instead of building on it.
+            // reference projection exists, so a multi-column carrier is always a node-key
+            // codec call. A seam to loosen for arity-N Direct, not a fact to build on.
             if (columns.size() > 1 && !(compaction instanceof CallSiteCompaction.NodeIdEncodeKeys)) {
                 throw new IllegalArgumentException(
                     "ColumnBackedReferenceField '" + name + "' with arity " + columns.size()
@@ -363,9 +344,8 @@ public sealed interface ChildField extends OutputField
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "ColumnBackedReferenceField");
         }
         /**
-         * Arity classified once: {@code true} when this carrier spans more than one column (a
-         * composite node key). Every consumer branches on this accessor rather than re-evaluating
-         * the size predicate.
+         * {@code true} when this carrier spans more than one column (a composite node key).
+         * Consumers branch here rather than re-evaluating the size predicate.
          */
         public boolean isComposite() { return columns.size() > 1; }
         @Override public DomainReturnType domainReturnType() {
@@ -406,7 +386,7 @@ public sealed interface ChildField extends OutputField
         }
         /** The FK-derived column pairs of the single cross-table hop. */
         public On.ColumnPairs pairs() { return (On.ColumnPairs) hop.on(); }
-        /** The cross table joined to project this field — equivalent to {@code hop().targetTable()}. */
+        /** The cross table joined to project this field; equivalent to {@code hop().targetTable()}. */
         public TableRef targetTable() { return hop.targetTable(); }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(column.columnType());
@@ -416,21 +396,21 @@ public sealed interface ChildField extends OutputField
     /**
      * A child field that navigates to (or stays at) a table scope and generates SQL.
      *
-     * <p>All six variants carry the same three SQL-generation components in addition to the
-     * core {@link ReturnTypeRef.TableBoundReturnType returnType} and join path:
+     * <p>All variants carry, in addition to the core
+     * {@link ReturnTypeRef.TableBoundReturnType returnType} and join path:
      * <ul>
-     *   <li>{@link #filters()} — ordered list of WHERE-clause contributions ({@link WhereFilter});
-     *       may be empty. {@link ConditionFilter} entries represent field-level {@code @condition}
-     *       methods. {@link GeneratedConditionFilter} entries represent Graphitron-generated
-     *       argument-driven predicates.</li>
-     *   <li>{@link #orderBy()} — authoritative ordering ({@link OrderBySpec}); always non-null.
-     *       {@link OrderBySpec.None} when ordering is not applicable or not resolvable.</li>
-     *   <li>{@link #pagination()} — Relay pagination arguments ({@link PaginationSpec});
-     *       {@code null} when the field has no pagination arguments.</li>
+     *   <li>{@link #filters()}: ordered WHERE-clause contributions; may be empty.
+     *       {@link ConditionFilter} entries are field-level {@code @condition} methods,
+     *       {@link GeneratedConditionFilter} entries are Graphitron-generated argument-driven
+     *       predicates.</li>
+     *   <li>{@link #orderBy()}: authoritative ordering; never null,
+     *       {@link OrderBySpec.None} when not applicable or not resolvable.</li>
+     *   <li>{@link #pagination()}: Relay pagination arguments; {@code null} when the field has
+     *       no pagination arguments.</li>
      * </ul>
      *
      * <p>{@link NestingField} is intentionally excluded: it carries a
-     * {@link ReturnTypeRef.TableBoundReturnType} but does not navigate — it inherits the parent's
+     * {@link ReturnTypeRef.TableBoundReturnType} but does not navigate; it inherits the parent's
      * table context unchanged.
      */
     sealed interface TableTargetField extends ChildField, SqlGeneratingField
@@ -459,15 +439,12 @@ public sealed interface ChildField extends OutputField
     ) implements TableTargetField, ResultKeyAliasedField {
         public TableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
-            // TableField is an implemented leaf, so no validator gate re-checks its
-            // shape — the emittable routine-chain set is pinned mechanically here rather than
-            // by classifier prose. A routine-bearing path carries exactly one routine node
-            // (chains with more land as typed Deferred, never on this leaf; the emitter's
-            // single CROSS JOIN LATERAL arm covers exactly this set) and none of the surfaces
-            // the inline emit does not render for routine chains: no filters, no
-            // argument-driven ordering, no pagination, non-Connection. @defaultOrder is
-            // admitted (OrderBySpec.Fixed against the terminus's real columns, rendered on
-            // the terminal alias like any table). The lateral-iff-routine correspondence is
+            // No validator gate re-checks TableField's shape, so the emittable routine-chain
+            // set is pinned mechanically here: the check below admits exactly the shape the
+            // inline emitter's single CROSS JOIN LATERAL arm renders; other routine chains
+            // classify as typed Deferred, never this leaf. @defaultOrder is admitted
+            // (OrderBySpec.Fixed against the terminus's real columns, rendered on the
+            // terminal alias like any table). The lateral-iff-routine correspondence is
             // JoinStep.Hop's own invariant, not restated here.
             long routineNodes = joinPath.stream()
                 .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
@@ -494,10 +471,9 @@ public sealed interface ChildField extends OutputField
 
     /**
      * A DataLoader-batched keyed re-query anchor: the field launches its own SELECT keyed on a
-     * tuple lifted off the parent's held object, one leaf for both parent backings (a full merge,
-     * with the key laundered across both backings). The keyed re-query is one primitive
-     * {@code f(keys, correlation)}; the source endpoint contributes only how the key tuple is
-     * lifted, never visible to the query unit.
+     * tuple lifted off the parent's held object, one leaf for both parent backings. The keyed
+     * re-query is one primitive {@code f(keys, correlation)}; the source endpoint contributes
+     * only how the key tuple is lifted, never visible to the query unit.
      *
      * <p>"Batched" names what distinguishes this leaf from the inline {@link TableField}: the
      * field launches its own keyed, DataLoader-batched re-query anchor (the {@link BatchKeyField}
@@ -510,13 +486,11 @@ public sealed interface ChildField extends OutputField
      *     Stored, not derived from {@link #lift()}: {@link KeyLift.FkColumns} is legitimately
      *     carried by both a table-row parent and a jOOQ-record-backed result parent, so the
      *     parent-backing fact cannot be recovered from the lift mechanism.
-     * @param lift how the key tuple is lifted off the parent's held object — total on this leaf.
+     * @param lift how the key tuple is lifted off the parent's held object; total on this leaf.
      *     The Table arm always carries {@link KeyLift.FkColumns} (project columns off the held
-     *     jOOQ record; its derived wrap is the {@code Row} residue the split mint stores); the
-     *     Record arm carries whichever mechanism the parent's backing admits. The Table arm's
-     *     lift is consumed only by {@link KeyLift#checkResidueAgreement} today (the Table emit
-     *     path stays wrap-driven); storing it consistent-by-construction is deliberate
-     *     provisioning for the eventual unified fetcher.
+     *     jOOQ record); the Record arm carries whichever mechanism the parent's backing admits.
+     *     The Table emit path is wrap-driven and consumes the lift only through
+     *     {@link KeyLift#checkResidueAgreement}, which pins the lift to its derived key residue.
      */
     record BatchedTableField(
         String parentTypeName,
@@ -537,7 +511,7 @@ public sealed interface ChildField extends OutputField
             // (1) the lift is total and must agree with the key residue it derives.
             java.util.Objects.requireNonNull(lift, "lift");
             KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedTableField");
-            // (2) carrier invariant, unchanged from both pre-merge leaves.
+            // (2) carrier invariant.
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "BatchedTableField");
             java.util.Objects.requireNonNull(sourceShape, "sourceShape");
             if (sourceShape == SourceShape.Table) {
@@ -551,24 +525,22 @@ public sealed interface ChildField extends OutputField
                         + "(KeyLift.FkColumns); a member-read lift (" + lift.getClass().getSimpleName()
                         + ") is a class-backed-parent mechanism");
                 }
-                // (6) every table-sourced mint dispatches LOAD_ONE (deriveSplitQuerySource's
-                // former prose guarantee, now structural). This is what keeps the unified
-                // emitsSingleRecordPerKey formula behavior-identical for the Table arm: the
-                // LOAD_MANY disjunct is unreachable here by construction, so a future mint
-                // cannot silently flip a table-sourced field's per-key cardinality.
+                // (6) every table-sourced mint dispatches LOAD_ONE. The LOAD_MANY disjunct of
+                // emitsSingleRecordPerKey is therefore unreachable on the Table arm by
+                // construction, so a mint cannot silently flip a table-sourced field's
+                // per-key cardinality.
                 if (loaderRegistration.dispatch() != LoaderRegistration.Dispatch.LOAD_ONE) {
                     throw new IllegalArgumentException(
                         "BatchedTableField with sourceShape=Table must dispatch LOAD_ONE; the "
                         + "loadMany contract is an accessor-arity (record-parent) shape");
                 }
                 // (5) leaf-specific surface pins, mirroring TableField's: a routine-bearing
-                // path carries exactly one routine node and none of the surfaces the batched emit
-                // does not render for routine chains. Additionally, a lateral-headed split keys
-                // the batch on the routine's column-bound inputs, so its sourceKey can never be
-                // empty (the classifier rejects the uncorrelated combination as
-                // DirectiveConflict). Table-gated: whether these should hold universally is an
-                // in-flight refinement question, not assumed — widening to Record would add
-                // unaudited checks.
+                // path carries exactly one routine node and none of the surfaces the batched
+                // emit does not render for routine chains. Additionally, a lateral-headed split
+                // keys the batch on the routine's column-bound inputs, so its sourceKey can
+                // never be empty (the classifier rejects the uncorrelated combination as
+                // DirectiveConflict). Table-gated: widening to Record would add unaudited
+                // checks.
                 long routineNodes = joinPath.stream()
                     .filter(s -> s instanceof JoinStep.Hop h && h.target() instanceof TableExpr.RoutineCall)
                     .count();
@@ -606,16 +578,13 @@ public sealed interface ChildField extends OutputField
         }
         @Override
         public boolean emitsSingleRecordPerKey() {
-            // One definition for both arms. Two structurally distinct triggers fold onto the
+            // One definition for both arms; two structurally distinct triggers fold onto the
             // same router decision in SplitRowsMethodEmitter: (a) single-cardinality fields
             // whose data-fetcher wants `Record` per key (one row per parent), and (b) the
             // loader.loadMany contract whose per-key value is `Record` regardless of field
-            // cardinality. The LOAD_MANY disjunct is unreachable on the Table arm (ctor
-            // invariant: Table implies LOAD_ONE), so the unified formula is structurally
-            // behavior-identical to the pre-merge split leaf's `!isList`. The
-            // {@link LoaderRegistration.Dispatch} projection is the single source of truth for
-            // (b) — TypeFetcherGenerator's record-based fetcher reads the same predicate to
-            // decide its valueType, so the two emit sites cannot drift.
+            // cardinality. The LoaderRegistration.Dispatch projection is the single source of
+            // truth for (b): TypeFetcherGenerator's record-based fetcher reads the same
+            // predicate to decide its valueType, so the two emit sites cannot drift.
             return !returnType().wrapper().isList()
                 || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
@@ -645,12 +614,10 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
- * The {@code @lookupKey} twin of {@link BatchedTableField}: a DataLoader-batched keyed
+     * The {@code @lookupKey} twin of {@link BatchedTableField}: a DataLoader-batched keyed
      * re-query anchor whose SELECT is additionally narrowed by a {@code @lookupKey} VALUES join.
-     * One leaf for both parent backings, gated on the stored {@link SourceShape}; the divergence
-     * between the pre-merge twins was a strict subset of the non-lookup pair's (same mint/fetcher
-     * fork, no Connection arm on either side). See {@link BatchedTableField} for the
-     * source-gate and total-lift rationale.
+     * One leaf for both parent backings, gated on the stored {@link SourceShape}; see
+     * {@link BatchedTableField} for the source-gate and total-lift rationale.
      */
     record BatchedLookupTableField(
         String parentTypeName,
@@ -670,7 +637,7 @@ public sealed interface ChildField extends OutputField
     ) implements TableTargetField, BatchKeyField, LookupField {
         public BatchedLookupTableField {
             // Invariants mirror BatchedTableField's 1/2/3/6; the Connection invariant (4) is
-            // deliberately absent — a Connection-shaped lookup is an author-reachable schema
+            // deliberately absent: a Connection-shaped lookup is an author-reachable schema
             // (rejected by the validator's "lookup fields must not return a connection" check
             // on both arms), not an unrepresentable generator state.
             java.util.Objects.requireNonNull(lift, "lift");
@@ -695,8 +662,7 @@ public sealed interface ChildField extends OutputField
         public boolean emitsSingleRecordPerKey() {
             // One definition for both arms, same formula as BatchedTableField. The classifier
             // rejects @splitQuery + @lookupKey at single cardinality, and the Table arm pins
-            // LOAD_ONE, so the Table arm always answers false — identical to the pre-merge
-            // split-lookup leaf's inherited default.
+            // LOAD_ONE, so the Table arm always answers false.
             return !returnType().wrapper().isList()
                 || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
@@ -706,7 +672,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * A child field using {@code @tableMethod} — the developer provides a pre-filtered
+     * A child field using {@code @tableMethod}: the developer provides a pre-filtered
      * {@code Table<?>}. The method handles all SQL generation.
      *
      * <p>The method signature is:
@@ -719,7 +685,7 @@ public sealed interface ChildField extends OutputField
      * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the directive
      * exists to bind a developer-authored jOOQ table method, which by construction returns a
      * generated jOOQ table class. {@code TableMethodDirectiveResolver} rejects any other return
- * shape as a schema error.
+     * shape as a schema error.
      */
     record TableMethodField(
         String parentTypeName,
@@ -774,15 +740,15 @@ public sealed interface ChildField extends OutputField
      * each participant's table) so the multi-table polymorphic emitter can emit a per-branch
      * WHERE in the stage-1 narrow UNION ALL.
      *
-     * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
+     * <p>{@code participantJoinPaths} is keyed by participant typename: exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
      * are absent from the map; they contribute no SQL branch. Each value is a
-     * {@link ParticipantCorrelation} carrying the resolved parent→participant correlation: the
-     * classifier decided the shape is supported once, and the emitter cannot represent an
-     * unsupported one. Currently every value is a
-     * {@link ParticipantCorrelation.KeyTupleWhere} (single-hop FK, auto-discovered or
-     * {@code @referenceFor}-disambiguated) or a {@link ParticipantCorrelation.JoinedCorrelation}
-     * (multi-hop FK chain or condition correlation).
+     * {@link ParticipantCorrelation} carrying the resolved parent-to-participant correlation:
+     * the classifier decided the shape is supported once, and the emitter cannot represent an
+     * unsupported one. Every value is a {@link ParticipantCorrelation.KeyTupleWhere} (single-hop
+     * FK, auto-discovered or {@code @referenceFor}-disambiguated) or a
+     * {@link ParticipantCorrelation.JoinedCorrelation} (multi-hop FK chain or condition
+     * correlation).
      *
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
@@ -793,11 +759,11 @@ public sealed interface ChildField extends OutputField
      * arm at construction.
      *
      * <p>{@code parentKeyOwnerTable} is the parent/hub table owning
-     * {@code parentSourceKey.columns()} — the parent's {@code @table} on the table-backed arm,
-     * the accessor-discovered hub on the record-backed arm — resolved at the same classification
+     * {@code parentSourceKey.columns()} (the parent's {@code @table} on the table-backed arm,
+     * the accessor-discovered hub on the record-backed arm), resolved at the same classification
      * site as the key. The batched rows methods read
      * {@code Tables.<OWNER>.<COL>.getDataType()} off it so converter-backed parent keys bind
- * through the column's registered jOOQ Converter at the DB type.
+     * through the column's registered jOOQ Converter at the DB type.
      */
     record InterfaceField(
         String parentTypeName,
@@ -883,7 +849,7 @@ public sealed interface ChildField extends OutputField
          * NestingField is a pass-through: the fetcher emits {@code env -> env.getSource()}, so
          * the children of the nested SDL type receive the parent's record verbatim. The parent's
          * table varies across nesting-reuse sites (the same nested SDL type can be reached from
-         * multiple {@code @table} parents — see {@code GraphitronSchemaBuilderTest.
+         * multiple {@code @table} parents; see {@code GraphitronSchemaBuilderTest.
          * SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE}); the children read by column name on
          * the generic jOOQ {@code Record} interface, not by typed {@code Tables.X.COL}. The
          * domain-return identity is therefore the generic {@code org.jooq.Record}, which any
@@ -896,8 +862,8 @@ public sealed interface ChildField extends OutputField
 
     /**
      * The inline {@code @pivot} leaf: a discriminator-keyed aggregate projection folded into the
-     * parent query as a correlated aggregate subselect — one round-trip, no DataLoader, no
-     * {@code GROUP BY} (the aggregate over the correlated set collapses to one row on its own).
+     * parent query as a correlated aggregate subselect (one round-trip, no DataLoader, no
+     * {@code GROUP BY}; the aggregate over the correlated set collapses to one row on its own).
      * One projection record exists per parent, always: a correlated aggregate over an empty set
      * still returns one row of nulls, never a null record; which slots are null is the only
      * data-dependent part. Every pivot fact rides {@link #spec()}; the return type is a plain
@@ -934,7 +900,7 @@ public sealed interface ChildField extends OutputField
      * {@link PivotField}, delivered through the existing DataLoader seam (a keyed rows method with
      * a {@code VALUES} parent-input table, {@code GROUP BY __idx__} over the batch, scattered
      * single-per-key). The pivot's batch query joins the attribute table <em>from</em> the
-     * parent-input table key-preservingly (a left join — the one deviation from the table shape's
+     * parent-input table key-preservingly (a left join, the one deviation from the table shape's
      * inner join) so every batch key produces a group and a row-less parent scatters to a record
      * of null slots, preserving the one-record-per-parent invariant inline delivery satisfies for
      * free. That key preservation must hold over the entire parent-input → terminus chain, which
@@ -956,7 +922,7 @@ public sealed interface ChildField extends OutputField
             KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedPivotField");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, spec.joinPath(), "BatchedPivotField");
             // The parent is SQL-backed by classifier guarantee, so the key is always lifted by
-            // column projection and dispatched LOAD_ONE — the same Table-arm invariants
+            // column projection and dispatched LOAD_ONE: the same Table-arm invariants
             // BatchedTableField pins.
             if (!(lift instanceof KeyLift.FkColumns)) {
                 throw new IllegalArgumentException(
@@ -970,7 +936,7 @@ public sealed interface ChildField extends OutputField
                     + "accessor-arity (record-parent) shape");
             }
         }
-        /** One projection record per key, always — the pivot invariant, not a cardinality fold. */
+        /** One projection record per key, always: the pivot invariant, not a cardinality fold. */
         @Override public boolean emitsSingleRecordPerKey() {
             return true;
         }
@@ -983,8 +949,8 @@ public sealed interface ChildField extends OutputField
     /**
      * One projection slot of a {@code @pivot} field's return type, carrying exactly one fact: its
      * {@link #readName()}, the projected column alias derived from the slot's SDL name. The
-     * discriminator token never reaches the slot — it is consumed only where {@link PivotSpec}
-     * builds the subselect — so the same plain projection type is reusable across pivots that
+     * discriminator token never reaches the slot (it is consumed only where {@link PivotSpec}
+     * builds the subselect), so the same plain projection type is reusable across pivots that
      * resolve different tokens. The emitted read is the same by-name generic-{@code Record} read
      * nesting children emit, which is what lets one registered fetcher per slot coordinate serve
      * both the pivot subselect's {@code Record} and a compatible nesting parent's record.
@@ -1091,33 +1057,28 @@ public sealed interface ChildField extends OutputField
         }
 
         /**
-         * Returns the per-key Java element type this field's loader resolves to (the {@code V}
-         * before any list-cardinality wrapping), derived from {@link #returnType()}. Used by
-         * the Generator to type {@code DataLoader<K, V>}.
+         * The per-key Java element type this field's loader resolves to (the {@code V} before
+         * any list-cardinality wrapping), derived from {@link #returnType()}. Used by the
+         * Generator to type {@code DataLoader<K, V>}.
          *
          * <p>Defers to {@link RowsMethodShape#strictPerKeyType} for the schema-determined
-         * answer (raw {@code org.jooq.Record} for {@code TableBoundReturnType}, the backing
-         * class for {@code ResultReturnType} with non-null {@code fqClassName}, the standard
-         * Java type for the five GraphQL spec built-ins via the
-         * {@code no.sikt.graphitron.rewrite.ScalarTypeResolver}). When the helper returns
-         * {@code null} (a non-built-in scalar leaf: an enum, or an unregistered custom scalar)
-         * the per-key {@code V} is peeled off the reflected outer return type on
-         * {@link MethodRef#returnType()} via {@link RowsMethodShape#perKeyFromOuter}, so the
-         * rows method's declared type is the flat {@code Map<K, V>} matching the service contract
- * rather than a doubly-nested {@code Map<K, Map<K, V>>}. Falls back to the whole
-         * reflected type only when the shape isn't peelable, which
-         * {@code ServiceDirectiveResolver.validateChildServiceReturnType} rejects at classify time.
+         * answer. When that returns {@code null} (a non-built-in scalar leaf: an enum, or an
+         * unregistered custom scalar) the per-key {@code V} is peeled off the reflected outer
+         * return type on {@link MethodRef#returnType()} via
+         * {@link RowsMethodShape#perKeyFromOuter}, so the rows method's declared type is the
+         * flat {@code Map<K, V>} matching the service contract rather than a doubly-nested
+         * {@code Map<K, Map<K, V>>}. Falls back to the whole reflected type only when the shape
+         * isn't peelable, which {@code ServiceDirectiveResolver.validateChildServiceReturnType}
+         * rejects at classify time.
          */
         public no.sikt.graphitron.javapoet.TypeName elementType() {
             no.sikt.graphitron.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
             if (strict != null) return strict;
-            // Non-built-in scalar leaf (an enum, or an unregistered custom scalar): strictPerKeyType
-            // can't name V from the schema, but the service method already declares the outer
-            // Map<K, V> / List<V>, so peel V off it. Handing back the whole map instead let
-            // outerRowsReturnType wrap it once more, emitting Map<K, Map<K, V>> that doesn't compile
-            //. Falls back to the reflected outer type only when the shape isn't peelable, which
-            // the resolver's validateChildServiceReturnType now rejects at classify time. Other
-            // null-perKey returns (a backing-less ResultReturnType) keep the legacy whole-type fallback.
+            // Non-built-in scalar leaf: the service method already declares the outer
+            // Map<K, V> / List<V>, so peel V off it; handing back the whole reflected type
+            // would let outerRowsReturnType wrap it once more into a Map<K, Map<K, V>> that
+            // does not compile. Other null-perKey returns (a backing-less ResultReturnType)
+            // keep the whole-type fallback.
             if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
                 // loaderRegistration().container() is the field-level projection of the service
                 // method's Sourced param container (FieldBuilder.buildServiceLoaderRegistration
@@ -1170,35 +1131,35 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
- * The single data field on an {@code @service} record-composite carrier payload. The
-     * {@code @service} method returns a consumer-authored composite (a POJO bundling several jOOQ
-     * records, e.g. one {@code FilmRecord} plus a {@code List<ActorRecord>}) as
-     * {@code List<Composite>} (list arrival) or one {@code Composite} (single arrival), optionally
-     * wrapped in the typed {@code Outcome} when the payload carries an errors field. This data field
-     * is a <em>source passthrough projection</em>: its fetcher reads the producer's in-memory
-     * record(s) straight off {@code env.getSource()} (narrowing {@code Outcome.Success.value()} under
-     * {@link SourceEnvelope#OUTCOME_SUCCESS}) and returns them verbatim, with no
-     * DataLoader, no re-fetch, and no SQL. graphql-java then maps each composite element onto the
-     * data field's element SDL type ({@code returnType}), whose {@code @field}-mapped {@code @table}
-     * children resolve through the record-backed accessor path off the composite.
+     * The single data field on an {@code @service} record-composite carrier payload. The
+     * {@code @service} method returns a consumer-authored composite (a POJO bundling several
+     * jOOQ records, e.g. one {@code FilmRecord} plus a {@code List<ActorRecord>}) as
+     * {@code List<Composite>} (list arrival) or one {@code Composite} (single arrival),
+     * optionally wrapped in the typed {@code Outcome} when the payload carries an errors field.
+     * This data field is a <em>source passthrough projection</em>: its fetcher reads the
+     * producer's in-memory record(s) straight off {@code env.getSource()} (narrowing
+     * {@code Outcome.Success.value()} under {@link SourceEnvelope#OUTCOME_SUCCESS}) and returns
+     * them verbatim, with no DataLoader, no re-fetch, and no SQL. graphql-java then maps each
+     * composite element onto the data field's element SDL type, whose {@code @field}-mapped
+     * {@code @table} children resolve through the record-backed accessor path off the composite.
      *
-     * <p>Sibling of the record-sourced {@link BatchedTableField} arm (the {@code @table}-element carrier data field, a
-     * PK-keyed re-fetch) and {@link RecordField} (a scalar / accessor read). It differs on the axes
-     * the model already separates: its {@link #target()} is {@code listOrSingle(Record)} (the element
-     * is a record-backed result type, not a {@code @table} {@code wrap(Table)} and not a scalar
-     * {@code Field}), and its {@link #domainReturnType()} is {@code Plain(compositeClass)} (the
-     * per-element composite class, there being no single table to name). Carries no
+     * <p>Sibling of the record-sourced {@link BatchedTableField} arm (a PK-keyed re-fetch) and
+     * {@link RecordField} (a scalar / accessor read): its {@link #target()} is
+     * {@code listOrSingle(Record)} (the element is a record-backed result type, not a
+     * {@code @table} and not a scalar {@code Field}) and its {@link #domainReturnType()} is the
+     * per-element composite class, there being no single table to name. Carries no
      * {@code SourceKey} / {@code LoaderRegistration} (a passthrough, not a batched load) and no
-     * {@code MethodRef} (the producing {@code @service} call is on the parent mutation field, not on
-     * this data field, distinguishing it from {@link ServiceRecordField}).
+     * {@code MethodRef} (the producing {@code @service} call is on the parent mutation field,
+     * not on this data field, distinguishing it from {@link ServiceRecordField}).
      *
-     * <p>{@code returnType} is the data field's element result type ({@link ReturnTypeRef.ResultReturnType}),
-     * carrying the arrival cardinality on its {@code wrapper()} and the composite's binary class name
-     * on its {@code fqClassName()}. {@code envelope} is the source-envelope fork ({@code DIRECT} for a
-     * bare producer return, {@code OUTCOME_SUCCESS} for an errors-bearing carrier whose producer flips
-     * to the typed {@code Outcome} wrapper) — carried on the leaf rather than recomputed at emit
-     * because the passthrough fetcher and the {@code OutcomeChildArmSwitch} validator both read it. The
-     * sibling errors field rides {@link Transport.WrapperArm}, unchanged.
+     * <p>{@code returnType} is the data field's element result type
+     * ({@link ReturnTypeRef.ResultReturnType}), carrying the arrival cardinality on its
+     * {@code wrapper()} and the composite's binary class name on its {@code fqClassName()}.
+     * {@code envelope} is the source-envelope fork ({@code DIRECT} for a bare producer return,
+     * {@code OUTCOME_SUCCESS} for an errors-bearing carrier returning the typed {@code Outcome}
+     * wrapper), carried on the leaf rather than recomputed at emit because the passthrough
+     * fetcher and the {@code OutcomeChildArmSwitch} validator both read it. The sibling errors
+     * field rides {@link Transport.WrapperArm}.
      */
     record RecordCompositeField(
         String parentTypeName,
@@ -1223,7 +1184,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * A child field using {@code @externalField} — the developer provides a static method
+     * A child field using {@code @externalField}: the developer provides a static method
      * returning a jOOQ {@code Field<X>} that is inlined into the parent's projection at
      * generation time. The method handles the SQL-side computation; runtime wiring uses
      * a {@code LightFetcher}-wrapped read of the aliased column, keyed on the GraphQL field name.
@@ -1259,7 +1220,7 @@ public sealed interface ChildField extends OutputField
      *     with non-null {@code fqClassName}; {@code null} otherwise
      *     ({@link GraphitronType.JooqRecordCarrier} parents, null-{@code fqClassName} parents,
      *     and {@code @error}-type parents do not run reflective accessor resolution). See {@link RecordField}'s analogous slot for the
-     *     full contract — including that classifier-side rejection routes through
+     *     full contract, including that classifier-side rejection routes through
      *     {@link GraphitronField.UnclassifiedField} rather than a {@code Rejected} value
      *     riding on this slot.
      */
@@ -1324,7 +1285,7 @@ public sealed interface ChildField extends OutputField
     /**
      * Where the errors-field data fetcher reads its value from at request time. Sealed so
      * {@code FetcherEmitter.dataFetcherValue}'s {@code ErrorsField} arm dispatches with
-     * compiler-enforced exhaustiveness; a future third arm forces every consumer site to
+     * compiler-enforced exhaustiveness; an added arm forces every consumer site to
      * acknowledge it.
      *
      * <ul>

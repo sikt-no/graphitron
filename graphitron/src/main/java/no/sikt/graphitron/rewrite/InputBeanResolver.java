@@ -59,7 +59,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  *
  * <p>Bean shape supported: Java {@code record} (canonical constructor) or plain class with a
  * public no-arg constructor and JavaBean-style setters. The bean class itself must be
- * {@code public} — generated fetchers live in a separate {@code .generated.fetchers} package and
+ * {@code public}: generated fetchers live in a separate {@code .generated.fetchers} package and
  * cannot reach package-private types. Anything else (builders, immutable value classes without a
  * no-arg constructor, abstract bean classes, recursive shapes) is rejected structurally.
  */
@@ -83,37 +83,13 @@ final class InputBeanResolver {
 
     /**
      * Walks the method's {@link ParamSource.Arg} parameters and rewrites every Direct extraction
-     * whose SDL arg is an input-object into a typed {@link CallSiteExtraction.InputBean}. Scalar
-     * SDL args (including custom scalars wired via {@code @scalarType}) keep the Direct
-     * extraction: graphql-java coerces the wire value to the declared Java type at runtime, and
-     * the generator trusts that wiring. An input-object SDL arg always returns a
-     * {@code Map<String, Object>} from graphql-java, and only the InputBean path can populate the
-     * consumer's typed parameter without an unchecked cast that fails at first field access.
-     *
-     * <p>Rejections (returned as {@link Result.Failed}, never silent fallbacks):
-     * <ul>
-     *   <li>SDL is input-object but the Java element type can't be loaded.</li>
-     *   <li>SDL is input-object but the Java type is {@code java.util.Map} — a dedicated arm with
-     *       a sharper message: Map at the service boundary is a permanent anti-pattern; use a
-     *       typed bean, or declare a custom scalar via {@code @scalarType} for open-ended JSON.</li>
-     *   <li>SDL is input-object but the Java element type is in the JDK / {@code org.jooq.*}, or
-     *       is an enum / primitive / array — i.e. not a populatable consumer bean.</li>
-     *   <li>SDL list-shape and Java list-shape disagree.</li>
-     *   <li>The bean class is not {@code public} (generated fetchers live in a different package
-     *       and cannot reach package-private classes).</li>
-     *   <li>The bean class has no record / public no-arg-ctor construction strategy.</li>
-     *   <li>For records, the component/field correspondence is not a total bijection: a component
-     *       binds to no SDL field (under-arity), or an SDL field binds to no component (silent drop).
-     *       Member binding honors {@code @field(name:)} (the input-side mirror of the output-side
-     *       {@code @field} accessor read), so the
-     *       correspondence is by binding key, not raw name. JavaBeans tolerate partial population
-     *       (unmatched fields are skipped); the empty-bindings case is the only JavaBean rejection.</li>
-     *   <li>Two SDL fields resolving to the same Java-member binding key (a {@code @field(name:)}
-     *       collision, or a value colliding with another field's plain name) — ambiguous binding.</li>
-     *   <li>The bean shape is recursive (the same class appears nested inside itself, directly or
-     *       transitively). Recursive shapes are not supported in v1 — the helper would emit
-     *       mutually-recursive method calls with no terminating leaf.</li>
-     * </ul>
+     * whose SDL arg is an input-object into a typed {@link CallSiteExtraction.InputBean}, or a
+     * {@link CallSiteExtraction.JooqRecord} when the input type classified as a jOOQ-record input.
+     * Scalar SDL args keep the Direct extraction. An input-object SDL arg always arrives as a
+     * {@code Map<String, Object>} from graphql-java, and only a typed instantiation plan can
+     * populate the consumer's parameter without an unchecked cast that fails at first field
+     * access. Every unusable pairing returns {@link Result.Failed}, never a silent fallback; the
+     * rejection messages name each case.
      */
     Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef) {
         var argTypes = fieldDef.getArguments().stream()
@@ -132,30 +108,19 @@ final class InputBeanResolver {
                 newParams.add(p);
                 continue;
             }
-            // Restrict v1 to head-only paths: the spec's bean-shape case is "the Java parameter is
-            // a bean mirroring the SDL input type", which is always a top-level argument binding.
-            // Nested-path bindings (a param drilling one field out of an input) carry scalar leaf
-            // types by construction and stay on the legacy Direct path.
+            // Bean-shaped params are always top-level argument bindings; a nested-path binding
+            // (a param drilling one field out of an input) carries a scalar leaf type by
+            // construction and stays on the Direct path.
             if (!arg.path().isHead()) {
                 newParams.add(p);
                 continue;
             }
             GraphQLInputType sdlType = argTypes.get(arg.graphqlArgName());
             SdlElement sdl = peelSdlListNonNull(sdlType);
-            // Direct is reserved for GraphQL scalar SDL args (including custom scalars wired via
-            // `@scalarType`). graphql-java coerces the incoming value to the Java type the
-            // consumer declared for that scalar — the generator trusts that wiring and emits
-            // `env.getArgument(name)` unchanged. Only GraphQL input-object SDL args trigger the
-            // InputBean classification; anything else stays on the existing Direct extraction.
             if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
                 newParams.add(p);
                 continue;
             }
-            // SDL says input-object → the Java parameter MUST be a populatable bean. Map / JDK /
-            // jOOQ / enum / array shapes are rejected loudly. Map<K, V> is a permanent rejection
-            // (anti-pattern at the service boundary, not a v1 deferral): consumers wanting
-            // open-ended-JSON semantics declare a custom scalar with `@scalarType` and a Map-typed
-            // Java binding — that lives in Direct, not InputBean.
             JavaElement elt = peelJavaListSet(p.typeName());
             Class<?> elementClass = tryLoad(elt.elementTypeName());
             if (elementClass == null) {
@@ -195,14 +160,12 @@ final class InputBeanResolver {
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
-            // The param's Java type is a generated jOOQ TableRecord (singular or List<…>). The
-            // type pass already classified the SDL input type as JooqTableRecordInputType, table and
-            // all; read that answer rather than re-resolving, and bind on the COLUMN axis (@field(name:)
-            // → ColumnRef) plus an optional @nodeId identity decode, not the Java-member axis the bean
-            // path uses. Sits after the shared input-object gates (loadable / Map / cardinality-parity)
-            // so a jOOQ record reuses them; only the member-axis bean instantiation below is replaced.
-            // Cardinality parity is inherited from the :elt.list() != sdl.list() check above, which the
-            // walker relies on to read list-ness off the Java type alone.
+            // The type pass already classified this SDL input as JooqTableRecordInputType, table
+            // and all; read that answer rather than re-resolving. A jOOQ-record param binds on the
+            // column axis (@field(name:) → ColumnRef, plus optional @nodeId identity decodes), not
+            // the Java-member axis the bean path uses. Sits after the shared input-object gates
+            // above so it reuses the loadable / Map / cardinality-parity checks; the walker relies
+            // on that parity to read list-ness off the Java type alone.
             if (ctx.types != null
                     && ctx.types.get(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
                 JooqBuilt jbuilt = buildJooqRecord(jtr, iot, p.name(), method.methodName(),
@@ -216,14 +179,12 @@ final class InputBeanResolver {
                     new ParamSource.Arg(jr, arg.path())));
                 continue;
             }
-            // (D2): an @table on the input classifies it as a TableInputType (the
-            // "Graphitron owns the DML" contract), which contradicts a jOOQ-record @service param
-            // (the service owns the DML). Without this arm a TableRecord param against a
-            // @table-present input falls through to the bean path and dies on the misleading "bean
-            // class … has no fields matching"; reject it honestly instead, so the binding/error
-            // behavior converges with the @table-absent path. isTableRecord is narrower than
-            // isJooqRecord on purpose: a non-table Record has no TableRef and keeps falling through
-            // to the bean path rather than reaching this (TableRef-less) reject.
+            // An @table on the input classifies it as a TableInputType ("Graphitron owns the
+            // DML"), which contradicts a jOOQ-record @service param (the service owns the DML).
+            // Without this arm such a param falls through to the bean path and dies on the
+            // misleading "bean class … has no fields matching"; reject it honestly instead.
+            // Gated on isTableRecord, narrower than isJooqRecord on purpose: a non-table Record
+            // has no TableRef and keeps falling through to the bean path.
             if (ctx.types != null
                     && isTableRecord(elementClass)
                     && ctx.types.get(iot.getName()) instanceof GraphitronType.TableInputType) {
@@ -262,38 +223,23 @@ final class InputBeanResolver {
 
     /**
      * Builds the {@link CallSiteExtraction.JooqRecord} for a {@code @service} param whose SDL input
-     * type classified as {@link GraphitronType.JooqTableRecordInputType}.
-     * Walks the SDL fields binding each on the column axis: every {@code @nodeId(typeName:)} field is a
-     * {@link CallSiteExtraction.RecordKeyDecode} (the wire-decode mechanism) whose decoded values
-     * load into resolved target columns on this record — the record's own key (same-table identity)
-     * or a foreign key's child columns (cross-table reference); every other plain field names
-     * a column through {@code @field(name:)} (a resolved {@link CallSiteExtraction.ColumnBinding}). A
-     * record may carry several {@code @nodeId} fields.
+     * type classified as {@link GraphitronType.JooqTableRecordInputType}. Binds each SDL field on
+     * the column axis: a {@code @nodeId(typeName:)} field becomes a
+     * {@link CallSiteExtraction.RecordKeyDecode} whose decoded values load into resolved target
+     * columns on this record (the record's own key, or a foreign key's child columns); every other
+     * field names a column through {@code @field(name:)} (a {@link CallSiteExtraction.ColumnBinding}).
+     * A record may carry several {@code @nodeId} fields.
      *
-     * <p>A field whose SDL type is itself a directiveless nested grouping input flattens transparently
- * onto the one backing table: {@link #collectJooqBindings} recurses into the nested type's
-     * fields and keeps producing the same column-axis carriers, each carrying the full access path from
-     * the record's own {@code Map} down to the leaf (so {@code details.title} carries
-     * {@code ["details", "title"]}). This is the column-axis analogue of the {@code @table}-input nesting
-     * the filter axis already flattens.
+     * <p>A directiveless nested grouping input flattens transparently onto the one backing table:
+     * {@link #collectJooqBindings} recurses and keeps producing the same column-axis carriers, each
+     * carrying the full access path from the record's own {@code Map} down to the leaf (so
+     * {@code details.title} carries {@code ["details", "title"]}).
      *
-     * <p>Rejections surface at validate time as {@code UnclassifiedField} — the
-     * honest replacement for the bean path's misleading "has no fields matching":
-     * <ul>
-     *   <li>the param record type is not in the jOOQ catalog;</li>
-     *   <li>a {@code @nodeId} field whose {@code typeName:} / {@code @reference} cannot resolve to target
-     *       columns on this record (see {@link #buildRecordKeyDecode});</li>
-     *   <li>a plain {@code @field} (at any nesting depth) resolving to no column on the table;</li>
-     *   <li>a nested grouping input that reaches itself (cyclic shape) — a single record cannot represent
-     *       a recursive input;</li>
-     *   <li>a list-shaped nested grouping field — a single record has one value per column, so a list of
-     *       column-groups is a cardinality contradiction;</li>
-     *   <li>a nested input carrying {@code @table} — a second DML target, not a column group to flatten
-     *       (compound multi-table mutations are a separate scope);</li>
-     *   <li>two plain {@code @field} leaves (in any nested group) resolving to the same column — two
-     *       fields cannot populate one column. Decode-vs-decode / decode-vs-column on a shared column stay
-     *       with the runtime value-agreement deferral (last-write-wins), unchanged.</li>
-     * </ul>
+     * <p>Unusable shapes reject structurally, surfacing at validate time as
+     * {@code UnclassifiedField}: uncataloged record type, unresolvable {@code @nodeId}, a field
+     * matching no column, a cyclic, list-shaped, or {@code @table}-carrying nested input, or two
+     * plain fields on one column. The rejection messages here and in
+     * {@link #collectJooqBindings} name each case.
      */
     private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
             graphql.schema.GraphQLInputObjectType iot, String paramName, String methodName,
@@ -309,19 +255,18 @@ final class InputBeanResolver {
         var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
         var keyDecodes = new ArrayList<CallSiteExtraction.RecordKeyDecode>();
         // Seed the cycle guard with the param record's own input type name, so an immediate
-        // self-reference (a nested field typed as the outer input) is named at the first hop. The
-        // recursion is on SDL nested-input type names onto this one table, so it threads the
-        // SDL-type-name "expanding" discipline (ClassifyContext) rather than buildInputBean's
-        // Set<Class<?>> visited (D2): a different carrier family on a parallel axis.
+        // self-reference (a nested field typed as the outer input) is named at the first hop.
+        // Cycle detection is on SDL nested-input type names (ClassifyContext's "expanding" set),
+        // a different axis than buildInputBean's Set<Class<?>> visited.
         Rejection rejection = collectJooqBindings(iot, table, where, List.of(),
             ClassifyContext.root().expanding(iot.getName()), columnBindings, keyDecodes);
         if (rejection != null) {
             return new JooqBuilt.Fail(rejection);
         }
-        // Plain-column collision (D3): two @field leaves (in any nested group) resolving to one column
-        // would last-write-wins silently. Reject, mirroring the member-axis binding-key collision reject.
-        // Decode-vs-decode / decode-vs-column overlaps are intentionally NOT checked here — those stay
-        // with the runtime value-agreement deferral.
+        // Two plain @field leaves (in any nested group) resolving to one column would
+        // last-write-wins silently; reject, mirroring the member-axis binding-key collision
+        // reject. Decode-vs-decode / decode-vs-column overlaps are intentionally NOT checked here;
+        // those stay with the runtime value-agreement deferral.
         var byColumn = new LinkedHashMap<String, List<String>>();
         for (var cb : columnBindings) {
             List<String> prior = byColumn.putIfAbsent(cb.column().sqlName(), cb.path());
@@ -338,19 +283,16 @@ final class InputBeanResolver {
     }
 
     /**
-     * Recursively walks the SDL fields of {@code iot} — the param record's input type at depth 1, or a
-     * nested directiveless grouping input deeper — appending column-axis carriers to {@code columnBindings}
-     * / {@code keyDecodes}. {@code pathPrefix} is the ordered enclosing nested-input field names (empty at
-     * depth 1); each carrier's {@code path} is {@code pathPrefix} + the leaf field name. {@code classifyCtx}
-     * carries the SDL-type-name "expanding" set for cycle detection (D2), the same idiom
-     * {@code BuildContext.classifyInputField} threads for the {@code @table}-input nesting. Returns the
-     * first {@link Rejection} encountered, or {@code null} on success (the bindings are accumulated into
-     * the caller-supplied lists).
+     * Recursively walks the SDL fields of {@code iot}, appending column-axis carriers to
+     * {@code columnBindings} / {@code keyDecodes}. Each carrier's {@code path} is
+     * {@code pathPrefix} (the ordered enclosing nested-input field names, empty at depth 1) plus
+     * the leaf field name. Returns the first {@link Rejection} encountered, or {@code null} on
+     * success.
      *
-     * <p>This stays parallel to the member-axis recursion ({@code bindField → buildInputBean}) rather than
-     * routing through {@code BuildContext.classifyInputField}: that produces a different carrier family
-     * ({@code InputField.*}) on the filter axis and resolves different identity semantics. The two axes are
-     * the existing intentional split; this recursion is the column axis catching up at the nested level.
+     * <p>Deliberately parallel to the member-axis recursion ({@code bindField} /
+     * {@code buildInputBean}) rather than routing through {@code BuildContext.classifyInputField}:
+     * that produces a different carrier family ({@code InputField.*}) on the filter axis and
+     * resolves different identity semantics.
      */
     private Rejection collectJooqBindings(graphql.schema.GraphQLInputObjectType iot, TableRef table,
             String where, List<String> pathPrefix, ClassifyContext classifyCtx,
@@ -361,9 +303,9 @@ final class InputBeanResolver {
             SdlElement sdlElt = peelSdlListNonNull(f.getType());
             if (f.hasAppliedDirective(DIR_NODE_ID)) {
                 // Multiple @nodeId fields are legal (an FK-reference record carries several FK
-                // references). Each resolves independently to its target columns on this record; when
-                // two decodes target the same column their runtime value-agreement is a data-dependent
-                // concern deferred to the runtime value-agreement check (last-write-wins here). The legacy single-@nodeId gate is gone.
+                // references). Each resolves independently to its target columns on this record;
+                // two decodes targeting the same column are a data-dependent concern deferred to
+                // the runtime value-agreement check (last-write-wins here).
                 var built = buildRecordKeyDecode(f, path, table, where);
                 if (built instanceof KeyDecodeResult.Fail kf) {
                     return kf.rejection();
@@ -435,25 +377,22 @@ final class InputBeanResolver {
 
     /**
      * Resolves one {@code @nodeId(typeName:)} field of a jOOQ-record param into a
-     * {@link CallSiteExtraction.RecordKeyDecode}, branching on whether the referenced NodeType's table
-     * is the param record's own table (same-table identity) or a different table (cross-table FK reference):
+     * {@link CallSiteExtraction.RecordKeyDecode}:
      *
      * <ul>
-     *   <li><b>Same table, no {@code @reference}</b> (node table == record table) → the decode loads
-     *       the record's own key columns (own-PK identity).</li>
- * <li><b>Same table, with {@code @reference}</b> → a self-FK reference: the
-     *       {@code @reference} names a same-table foreign key, and the node-key columns map through
-     *       it to the self-FK's child columns on this record (never the record's own PK), via
-     *       {@link BuildContext#resolveRecordFkTargetColumns} oriented with
-     *       {@code selfRefFkOnSource=true}.</li>
- * <li><b>Different table</b> → the cross-table FK-reference case: the node-key columns
-     *       map through the foreign key (deduced when exactly one connects the two tables, else named
-     *       by {@code @reference(key:)}) to the FK's child columns on this record, via the same
-     *       {@link BuildContext#resolveRecordFkTargetColumns}.</li>
+     *   <li><b>Same table, no {@code @reference}</b>: the decode loads the record's own key
+     *       columns (own-PK identity).</li>
+     *   <li><b>Same table, with {@code @reference}</b>: the directive names a same-table self-FK;
+     *       the node-key columns map through it to the self-FK's child columns on this record
+     *       (never the record's own PK), via {@link BuildContext#resolveRecordFkTargetColumns}
+     *       oriented with {@code selfRefFkOnSource=true}.</li>
+     *   <li><b>Different table</b>: the node-key columns map through the foreign key (deduced when
+     *       exactly one connects the two tables, else named by {@code @reference(key:)}) to the
+     *       FK's child columns on this record, via the same resolver.</li>
      * </ul>
      *
-     * The decode's {@code nonNull} is read off the SDL field's {@code ID!}-vs-{@code ID} nullability and
-     * drives the emitter's throw-vs-conditional-set (D4), set identically for both branches.
+     * The decode's {@code nonNull} is read off the SDL field's {@code ID!}-vs-{@code ID}
+     * nullability and drives the emitter's throw-vs-conditional-set, identically for both branches.
      */
     private KeyDecodeResult buildRecordKeyDecode(graphql.schema.GraphQLInputObjectField f,
             List<String> path, TableRef table, String where) {
@@ -477,12 +416,8 @@ final class InputBeanResolver {
             // Same-table identity: the decoded values are the record's own key columns.
             targetColumns = resolved.keyColumns();
         } else {
-            // Cross-table FK reference, or a same-table self-FK reference: map the
-            // node-key columns through the FK to the record's child columns. A same-table @nodeId
-            // *with* @reference names a self-FK — resolveRecordFkTargetColumns orients it through
-            // resolveFkSlots(selfRefFkOnSource=true), landing the decoded keys on the self-FK's
-            // child columns on this record, never the record's own PK. Same-table *without*
-            // @reference is the identity branch above.
+            // Cross-table FK reference, or a same-table self-FK reference: map the node-key
+            // columns through the FK to this record's child columns (see the method javadoc).
             var fkTargets = ctx.resolveRecordFkTargetColumns(
                 table, resolved.table().tableName(), resolved.keyColumns(), firstReferenceKey(f));
             if (fkTargets instanceof BuildContext.RecordFkTargets.Rejected fr) {
@@ -571,19 +506,17 @@ final class InputBeanResolver {
             javaMembersByName = indexJavaBeanSetters(beanClass);
         }
 
-        // Index the SDL fields by their Java-member binding key (the @field(name:) value, or the
-        // field's own name when the directive is absent). Two SDL fields resolving to one key is a
-        // structural ambiguity on either target: on the record arm the second would silently win the
-        // bijection slot (order-dependent binding); on the JavaBean arm the same setter would be
-        // invoked twice. Reject it here, before either arm builds a result, so neither can produce an
-        // order-dependent or double-bound bean.
+        // Index the SDL fields by their Java-member binding key. Two SDL fields resolving to one
+        // key is rejected before either arm builds a result: on the record arm the second would
+        // silently win the bijection slot (order-dependent binding); on the JavaBean arm the same
+        // setter would be invoked twice.
         var sdlByBindingKey = new LinkedHashMap<String, GraphQLInputObjectField>();
         for (var f : iot.getFieldDefinitions()) {
             String key = bindingKey(f);
             // A present-but-blank @field(name:) yields an empty key (GraphQL field names are never
-            // empty, so this is reachable only via the directive). It can match no record component
-            // or setter; rather than silently skipping it on the JavaBean arm (a silent fallback the
-            // directive newly opens), reject the malformed directive at classify time.
+            // empty, so only the directive can produce one). It can match no record component or
+            // setter; reject the malformed directive at classify time rather than silently
+            // skipping the field on the JavaBean arm.
             if (key.isEmpty()) {
                 return new Built.Fail(Rejection.structural(
                     "parameter '" + paramName + "' on method '" + methodName + "' in class '"
@@ -604,10 +537,9 @@ final class InputBeanResolver {
             }
         }
 
-        // Records are positional and total (the canonical constructor needs every component, and a
-        // leftover SDL field would be silently dropped); JavaBean setters are independent and
-        // partial. The two arms encode that invariant difference; they share the binding-key index
-        // above and the per-field leaf classification (bindField).
+        // Records are positional and total; JavaBean setters are independent and partial. The two
+        // arms encode that invariant difference and share the binding-key index above and the
+        // per-field leaf classification (bindField).
         return switch (target) {
             case RECORD -> bindRecord(beanClass, iot, javaMembersByName, sdlByBindingKey,
                 paramName, methodName, className, visited);
@@ -618,12 +550,10 @@ final class InputBeanResolver {
 
     /**
      * The Java-member binding key for an SDL input field: the {@code @field(name:)} value when the
-     * directive is present, else the field's own name. This is the input-side mirror of the
-     * output-side "{@code @field} names the Java accessor" read
-     * ({@code FieldBuilder.collectAccessorMatches}) and uses the same {@code argString(...).orElse(name)}
-     * idiom as the column-axis read in {@code BuildContext}. The key names the record component /
-     * JavaBean property the field binds to; the field's own name stays the {@code Map} key the
-     * generated helper reads the wire value from.
+     * directive is present, else the field's own name. The input-side mirror of the output-side
+     * "{@code @field} names the Java accessor" read ({@code FieldBuilder.collectAccessorMatches}).
+     * The key names the record component / JavaBean property the field binds to; the field's own
+     * name stays the {@code Map} key the generated helper reads the wire value from.
      */
     private static String bindingKey(GraphQLInputObjectField f) {
         return f.hasAppliedDirective(DIR_FIELD)
@@ -632,14 +562,11 @@ final class InputBeanResolver {
     }
 
     /**
-     * Record arm: a bidirectional bijection between record components and SDL input fields. A
-     * record's correspondence to its SDL input type is total in both directions, so the reduction
-     * checks both:
+     * Record arm: a bidirectional bijection between record components and SDL input fields.
      * <ul>
      *   <li><b>Every component must bind</b> (direction A). The canonical constructor takes every
-     *       component, so a component with no SDL field bound to it (none named after it, none
-     *       carrying {@code @field(name: "<component>")}) is a hard fail at classify time, rather
-     *       than the under-arity constructor call the old loop emitted downstream.</li>
+     *       component, so a component with no SDL field bound to it fails at classify time rather
+     *       than as an under-arity constructor call in the generated code.</li>
      *   <li><b>Every SDL field must be consumed</b> (direction B). A field whose binding key names
      *       no component would have its value silently dropped (it never reaches the constructor);
      *       for a record's total-mirror contract that is a hard fail, not the deliberate
@@ -734,12 +661,10 @@ final class InputBeanResolver {
 
     /**
      * Classifies one SDL-field / Java-member pair into a {@link CallSiteExtraction.FieldBinding}.
-     * Member resolution has already happened (the directive selected which member binds); the
-     * member's Java type now drives the leaf branch (nested {@code InputBean} / {@code EnumValueOf} /
-     * {@code NodeIdDecodeRecord} / {@code Direct}), unchanged from before. The binding carries
-     * the SDL field name (the {@code Map} key the helper reads) separately from the Java member name
-     * (the component / property it populates), so the emitter is agnostic to <em>how</em> the member
-     * was chosen, the same property the output side relies on.
+     * Member resolution has already happened (the binding key selected which member binds); the
+     * member's Java type drives the leaf branch. The binding carries the SDL field name (the
+     * {@code Map} key the helper reads) separately from the Java member name (the component /
+     * property it populates), so the emitter is agnostic to <em>how</em> the member was chosen.
      */
     private FieldResult bindField(GraphQLInputObjectField sdlField, JavaMember member,
             String paramName, String methodName, String className, Set<Class<?>> visited) {
@@ -767,12 +692,11 @@ final class InputBeanResolver {
         } else if (sdlElt.elementType() instanceof GraphQLEnumType enumSdl
                 && tryLoad(javaElementTypeName) != null
                 && tryLoad(javaElementTypeName).isEnum()) {
-            // Site E: the declared type IS the enum and assignment succeeds, but
-            // Enum.valueOf((String) ...) throws IllegalArgumentException when an SDL enum value name
-            // diverges from the Java constant names. Route through the single enum-constant parity
-            // home (EnumMappingResolver, D3) — a divergence rejects loudly rather than emitting a
-            // valueOf that crashes at runtime. This closes the asymmetry where the @service enum
-            // producer built EnumValueOf with no parity check while the column/arg enum path did.
+            // The declared type IS the enum and assignment succeeds, but
+            // Enum.valueOf((String) ...) throws IllegalArgumentException when an SDL enum value
+            // name diverges from the Java constant names. Route through the single enum-constant
+            // parity home (EnumMappingResolver) so a divergence rejects loudly rather than
+            // emitting a valueOf that crashes at runtime.
             var parity = new EnumMappingResolver(ctx).checkEnumConstants(enumSdl.getName(), tryLoad(javaElementTypeName));
             if (parity instanceof EnumMappingResolver.EnumConstantParity.Divergence d) {
                 return new FieldResult.Fail(new WireCoercionError.EnumConstantDivergence(
@@ -786,8 +710,7 @@ final class InputBeanResolver {
         } else {
             // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
             // String cast to a *Record throws ClassCastException at the first request. Branch
-            // to a @nodeId-decode leaf, or reject loudly — never fall
-            // through to Direct with a record member.
+            // to a @nodeId-decode leaf, or reject loudly.
             Class<?> memberClass = tryLoad(javaElementTypeName);
             if (memberClass != null && isJooqRecord(memberClass)) {
                 RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, sdlFieldName,
@@ -797,11 +720,11 @@ final class InputBeanResolver {
                 }
                 leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
             } else {
-                // Site A: a scalar SDL field bound to a consumer-declared Java type only
-                // lands on Direct once the wire-coercion predicate confirms graphql-java's coercion
-                // output for the SDL scalar is assignable to that declared type. This widens the earlier
-                // narrow jOOQ-record-only rejection to the full wire-incompatible family (numeric
-                // width, ID-as-numeric, domain types). The predicate is the sole producer of Direct.
+                // A scalar SDL field bound to a consumer-declared Java type lands on Direct only
+                // once the wire-coercion predicate confirms graphql-java's coercion output for the
+                // SDL scalar is assignable to that declared type (numeric width, ID-as-numeric,
+                // and domain-type mismatches all reject). The predicate is the sole producer of
+                // Direct here.
                 var wire = WireCoercionResolver.checkScalar(sdlElt.elementType(), javaElementTypeName,
                     ctx.types == null ? null : ctx.types.values(),
                     "input-bean field '" + sdlFieldName + "' on parameter '" + paramName + "' of method '"
@@ -821,8 +744,7 @@ final class InputBeanResolver {
     /**
      * Classification of a jOOQ-{@code Record}-typed input-bean member: either a
      * {@link CallSiteExtraction.NodeIdDecodeRecord} decode leaf or a structural rejection. A record
-     * member has exactly these two outcomes; it never falls through to
- * {@link CallSiteExtraction.Direct}.
+     * member never falls through to {@link CallSiteExtraction.Direct}.
      */
     private sealed interface RecordLeaf {
         record Ok(CallSiteExtraction.NodeIdDecodeRecord leaf) implements RecordLeaf {}
@@ -832,16 +754,11 @@ final class InputBeanResolver {
     /**
      * Builds the {@link CallSiteExtraction.NodeIdDecodeRecord} leaf for a jOOQ-record-typed bean
      * member, reading {@code @nodeId(typeName:)} off the SDL field and resolving the decode
-     * materialization data through {@link BuildContext#resolveNodeIdRecordDecode}. Handles
-     * <strong>every</strong> record-member shape: single-column and composite key (arity is the
-     * resolved key-column count, one typed {@code set} per column), scalar and list-valued (the
-     * caller carries list-ness on the enclosing {@link CallSiteExtraction.FieldBinding}, which
-     * drives the scalar-vs-list emitter variant). The leaf is arity- and shape-agnostic.
-     *
-     * <p>Rejects (rather than falling to {@link CallSiteExtraction.Direct}) only for
-     * <em>malformed-directive</em> cases: no {@code @nodeId} on the member, {@code @nodeId} without
-     * {@code typeName:}, or a {@code typeName:} that resolves to no known NodeType. There are no
-     * shape gates: a composite-key or list-valued member is supported, not deferred.
+     * materialization data through {@link BuildContext#resolveNodeIdRecordDecode}. The leaf is
+     * arity- and shape-agnostic: composite keys and list-valued members are supported (list-ness
+     * rides on the enclosing {@link CallSiteExtraction.FieldBinding}), so the only rejections are
+     * malformed-directive cases: no {@code @nodeId} on the member, {@code @nodeId} without
+     * {@code typeName:}, or a {@code typeName:} naming no known NodeType.
      */
     private RecordLeaf buildJooqRecordLeaf(GraphQLInputObjectField sdlField, String sdlFieldName,
             String recordTypeName, boolean nonNull,
@@ -866,14 +783,11 @@ final class InputBeanResolver {
             return new RecordLeaf.Fail(Rejection.structural(where + ": " + r.message()));
         }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
-        // The NodeId for `typeName` decodes into the record of that type's own @table. Loading those
-        // key values into a *different* jOOQ record is unsound: the Tables.<NodeTable>.<col> field
-        // references the decode helper emits are not fields of the declared record, and the helper
-        // would return the node-table record into a bean field of the declared type. Without this
-        // gate that surfaces only downstream as a javac "incompatible types" error in the consumer's
-        // *Fetchers (the opptak List<SoknadSoknadsbehandlingTaggRecord> vs List<SoknadsbehandlingTaggRecord>
-        // case), not as a graphitron rejection. Catch it at classification: the member's declared
-        // record type must equal the node table's record type.
+        // The NodeId for `typeName` decodes into the record of that NodeType's own @table. Loading
+        // those key values into a *different* jOOQ record is unsound: the Tables.<NodeTable>.<col>
+        // field references the decode helper emits are not fields of the declared record. Without
+        // this gate the mismatch surfaces only as a javac "incompatible types" error in the
+        // consumer's generated fetchers, not as a graphitron rejection; catch it at classification.
         String nodeTableRecord = resolved.table().recordClass().toString();
         if (!nodeTableRecord.equals(recordTypeName)) {
             return new RecordLeaf.Fail(Rejection.structural(where
@@ -909,7 +823,7 @@ final class InputBeanResolver {
      * True when {@code cls} implements {@code org.jooq.TableRecord} (transitively). Strictly narrower
      * than {@link #isJooqRecord}: a non-table {@code Record} (e.g. {@code Record1}) implements
      * {@code org.jooq.Record} but not {@code org.jooq.TableRecord} and has no backing {@code TableRef},
-     * so the {@code @table}-on-input reject (D2) gates on this — a non-table record keeps falling
+     * so the {@code @table}-on-input reject gates on this; a non-table record keeps falling
      * through to the bean path rather than reaching a reject that assumes a table. Same FQN-based,
      * classloader-agnostic discipline as {@link #isJooqRecord}.
      */

@@ -49,14 +49,12 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Cross-cutting check: drains the cached tenant-scope classification's typed rejections
-     * (the tenant-column type disagreement and the unknown tenant column) into
-     * {@link ValidationError}s, mirroring the validator-mirrors-classifier shape of
-     * {@link #validateContextArgumentTypeAgreement}. The classification runs once at catalog
-     * load ({@link TenantScopeClassifier}); the validator and the tenant-routing emitters read
-     * the identical {@link GraphitronSchema#tenantScopes()} rather than re-walking the catalog.
-     * Like the pom-configured contextArguments, a tenant-column defect has no SDL coordinate,
-     * so the errors surface at {@code <schema>}.
+     * Drains the cached tenant-scope classification's typed rejections into
+     * {@link ValidationError}s (same validator-mirrors-classifier shape as
+     * {@link #validateContextArgumentTypeAgreement}). {@link TenantScopeClassifier} runs once at
+     * catalog load; the validator and the tenant-routing emitters read the identical
+     * {@link GraphitronSchema#tenantScopes()}. A tenant-column defect has no SDL coordinate, so
+     * the errors surface at {@code <schema>}.
      */
     private void validateTenantBindings(GraphitronSchema schema, List<ValidationError> errors) {
         if (schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configured) {
@@ -74,36 +72,28 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Drains the build-time validation diagnostics the immutable validate phase
-     * accumulated ({@link GraphitronSchema#diagnostics()}) into the {@link ValidationError} stream.
-     * The global soundness reductions (node-typeId uniqueness, case-fold collisions, the
-     * dangling-reference backstop, the federation {@code @key} checks, and the multi-producer
-     * {@code DomainReturnType} agreement) register a fully-formed
-     * {@link ValidationError} on the schema rather than demoting a classified verdict to
-     * {@code UnclassifiedType} / {@code UnclassifiedField}, so a verdict read after the walk equals
-     * the verdict classification produced. This drain re-surfaces those findings unchanged: the
-     * coordinate, typed {@link Rejection}, and source location are already those the validator's own
-     * {@code validateUnclassifiedType} / {@code validateUnclassifiedField} passes would have
-     * produced from the demotion, so the error stream is byte-identical to the demoting world.
+     * Drains the build-time validation diagnostics ({@link GraphitronSchema#diagnostics()}) into
+     * the {@link ValidationError} stream. The global soundness reductions (node-typeId
+     * uniqueness, case-fold collisions, the dangling-reference backstop, the federation
+     * {@code @key} checks, the multi-producer {@code DomainReturnType} agreement) register a
+     * fully-formed {@link ValidationError} on the schema instead of demoting a classified verdict
+     * to {@code UnclassifiedType} / {@code UnclassifiedField}, so a verdict read after the walk
+     * equals the verdict classification produced; this drain re-surfaces those findings unchanged
+     * (coordinate, typed {@link Rejection}, source location).
      */
     private void drainBuildDiagnostics(GraphitronSchema schema, List<ValidationError> errors) {
         errors.addAll(schema.diagnostics());
     }
 
     /**
-     * Cross-cutting check: drains the cached {@link ContextArgumentClassifier} output's typed
-     * {@link Rejection.AuthorError.TypeConflict} list into {@link ValidationError}s, mirroring
-     * the validator-mirrors-classifier shape of
-     * {@link #validateLocalContextErrorsFieldGuards}. The classifier walks every
-     * {@link no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed} whose source is
-     * {@link no.sikt.graphitron.rewrite.model.ParamSource.Context} and rejects when two or more
-     * directive sites reference the same name with disagreeing Java types, closing the loop
-     * before the factory emitter is ever asked to paste a non-existent {@code TypeName} into
-     * {@code Graphitron.newExecutionInput(...)}.
+     * Drains the cached {@link ContextArgumentClassifier} output's typed
+     * {@link Rejection.AuthorError.TypeConflict} list into {@link ValidationError}s: two or more
+     * directive sites referencing the same context-argument name with disagreeing Java types
+     * reject here, before the factory emitter is asked to paste a non-existent {@code TypeName}
+     * into {@code Graphitron.newExecutionInput(...)}.
      *
-     * <p>Reads {@link GraphitronSchema#contextArguments()}, which the schema's constructor
-     * populated once at parse boundary, so the validator and {@code GraphitronFacadeGenerator}
-     * see the identical classification rather than each re-running the walk.
+     * <p>Reads {@link GraphitronSchema#contextArguments()}, populated once at parse boundary, so
+     * the validator and {@code GraphitronFacadeGenerator} see the identical classification.
      */
     private void validateContextArgumentTypeAgreement(GraphitronSchema schema, List<ValidationError> errors) {
         for (Rejection conflict : schema.contextArguments().conflicts()) {
@@ -140,19 +130,12 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateField(GraphitronField field, GraphitronSchema schema, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        // Reentry implementedness guard, replacing the retired
-        // dispatchPerformsReFetch mirror. The mirror re-enumerated per leaf what the generator's
-        // re-fetch dispatch did and asserted agreement with the requiresReFetch derivation; since
-        // the reentry emit itself now routes on the model facts (the source-shape-gated batched
-        // fetcher, the service lift, the named DML rows companions), that enumeration became a
-        // second derivation of the same facts — the drift it guarded against is structurally
-        // impossible, and keeping it would itself be the two-consumers smell. What still needs a
-        // build-time guard is implementedness: a future leaf or fact combination that derives
-        // site-level reentry (emitsKeyedReQuery) without being one of the shapes the reentry emit
-        // handles — the DataLoader-backed leaves (BatchKeyField) and the projected/discriminated
-        // DML arms (DmlTableField) — must fail in ValidateMojo, not reach the generator. No
-        // current leaf can fire this (the sealed hierarchy admits no such combination), which is
-        // exactly the state the guard exists to preserve.
+        // Reentry implementedness guard: a leaf that derives site-level reentry
+        // (emitsKeyedReQuery) without being one of the shapes the reentry emit handles
+        // (the DataLoader-backed BatchKeyField leaves and the projected/discriminated
+        // DmlTableField arms) must fail at validate time, not reach the generator. No current
+        // leaf can fire this (the sealed hierarchy admits no such combination); preserving
+        // that state is the guard's job.
         if (field instanceof no.sikt.graphitron.rewrite.model.OutputField out
                 && out.emitsKeyedReQuery()
                 && !(field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField)
@@ -274,15 +257,12 @@ public class GraphitronSchemaValidator {
      * results every run. Reject at build time rather than ship a latent non-determinism bug.
      *
      * <p>Gated on {@link FieldWrapper.List} (not {@link FieldWrapper#isList()}, which also covers
-     * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering}
-     * — connections always carry pagination and are caught there. Exempts
- * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} fields: a
+     * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering};
+     * connections always carry pagination and are caught there. Exempts
+     * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} fields: a
      * re-fetch field's visible order is locked to the source/target key correspondence (the
      * {@code ORDER BY idx} scatter re-keys the re-projected rows to the upstream source order), so
-     * the "list-shaped + {@code None}" signal does not imply non-determinism for them, regardless of
-     * intent. This covers the carriers that the retired {@code OrderingOwnedByProducer} marker
-     * exempted, and correctly admits a PK-less idx-ordered re-fetch that the marker would have
-     * rejected.
+     * the "list-shaped + {@code None}" signal does not imply non-determinism for them.
      */
     private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
         if (field instanceof SqlGeneratingField sgf
@@ -300,16 +280,15 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Cross-cutting check: reject schemas whose classification lands on a variant that the
-     * {@link TypeFetcherGenerator} hasn't implemented yet. Without this check the build
-     * succeeds and the generated stub throws {@link UnsupportedOperationException} at the
-     * first request hitting the variant; the principle in {@code graphitron-principles.md}
-     * is that problems caught at build time are cheaper, so we surface it here.
+     * Cross-cutting check: reject schemas whose classification lands on a variant the
+     * {@link TypeFetcherGenerator} does not implement. Without this check the build succeeds
+     * and the generated stub throws {@link UnsupportedOperationException} at the first request
+     * hitting the variant; problems caught at build time are cheaper.
      *
      * <p>The {@link TypeFetcherGenerator#STUBBED_VARIANTS} map is the single source of
      * truth for "stubbed" status. Variants in {@code IMPLEMENTED_LEAVES} or
      * {@code NOT_DISPATCHED_LEAVES} return {@code null} from this lookup and are correctly
-     * ignored — an invariant enforced by
+     * ignored, an invariant enforced by
      * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
      */
     private void validateVariantIsImplemented(GraphitronField field, List<ValidationError> errors) {
@@ -328,7 +307,7 @@ public class GraphitronSchemaValidator {
         ));
     }
 
-    // --- Type validators (stubs — filled in as test classes are added) ---
+    // --- Type validators ---
 
     private void validateTableType(no.sikt.graphitron.rewrite.model.GraphitronType.TableType type, List<ValidationError> errors) {
         // Unresolved tables are caught by the builder (UnclassifiedType). Nothing more to validate here.
@@ -410,14 +389,13 @@ public class GraphitronSchemaValidator {
     }
 
     /**
- * The input-field validator-side rejections ({@link #validateInputFieldRecursive}) as a
-     * standalone list, so a call site that resolves input fields against a table <em>outside</em> the
+     * The input-field validator-side rejections ({@link #validateInputFieldRecursive}) as a
+     * standalone list, so a call site that resolves input fields against a table outside the
      * registry {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType} walk (the
-     * field-derived DELETE write-target path in {@code FieldBuilder}) can enforce the identical rule.
-     * This is the validator-mirror obligation: a field-derived DELETE input never lands in
-     * {@link #validateTableInputType}, so the same broken input would reject on the
-     * {@code @table}-on-input path and slip through on the field-derived path unless both routes drain
-     * this one walk. Both do.
+     * field-derived DELETE write-target path in {@code FieldBuilder}) can enforce the identical
+     * rule. A field-derived DELETE input never lands in {@link #validateTableInputType}, so the
+     * same broken input would reject on the {@code @table}-on-input path and slip through on the
+     * field-derived path unless both routes drain this one walk. Both do.
      */
     static List<ValidationError> collectInputFieldRejections(List<no.sikt.graphitron.rewrite.model.InputField> fields) {
         var errors = new java.util.ArrayList<ValidationError>();
@@ -428,11 +406,9 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Walks the input-field tree rooted at {@code field}, surfacing the validator-side rejections
-     * (currently only {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
-     * {@code @condition(override:false)}). Recurses through
-     * {@link no.sikt.graphitron.rewrite.model.InputField.NestingField} so nested plain inputs
-     * inside an {@code @table} input are walked too.
+     * Walks the input-field tree rooted at {@code field}, surfacing the validator-side
+     * rejections; recurses through nesting fields so nested plain inputs inside an
+     * {@code @table} input are walked too.
      */
     private static void validateInputFieldRecursive(no.sikt.graphitron.rewrite.model.InputField field, List<ValidationError> errors) {
         switch (field) {
@@ -461,7 +437,7 @@ public class GraphitronSchemaValidator {
      *       must declare a primary key. Stage 1 needs row identity per branch.</li>
      *   <li>All TableBound participants must share the same PK arity. Stage 1 projects
      *       {@code (typename, pk0..pkN-1, sort)} per branch, and the column count must align
-     *       across UNION ALL branches. v1 doesn't NULL-pad; mixed arity rejects upstream.</li>
+     *       across UNION ALL branches; the emitter does not NULL-pad.</li>
      * </ul>
      *
      * <p>{@link no.sikt.graphitron.rewrite.model.ParticipantRef.Unbound} participants are
@@ -547,15 +523,11 @@ public class GraphitronSchemaValidator {
             return; // one collision is enough; subsequent ones are noise
         }
 
-        // Deferred follow-up: lift the
-        // emit-time single-column participant-PK check at MultiTablePolymorphicEmitter.java:824
-        // (the connection-rows method picks the first PK column to type sortField, silently
-        // truncating composite participant PKs). Existing graphitron-sakila-example
-        // Query.pagedItems → PagedA/PagedB has composite-PK participants on a connection that
-        // quietly works because the test data is structured around k1, so promoting the
-        // truncation to a hard validator error would block today. The wrapper parameter for
-        // gating this check on Connection re-lands when the lift does — keeping it in the
-        // signature today would be infrastructure ahead of need.
+        // Not enforced here: MultiTablePolymorphicEmitter's connection-rows method types its
+        // sortField by the first PK column only, silently truncating composite participant PKs.
+        // Promoting that truncation to a validator rejection would break composite-PK connection
+        // participants that work today (graphitron-sakila-example's Query.pagedItems), so the
+        // validator stays silent on it.
     }
 
     /**
@@ -566,14 +538,13 @@ public class GraphitronSchemaValidator {
      * so the resulting {@code Row<N+1>} tops out at jOOQ's {@code Row22} on either arm.
      * Field-level cap therefore is parent-key arity 21.
      *
-     * <p>Surfaces the constraint as a clean validator rejection (build-time AUTHOR_ERROR with
-     * file:line) instead of a codegen-time {@code IllegalStateException} or a
-     * {@code Row23}-doesn't-exist compile failure.
+     * <p>Surfaces the constraint as a build-time validator rejection with file:line instead of a
+     * codegen-time {@code IllegalStateException} or a {@code Row23}-doesn't-exist compile failure.
      *
-     * <p>Reads {@code field.parentSourceKey().columns()} uniformly across all five
-     * {@link no.sikt.graphitron.rewrite.model.KeyLift} arms the polymorphic parent
-     * can land on — the same column tuple the rows-method prelude uses, so the validator's
-     * arity surface tracks the actual key tuple regardless of producer.
+     * <p>Reads {@code field.parentSourceKey().columns()} uniformly across every
+     * {@link no.sikt.graphitron.rewrite.model.KeyLift} arm the polymorphic parent can land on,
+     * the same column tuple the rows-method prelude uses, so the validator's arity surface
+     * tracks the actual key tuple regardless of producer.
      *
      * <p>The non-empty invariant is enforced upstream at construction time: the producer
      * routes empty-PK / unresolved-hub parents through {@code UnclassifiedField} before
@@ -598,7 +569,7 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    // --- Field validators (stubs — filled in as test classes are added) ---
+    // --- Field validators ---
 
     private void validateQueryLookupTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
@@ -609,8 +580,8 @@ public class GraphitronSchemaValidator {
             ));
         } else {
             // Lookup cardinality is determined by whether any @lookupKey arg is a list.
-            // Lookup-key args live on LookupMapping; any legacy filter-carried list arg is
-            // also considered (validator is input-shape-agnostic and covers both paths).
+            // The validator is input-shape-agnostic: list-ness may come from LookupMapping
+            // or from a filter-carried list arg, and both paths are covered.
             boolean anyKeyIsList = switch (field.lookupMapping()) {
                     case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->
                         cm.hasListArg();
@@ -671,13 +642,13 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryServiceTableInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableInterfaceField field, List<ValidationError> errors) {
         // Mirror the read-side single-table floor (validateQueryTableInterfaceField), NOT the
-        // multi-table one. validateMultiTableParticipants enforces distinct-table PK presence + uniform
-        // arity + the same-table *rejection* floor route (a) needs; single-table is precisely the shape
-        // that floor steers authors toward, so applying it here would reject the valid case. The
-        // single-table invariants (single-hop FK per cross-table participant field, PK-bearing shared
-        // table, resolvable discriminator column) are enforced upstream in TypeBuilder when the
-        // TableInterfaceType and its ParticipantRef.TableBound participants are built; the variant
-        // reuses tit.participants() verbatim, so they are inherited rather than re-mirrored here.
+        // multi-table one: validateMultiTableParticipants enforces the same-table *rejection*
+        // floor, and single-table is precisely the shape that floor steers authors toward, so
+        // applying it here would reject the valid case. The single-table invariants (single-hop
+        // FK per cross-table participant field, PK-bearing shared table, resolvable discriminator
+        // column) are enforced upstream in TypeBuilder when the TableInterfaceType and its
+        // participants are built; the variant reuses tit.participants() verbatim, so they are
+        // inherited rather than re-mirrored here.
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateMutationServiceTableInterfaceField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableInterfaceField field, List<ValidationError> errors) {
@@ -942,11 +913,10 @@ public class GraphitronSchemaValidator {
      * {@code NestingField.nestedFields()}). Expanding this predicate requires the corresponding
      * generator-side change.
      *
-     * <p>A predicate rather than a class set: the merged {@code BatchedTableField} is
-     * wireable at nested depth only on its Table-sourced arm — a nested plain-object type shares
-     * the parent's table context, which the record-sourced arm's key lift does not read. Admitting
-     * record-sourced instances here would silently wire them into nested fetchers the emit arms
-     * never supported (the pre-merge set contained only the Split variants).
+     * <p>A predicate rather than a class set: {@code BatchedTableField} is wireable at nested
+     * depth only on its Table-sourced arm; a nested plain-object type shares the parent's table
+     * context, which the record-sourced arm's key lift does not read. Admitting record-sourced
+     * instances here would silently wire them into nested fetchers the emit arms never supported.
      */
     private static boolean isNestedWireableLeaf(GraphitronField field) {
         return switch (field) {
@@ -987,7 +957,7 @@ public class GraphitronSchemaValidator {
      *
      * <p>Non-{@link ChildField.ColumnBackedField} leaves reject at nested depth when the nesting type is
      * shared: their resolution depends on per-parent metadata (join paths, FK counts), which is
-     * per-field. Multi-parent support for those leaves is a planned follow-up.
+     * per-field.
      */
     private void validateNestingParentCompat(GraphitronSchema schema, List<ValidationError> errors) {
         var grouped = new java.util.LinkedHashMap<String, List<ChildField.NestingField>>();
@@ -1012,10 +982,8 @@ public class GraphitronSchemaValidator {
      * ({@link GraphitronSchema#reachableSourceShapes}) is a combination no emitter arm serves. Reads the
      * same reified fact the dispatch emitter dispatches on, so emitter and validator cannot drift on which
      * combinations are supported. The {@code JooqRecordCarrier} + nesting mix
-     * ({@link no.sikt.graphitron.rewrite.model.ReachableSourceShape#REJECTED}) is the first such
-     * combination: it re-lands the narrowed remainder of the former fused type-level rejection (a
-     * {@code @table} parent embedding a jOOQ-record-carrier result), now over the reified fact rather than
-     * a type-level {@code instanceof ResultType} check.
+     * ({@link no.sikt.graphitron.rewrite.model.ReachableSourceShape#REJECTED}) rejects a
+     * {@code @table} parent embedding a jOOQ-record-carrier result.
      */
     private void validateReachableSourceShapes(GraphitronSchema schema, List<ValidationError> errors) {
         schema.mixedSourceCoordinates().forEach((coord, shapes) -> {
@@ -1129,7 +1097,6 @@ public class GraphitronSchemaValidator {
                 ));
             }
         }
-        // Report fields present on `other` but not on `rep`.
         String coord = otherParent + "." + other.name();
         for (var name : otherByName.keySet()) {
             if (!repByName.containsKey(name)) {
@@ -1147,15 +1114,14 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
 
         // Enforces the channel-less premise on the service reentry path (DML reentry has its
-        // own channel transport and its own fetcher
-        // family): the service reentry fetcher inlines the channel catch / early-return arms
-        // into the Fetcher (no independent seam), and the load-bearing premise is
-        // that reentry @service fields are channel-less — the slot is provably empty today
-        // (resolveErrorChannel guards on ResultReturnType; this return is table-bound), so the
-        // inlined arm shape cannot vary within the family. This check is the premise's enforcer
-        // rather than a prose claim: if channel resolution ever widens to table-bound payloads,
-        // the schema that first exercises it fails here, at the build boundary, instead of
-        // inheriting an inlined arm shape that was never designed for a channel.
+        // own channel transport and fetcher family): the service reentry fetcher inlines the
+        // channel catch / early-return arms into the Fetcher with no independent seam, on the
+        // premise that reentry @service fields are channel-less. The slot is provably empty
+        // today (resolveErrorChannel guards on ResultReturnType; this return is table-bound),
+        // so the inlined arm shape cannot vary within the family. If channel resolution ever
+        // widens to table-bound payloads, the first schema exercising it fails here, at the
+        // build boundary, instead of inheriting an inlined arm shape never designed for a
+        // channel.
         if (field.emitsKeyedReQuery() && field.errorChannel().isPresent()) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
@@ -1285,7 +1251,7 @@ public class GraphitronSchemaValidator {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
     }
     /**
- * An {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
+     * An {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
      * {@code @condition(override: false)} present is a structural bug — the field has no column
      * to bind and the explicit condition method does not own the predicate (override: false
      * means the implicit column predicate is required to compose with the condition). The
@@ -1327,12 +1293,11 @@ public class GraphitronSchemaValidator {
      * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} instead).
      *
      * <p>Path <em>shape</em> is likewise gated at classification time, not here: the single-table
-     * {@code TableInterfaceField} arm through {@code FieldBuilder.validateSingleHopFkJoin} and the
-     * multi-table interface/union child arm through {@code FieldBuilder.resolveChildPolymorphicJoinPaths}
- *, the latter carrying its resolved correlation as a
+     * {@code TableInterfaceField} arm through {@code FieldBuilder.validateSingleHopFkJoin}, and the
+     * multi-table interface/union child arm through {@code FieldBuilder.resolveChildPolymorphicJoinPaths},
+     * which carries its resolved correlation as a
      * {@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation} so an unsupported join shape is
-     * unrepresentable downstream. There is no reference-path shape rule left for the validator to
-     * enforce.
+     * unrepresentable downstream. No reference-path shape rule is left for the validator to enforce.
      */
     private void validateReferencePath(String fieldName, SourceLocation location, List<JoinStep> path, List<ValidationError> errors) {
         // All elements are resolved and the join-path shape is gated in the builder; nothing to check.
@@ -1351,11 +1316,10 @@ public class GraphitronSchemaValidator {
      * {@code null}; otherwise the catch path renders {@code data} as a corrupt half-payload instead
      * of the SDL-level {@code data: null, errors: [...]} shape. The {@code @service}-payload
      * lifting in {@code FieldBuilder.findPayloadErrorsBinding} keeps the data-channel role's
-     * variants within {@link #isLocalContextGuardedDataChannel} by construction. That admission
-     * widened to mutation DML record fields, and any future widening that admits a
-     * non-guarded variant must extend the allow-list along with the matching fetcher's null-source
-     * guard. This validator pass is the cross-check that turns a silently-broken admission into a
-     * build-time {@link Rejection.AuthorError.Structural}.
+     * variants within {@link #isLocalContextGuardedDataChannel} by construction; widening the
+     * admission to a new variant requires extending the allow-list along with the matching
+     * fetcher's null-source guard. This validator pass is the cross-check that turns a
+     * silently-broken admission into a build-time {@link Rejection.AuthorError.Structural}.
      */
     private void validateLocalContextErrorsFieldGuards(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {
@@ -1388,16 +1352,14 @@ public class GraphitronSchemaValidator {
      *   <li>Record-sourced {@code BatchedTableField} → {@code buildRecordBasedDataFetcher}
      *       (explicit {@code if (env.getSource() == null) return completedFuture(null);} prelude
      *       before the key read; the {@code OUTCOME_SUCCESS} arm's {@code instanceof Success}
-     *       narrowing also rejects null). The Table-sourced arm is deliberately
-     *       excluded: {@code buildSplitQueryDataFetcher} carries no null-source guard, exactly as
-     *       the table-sourced leaf was absent from this allow-list before the arms merged.</li>
+     *       narrowing also rejects null). The Table-sourced arm is deliberately excluded:
+     *       {@code buildSplitQueryDataFetcher} carries no null-source guard.</li>
      *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
      *       (explicit guard before encoder dispatch).</li>
      * </ul>
      *
-     * <p>The lookup leaf ({@code BatchedLookupTableField}, either arm) is not admitted — it was absent from the
-     * pre-merge allow-list and its fetcher's guard has not been audited; preserve the asymmetry
- * rather than silently widening.
+     * <p>The lookup leaf ({@code BatchedLookupTableField}, either arm) is not admitted: its
+     * fetcher's guard has not been audited.
      *
      * <p>Admitting a variant here requires the matching emitter site to honor the guard;
      * removing the guard from an existing emitter arm must remove the variant here.
@@ -1452,15 +1414,11 @@ public class GraphitronSchemaValidator {
      * on {@code ErrorList}). An un-switched child is a silent runtime hole: graphql-java's default
      * {@code PropertyDataFetcher} would read a property off the {@code Outcome} object itself.
      *
-     * <p>The former allow-list of "arm-switchable" variants was retired (a parallel taxonomy that
-     * drifted from the emitter: a child that can't arm-switch is a generator limitation, not an
-     * author error, and {@code @table}-bound DataLoader data fields were wrongly rejected by it).
-     * The arm-switch now lives where it belongs: the inline-resolved reads narrow {@code Success}
-     * in the source-read {@code FetcherEmitter.bind} reifies onto {@code <Type>Fetchers} (the
-     * registration site carries the resulting reference), DataLoader fields narrow inside their
-     * generated fetcher method. This pass
-     * keeps a contextual structural guarantee instead of allow-list membership: every immediate
-     * child of a wrapper outcome type must resolve through a graphitron-emitted fetcher, never
+     * <p>The arm-switch lives with the emit: inline-resolved reads narrow {@code Success} in the
+     * source-read {@code FetcherEmitter.bind} reifies onto {@code <Type>Fetchers}, and DataLoader
+     * fields narrow inside their generated fetcher method. This pass therefore checks a
+     * contextual structural guarantee rather than allow-list membership: every immediate child of
+     * a wrapper outcome type must resolve through a graphitron-emitted fetcher, never
      * graphql-java's default {@code PropertyDataFetcher}.
      *
      * <p>The dispatch-partition coverage test does not catch this: it pins a global property (every
@@ -1473,7 +1431,7 @@ public class GraphitronSchemaValidator {
      * or a property/record read on a no-backing parent). {@code UnclassifiedField} is the only
      * unregistered leaf that can sibling an errors field on an object type (the other
      * {@code NOT_DISPATCHED_LEAVES} are {@code InputField} leaves, which only attach to input
-     * objects); stubbed variants are already rejected by {@code validateVariantIsImplemented}.
+     * objects); stubbed variants are already rejected by {@link #validateVariantIsImplemented}.
      */
     private void validateOutcomeChildArmSwitch(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {

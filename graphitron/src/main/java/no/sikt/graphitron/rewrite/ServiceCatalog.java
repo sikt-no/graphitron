@@ -79,20 +79,19 @@ class ServiceCatalog {
     }
 
     /**
-     * Resolves a column at the terminal of an FK {@code @reference} path. The terminal is carried
- * as the identity-resolved {@link TableRef} the path's hops already pinned, never
-     * collapsed to a bare SQL name and re-resolved through the catalog — a bare-name lookup is
-     * ambiguous when the terminal table name collides across generated schemas.
+     * Resolves a column at the terminal of an FK {@code @reference} path. The terminal is the
+     * identity-resolved {@link TableRef} the path's hops carry, never a bare SQL name re-resolved
+     * through the catalog: a bare-name lookup is ambiguous when the terminal table name collides
+     * across generated schemas.
      */
     Optional<ColumnRef> resolveColumnForReference(String columnName, List<JoinStep> path, TableRef start) {
         return terminalTableForReference(path, start).flatMap(t -> t.column(columnName));
     }
 
     /**
-     * Walks the FK join path from {@code start} and returns the terminal table as the
-     * identity-resolved {@link TableRef} the last hop already carries; an empty path yields
-     * {@code start}. Returns empty when any path step is not FK-derived (i.e. the path contains
-     * a condition-only step whose target table is unknown at build time).
+     * Walks the FK join path from {@code start} and returns the terminal table's
+     * identity-resolved {@link TableRef}; an empty path yields {@code start}. Empty when any
+     * step is not FK-derived (a condition-only step's target table is unknown at build time).
      */
     Optional<TableRef> terminalTableForReference(List<JoinStep> path, TableRef start) {
         TableRef current = start;
@@ -114,10 +113,10 @@ class ServiceCatalog {
      * {@code null} when the type has no associated table.
      */
     String getTableSqlNameForType(String typeName) {
-        // Resolve table-backedness through the pure TableIndex (a fixed point built
-        // before the walk), not ctx.types: under the single classify-and-emit walk a field's target
-        // composite may not be registered yet when the field classifies, so a registry read would miss
-        // it. The index agrees with the registry for table-backed types by construction (slice 3d).
+        // Resolve table-backedness through the TableIndex (a fixed point built before the walk),
+        // not ctx.types: under the single classify-and-emit walk a field's target composite may
+        // not be registered yet when the field classifies, so a registry read would miss it. The
+        // index agrees with the registry for table-backed types by construction.
         var type = ctx.tables.forName(typeName).orElse(null);
         if (type instanceof TableBackedType tbt) return tbt.table().tableName();
         return null;
@@ -126,21 +125,14 @@ class ServiceCatalog {
     // ===== Service method reflection =====
 
     /**
-     * Loads the service class and method via reflection and classifies each parameter.
+     * Loads the service class and method via reflection and classifies each parameter: binding-map
+     * keys become {@link ParamSource.Arg}, context keys become {@link ParamSource.Context}, the
+     * rest classify via {@link #classifySourcesType}.
      *
-     * <p>{@code argBindings} maps each Java parameter name that should bind to a GraphQL argument
-     * to that argument's name. Constructed by the caller via {@link ArgBindingMap#of}; identity
-     * entries cover the no-override case, override entries carry the {@code argMapping} override.
-     *
-     * <p>Parameters whose name appears as a key in the binding map get {@link ParamSource.Arg}
-     * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value; parameters
-     * whose name matches a context key get {@link ParamSource.Context}; all others are classified
-     * by {@link #classifySourcesType}.
-     *
-     * <p>If a key in the binding map that constitutes an explicit override ({@code key != value})
-     * does not appear among the resolved method's parameter names, the method fails with a
-     * typo-guard message naming the directive site, the override target, and the available
-     * parameter names.
+     * <p>{@code argBindings} is built by the caller via {@link ArgBindingMap#of}. An explicit
+     * override entry ({@code key != value}) whose target is not among the resolved method's
+     * parameter names fails with a typo-guard message naming the directive site, the override
+     * target, and the available parameter names.
      *
      * <p>{@code parentPkColumns} is the primary-key column list of the parent type's table.
      * Pass {@link List#of()} when the parent is a root operation type or has no backing table.
@@ -148,17 +140,14 @@ class ServiceCatalog {
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected.
      *
-     * <p>{@code expectedReturnType} (when non-null) is the structured javapoet
-     * {@link TypeName} the method's generic return type must equal exactly (e.g.
-     * {@code Result<FilmRecord>} for a List-cardinality {@code @table}-bound return).
-     * Mismatched return types fail classification with a message naming the expected vs
-     * actual type. Pass {@code null} for cases where strict validation isn't applicable
-     * (e.g. {@code ScalarReturnType} or {@code ResultReturnType} with no backing class).
-     * Comparison is via {@link TypeName#equals(Object)} so it is whitespace-tolerant and
-     * structurally exact (a wildcard {@code ? extends Foo} is not equal to {@code Foo}).
-     * The captured return type stored on the resulting {@link MethodRef.Service} is always
-     * the parameterised form so emitters can declare matching fetcher return types
-     * directly without parsing a string.
+     * <p>{@code expectedReturnType} (when non-null) is the structured javapoet {@link TypeName}
+     * the method's generic return type must equal exactly; a mismatch fails classification with
+     * a message naming expected vs actual. Pass {@code null} where strict validation isn't
+     * applicable. Comparison is {@link TypeName#equals(Object)}: whitespace-tolerant and
+     * structurally exact (a wildcard {@code ? extends Foo} is not equal to {@code Foo}). The
+     * captured return type on the resulting {@link MethodRef.Service} is always the
+     * parameterised form so emitters can declare matching fetcher return types directly without
+     * parsing a string.
      */
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
@@ -168,16 +157,10 @@ class ServiceCatalog {
     }
 
     /**
-     * Suggestion-aware overload: identical to the 6-arg version, but accepts
-     * {@code slotTypes} so a parameter-mismatch rejection can pre-fill an unambiguous
-     * reachable path under one of the available slots in its argMapping suggestion.
-     *
-     * <p>The 6-arg overload delegates here with {@code Map.of()}; tests that don't care about
-     * the prefilled-path hint stay on the simpler form. The single production caller
+     * Suggestion-aware overload: {@code slotTypes} lets a parameter-mismatch rejection pre-fill
+     * an unambiguous reachable path in its argMapping suggestion. The production caller
      * ({@link ServiceDirectiveResolver}) threads the real slot types from
-     * {@link FieldBuilder#argSlotTypes(graphql.schema.GraphQLFieldDefinition)} so that the
-     * suggestion message rendered to schema authors carries a copy-pasteable path when one
-     * is unambiguously reachable.
+     * {@link FieldBuilder#argSlotTypes(graphql.schema.GraphQLFieldDefinition)}.
      */
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
@@ -250,22 +233,15 @@ class ServiceCatalog {
                             return new ServiceReflectionResult(null,
                                 new ReflectionError.ParameterNamesMissing(className, methodName));
                         }
-                        // The discriminator is the parameter type axis, not the coordinate. The
-                        // parameter must either match a GraphQL argument / context key (handled
-                        // above), classify as SOURCES (handled by classifySourcesType), or land in
-                        // one of the diagnostics below. parentPkColumns only gates which SOURCES
-                        // outcomes are reachable at a given coordinate; it does not gate the
-                        // name-mismatch diagnostic, which applies wherever the parameter is clearly
-                        // not SOURCES-adjacent (root, DTO-parent child, or @table-parent child with
-                        // a non-container type like LocalDate / String / Integer).
-                        // Anonymous-key SOURCES shapes (List<RowN> / List<RecordN>) at root get the
-                        // dedicated batch-at-root diagnostic — `@service at the root does not
-                        // support List<Row>/List<Record> batch parameters`. List<TableRecord> at
-                        // root is the canonical InputBeanResolver shape and falls through to the
-                        // arg-mismatch arm if the parameter name doesn't bind
+                        // The discriminator is the parameter type axis, not the coordinate:
+                        // parentPkColumns only gates which SOURCES outcomes are reachable, not
+                        // the name-mismatch diagnostic. Anonymous-key SOURCES shapes (List<RowN>
+                        // / List<RecordN>) at root get the dedicated batch-at-root diagnostic;
+                        // List<TableRecord> at root is the canonical InputBeanResolver shape and
+                        // falls through to the arg-mismatch arm when the name doesn't bind
                         // (looksLikeSourcesShape excludes TableRecord). classifySourcesType
-                        // returns empty for parentPkColumns.isEmpty(), so the detection happens
-                        // here on the parameter type directly.
+                        // returns empty for empty parentPkColumns, so detection happens here on
+                        // the parameter type directly.
                         if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("@service at the root does not support "
@@ -273,11 +249,11 @@ class ServiceCatalog {
                                 + "has no parent context to batch against"));
                         }
                         // DTO-shape parameters (List<DTO> / Set<DTO>) at child coordinates keep
-                        // precedence over the name-mismatch arm: the @sourceRow lifter-directive
-                        // hint is genuinely actionable here (DataLoader batching applies, and the
-                        // missing piece is a DTO-to-key conversion). At root coordinates the gate
-                        // flips: List<DTO> there has no batching context, so the arg-mismatch arm
-                        // wins (pinned by dtoSources_onRootField_pointsAtArgCtxMismatch).
+                        // precedence over the name-mismatch arm: the @sourceRow hint is
+                        // actionable there (DataLoader batching applies; the missing piece is a
+                        // DTO-to-key conversion). At root, List<DTO> has no batching context, so
+                        // the arg-mismatch arm wins (pinned by
+                        // dtoSources_onRootField_pointsAtArgCtxMismatch).
                         if (!parentPkColumns.isEmpty()) {
                             String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
                             if (dtoReason != null) {
@@ -285,10 +261,8 @@ class ServiceCatalog {
                                     new ServiceMethodCallError.DtoSourcesUnsupported(displayName, methodName, dtoReason));
                             }
                         }
-                        // Non-SOURCES-adjacent parameter that didn't match any argument / context
-                        // key: the only plausible diagnosis is a name mismatch (or a missing
-                        // context key). Fires at any coordinate — root, DTO-parent child, or
-                        // @table-parent child with a non-container type.
+                        // Non-SOURCES-adjacent parameter that matched no argument or context key:
+                        // the only plausible diagnosis is a name mismatch or missing context key.
                         if (!looksLikeSourcesShape(p.getParameterizedType())) {
                             String suggestion;
                             if (argByJavaName.isEmpty()) {
@@ -361,9 +335,8 @@ class ServiceCatalog {
 
     /**
      * Resolves the single declared method named {@code methodName} on {@code cls}. Shared by all
- * three reflect helpers: replaces the silent {@code methods.get(0)} that picked the
-     * first JVM-declaration-order match with an explicit fork — zero matches produce the typed
-     * {@code unknownServiceMethod} {@link Rejection.AuthorError.UnknownName}; more than one produce
+     * three reflect helpers: zero matches produce the typed {@code unknownServiceMethod}
+     * {@link Rejection.AuthorError.UnknownName}; more than one produce
      * {@link ReflectionError.AmbiguousMethod} carrying every candidate's parameter arity.
      */
     private static MethodPick pickMethod(Class<?> cls, String className, String methodName) {
@@ -397,14 +370,10 @@ class ServiceCatalog {
     private record InstanceHolderResolution(List<MethodRef.Param> ctorParams, Rejection rejection) {}
 
     /**
-     * Resolves the holder constructor for an instance {@code @service} method.
-     * The class must be concrete (not abstract / an interface); it must expose a public constructor
-     * whose parameters are each bindable from a {@code DSLContext} slot or a declared context key
-     * (so the legacy {@code (DSLContext)} ctor still resolves, and a {@code (DSLContext, ctxArg)}
-     * ctor now does too). Among the qualifying constructors the one with the most parameters wins
-     * (so a {@code (DSLContext)} ctor is preferred over a no-arg ctor, and a richer
-     * {@code (DSLContext, ctxArg)} ctor over a bare {@code (DSLContext)} one); ties break on
-     * declaration order.
+     * Resolves the holder constructor for an instance {@code @service} method. The class must be
+     * concrete and expose a public constructor whose parameters are each bindable from a
+     * {@code DSLContext} slot or a declared context key. Among qualifying constructors the one
+     * with the most parameters wins; ties break on declaration order.
      *
      * <p>Returns the chosen constructor's parameters projected onto {@link MethodRef.Param} with
      * {@link ParamSource.DslContext} / {@link ParamSource.Context} sources, which the walker
@@ -470,10 +439,9 @@ class ServiceCatalog {
     }
 
     /**
-     * Captures the developer method's declared exception classes as FQNs, in source order.
-     * Feeds {@link MethodRef#declaredExceptions()} so the classifier's match rule can
-     * verify each declared exception is covered by an {@code @error} handler on the field's
-     * channel. Returns the empty list when the method has no {@code throws} clause.
+     * Captures the developer method's declared exception classes as FQNs, in source order,
+     * feeding {@link MethodRef#declaredExceptions()} so the classifier can verify each declared
+     * exception is covered by an {@code @error} handler on the field's channel.
      */
     private static List<String> declaredExceptionFqns(java.lang.reflect.Method m) {
         return Arrays.stream(m.getExceptionTypes())
@@ -482,17 +450,13 @@ class ServiceCatalog {
     }
 
     /**
-     * Post-reflection typo guard for {@code argMapping} overrides on argument sites.
+     * Post-reflection typo guard for {@code argMapping} overrides: verifies each explicit
+     * override target ({@code javaTarget != graphqlArgName}) is among the resolved method's
+     * parameter names. Returns a failure message naming the directive site, the target, and the
+     * actual parameter list, or {@code null} when every target resolves.
      *
-     * <p>Iterates {@code argByJavaName} entries that constitute explicit overrides
-     * ({@code javaTarget != graphqlArgName}) and verifies each {@code javaTarget} is among the
-     * resolved method's parameter names. Returns a failure message when any override target is
-     * absent, naming the directive site (the GraphQL argument name), the override target, and
-     * the actual parameter list. Returns {@code null} when every override target resolves.
-     *
-     * <p>Identity entries ({@code javaTarget == graphqlArgName}) skip this guard: an unresolved
-     * identity entry produces the existing per-parameter "does not match any GraphQL argument"
-     * error inside the main loop, which is already actionable.
+     * <p>Identity entries skip the guard: an unresolved identity entry produces the per-parameter
+     * "does not match any GraphQL argument" error in the main loop, which is already actionable.
      */
     private static String checkOverrideTargets(Map<String, PathExpr> argByJavaName,
                                                java.lang.reflect.Method javaMethod,
@@ -519,39 +483,30 @@ class ServiceCatalog {
      * Table-parameter policy for {@link #reflectTableMethod}, distinguishing the two callers.
      *
      * <ul>
-     *   <li>{@link #REQUIRED} — {@code @condition}: the method's first slot is the parent
-     *       {@code Table<?>}; reflection must find exactly one Table parameter and emit it as
-     *       {@link ParamSource.Table}. argMapping entries targeting the Table slot are rejected
-     *       (the reserved-slot typo guard).</li>
-     *   <li>{@link #FORBIDDEN} — {@code @tableMethod}: the developer's method
-     *       receives GraphQL field arguments and context values only; graphitron derives the
-     *       target table from the method's return type. Any {@code Table<?>} parameter is
-     *       rejected outright.</li>
+     *   <li>{@link #REQUIRED} ({@code @condition}): reflection must find exactly one
+     *       {@code Table<?>} parameter and emits it as {@link ParamSource.Table}; argMapping
+     *       entries targeting the Table slot are rejected.</li>
+     *   <li>{@link #FORBIDDEN} ({@code @tableMethod}): the method receives GraphQL field
+     *       arguments and context values only; graphitron derives the target table from the
+     *       return type, so any {@code Table<?>} parameter is rejected.</li>
      * </ul>
      */
     enum TableSlotPolicy { REQUIRED, FORBIDDEN }
 
     /**
-     * Loads the table-method class and method via reflection and classifies each parameter.
+     * Loads the table-method class and method via reflection and classifies each parameter:
+     * binding-map keys become {@link ParamSource.Arg}, context keys {@link ParamSource.Context},
+     * and {@code Table<?>} parameters follow the {@link TableSlotPolicy}. Any other parameter
+     * shape is an error.
      *
-     * <p>Parameters whose name appears as a key in {@code argBindings} get {@link ParamSource.Arg}
-     * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value;
-     * parameters whose name matches a context key get {@link ParamSource.Context}.
-     * The {@link TableSlotPolicy} governs how {@code Table<?>}-typed parameters are handled:
-     * {@code REQUIRED} (the {@code @condition} caller) treats them as the parent Table slot and
-     * emits {@link ParamSource.Table}; {@code FORBIDDEN} (the {@code @tableMethod} caller)
-     * rejects them. Any other parameter shape is an error.
+     * <p>{@code argBindings} carries the Java-target to GraphQL-arg-name mapping per
+     * {@link #reflectServiceMethod}, with the same override typo guard. Under {@code REQUIRED},
+     * an override entry targeting the Table parameter is additionally rejected by
+     * {@link #checkConditionOverrideTargets}.
      *
-     * <p>{@code argBindings} carries the Java-target → GraphQL-arg-name mapping per
-     * {@link #reflectServiceMethod}. Override entries pointing at non-existent Java parameters are
-     * rejected with a typo-guard message naming the directive site and the available parameter names.
-     * Under {@code REQUIRED}, an override entry targeting the Table parameter is additionally
-     * rejected by {@link #checkConditionOverrideTargets}.
-     *
-     * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
-     * A warning is logged proactively as soon as any nameless parameter is detected — even if
-     * type-based classification would otherwise succeed — so that the user is notified regardless
-     * of whether all parameters happen to have distinct types.
+     * <p>If the compiler was not invoked with {@code -parameters}, a warning is logged as soon
+     * as any nameless parameter is detected, even if type-based classification would otherwise
+     * succeed.
      *
      * <p>The method's return type must match {@code expectedReturnClass} exactly (the
      * {@link ClassName} of the generated jOOQ table class for the field's {@code @table}-bound
@@ -641,9 +596,9 @@ class ServiceCatalog {
                 TypeName javaType = TypeName.get(p.getParameterizedType());
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
-                    // @tableMethod / @condition (sites C/D) keep legacy extraction until Slice 2:
-                    // their dimensional wire-coercion channel is not yet pinned, so the shared
-                    // predicate is not enforced here — only the @service caller (site B) rejects.
+                    // No wire-coercion check on this path: @tableMethod / @condition arguments
+                    // use legacyArgExtraction; only the @service caller rejects, via
+                    // argExtraction.
                     params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
                         new ParamSource.Arg(legacyArgExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
                 } else if (ctxKeys.contains(pName)) {
@@ -678,15 +633,10 @@ class ServiceCatalog {
      * shape so the generated {@code $fields()} body compiles cleanly when projecting against
      * a {@code List<Field<?>>}.
      *
-     * <p>Mirrors {@link #reflectTableMethod} but with a stricter return-type rule (must be
-     * {@code Field}, not the wider {@code Table<?>} that {@code @tableMethod} accepts) and a
-     * fixed param shape (exactly one Table<?>, no GraphQL args, no context args).
-     *
      * <p>Both {@code className} and {@code methodName} are required: the {@code @externalField}
-     * arm in {@code FieldBuilder} surfaces a targeted "missing className" error before this call
+     * arm in {@link FieldBuilder} surfaces a targeted "missing className" error before this call
      * and defaults {@code methodName} to the GraphQL field name when the directive omits
-     * {@code method:}. Empty-reference and named-reference-lookup-failure cases never reach this
-     * method.
+     * {@code method:}.
      */
     ServiceReflectionResult reflectExternalField(String className, String methodName,
             ClassName parentTableClass) {
@@ -748,8 +698,7 @@ class ServiceCatalog {
     /**
      * Override-target check for {@link TableSlotPolicy#REQUIRED} callers ({@code @condition}):
      * rejects argMapping entries that target the reserved {@code Table<?>} parameter slot, then
-     * defers to {@link #checkOverrideTargets} for missing-parameter detection. Mirrors the legacy
-     * {@code checkTableMethodOverrideTargets} that {@code @tableMethod} no longer needs.
+     * defers to {@link #checkOverrideTargets} for missing-parameter detection.
      */
     private static String checkConditionOverrideTargets(Map<String, PathExpr> argByJavaName,
                                                         java.lang.reflect.Method javaMethod,
@@ -789,11 +738,10 @@ class ServiceCatalog {
     }
 
     /**
-     * Outcome of {@link #argExtraction}: either the resolved {@link CallSiteExtraction} or a typed
- * wire-coercion rejection. Widening the return type past a bare {@code CallSiteExtraction}
-     * is the D2 lift: a wire-incompatible arg now <em>rejects</em> instead of silently classifying to
-     * a {@code Direct} raw cast that crashes at runtime, and every downstream {@code ParamSource.Arg}
-     * consumer can assume the extraction is wire-sound.
+     * Outcome of {@link #argExtraction}: either the resolved {@link CallSiteExtraction} or a
+     * typed wire-coercion rejection. A wire-incompatible arg rejects instead of classifying to a
+     * {@code Direct} raw cast that crashes at runtime, so every downstream
+     * {@link ParamSource.Arg} consumer can assume the extraction is wire-sound.
      */
     sealed interface ArgExtraction {
         record Resolved(CallSiteExtraction extraction) implements ArgExtraction {}
@@ -801,12 +749,11 @@ class ServiceCatalog {
     }
 
     /**
-     * Legacy extraction (no wire-coercion check): a jOOQ enum gets {@link CallSiteExtraction.EnumValueOf},
-     * everything else {@link CallSiteExtraction.Direct}. Retained for the {@code @tableMethod} /
-     * {@code @condition} argument path (sites C/D), which Slice 1 does not touch: those sites
- * consume the same predicate in a later slice once their dimensional channel is pinned, so
-     * threading the reject here now would fire ahead of the channel that surfaces it. Slice 1 gates
-     * only the {@code @service} path (site B) via {@link #argExtraction}.
+     * Extraction without the wire-coercion check: a jOOQ enum gets
+     * {@link CallSiteExtraction.EnumValueOf}, everything else {@link CallSiteExtraction.Direct}.
+     * Used by the {@code @tableMethod} / {@code @condition} argument path, which has no
+     * dimensional wire-coercion channel to surface a rejection; only the {@code @service} path
+     * rejects, via {@link #argExtraction}.
      */
     static CallSiteExtraction legacyArgExtraction(String typeName, ClassLoader codegenLoader) {
         try {
@@ -818,18 +765,18 @@ class ServiceCatalog {
     }
 
     /**
-     * Returns the {@link CallSiteExtraction} for a GraphQL {@code Arg} parameter given its declared
-     * Java type and the resolved SDL leaf type at the bound argument position (the D2 lift). A
-     * jOOQ-generated enum gets {@link CallSiteExtraction.EnumValueOf} after an enum-constant parity
-     * check against the SDL enum values (site E: a divergent value name rejects rather than emitting
-     * an {@code Enum.valueOf} that throws at runtime); a scalar gets {@link CallSiteExtraction.Direct}
-     * only once the wire-coercion predicate confirms graphql-java's coercion output for the SDL leaf
-     * is assignable to the declared Java type (site B), else an
-     * {@link no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability} rejection.
+     * Returns the {@link CallSiteExtraction} for a GraphQL {@code Arg} parameter given its
+     * declared Java type and the resolved SDL leaf type at the bound argument position. A
+     * jOOQ-generated enum gets {@link CallSiteExtraction.EnumValueOf} after an enum-constant
+     * parity check against the SDL enum values (a divergent value name rejects rather than
+     * emitting an {@code Enum.valueOf} that throws at runtime); a scalar gets
+     * {@link CallSiteExtraction.Direct} only once the wire-coercion predicate confirms
+     * graphql-java's coercion output for the SDL leaf is assignable to the declared Java type,
+     * else an {@link no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability} rejection.
      *
      * <p>Text-mapped enums (GraphQL enum bound to a varchar column via {@code @field(name:)})
      * route through {@code Direct}: graphql-java translates the wire form to the runtime form
- * at the boundary via {@code GraphQLEnumValueDefinition.value(...)}, so resolvers
+     * at the boundary via {@code GraphQLEnumValueDefinition.value(...)}, so resolvers
      * receive the runtime string and no extra extraction step is needed.
      *
      * <p>{@code sdlLeafType} may be {@code null} when the bound path cannot be resolved against the
@@ -842,8 +789,8 @@ class ServiceCatalog {
         try {
             javaClass = Class.forName(typeName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
-            // Unloadable declared type: keep the legacy Direct fall-through (the reflect path has
-            // already surfaced any hard class-loading failure for the method itself).
+            // Unloadable declared type: fall through to Direct (the reflect path has already
+            // surfaced any hard class-loading failure for the method itself).
             return new ArgExtraction.Resolved(new CallSiteExtraction.Direct());
         }
         if (javaClass.isEnum()) {
@@ -883,7 +830,7 @@ class ServiceCatalog {
 
     /**
      * Resolves the SDL leaf type a {@link PathExpr} binds to, walking from the head slot in
- * {@code slotTypes} through each subsequent dot-path segment's input-object field. Returns
+     * {@code slotTypes} through each subsequent dot-path segment's input-object field. Returns
      * {@code null} when the head slot is absent or the path descends through a non-input-object
      * intermediate (the caller then passes through the wire-coercion check conservatively).
      */
@@ -907,14 +854,13 @@ class ServiceCatalog {
     }
 
     /**
-     * Returns true if the parameter type is a {@code List<X>} or {@code Set<X>} where {@code X}
-     * is a {@code RowN} or {@code RecordN}. Used by the root-op diagnostic to detect the
-     * anonymous-key SOURCES-shape parameters that {@link #classifySourcesType} cannot fully
-     * classify because the parent has no PK to populate the source key. Concrete
-     * {@code TableRecord} subclasses are intentionally excluded: at root, {@code List<XRecord>}
-     * is the canonical {@code InputBeanResolver} shape ("list of input objects mapped to
-     * records"), so it must fall through to the arg-mismatch diagnostic when the parameter
-     * name doesn't bind to a GraphQL argument.
+     * True when the parameter type is a {@code List} / {@code Set} of {@code RowN} or
+     * {@code RecordN}. Used by the root-op diagnostic to detect anonymous-key SOURCES-shape
+     * parameters that {@link #classifySourcesType} cannot classify because the parent has no PK
+     * to populate the source key. Concrete {@code TableRecord} subclasses are intentionally
+     * excluded: at root, {@code List<XRecord>} is the canonical {@code InputBeanResolver} shape,
+     * so it must fall through to the arg-mismatch diagnostic when the parameter name doesn't
+     * bind to a GraphQL argument.
      */
     private static boolean looksLikeSourcesShape(java.lang.reflect.Type paramType) {
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
@@ -932,13 +878,10 @@ class ServiceCatalog {
     }
 
     /**
-     * Source-shape classification result for a {@code @service} Java method's
-     * {@code List<RowN<...>>} / {@code Set<RowN<...>>} / {@code List<RecordN<...>>} /
-     * {@code Set<RecordN<...>>} / {@code List<X extends TableRecord<X>>} /
-     * {@code Set<X extends TableRecord<X>>} SOURCES parameter. Carries the two axes the producer
-     * needs to construct {@link MethodRef.Param.Sourced}: the per-row shape
-     * ({@link SourceKey.Wrap}) and the container axis ({@link LoaderRegistration.Container}).
-     * The columns axis is the caller's {@code parentPkColumns} input and so is not repeated here.
+     * Classification of a {@code @service} SOURCES parameter: the per-row shape
+     * ({@link SourceKey.Wrap}) and the container axis ({@link LoaderRegistration.Container})
+     * needed to construct {@link MethodRef.Param.Sourced}. The columns axis is the caller's
+     * {@code parentPkColumns} input and is not repeated here.
      */
     record SourcesShape(SourceKey.Wrap wrap, LoaderRegistration.Container container) {}
 
@@ -947,14 +890,6 @@ class ServiceCatalog {
      * a {@link SourcesShape}, or returns {@link Optional#empty()} when the type is not
      * recognised or when {@code parentPkColumns} is empty (root-op case: the diagnostic is
      * produced upstream by {@link #looksLikeSourcesShape}).
-     *
-     * <p>The container axis ({@code List} vs {@code Set}) maps onto
-     * {@link LoaderRegistration.Container#POSITIONAL_LIST} vs
-     * {@link LoaderRegistration.Container#MAPPED_SET}; the element-shape axis (one of
-     * {@code RowN}, {@code RecordN}, or {@code X extends TableRecord}) maps onto
-     * {@link SourceKey.Wrap.Row}, {@link SourceKey.Wrap.Record}, or
-     * {@link SourceKey.Wrap.TableRecord} carrying the developer's typed
-     * {@code TableRecord} subclass.
      */
     static Optional<SourcesShape> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
@@ -1015,24 +950,20 @@ class ServiceCatalog {
     record ContainerSplit(ContainerKind container, java.lang.reflect.Type elementType) {}
 
     /**
-     * Peels the container layer off a {@link java.lang.reflect.Type}. Recognises {@code List<X>}
-     * and {@code Set<X>} (returns {@code LIST} / {@code SET} with the inner type as
-     * {@code elementType}), and a bare {@link Class} (returns {@code SINGLE} with the class as
-     * {@code elementType}). Empty for anything else (raw types, wildcards, type variables,
-     * unrecognised parameterised containers, or {@code List<X, Y>}-style ill-typed shapes).
+     * Peels the container layer off a {@link java.lang.reflect.Type}: {@code List<X>} /
+     * {@code Set<X>} yield {@code LIST} / {@code SET} with the inner type as
+     * {@code elementType}, a bare {@link Class} yields {@code SINGLE}. Empty for anything else
+     * (raw types, wildcards, type variables, unrecognised parameterised containers).
      *
-     * <p>Shared between {@link #classifySourcesType} (the SOURCES classifier in {@code @service}
-     * parameter reflection; SINGLE is filtered out via {@code accept}) and
-     * {@code FieldBuilder.classifyAccessorReturn} (the accessor-side classifier on
-     * class-backed parents; all three kinds are accepted). Both call sites remain inside
-     * parse-boundary classes per the {@code development-principles.adoc} containment invariant on holding
-     * raw reflection types only inside {@code JooqCatalog} / {@code TypeBuilder} /
-     * {@code FieldBuilder} / {@code ServiceCatalog}; the helper itself lives here to honour
-     * the more-general SOURCES classifier as the natural home.
+     * <p>Shared between {@link #classifySourcesType} (SINGLE filtered out via {@code accept})
+     * and {@code FieldBuilder.classifyAccessorReturn} (all three kinds accepted). Both call
+     * sites stay inside parse-boundary classes per the {@code development-principles.adoc}
+     * containment invariant on holding raw reflection types only inside {@code JooqCatalog} /
+     * {@code TypeBuilder} / {@code FieldBuilder} / {@code ServiceCatalog}.
      *
      * @param type the type to peel
-     * @param accept the container kinds the caller wants to accept; types whose container axis
-     *               is not in this set return {@link Optional#empty()}
+     * @param accept the container kinds the caller accepts; other container axes return
+     *               {@link Optional#empty()}
      */
     static Optional<ContainerSplit> peelContainer(java.lang.reflect.Type type,
                                                   java.util.Set<ContainerKind> accept) {
@@ -1053,11 +984,7 @@ class ServiceCatalog {
         return Optional.empty();
     }
 
-    /**
-     * Formats a set of names as a sorted bracketed list, or {@code (none)} when empty. Used by
-     * the parameter-classification error message on root operation fields to enumerate the
-     * GraphQL arguments and context keys the parameter could have matched.
-     */
+    /** Formats a set of names as a sorted bracketed list, or {@code (none)} when empty. */
     private static String formatNameSet(Set<String> names) {
         return names.isEmpty()
             ? "(none)"
@@ -1098,22 +1025,16 @@ class ServiceCatalog {
     /**
      * Walks every slot in {@code slotTypes} looking for a single nested input-object field
      * whose GraphQL type maps to {@code targetTypeName} (the Java type of an unmatched method
-     * parameter). Returns the dotted path (e.g. {@code "input.kvotesporsmalId"}) when exactly
-     * one such field exists across all slots; returns {@code null} when there is no match or
-     * more than one (so the caller falls back to the floor's {@code <fieldName>} placeholder).
+     * parameter). Returns the dotted path (e.g. {@code "input.filmId"}) when exactly one such
+     * field exists across all slots; returns {@code null} when there is no match or more than
+     * one (the caller then falls back to the {@code <fieldName>} placeholder).
      *
      * <p>The search is conservative on purpose: it only descends through non-list
-     * {@link GraphQLInputObjectType} intermediates and only matches scalar leaves whose
-     * GraphQL kind maps to a standard Java type (Int → Integer, Float → Double, String/ID →
-     * String, Boolean → Boolean, with {@code List<>} wraps propagated). Custom scalars,
-     * enums and named input objects don't count as candidate leaves; the suggestion would
-     * mislead users by pointing at a path whose runtime Java shape isn't guaranteed to match.
-     *
-     * <p>Matching is gated on {@code targetTypeName} (the parameter's
-     * {@link java.lang.reflect.Parameter#getParameterizedType()} name) equalling the
-     * mapped Java type literally. {@code java.util.List<java.lang.Integer>} matches {@code [Int!]!}
-     * ; {@code java.lang.Integer} matches a non-list {@code Int!}. Mismatches drop the
-     * candidate silently; a non-matching path simply doesn't get suggested.
+     * {@link GraphQLInputObjectType} intermediates and only matches leaves whose GraphQL kind
+     * maps to a standard Java type via {@link #mapToJavaTypeName}, compared literally against
+     * the parameter's parameterized-type name. Custom scalars, enums and named input objects
+     * don't count as candidate leaves; the suggestion would mislead users by pointing at a path
+     * whose runtime Java shape isn't guaranteed to match.
      */
     private String unambiguousReachablePath(
             String targetTypeName, Map<String, GraphQLInputType> slotTypes) {
@@ -1192,14 +1113,12 @@ class ServiceCatalog {
      *       the existing name-mismatch diagnostic.</li>
      * </ol>
      *
-     * <p>{@code Table<?>} and {@code DSLContext} parameters are skipped because they're
-     * resolved by type elsewhere; parameters whose name matches a declared context key are
-     * skipped because the existing name-based binding wins. Parameters with no compiler-set
-     * name are skipped (the {@code -parameters} diagnostic still fires from the per-parameter
-     * loop). Parameters whose Java type matches a recognised SOURCES shape
-     * ({@link #couldBeSourcesShape}: {@code List<RowN>}, {@code List<RecordN>},
-     * {@code List<TableRecord>} and Set equivalents) are skipped so the SOURCES classifier
-     * downstream retains precedence at child coordinates.
+     * <p>{@code Table<?>} and {@code DSLContext} parameters are skipped (resolved by type
+     * elsewhere); parameters whose name matches a declared context key are skipped (name-based
+     * binding wins); nameless parameters are skipped (the {@code -parameters} diagnostic still
+     * fires from the per-parameter loop); SOURCES-shape parameters
+     * ({@link #couldBeSourcesShape}) are skipped so the SOURCES classifier downstream retains
+     * precedence at child coordinates.
      */
     private Map<String, PathExpr> inferBindingsByType(
             java.lang.reflect.Method javaMethod,
@@ -1248,17 +1167,13 @@ class ServiceCatalog {
 
         var augmented = new LinkedHashMap<>(existing);
 
-        // Arity-unique branch: one unbound parameter, one unclaimed slot. Bind positionally
-        // when the slot's GraphQL type has no canonical Java scalar mapping (named input
-        // object, enum) AND the parameter's Java type is not a canonical scalar AND no
-        // reachable nested field of the parameter's Java type exists inside the slot — that
-        // covers the input-bean case the unambiguousReachablePath hint can't disambiguate.
-        // When the slot does have a canonical mapping, fall through to the type-unique
-        // branch so a real type mismatch surfaces the existing diagnostic; when the
-        // parameter is a canonical scalar against a non-scalar slot or there is a competing
-        // nested-reachable field of the parameter's type, defer to the
-        // unambiguousReachablePath dot-path suggestion which captures the developer's likely
-        // intent (a nested field pull).
+        // Arity-unique branch: one unbound parameter, one unclaimed slot. Bind positionally only
+        // when the slot has no canonical Java scalar mapping (named input object, enum), the
+        // parameter's Java type is not a canonical scalar, and no reachable nested field of the
+        // parameter's type exists inside the slot: the input-bean case the
+        // unambiguousReachablePath hint can't disambiguate. Otherwise fall through, so a real
+        // type mismatch surfaces the existing diagnostic or the dot-path suggestion captures the
+        // likely intent (a nested field pull).
         if (unboundParams.size() == 1 && unclaimedSlotNames.size() == 1) {
             String slotName = unclaimedSlotNames.get(0);
             String slotJavaType = mapToJavaTypeName(slotTypes.get(slotName));
@@ -1290,28 +1205,23 @@ class ServiceCatalog {
             if (paramEntry.getValue().size() != 1) continue;
             var slots = slotsByType.get(paramEntry.getKey());
             if (slots == null || slots.size() != 1) continue;
-            // The user's rule: "one and only one possible mapping". A top-level slot is one
+            // Bind only when there is one and only one possible mapping. A top-level slot is one
             // possible mapping; any reachable nested field of the same Java type inside any
-            // unclaimed slot is another. When both exist, the binding is ambiguous and the
-            // inference yields so the existing unambiguousReachablePath suggestion can render
-            // the dot-path alternative.
+            // unclaimed slot is another. When both exist, the binding is ambiguous and inference
+            // yields to the unambiguousReachablePath dot-path suggestion.
             if (anyReachableNestedMatch(paramEntry.getKey(), unclaimedSlotNames, slotTypes)) continue;
             augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
         }
 
         // Name-based depth-1 unpacking, on the residual parameters still unbound after the
-        // arity-unique and type-unique branches. For a parameter whose name matches exactly one
-        // direct field — by name AND mapped Java type — of a single unclaimed input-object slot,
-        // bind it one level in to that nested field. The synthesised PathExpr is byte-identical to
-        // the one a hand-written `argMapping: "p: slot.field"` produces (head = the slot, one Step
-        // = the field, liftsList via ArgBindingMap.isListShaped), so downstream emission is
-        // unchanged; the rule only fills in the path the author would otherwise have written. The
-        // disambiguator is the parameter name, orthogonal to the type-count axis above, so this is
-        // a distinct name-keyed branch rather than a splice into the count rule. Identity
-        // binding is handled earlier in ArgBindingMap.of, so a parameter that matched a slot by its
-        // own name is already bound and skipped here. Zero or >1 candidates leave the parameter
-        // unbound, so the per-parameter rejection (with its unambiguousReachablePath argMapping
-        // suggestion) still fires.
+        // arity-unique and type-unique branches: a parameter whose name matches exactly one
+        // direct field (by name AND mapped Java type) of a single unclaimed input-object slot
+        // binds one level in. The synthesised PathExpr is identical to the one a hand-written
+        // `argMapping: "p: slot.field"` produces, so downstream emission is unchanged. Identity
+        // binding is handled earlier in ArgBindingMap.of, so a parameter that matched a slot by
+        // its own name is already bound and skipped here. Zero or >1 candidates leave the
+        // parameter unbound, so the per-parameter rejection (with its unambiguousReachablePath
+        // argMapping suggestion) still fires.
         for (var p : unboundParams) {
             if (augmented.containsKey(p.getName())) continue;
             PathExpr nested = inferNestedFieldByName(
@@ -1324,24 +1234,18 @@ class ServiceCatalog {
     }
 
     /**
-     * Depth-1 name-based descent. For an unbound Java parameter named {@code paramName} with
-     * parameterized-type name {@code paramJavaTypeName}, scans every unclaimed slot whose unwrapped
-     * (non-null) GraphQL type is a {@link GraphQLInputObjectType} and looks for the direct field
-     * named {@code paramName} whose {@link #mapToJavaTypeName mapped Java type} is non-null and
-     * equals {@code paramJavaTypeName}. Returns the {@link PathExpr.Step} binding — head = the
-     * slot, one segment = the field, {@code liftsList} via {@link ArgBindingMap#isListShaped} —
-     * when exactly one such {@code (slot, field)} candidate exists across all unclaimed slots;
-     * returns {@code null} for zero or more than one so the caller leaves the parameter unbound.
+     * Depth-1 name-based descent: scans every unclaimed slot whose unwrapped (non-null) GraphQL
+     * type is a {@link GraphQLInputObjectType} for the direct field named {@code paramName}
+     * whose {@link #mapToJavaTypeName mapped Java type} equals {@code paramJavaTypeName}.
+     * Returns the {@link PathExpr.Step} binding when exactly one such candidate exists across
+     * all unclaimed slots; {@code null} for zero or more than one, so the caller leaves the
+     * parameter unbound.
      *
-     * <p>Strips only non-null wrappers off the slot, mirroring {@link #searchSlotForMatchingPath}:
-     * a list-shaped slot is not a {@link GraphQLInputObjectType} and is skipped, so a list-shaped
-     * intermediate is never descended through. Routing the leaf through {@link #mapToJavaTypeName}
-     * means a field whose type is a named input object, enum, or unclassified scalar (mapped type
-     * {@code null}) never matches: this rule binds only canonical-scalar-typed leaves (a scalar or a
-     * list thereof), the same null-is-no-match discipline the {@code unambiguousReachablePath}
-     * suggestion uses. Requiring both the name and the type to match keeps this branch exactly as
-     * confident as its arity-unique / type-unique siblings, which also gate on
-     * {@link #mapToJavaTypeName}.
+     * <p>Strips only non-null wrappers off the slot, mirroring {@link #searchSlotForMatchingPath},
+     * so a list-shaped intermediate is never descended through. Routing the leaf through
+     * {@link #mapToJavaTypeName} means only canonical-scalar-typed leaves match (a scalar or a
+     * list thereof), the same null-is-no-match discipline the arity-unique / type-unique
+     * branches gate on.
      */
     PathExpr inferNestedFieldByName(String paramName, String paramJavaTypeName,
             List<String> unclaimedSlotNames, Map<String, GraphQLInputType> slotTypes) {
@@ -1366,8 +1270,8 @@ class ServiceCatalog {
     /**
      * True when any unclaimed slot's input-object type contains a reachable nested field whose
      * GraphQL type maps to {@code targetTypeName}. Mirrors the search in
-     * {@link #unambiguousReachablePath} but stops at the first hit — for ambiguity detection in
-     * {@link #inferBindingsByType} we only need existence, not uniqueness.
+     * {@link #unambiguousReachablePath} but stops at the first hit: ambiguity detection in
+     * {@link #inferBindingsByType} needs existence, not uniqueness.
      */
     private boolean anyReachableNestedMatch(
             String targetTypeName, List<String> unclaimedSlotNames,
@@ -1393,8 +1297,8 @@ class ServiceCatalog {
     }
 
     /**
-     * True when the parameter's Java type matches a recognised SOURCES shape — {@code List<RowN>},
-     * {@code List<RecordN>}, {@code List<TableRecord>}, or the {@code Set<>} equivalents.
+     * True when the parameter's Java type matches a recognised SOURCES shape: {@code List} /
+     * {@code Set} of {@code RowN}, {@code RecordN}, or {@code TableRecord}.
      * {@link #inferBindingsByType} consults this to keep SOURCES-shape parameters out of the
      * inferred-binding candidate set, so the per-parameter loop's SOURCES classifier still wins
      * at child coordinates. The narrower {@link #looksLikeSourcesShape} only covers
@@ -1425,10 +1329,10 @@ class ServiceCatalog {
      * for types the search can't translate confidently (unclassified scalars, enums, named
      * input objects), so the caller skips that candidate rather than guessing.
      *
-     * <p>Phase 3: routes scalars through {@code ctx.types} so the classifier's
+     * <p>Scalars route through {@code ctx.types} so the classifier's
      * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} is the single source of
-     * truth for the Java type binding. Consumer scalars resolved via {@code @scalarType} produce
-     * their resolved Java type FQN instead of the previous {@code null}-fallback.
+     * truth for the Java type binding; consumer scalars resolved via {@code @scalarType} produce
+     * their resolved Java type FQN.
      */
     private String mapToJavaTypeName(GraphQLInputType t) {
         GraphQLType current = t;

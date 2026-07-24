@@ -50,22 +50,21 @@ class GeneratorUtils {
 
     /**
      * Reserved SQL-alias affixes for the full-parent-row projection that backs a
- * {@link SourceKey.Wrap.TableRecord} key read. The parent {@code $fields} SELECT
-     * projects every column re-aliased as {@code __src_<sqlColumnName>__}, and
-     * {@link #buildKeyExtraction(SourceKey, TableRef)}'s {@code TableRecord} arm reconstructs the
-     * typed record by reading those same aliases back. The {@code __}-lead is deliberate: GraphQL
+     * {@link SourceKey.Wrap.TableRecord} key read. The parent {@code $fields} SELECT projects
+     * every column re-aliased as {@code __src_<sqlColumnName>__}, and
+     * {@link #buildKeyExtraction(SourceKey, TableRef)}'s {@code TableRecord} arm reads those same
+     * aliases back to reconstruct the typed record. The {@code __}-lead is deliberate: GraphQL
      * reserves leading-{@code __} names for introspection, so no client-driven sibling projection
      * alias (multiset object fields, {@code .as(fieldName)} scalar aliases, interface-participant
-     * aliases) can ever collide with one. This moves the whole-row read out of the shared
-     * base-column namespace where {@code into(Tables.X)} used to map by name and crash on a
-     * colliding alias. Producer and consumer must agree on the exact string, so both
+     * aliases) can ever collide with one. This keeps the whole-row read out of the shared
+     * base-column namespace, where a by-name {@code into(Tables.X)} map crashes on a colliding
+     * alias. Producer and consumer must agree on the exact string, so both
      * {@link #reservedSourceAlias(String)} (the sole formatter) and the two emit sites drive off
-     * {@link TableRef#allColumns()} — the column set and the alias basis are single-homed there and
+     * {@link TableRef#allColumns()}: the column set and the alias basis are single-homed there and
      * cannot drift. Reaches generated code only as a string literal, never a Java identifier, so it
      * is invisible to the dunder-identifier lints.
      *
-     * @see no.sikt.graphitron.rewrite.generators.TypeClassGenerator (the producer: reserved-alias
-     *      full-row projection in {@code $fields})
+     * @see TypeClassGenerator (the producer: reserved-alias full-row projection in {@code $fields})
      */
     static final String RESERVED_SRC_ALIAS_PREFIX = "__src_";
     static final String RESERVED_SRC_ALIAS_SUFFIX = "__";
@@ -86,20 +85,18 @@ class GeneratorUtils {
      * computed fields. Aliasing a duplicate reference selection under its runtime <em>result
      * key</em> rather than the schema field name lets {@code a: ref { x } b: ref { y }} mint two
      * distinct SELECT terms instead of two colliding {@code .as(fieldName)} aliases. The prefix
-     * reaches generated code only inside string literals — the write side emits
+     * reaches generated code only inside string literals: the write side emits
      * {@code .as("__rk_" + <entry>.getKey())} in {@code $fields}
-     * ({@link no.sikt.graphitron.rewrite.generators.InlineTableFieldEmitter},
-     * {@link no.sikt.graphitron.rewrite.generators.InlineLookupTableFieldEmitter},
-     * {@link no.sikt.graphitron.rewrite.generators.InlineColumnReferenceFieldEmitter}, and the
-     * {@code ComputedField} arm of {@link no.sikt.graphitron.rewrite.generators.TypeClassGenerator}),
-     * the read side {@code DSL.field("__rk_" + env.getField().getResultKey())}
-     * ({@link no.sikt.graphitron.rewrite.generators.FetcherEmitter}) — so the concatenation happens
-     * at runtime and this constant is the single home both sides drive off, never drifting.
+     * ({@link InlineTableFieldEmitter}, {@link InlineLookupTableFieldEmitter},
+     * {@link InlineColumnReferenceFieldEmitter}, and the {@code ComputedField} arm of
+     * {@link TypeClassGenerator}), the read side
+     * {@code DSL.field("__rk_" + env.getField().getResultKey())} ({@link FetcherEmitter}); the
+     * concatenation happens at runtime and this constant is the single home both sides drive off.
      *
-     * <p>Prefixing the alias with the reserved {@code __}-lead moves it out of the
-     * client-reachable alias namespace: GraphQL reserves leading-{@code __} names for
-     * introspection in the schema, but document aliases are unrestricted, so a client could
-     * write {@code __src_actor_id__: ref} or {@code __discriminator__: ref}. The prefix keeps a
+     * <p>The reserved {@code __}-lead moves the alias out of the client-reachable namespace:
+     * GraphQL reserves leading-{@code __} names for introspection only in the schema, and
+     * document aliases are unrestricted, so a client could write {@code __src_actor_id__: ref}
+     * or {@code __discriminator__: ref}. The prefix keeps a
      * client-chosen alias from ever colliding with a base-column projection, a
      * {@link #RESERVED_SRC_ALIAS_PREFIX} full-row alias, the polymorphic discriminator
      * projection, or another result key (result keys are unique per flattened selection map by
@@ -113,7 +110,8 @@ class GeneratorUtils {
      * The default source binding for a record-parent key extraction: the fetcher reads its backing
      * object straight off {@code env.getSource()}. The arm-switch substitutes
      * {@code success.value()} here once it has narrowed the {@code Outcome} source to
-     * {@code Success}; see {@link #buildRecordParentKeyExtraction(SourceKey, GraphitronType.ResultType, CodeBlock)}.
+     * {@code Success}; see
+     * {@link #buildRecordParentKeyExtraction(SourceKey, KeyLift, TableRef, GraphitronType.ResultType, CodeBlock)}.
      */
     static final CodeBlock SOURCE_FROM_ENV = CodeBlock.of("env.getSource()");
     /** {@code <outputPackage>.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
@@ -157,14 +155,10 @@ class GeneratorUtils {
 
         /**
          * The name of the jOOQ table-alias local variable declared in the emitted fetcher
-         * body (e.g. {@code filmTable}, {@code languageTable}). Derived from the simple
-         * name of {@link #jooqTableClass} with the first character lowered so a Java
-         * identifier is produced. Using {@code jooqTableClass} as the source keeps both
-         * ends of the emitted declaration ({@code <JooqTableClass> <alias> = Tables.X})
-         * referencing the same field. The rename exists because the jOOQ table class and
-         * the generated mapper class typically share a simple name; keeping the local
-         * entity-prefixed ({@code filmTable}, not {@code table}) lets the importer import
-         * both without qualifying either.
+         * body (e.g. {@code filmTable}). The jOOQ table class and the generated mapper class
+         * typically share a simple name; keeping the local entity-prefixed
+         * ({@code filmTable}, not {@code table}) lets the importer import both without
+         * qualifying either.
          */
         String tableLocalName() {
             var simple = jooqTableClass.simpleName();
@@ -194,9 +188,8 @@ class GeneratorUtils {
      * JooqTableClass filmTable = Tables.FILM;
      * }</pre>
      *
-     * <p>The local name comes from {@link ResolvedTableNames#tableLocalName()} — the
-     * entity-prefixed form disambiguates the import between the jOOQ table class and the
-     * generated mapper class (which usually share a simple name).
+     * <p>The local name comes from {@link ResolvedTableNames#tableLocalName()}, which documents
+     * the entity-prefixed rationale.
      */
     static CodeBlock declareTableLocal(ResolvedTableNames names, TableRef tableRef) {
         return CodeBlock.builder()
@@ -213,41 +206,13 @@ class GeneratorUtils {
     /**
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} (or list-shaped
      * variants) statement for a class-backed-parent batched DataFetcher, extracting the
-     * batch-key value(s) from the parent. Switches exhaustively on the field's {@link KeyLift}
-     * (with the arity-bearing arms forking on their own {@link Arity}).
+     * batch-key value(s) from the parent. Switches exhaustively on the field's {@link KeyLift},
+     * with the arity-bearing arms forking on their own {@link Arity}; the emit shape per arm
+     * lives in the private helpers below.
      *
-     * <ul>
-     *   <li>{@link KeyLift.FkColumns} (catalog FK on a class-backed parent's
-     *       backing class) — emits {@code RowN<...>} via {@code DSL.row(...)} over per-column
-     *       accessors derived from the {@link GraphitronType.ResultType} variant:
-     *       <ul>
-     *         <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).get(Tables.T.FK_COL)}</li>
-     *         <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).get("sql_name")}</li>
-     *         <li>{@link GraphitronType.JavaRecordType}: {@code ((BackingClass) env.getSource()).lowerCamelCase()}</li>
-     *         <li>{@link GraphitronType.PojoResultType}: {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
-     *       </ul>
-     *   </li>
-     *   <li>{@link KeyLift.Lifter} ({@code @sourceRows} lifter) — calls the
-     *       developer-supplied static lifter on the parent's backing class:
-     *       {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}. Leaf-PK and
-     *       {@code @reference}-composed shapes share emit logic; the path identity is carried
-     *       first-class on the leaf's {@code joinPath} but not consumed here.</li>
-     *   <li>{@link KeyLift.Accessor} + {@link Arity#ONE} — single
-     *       typed {@code TableRecord} via instance accessor, projected to the element table's PK
-     *       columns: <pre>{@code
-     *   ElementRecord element = ((BackingClass) env.getSource()).<accessor>();
-     *   RecordN<...> key = element.into(Tables.T.PK1, Tables.T.PK2);
-     * }</pre></li>
-     *   <li>{@link KeyLift.Accessor} + {@link Arity#MANY} —
-     *       {@code List<X>} / {@code Set<X>} accessor; each element projects to a
-     *       {@code RecordN<...>} key via a typed for-loop over {@code Iterable}: <pre>{@code
-     *   List<RecordN<...>> keys = new ArrayList<>();
-     *   for (ElementRecord element : ((BackingClass) env.getSource()).<accessor>()) {
-     *       RecordN<...> key = element.into(Tables.T.PK1, Tables.T.PK2);
-     *       keys.add(key);
-     *   }
-     * }</pre></li>
-     * </ul>
+     * <p>On the {@link KeyLift.Lifter} arm, leaf-PK and {@code @reference}-composed shapes share
+     * emit logic; the path identity is carried first-class on the leaf's {@code joinPath} but not
+     * consumed here.
      */
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
@@ -262,17 +227,16 @@ class GeneratorUtils {
      * {@link #buildRecordParentKeyExtraction(SourceKey, KeyLift, TableRef, GraphitronType.ResultType)}.
      * {@code sourceExpr} is the Java expression the backing object is read from before the cast:
      * {@code env.getSource()} on the normal path, {@code success.value()} when this fetcher is an
- * immediate child of a flipped {@code Outcome} payload and the caller has already narrowed
+     * immediate child of a flipped {@code Outcome} payload and the caller has already narrowed
      * {@code env.getSource()} to {@code Outcome.Success}. The cast and accessor logic are identical
      * either way; only the source binding moves, so the arm-switch reuses the field's own key
      * extraction rather than re-deriving it.
      *
      * <p>{@code keyOwnerTable} is the table whose typed {@code Tables.X.COL} constants the
-     * {@link KeyLift.Accessor} and single-arity
-     * {@link KeyLift.ProducedRecords} arms project the key through — the field's
-     * return-type table on the child-field path, the hub table ({@code parentKeyOwnerTable}) on
- * the polymorphic record-parent path. Read off the carrier at the call site; the
-     * other lift arms ignore it.
+     * {@link KeyLift.Accessor} and single-arity {@link KeyLift.ProducedRecords} arms project the
+     * key through: the field's return-type table on the child-field path, the hub table
+     * ({@code parentKeyOwnerTable}) on the polymorphic record-parent path. Read off the carrier
+     * at the call site; the other lift arms ignore it.
      */
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
@@ -311,9 +275,8 @@ class GeneratorUtils {
     /**
      * Per-column read of the key tuple off a single record expression, shared by
      * {@link #buildFkRowKey} (one key off {@code env.getSource()}) and
-     * {@link #buildProducedRecordsKeyMany} (one key per element of a held collection). Forks on the
-     * parent {@link GraphitronType.ResultType}: jOOQ table record / jOOQ record read the column by
-     * field or sql-name; Java record / typed POJO read it via the accessor method.
+     * {@link #buildProducedRecordsKeyMany} (one key per element of a held collection). Forks on
+     * the parent {@link GraphitronType.ResultType}.
      */
     private static CodeBlock recordColumnReadArgs(
             List<ColumnRef> cols, GraphitronType.ResultType resultType, CodeBlock recordExpr) {
@@ -342,12 +305,11 @@ class GeneratorUtils {
     }
 
     /**
- * {@link KeyLift.ProducedRecords} at {@link Arity#MANY}: the
-     * source is the producer's held collection of target records (a {@code List<XRecord>} on
-     * {@code env.getSource()} or {@code Outcome.Success.value()}). Iterates it and builds one
-     * {@code RowN} PK key per element, collected into {@code List<key> keys} for the {@code LOAD_MANY}
-     * dispatch (one re-projected row per key, scattered by idx). Mirrors {@link #buildAccessorKeyMany}
-     * with the source itself as the iterable rather than an accessor's return.
+     * {@link KeyLift.ProducedRecords} at {@link Arity#MANY}: the source is the producer's held
+     * collection of target records. Iterates it and builds one {@code RowN} PK key per element,
+     * collected into {@code List<key> keys} for the {@code LOAD_MANY} dispatch (one re-projected
+     * row per key, scattered by idx). Mirrors {@link #buildAccessorKeyMany} with the source itself
+     * as the iterable rather than an accessor's return.
      */
     private static CodeBlock buildProducedRecordsKeyMany(
             SourceKey sourceKey, GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
@@ -390,12 +352,12 @@ class GeneratorUtils {
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
         // Null-guard: a nullable to-one @table relation that resolves to no row hands the accessor
-        // a null nested record (the field's nullability classification on the SourceKey is what
-        // makes this reachable — if a future change marks such a field non-null, this guard becomes
-        // visibly dead code rather than silently orphaned). Mirrors the FK-side precedent in
-        // buildKeyExtractionWithNullCheck: a key that can't be built must not dispatch the loader;
-        // the to-one's faithful "no row" rendering is null, and the fetcher returns
-        // CompletableFuture<DataFetcherResult<Record>>, so completedFuture(null) is assignable.
+        // a null nested record. Mirrors buildKeyExtractionWithNullCheck: a key that can't be built
+        // must not dispatch the loader. The to-one's faithful "no row" rendering is null, and the
+        // fetcher returns CompletableFuture<DataFetcherResult<Record>>, so completedFuture(null)
+        // is assignable. Reachability rides on the field's nullability classification on the
+        // SourceKey; a non-null reclassification leaves this guard visibly dead rather than
+        // silently orphaned.
         return CodeBlock.builder()
             .addStatement("$T element = (($T) $L).$L()",
                 elementClass, backingClass, sourceExpr, accessor.methodName())
@@ -424,26 +386,21 @@ class GeneratorUtils {
             if (i > 0) intoArgs.add(", ");
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
-        // For-loop over Iterable, not stream + .toList(): a typed local in a for-loop pins the
-        // inference cheaply, and iterating works uniformly across the List<X> and Set<X>
-        // declarations the parent class may carry. The output is always a List<RecordN<...>>
-        // because DataLoader.loadMany takes a List.
+        // For-loop over a typed Iterable<Element> local, not stream + .toList(): the typed local
+        // pins the inference cheaply and iterates uniformly over the List<X> or Set<X> the parent
+        // class declares (AccessorRef carries the element type, not the concrete declaration).
+        // The output is always a List<RecordN<...>> because DataLoader.loadMany takes a List.
         //
-        // Null-guard: a nullable to-many @table relation whose backing was never populated
-        // hands the accessor a null collection, and the bare for-each would NPE before any
-        // .into(...) runs. Hoist the accessor result to a typed local and skip the loop when it is
-        // null so `keys` stays empty; the existing loadMany(keys, ...) dispatch then renders the
-        // field as []. This deliberately collapses null-vs-empty (both render []), unlike the ONE
-        // arm (buildAccessorKeySingle) which preserves null-vs-present (a null nested record
-        // renders the field null): a to-many has no faithful surface distinction between "never
+        // Null-guard: a nullable to-many @table relation whose backing was never populated hands
+        // the accessor a null collection. Skipping the loop keeps `keys` empty, and the
+        // loadMany(keys, ...) dispatch renders the field as []. This deliberately collapses
+        // null-vs-empty (both render []), unlike the ONE arm (buildAccessorKeySingle), which
+        // preserves null-vs-present: a to-many has no faithful surface distinction between "never
         // populated" and "zero rows" once the loader returns, whereas a to-one's "no row"
         // faithfully renders as null. Element-level nulls inside a non-null collection stay
-        // unguarded (a malformed backing, not a cardinality to model). The local is typed
-        // Iterable<Element> because the loop consumes only the iteration capability, the same
-        // List/Set-agnostic reading the comment above relies on; AccessorRef carries the element
-        // type, not the parent's concrete List/Set declaration. Whether the relation can be null is
-        // the field's nullability classification on the SourceKey; if a future change makes it
-        // non-null this guard is visibly dead code rather than silently orphaned.
+        // unguarded (a malformed backing, not a cardinality to model). Reachability rides on the
+        // field's nullability classification on the SourceKey; a non-null reclassification leaves
+        // the guard visibly dead rather than silently orphaned.
         var b = CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
             .addStatement("$T elements = (($T) $L).$L()",
@@ -473,7 +430,7 @@ class GeneratorUtils {
      * Companion to {@link #buildKeyExtraction} for single-cardinality
      * {@code @splitQuery} fetchers where the SourceKey's columns sit on the parent's FK side.
      * Extracts each key column into a typed local and returns {@code CompletableFuture.completedFuture(null)}
-     * before building the {@code RowN} key if any component is {@code null} — a {@code NULL} FK
+     * before building the {@code RowN} key if any component is {@code null}: a {@code NULL} FK
      * on the parent can never match {@code terminal.pk = parentInput.fk_value}, so dispatching
      * to the DataLoader is a wasted round-trip.
      *
@@ -491,10 +448,10 @@ class GeneratorUtils {
      * the key columns off {@code sourceExpr} (e.g. {@code success.value()} under an
      * {@code OUTCOME_SUCCESS} envelope) rather than {@code env.getSource()}. Reads each PK column
      * into a typed local so a {@code null} component binds as a typed {@code null} (not an untyped
-     * literal), then short-circuits to {@code completedFuture(null)} if any component is {@code null}
-     * — the source=target carrier path relies on both: the typed bind keeps the VALUES-join's
-     * {@code = } comparison well-typed, and the null short-circuit returns no row for the LocalContext
-     * error sentinel (an empty record with a {@code null} PK).
+     * literal), then short-circuits to {@code completedFuture(null)} if any component is
+     * {@code null}. The source=target carrier path relies on both: the typed bind keeps the
+     * VALUES-join's {@code =} comparison well-typed, and the null short-circuit returns no row
+     * for the LocalContext error sentinel (an empty record with a {@code null} PK).
      */
     static CodeBlock buildKeyExtractionWithNullCheck(SourceKey sourceKey, TableRef parentTable, CodeBlock sourceExpr) {
         if (!(sourceKey.wrap() instanceof SourceKey.Wrap.Row)) {
@@ -535,15 +492,13 @@ class GeneratorUtils {
      * {@code @table}-parent {@code @splitQuery} fetcher. The wrap-axis is the developer's
      * source-shape choice:
      * <ul>
-     *   <li>{@link SourceKey.Wrap.Row} →
+     *   <li>{@link SourceKey.Wrap.Row}:
      *       {@code DSL.row((Record) env.getSource().get(table.col), ...)}</li>
-     *   <li>{@link SourceKey.Wrap.Record} →
+     *   <li>{@link SourceKey.Wrap.Record}:
      *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
-     *   <li>{@link SourceKey.Wrap.TableRecord} → a typed record reconstructed per-column, forked at
-     *       runtime on the source's own type: a typed parent ({@code source instanceof XRecord}) is
-     *       copied field-by-field by jOOQ field-identity, and a generic SQL-projected row is rebuilt
-     *       from the reserved full-row aliases ({@code source.get("__src_col__", ColType.class)}).
-     *       See the {@code TableRecord} arm below for the discriminator's rationale.</li>
+     *   <li>{@link SourceKey.Wrap.TableRecord}: a typed record reconstructed per-column, forked at
+     *       runtime on the source's own type. The comment on the arm below carries the
+     *       discriminator's rationale and its test pin.</li>
      * </ul>
      *
      * <p>The container axis (positional list vs mapped set) is orthogonal and not consulted
@@ -551,31 +506,6 @@ class GeneratorUtils {
      * the batch as a {@code List<K>} or {@code Set<K>}. The resolver-side parent-table
      * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
      * table, so the extraction's projection target is the parent table itself.
-     *
- * <p>The {@code TableRecord} arm forks at runtime on the source's own type, because the same
-     * {@code (type, field)} fetcher is reached by two parent arrival paths graphql-java cannot
-     * distinguish at classification time: a {@code @service} (or DML) that returns the typed record
-     * straight to graphql-java, and the generic {@code Record} an SQL-projected parent
-     * {@code <Type>.$fields} query builds. The typed arm ({@code source instanceof XRecord}) copies
-     * each column off the record by jOOQ field-identity ({@code get(Tables.X.COL)}), never a
-     * by-name {@code into(Tables.X)} map: that by-name map is what a sibling projection aliased to a
-     * name colliding with a physical column (multiset object fields are the concrete trigger) used
-     * to poison, throwing a {@code MappingException}. The else arm handles the SQL-projected row:
-     * the parent {@code $fields} projects the full row under reserved {@code __src_<col>__} aliases
-     * (see {@link #reservedSourceAlias(String)}) and this arm rebuilds the typed record column by
-     * column, reading each value back by its reserved alias with an explicit type. Both arms mint a
-     * fresh record over the same {@link TableRef#allColumns()} enumeration, so the produced key is
-     * structurally identical whichever path produced the parent and the live parent object is never
-     * aliased as the DataLoader key; the projected alias names and the names read here are
-     * single-homed on {@code allColumns()} and cannot drift. The full-parent-row contract is
-     * preserved: the reconstructed record carries every column on the parent table.
-     *
-     * <p>The typed arm is what makes the documented "a {@code @service}-returned typed parent is
-     * used as the producing service populated it" combination resolve rather than crash; the
-     * discriminator's basis (the {@code $fields} SELECT never materialises the typed subclass) is
-     * pinned by the graphitron-sakila-example internal-tier test
-     * {@code ServiceParentTableRecordKeyExtractionTest}. It is named in prose rather than by
-     * {@code @link} because it lives in a downstream module not on this module's javadoc classpath.
      */
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
         TypeName keyType = sourceKey.keyElementType();
@@ -627,8 +557,8 @@ class GeneratorUtils {
                 // The discriminator is sound because the $fields SQL path materialises generic
                 // Record implementations, never the typed subclass; that invariant is pinned by the
                 // graphitron-sakila-example internal-tier test
-                // ServiceParentTableRecordKeyExtractionTest (a downstream module, so the read-site
-                // javadoc below names it in prose rather than by {@link}).
+                // ServiceParentTableRecordKeyExtractionTest (a downstream module not on this
+                // module's classpath, so named in prose rather than by a javadoc link).
                 out.beginControlFlow("if (source instanceof $T typedSource)", keyType);
                 for (ColumnRef col : parentTable.allColumns()) {
                     out.addStatement("key.set($T.$L.$L, typedSource.get($T.$L.$L))",

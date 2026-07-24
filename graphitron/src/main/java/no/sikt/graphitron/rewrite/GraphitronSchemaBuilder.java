@@ -74,16 +74,15 @@ public class GraphitronSchemaBuilder {
             Pattern.compile("tried to use an undeclared directive '([^']+)'");
 
     /**
-     * Initialisation-on-demand holder for the federation directive name set. The set is computed
-     * by calling into {@code federation-graphql-java-support}, which loads the pinned spec URL
-     * and parses its directive definitions. If that call ever fails (network, classpath, or
-     * federation-jvm version mismatch) we want the failure to land only on schemas that actually
-     * use federation, not on every {@code GraphitronSchemaBuilder} class load. Putting the set
-     * behind a holder class delays the federation-jvm call until {@link #buildRecipeErrors}
-     * needs it; non-federation pipelines never trigger the load.
+     * Initialisation-on-demand holder for the federation directive name set. Computing the set
+     * calls into {@code federation-graphql-java-support}, which loads the pinned spec URL and
+     * parses its directive definitions; if that ever fails (network, classpath, federation-jvm
+     * version mismatch) the failure should land only on schemas that actually use federation,
+     * not on every {@code GraphitronSchemaBuilder} class load. The holder delays the call until
+     * {@link #buildRecipeErrors} needs it; non-federation pipelines never trigger the load.
      *
-     * <p>Also: we use {@link FederationDirectives#loadFederationSpecDefinitions(String)} rather
-     * than {@code FederationDirectives.allNames}, because in v6.0.0 {@code allNames} is the
+     * <p>We use {@link FederationDirectives#loadFederationSpecDefinitions(String)} rather than
+     * {@code FederationDirectives.allNames} because in v6.0.0 {@code allNames} is the
      * Federation 1 set only and would miss {@code @shareable}, {@code @inaccessible},
      * {@code @override}, {@code @tag}, {@code @composeDirective}, and {@code @interfaceObject}.
      * Don't "fix" this back to {@code allNames}.
@@ -98,11 +97,10 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Pairs the classified {@link GraphitronSchema} with the raw {@link GraphQLSchema} the
-     * classifier built internally. The Commit B emitters read raw type structure (argument
-     * default values, nested list/non-null wrapping, directive applications) off the assembled
-     * schema and don't need the reclassification to carry it all, so we just surface both
-     * together. Production callers pass an {@link AttributedRegistry} carrying the
-     * {@code federationLink} flag captured from
+     * classifier built internally. Emitters read raw type structure (argument default values,
+     * nested list/non-null wrapping, directive applications) off the assembled schema, so the
+     * model does not carry it; both surface together. Production callers pass an
+     * {@link AttributedRegistry} carrying the {@code federationLink} flag captured from
      * {@link FederationLinkApplier#apply}'s return value; tests that hand-craft a registry use
      * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RewriteContext)},
      * which derives the flag via {@link AttributedRegistry#from(TypeDefinitionRegistry)}.
@@ -180,10 +178,8 @@ public class GraphitronSchemaBuilder {
      * assembly time. The pre-pass keeps the directive-name signal alive so the type classifier
      * can raise a {@code Rejection.InvalidSchema.DirectiveConflict} at directive-read time.
      *
-     * <p>Non-built-in scalars carry their applied directives through to the assembled schema, so
-     * for those the classifier can keep reading from the {@code GraphQLScalarType} directly. The
-     * pre-pass is general enough to record both regardless; the consumer decides which source to
-     * trust.
+     * <p>Non-built-in scalars carry their applied directives through to the assembled schema;
+     * the pre-pass records both regardless, and the consumer decides which source to trust.
      */
     private static void recordSdlScalarDirectives(TypeDefinitionRegistry registry, BuildContext bctx) {
         java.util.function.BiConsumer<String, java.util.List<graphql.language.Directive>> record = (name, directives) -> {
@@ -230,11 +226,9 @@ public class GraphitronSchemaBuilder {
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
         bctx.typeBuilder = typeBuilder;
-        // The types-only half of the single walk: classify the reachable composites on
-        // enter (a ClassifyingVisitor with no FieldBuilder, so no field-classification side effects),
-        // then the post-walk type-level work. This reproduces the type registry the deleted
-        // buildTypes() built, without consuming the resolver via field classification (which
-        // NodeIdLeafResolverTest depends on; see this method's javadoc).
+        // The types-only half of the single walk: classify the reachable composites on enter
+        // (a ClassifyingVisitor with no FieldBuilder, so no field-classification side effects),
+        // then the post-walk type-level work.
         typeBuilder.prepareForWalk();
         SchemaReachability.walk(bctx.schema,
             new ClassifyingVisitor(bctx, typeBuilder, null, null, null));
@@ -246,95 +240,58 @@ public class GraphitronSchemaBuilder {
 
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
-        // The single classify-and-emit walk. One SchemaTraverser.depthFirst over the
-        // reachable output surface classifies each composite type on enter AND classifies the fields of
-        // each reached object in the same visit (ClassifyingVisitor), replacing the three former
-        // traversals of that surface: the SchemaReachability name-set walk, TypeBuilder.buildTypes'
-        // eager type loop, and this method's separate field loop. The fold is possible because field
-        // classification became registry-read-free for every target verdict: a
-        // field's output target is a not-yet-visited child of its parent under the enter-only traversal,
-        // and the field resolves it through the registry-free look-ahead / fixed-point indices, never a
-        // registry lookup. buildTypes, the reachableOutputTypes hand-off, and the field loop are deleted.
-        //
-        // Connection synthesis stays a byproduct of visiting each field
-        // (ConnectionPromoter.synthesiseForField inside classifyFieldsOfObject); the walk accumulates
-        // the carrier rewrites and the synthesised names absent from the assembled schema.
+        // The single classify-and-emit walk: one traversal of the reachable output surface
+        // classifies each composite type on enter and the fields of each reached object in the
+        // same visit; see ClassifyingVisitor. Connection synthesis is a byproduct of visiting
+        // each field (ConnectionPromoter.synthesiseForField inside classifyFieldsOfObject); the
+        // walk accumulates the carrier rewrites and the synthesised names absent from the
+        // assembled schema.
         typeBuilder.prepareForWalk();
         var connectionRewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
         var synthesisedConnectionNames = new LinkedHashSet<String>();
         SchemaReachability.walk(ctx.schema, new ClassifyingVisitor(
             ctx, typeBuilder, fieldBuilder, connectionRewrites, synthesisedConnectionNames));
-        // The post-walk type-level work: classify the input / scalar / enum kinds the output walk never
-        // reaches, then the global validation reductions over the finished registry. Runs after the walk
-        // because field classification is registry-read-free, so the reductions change no verdict.
+        // The post-walk type-level work: classify the input / scalar / enum kinds the output
+        // walk never reaches, then the global validation reductions over the finished registry.
+        // Field classification is registry-read-free, so running the reductions after the walk
+        // changes no verdict.
         typeBuilder.finishTypeClassification();
-        // NestingType registration is folded onto the embedding edge (per classified
-        // field in classifyFieldsOfObject), so the former post-walk registerNestingTypes sweep over the
-        // whole field registry is gone.
-        // The multi-producer DomainReturnType agreement check is detected here (on the
-        // pre-dangling field registry, against the assembled-schema SDL-Object axis) but no longer
-        // demotes the producers; the conflicts ride on the schema's diagnostic channel and the
-        // validator surfaces them, closing the enforcement in the same commit so no gap opens.
-        // Connection synthesis above does not touch the field registry, so the conflict set is
-        // unaffected by its relocation into the walk. This and the three reductions
-        // below register build-time diagnostics on ctx rather than demoting a verdict; see
-        // GraphitronSchema.diagnostics.
+        // The reductions below register build-time diagnostics on ctx rather than demoting a
+        // verdict; the validator drains the channel. See GraphitronSchema.diagnostics.
         collectDomainReturnTypeConflicts(ctx);
         rejectDanglingTypeReferences(ctx);
-        // The synthesised-type set for the rebuild is resolved once, here, from the names the walk
-        // flagged (their final post-tag-union forms live on the registry). rebuild consumes this typed
-        // set rather than re-deriving it, so the rebuilt assembled schema cannot drift from the registry.
+        // The rebuild consumes the walk's own synthesised-name output as a typed set rather than
+        // re-deriving it, so the rebuilt assembled schema cannot drift from the registry; see
+        // resolveSynthesisedConnectionTypes.
         var synthesisedConnectionTypes = resolveSynthesisedConnectionTypes(ctx, synthesisedConnectionNames);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(
             ctx.schema, synthesisedConnectionTypes, connectionRewrites);
-        // Reject case-insensitive type-name collisions. Graphitron emits one Java file per
-        // type-name stem; on case-insensitive filesystems two case-equivalent names would clobber
-        // each other. Runs post-promotion so synth-vs-synth Connection-name clashes (the consumer
-        // repro) are visible. Registers a build-time diagnostic per colliding member
-        // rather than demoting the registry entry, so the colliding types keep their classified
-        // verdict and the assembled schema stays consistent; the validator surfaces the collision by
-        // draining the channel.
+        // Runs post-promotion so synth-vs-synth Connection-name clashes are visible; see
+        // rejectCaseInsensitiveTypeCollisions.
         rejectCaseInsensitiveTypeCollisions(ctx);
-        // Deprecation signal over @table-on-input usages, carving out the encoded-ID /
-        // scalar-return INSERT/UPSERT case whose only write-target signal is still the input's
-        // @table (a later consumer-derived-table change retires that carve-out). Placed beside the other post-classification
-        // cross-cutting passes on the live ctx; reads the classified model (the carve-out set is
-        // computed off the field registry's MutationField leaves).
         emitTableOnInputDeprecationWarnings(ctx);
-        // Reject every @nodeId application whose coordinate is not of unwrapped type ID. Reads
-        // ctx.schema applied directives (not the registry) because a dropped @nodeId leaves no trace
-        // on the classified field — see rejectNonIdNodeId. Sibling soundness reduction; registers a
-        // build-time diagnostic the validator drains, demoting nothing.
         rejectNonIdNodeId(ctx);
-        // Reject @asFacet misuse. Sibling soundness reduction to rejectNonIdNodeId, and for
-        // the same reason a raw-schema pass: the promoter's facet walk skips malformed applications
-        // (they produce no FacetSpec, no trace on the classified model), so the misuse is only
-        // visible on the SDL directive surface. Registers build-time diagnostics the validator
-        // drains, demoting nothing.
         rejectFacetMisuse(ctx);
-        // Hash-suffix dedup: walk every WithErrorChannel field and apply the collision-suffix
-        // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
-        // before the emitter runs. Pass-through for the common case (every payload class has at
-        // most one channel shape).
+        // Apply the collision-suffix rule to ErrorChannel.mappingsConstantName on every
+        // WithErrorChannel field so the resolved name lands on the carrier before the emitter
+        // runs. Pass-through for the common case (at most one channel shape per payload class).
         var dedupedFields = MappingsConstantNameDedup.apply(ctx.fieldRegistry.entries());
         Map<String, EntityResolution> entitiesByType =
             EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled,
                 ctx::addWarning, ctx::addDiagnostic);
         // The ancestor-product arrival fold, computed once over the assembled (pre-connection-
-        // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk order,
-        // so it is computed here and threaded onto the schema for OutputField.source(Arrival) consumers
-        // to read through GraphitronSchema.sourceOf. No generator reads it (emit stays leaf-identity
-        // dispatch), so populating OnlyChild changes no generated code.
+        // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk
+        // order; threaded onto the schema for OutputField.source(Arrival) consumers to read
+        // through GraphitronSchema.sourceOf.
         var arrivals = ArrivalIndex.compute(ctx.schema).byName();
-        // The reachable-source-shape fold: per-coordinate source-shape union for every type reached
-        // through more than one source shape (a directiveless type reached both as a nesting projection
-        // and as a producer-backed result). Pure fold over the classified types and fields, so it is
-        // computed here and threaded onto the schema for the dispatch emitter and the validator's
-        // shape-set rule to read one fact.
+        // The reachable-source-shape fold: per-coordinate source-shape union for every type
+        // reached through more than one source shape (a directiveless type reached both as a
+        // nesting projection and as a producer-backed result). Pure fold over the classified
+        // types and fields; the dispatch emitter and the validator's shape-set rule read one fact.
         var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, dedupedFields);
         // The per-field tenant-binding fold. Ancestor-context fact (Inherited needs every
-        // reaching path bound), so it is computed here post-walk beside the arrival fold and
-        // threaded onto the schema for the validator's tenant mirror and the routing emitters.
+        // reaching path bound), so it is computed post-walk; read by the validator's tenant
+        // mirror and the routing emitters.
         var tenantBindings = TenantBindingIndex.compute(
             ctx.schema, dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes);
         var model = new GraphitronSchema(
@@ -355,7 +312,7 @@ public class GraphitronSchemaBuilder {
      *
      * <p>The object's own verdict is registered before its fields classify, so the field work reads the
      * object's own registry entry (its parent verdict, set here or, for a producer-backed carrier /
-     * connection arm, by the discovering parent field before this visit) — never a sibling's or a
+     * connection arm, by the discovering parent field before this visit), never a sibling's or a
      * not-yet-determined verdict.
      *
      * <p>{@code fieldBuilder} is {@code null} for the types-only test seam
@@ -407,8 +364,8 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Classifies every field of one SDL object type, invoked from
-     * {@link ClassifyingVisitor} as the single walk enters each reached object (the compensating sweep
-     * over unreached objects was removed, so an unreached object's fields are not classified). A
+     * {@link ClassifyingVisitor} as the single walk enters each reached object (an unreached
+     * object's fields are not classified). A
      * directiveless nesting target (structurally decided, see
      * {@link TypeBuilder#isDirectivelessNestingTarget}) is skipped: its fields are resolved through the
      * {@code NestingField} that embeds it, whose {@code NestingType} this method registers at the edge
@@ -417,25 +374,22 @@ public class GraphitronSchemaBuilder {
     private static void classifyFieldsOfObject(
             BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType,
             List<ConnectionPromoter.CarrierRewrite> connectionRewrites, Set<String> synthesisedConnectionNames) {
-        // Connection synthesis is a byproduct of visiting each field, run before any of
-        // the classification early-returns below so it fires for every field exactly as the retired
-        // all-types promotion pass did (including fields on directiveless parents whose standalone
-        // classification is skipped). register owns dedup and the cross-carrier @tag union.
+        // Connection synthesis runs before the classification early-returns below so it fires
+        // for every field, including fields on directiveless parents whose standalone
+        // classification is skipped. register owns dedup and the cross-carrier @tag union.
         for (var fieldDef : objType.getFieldDefinitions()) {
             ConnectionPromoter.synthesiseForField(
                 ctx, objType, fieldDef, connectionRewrites, synthesisedConnectionNames);
         }
         var parentType = ctx.types.get(objType.getName());
-        // A directiveless nesting target has its fields resolved through the embedding NestingField, not
-        // standalone here. This is decided structurally
-        // (TypeBuilder.isDirectivelessNestingTarget), not by reading parentType == null: once NestingType
-        // registration folds onto the embedding edge, this object's own registry slot may already hold the
-        // NestingType a sibling edge produced, so a null check would observe sibling state. The structural
-        // verdict is sibling-independent and reproduces the old null signal. A structural Connection / Edge
-        // / PageInfo type is also directiveless in the SDL: the connection synthesis above just registered
-        // it as a connection arm, but its fields are emitted by the connection emitter, never classified
-        // standalone, so skip it too so folding synthesis into the walk does not start classifying
-        // connection-internal fields.
+        // A directiveless nesting target has its fields resolved through the embedding
+        // NestingField, not standalone here. Decided structurally
+        // (TypeBuilder.isDirectivelessNestingTarget), not by reading parentType == null: this
+        // object's registry slot may already hold the NestingType a sibling edge produced, so a
+        // null check would observe sibling state; the structural verdict is sibling-independent.
+        // A structural Connection / Edge / PageInfo type is also directiveless in the SDL: the
+        // synthesis above just registered it as a connection arm, but its fields are emitted by
+        // the connection emitter, never classified standalone, so skip it too.
         if (typeBuilder.isDirectivelessNestingTarget(objType.getName())
                 || parentType instanceof ConnectionType
                 || parentType instanceof EdgeType
@@ -444,17 +398,15 @@ public class GraphitronSchemaBuilder {
                 || parentType instanceof GraphitronType.FacetValueType) {
             return;
         }
-        // Structural carrier-shape detection (scanStructuralDmlPayload)
-        // routes payload-returning DML through the unified path. For payloads with a
-        // producer binding (DmlEmitted for non-DELETE, or ServiceEmitted), the per-type
-        // pass runs against the binding to construct the data-field permit. For orphan
-        // carriers (carrier-shaped payload that no producer mutation returns)
-        // and for DELETE DML carriers (data-field permit constructed at the @mutation
-        // classifier from the DmlElementKind dispatch), the data field stays
-        // unregistered at this site; graphql-java's never-traverse-unproduced-fields
-        // guarantee makes the missing entry structurally safe. Errors-shaped fields
-        // still classify through the normal per-field classifier so ErrorsField is
-        // materialised independent of the producer binding.
+        // Structural carrier-shape detection (scanStructuralDmlPayload) routes payload-returning
+        // DML through the unified path. For payloads with a producer binding (DmlEmitted for
+        // non-DELETE, or ServiceEmitted), the per-type pass runs against the binding to construct
+        // the data-field permit. For orphan carriers (carrier-shaped payload that no producer
+        // mutation returns) and for DELETE DML carriers (permit constructed at the @mutation
+        // classifier from the DmlElementKind dispatch), the data field stays unregistered here;
+        // graphql-java's never-traverse-unproduced-fields guarantee makes the missing entry
+        // structurally safe. Errors-shaped fields still classify through the normal per-field
+        // classifier so ErrorsField is materialised independent of the producer binding.
         var nDml = typeBuilder.dmlEmittedBinding(objType.getName());
         var nService = typeBuilder.serviceEmittedBinding(objType.getName());
         boolean skipForUnifiedPath =
@@ -462,11 +414,10 @@ public class GraphitronSchemaBuilder {
             || nService.isPresent();
         var scan = ctx.scanStructuralDmlPayload(objType.getName());
         // A DELETE carrier's data field is owned by the @mutation DELETE classifier
-        // (SingleRecordIdFieldFromReturning, set via
-        // reclassify). The carrier is bound to a JooqTableRecordType, so the standard
-        // per-type pass below would classify that same data field a second time and collide;
-        // skip it here, classifying only the errors field. (Orphan carriers are no longer
-        // promoted, so they fall through to the NestingType guard below.)
+        // (SingleRecordIdFieldFromReturning, set via reclassify). The carrier is bound to a
+        // JooqTableRecordType, so the standard per-type pass below would classify that same data
+        // field a second time and collide; skip it here, classifying only the errors field.
+        // (Orphan carriers fall through to the NestingType guard below.)
         if (scan instanceof BuildContext.DmlPayloadScan.Admit
                 && nDml.isPresent() && nDml.get().kind() == no.sikt.graphitron.rewrite.model.DmlKind.DELETE) {
             Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
@@ -479,41 +430,31 @@ public class GraphitronSchemaBuilder {
             }
             return;
         }
-        // A directiveless object the type pass left unclassified (the structural skip above) has its
-        // fields resolved through the NestingField that embeds it, not standalone here.
         Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
         objType.getFieldDefinitions().forEach(fieldDef -> {
-            // Land the producer-backed single-record carrier verdict at the producing
-            // edge: the field whose return type is the carrier registers its JooqTableRecordType here,
-            // before its own classification, replacing the deleted post-type-pass
-            // promoteSingleRecordPayloads SDL scan. The binding (carrierTableBinding) is computed from
-            // the producer (DmlEmitted / ServiceEmitted) and the structural carrier scan, never from the
-            // in-progress type registry, so it is order-independent; the contains guard keeps the
-            // register idempotent across the several edges (producing field, the carrier's own later
-            // visit) that observe the same carrier. Registering before classifyField is what retires the
-            // classify-reads-classify dependency: the field's resolveReturnType then sees the carrier as
-            // a ResultType and routes through the record-backed mutation path, and the carrier's own
-            // later visit reads the verdict as its parentType.
+            // Land the producer-backed single-record carrier verdict at the producing edge,
+            // before the field's own classification: the field's resolveReturnType then sees the
+            // carrier as a ResultType and routes through the record-backed mutation path, and the
+            // carrier's own later visit reads the verdict as its parentType. See
+            // registerProducerBackedCarrier for the order-independence and idempotency argument.
             registerProducerBackedCarrier(ctx, typeBuilder, BuildContext.baseTypeName(fieldDef));
             var classified = fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass);
             ctx.fieldRegistry.classify(
                 FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()), classified);
-            // Fold NestingType registration onto the embedding edge: a NestingField built
-            // here establishes its target (and any deeper nested targets) as a NestingType right now,
-            // recursing into nested fields, rather than in a post-walk sweep.
+            // A NestingField built here establishes its target (and any deeper nested targets)
+            // as a NestingType at the embedding edge, recursing into nested fields.
             registerNestingTypesIn(ctx, typeBuilder, classified);
         });
     }
 
     /**
- * Assign {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to the SDL object
+     * Assigns {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to the SDL object
      * type a {@code NestingField} embeds, recursing into nested {@code NestingField}s. The type pass
      * leaves a directiveless object unclassified (it cannot know what it is); a {@code NestingField} built
      * at the embedding edge is the only thing that establishes it as a nesting projection of a table-backed
      * parent, so the invariant {@code NestingType} ⟺ {@code ∃ NestingField} holds by construction.
      *
-     * <p>Called per classified field at the embedding edge (from
-     * {@link #classifyFieldsOfObject}), not in a post-walk sweep over the whole field registry. The
+     * <p>Called per classified field at the embedding edge (from {@link #classifyFieldsOfObject}). The
      * {@code contains} guard keeps the registration idempotent across the several edges that may embed the
      * same target; it dedups an already-produced {@code NestingType}, it does not gate the nesting verdict
      * (that is decided structurally and registry-free at each edge).
@@ -561,8 +502,7 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Registers the {@link GraphitronType.ResultType} verdict for a producer-backed
-     * carrier at the producing edge (the field returning it), replacing the deleted post-type-pass
-     * {@code TypeBuilder.promoteSingleRecordPayloads} SDL scan. {@code name} is the field's unwrapped
+     * carrier at the producing edge (the field returning it). {@code name} is the field's unwrapped
      * return-type name; the verdict fires only when {@link TypeBuilder#carrierVerdict} resolves a
      * producer-backed carrier (a DML {@code RETURNING} / single-level {@code @service} {@code @table}
      * carrier → {@link GraphitronType.JooqTableRecordType}, or a two-level {@code @service}
@@ -606,33 +546,29 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * Model-level soundness backstop: no classified field may reference a type the model
+     * Model-level soundness backstop: no classified field may reference a type the model
      * dropped. A classified {@link OutputField} whose SDL return element is an Object type with
      * no registry entry would emit {@code typeRef("X")} while the type itself is never emitted;
-     * graphql-java assembly then fails with {@code AssertException: type X not found in schema}
-     * — an invalid schema discovered by the consumer at runtime instead of an author error at
+     * graphql-java assembly then fails with {@code AssertException: type X not found in schema},
+     * an invalid schema discovered by the consumer at runtime instead of an author error at
      * build time. SDL Object types are the only kind the type pass can leave entirely absent
      * (directiveless objects with no producer binding, no carrier promotion, and no
      * {@code NestingField} embedding); every other SDL kind either registers or demotes to a
      * registered {@link UnclassifiedType} that carries its own diagnostic.
      *
-     * <p>Registers a build-time {@link ValidationError} on the schema's diagnostic
-     * channel instead of reclassifying the field to {@link GraphitronField.UnclassifiedField}. The
-     * field keeps its real {@link OutputField} verdict (so a verdict read after the walk equals the
-     * one classification produced); the build still fails through the validator's drain of the
-     * channel. The former demotion's second job — removing the field from emission — is redundant
-     * because the validator throws before the emitter runs and nothing between this pass and the
-     * validator reads the field verdict ({@code rebuildAssembledForConnections} works off the SDL
-     * assembled schema plus carrier rewrites). This is the
-     * shape-agnostic closure of the per-shape classifier guards (the {@code @service}
-     * orphan-carrier guard rejects recognized carrier shapes with richer, shape-specific
-     * guidance before this pass runs; anything that slips past every classifier-level guard —
-     * errors-only payloads, scan-{@code Reject} shapes, future holes — lands here). Runs after the
-     * field-first walk has registered every nesting projection at its embedding edge
-     * ({@link #registerNestingTypesIn}) and after that walk's
-     * connection synthesis ({@code ConnectionPromoter.synthesiseForField} registers the Connection /
-     * Edge / PageInfo types as a byproduct of visiting each carrier; running earlier would demote
-     * every Connection-returning field).
+     * <p>Registers a build-time {@link ValidationError} on the schema's diagnostic channel
+     * instead of reclassifying the field to {@link GraphitronField.UnclassifiedField}: the field
+     * keeps its real {@link OutputField} verdict, the validator throws before the emitter runs,
+     * and nothing between this pass and the validator reads the field verdict
+     * ({@code rebuildAssembledForConnections} works off the SDL assembled schema plus carrier
+     * rewrites). This is the shape-agnostic closure of the per-shape classifier guards (the
+     * {@code @service} orphan-carrier guard rejects recognized carrier shapes with richer,
+     * shape-specific guidance before this pass runs; anything that slips past every
+     * classifier-level guard lands here). Runs after the walk has registered every nesting
+     * projection at its embedding edge ({@link #registerNestingTypesIn}) and after the walk's
+     * connection synthesis ({@code ConnectionPromoter.synthesiseForField} registers the
+     * Connection / Edge / PageInfo types as a byproduct of visiting each carrier; running
+     * earlier would demote every Connection-returning field).
      */
     private static void rejectDanglingTypeReferences(BuildContext ctx) {
         for (var entry : ctx.fieldRegistry.entries().entrySet()) {
@@ -640,18 +576,10 @@ public class GraphitronSchemaBuilder {
             String sdlReturn = sdlReturnTypeName(ctx.schema, entry.getKey());
             if (sdlReturn == null) continue;
             if (ctx.typeRegistry.contains(sdlReturn)) continue;
-            // Register a build-time diagnostic instead of reclassifying the field to
-            // UnclassifiedField. The field keeps its real OutputField verdict; the demotion's second
-            // job (removing the field from emission) is redundant because the validator throws before
-            // the emitter runs (the global gate), and nothing between here and the validator reads the
-            // demoted verdict: rebuildAssembledForConnections works off the SDL assembled schema plus
-            // carrier rewrites, not the field registry. The shared ValidationError.forField factory
-            // applies the same "Field '<qname>': " prefix the validator's validateUnclassifiedField
-            // pass did, so the error stream is byte-identical to the former demotion by construction.
             // When the binding walk recorded a gated accessor near-miss for this type (a parent
             // accessor name-matched but failed the arity / boolean-is / field-fallback-with-arguments
-            // gate), name the gate rather than the generic "did not classify" cascade — the walk is the
-            // one place that knows why the accessor did not match.
+            // gate), name the gate rather than the generic "did not classify" cascade; the walk is
+            // the one place that knows why the accessor did not match.
             String gateNote = ctx.typeBuilder == null ? "" : ctx.typeBuilder.accessorGateReason(sdlReturn)
                 .map(g -> " The accessor that could have grounded '" + sdlReturn + "' was rejected: "
                     + g.reason() + " (via " + g.parentSdlType() + "." + g.fieldName() + ").")
@@ -673,26 +601,19 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * Detects, but no longer enforces, that every {@link OutputField} producer
-     * reaching the same SDL return-type name agrees on its {@link DomainReturnType} sealed arm.
-     * Disagreement means the producers put structurally different Java values at
-     * {@code env.getSource()} for the SDL return type's child datafetchers; the generator commits to
-     * one source-Java-type per child-field coord at emit time and does not branch on runtime source
-     * type, so a multi-producer disagreement would feed a datafetcher generated against the other
-     * producer's record shape.
+     * Detects that every {@link OutputField} producer reaching the same SDL return-type name
+     * agrees on its {@link DomainReturnType} sealed arm. Disagreement means the producers put
+     * structurally different Java values at {@code env.getSource()} for the SDL return type's
+     * child datafetchers; the generator commits to one source-Java-type per child-field coord at
+     * emit time and does not branch on runtime source type, so a multi-producer disagreement
+     * would feed a datafetcher generated against the other producer's record shape.
      *
-     * <p>Registers one {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} per conflict
-     * group on the schema's diagnostic channel ({@code ctx.addDiagnostic}), each naming every
-     * participant; the validator drains the channel into compiler-style errors that fail the build
-     * (the reclassify-to-{@link GraphitronField.UnclassifiedField} post-pass that previously enforced
-     * this here was retired, moving enforcement to the validator in the same commit so no gap opens;
-     * the dedicated {@code domainReturnTypeConflicts} carrier was later folded into the single
-     * diagnostic channel). Runs on the pre-promotion, pre-dangling field registry against the
-     * assembled-schema SDL-Object axis, so the conflict set is byte-identical to the retired post-pass;
-     * the data field on the conflict payload (if any) stays classified as-is per the design fork
-     * (a), since the validator halts the build before any generated code runs. The diagnostic
-     * coordinate ({@code "<schema>"}) and empty {@link SourceLocation} reproduce what the former
-     * {@code validateUniformDomainReturnType} drain emitted, so the error stream is byte-identical.
+     * <p>Registers one {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} per
+     * conflict group on the schema's diagnostic channel ({@code ctx.addDiagnostic}), each naming
+     * every participant; the validator drains the channel into compiler-style errors that fail
+     * the build. Runs on the pre-promotion, pre-dangling field registry against the
+     * assembled-schema SDL-Object axis. The data field on the conflict payload (if any) stays
+     * classified as-is, since the validator halts the build before any generated code runs.
      */
     private static void collectDomainReturnTypeConflicts(BuildContext ctx) {
         Map<String, List<FieldCoordinates>> bySdlReturnType = new LinkedHashMap<>();
@@ -799,7 +720,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * Rejects every type whose name collides case-insensitively with another emit-producing
+     * Rejects every type whose name collides case-insensitively with another emit-producing
      * type. Graphitron emits one Java file per type-name stem, and GraphQL identifiers are
      * case-sensitive ({@code type Foo} and {@code type foo} parse as distinct types); on
      * case-insensitive filesystems (APFS, NTFS) the two map to the same filename and clobber each
@@ -809,19 +730,17 @@ public class GraphitronSchemaBuilder {
      *
      * <p>One case-folded pass over {@code ctx.typeRegistry.entries()}, skipping variants that do
      * not implement {@link EmitsPerTypeFile} ({@link
-     * no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} and {@link UnclassifiedType}
-     * today). For each collision group of two or more members, every member's typed
+     * no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} and {@link UnclassifiedType}).
+     * For each collision group of two or more members, every member's typed
      * {@link Rejection.InvalidSchema.CaseFoldCollision} rejection (naming the full group plus the
      * member's classifier-arm {@link Origin}) is registered as a build-time {@link ValidationError}
-     * on the diagnostic channel rather than demoting the registry entry; the colliding types keep
-     * their classified verdict and the validator surfaces one error per member by draining the
-     * channel. The coordinate, prefixed message and location are byte-identical to what the former
-     * demotion's {@code validateUnclassifiedType} projection produced.
+     * on the diagnostic channel; the colliding types keep their classified verdict and the
+     * validator surfaces one error per member by draining the channel.
      *
-     * <p>Demote-all (rather than first-wins) because there's no logical winner between two
-     * SDL-declared types: silently picking one would tilt the schema's public surface against the
-     * author. Synthesised Connection / Edge / PageInfo arms specialise the message to hint at the
-     * {@code @asConnection(connectionName:)} fix.
+     * <p>Every member is rejected (rather than first-wins) because there's no logical winner
+     * between two SDL-declared types: silently picking one would tilt the schema's public surface
+     * against the author. Synthesised Connection / Edge / PageInfo arms specialise the message to
+     * hint at the {@code @asConnection(connectionName:)} fix.
      *
      * <p>{@link Locale#ROOT} for the fold; GraphQL identifiers are ASCII-only per the spec rule
      * {@code [_A-Za-z][_0-9A-Za-z]*} (no non-ASCII letters, no locale-dependent folding hazards).
@@ -843,10 +762,6 @@ public class GraphitronSchemaBuilder {
                     case PageInfoType ignored -> Origin.SYNTH_PAGE_INFO;
                     default -> Origin.SDL;
                 };
-                // Register a diagnostic instead of demoting the colliding type. The
-                // shared ValidationError.forType factory applies the same "Type '<name>': " prefix the
-                // validator's validateUnclassifiedType pass did, so the error stream is byte-identical
-                // to the former UnclassifiedType demotion by construction.
                 ctx.addDiagnostic(ValidationError.forType(name,
                     Rejection.caseFoldCollision(group, origin), existing.location()));
             }
@@ -854,30 +769,24 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * The actionable tier of the {@code @table}-on-input deprecation signal. Walks every
+     * The actionable tier of the {@code @table}-on-input deprecation signal. Walks every
      * {@code INPUT_OBJECT} that <em>explicitly declares</em> {@code @table} (read off
-     * {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId} — the consumer-derived
+     * {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId}; the consumer-derived
      * table branch of {@link TypeBuilder#buildInputType} carries no author-written directive and is
      * deliberately not flagged) and emits a non-fatal {@link BuildWarning.NoRule} advisory per usage.
-     * No input is carved out: DELETE ({@code @mutation(table:)}) and INSERT (return-derived, or
-     * {@code @mutation(table:)} for encoded returns) both have field-relative write-target paths now,
-     * so the warning fires on every author-written {@code @table} input and names the per-verb
-     * replacement explicitly.
+     * No input is carved out: DELETE, INSERT, and UPDATE all have field-relative write-target
+     * paths, so the warning fires on every author-written {@code @table} input and names the
+     * per-verb replacement explicitly.
      *
-     * <p>The message names no roadmap ID (D2): it gives the replacement instruction (the write target
-     * is derived from the consuming mutation field's resolved table) rather than pointing at the
-     * internal removal owner. Unconditional and not suppressible (D4): a switchable nudge defeats the
-     * "stop adding new usages" purpose, and there is no build-breakage to suppress. The plain
-     * {@link BuildWarning.NoRule} arm (not {@link BuildWarning.LintFinding}) is deliberate (D1): this
-     * is a deprecation announcement, not a lint-engine finding, and stays unconditional. The live
-     * precedent for {@code NoRule} is the federation compound-key advisory in
-     * {@link EntityResolutionBuilder}.
+     * <p>The message gives the replacement instruction (the write target is derived from the
+     * consuming mutation field's resolved table) rather than pointing at an internal owner. It is
+     * unconditional and not suppressible: a switchable nudge defeats the "stop adding new usages"
+     * purpose, and there is no build-breakage to suppress. The plain {@link BuildWarning.NoRule}
+     * arm (not {@link BuildWarning.LintFinding}) is deliberate: this is a deprecation
+     * announcement, not a lint-engine finding. The live precedent for {@code NoRule} is the
+     * federation compound-key advisory in {@link EntityResolutionBuilder}.
      */
     private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
-        // DELETE, INSERT, and UPDATE all have field-relative write-target paths, so no input is carved
-        // out of the warning; instead it names the field-relative replacement per verb. The encoded-ID
-        // INSERT carve-out retired once the INSERT write target became field-relative, so those inputs
-        // warn too.
         Set<String> deleteConsumed = deleteConsumedInputTypes(ctx);
         Set<String> insertConsumed = insertConsumedInputTypes(ctx);
         Set<String> updateConsumed = updateConsumedInputTypes(ctx);
@@ -911,17 +820,13 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * The SDL input-type names consumed by a {@code @mutation(typeName: INSERT)} field. Drives the
+     * The SDL input-type names consumed by a {@code @mutation(typeName: INSERT)} field. Drives the
      * INSERT-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
      * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded
-     * return). Every INSERT leaf carries an {@link ArgumentRef.InputTypeArg.TableInputArg} whose
-     * {@code typeName()} is the input type; the record-carrier DML leaves are gated on
-     * {@code kind() == INSERT} (UPSERT is refused upstream, but the leaf type structurally permits it).
-     *
-     * <p>Earlier a sibling set ({@code encodedWriteTargetInputTypes}) suppressed the warning on the
-     * encoded-ID / scalar-return INSERT inputs, because the input's {@code @table} was then the only
-     * signal naming the write target; that set retired when {@code @mutation(table:)} became an INSERT
-     * write-target rung, so the warning now fires on those inputs and this set only selects wording.
+     * return); the set selects wording only, it suppresses nothing. Every INSERT leaf carries an
+     * {@link ArgumentRef.InputTypeArg.TableInputArg} whose {@code typeName()} is the input type; the
+     * record-carrier DML leaves are gated on {@code kind() == INSERT} (UPSERT is refused upstream,
+     * but the leaf type structurally permits it).
      */
     private static Set<String> insertConsumedInputTypes(BuildContext ctx) {
         Set<String> consumed = new LinkedHashSet<>();
@@ -941,16 +846,14 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * The SDL input-type names consumed by a {@code @mutation(typeName: DELETE)} field. Drives
+     * The SDL input-type names consumed by a {@code @mutation(typeName: DELETE)} field. Drives
      * the DELETE-specific replacement clause on the {@code @table}-on-input deprecation warning (name
-     * the write target with {@code @mutation(table:)} on the field). Earlier, this same computation
-     * suppressed the warning on DELETE inputs, before the field-relative path existed; it was
-     * repurposed from suppression to wording, leaving no dead set behind.
+     * the write target with {@code @mutation(table:)} on the field).
      *
      * <p>The three DELETE leaves carry an {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose
-     * accessor is {@code inputTypeName()} (not the {@code tableInputArg().typeName()} the encoded
-     * INSERT/UPSERT carve-out reads); the record-carrier DML leaves are INSERT/UPSERT-only by compact
-     * constructor, so these three arms are exhaustive over DELETE.
+     * accessor is {@code inputTypeName()} (not the {@code tableInputArg().typeName()} the INSERT set
+     * reads); the record-carrier DML leaves are INSERT/UPSERT-only by compact constructor, so these
+     * three arms are exhaustive over DELETE.
      */
     private static Set<String> deleteConsumedInputTypes(BuildContext ctx) {
         Set<String> carveOut = new LinkedHashSet<>();
@@ -966,7 +869,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * The SDL input-type names consumed by a {@code @mutation(typeName: UPDATE)} field. Drives the
+     * The SDL input-type names consumed by a {@code @mutation(typeName: UPDATE)} field. Drives the
      * UPDATE-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
      * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded /
      * scalar return). The three UPDATE walker-carrier leaves
@@ -989,7 +892,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * Rejects every {@code @nodeId} application whose coordinate does not have an unwrapped
+     * Rejects every {@code @nodeId} application whose coordinate does not have an unwrapped
      * SDL type of {@code ID}. The SDL directive permits {@code @nodeId} on {@code FIELD_DEFINITION |
      * INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION} with no {@code ID} restriction, but every
      * decode/encode arm in the generator is gated on {@code "ID".equals(...)}; on a non-{@code ID}
@@ -1065,7 +968,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * Rejects every misused {@code @asFacet} application. The rejection split follows a
+     * Rejects every misused {@code @asFacet} application. The rejection split follows a
      * definition-keyed / use-keyed axis: the binding checks (a facet must be a plain
      * {@code @field}-bound scalar/enum column; {@code @reference} / {@code @condition} /
      * {@code @nodeId} bindings and {@code ID} fields are v1-unsupported) are authored-directive
@@ -1086,7 +989,7 @@ public class GraphitronSchemaBuilder {
      * channel that {@link GraphitronSchemaValidator} drains; it demotes no verdict.
      */
     private static void rejectFacetMisuse(BuildContext ctx) {
-        // Per input type: consumed by any @asConnection field at all; (Phase 4) consumed by one
+        // Per input type: consumed by any @asConnection field at all; consumed by one
         // carrying the deprecated connectionName: override (the facet emitters resolve a carrier's
         // ConnectionType through the derived ConnectionNaming.defaultConnectionName, which an
         // overridden name would silently miss); and consumed by a carrier the v1 facet emitter
@@ -1152,9 +1055,7 @@ public class GraphitronSchemaBuilder {
                 // A facet's name must be unique across the carrier's whole filter surface
                 // (sibling input args' fields and top-level arguments): the facet fragments and
                 // the generated condition method both key parameters by name, so a same-named
-                // non-facet filter is irreducibly ambiguous at the emission boundary. (The
-                // generated <Type>Conditions method cannot even declare two same-named
-                // parameters today; that generic defect is tracked separately.)
+                // non-facet filter is irreducibly ambiguous at the emission boundary.
                 for (var facetName : facetNamesOnCarrier) {
                     if (duplicateFacetNames.contains(facetName)) continue;
                     if (filterParamNameCounts.getOrDefault(facetName, 0) > 1) {
@@ -1185,7 +1086,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
- * Why a consuming {@code @asConnection} carrier is outside the v1 facet emitter's scope,
+     * Why a consuming {@code @asConnection} carrier is outside the v1 facet emitter's scope,
      * or {@code null} when it is served. The v1 facet plan is built only by the root Query
      * single-table connection fetcher; child ({@code @splitQuery}) carriers and interface/union
      * elements paginate through emitters that bind no plan, so their facets would silently
@@ -1269,10 +1170,7 @@ public class GraphitronSchemaBuilder {
      * non-federation half. This is intentional: we cannot keep the {@code SchemaProblem}
      * around (it is unrecoverable once unwrapped) and also throw {@code ValidationFailedException}
      * with the recipe-rewrap entries for the federation half. The chosen behaviour preserves
-     * every error message; it loses only the original exception subtype distinction. If a real
-     * consumer surfaces wanting the original type back for the non-federation half, switch
-     * to a two-pass strategy here (raise {@code ValidationFailedException} for the federation
-     * half, rethrow the {@code SchemaProblem} for the rest).
+     * every error message; it loses only the original exception subtype distinction.
      */
     private static List<ValidationError> buildRecipeErrors(SchemaProblem e) {
         var errors = e.getErrors();

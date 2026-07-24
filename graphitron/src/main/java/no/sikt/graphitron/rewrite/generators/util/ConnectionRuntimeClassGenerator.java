@@ -26,14 +26,13 @@ import java.util.StringJoiner;
  * per-request identity around exactly one pinned connection, and the {@code SessionHook} seam the
  * database-side connect/disconnect callables plug into.
  *
- * <p>Emitted (not shipped as a graphitron artifact) so it follows the {@code GraphitronContext}
- * precedent: the bodies depend only on the JDK ({@code javax.sql.DataSource},
- * {@code java.sql.Connection}, {@code java.util.concurrent.Executor}) and jOOQ
- * ({@code org.jooq.SQLDialect}); no auth-framework type and no graphitron type ever appears. In a
- * multi-tenant build the {@code TenantConnections} carrier additionally references graphql-java's
- * {@code DataFetchingEnvironment} (its routing statics resolve the carrier off the GraphQL
- * context), which every generated consumer already has on the classpath. The bodies must be valid
- * Java 17 (verified by the {@code graphitron-sakila-example} {@code <release>17</release>} compile).
+ * <p>Emitted (not shipped as a graphitron artifact), following the {@code GraphitronContext}
+ * precedent: the bodies depend only on the JDK and jOOQ; no auth-framework type and no graphitron
+ * type ever appears. In a multi-tenant build the {@code TenantConnections} carrier additionally
+ * references graphql-java's {@code DataFetchingEnvironment} (its routing statics resolve the
+ * carrier off the GraphQL context), which every generated consumer already has on the classpath.
+ * The bodies must be valid Java 17 (verified by the {@code graphitron-sakila-example}
+ * {@code <release>17</release>} compile).
  *
  * <h2>The two lifecycles</h2>
  * Connection setup is application-scoped ({@code GraphitronRuntime}, built once at wiring time via
@@ -63,8 +62,8 @@ import java.util.StringJoiner;
  * <h3>Hooks run outside any transaction (structural guarantee)</h3>
  * Session identity is connection-scoped state, never transactional state: neither mount nor unmount
  * may depend on any transaction's outcome. Both lifecycle ends enforce this rather than assume it.
- * Acquire normalizes autocommit before connect, so a pool configured autocommit=false (Agroal and
- * Hikari both support this) cannot put the mount inside an implicit never-committed transaction; on
+ * Acquire normalizes autocommit before connect, so a pool configured autocommit=false cannot put
+ * the mount inside an implicit never-committed transaction; on
  * Postgres {@code set_config}/{@code SET} are transactional, so an in-transaction mount would revert
  * with a mutation field's rollback and an in-transaction clear would be reverted by the pool's
  * return-rollback, leaving identity alive for the next borrower. Release settles any transaction the
@@ -108,7 +107,7 @@ import java.util.StringJoiner;
  * synchronous; the fanned fetcher calls {@code scatter} and blocks, and concurrency never leaks
  * into fetcher bodies.
  *
- * <h2>Session hooks (slice 3)</h2>
+ * <h2>Session hooks</h2>
  * With no {@code <sessionState>} configured the runtime bakes {@code SessionHook.NONE} (a no-op
  * null-object: mounts and unmounts nothing) so the path never branches on a nullable hook. A
  * configured {@link SessionStateConfig} additionally emits a concrete
@@ -142,9 +141,9 @@ public final class ConnectionRuntimeClassGenerator {
     public static final String RUNTIME_CLASS_NAME = "GraphitronRuntime";
     public static final String PINNED_CONNECTION_CLASS_NAME = "PinnedConnection";
     public static final String SESSION_HOOK_CLASS_NAME = "SessionHook";
-    /** The concrete {@code SessionHook} emitted from a configured {@code <sessionState>} block (slice 3). */
+    /** The concrete {@code SessionHook} emitted from a configured {@code <sessionState>} block. */
     public static final String SESSION_HOOK_IMPL_CLASS_NAME = "GraphitronSessionHook";
-    /** The per-operation tenant-keyed connection carrier (slice 4). */
+    /** The per-operation tenant-keyed connection carrier. */
     public static final String TENANT_CONNECTIONS_CLASS_NAME = "TenantConnections";
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
@@ -285,7 +284,7 @@ public final class ConnectionRuntimeClassGenerator {
         };
     }
 
-    /** The connect/disconnect seam. Open interface: slice 1 fakes it, slice 3 generates the concrete impl. */
+    /** The connect/disconnect seam. Open interface: tests fake it; a configured {@code <sessionState>} emits the concrete impl. */
     private static TypeSpec sessionHook(ClassName sessionHook) {
         var connect = MethodSpec.methodBuilder("connect")
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
@@ -329,7 +328,7 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
 
         // No-op null-object for the no-<sessionState> path: mounts and unmounts nothing, so acquire and
-        // release never branch on a nullable hook. Slice 6's generation-time warning describes this default.
+        // release never branch on a nullable hook.
         var none = FieldSpec.builder(sessionHook, "NONE", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("$L", TypeSpec.anonymousClassBuilder("")
                 .addSuperinterface(sessionHook)
@@ -541,10 +540,6 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .build();
 
-        // Propagate unchecked causes with their type intact; wrap the checked residue (a connect/disconnect
-        // SQLException) in an unchecked carrier so release() needs no throws clause. Errors are rethrown
-        // directly. Returns the RuntimeException to throw so both call sites read `throw rethrow(...)`, which
-        // also tells the compiler control does not fall through.
         var rethrow = MethodSpec.methodBuilder("rethrow")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(RuntimeException.class)
@@ -601,7 +596,7 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code Connection.abort} is the JDBC primitive designed for exactly this. {@code synchronized}
      * because a straggler worker's self-abort and the dispatch thread's {@code releaseAll} can race
      * on the same instance; {@code release()} needs no synchronization (release and abort never
-     * target the same instance — the carrier's per-key remove arbitrates which path processes an
+     * target the same instance: the carrier's per-key remove arbitrates which path processes an
      * entry, and release is only chosen for keys whose worker has settled).
      */
     private static MethodSpec abortMethod() {
@@ -626,7 +621,7 @@ public final class ConnectionRuntimeClassGenerator {
      * Multi-tenant builds additionally carry the fan-out execution configuration (the bounded
      * scatter executor and the scatter deadline), as two flat constructor scalars plus an optional
      * consumer-supplied {@code Executor} overload; deployment-time values, so they never touch the
-     * Mojo. Single-tenant emission is byte-identical to the pre-fan-out shape.
+     * Mojo.
      */
     private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection, ClassName instrumentation,
                                     RuntimeHookProjection projection, TypeName tenantKey, boolean multiTenant) {
@@ -649,8 +644,7 @@ public final class ConnectionRuntimeClassGenerator {
             .initializer("$T::run", Runnable.class)
             .build();
         // Fan-out execution configuration (multi-tenant builds only): the bounded scatter executor
-        // and the scatter deadline. A second, independent executor beside abortExecutor; the two are
-        // orthogonal and never conflated.
+        // and the scatter deadline.
         var defaultFanOutConcurrencyField = FieldSpec.builder(int.class, "DEFAULT_FAN_OUT_CONCURRENCY",
                 Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("8")
@@ -673,10 +667,8 @@ public final class ConnectionRuntimeClassGenerator {
 
         var mapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), DATA_SOURCE);
 
-        // Canonical constructor: default source (untenanted / single-tenant) plus the per-tenant map. The
-        // two-arg single-tenant form delegates here with an empty map. In multi-tenant builds the
-        // canonical grows the two fan-out slots (executor + deadline); the map-only form delegates
-        // with the documented defaults.
+        // Canonical constructor: default source plus the per-tenant map; the other constructor
+        // forms delegate here.
         var canonicalBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
@@ -742,10 +734,6 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
             .build();
 
-        // Multi-tenant fan-out configuration: two delegating overloads over the executor-form
-        // canonical. The map-only form bakes the documented defaults; the int-cap form builds the
-        // default bounded pool of platform threads sized by the cap. Deployment-time values, so the
-        // constructor surface (not the Mojo) is where they live.
         var mapOnlyConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
@@ -926,22 +914,15 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * The per-operation tenant-keyed connection carrier (slice 4): generalizes slice 2's single pinned
-     * connection to one pinned connection per <em>distinct</em> divined tenant key within an operation.
-     * {@code dslFor(key)} pins-and-mounts on first use of a key and reuses thereafter (so N distinct keys
-     * pin N connections, a repeated key pins once), binding a provider-backed {@code DSLContext} over the
-     * key's connection; {@code releaseAll()} releases every pinned connection on every completion path,
+     * The per-operation tenant-keyed connection carrier: one pinned connection per <em>distinct</em>
+     * divined tenant key within an operation. {@code dslFor(key)} pins-and-mounts on first use of a
+     * key and reuses thereafter, binding a provider-backed {@code DSLContext} over the key's
+     * connection; {@code releaseAll()} releases every pinned connection on every completion path,
      * per-connection eviction on disconnect failure, idempotent.
      *
      * <p>The {@code DSL.using(...) + TransactionProvider} binding lives here, single-sourced, so the
      * many per-field tenant-routing sites consume {@code dslFor(key)} as a drop-in for {@code getDslContext(env)}
      * and never re-emit the binding (only <em>which key</em> and <em>where it routes</em> are schema-shaped).
-     *
- * <p>Forward note: this carrier subsumes slice 2's single-{@code pinned} instrumentation state
-     * as the one-entry case; when tenant routing is wired in, the untenanted path becomes a default-key
-     * entry here rather than a second parallel carrier, collapsing the two release-on-completion sites into
-     * one. Slice 4 lands and proves the carrier directly (test-supplied keys, fake tenant map); it does not
-     * rewire the instrumentation.
      */
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
@@ -1728,7 +1709,7 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * {@code static DSLContext dslFor(DataFetchingEnvironment env, T tenantKey)}: the one-call
-     * routed acquisition emitted fetcher sites use — resolves the carrier off the GraphQL
+     * routed acquisition emitted fetcher sites use. Resolves the carrier off the GraphQL
      * context and pins the key's connection, wrapping the checked acquisition failure in jOOQ's
      * {@code DataAccessException} so batch rows methods and dispatch surfaces (which declare no
      * checked exceptions) route it through the same redaction contract as any data-access fault.

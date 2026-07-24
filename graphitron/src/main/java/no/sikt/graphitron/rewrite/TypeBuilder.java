@@ -92,11 +92,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 /**
  * Classifies all named types in the schema into the {@link GraphitronType} hierarchy.
  *
- * <p>Classification is field-first and reachability-driven (see {@link #classifyAndRegister}, driven
- * by the single walk in {@link GraphitronSchemaBuilder}): each type
- * is classified as the walk reaches it, including interface / union participant lists, which are a
- * registry-free function of SDL plus the reflection fixed point and
- * so need no separate enrichment pass.
+ * <p>Classification is field-first and reachability-driven: each type is classified as the single
+ * walk in {@link GraphitronSchemaBuilder} reaches it (see {@link #classifyAndRegister}), including
+ * interface / union participant lists, which are a registry-free function of SDL plus the
+ * reflection fixed point.
  */
 class TypeBuilder {
 
@@ -108,10 +107,9 @@ class TypeBuilder {
     private final ServiceCatalog svc;
     private final Map<String, Class<?>> recordBackingClasses = new LinkedHashMap<>();
     /**
- * The reflection-driven SDL → backing-class binding resolver. Constructed and
-     * populated by {@link #prepareForWalk()} before per-type classification; consulted by
-     * {@link #buildResultType} and {@link #buildNonTableInputType} to decide the backed
-     * variant. The directive's {@code className} no longer participates.
+     * The reflection-driven SDL-to-backing-class binding resolver. Populated by
+     * {@link #prepareForWalk()} before per-type classification; consulted by
+     * {@link #buildResultType} and {@link #buildNonTableInputType} to decide the backed variant.
      */
     private RecordBindingResolver bindings;
 
@@ -124,42 +122,38 @@ class TypeBuilder {
     }
 
     /**
-     * Backing classes for reflection-bound result types and input types, keyed by GraphQL
-     * type name. Populated by the {@link RecordBindingResolver} via the recursive reflection
-     * walk before per-type classification runs. The schema builder threads each loaded class
-     * through {@link FieldBuilder#classifyField} so the per-field accessor resolver does not
-     * re-load. Per the rewrite design principles, the class is classifier-time scratch state
-     * and does not survive into the persisted model.
+     * Backing classes for reflection-bound result and input types, keyed by GraphQL type name.
+     * Populated by the {@link RecordBindingResolver} walk before per-type classification runs; the
+     * schema builder threads each loaded class through {@link FieldBuilder#classifyField} so the
+     * per-field accessor resolver does not re-load. Classifier-time scratch state; does not
+     * survive into the persisted model.
      */
     Map<String, Class<?>> recordBackingClasses() {
         return recordBackingClasses;
     }
 
     /**
-     * DML payload bindings produced by {@link RecordBindingResolver#groundDmlMutationField}.
-     * Keyed by payload SDL type name. Read by the schema-builder loop and threaded into
-     * {@link FieldBuilder#classifyField} so the unified-path classifier can route a payload
-     * field's child classification through the inner {@code TableRef} the DML producer carries.
-     * Empty until {@code prepareForWalk()} resolves the bindings.
+     * DML payload binding produced by {@link RecordBindingResolver#groundDmlMutationField}, keyed
+     * by payload SDL type name. Threaded into {@link FieldBuilder#classifyField} so a payload
+     * field's child classification routes through the inner {@code TableRef} the DML producer
+     * carries. Empty until {@link #prepareForWalk()} resolves the bindings.
      */
     java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted> dmlEmittedBinding(String sdlTypeName) {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveDmlEmitted(sdlTypeName);
     }
 
     /**
-     * Resolves the optional {@link no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted}
-     * binding for an SDL payload type whose producer is an {@code @service} mutation field
-     * with a carrier-shaped payload. Mirrors {@link #dmlEmittedBinding}; both bindings sit on
-     * dedicated maps inside the resolver and are read at field-classify time to drive the
-     * unified-path data-field permit construction.
+     * The {@link no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted} binding for an
+     * SDL payload type whose producer is an {@code @service} mutation field with a carrier-shaped
+     * payload. Mirrors {@link #dmlEmittedBinding}.
      */
     java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted> serviceEmittedBinding(String sdlTypeName) {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceEmitted(sdlTypeName);
     }
 
     /**
- * The {@code @service} producer's arrival cardinality for a payload SDL type, decided once
-     * at the reflection boundary and read by the classify-time shape verdict at the {@code @service}
+     * The {@code @service} producer's arrival cardinality for a payload SDL type, decided once at
+     * the reflection boundary and read by the classify-time shape verdict at the {@code @service}
      * carrier seat. Mirrors {@link #serviceEmittedBinding}.
      */
     java.util.Optional<no.sikt.graphitron.rewrite.model.Arity> serviceCarrierProducerArrival(String parentType, String fieldName) {
@@ -167,10 +161,10 @@ class TypeBuilder {
     }
 
     /**
- * The gated accessor near-miss (if any) the binding walk recorded while failing to ground a
+     * The gated accessor near-miss (if any) the binding walk recorded while failing to ground a
      * child SDL type through a parent accessor. Consumed by the dangling-type-reference backstop
-     * ({@code GraphitronSchemaBuilder.rejectDanglingTypeReferences}) so a sole-producer type whose only
-     * near-grounding was a gated accessor surfaces the accessor gate rather than the generic
+     * ({@code GraphitronSchemaBuilder.rejectDanglingTypeReferences}) so a sole-producer type whose
+     * only near-grounding was a gated accessor surfaces the accessor gate rather than the generic
      * "did not classify into the model" cascade.
      */
     java.util.Optional<RecordBindingResolver.AccessorGateReason> accessorGateReason(String sdlTypeName) {
@@ -183,25 +177,21 @@ class TypeBuilder {
      * The pre-walk preparation, shared by the production single walk
      * ({@link GraphitronSchemaBuilder#buildSchema}) and the types-only test seam
      * ({@link GraphitronSchemaBuilder#buildContextForTests}). Resolves the reflection-driven
- * SDL → backing-class bindings, builds the fixed-point classification indices, and
-     * classifies every SDL kind the output walk never reaches: input types, scalars, and enums (they
-     * sit only on argument / input-field coordinates the walk does not descend). These leaf kinds are
-     * classified <em>before</em> the walk, not after, because field classification reads input / scalar
-     * / enum verdicts from {@code ctx.types} (e.g. {@code MutationInputResolver}, {@code EnumMappingResolver},
-     * {@code ServiceCatalog}'s scalar binding); having them registered up front keeps those reads valid
-     * during the walk, exactly as the two-pass world (which classified them before any field) did. The
-     * directive-ignored warnings and the multi-producer rejection demotions also run here, so a
-     * rejected input is read as its {@link UnclassifiedType} demotion during the walk, matching two-pass.
+     * SDL-to-backing-class bindings, builds the fixed-point classification indices, and classifies
+     * every SDL kind the output walk never reaches: input types, scalars, and enums (they sit only
+     * on argument / input-field coordinates the walk does not descend). These leaf kinds are
+     * classified <em>before</em> the walk because field classification reads their verdicts from
+     * {@code ctx.types} during the walk (e.g. {@code MutationInputResolver},
+     * {@code EnumMappingResolver}, {@code ServiceCatalog}'s scalar binding). The directive-ignored
+     * warnings and the multi-producer rejection demotions also run here, so a rejected input is
+     * read as its {@link UnclassifiedType} demotion during the walk.
      *
-     * <p>The output composite types are <em>not</em> classified here; each is classified as the walk
-     * reaches it ({@link #classifyAndRegister}). The one validation reduction that depends on the
-     * composites ({@link #validateNodeTypeIdUniqueness} over {@code @node} types) runs after the walk
+     * <p>The output composite types are <em>not</em> classified here; each is classified as the
+     * walk reaches it ({@link #classifyAndRegister}). The one validation reduction that depends on
+     * the composites ({@link #validateNodeTypeIdUniqueness}) runs after the walk
      * ({@link #finishTypeClassification}).
      */
     void prepareForWalk() {
-        // Derive SDL → backing-class bindings from reflection before per-type classification
-        // runs. The directive-driven path inside buildResultType / buildNonTableInputType is gone;
-        // both consult the resolver for the variant decision.
         bindings = new RecordBindingResolver(ctx, svc);
         bindings.resolveAll();
         // Side-effect: populate recordBackingClasses for downstream field-classification threading.
@@ -212,16 +202,13 @@ class TypeBuilder {
             bindings.resolveInput(named.getName()).ifPresent(cls ->
                 recordBackingClasses.putIfAbsent(named.getName(), cls));
         }
-        // Build the fixed-point reverse indices the field pass reads in place of
-        // its whole-registry NodeType / participant scans. Derived from SDL + catalog via the same
-        // producers (buildTableType / buildTableInterfaceType), not memoised from the registry, so
-        // they carry no dependency on the registry being populated, and may be built before the walk.
+        // Build the fixed-point reverse indices the field pass reads. Derived from SDL + catalog
+        // via the same producers classification uses (buildTableType / buildTableInterfaceType),
+        // not from the registry, so they may be built before the walk.
         buildClassificationIndices();
-        // Classify the input / scalar / enum kinds the output walk never reaches. The walk descends
-        // field-output / union-member / interface-implementor only, so these are reached only through
-        // argument / input coordinates it does not descend; without this they would vanish from the
-        // registry. Output composites (object / interface / union) are classified on the walk — an
-        // unreached composite is an orphan, deliberately pruned — so skip them here.
+        // Classify the input / scalar / enum kinds the output walk never reaches. Output
+        // composites (object / interface / union) are classified on the walk; an unreached
+        // composite is an orphan, deliberately pruned, so skip them here.
         for (var namedType : ctx.schema.getAllTypesAsList()) {
             if (namedType.getName().startsWith("__")) continue;
             if (namedType instanceof GraphQLObjectType
@@ -231,36 +218,32 @@ class TypeBuilder {
             }
             classifyAndRegister(namedType);
         }
-        // The directive-ignored warning is a classification output. Emit it in a dedicated pass
-        // over getAllTypesAsList so the warning order is stable (SDL order) and independent of walk
-        // order. It reads only the reflection-binding fixed point (resolveAll) and SDL directives,
-        // never the registry, so it is order-independent of classification.
+        // Emit the directive-ignored warning in a dedicated pass over getAllTypesAsList so the
+        // warning order is stable (SDL order) and independent of walk order. It reads only the
+        // reflection-binding fixed point and SDL directives, never the registry.
         for (var namedType : ctx.schema.getAllTypesAsList()) {
             if (namedType.getName().startsWith("__")) continue;
             emitDirectiveIgnoredWarning(namedType);
         }
-        // Surface multi-producer rejections as UnclassifiedType. Runs before the walk so a
-        // rejected input reads as its demotion during field classification (the only composite this
-        // demotes is a directiveless object, whose classifyType verdict is null, so the walk does not
-        // overwrite the demotion).
+        // Surface multi-producer rejections as UnclassifiedType before the walk so a rejected
+        // input reads as its demotion during field classification. The only composite this demotes
+        // is a directiveless object, whose classifyType verdict is null, so the walk does not
+        // overwrite the demotion.
         surfaceMultiProducerRejections();
     }
 
     /**
-     * Classifies one reached type and registers its verdict, the per-type work the
-     * single walk drives on enter (see {@link GraphitronSchemaBuilder} {@code ClassifyingVisitor}).
-     * Replaces the eager pre-field type loop that {@code buildTypes} ran over the whole reachable set:
-     * a composite is now classified as the edge reaches it, not all up front. {@link #classifyType}
-     * is registry-free, so the verdict is identical regardless of how much of the registry exists yet
-     * (the read-free visitor invariant). A {@code null} verdict (a directiveless object: a nesting
-     * target, a producer-backed carrier, or an orphan) registers nothing here; that verdict is landed
-     * at the producing / embedding edge during field classification, or stays absent for an orphan.
-     * Also drives the input / scalar / enum sweep in {@link #prepareForWalk}.
+     * Classifies one reached type and registers its verdict, the per-type work the single walk
+     * drives on enter (see {@link GraphitronSchemaBuilder}'s {@code ClassifyingVisitor}).
+     * {@link #classifyType} is registry-free, so the verdict is identical regardless of how much
+     * of the registry exists yet. A {@code null} verdict (a directiveless object: a nesting
+     * target, a producer-backed carrier, or an orphan) registers nothing here; that verdict lands
+     * at the producing / embedding edge during field classification, or stays absent for an
+     * orphan. Also drives the input / scalar / enum sweep in {@link #prepareForWalk}.
      */
     GraphitronType classifyAndRegister(GraphQLNamedType namedType) {
         var gType = classifyType(namedType);
         if (gType != null) {
-            // Per-type classification goes through the reconciling register entry.
             ctx.typeRegistry.register(namedType.getName(), gType);
         }
         return gType;
@@ -274,45 +257,36 @@ class TypeBuilder {
      */
     void finishTypeClassification() {
         // NodeType typeId uniqueness: two types cannot share a typeId because Query.node(id:)
-        // dispatch extracts the typeId prefix and routes to one GraphQL type. The
-        // colliding nodes keep their NodeType verdict (the registry is no longer mutated by a
-        // validation reduction); the collision is surfaced as a build-time diagnostic the validator
-        // drains, so the build still fails before generation but a verdict read after the walk
-        // equals the verdict classification produced.
+        // dispatch extracts the typeId prefix and routes to one GraphQL type. Colliding nodes keep
+        // their NodeType verdict; the collision surfaces as a build-time diagnostic the validator
+        // drains, so the build fails before generation while a verdict read after the walk equals
+        // the verdict classification produced.
         validateNodeTypeIdUniqueness();
     }
 
     /**
-     * The producer-bound table backing a directiveless single-record carrier, or
-     * {@code null} when no DML {@code RETURNING} or {@code @service} producer returns it. Registry-free:
-     * derived from the structural carrier scan ({@link BuildContext#scanStructuralDmlPayload} /
-     * {@link BuildContext#scanStructuralServiceCarrierPayload}) plus the producer binding fixed point
-     * ({@code DmlEmitted} / {@code ServiceEmitted}), never from the in-progress type registry. A
-     * producer-backed carrier binds its wrapper to the producer's table record: a DML {@code RETURNING}
-     * or an {@code @service} method yields a {@code Record} (single) or {@code Result<Record>} (multi),
-     * so the carrier IS that record, single or multi cardinality alike, and the inner data field reads
-     * off the record through the standard record-backed path. Each producer family gates on its
-     * own scan; DML carriers keep the strict forbidden-directive set, {@code @service} carriers tolerate
-     * {@code @splitQuery} on the data field.
+     * The producer-bound backing for a directiveless single-record carrier payload. Registry-free:
+     * derived from the structural carrier scans ({@link BuildContext#scanStructuralDmlPayload} /
+     * {@link BuildContext#scanStructuralServiceCarrierPayload}) plus the producer binding fixed
+     * point ({@code DmlEmitted} / {@code ServiceEmitted}), never from the in-progress type
+     * registry. A producer-backed carrier binds its wrapper to the producer's record, single or
+     * multi cardinality alike, so the inner data field reads off the record through the standard
+     * record-backed path. Each producer family gates on its own scan; DML carriers keep the strict
+     * forbidden-directive set, {@code @service} carriers tolerate {@code @splitQuery} on the data
+     * field.
      *
      * <p>Sole producer of the carrier fact, shared by
-     * {@link GraphitronSchemaBuilder#classifyFieldsOfObject} (slice 3b: registers the carrier's
-     * {@link ResultType} verdict at the carrier's visit via {@link #carrierVerdict}) and
-     * {@link #isDirectivelessNestingTarget} (which excludes producer-backed carriers from the nesting
-     * verdict), so the two cannot drift. A carrier-shaped payload that no producer returns (orphan) is
-     * {@link CarrierBinding.NotACarrier}; it stays a {@link NestingType} and is rejected by the
-     * soundness pass.
+     * {@link GraphitronSchemaBuilder#classifyFieldsOfObject} (registers the carrier's
+     * {@link ResultType} verdict via {@link #carrierVerdict}) and
+     * {@link #isDirectivelessNestingTarget} (excludes producer-backed carriers from the nesting
+     * verdict), so the two cannot drift. A carrier-shaped payload that no producer returns
+     * (orphan) is {@link CarrierBinding.NotACarrier}; it stays a {@link NestingType} and is
+     * rejected by the soundness pass.
      *
- * <p>The recognizer is sealed over the two backing shapes a producer-backed carrier can
-     * have: a {@link CarrierBinding.TableBacked} table record (the DML {@code RETURNING} / single-level
-     * {@code @service} {@code @table}-data-field carrier, classified {@link GraphitronType.JooqTableRecordType})
-     * and a {@link CarrierBinding.ClassBacked} record-composite element class (the two-level
-     * {@code @service} carrier whose non-{@code @table} object data field's element bound to a consumer
-     * composite on the result axis, classified as the matching class-backed {@link ResultType}). One
-     * recognizer, two projections ({@link #carrierVerdict} builds the type; {@link #isDirectivelessNestingTarget}
-     * and the orphan-carrier guard read {@link CarrierBinding.NotACarrier}); the structural
-     * {@code RecordElement} {@code Admit} from {@link BuildContext#scanStructuralServiceCarrierPayload}
-     * is the single shape signal both this and the emit-side data-field interception consume.
+     * <p>Sealed over the two backing shapes a producer-backed carrier can have; see the record
+     * javadocs. The structural {@code RecordElement} {@code Admit} from
+     * {@link BuildContext#scanStructuralServiceCarrierPayload} is the single shape signal both
+     * this recognizer and the emit-side data-field interception consume.
      */
     sealed interface CarrierBinding
         permits CarrierBinding.TableBacked, CarrierBinding.ClassBacked, CarrierBinding.NotACarrier {
@@ -332,17 +306,16 @@ class TypeBuilder {
         if (ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit admit) {
             var table = serviceEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
             if (table != null) return new CarrierBinding.TableBacked(table);
-            // The composite carrier — a RecordElement data field whose element type bound to a
-            // consumer composite on the result axis. The payload's backing is that element class
-            // (the element-naming convention: the per-element class, with the arrival cardinality on
-            // the data field), mirroring how a bulk @table carrier above names the element table.
-            // Two gates keep the scan's structural RecordElement Admit (which fires for any record-
-            // backed DTO with a single object field) from over-recognizing: the payload must NOT be a
-            // directly result-axis-bound result type (a plain @service-returned DTO whose object field
-            // is an accessor read — resolveResult(name) present), and it must be returned by an
-            // @service field (an orphan payload whose data-field element binds via an unrelated
-            // producer is not a carrier). Both are BindsDataFieldElement's preconditions, read off the
-            // binding fixed point + schema, not re-derived.
+            // The composite carrier: a RecordElement data field whose element type bound to a
+            // consumer composite on the result axis. The payload's backing is that per-element
+            // class, with the arrival cardinality on the data field, mirroring how a bulk @table
+            // carrier above names the element table. Two gates keep the scan's structural
+            // RecordElement Admit (which fires for any record-backed DTO with a single object
+            // field) from over-recognizing: the payload must NOT be a directly result-axis-bound
+            // result type (resolveResult(name) present), and it must be returned by an @service
+            // field (an orphan payload whose data-field element binds via an unrelated producer is
+            // not a carrier). Both are BindsDataFieldElement's preconditions, read off the binding
+            // fixed point + schema, not re-derived.
             if (admit.element() instanceof BuildContext.DmlElementKind.RecordElement
                     && bindings.resolveResult(name).isEmpty()
                     && ctx.isServiceProducedPayload(name)) {
@@ -356,13 +329,11 @@ class TypeBuilder {
     }
 
     /**
- * The {@link GraphitronType} verdict a producer-backed carrier payload classifies as, or
-     * {@code null} when {@code name} is not such a carrier ({@link CarrierBinding.NotACarrier}). The
-     * single projection of {@link #carrierBinding} into a registered type, shared by
-     * {@link #lookAheadVerdict} (the registry-free look-ahead) and
-     * {@link GraphitronSchemaBuilder} (the producing-edge registration), so the carrier verdict cannot
-     * drift between the two. {@link CarrierBinding.TableBacked} → {@link GraphitronType.JooqTableRecordType};
-     * {@link CarrierBinding.ClassBacked} → the matching class-backed {@link ResultType}.
+     * The {@link GraphitronType} verdict a producer-backed carrier payload classifies as, or
+     * {@code null} when {@code name} is not such a carrier ({@link CarrierBinding.NotACarrier}).
+     * The single projection of {@link #carrierBinding} into a registered type, shared by
+     * {@link #lookAheadVerdict} and the producing-edge registration in
+     * {@link GraphitronSchemaBuilder}, so the carrier verdict cannot drift between the two.
      */
     GraphitronType carrierVerdict(String name) {
         var binding = carrierBinding(name);
@@ -382,18 +353,15 @@ class TypeBuilder {
 
     /**
      * Registry-free verdict for whether an SDL object reached at an embedding edge is a
-     * directiveless nesting target: a plain object with no competing classification, to be projected as a
-     * {@link GraphitronType.NestingType} from the embedding parent's table context. Computed from the
-     * type's own SDL plus the binding fixed points, never from the in-progress type registry, so an
-     * embedding edge decides nesting independently of whether a sibling edge already registered the same
-     * {@code NestingType} (the edge-driven order-independence invariant: an edge never reads a sibling
-     * edge's classification). True iff the type is a {@link GraphQLObjectType} that {@link #classifyType}
-     * leaves unclassified (no {@code @table} / {@code @error} / producer-backed result, not a root /
-     * interface / union / enum / scalar), is not a multi-producer rejection (those classify as
+     * directiveless nesting target: a plain object with no competing classification, projected as
+     * a {@link GraphitronType.NestingType} from the embedding parent's table context. Computed
+     * from the type's own SDL plus the binding fixed points, never from the in-progress type
+     * registry, so an embedding edge decides nesting independently of whether a sibling edge
+     * already registered the same {@code NestingType} (an edge never reads a sibling edge's
+     * classification). True iff the type is a {@link GraphQLObjectType} that {@link #classifyType}
+     * leaves unclassified, is not a multi-producer rejection (those classify as
      * {@link UnclassifiedType}), and is not a producer-bound single-record carrier
-     * ({@link #carrierBinding}, which classifies as {@code JooqTableRecordType} instead). This
-     * reproduces, structurally, the {@code ctx.types.get(name) == null} signal the field pass read before
-     * the fold (an SDL object the type pass left unregistered), minus the registry read.
+     * ({@link #carrierBinding}).
      */
     boolean isDirectivelessNestingTarget(String name) {
         if (!(ctx.schema.getType(name) instanceof GraphQLObjectType obj)) return false;
@@ -403,17 +371,16 @@ class TypeBuilder {
     }
 
     /**
-     * The nesting-<em>edge</em> verdict: whether an SDL object reached at an embedding edge is projected
-     * as a {@code NestingField} from the parent's table context, whether or not it also classifies as a
-     * producer-backed result. This is the broader relation {@link #isDirectivelessNestingTarget} is a
-     * subset of: it additionally admits a directiveless object whose only competing type-level verdict is
-     * a {@link GraphitronType.ResultType} (a class-backed accessor result, or a jOOQ-record carrier). Such
-     * a type is reached both as a nesting projection and via its producer; the embedding edge builds the
-     * {@code NestingField} (children classified against the parent table) while the type's own visit
-     * registers the {@code ResultType}, so {@link GraphitronSchemaBuilder} does <em>not</em> register a
-     * {@code NestingType} for it (the registration gate stays {@link #isDirectivelessNestingTarget}). The
-     * per-coordinate legality of the resulting shape-set union (dispatch vs reject) is decided post-walk
-     * over {@link GraphitronSchema#reachableSourceShapes}, not here. Registry-free, so the edge decides
+     * The nesting-<em>edge</em> verdict: whether an SDL object reached at an embedding edge is
+     * projected as a {@code NestingField} from the parent's table context, whether or not it also
+     * classifies as a producer-backed result. The broader relation
+     * {@link #isDirectivelessNestingTarget} is a subset of: it additionally admits a directiveless
+     * object whose only competing type-level verdict is a {@link GraphitronType.ResultType}. Such
+     * a type is reached both as a nesting projection and via its producer; the embedding edge
+     * builds the {@code NestingField} while the type's own visit registers the {@code ResultType},
+     * so the registration gate stays {@link #isDirectivelessNestingTarget}. The per-coordinate
+     * legality of the resulting shape-set union is decided post-walk over
+     * {@link GraphitronSchema#reachableSourceShapes}, not here. Registry-free, so the edge decides
      * independently of any sibling edge's registration.
      */
     boolean isNestingEdgeTarget(String name) {
@@ -427,36 +394,30 @@ class TypeBuilder {
     }
 
     /**
-     * Registry-free look-ahead at a field's target type. Returns the verdict the
-     * target type name resolves to, computed from SDL + reflection bindings + catalog
-     * ({@link #classifyType}) plus the producer-bound single-record carrier fixed point
-     * ({@link #carrierVerdict}), never read from the in-progress type registry. It reproduces
-     * exactly what {@code ctx.types.get(name)} returned at field-classification time in the two-pass
-     * world (where {@code buildTypes} had fully populated the registry before the field pass ran),
-     * so the field pass can resolve an {@link InterfaceType} / {@link UnionType} / {@link ResultType}
-     * target without depending on that target having been registered. That independence is the
-     * precondition for folding type and field classification into one enter-only walk (slice 4),
-     * where a field's output target is a not-yet-visited child of the field's parent.
+     * Registry-free look-ahead at a field's target type: the verdict the target type name
+     * resolves to, computed from SDL + reflection bindings + catalog ({@link #classifyType}) plus
+     * the producer-bound single-record carrier fixed point ({@link #carrierVerdict}), never read
+     * from the in-progress type registry. This lets the field pass resolve an
+     * {@link InterfaceType} / {@link UnionType} / {@link ResultType} target without depending on
+     * that target having been registered, which is what allows type and field classification to
+     * share one enter-only walk where a field's output target is a not-yet-visited child of the
+     * field's parent.
      *
-     * <p>{@code classifyType} covers the {@code @table} / {@code @node} / {@code @error} / interface
-     * / union / reflection-bound result / scalar / enum / input verdicts. The carrier fallback covers
-     * the one verdict {@code classifyType} leaves {@code null} but the registry holds non-null: the
-     * directiveless single-record carrier, bound at the producing edge from {@link #carrierVerdict}
-     * (a {@link GraphitronType.JooqTableRecordType}), not by a resolved {@code @record} producer. A
-     * directiveless nesting target / orphan classifies to {@code null} under both, matching the
-     * registry's absent entry; the nesting branch in {@link FieldBuilder} is decided separately by
-     * {@link #isDirectivelessNestingTarget}, not by this verdict.
+     * <p>The carrier fallback covers the one verdict {@link #classifyType} leaves {@code null} but
+     * the registry holds non-null: the directiveless single-record carrier, bound at the producing
+     * edge from {@link #carrierVerdict}. A directiveless nesting target / orphan classifies to
+     * {@code null} under both, matching the registry's absent entry; the nesting branch in
+     * {@link FieldBuilder} is decided separately by {@link #isDirectivelessNestingTarget}, not by
+     * this verdict.
      *
-     * <p>The multi-producer rejection guard runs first, mirroring {@link #participantClassification}:
-     * {@code surfaceMultiProducerRejections} demotes every binding-rejected type (result <em>and</em>
-     * input) to {@link UnclassifiedType} in {@code buildTypes}, before the field pass reads it, so a
-     * faithful look-ahead reproduces that demotion rather than the live verdict {@code classifyType}
-     * would still compute. This matters for the input reads (an input rejected for a binding clash is
-     * read as {@code UnclassifiedType}, not a live {@code TableInputType} / {@code InputType}). The
-     * other post-walk demotions do not change any arm this look-ahead is read for: a typeId-collided
-     * node is read through the {@code NodeIndex} (and is table-backed, never one of these arms), and the
-     * case-fold collision pass runs after the field walk, so the registry it reads during the walk does
-     * not carry that demotion either.
+     * <p>The multi-producer rejection guard runs first, mirroring
+     * {@link #participantClassification}: {@link #surfaceMultiProducerRejections} demotes every
+     * binding-rejected type (result <em>and</em> input) to {@link UnclassifiedType} before the
+     * field pass reads it, so the look-ahead reproduces that demotion rather than the live verdict
+     * {@link #classifyType} would compute. The other post-walk demotions do not change any arm
+     * this look-ahead is read for: a typeId-collided node is read through the {@code NodeIndex}
+     * (and is table-backed, never one of these arms), and the case-fold collision pass runs after
+     * the field walk.
      */
     GraphitronType lookAheadVerdict(String typeName) {
         if (!(ctx.schema.getType(typeName) instanceof GraphQLNamedType named)) return null;
@@ -482,10 +443,8 @@ class TypeBuilder {
             List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
             String others = String.join(", ", colliding);
             for (var nt : entry.getValue()) {
-                // Register a diagnostic instead of demoting the NodeType. The shared
-                // ValidationError.forType factory applies the same "Type '<name>': " prefix the
-                // validator's validateUnclassifiedType pass did, so the error stream is byte-identical
-                // to the former UnclassifiedType demotion by construction.
+                // Register a diagnostic instead of demoting the NodeType; ValidationError.forType
+                // applies the standard "Type '<name>': " prefix.
                 ctx.addDiagnostic(ValidationError.forType(nt.name(),
                     Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
                     + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)"),
@@ -497,42 +456,27 @@ class TypeBuilder {
     /**
      * Builds the fixed-point reverse indices ({@link BuildContext#nodes},
      * {@link BuildContext#tables}, {@link BuildContext#errors},
-     * {@link BuildContext#crossTableFieldsByParticipant}) that retire {@code FieldBuilder}'s
-     * whole-registry and keyed {@code ctx.types.get} reads at classification edges. Derived from the
-     * SDL declarations via the same producers classification uses ({@code buildTableType} for nodes
-     * and tables, {@code buildTableInterfaceType} for table-interfaces, {@code buildErrorType} for
-     * errors).
+     * {@link BuildContext#crossTableFieldsByParticipant}) the field pass reads at classification
+     * edges. Derived from the SDL declarations via the same producers classification uses
+     * ({@link #buildTableType} for nodes and tables, {@link #buildTableInterfaceType} for
+     * table-interfaces, {@link #buildErrorType} for errors).
      *
-     * <p>The three membership indices ({@code nodes} / {@code tables} / {@code errors})
-     * are directive-scanned over <b>all</b> declared types (a superset of the reachable set, unpruned),
-     * and are <b>pure</b>: no demotion, no reachability prune, and no typeId-uniqueness exclusion (an
-     * earlier slice conflated the latter into {@code NodeIndex}; it comes out here, with
-     * {@link #validateNodeTypeIdUniqueness} left the sole owner of uniqueness as a validation reduction
-     * over the registry). The superset is sound because every type a field read actually queries is
-     * already reachable. Multiple {@code @node} types on one table is legitimate (distinct node ids
-     * over the same rows): {@code byTable} is one-to-many (every node on a table), and the implicit
-     * "encoder for this table" lookup is resolved at the call site, which rejects the zero and
-     * ambiguous (>1) cases. {@code byName} keys on the distinct type names so each node resolves
-     * independently through the explicit {@code @nodeId(typeName:)} path.
+     * <p>All four indices are directive-scanned over <b>all</b> declared types (a superset of the
+     * reachable set), which lets them be built before the walk, and are <b>pure</b>: no demotion,
+     * no reachability prune, and no typeId-uniqueness exclusion
+     * ({@link #validateNodeTypeIdUniqueness} is the sole owner of uniqueness, as a validation
+     * reduction over the registry). The superset is sound because every type a field read actually
+     * queries is already reachable; the extra entries are never read.
      *
-     * <p>The participant index ({@code crossTableFieldsByParticipant}) is now also
-     * directive-scanned over <b>all</b> declared types, not the reachable set: this lets the indices be
-     * built before the walk (the reachable set is no longer precomputed as a separate pass). It is the
-     * same superset argument as the membership indices: a participant a reachable field actually queries
-     * is itself reachable, so the index and the consulted domain agree. The extra entries (for
-     * {@code @table}+{@code @discriminate} interfaces no reachable field queries) are never read.
+     * <p>Multiple {@code @node} types on one table is legitimate (distinct node ids over the same
+     * rows): {@code byTable} is one-to-many, the implicit "encoder for this table" lookup is
+     * resolved at the call site (which rejects the zero and ambiguous cases), and {@code byName}
+     * keys on the distinct type names so each node resolves independently through the explicit
+     * {@code @nodeId(typeName:)} path.
      */
     private void buildClassificationIndices() {
-        // The membership indices (node / table / error) are directive-scanned over
-        // ALL declared types (skipping the __-prefixed introspection types), a superset of the
-        // reachable set. No reachability prune: every type a field read actually queries is already
-        // reachable (@node / @key self-seed; a @table data field or @error member is queried only by
-        // a field that reaches it), so the index and the reachability-pruned registry agree on the
-        // consulted domain. The indices are PURE: no demotion, no reachability prune, and no
-        // typeId-uniqueness exclusion (validateNodeTypeIdUniqueness is the sole owner of uniqueness,
-        // as a validation reduction over the registry). Iteration follows SDL declaration order, which
-        // is the order classifyType registers the reachable subset in, so byName/byTable ordering is
-        // unchanged for the consulted (reachable) entries.
+        // Iteration follows SDL declaration order, the order classifyType registers the reachable
+        // subset in, so byName / byTable ordering matches for the consulted (reachable) entries.
         var byTable = new LinkedHashMap<String, List<NodeType>>();
         var byName = new LinkedHashMap<String, NodeType>();
         var byTableType = new LinkedHashMap<String, TableBackedType>();
@@ -540,24 +484,18 @@ class TypeBuilder {
         for (var named : ctx.schema.getAllTypesAsList()) {
             if (named.getName().startsWith("__")) continue;
             if (!(named instanceof GraphQLObjectType || named instanceof GraphQLInterfaceType)) continue;
-            // Drive membership off the same classifyType verdict the registry stores (classifyType is
-            // registry-free / pure), so the index agrees with the registry by construction: a directive
-            // conflict (e.g. @table + @error) or a catalog-miss yields an UnclassifiedType, not a
-            // TableBackedType / ErrorType, exactly as classifyType would register it. Calling
-            // classifyType directly (rather than the producers in isolation) keeps the index from
-            // resolving a verdict the conflict / federation / support-type gates in classifyType would
+            // Drive membership off the same classifyType verdict the registry stores (classifyType
+            // is registry-free / pure), so the index agrees with the registry by construction:
+            // calling classifyType directly, rather than the producers in isolation, keeps the
+            // index from resolving a verdict the conflict / federation / support-type gates would
             // have suppressed.
             var verdict = classifyType(named);
             switch (verdict) {
                 case TableBackedType tbt -> {
                     byTableType.put(tbt.name(), tbt);
                     if (tbt instanceof NodeType nt) {
-                        // Multiple @node types on ONE table is legitimate (distinct node ids over the
-                        // same rows), so byTable is one-to-many. byName keys on the distinct type names
-                        // so each node on a shared table resolves independently through the explicit
-                        // @nodeId(typeName:) path. byTable is keyed on the lowercased table name so
-                        // NodeIndex.forTable lookups are case-folded (the TableRef.sameTable contract);
-                        // see NodeIndex.forTable.
+                        // byTable is keyed on the lowercased table name so NodeIndex.forTable
+                        // lookups are case-folded (the TableRef.sameTable contract).
                         byTable.computeIfAbsent(nt.table().tableName().toLowerCase(java.util.Locale.ROOT), k -> new ArrayList<>()).add(nt);
                         byName.put(nt.name(), nt);
                     }
@@ -582,7 +520,7 @@ class TypeBuilder {
                 if (!(p instanceof ParticipantRef.TableBound tb)) continue;
                 var fields = byParticipant.computeIfAbsent(tb.typeName(), k -> new LinkedHashMap<>());
                 for (var ctf : tb.crossTableFields()) {
-                    // First-wins across interfaces, mirroring the old findFirst over the scan.
+                    // First-wins across interfaces.
                     fields.putIfAbsent(ctf.fieldName(), ctf);
                 }
             }
@@ -593,35 +531,27 @@ class TypeBuilder {
     }
 
     /**
- * Emit the directive-ignored warning for a reachable SDL type carrying
-     * {@code @record}. This is folded into the classification pass: the method is called once
-     * per type as the classifier visits it (no separate post-classification re-walk), so the
-     * warning is a classification output. The reflection bindings it reads are a fixed point by
-     * then ({@code bindings.resolveAll} runs before the classify loop). Three message variants
-     * selected by context:
+     * Emits the directive-ignored warning for a reachable SDL type carrying {@code @record}.
+     * Called once per type from the dedicated pass in {@link #prepareForWalk}; the reflection
+     * bindings are a fixed point by then. Three message variants selected by context:
      *
      * <ul>
-     *   <li><b>Shadowed by @table</b> (input types only): the type also carries {@code @table},
-     *     so the binding comes from {@code @table}-driven reflection. Variant precedence: this
-     *     variant takes precedence over Matches/Disagrees.</li>
-     *   <li><b>Matches</b>: the directive's {@code className} equals the reflected class, or
-     *     the directive carries no {@code className}. The no-{@code className} case is
-     *     equivalent to having no {@code @record} at all (the directive's
-     *     {@code className} is the only field that ever participated in binding); it folds
-     *     into Matches by definition.</li>
-     *   <li><b>Disagrees</b>: the directive's {@code className} differs from the reflected
-     *     class. Reflection's class is used; the directive's claim is informational only.</li>
+     *   <li><b>Shadowed by @table</b>: the type also carries {@code @table}, so the binding comes
+     *     from {@code @table}-driven reflection. Takes precedence over Matches / Disagrees.</li>
+     *   <li><b>Matches</b>: the directive's {@code className} equals the reflected class, or the
+     *     directive carries no {@code className} (equivalent to no {@code @record} at all, since
+     *     {@code className} is the only field that ever participated in binding).</li>
+     *   <li><b>Disagrees</b>: the directive's {@code className} differs from the reflected class.
+     *     Reflection's class is used; the directive's claim is informational only.</li>
      * </ul>
      *
-     * <p>Types whose reflection walk produced a multi-producer rejection do not emit the
-     * directive-ignored warning at all; the error supersedes the warning at the same site.
+     * <p>A type whose reflection walk produced a multi-producer rejection emits no warning; the
+     * error supersedes the warning at the same site.
      */
     private void emitDirectiveIgnoredWarning(graphql.schema.GraphQLNamedType named) {
         if (!(named instanceof graphql.schema.GraphQLDirectiveContainer container)) return;
         if (!container.hasAppliedDirective(DIR_RECORD)) return;
         String name = named.getName();
-        // Suppress the warning when the reflection walk produced a multi-producer rejection
-        // for this type; the typed error supersedes the warning at the same site.
         if (bindings.rejection(name).isPresent()) return;
 
         boolean isInput = named instanceof GraphQLInputObjectType;
@@ -643,11 +573,9 @@ class TypeBuilder {
         var recordFix = LintFix.deleteBareAppliedDirective(
             container.getAppliedDirective(DIR_RECORD), "Remove the redundant @record");
 
-        // Shadowed by @table. A @table + @record combination is no longer a hard
-        // conflict (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT
-        // carriers reach this site; @table wins and @record is ignored. Warn so the author
-        // removes the dead directive, with the @table-specific message (the backing comes from
-        // @table metadata, not a producing field's reflected return).
+        // Shadowed by @table. A @table + @record combination is not a hard conflict
+        // (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT carriers reach
+        // this site; @table wins and @record is ignored.
         if (container.hasAppliedDirective(DIR_TABLE)) {
             String message = (isInput ? "Input type '" : "Type '") + name + "' carries both @table and "
                 + formatRecordRef(declaredClassName)
@@ -663,8 +591,6 @@ class TypeBuilder {
             : bindings.resolveResult(name).orElse(null);
         if (reflectedClass == null) return;
 
-        // Matches: declaredClassName is null (no className declared) OR equals the reflected
-        // class name. The no-className case is equivalent to having no @record.
         boolean matches = declaredClassName == null
             || declaredClassName.equals(reflectedClass.getName());
         if (matches) {
@@ -706,10 +632,10 @@ class TypeBuilder {
     }
 
     /**
- * For every multi-producer disagreement the resolver reported, demote the SDL type to
+     * For every multi-producer disagreement the resolver reported, demote the SDL type to
      * {@link UnclassifiedType} carrying the typed
-     * {@link Rejection.AuthorError.RecordBindingMultiProducer} payload. The validator
-     * picks the demotion up through its standard {@link UnclassifiedType} pass.
+     * {@link Rejection.AuthorError.RecordBindingMultiProducer} payload. The validator picks the
+     * demotion up through its standard {@link UnclassifiedType} pass.
      */
     private void surfaceMultiProducerRejections() {
         for (var named : ctx.schema.getAllTypesAsList()) {
@@ -722,10 +648,9 @@ class TypeBuilder {
             else if (named instanceof GraphQLInputObjectType inp) loc = locationOf(inp);
             else continue;
             var unclassified = new UnclassifiedType(name, loc, rejection);
-            // A multi-producer type may be absent (a directiveless object with no
-            // single agreed producer was never registered) or present (a prior verdict to demote). The
-            // single reconciling register entry stores when absent and demotes when present, so the
-            // former contains-guarded classify/demote fork collapses to one call.
+            // The reconciling register entry stores when the type is absent (a directiveless
+            // object with no single agreed producer was never registered) and demotes when a prior
+            // verdict is present.
             ctx.typeRegistry.register(name, unclassified);
         }
     }
@@ -736,28 +661,18 @@ class TypeBuilder {
     }
 
     /**
-     * The participant's classification verdict, recomputed as a pure function of SDL
-     * plus the already-resolved reflection bindings, with <em>no</em> sideways read of the type
-     * registry. This is the order-independence step that lets the field-first walk (slice 3b) call
-     * {@link #buildParticipantList} before any eager type pass has populated {@code ctx.types}.
-     *
-     * <p>It reproduces exactly the value {@code ctx.types.get(typeName)} returned at enrich time:
-     * <ul>
-     *   <li>a multi-producer rejection ({@link RecordBindingResolver#rejection}) is what
-     *       {@code surfaceMultiProducerRejections} demoted/classified to {@link UnclassifiedType}
-     *       before the enrich pass ran, so it is reproduced first and as an {@code UnclassifiedType}
-     *       (routing to {@code buildParticipantList}'s error arm, as the old registry read did);
-     *   <li>otherwise the type pass's own {@link #classifyType} result, which is {@code null} for a
-     *       directiveless object. A directiveless single-record carrier classifies as a
-     *       {@code JooqTableRecordType} only at the producing edge in the field pass
-     *       ({@link #carrierVerdict}), after this enrich-time recompute, so it is {@code null} here
-     *       under both the old registry read and this recompute, exactly as before.
-     * </ul>
+     * The participant's classification verdict, computed as a pure function of SDL plus the
+     * already-resolved reflection bindings, with <em>no</em> read of the type registry, so
+     * {@link #buildParticipantList} can run before the registry is populated. A multi-producer
+     * rejection ({@link RecordBindingResolver#rejection}) is reproduced first, as an
+     * {@link UnclassifiedType} (routing to {@link #buildParticipantList}'s error arm); otherwise
+     * the verdict is {@link #classifyType}'s, which is {@code null} for a directiveless object (a
+     * directiveless single-record carrier classifies only at the producing edge via
+     * {@link #carrierVerdict}, so it is {@code null} here too).
      *
      * <p>{@code classifyType} is a value-builder over SDL + bindings + catalog with no registry or
-     * accumulator writes, so re-invoking it here is safe; its only side effect anywhere is a rare
-     * {@code LOGGER.warn} for a {@code @node} keyColumns order mismatch, which does not affect
-     * generated output.
+     * accumulator writes, so re-invoking it here is safe; its only side effect is a rare
+     * {@code LOGGER.warn} for a {@code @node} keyColumns order mismatch.
      */
     private GraphitronType participantClassification(String typeName) {
         var named = (GraphQLNamedType) ctx.schema.getType(typeName);
@@ -776,12 +691,9 @@ class TypeBuilder {
      *
      * <p><b>Interim:</b> {@code ParticipantRef.Unbound} is overloaded here for two distinct
      * things, {@code @error} members (e.g. an {@code @error}-only union) and directiveless
-     * implementors of a plain interface, and the participant role is derived from the member type's
-     * standalone classification rather than from the field that returns the polymorphic type. The
-     * proper model (classify in the context of the returning field, give {@code @error} its own
-     * participant kind, handle service-populated polymorphic types) is tracked as a separate roadmap
-     * item; this method keeps the earlier behaviour, only adapted to directiveless objects now being
-     * left unclassified ({@code gt == null}) instead of a {@code PlainObjectType}.
+     * implementors of a plain interface, and the participant role is derived from the member
+     * type's standalone classification rather than from the field that returns the polymorphic
+     * type.
      *
      * @param allowNonTableMembers whether non-table members are admitted as {@link ParticipantRef.Unbound}
      *     (true for a plain {@link InterfaceType}; false for unions and {@code TableInterfaceType},
@@ -818,12 +730,11 @@ class TypeBuilder {
                     : List.of();
                 result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue, crossTableFields));
             } else if (gt == null && allowNonTableMembers) {
-                // Directiveless implementor of a plain interface: the type pass left it unclassified
-                // (gt == null), and this context admits non-table members. (See the class note.)
+                // Directiveless implementor of a plain interface (see the Interim note).
                 result.add(new ParticipantRef.Unbound(typeName));
             } else if (gt != null && !(gt instanceof UnclassifiedType)) {
-                // A classified non-table member, e.g. an @error type in an @error-only union.
-                // (@error deserves its own participant kind; see the method note.)
+                // A classified non-table member, e.g. an @error type in an @error-only union
+                // (see the Interim note).
                 result.add(new ParticipantRef.Unbound(typeName));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
@@ -865,19 +776,17 @@ class TypeBuilder {
             // primary signal; fall back to the GraphQL field name when the directive is absent.
             String columnSqlName = argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(fieldName);
 
-            // A @reference field whose resolved column already exists on the
-            // interface/base table is a contradiction: the column is read directly off the
-            // discriminated base table, so a cross-table @reference is meaningless. The pathological
-            // case is the discriminator column itself, re-declared on a detail table by a composite
-            // FK — classifying it as cross-table emits a fetcher that reads a join-only alias never
-            // populated in a non-inline-fragment query, so the read silently finds nothing. Resolve
-            // the predicate once here (the catalog is in scope) and surface a build-time rejection
-            // through the diagnostic channel the validator drains; the validator has no catalog, so
-            // it reads the surfaced rejection rather than recomputing (avoiding the two-consumer
-            // drift the design principles warn against). Skipping the field also narrows the
-            // classifier so no ParticipantColumnReferenceField is emitted (belt-and-suspenders). A
-            // participant-only field like `navn` (column lives only on the detail table) is not
-            // matched and stays a valid cross-table field.
+            // A @reference field whose resolved column already exists on the interface/base table
+            // is a contradiction: the column is read directly off the base table, so a cross-table
+            // @reference is meaningless. The pathological case is the discriminator column itself,
+            // re-declared on a detail table by a composite FK: classifying it as cross-table emits
+            // a fetcher that reads a join-only alias never populated in a non-inline-fragment
+            // query, so the read silently finds nothing. Resolve the predicate here (the catalog
+            // is in scope) and surface a rejection through the diagnostic channel; the validator
+            // has no catalog, so it reads the surfaced rejection rather than recomputing. Skipping
+            // the field also keeps any ParticipantColumnReferenceField from being emitted. A
+            // participant-only field (column lives only on the detail table) is not matched and
+            // stays a valid cross-table field.
             if (interfaceTable.column(columnSqlName).isPresent()) {
                 var baseColumns = interfaceTable.allColumns().stream().map(ColumnRef::sqlName).collect(Collectors.toSet());
                 var detailOnlyColumns = fk.targetTable().allColumns().stream().map(ColumnRef::sqlName)
@@ -1066,32 +975,26 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
-            // Reflection-derived binding from the resolver is the only signal. A
-            // reachable type with a resolved producer binding classifies into the appropriate
-            // backed variant; the @record directive is deprecated and ignored (it never drives
-            // classification).
+            // The reflection-derived binding from the resolver is the only signal; the deprecated
+            // @record directive never drives classification.
             if (bindings.resolveResult(name).isPresent()) {
                 return buildResultType(name, location);
             }
-            // A directiveless object with no producer is left UNCLASSIFIED here: the type builder
+            // A directiveless object with no producer is left unclassified here: the type builder
             // cannot yet know what it is. It becomes a NestingType at the embedding edge if a
-            // NestingField references it (so NestingType implies a corresponding
-            // NestingField by construction); a producer-backed carrier-shaped payload is bound to a
-            // JooqTableRecordType at its visit in the field pass (carrierVerdict);
-            // anything else is an orphan, caught at the field edge where the field referencing it
-            // classifies as UnclassifiedField.
+            // NestingField references it (so NestingType implies a corresponding NestingField by
+            // construction); a producer-backed carrier-shaped payload is bound at its visit in the
+            // field pass (carrierVerdict); anything else is an orphan, caught at the field edge
+            // where the referencing field classifies as UnclassifiedField.
             return null;
         }
         if (namedType instanceof GraphQLInterfaceType iface) {
             if (iface.hasAppliedDirective(DIR_TABLE) && iface.hasAppliedDirective(DIR_DISCRIMINATE)) {
                 return buildTableInterfaceType(iface);
             }
-            // Classify a plain interface with its participants at the moment the walk
-            // reaches it, folding the former second-pass enrichment onto the node visit.
-            // {@link #participantClassification} is registry-free (slice 3a), so the participant list
-            // is a pure function of SDL + the reflection fixed point and reads nothing from the
-            // still-being-populated type registry; the verdict is therefore identical to the one the
-            // separate enrich pass produced.
+            // Classify a plain interface with its participants at its own visit.
+            // participantClassification is registry-free, so the participant list is a pure
+            // function of SDL + the reflection fixed point.
             var participants = buildParticipantList(implementorNames(name), true, null);
             if (participants.error() != null) {
                 return new UnclassifiedType(name, location, Rejection.structural(participants.error()));
@@ -1099,8 +1002,8 @@ class TypeBuilder {
             return new InterfaceType(name, location, participants.list());
         }
         if (namedType instanceof GraphQLUnionType union) {
-            // See the interface arm above: union members are classified into
-            // participants at the union's own visit, not in a trailing enrich pass.
+            // Union members are classified into participants at the union's own visit; see the
+            // interface arm above.
             var memberNames = union.getTypes().stream().map(t -> t.getName()).toList();
             var participants = buildParticipantList(memberNames, false, null);
             if (participants.error() != null) {
@@ -1189,25 +1092,20 @@ class TypeBuilder {
 
     /**
      * Classifies a {@link graphql.schema.GraphQLScalarType} via the {@link ScalarTypeResolver}.
-     * Resolution order (Phase 3):
+     * Resolution order:
      *
      * <ul>
-     *   <li><b>Spec built-ins</b> ({@code Int}, {@code Float}, {@code String}, {@code Boolean},
-     *       {@code ID}) resolve through the resolver's closed built-in table. {@code @scalarType}
-     *       on a spec built-in is a {@link Rejection.InvalidSchema.DirectiveConflict}.</li>
-     *   <li><b>Federation-namespace scalars</b> ({@code federation__FieldSet},
-     *       {@code federation__Scope}, etc.) resolve via
+     *   <li><b>Spec built-ins</b> resolve through the resolver's closed built-in table;
+     *       {@code @scalarType} on one is a
+     *       {@link Rejection.InvalidSchema.DirectiveConflict}.</li>
+     *   <li><b>Federation-namespace scalars</b> resolve via
      *       {@link ScalarTypeResolver#resolveFederationNamespaceScalar(String)} to a
-     *       {@link ScalarResolution.Synthesised} carrying the SDL name and the
-     *       {@code _Any.type.getCoercing()} source. The schema generator inlines a
-     *       {@code GraphQLScalarType.newScalar()...build()} registration; directive-argument
-     *       slots reference the scalar via {@code GraphQLTypeReference.typeRef(name)}.</li>
-     *   <li><b>{@code @scalarType(scalar: "FQN.FIELD")}</b> on the SDL scalar: the single explicit
-     *       binding path for any non-spec, non-federation scalar. The resolver looks up the named
-     *       class + field through {@link BuildContext#codegenLoader}, validates the field, and
-     *       reflects on the {@code Coercing<I, O>} type parameters.</li>
-     *   <li><b>Unresolved</b>: a directive-less non-spec/non-federation scalar is a hard validation
-     *       error with a message naming the scalar and pointing at {@code @scalarType(scalar:)} as
+     *       {@link ScalarResolution.Synthesised}; see the inline note.</li>
+     *   <li><b>{@code @scalarType(scalar: "FQN.FIELD")}</b>: the single explicit binding path for
+     *       any other scalar. The resolver looks up the named class + field through
+     *       {@link BuildContext#codegenLoader}, validates the field, and reflects on the
+     *       {@code Coercing<I, O>} type parameters.</li>
+     *   <li><b>Unresolved</b>: a hard validation error pointing at {@code @scalarType(scalar:)} as
      *       the fix.</li>
      * </ul>
      */
@@ -1269,9 +1167,6 @@ class TypeBuilder {
             return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
 
-        // Unresolved: scalar is neither a spec built-in, a federation-namespace name, nor an
-        // @scalarType-declared scalar. Surface as a hard validation error with the single fix
-        // in the message.
         return new UnclassifiedType(name, location, Rejection.structural(
             "scalar '" + name + "' is not resolvable to a Java type. Add "
                 + "@" + DIR_SCALAR_TYPE + "(" + ARG_SCALAR + ": \"fully.qualified.Class.FIELD\") "
@@ -1281,8 +1176,8 @@ class TypeBuilder {
     /**
      * Projects a {@link ScalarResolution.Rejected} arm to a {@link Rejection} the validator
      * surfaces alongside the rest of the type-classification rejections. Each arm carries the
-     * structured payload the per-arm LSP fix-it consumes (Phase 4); the prose here is the
-     * build-log surface only.
+     * structured payload the per-arm LSP fix-it consumes; the prose here is the build-log surface
+     * only.
      */
     private static Rejection asRejection(ScalarResolution resolution, String scalarName) {
         return switch (resolution) {
@@ -1327,8 +1222,8 @@ class TypeBuilder {
         // authors see the issue even when they try to override values with explicit @node.
         // Beyond that, NodeType promotion is opt-in via `implements Node @node`: a `@table` type
         // without `@node` stays a TableType regardless of whether the backing jOOQ class carries
-        // node-id metadata. Auto-promoting on metadata alone silently collided typeIds across
-        // types whose backing tables shared `__NODE_TYPE_ID`, with no SDL-side opt-out.
+        // node-id metadata (auto-promotion on metadata alone would silently collide typeIds across
+        // types whose backing tables share `__NODE_TYPE_ID`, with no SDL-side opt-out).
         Optional<String> metadataDiagnostic = ctx.catalog.nodeIdMetadataDiagnostic(tableRef.tableName());
         if (metadataDiagnostic.isPresent()) {
             return new UnclassifiedType(name, location, Rejection.structural(
@@ -1466,11 +1361,10 @@ class TypeBuilder {
     }
 
     /**
-     * Constructs the appropriate {@link ResultType} sub-type from the resolved backing class.
- * {@link RecordBindingResolver} reflection is the only source. This is reached only
-     * for a type with a resolved producer binding (gated in {@link #classifyType}); the
-     * {@code @record} directive is deprecated and ignored, surfaced by the directive-ignored
-     * warning at {@link #emitDirectiveIgnoredWarning} rather than consulted here.
+     * Constructs the appropriate {@link ResultType} sub-type from the resolved backing class;
+     * {@link RecordBindingResolver} reflection is the only source. Reached only for a type with a
+     * resolved producer binding (gated in {@link #classifyType}); the deprecated {@code @record}
+     * directive is surfaced by {@link #emitDirectiveIgnoredWarning} rather than consulted here.
      */
     private GraphitronType buildResultType(String name, SourceLocation location) {
         Class<?> cls = bindings.resolveResult(name).orElseThrow(() -> new IllegalStateException(
@@ -1532,9 +1426,8 @@ class TypeBuilder {
         JooqCatalog.ColumnEntry discriminatorEntry = discriminatorRaw == null ? null
             : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw).orElse(null);
         String discriminatorColumn = discriminatorEntry != null ? discriminatorEntry.sqlName() : discriminatorRaw;
-        // Enrich at classify time (see the interface arm of classifyType). The
-        // single-table interface passes its own table so each participant's cross-table fields are
-        // detected against it.
+        // The single-table interface passes its own table so each participant's cross-table
+        // fields are detected against it.
         var participants = buildParticipantList(implementorNames(name), false, tableOpt.get());
         if (participants.error() != null) {
             return new UnclassifiedType(name, location, Rejection.structural(participants.error()));
@@ -1621,10 +1514,8 @@ class TypeBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
-        // @table wins on the (@table + @record) combination on input types. The legacy
-        // emission that surfaced the redundancy as a standalone warning here is removed; the
-        // signal is now carried by the "Shadowed by @table" variant of the directive-ignored
-        // warning, emitted per-type during the classification pass in emitDirectiveIgnoredWarning.
+        // @table wins on the (@table + @record) combination on input types; the redundancy is
+        // surfaced by the "Shadowed by @table" variant in emitDirectiveIgnoredWarning.
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);
@@ -1635,19 +1526,16 @@ class TypeBuilder {
         }
         // Directive-driven only: an explicit @table produces the deprecated TableInputType bridge
         // above; every other input is plain. The input is not itself a modeled relation, so it has
-        // no table to decide here. Its fields resolve against the consuming field's return table at
-        // the call site (FieldBuilder.classifyArgument's plain-input path via InputFieldResolver, or
-        // the arg-level @lookupKey path re-deriving through resolveInputFields). A prior global
-        // aggregate over the input's consumers auto-promoted a single-table filter input to
-        // TableInputType; it bailed to non-table on more than one distinct table, silently demoting
-        // an input reused across tables. Consumer-derived resolution supersedes it: each call site
-        // resolves against its own target, so reuse across tables is per-consumer, not a demotion.
+        // no table to decide here; its fields resolve against the consuming field's return table
+        // at each call site (FieldBuilder.classifyArgument's plain-input path via
+        // InputFieldResolver, or the arg-level @lookupKey path via resolveInputFields), so an
+        // input reused across tables resolves per-consumer.
         return buildNonTableInputType(inputType, name, location);
     }
 
     /**
- * The narrow field-resolution fact a table-relative input-field resolution produces:
-     * either the resolved {@link InputField} list or the accumulated-failure prose. Deliberately
+     * The narrow field-resolution fact a table-relative input-field resolution produces: either
+     * the resolved {@link InputField} list or the accumulated-failure prose. Deliberately
      * <em>not</em> a synthesized {@link TableInputType} (which additionally carries
      * {@code name}/{@code location}/{@code inputType}/{@code InputRecordShape}, all type-registry
      * concerns): the field-derived DELETE write-target path in {@code FieldBuilder} needs only the
@@ -1662,8 +1550,8 @@ class TypeBuilder {
     /**
      * Resolves a list of raw input fields against a {@link TableRef} into fully-classified
      * {@link InputField}s (or the accumulated-failure prose). The single home of the input-field
-     * classification loop, shared by {@link #buildTableInputType} (the {@code @table}-on-input path)
- * and the field-derived DELETE write-target path in {@code FieldBuilder}, so both routes
+     * classification loop, shared by {@link #buildTableInputType} (the {@code @table}-on-input
+     * path) and the field-derived DELETE write-target path in {@code FieldBuilder}, so both routes
      * classify identical schema defects identically.
      */
     InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields, TableRef tableRef) {
@@ -1721,11 +1609,11 @@ class TypeBuilder {
     }
 
     /**
-     * Constructs the appropriate {@link InputType} sub-type from the resolved backing class.
- * Symmetric with {@link #buildResultType}, {@link RecordBindingResolver} reflection
-     * is the only source. An input type with no reflected producer binding is a backing-less
-     * {@link GraphitronType.PojoInputType}; the {@code @record} directive is deprecated and
-     * ignored (it never supplies a fallback className).
+     * Constructs the appropriate {@link InputType} sub-type from the resolved backing class,
+     * symmetric with {@link #buildResultType}: {@link RecordBindingResolver} reflection is the
+     * only source. An input type with no reflected producer binding is a backing-less
+     * {@link GraphitronType.PojoInputType}; the deprecated {@code @record} directive never
+     * supplies a fallback className.
      */
     private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
         var shape = buildInputRecordShape(name, inputType);
@@ -1757,7 +1645,7 @@ class TypeBuilder {
      * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}; SDL enum fields lift to
      * {@code String} (graphql-java delivers enum values as their name string); SDL list wraps
      * compose {@code List<X>}; nested input refs resolve to the emitted record's
-     * {@link ClassName} (forward-declared — javapoet does not require the class to exist at
+     * {@link ClassName} (forward-declared; javapoet does not require the class to exist at
      * codegen). An SDL field whose scalar fails to classify surfaces as a {@code null} return,
      * causing the caller to route the input type through {@link UnclassifiedType}.
      *
@@ -1858,11 +1746,10 @@ class TypeBuilder {
     /**
      * Lifts one entry from the {@code handlers} array on an {@code @error} directive into the
      * sealed {@link ErrorType.Handler} variant matching the entry's discriminator. Returns
-     * {@code null} and appends a reason to {@code rejectReasons} if the entry is unparseable
-     * or violates one of the parse-time intra-handler reject rules (rules 1–5 and the
-     * no-handler case in the {@code error-handling-parity} spec). Channel-level reject rules
-     * (7–9) live with the carrier classifier; rule 6 (no fields beyond path/message) is
-     * applied by the caller.
+     * {@code null} and appends a reason to {@code rejectReasons} if the entry is unparseable or
+     * violates one of the parse-time intra-handler reject rules (the numbered rules below).
+     * Channel-level reject rules live with the carrier classifier; the no-fields-beyond-
+     * path/message rule is applied by the caller.
      */
     private ErrorType.Handler parseErrorHandler(Map<String, Object> item, List<String> rejectReasons) {
         Object handlerRaw = item.get(ARG_HANDLER);
@@ -1925,10 +1812,9 @@ class TypeBuilder {
                 if (code != null) {
                     return new ErrorType.VendorCodeHandler(code, matchesOpt, descriptionOpt);
                 }
-                // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). The legacy
-                // "DataAccessException-only" nominal match becomes a documented behaviour shift.
-                // SQLException always resolves on the classifier classpath, so no Class.forName
-                // check is needed here.
+                // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). SQLException
+                // always resolves on the classifier classpath, so no Class.forName check is
+                // needed here.
                 return new ErrorType.ExceptionHandler("java.sql.SQLException", matchesOpt, descriptionOpt);
             }
             case VALIDATION -> {
@@ -1958,18 +1844,14 @@ class TypeBuilder {
 
     /**
      * Resolves an {@code ExceptionHandler.exceptionClassName} on the classifier classpath and
-     * verifies it's a {@link Throwable} subtype. Returns a non-null reject reason when the
-     * class cannot be loaded or doesn't extend {@code Throwable}; returns {@code null} on a
-     * clean resolution. Mirrors the {@code Class.forName} check already used by
-     * {@code @record(record: {className: ...})} in {@link #buildResultType}.
-     *
-     * <p>The runtime matcher walks the cause chain testing each link with
-     * {@code Class.isInstance}; a non-{@code Throwable} class would never match anything and
+     * verifies it's a {@link Throwable} subtype. Returns a non-null reject reason when the class
+     * cannot be loaded or doesn't extend {@code Throwable}; returns {@code null} on a clean
+     * resolution. The runtime matcher walks the cause chain testing each link with
+     * {@code Class.isInstance}, so a non-{@code Throwable} class would never match anything and
      * is almost certainly a typo.
      */
-    // Instance method (not static) so it can read `ctx.codegenLoader()`; the single caller is
-    // `parseErrorHandler` on the same class, which already holds `ctx`. The explicit-parameter
-    // sibling lives at `CheckedExceptionMatcher.unmatched`, which crosses a class boundary.
+    // Instance method (not static) so it can read ctx.codegenLoader(); the explicit-parameter
+    // sibling lives at CheckedExceptionMatcher.unmatched, which crosses a class boundary.
     private String validateExceptionClass(String className, String handlerKind) {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
@@ -1989,18 +1871,17 @@ class TypeBuilder {
     // ===== Conflict detection =====
 
     /**
-     * Returns a reason string when mutually exclusive type-classification directives appear
+     * Returns a conflict rejection when mutually exclusive type-classification directives appear
      * together on one OBJECT, or {@code null} when the combination is allowed.
      *
-     * <p>{@code @table} and {@code @error} are mutually exclusive. {@code @table} resolves columns
-     * from jOOQ metadata; {@code @error} declares an SDL-side error shape (the runtime source is
-     * the matched throwable itself; there is no developer-supplied data class for an {@code @error}
-     * type).
+     * <p>{@code @table} and {@code @error} are mutually exclusive: {@code @table} resolves columns
+     * from jOOQ metadata; {@code @error} declares an SDL-side error shape whose runtime source is
+     * the matched throwable itself.
      *
- * <p>{@code @record} is deprecated and ignored, so its mere presence is not a conflict.
-     * A {@code @table} + {@code @record} or {@code @error} + {@code @record} combination is allowed
-     * to classify ({@code @table}/{@code @error} wins) and surfaces the directive-ignored warning
-     * in {@link #emitDirectiveIgnoredWarning} rather than a hard rejection.
+     * <p>{@code @record} is deprecated and ignored, so its mere presence is not a conflict: a
+     * {@code @table} + {@code @record} or {@code @error} + {@code @record} combination classifies
+     * ({@code @table}/{@code @error} wins) and surfaces the directive-ignored warning in
+     * {@link #emitDirectiveIgnoredWarning} rather than a hard rejection.
      */
     private static Rejection.InvalidSchema.DirectiveConflict detectTypeDirectiveConflict(GraphQLObjectType objType) {
         boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);

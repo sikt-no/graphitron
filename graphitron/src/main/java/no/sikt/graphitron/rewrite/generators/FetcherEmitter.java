@@ -33,18 +33,11 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_A
  * {@code <Type>Fetchers} method that owns the read (when the read is reified here).
  *
  * <p>Consumed by {@link no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter}
- * (which emits the registration value) and {@link TypeFetcherGenerator} (which collects the
- * reified method onto the owning {@code <Type>Fetchers} class). The fetcher logic is kept in
- * one place so the classifier → registration pipeline stays the only path from schema model
- * to a {@code DataFetcher}.
- *
- * <p>{@link #bind} returns a {@link FetcherBinding}: {@link FetcherBinding.Reified} carries both
- * the method declaration and the registration value (a bare {@code Fetchers::field} reference for
- * env-dependent reads, or a {@code new LightFetcher<>(Fetchers::field)} wrapper for source-only
- * reads so the env-skipping fast path is preserved), so the value and the method cannot drift.
- * {@link FetcherBinding.Inline} carries only the registration value — used for method-backed
- * variants whose method {@link TypeFetcherGenerator}'s switch owns, and for the few shapes not
- * yet reified.
+ * (emits the registration value) and {@link TypeFetcherGenerator} (collects the reified method
+ * onto the owning {@code <Type>Fetchers} class). The fetcher logic lives in one place so the
+ * classifier-to-registration pipeline stays the only path from schema model to a
+ * {@code DataFetcher}. {@link #bind} returns a {@link FetcherBinding} pairing the registration
+ * value with the reified method (when any), so the two cannot drift.
  */
 public final class FetcherEmitter {
 
@@ -60,7 +53,7 @@ public final class FetcherEmitter {
      * The binding between a classified field and its {@code DataFetcher}. {@link Reified} owns a
      * named {@code <Type>Fetchers} method here; {@link Inline} leaves the method to
      * {@link TypeFetcherGenerator}'s switch (method-backed variants) or carries an inline value
-     * (the few shapes not yet reified).
+     * (shapes not reified here).
      */
     public sealed interface FetcherBinding {
         /** The expression the {@code codeRegistry.dataFetcher(coords, ...)} call receives. */
@@ -110,9 +103,9 @@ public final class FetcherEmitter {
      * {@code Success}. The signal is the parent's own {@code WrapperArm} errors field, knowable at
      * generation time without re-walking the classifier.
      *
-     * <p>Single home for the predicate so the two consumers that fork on it — the registration-site
-     * routing in {@code FetcherRegistrationsEmitter} and the DataLoader-method emission in
- * {@code TypeFetcherGenerator} — cannot drift.
+     * <p>Single home for the predicate so its two consumers, the registration-site routing in
+     * {@code FetcherRegistrationsEmitter} and the DataLoader-method emission in
+     * {@code TypeFetcherGenerator}, cannot drift.
      */
     public static boolean hasWrapperArmErrors(List<? extends GraphitronField> fields) {
         return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField ef
@@ -121,11 +114,10 @@ public final class FetcherEmitter {
 
     /**
      * Whether a nested object type owns any fetcher, i.e. any classified field. Every classified
-     * field {@link #bind}s to a fetcher (a reified read or a method-backed reference), so a nested
-     * type owning one gets its own {@code <Type>Fetchers} class and the registration references
- * into it. Single home for the gate so {@code FetcherRegistrationsEmitter.nestedBody}
-     * (which references the class) and {@code TypeFetcherGenerator.collectNestedFetcherClasses}
-     * (which emits it) cannot drift.
+     * field {@link #bind}s to a fetcher, so a nested type owning one gets its own
+     * {@code <Type>Fetchers} class and the registration references into it. Single home for the
+     * gate so {@code FetcherRegistrationsEmitter.nestedBody} (which references the class) and
+     * {@code TypeFetcherGenerator.collectNestedFetcherClasses} (which emits it) cannot drift.
      */
     public static boolean nestedTypeOwnsFetchers(List<? extends GraphitronField> nestedFields) {
         return nestedFields.stream().anyMatch(f -> !(f instanceof GraphitronField.UnclassifiedField));
@@ -135,22 +127,20 @@ public final class FetcherEmitter {
      * Whether {@code field} would resolve to graphql-java's {@code PropertyDataFetcher} (a property
      * read off the source object) rather than a graphitron-emitted fetcher. Under an
      * {@code Outcome} wrapper this is a silent runtime hole: the read would land on the
- * {@code Outcome} object itself rather than arm-switching. The emit-time source is
+     * {@code Outcome} object itself rather than arm-switching. The emit-time source is
      * an {@code ErrorsField} on the {@code PayloadAccessor} transport, which emits
      * {@code PropertyDataFetcher.fetching} in {@link #bindRaw}. The validator consults
      * this predicate so it keys on the emitter's own dispositions rather than re-deriving them.
      * The live case is pinned by {@code FetcherPipelineTest} wiring assertions.
      *
-     * <p>This is the {@code PropertyDataFetcher} (registration-escape) family only, the invariant
-     * {@code validateOutcomeChildArmSwitch} enforces. It does <em>not</em> claim to
-     * catch every non-arm-switching emit path: a {@code ComputedField} or other
-     * {@code LightFetcher}-backed leaf would emit a (non-arm-switched) {@code LightDataFetcher}
-     * rather than a {@code PropertyDataFetcher}, but such shapes are inventory-absent under a
-     * class-backed {@code @service} payload (they need a SELECT-projected parent), which is
+     * <p>Covers only the {@code PropertyDataFetcher} (registration-escape) family, the invariant
+     * {@code validateOutcomeChildArmSwitch} enforces, not every non-arm-switching emit path:
+     * a {@code ComputedField} or other {@code LightFetcher}-backed leaf needs a SELECT-projected
+     * parent and so is inventory-absent under a class-backed {@code @service} payload, which is
      * the scope boundary the arm-switch validator draws.
      *
-     * <p>An {@code UnclassifiedField} (which gets no registration at all, so graphql-java installs
-     * its default {@code PropertyDataFetcher}) is the third source, but it is absence-of-registration
+     * <p>An {@code UnclassifiedField} (no registration at all, so graphql-java installs its
+     * default {@code PropertyDataFetcher}) is the third source, but it is absence-of-registration
      * rather than an emitted value, so the validator checks it separately.
      */
     public static boolean resolvesViaPropertyDataFetcher(
@@ -171,32 +161,22 @@ public final class FetcherEmitter {
      * @param resultType    the parent type's class backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
      * @param sourceIsOutcome {@code true} when this field is an immediate child of an outcome type
- * that has flipped to the {@code Outcome} wrapper transport: its
-     *                        fetcher receives an {@code Outcome} as {@code env.getSource()}, so a
-     *                        data-channel field's read must unwrap {@code Success} first and resolve
-     *                        null on the {@code ErrorList} arm. The errors field itself is exempt
-     *                        (it reads {@code ErrorList.errors()} directly via its {@code WrapperArm}
-     *                        transport). The caller knows this at generation time from the parent
-     *                        type's classified fields.
+     *                        flipped to the {@code Outcome} wrapper transport: its fetcher receives
+     *                        an {@code Outcome} as {@code env.getSource()}, so a data-channel
+     *                        field's read must unwrap {@code Success} first and resolve null on the
+     *                        {@code ErrorList} arm. The errors field itself is exempt (it reads
+     *                        {@code ErrorList.errors()} directly via its {@code WrapperArm}
+     *                        transport).
      */
     public static FetcherBinding bind(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, boolean sourceIsOutcome) {
-        // An immediate child of a flipped Outcome payload receives a non-null Outcome as
-        // env.getSource(). Three structural roles, only one of which is an inline arm-switch here:
-        //   - the errors field reads ErrorList.errors via its WrapperArm transport (the raw emitter
-        //     already handles it, so it falls through);
-        //   - inline-resolved data fields (record-backed accessor reads, constructor/nesting
-        //     passthrough) arm-switch here: narrow Success and point the field's own read at
-        //     success.value(), resolving null on the ErrorList arm;
-        //   - DataLoader/method-backed data fields (record-sourced BatchedTableField / BatchedLookupTableField,
-        //     the dissolved @tableMethod DTO-parent shape, and the @service nested-method variants) resolve
-        //     to a generated fetcher method that arm-switches internally (TypeFetcherGenerator +
-        //     GeneratorUtils source-bound key extraction), so the registration emits the plain
-        //     method reference unchanged via bindRaw.
-        // The fork is on a structural fact the model already carries (inline value vs. method
-        // reference), not a parallel allow-list of "blessed" variants.
+        // Immediate children of a flipped Outcome payload: inline-resolved data fields arm-switch
+        // here; the errors field (WrapperArm transport, handled by bindRaw) and DataLoader/
+        // method-backed data fields (their generated fetcher method arm-switches internally) fall
+        // through. The fork is on a structural fact the model already carries (inline value vs.
+        // method reference), not a parallel allow-list of variants.
         if (sourceIsOutcome && isInlineArmSwitchedDataField(field)) {
             return armSwitchedInlineDataFetcher(field, fetchersClass, resultType, outputPackage);
         }
@@ -209,9 +189,8 @@ public final class FetcherEmitter {
      * result (source is the producer's reflected backing object). graphql-java wires one datafetcher per
      * coordinate, so the two single-arm reads compose into one reified method that dispatches at run time
      * on {@code source instanceof org.jooq.Record}: the {@code Record} arm is the by-typed-column read
-     * against the representative parent table (the {@code accessorField}'s nesting-arm {@code ColumnBackedField},
-     * {@code columnArm}), the else arm is the record-backed accessor read (the result arm). Statement-form,
-     * Java-17-valid (pattern {@code instanceof} is Java 16+).
+     * against the representative parent table ({@code recordArm}), the else arm is the record-backed
+     * accessor read. Pattern {@code instanceof} is valid in the Java 17 output target.
      *
      * <p>Two invariants a dual-shape coordinate carries that a single-arm one does not: it always
      * registers its fetcher even where the accessor arm alone would be equivalent to graphql-java's default
@@ -257,8 +236,8 @@ public final class FetcherEmitter {
      * subject (the narrowed {@code rec} local rather than {@code ((Record) source)}).
      */
     private static CodeBlock dualShapeRecordArmRead(ChildField recordArm, TableRef parentTable) {
-        // A pivot-edge representative reads its slot by derived name off the pivot record —
-        // the by-name form works identically against a compatible nesting parent's row, so a
+        // A pivot-edge representative reads its slot by derived name off the pivot record; the
+        // by-name form works identically against a compatible nesting parent's row, so a
         // pivot-first representative serves both generic-Record sources.
         if (recordArm instanceof ChildField.PivotSlotField slot) {
             return CodeBlock.of("rec.get($T.field($T.name($S)))", DSL, DSL, slot.readName());
@@ -289,8 +268,8 @@ public final class FetcherEmitter {
      * <p>The errors field is excluded (it reads {@code ErrorList.errors} via its
      * {@code WrapperArm} transport). DataLoader/method-backed fields are excluded because their
      * generated fetcher method owns the arm-switch; the registration site emits a plain method
-     * reference for them. This is not the retired allow-list: it names the shapes whose read is
-     * resolved <em>here</em> as a narrowable source read, a structural property of the emit path.
+     * reference for them. This names the shapes whose read is resolved <em>here</em> as a
+     * narrowable source read, a structural property of the emit path, not an allow-list.
      */
     private static boolean isInlineArmSwitchedDataField(GraphitronField field) {
         return field instanceof ChildField.NestingField
@@ -299,19 +278,16 @@ public final class FetcherEmitter {
     }
 
     /**
- * An inline-resolved data-channel child of a flipped outcome type reads off
+     * An inline-resolved data-channel child of a flipped outcome type reads off
      * {@code Success.value()} of the non-null {@code Outcome} source and resolves null on the
      * {@code ErrorList} arm. The success-arm read is the field's <em>own</em> read, source-bound to
-     * {@code success.value()} instead of {@code env.getSource()} — for record-backed accessors via
+     * {@code success.value()} instead of {@code env.getSource()}; record-backed accessors go via
      * the shared {@link #recordBackedAccessorRead} (the same helper {@link #propertyOrRecordBinding}
      * uses), so there is no parallel accessor taxonomy.
      */
     private static FetcherBinding armSwitchedInlineDataFetcher(
             GraphitronField field, ClassName fetchersClass,
             GraphitronType.ResultType resultType, String outputPackage) {
-        // Statement form: narrow Success up front, then return the field's own read off
-        // success.value(); resolve null on the ErrorList arm. Source-only unless the field reads a
-        // class-backed accessor that injects the environment.
         boolean envDependent = isEnvDependentAccessorRead(field, resultType);
         CodeBlock subject = envDependent ? ENV_SOURCE : CodeBlock.of("source");
         CodeBlock body = CodeBlock.builder()
@@ -352,9 +328,7 @@ public final class FetcherEmitter {
      * The success-arm value expression: the field's own read, source-bound to {@code success.value()}.
      * The read shape follows the field's backing, mirroring {@link #bindRaw} /
      * {@link #propertyOrRecordBinding} so there is no parallel taxonomy: a jOOQ-record column
-     * {@code get} (the {@code ((Record) source).get(column)} read a jOOQ-record column field emits,
-     * inlined onto {@code success.value()}), a
-     * class-backed accessor call, or the nesting source passthrough.
+     * {@code get}, a class-backed accessor call, or the nesting source passthrough.
      *
      * <p>The final {@code throw} is a defensive backstop for any field/backing combination that
      * has neither a column nor a resolved accessor and so cannot be projected inline.
@@ -363,8 +337,7 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.NestingField) {
             return CodeBlock.of("success.value()");
         }
-        // jOOQ-record-backed column read: the ((Record) source).get(column) read, inlined
-        // onto success.value(). Same two arms as propertyOrRecordBinding's jOOQ branches.
+        // jOOQ-record-backed column read: same two arms as propertyOrRecordBinding's jOOQ branches.
         ColumnRef column = field instanceof ChildField.PropertyField pf ? pf.column()
             : field instanceof ChildField.RecordField rf ? rf.column()
             : null;
@@ -442,43 +415,30 @@ public final class FetcherEmitter {
             return sourceOnly(field.name(), fetchersClass, outputPackage, CodeBlock.of("return source;\n"));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
-            // Data field on a payload-returning DELETE carrier with an ID-typed data field.
-            // The mutation fetcher produced a Record (single) or Result<Record> (bulk) from the
-            // PK-only RETURNING; this fetcher reads PK column(s) off each row and runs them
-            // through the resolved NodeId encoder. No follow-up SELECT — the row is gone.
+            // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and
+            // encode. No follow-up SELECT; the row is gone.
             return envDependent(field.name(), fetchersClass,
                 buildSingleRecordIdFromReturningFetcherValue(idCarrier));
         }
         if (field instanceof ChildField.SingleRecordIdField serviceIdCarrier) {
-            // ID-element data field on an @service source-record carrier. The producer
-            // returned the typed XRecord (ONE) or List<XRecord> (MANY) verbatim, optionally
-            // wrapped in Outcome (errors-bearing payload); this fetcher reads the node-key
-            // column(s) off each in-memory record and runs them through the resolved NodeId
-            // encoder. No follow-up SELECT — the records may be deleted rows.
+            // ID-element data field on an @service source-record carrier: read the node-key
+            // column(s) off each in-memory record and encode. No follow-up SELECT; the records
+            // may be deleted rows.
             return envDependent(field.name(), fetchersClass,
                 buildSingleRecordIdFetcherValue(serviceIdCarrier, outputPackage));
         }
         if (field instanceof ChildField.RecordCompositeField composite) {
-            // The @service record-composite carrier's data field. The producer returned the
-            // consumer composite(s) (one Composite for single arrival, List<Composite> for list
-            // arrival) verbatim, optionally wrapped in Outcome (errors-bearing payload); this fetcher
-            // narrows Outcome.Success then returns the composite(s) straight off env.getSource() — no
-            // re-fetch, no DataLoader. graphql-java maps each composite onto the element result type,
-            // whose @field-mapped @table children resolve through their own record-backed fetchers.
+            // @service record-composite carrier: narrow Outcome.Success then return the producer's
+            // composite(s) straight off env.getSource(); no re-fetch, no DataLoader.
             return envDependent(field.name(), fetchersClass,
                 buildRecordCompositeFetcherValue(composite, outputPackage));
         }
         if (field instanceof ChildField.ErrorsField ef) {
-            // Switch on the field's resolved Transport: PayloadAccessor reads the errors list
-            // off the parent payload via graphql-java's PropertyDataFetcher (record accessor /
-            // JavaBean getter / field); LocalContext reads it off the env's local-context slot,
-            // populated by the catch arm of an ErrorChannel.LocalContext-bound carrier. The
-            // discriminator rides on the field-level model (resolved at classify time with the
-            // parent carrier's channel in scope) so this emission never re-walks the parent.
+            // The Transport discriminator rides on the field-level model (resolved at classify
+            // time with the parent carrier's channel in scope), so this emission never re-walks
+            // the parent. LocalContext is populated by the catch arm of an
+            // ErrorChannel.LocalContext-bound carrier.
             return switch (ef.transport()) {
-                // PayloadAccessor still resolves via graphql-java's PropertyDataFetcher; the
-                // resolved-accessor reification (with the arm-switch validator reconciliation) lands as
-                // a dedicated follow-up commit.
                 case ChildField.Transport.PayloadAccessor ignored -> {
                     var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
                     yield new FetcherBinding.Inline(
@@ -487,11 +447,9 @@ public final class FetcherEmitter {
                 case ChildField.Transport.LocalContext ignored ->
                     envDependent(field.name(), fetchersClass,
                         CodeBlock.of("return env.getLocalContext();\n"));
-                // The errors list rides on the Outcome.ErrorList arm of the non-null
-                // Outcome source. On the Success arm there are no errors, so resolve null (not
-                // List.of()) to honour the errors field's SDL nullability on the wire (admissio
-                // parity). The NonNullableErrorsField classify-time rule guarantees the field is
-                // nullable, so null is always a legal success-arm value.
+                // On the Success arm resolve null (not List.of()) to honour the errors field's
+                // SDL nullability on the wire. The NonNullableErrorsField classify-time rule
+                // guarantees the field is nullable, so null is always a legal success-arm value.
                 case ChildField.Transport.WrapperArm ignored ->
                     sourceOnly(field.name(), fetchersClass, outputPackage,
                         CodeBlock.of("return source instanceof $T<?> errorList ? errorList.errors() : null;\n",
@@ -508,11 +466,10 @@ public final class FetcherEmitter {
         }
         if (field instanceof ChildField.ColumnBackedField cf && parentTable != null) {
             if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
-                // NodeId-encoded projection: read each keyColumn off the source record and pass
-                // them positionally through encode<TypeName>(c1, ..., cN) — one arity-uniform
-                // loop, a 1-element loop for the single-column case. The HelperRef.Encode
-                // reference carries both the encoder class and the helper method name so we
-                // never reconstruct either from a raw typeId string at emission time.
+                // NodeId-encoded projection: pass each key column positionally through
+                // encode<TypeName>(c1, ..., cN), one arity-uniform loop. The HelperRef.Encode
+                // reference carries both the encoder class and the helper method name, so neither
+                // is reconstructed from a raw typeId string at emission time.
                 var encoderClass = enc.encodeMethod().encoderClass();
                 var body = CodeBlock.builder()
                     .add("$T r = ($T) source;\n", RECORD, RECORD)
@@ -551,10 +508,9 @@ public final class FetcherEmitter {
         }
         if (field instanceof ChildField.PivotField) {
             // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
-            // (PivotProjectionEmitter); unwrap it exactly as the single-cardinality TableField
-            // read does. The row always exists (a correlated aggregate over an empty set still
-            // yields one row of nulls), so the empty-guard is defensive symmetry, not a semantic
-            // fork.
+            // (PivotProjectionEmitter); unwrap it as the single-cardinality TableField read does.
+            // The row always exists (a correlated aggregate over an empty set still yields one
+            // row of nulls), so the empty-guard is defensive symmetry, not a semantic fork.
             var resultClass = ClassName.get("org.jooq", "Result");
             var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
             CodeBlock body = CodeBlock.builder()
@@ -566,9 +522,9 @@ public final class FetcherEmitter {
         }
         if (field instanceof ChildField.PivotSlotField slot) {
             // A projection slot reads its aggregate off the pivot record by its derived read
-            // name — the same by-name generic-Record read nesting children emit, which is what
-            // lets one registered fetcher per slot coordinate serve both the pivot subselect's
-            // Record and a compatible nesting parent's record.
+            // name, the same by-name generic-Record read nesting children emit; that lets one
+            // registered fetcher per slot coordinate serve both the pivot subselect's Record and
+            // a compatible nesting parent's record.
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.field($T.name($S)));\n",
                     RECORD, DSL, DSL, slot.readName()));
@@ -579,13 +535,11 @@ public final class FetcherEmitter {
             return columnByAlias(field.name(), fetchersClass);
         }
         if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {
-            // Cross-table participant field on a TableInterfaceType participant. The interface
-            // fetcher (TypeFetcherGenerator) emits a conditional LEFT JOIN per field gated by the
-            // participant's discriminator value, and projects the column aliased as
-            // pcrf.aliasName(). Read it back from the parent record by alias. The Class<?>
-            // parameter on DSL.field carries the column's concrete type so jOOQ's converter
-            // returns the right Java value (e.g. enum) when the column is a typed projection
-            // rather than a raw SQL identifier.
+            // Cross-table participant field on a TableInterfaceType participant: the interface
+            // fetcher (TypeFetcherGenerator) projects the column aliased as pcrf.aliasName();
+            // read it back from the parent record by alias. The Class<?> parameter on DSL.field
+            // carries the column's concrete type so jOOQ's converter returns the right Java value
+            // (e.g. enum) when the column is a typed projection rather than a raw SQL identifier.
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.field($T.name($S), $T.class));\n",
                     RECORD, DSL, DSL, pcrf.aliasName(),
@@ -594,17 +548,17 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.ColumnBackedReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.Direct) {
             // Direct-compaction scalar @reference: TypeClassGenerator.$fields() projects an aliased
-            // correlated subquery; the read picks the value out of the parent Record by alias.
-            // A NodeIdEncodeKeys instance (rooted-at-parent NodeId reference, any arity) never
-            // reaches emission: the validator rejects it as deferred, and one leaking through
-            // falls to the ResultKeyAliasedField guard below and fails loudly.
+            // correlated subquery; read the value out of the parent Record by alias. A
+            // NodeIdEncodeKeys instance never reaches emission: the validator rejects it as
+            // deferred, and one leaking through falls to the ResultKeyAliasedField guard below
+            // and fails loudly.
             return columnByAlias(field.name(), fetchersClass);
         }
-        // A ResultKeyAliasedField reaching here would be an alias-projecting variant with no
-        // env-dependent read binding: it would fall through to a plain method-backed reference and
-        // never read its __rk_ alias, silently mis-resolving aliased duplicates. Fail loudly — the
-        // read half of the membership guard that keeps the write and read alias sets from drifting
-        // (the write half is TypeClassGenerator.emitSelectionSwitch's default arm).
+        // A ResultKeyAliasedField reaching here would fall through to a plain method-backed
+        // reference and never read its __rk_ alias, silently mis-resolving aliased duplicates.
+        // Fail loudly: this is the read half of the membership guard that keeps the write and
+        // read alias sets from drifting (the write half is TypeClassGenerator.emitSelectionSwitch's
+        // default arm).
         if (field instanceof ResultKeyAliasedField) {
             throw new IllegalStateException(
                 "ResultKeyAliasedField '" + field.name() + "' (" + field.getClass().getSimpleName()
@@ -621,7 +575,7 @@ public final class FetcherEmitter {
      * ({@code GeneratorUtils.RESERVED_RK_ALIAS_PREFIX}), so two aliases of the same reference
      * ({@code a: ref b: ref}) each read their own SELECT term via {@code env.getField().getResultKey()}
      * rather than colliding on a field-named alias. This is the read half of
-     * {@link ResultKeyAliasedField} — it must move in lockstep with the write arms.
+     * {@link ResultKeyAliasedField}; it must move in lockstep with the write arms.
      */
     private static FetcherBinding columnByAlias(String name, ClassName fetchersClass) {
         return envDependent(name, fetchersClass,
@@ -630,17 +584,13 @@ public final class FetcherEmitter {
     }
 
     /**
- * Data-fetcher value for a {@link ChildField.SingleRecordIdField}, the ID-element
-     * data field on an {@code @service} source-record carrier. Mirrors
-     * the {@link #emitRecordSourceLocal} source handling — the same
-     * {@code SourceEnvelope} fork (narrow {@code Outcome.Success} under {@code OUTCOME_SUCCESS},
-     * read {@code env.getSource()} verbatim under {@code DIRECT}) via the shared
-     * {@link #emitRecordSourceLocal}, binding the same typed {@code XRecord} / {@code List<XRecord>}
-     * {@code source} local — but instead of a follow-up SELECT it maps
-     * each record through the pre-resolved NodeId encoder, reading the node-key column(s) via
-     * the typed {@code Tables.X.COL} constants. No database access: the producer's records may
-     * be deleted rows (the opptak {@code fjernSakTagg}/{@code fjernSakTagger} shape), and the
-     * encode is total over the in-memory record.
+     * Data-fetcher value for a {@link ChildField.SingleRecordIdField}, the ID-element data field
+     * on an {@code @service} source-record carrier. Uses {@link #emitRecordSourceLocal}'s
+     * {@code SourceEnvelope} fork to bind the typed {@code XRecord} / {@code List<XRecord>}
+     * {@code source} local, then maps each record through the pre-resolved NodeId encoder,
+     * reading the node-key column(s) via the typed {@code Tables.X.COL} constants. No database
+     * access: the producer's records may be deleted rows, and the encode is total over the
+     * in-memory record.
      */
     private static CodeBlock buildSingleRecordIdFetcherValue(
             ChildField.SingleRecordIdField carrier, String outputPackage) {
@@ -690,16 +640,14 @@ public final class FetcherEmitter {
     }
 
     /**
- * Data-fetcher value for a {@link ChildField.RecordCompositeField}: the source-passthrough
-     * projection of an {@code @service} carrier's composite record(s). Mirrors
-     * {@link #emitRecordSourceLocal}'s envelope fork (narrow {@code Outcome.Success} under
-     * {@code OUTCOME_SUCCESS}, read {@code env.getSource()} verbatim under {@code DIRECT}), binding the
-     * typed {@code source} local to {@code List<Composite>} (list arrival) or {@code Composite} (single
-     * arrival), then returns it unchanged. No database access and no DataLoader: the producer's
-     * composite record(s) are already in memory; graphql-java maps each element onto the data field's
-     * element result type, whose {@code @field}-mapped {@code @table} children resolve through their
-     * own record-backed fetchers. The {@code ErrorList} arm of {@link #emitRecordSourceLocal} falls
-     * through to {@code return null}, rendering {@code data: null} on the error arm.
+     * Data-fetcher value for a {@link ChildField.RecordCompositeField}: the source-passthrough
+     * projection of an {@code @service} carrier's composite record(s). Uses
+     * {@link #emitRecordSourceLocal}'s envelope fork to bind the typed {@code source} local to
+     * {@code List<Composite>} or {@code Composite}, then returns it unchanged. No database access
+     * and no DataLoader: graphql-java maps each element onto the data field's element result
+     * type, whose {@code @field}-mapped {@code @table} children resolve through their own
+     * record-backed fetchers. The {@code ErrorList} arm falls through to {@code return null},
+     * rendering {@code data: null} on the error arm.
      */
     private static CodeBlock buildRecordCompositeFetcherValue(
             ChildField.RecordCompositeField field, String outputPackage) {
@@ -717,19 +665,15 @@ public final class FetcherEmitter {
     }
 
     /**
- * Data-fetcher value for a {@link ChildField.SingleRecordIdFieldFromReturning}.
-     * Reads the resolved PK column(s) off {@code env.getSource()} and runs them through the
-     * pre-resolved {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} encoder helper.
-     * Single-shaped wrapper emits {@code (env) -> encode<Type>(record.get(pkCol1), ...)};
-     * list-shaped wrapper iterates {@code Result<Record>} and maps each row through the
-     * encoder.
-     *
-     * <p>The encoder reference is pre-resolved at carrier-classify time
-     * ({@link no.sikt.graphitron.rewrite.FieldBuilder}'s {@code resolveDeleteIdEncoder}); the
-     * emitter reads {@code encodeMethod.encoderClass()}, {@code methodName()}, and the
-     * positional {@code paramSignature()} from the {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys}
-     * slot directly. No follow-up SELECT runs — the deleted row's PK is the entire post-image
-     * and lives in the upstream Record.
+     * Data-fetcher value for a {@link ChildField.SingleRecordIdFieldFromReturning}: reads the
+     * resolved PK column(s) off {@code env.getSource()} and runs them through the pre-resolved
+     * {@link no.sikt.graphitron.rewrite.model.HelperRef.Encode} helper, mapping each row of the
+     * {@code Result<Record>} when the wrapper is list-shaped. The encoder reference is
+     * pre-resolved at carrier-classify time ({@link no.sikt.graphitron.rewrite.FieldBuilder}'s
+     * {@code resolveDeleteIdEncoder}) and read from the
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys} slot directly.
+     * No follow-up SELECT runs: the deleted row's PK is the entire post-image and lives in the
+     * upstream Record.
      */
     private static CodeBlock buildSingleRecordIdFromReturningFetcherValue(
             ChildField.SingleRecordIdFieldFromReturning carrier) {
@@ -780,7 +724,7 @@ public final class FetcherEmitter {
     /**
      * Binding for a {@code PropertyField} / {@code RecordField}. jOOQ-record parents read a column
      * off the source (source-only, wrapped in {@code LightFetcher}); class-backed parents read the
-     * pre-resolved accessor — source-only for field reads and zero-arg accessors, env-dependent when
+     * pre-resolved accessor: source-only for field reads and zero-arg accessors, env-dependent when
      * the accessor injects the environment. The accessor read itself goes through the shared
      * {@link #recordBackedAccessorRead} (the same helper the arm-switch path uses), so the
      * accessor switch lives in one place.
@@ -833,10 +777,10 @@ public final class FetcherEmitter {
      * Emits the method-call value expression for a resolved accessor, read off {@code sourceExpr}.
      * Three injection forms: zero-arg ({@code .name()}), full-environment ({@code .name(env)} when
      * the method takes a single {@code DataFetchingEnvironment}), or per-argument
-     * ({@code .name(($T) env.getArgument($S), …)} — uses the candidate method's reflected parameter
-     * names as the SDL argument keys, which holds when the consumer compiles with
-     * {@code -parameters}). The {@code env} reference for the full-environment and per-argument forms
-     * is supplied by the enclosing lambda, independent of where the source object is read from.
+     * ({@code .name(($T) env.getArgument($S), …)}, using the method's reflected parameter names
+     * as the SDL argument keys, which holds when the consumer compiles with {@code -parameters}).
+     * The {@code env} reference for the full-environment and per-argument forms is supplied by
+     * the enclosing lambda, independent of where the source object is read from.
      */
     private static CodeBlock methodCallValue(
             ClassName backingClass, java.lang.reflect.Method method, CodeBlock sourceExpr) {

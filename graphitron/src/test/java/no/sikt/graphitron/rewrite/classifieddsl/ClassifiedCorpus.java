@@ -63,11 +63,10 @@ public final class ClassifiedCorpus {
 
         /*
          * Enum-typed scalar: a field whose GraphQL return type is an enum still resolves to a real DB
-         * column on the @table parent, so it classifies exactly like any other inline scalar (source
-         * Child(Table), operation Fetch, target Single(Column), ColumnField). The enum-ness lives in the
-         * GraphQL-to-Java conversion, not the classification. Corpus-only: it lands on the already-taught
-         * Child / Fetch / Column coordinate; this pins the "enum returns are columns" edge that the retired
-         * ENUM_RETURN_TYPE enum row asserted.
+         * column on the @table parent, so it classifies exactly like any other inline scalar. The
+         * enum-ness lives in the GraphQL-to-Java conversion, not the classification. Corpus-only: it
+         * lands on the already-taught Child / Fetch / Column coordinate, pinning the "enum returns are
+         * columns" edge.
          */
         new Example("enum-column", """
             enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
@@ -230,7 +229,7 @@ public final class ClassifiedCorpus {
 
         /*
          * Result-type backing (a type-verdict cluster). A non-@table result type acquires its backing
- * class by reflection on the @service producer's return type, never from a directive, and
+         * class by reflection on the @service producer's return type, never from a directive, and
          * the GraphitronType leaf reflects what that class is: a plain Java class is PojoResultType.Backed
          * (`as: Backed`), a Java record is JavaRecordType, a jOOQ TableRecord is JooqTableRecordType.
          * Corpus-only: the @classifiedType axis is asserted directly; there is no field-side dimensional
@@ -275,9 +274,8 @@ public final class ClassifiedCorpus {
          * path/message (`severity`) does not break the verdict: the per-handler accessor check fires
          * on the carrier, not the @error type, so the type stays ErrorType. Corpus-only: the
          * @classifiedType axis is asserted directly; `path` doubles as the fixture's required field
-         * coordinate (Child / Fetch / Field). (The @error + @record silently-ignored verdict, the
-         * D1 precedence rule, is covered by RecordDirectiveIgnoredWarningTest, the one place applied
-         * @record remains.)
+         * coordinate (Child / Fetch / Field). (The @error-over-@record precedence verdict, @record
+         * silently ignored, is covered by RecordDirectiveIgnoredWarningTest.)
          */
         new Example("error-type", """
             enum Severity { LOW HIGH }
@@ -309,7 +307,7 @@ public final class ClassifiedCorpus {
          * @pivot: a discriminator-keyed aggregate projection. The field pivots the narrow
          * film_translation (film_id, lang_code, title_txt) attribute table into one record per
          * parent, one filtered aggregate per selected slot; the return type is a plain output
-         * type registered as an ordinary NestingType (nothing on the type says "pivot" — every
+         * type registered as an ordinary NestingType (nothing on the type says "pivot"; every
          * pivot fact lives on the consuming field's PivotSpec). The verdict is a new operation
          * (Pivot, the row-to-column verb) with target Single(Record) (the graphitron-built jOOQ
          * record the slot fetchers read by name). Delivery is not a tuple axis: the @splitQuery
@@ -340,15 +338,12 @@ public final class ClassifiedCorpus {
             type Query { film: Film }
             """),
 
-        // The former "constructor" example (a record-backed child type under a @table parent) left the
-        // classified corpus when ConstructorField was dissolved. That shape is now the mixed-source reach:
-        // FilmDetails projects as a NestingField off @table Film and is also read through its producer.
-        // Its per-edge field classifications are ordinary (a NestingField on Film.details, a PropertyField
-        // on FilmDetails.rating) and already covered by the "nesting" example and the record-backed cases;
-        // the cross-edge reachable-source-shape union it adds is a type-level fact outside the @classified
-        // per-field dimensions, pinned by MixedSourceNestedTypeReadsTest (positive) and
-        // MixedSourceNestingReachValidationTest (negatives). The Record target shape stays exercised by
-        // ErrorsField, ServiceRecordField, and the DML record carriers.
+        // The mixed-source reach (a type projected as a NestingField off a @table parent and also read
+        // through a record producer) has no corpus entry: its per-edge field classifications are ordinary
+        // and covered by the "nesting" example and the record-backed cases, and the cross-edge
+        // reachable-source-shape union it adds is a type-level fact outside the @classified per-field
+        // dimensions, pinned by MixedSourceNestedTypeReadsTest (positive) and
+        // MixedSourceNestingReachValidationTest (negatives).
 
         /*
          * Polymorphic children and roots are catalog-bound over their participant tables: the target shape
@@ -361,7 +356,7 @@ public final class ClassifiedCorpus {
          * though the generator currently emits a per-parent query (a known defect; the corpus asserts the
          * correct verdict). Of the four shapes below (plain interface, union, table-interface, Relay Node)
          * the interface and the union render doc examples, the interface over its shared interface-level
-         * field and the union through inline fragments on its participants (renderer hardening item 3);
+         * field and the union through inline fragments on its participants;
          * table-interface and Relay Node stay corpus-only.
          */
         new Example("interface", """
@@ -392,12 +387,12 @@ public final class ClassifiedCorpus {
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
 
         /*
-         * Route (a): a root @service field returning a multitable interface
+         * A root @service field returning a multitable interface
          * (QueryServicePolymorphicField, single cardinality). The service hands back a PK-populated
          * TableRecord per branch; the verdict is source Query, operation ServiceCall (the developer method
          * replaces the catalog read), and target Single, target shape Interface. Distinct-table
-         * participants (film, actor) so record-class dispatch is well-defined. Interface only — a @service
-         * returning a union is permanently unsupported (rejected at classify). Corpus-only: it adds the
+         * participants (film, actor) so record-class dispatch is well-defined. Interface only: a @service
+         * returning a union is unsupported (rejected at classify). Corpus-only: it adds the
          * QueryServicePolymorphicField leaf and lands on the Query / ServiceCall coordinate.
          */
         new Example("query-service-polymorphic", """
@@ -412,9 +407,10 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * Route (a): mutation analogue (MutationServicePolymorphicField), list cardinality. The
+         * Mutation analogue of the multitable interface @service root
+         * (MutationServicePolymorphicField), list cardinality. The
          * service returns a Result<FilmRecord>; the fetcher dispatches each returned record on its runtime
-         * class. Verdict: source Mutation, operation ServiceCall, target List. Corpus-only: adds the
+         * class. Corpus-only: adds the
          * MutationServicePolymorphicField leaf and lands on the Mutation / ServiceCall coordinate.
          */
         new Example("mutation-service-polymorphic", """
@@ -430,13 +426,13 @@ public final class ClassifiedCorpus {
             """),
 
         /*
- * A root @service field returning a single-table discriminated interface
-         * (QueryServiceTableInterfaceField, single cardinality). Unlike route (a) above, all
+         * A root @service field returning a single-table discriminated interface
+         * (QueryServiceTableInterfaceField, single cardinality). Unlike the multitable form above, all
          * implementers share one @table @discriminate table, so the service hands back records of that
          * one table; the emitted fetcher collects their PKs and re-fetches by PK, routing each row off
-         * the live discriminator via the TableInterfaceType TypeResolver. Verdict: source Query,
-         * operation ServiceCall, target Single, target shape Interface (same wiring shape as route (a),
-         * keeping requiresReFetch() false). Corpus-only: adds the QueryServiceTableInterfaceField leaf.
+         * the live discriminator via the TableInterfaceType TypeResolver. Same wiring shape as the
+         * multitable form (requiresReFetch() stays false). Corpus-only: adds the
+         * QueryServiceTableInterfaceField leaf.
          */
         new Example("query-service-table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
@@ -449,9 +445,8 @@ public final class ClassifiedCorpus {
             """),
 
         /*
- * Mutation analogue (MutationServiceTableInterfaceField), list cardinality. Same
-         * single-table by-PK re-fetch as the query arm. Verdict: source Mutation, operation
-         * ServiceCall, target List, target shape Interface. Corpus-only: adds the
+         * Mutation analogue (MutationServiceTableInterfaceField), list cardinality. Same
+         * single-table by-PK re-fetch as the query arm. Corpus-only: adds the
          * MutationServiceTableInterfaceField leaf.
          */
         new Example("mutation-service-table-interface", """
@@ -508,13 +503,10 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * Slice-3 coverage sweep. The fixtures from here to the end of the list are the swept long
-         * tail: corpus entries authored to bring every output-field and (non-failure) type leaf under
-         * the corpus as single source of truth (VariantCoverageTest), tested but not necessarily
-         * prose-featured. Each ports the SDL shape of the GraphitronSchemaBuilderTest case that used to
-         * own the leaf, annotated with its dimensional verdict (the field model's
-         * {@code source()}/{@code operation()}/{@code target()} triple) or its
-         * @classifiedType verdict.
+         * Coverage sweep. The fixtures from here to the end of the list are the long tail that brings
+         * every output-field and (non-failure) type leaf under the corpus as single source of truth
+         * (VariantCoverageTest), tested but not necessarily prose-featured. Each is annotated with its
+         * dimensional verdict or its @classifiedType verdict.
          */
 
         /*
@@ -579,7 +571,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
- * @routine: a table-valued read function backing a root list field. jOOQ models the
+         * @routine: a table-valued read function backing a root list field. jOOQ models the
          * function as a catalog Table<R>, so the verdict is the same shape as a plain catalog read
          * (QueryRoutineTableField, Query / Fetch / List(Table)); only the FROM source differs (the
          * generated Routines convenience method, with IN params bound from GraphQL arguments). The
@@ -598,7 +590,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
- * @routine on Mutation: the routine call IS the write and commits before the
+         * @routine on Mutation: the routine call IS the write and commits before the
          * follow-up query. The chain form (@routine plus at least one @reference hop) lands
          * MutationRoutineWriteField (Mutation / RoutineWrite / List(Table)): step 1 runs the
          * VOLATILE set-returning function inside the per-field transaction and captures hop 0's
@@ -758,17 +750,16 @@ public final class ClassifiedCorpus {
             """),
 
         /*
- * The @service record-composite carrier: a mutation whose @service producer returns a
+         * The @service record-composite carrier: a mutation whose @service producer returns a
          * list of a consumer-authored composite (one FilmRecord plus a List<ActorRecord>). The payload
          * is a two-level carrier: a data field that is a list of an intermediate result type
-         * (CreateFilmsResult, reflection-bound to the composite class → JavaRecordType), whose
+         * (CreateFilmsResult, reflection-bound to the composite class, hence JavaRecordType), whose
          * @field-mapped @table children read off the composite through the record-backed accessor path
          * (BatchedTableField). The data field itself is a source-passthrough projection of the producer's
-         * in-memory composite list — no re-fetch, no DataLoader (RecordCompositeField, source Child(Record),
+         * in-memory composite list, no re-fetch and no DataLoader (RecordCompositeField, source Child(Record),
          * operation Fetch, target List(Record)). The errors field rides the Outcome WrapperArm. The payload
-         * no longer dangles: it classifies as JavaRecordType naming the per-element composite class, with
-         * the arrival cardinality on the data field (the element-naming convention the bulk @table carrier
-         * also uses).
+         * classifies as JavaRecordType naming the per-element composite class, with the arrival
+         * cardinality on the data field (the element-naming convention the bulk @table carrier also uses).
          */
         new Example("service-record-composite-carrier", """
             type Film @table(name: "film") @classifiedType(as: TableType) {
@@ -809,7 +800,7 @@ public final class ClassifiedCorpus {
          * the bulk INSERT carrier (MutationBulkDmlRecordField, whose DmlKind reads INSERT). Distinct
          * payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
          * (MutationDeletePayloadField / MutationBulkDeletePayloadField) are not corpus-covered: their
-         * only admissible data field is now an ID-element (a @table-element projection off a deleted
+         * only admissible data field is an ID-element (a @table-element projection off a deleted
          * row is impossible), which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus
          * catalog; they are covered by MutationDmlNodeIdClassificationTest under the nodeidfixture and
          * carried in VariantCoverageTest's NO_CASE_REQUIRED.
@@ -839,8 +830,8 @@ public final class ClassifiedCorpus {
          * DML side: an INSERT that writes then projects the inserted row. The write produces the row,
          * then a follow-up SELECT projects the @table return; the verdict is source Mutation, operation
          * Insert, target Table, and the follow-up re-fetch is derived (not a tuple axis). Doc example:
-         * the projection query pulls in the FilmInput argument's input-object closure (renderer hardening
-         * item 3), so the rendered excerpt shows the input the mutation consumes rather than dangling.
+         * the projection query pulls in the FilmInput argument's input-object closure, so the rendered
+         * excerpt shows the input the mutation consumes rather than dangling.
          */
         new Example("dml", """
             type Film @table(name: "film") { title: String }
@@ -857,7 +848,7 @@ public final class ClassifiedCorpus {
         /*
          * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE is a DML write
          * that projects the affected @table row back, so it is Mutation / Update / Table
- * (MutationUpdateTableField; the projection re-fetch is derived). DELETE cannot project a
+         * (MutationUpdateTableField; the projection re-fetch is derived). DELETE cannot project a
          * @table (the row is gone; RETURNING carries only the PK), so it tops out at an encoded-ID return:
          * Mutation / Delete / Column (MutationDeleteTableField with an Encoded* return-expression arm).
          * DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`) or an
@@ -869,7 +860,7 @@ public final class ClassifiedCorpus {
          * Record (MutationDmlRecordField, DmlKind INSERT), the follow-up projection being the data field's
          * own concern (a Child / Fetch / Table BatchedTableField on the payload). Corpus-only: these
          * remaining root forms are additional leaves on the principles the `dml` and `dml-payloads`
-         * examples teach (their input objects render fine since hardening item 3).
+         * examples teach.
          */
         new Example("mutation-roots", """
             interface Node { id: ID! }

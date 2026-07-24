@@ -37,30 +37,25 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  *
  * <p>Emitted bodies have this shape:
  * <ol>
- *   <li>Empty-input short-circuit — returns {@code List.of()} without touching the DSL context.</li>
- *   <li>Parent-input {@code VALUES} table carrying {@code (idx, parent_pk...)} — one row per
- *       {@code keys[i]}. Rows are typed {@code Row<N+1><Integer, pkType1, pkType2, …>}, the
- *       corresponding typed {@link org.jooq.Table} carries {@link org.jooq.Record Record}&lt;N+1&gt;,
- *       and column access via {@code parentInput.fieldsRow().fieldK()} returns typed
- *       {@link org.jooq.Field Field}&lt;T&gt;. Arity is known at codegen time from
+ *   <li>Empty-input short-circuit returning {@code List.of()} without touching the DSL context.</li>
+ *   <li>Parent-input {@code VALUES} table carrying {@code (idx, parent_pk...)}, one row per
+ *       {@code keys[i]}, fully typed ({@code Row<N+1>}, {@link org.jooq.Table} of
+ *       {@link org.jooq.Record Record}&lt;N+1&gt;, typed {@link org.jooq.Field Field}&lt;T&gt;
+ *       column access). Arity is known at codegen time from
  *       {@link no.sikt.graphitron.rewrite.model.SourceKey#columns()}; generic array creation is the
  *       one unavoidable {@code @SuppressWarnings("unchecked")} per generated method.</li>
- *   <li>Key unpacking uses {@code k.field1()}…{@code k.fieldN()} — {@code Row1/Row2/…} expose
- *       their cells as typed {@code Field<T>} references (the inline {@code Field} jOOQ created
- *       when {@link GeneratorUtils#buildKeyExtraction} built the key via {@code DSL.row(record.get(col))}).
- *       The earlier plan's Decision 7 cited {@code value1()} calls, but those live on
- *       {@code Record1/Record2/…}, not on {@code Row} — {@code Row} is a schema construct, not
- *       a data carrier.</li>
+ *   <li>Key unpacking via {@code k.field1()}…{@code k.fieldN()}: jOOQ {@code Row} is a schema
+ *       construct, not a data carrier, so cells surface as typed {@code Field<T>} references
+ *       (the inline {@code Field} created when {@link GeneratorUtils#buildKeyExtraction} built
+ *       the key via {@code DSL.row(record.get(col))}).</li>
  *   <li>FK chain aliases identical to the inline-projection path.</li>
- *   <li>{@code .select($fields + parentInput.fieldsRow().field1().as("__idx__"))} — the
+ *   <li>{@code .select($fields + parentInput.fieldsRow().field1().as("__idx__"))}; the
  *       {@code __idx__} column drives the Java-side scatter, see {@link #IDX_COLUMN}.</li>
- *   <li>Explicit {@code ON} predicate joining the first FK hop to {@code parentInput} via
- *       {@code parentInput.fieldsRow().fieldK()} — typed {@code Field<T>}, matching the FK
- *       column's type in {@code .eq(...)}. Inherits the USING→ON lesson from
- *       {@link InlineLookupTableFieldEmitter} (junction tables re-expose the FK column and
- *       would collide under USING).</li>
- *   <li>{@code scatterByIdx(flat, keys.size())} — emitted once per fetcher class, see
- *       {@code SplitRowsMethodEmitter.buildScatterByIdxHelper}.</li>
+ *   <li>Explicit {@code ON} predicate (not USING: junction tables re-expose the FK column and
+ *       would collide under USING, as in {@link InlineLookupTableFieldEmitter}) joining the
+ *       first FK hop to {@code parentInput} via typed {@code Field<T>} lookups.</li>
+ *   <li>{@code scatterByIdx(flat, keys.size())}, emitted once per fetcher class; see
+ *       {@link #buildScatterByIdxHelper()}.</li>
  * </ol>
  */
 public final class SplitRowsMethodEmitter {
@@ -83,13 +78,11 @@ public final class SplitRowsMethodEmitter {
     }
 
     // Synthetic SQL column aliases for the split-rows projection. The double-underscore wrapping
-    // (__name__) is a deliberate collision-avoidance device, NOT the lazy dunder convention this
-    // class otherwise avoids for Java locals: these names live in the result-set column namespace
-    // alongside real table columns, which the consumer's DB schema controls. Wrapping in __ keeps
-    // a synthetic alias from colliding with a real column the consumer happens to name `idx` or
-    // `rn`. They reach generated code as string literals (.as("__idx__"), r.get("__rn__")), never
-    // as Java identifiers, so the no-regression meta-test (which scans for dunder-prefixed
-    // identifiers) correctly leaves them alone.
+    // (__name__) is collision avoidance: these names live in the result-set column namespace
+    // alongside real table columns, which the consumer's DB schema controls, so the wrapping
+    // keeps a synthetic alias from colliding with a real column named `idx` or `rn`. They reach
+    // generated code only as string literals (.as("__idx__"), r.get("__rn__")), never as Java
+    // identifiers, so DunderFreeEmissionPipelineTest's identifier scan leaves them alone.
 
     /**
      * SELECT-projection alias for the parent-input {@code idx} column that drives the Java-side
@@ -108,38 +101,23 @@ public final class SplitRowsMethodEmitter {
     /**
      * Bindings produced by {@link #emitParentInputAndFkChain} that the three sibling rows-method
      * builders consume at their divergence points. Carries only what is re-derived in more than
-     * one sibling; per-sibling locals (typed Row/Record/Table type names, the projection list,
-     * etc.) stay in the sibling.
+     * one sibling; per-sibling locals stay in the sibling.
      *
      * <p>{@code joinOnCols} is the column list the rows-method's {@code JOIN parentInput ... ON ...}
-     * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
-     * the FK hop's source-side columns (FK-holder side, terminal for list cardinality); on
-     * the lifter path, the {@code OnLiftedSlots} correlation's
-     * {@link no.sikt.graphitron.rewrite.model.HasSlots#targetSideColumns()} (the DataLoader key
-     * tuple IS the target-column tuple by construction); on the
-     * @sourceRow + @reference path, the FK hop's source-side columns again. The prelude resolves
-     * this fork once via a sealed switch and exports the ready list; the consumer iterates without
-     * re-switching.
-     *
-     * <p>{@code joinOnParentCols} is parallel to {@code joinOnCols}: index {@code i} is the parent
-     * column that {@code joinOnCols.get(i)} references. On the catalog-FK path that is
-     * the hop's target-side columns (the FK's parent-side referenced columns, paired
-     * with {@code sourceColumns} by FK declaration order); on the lifter path it is the same list
-     * as {@code joinOnCols} (the DataLoader key tuple IS the target-column tuple). Consumers
-     * resolve the {@code parentInput.field(...)} reference for each predicate slot by
-     * sqlName + Java type, sidestepping any positional mismatch between FK column ordering and
-     * the parent VALUES table's aliasing order.
+     * predicate matches against {@code joinOnAlias}; {@code joinOnParentCols} is parallel to it:
+     * index {@code i} is the parent column that {@code joinOnCols.get(i)} references. The prelude
+     * resolves the per-arm fork once via a sealed switch on {@link ParentCorrelation} and exports
+     * ready lists; consumers iterate without re-switching, resolving each
+     * {@code parentInput.field(...)} reference by sqlName + Java type, which sidesteps any
+     * positional mismatch between FK column ordering and the parent VALUES table's aliasing order.
      */
     private record PreludeBindings(
         List<String> aliases,
         String terminalAlias,
         String firstAlias,
-        // For ParentCorrelation.OnFkSlots: firstAlias (the first hop's target table).
-        // For ParentCorrelation.OnParentJoin: parentAlias (the @table-bound parent declared
-        // in the prelude). The {@code .join(parentInput).on(...)} predicate's LHS reads this
-        // alias paired with {@link #joinOnCols}; the parent-input field lookup uses {@link
-        // #joinOnParentCols} for sqlName + Java type. The two arms collapse onto one accessor
-        // so the buildList/Single/Connection emitter sites don't fork.
+        // The alias the parentInput JOIN predicate's LHS reads, paired with joinOnCols: the
+        // first hop's target table (OnFkSlots/OnLiftedSlots) or the OnParentJoin parentAlias.
+        // The arms collapse onto one accessor so the buildList/Single/Connection sites don't fork.
         String joinOnAlias,
         List<ColumnRef> joinOnCols,
         List<ColumnRef> joinOnParentCols,
@@ -155,14 +133,12 @@ public final class SplitRowsMethodEmitter {
      * untyped bind renders converter-backed / domain-typed keys at the wrong SQL type and
      * the correlation JOIN has no matching operator).
      *
-     * <p>The scalar extraction forks on {@link SourceKey.Wrap} — the axis that decides whether
-     * the key row exposes value accessors: {@code RecordN} keys read {@code k.valueN()}
-     * directly; {@code RowN} keys have no value accessors (jOOQ {@code Row} is a schema
-     * construct), so the value is pulled out of the bind {@code Param} the key was constructed
-     * from via the per-fetcher-class {@code parentKeyCellValue} helper (see
-     * {@link #buildParentKeyCellValueHelper()}). {@link SourceKey.Wrap.TableRecord} keys never
-     * reach the parent-input seam (their variants route through service-lift or produced-record
-     * reads, not this prelude).
+     * <p>The scalar extraction forks on {@link SourceKey.Wrap}: {@code RecordN} keys read
+     * {@code k.valueN()} directly; {@code RowN} keys have no value accessors (jOOQ {@code Row}
+     * is a schema construct), so the value is recovered from the bind {@code Param} via the
+     * per-fetcher-class helper built by {@link #buildParentKeyCellValueHelper()}.
+     * {@link SourceKey.Wrap.TableRecord} keys never reach the parent-input seam (those variants
+     * route through service-lift or produced-record reads).
      */
     private static CodeBlock parentKeyCells(SourceKey sourceKey, List<ColumnRef> pkCols, TableRef ownerTable) {
         CodeBlock ownerExpr = CodeBlock.of("$T.$L", ownerTable.constantsClass(), ownerTable.javaFieldName());
@@ -197,10 +173,10 @@ public final class SplitRowsMethodEmitter {
      * constructed via {@code DSL.row(value, ...)}, which wraps each scalar in a bind
      * {@code Param}; jOOQ's {@code Row} exposes cells only as {@code Field}s, so the value is
      * recovered through the {@code Param} narrowing. For generator-built keys the cast always
-     * holds; for {@code @sourceRow} lifter keys it is a documented contract — a lifter that
+     * holds; for {@code @sourceRow} lifter keys it is a documented contract: a lifter that
      * builds its {@code RowN} from column references (not scalar values) gets this diagnostic
      * instead of a silently mistyped bind. Emitted once per fetcher class that has any
-     * Row-keyed parent-input rows method (gate in {@code TypeFetcherGenerator}).
+     * Row-keyed parent-input rows method (gate in {@link TypeFetcherGenerator}).
      */
     public static MethodSpec buildParentKeyCellValueHelper() {
         TypeName fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
@@ -241,13 +217,11 @@ public final class SplitRowsMethodEmitter {
             String outputPackage) {
         TableRef terminalTable = returnType.table();
 
-        // Side-aware column list: KeyLift.FkColumns carries parent-side FK columns (catalog-FK arm);
-        // KeyLift.Lifter and KeyLift.Accessor carry the join target columns (target side via the
-        // lifted correlation / FK-derived Hop chain). All four produce RowN<...> of the same Java types as the
-        // JOIN target columns. The SourceKey parameter encodes "only the four prelude-reachable
-        // shapes reach this site" structurally; the @service source shapes are unreachable here by
-        // entry-point construction (only the four BatchKeyField permits with sourceKey() routed
-        // through buildList/Single/Connection reach the prelude).
+        // Side-aware column list: KeyLift.FkColumns carries parent-side FK columns; KeyLift.Lifter
+        // and KeyLift.Accessor carry the join target columns. All produce RowN<...> of the same
+        // Java types as the JOIN target columns. The SourceKey parameter structurally encodes that
+        // only the prelude-reachable shapes arrive here; the @service source shapes never route
+        // through buildList/Single/Connection.
         List<ColumnRef> pkCols = sourceKey.columns();
         TypeName keyElement = sourceKey.keyElementType();
 
@@ -266,13 +240,12 @@ public final class SplitRowsMethodEmitter {
         TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
 
         // Classifier contract: joinPath is non-empty for an @reference-correlated split child
-        // (the parent-correlation JOIN needs at least the first hop's slots), and empty for the
-        // pre-keyed lifted shape (ParentCorrelation.OnLiftedSlots), whose single target
-        // alias is synthesized from the correlation's target table exactly as the retired
-        // single-LiftedHop path derived it. An empty joinPath with a null correlation is the
-        // standalone-lookup shape, which the classifier does not route here; guard it explicitly
-        // so a classifier regression fails loudly with the cause rather than as an opaque
-        // "Index -1 out of bounds" on the empty alias list below.
+        // (the parent-correlation JOIN needs at least the first hop's slots), and empty only for
+        // the pre-keyed lifted shape (ParentCorrelation.OnLiftedSlots), whose single target alias
+        // is synthesized from the correlation's target table. An empty joinPath with a null
+        // correlation is the standalone-lookup shape, which the classifier does not route here;
+        // guard it explicitly so a classifier regression fails loudly with the cause rather than
+        // as an opaque "Index -1 out of bounds" on the empty alias list below.
         if (joinPath.isEmpty() && !(parentCorrelation instanceof ParentCorrelation.OnLiftedSlots)) {
             throw new IllegalStateException(
                 "SplitRowsMethodEmitter reached a standalone (empty-joinPath) shape for field '"
@@ -285,12 +258,8 @@ public final class SplitRowsMethodEmitter {
             : JoinPathEmitter.generateAliases(joinPath, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
-        // Classifier contract: joinPath is non-empty. The first step is either a filter-less FK-style
-        // hop (an FK-derived Hop with pairable slots), a pre-keyed lifted correlation, a parent-anchored hop
-        // (a condition-join OR any hop-0 filter), or a lateral routine head. The sealed switch
-        // on parentCorrelation routes them uniformly: OnFkSlots reads the slot pairs as before;
-        // OnParentJoin declares the parent-alias table local and routes parentInput's JOIN through the
-        // parent's own PK columns (the parent-PK grain the arm dictates).
+        // The sealed switch on parentCorrelation resolves the parentInput JOIN's alias and
+        // column pairs once for all downstream consumers.
         String joinOnAlias;
         List<ColumnRef> joinOnCols;
         List<ColumnRef> joinOnParentCols;
@@ -309,19 +278,17 @@ public final class SplitRowsMethodEmitter {
                 joinOnParentCols = lifted.columns();
             }
             case ParentCorrelation.OnParentJoin pj -> {
-                // ParentInput joins on the parent table's own PK columns: the predicate is
-                // parentAlias.<pkCol> = parentInput.field("<pkCol.sqlName>"). The DataLoader
-                // key tuple IS the parent-PK tuple (parentKeyColumns), so the cols on both sides
-                // of the predicate are the same ColumnRef set — only the alias to put them on
-                // differs. Hop 0 then attaches off parentAlias (its On dispatched in
+                // The DataLoader key tuple IS the parent-PK tuple (parentKeyColumns), so both
+                // sides of the predicate use the same ColumnRef set; only the alias differs.
+                // Hop 0 then attaches off parentAlias (its On dispatched in
                 // emitFromBridgeAndParentJoin), so a hop-0 filter has a real parent alias to bind.
                 joinOnAlias = "parentAlias";
                 joinOnCols = pj.parentKeyColumns();
                 joinOnParentCols = pj.parentKeyColumns();
             }
             case ParentCorrelation.OnLateralArgs ignored -> {
-                // A lateral routine hop at step 0 correlates through its call arguments —
-                // the SourceColumn bindings read parentInput fields directly (they ARE the
+                // A lateral routine hop at step 0 correlates through its call arguments: the
+                // SourceColumn bindings read parentInput fields directly (they ARE the
                 // DataLoader key), so the CROSS JOIN LATERAL carries no ON predicate at all.
                 joinOnAlias = firstAlias;
                 joinOnCols = List.of();
@@ -332,7 +299,7 @@ public final class SplitRowsMethodEmitter {
         // Empty-input short-circuit and DSLContext local are emitted by RowsMethodSkeleton's SQL
         // framing; this prelude picks up after both.
 
-        // Parent-input VALUES rows — fully typed. One Row<N+1><Integer, pkType1, …> per key[i].
+        // Parent-input VALUES rows, fully typed: one Row<N+1><Integer, pkType1, …> per key[i].
         // Generic array creation is the one unavoidable unchecked cast: Java forbids
         //   new Row2<Integer, Integer>[n]
         // so we cast a raw Row<N+1>[] up to the typed array. Scoped to this one line.
@@ -354,13 +321,12 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
             parentInputTableType, DSL, parentInputAlias.build());
 
-        // Hop aliases — one declaration per hop. Reads target accessors uniformly through
+        // Hop aliases, one declaration per hop. Reads target accessors uniformly through
         // HasTargetTable so every step surfaces its pre-resolved targetTable without an
-        // arm-specific cast (condition-join hops now carry a resolved TableRef; see
+        // arm-specific cast (condition-join hops carry a resolved TableRef; see
         // BuildContext.resolveConditionJoinTarget).
         // The lifted shape has no hops; declare its single synthesized target alias directly
-        // (byte-identical to the retired single-LiftedHop declaration: the target is always a
-        // catalog table).
+        // (the target is always a catalog table).
         if (parentCorrelation instanceof ParentCorrelation.OnLiftedSlots lifted) {
             TableRef liftedTarget = lifted.targetTable();
             body.addStatement("$T $L = $T.$L.as($S)",
@@ -373,7 +339,7 @@ public final class SplitRowsMethodEmitter {
             ClassName jooqTableClass = step.targetTable().tableClass();
             // Materialization routes through the shared TableExpr switch. A routine hop
             // heading the chain reads its correlated columns off parentInput (the implicit head
-            // is not materialised in the batch query — its bound columns ARE the DataLoader
+            // is not materialised in the batch query; its bound columns ARE the DataLoader
             // key); a mid-chain routine hop reads the preceding hop's alias like the inline form.
             PreviousNodeRef previousNode = i > 0
                 ? new PreviousNodeRef.TypedAlias(aliases.get(i - 1))
@@ -383,7 +349,7 @@ public final class SplitRowsMethodEmitter {
             // ^ The "parentAlias" placeholder is only ever read for a lateral routine hop (to
             // reference the previous node inside the call args); a Catalog target ignores
             // previousNode. Only the OnParentJoin arm actually declares a parentAlias local
-            // (below) — OnFkSlots materialises hop 0 off parentInput's slot columns and needs none.
+            // (below); OnFkSlots materialises hop 0 off parentInput's slot columns and needs none.
             body.addStatement("$T $L = $L.as($S)",
                 jooqTableClass, aliases.get(i),
                 JoinPathEmitter.emitTableExpression(joinPath.get(i), previousNode,
@@ -394,7 +360,7 @@ public final class SplitRowsMethodEmitter {
         }
 
         // OnParentJoin: declare the @table-bound parent alias the rows-method anchors on. Hop 0
-        // attaches off it (via its On — an ordinary forward join for a filtered FK hop, or the
+        // attaches off it via its On (an ordinary forward join for a filtered FK hop, or the
         // condition method for a condition-join hop), and parentInput pairs against it on the
         // parent-PK columns. OnFkSlots reuses firstAlias as the join-on alias and needs no extra
         // declaration.
@@ -417,24 +383,13 @@ public final class SplitRowsMethodEmitter {
      * there; connection appends its window tail), so each caller frames the projection and tail
      * itself.
      *
-     * <p>This block was once the source of a bug: it lived as a byte-for-byte copy in
-     * {@code buildListMethod} and {@code buildConnectionMethod} but never grew into
-     * {@code buildSingleMethod}, which projected off {@code firstAlias} with no bridging loop and
-     * was therefore single-hop only. Extracting it makes the topology uniform across the
-     * cardinality fork; the genuine per-cardinality divergence (projection envelope, scatter call)
-     * stays with each sibling.
-     *
- * <p>The walk is start-first with {@code parentInput} as the FROM anchor: a lateral
-     * routine hop's call arguments reference the previous node's alias — {@code parentInput}
-     * itself at the chain head — and SQL LATERAL scoping only sees FROM entries to its left, so
-     * the old terminal-back walk cannot host a lateral node. For the pure INNER-join chains every
-     * other shape emits, anchor and direction are behaviour-equivalent (the execution tier pins
-     * the multi-hop, single-cardinality, and connection shapes). The bridging loop dispatches on
-     * step identity: FK hops use {@code .onKey(FK)} / the name-matched pair conjunction, condition
-     * hops use {@code .on(method(prevAlias, alias))}, lateral routine hops use
-     * {@code .crossJoin(DSL.lateral(alias))}. The pre-keyed lifted shape carries no hops at all
-     * ({@code @reference}-composed paths are FK / condition chains; the lifted correlation is
-     * hop-less), so the loop is a no-op for it and for any single-hop path.
+     * <p>The walk is start-first with {@code parentInput} as the FROM anchor: a lateral routine
+     * hop's call arguments reference the previous node's alias ({@code parentInput} itself at the
+     * chain head) and SQL LATERAL scoping only sees FROM entries to its left, so a terminal-back
+     * walk cannot host a lateral node. For the pure INNER-join chains every other shape emits,
+     * anchor and direction are behaviour-equivalent (the execution tier pins the multi-hop,
+     * single-cardinality, and connection shapes). The pre-keyed lifted shape carries no hops at
+     * all, so the bridging loop is a no-op for it and for any single-hop path.
      */
     private static void emitFromBridgeAndParentJoin(
             CodeBlock.Builder sel,
@@ -445,13 +400,12 @@ public final class SplitRowsMethodEmitter {
             String joinOnAlias,
             List<ColumnRef> joinOnCols,
             List<ColumnRef> joinOnParentCols) {
-        // The parentInput correlation predicate. For OnFkSlots, joinOnAlias is firstAlias and the
-        // predicate pairs slot.targetSide()/slot.sourceSide(). For OnParentJoin, joinOnAlias is
-        // parentAlias and the predicate pairs parent-PK on both sides. For OnLateralArgs the slot
-        // lists are empty — correlation rides the lateral call's arguments. The parentInput field
-        // is resolved by sqlName + the owner column's DataType rather than positional index,
-        // sidestepping @node(keyColumns: [...]) vs FK column ordering mismatches and keeping
-        // converter-backed columns' type metadata faithful.
+        // The parentInput correlation predicate; alias and column pairs come pre-resolved per
+        // correlation arm from the prelude (empty lists for OnLateralArgs: correlation rides the
+        // lateral call's arguments). The parentInput field is resolved by sqlName + the owner
+        // column's DataType rather than positional index, sidestepping @node(keyColumns: [...])
+        // vs FK column ordering mismatches and keeping converter-backed columns' type metadata
+        // faithful.
         TableRef ownerTable = parentCorrelation.parentKeyOwnerTable();
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
@@ -471,11 +425,9 @@ public final class SplitRowsMethodEmitter {
                 sel.add(".join($L).on($L)\n", firstAlias, onCond.build());
             case ParentCorrelation.OnParentJoin pj -> {
                 // parentAlias pairs with parentInput on the parent's PK, then hop 0 attaches
-                // firstAlias (= aliases[0], the hop's target) off parentAlias. The attach dispatches
-                // on the hop's own On (JoinStep's two-axis model): an ordinary forward join for an
-                // FK hop carrying a hop-0 filter, or the two-arg condition method for a
-                // condition-join hop. Either way firstAlias hangs off a real parent alias, so a
-                // hop-0 filter (emitted in buildWhereCondition) can bind parentAlias as its source.
+                // firstAlias off parentAlias per the hop's own On. Either way firstAlias hangs
+                // off a real parent alias, so a hop-0 filter (emitted in buildWhereCondition)
+                // can bind parentAlias as its source.
                 sel.add(".join(parentAlias).on($L)\n", onCond.build());
                 switch (pj.firstHop().on()) {
                     case On.ColumnPairs cp -> sel.add("$L\n",
@@ -511,10 +463,8 @@ public final class SplitRowsMethodEmitter {
      * <p>The per-hop filter is emitted as {@code method(srcAlias, tgtAlias)}, where {@code srcAlias}
      * is the hop's origin side: the previous hop's alias for hops 1..n, and for hop 0 the parent
      * alias declared by the {@link ParentCorrelation.OnParentJoin} arm. The classifier lands any
- * hop-0 {@code filter()} on that arm precisely so a parent alias exists here; under the
-     * other arms a hop-0 filter is unreachable and guarded (the earlier code bound the hop-0
-     * <em>target</em> alias as both parameters, so a filter's concretely-typed source parameter
-     * failed javac and a wildcard-typed one produced silently self-referential SQL).
+     * hop-0 {@code filter()} on that arm precisely so a parent alias exists here; under the
+     * other arms a hop-0 filter is unreachable and guarded.
      *
      * <p>Only {@link JoinStep.Hop}s carry a per-hop filter; lifter hops are skipped by the
      * {@code instanceof} guard.
@@ -543,12 +493,9 @@ public final class SplitRowsMethodEmitter {
             if (hop.filter() != null) {
                 String srcAlias;
                 if (i == 0) {
-                    // A hop-0 filter reads the parent row, so the classifier lands it on the
-                    // parent-anchor arm (OnParentJoin) precisely so parentAlias is in scope to bind
-                    // the filter's source parameter. Under OnFkSlots / OnLateralArgs parentInput
-                    // carries no parent alias, so a hop-0 filter is classifier-unreachable — guard
-                    // it loudly rather than silently bind the target alias twice as the earlier
-                    // code did.
+                    // Under OnFkSlots / OnLateralArgs no parent alias exists, so a hop-0 filter
+                    // is classifier-unreachable; fail loudly rather than silently bind the
+                    // target alias twice.
                     if (!(parentCorrelation instanceof ParentCorrelation.OnParentJoin)) {
                         throw new IllegalStateException(
                             "hop-0 filter reached buildWhereCondition under "
@@ -577,19 +524,18 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the rows-method for a {@link ChildField.BatchedTableField} (both source shapes;
-     * the SQL bodies were already shared pre-merge). Sibling entry point
-     * {@link #buildForBatchedLookupTable} covers the lookup shape; each caller in
-     * {@code TypeFetcherGenerator} already has the concrete field type, so
+     * Builds the rows-method for a {@link ChildField.BatchedTableField}; both source shapes share
+     * one SQL body. Sibling entry point {@link #buildForBatchedLookupTable} covers the lookup
+     * shape; each caller in {@link TypeFetcherGenerator} already has the concrete field type, so
      * no capability-typed dispatcher is needed at this seam.
      *
      * <p>Routing is on facts, not the source gate: {@code emitsSingleRecordPerKey} folds the
-     * single-cardinality and loader.loadMany triggers onto {@code buildSingleMethod} (the flat
-     * join + scatterSingleByIdx shape the loadMany dispatch requires — loader value type
+     * single-cardinality and loader.loadMany triggers onto {@link #buildSingleMethod} (the flat
+     * join + scatterSingleByIdx shape the loadMany dispatch requires: loader value type
      * {@code Record}, returning {@code List<Record>} 1:1 with keys, not
      * {@code List<List<Record>>}); the Connection arm is reachable only from the Table-sourced
      * arm (the leaf's ctor rejects Record + Connection). The capability fold matches
-     * {@code TypeFetcherGenerator}'s scatterSingleByIdx helper-emission gate; both ask the same
+     * {@link TypeFetcherGenerator}'s scatterSingleByIdx helper-emission gate; both ask the same
      * uniform question.
      */
     static MethodSpec buildForBatchedTable(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf, String outputPackage,
@@ -629,13 +575,13 @@ public final class SplitRowsMethodEmitter {
      * aggregate projection delivered through the DataLoader seam. Reuses the shared parent-input
      * prelude ({@link #emitParentInputAndFkChain}) but deliberately not
      * {@link #emitFromBridgeAndParentJoin}: the pivot attaches the attribute table to the
-     * parent-input {@code VALUES} table with a <em>left</em> join — the one deviation from the
-     * table shape's inner join — so every batch key produces a {@code GROUP BY __idx__} group and
+     * parent-input {@code VALUES} table with a <em>left</em> join (the one deviation from the
+     * table shape's inner join) so every batch key produces a {@code GROUP BY __idx__} group and
      * a row-less parent scatters to one record of null slots via {@code scatterSingleByIdx},
      * matching the inline delivery's one-record-per-parent invariant instead of null-bombing the
      * field. That key preservation is what restricts the {@code @pivot} path to a single FK hop
-     * (bridging hops are inner joins; a per-hop filter lands in WHERE — either would re-drop the
-     * null-extended row), which {@link no.sikt.graphitron.rewrite.model.PivotSpec} pins
+     * (bridging hops are inner joins and a per-hop filter lands in WHERE; either would re-drop
+     * the null-extended row), which {@link no.sikt.graphitron.rewrite.model.PivotSpec} pins
      * structurally.
      *
      * <p>The select list is the selection-gated filtered-aggregate projection shared with the
@@ -702,11 +648,11 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /**
-     * See {@link #buildForBatchedTable} for the entry-point convention. Both source shapes: the
-     * rows-method body was already identical for the pre-merge lookup twins — same
-     * {@code SourceKey} (Wrap.Row) + {@code LookupMapping} shape, so {@code buildListMethod}
-     * handles both. The parent-backing divergence (jOOQ-table-row vs backing-object key
-     * extraction) lives above this seam, in {@code TypeFetcherGenerator}'s fetcher fork.
+     * See {@link #buildForBatchedTable} for the entry-point convention. Both source shapes carry
+     * the same {@code SourceKey} (Wrap.Row) + {@code LookupMapping} shape, so
+     * {@link #buildListMethod} handles both. The parent-backing divergence (jOOQ-table-row vs
+     * backing-object key extraction) lives above this seam, in {@link TypeFetcherGenerator}'s
+     * fetcher fork.
      */
     static MethodSpec buildForBatchedLookupTable(TypeFetcherEmissionContext ctx, ChildField.BatchedLookupTableField blf, String outputPackage,
             CompositeDecodeHelperRegistry registry) {
@@ -760,14 +706,14 @@ public final class SplitRowsMethodEmitter {
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
 
         // Projection: $fields(env.getSelectionSet(), terminalAlias, env) + idx.as("__idx__").
-        // env.getSelectionSet() is the child-selection for the Split field itself — exactly what
-        // a SelectedField.getSelectionSet() would return, so the rows method signature does not
-        // need a separate SelectedField parameter. See the "dropped sel parameter" commit message.
+        // env.getSelectionSet() is the child-selection for the Split field itself, exactly what
+        // a SelectedField.getSelectionSet() would return, so the rows method signature needs no
+        // separate SelectedField parameter.
         //
         // Typed idx access: parentInput.field(0, Integer.class) → Field<Integer>. Table.fieldsRow()
-        // inherits from Fields and returns untyped Row (it's not overridden on Table<RecordN> with
-        // a typed return, despite RecordN itself exposing typed fieldsRow). The typed-by-index
-        // Fields.field(int, Class<T>) is the idiomatic jOOQ alternative and preserves type safety.
+        // returns untyped Row (not overridden on Table<RecordN> with a typed return, despite
+        // RecordN itself exposing typed fieldsRow); the typed-by-index Fields.field(int, Class<T>)
+        // is the idiomatic jOOQ alternative and preserves type safety.
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
         body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
@@ -782,10 +728,10 @@ public final class SplitRowsMethodEmitter {
         String lookupInputAlias = fieldName + "Input";
         if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping) {
             List<ColumnRef> lookupCols = columnMapping.slotColumns();
-            // Typed Row<M+1> / Record<M+1> for lookupInput — idx + one cell per @lookupKey
+            // Typed Row<M+1> / Record<M+1> for lookupInput: idx + one cell per @lookupKey
             // slot. Arity known at codegen time; the cap is enforced inside LookupValuesJoinEmitter
             // (which emits the helper this call consumes). DSL.values(Row<M+1>...) returns
-            // Table<Record<M+1>> — typed through to field access by index or name.
+            // Table<Record<M+1>>, typed through to field access by index or name.
             int lookupArity = lookupCols.size() + 1;
             TypeName[] lookupTypeArgs = new TypeName[lookupArity];
             lookupTypeArgs[0] = ClassName.get(Integer.class);
@@ -811,10 +757,6 @@ public final class SplitRowsMethodEmitter {
                 lookupInputTableType, DSL, lookupAliasArgs.build());
         }
 
-        // Flat SELECT: FROM parentInput, step-0 attach per correlation arm (slot columns eq
-        // parentInput.field(sqlName), or the OnParentJoin parent-PK pairing), then the forward
-        // bridging hops out to the terminal. Shared with the single and connection siblings via
-        // emitFromBridgeAndParentJoin.
         var sel = CodeBlock.builder();
         sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
         sel.indent();
@@ -842,8 +784,6 @@ public final class SplitRowsMethodEmitter {
             sel.add(".join(lookupInput).on($L)\n", lookupOnCond.build());
         }
 
-        // WHERE: per-hop whereFilters + field-level filters, shared with the single and connection
-        // siblings via buildWhereCondition.
         sel.add(".where($L)\n",
             buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
         sel.add(".fetch();\n");
@@ -892,17 +832,15 @@ public final class SplitRowsMethodEmitter {
      * <p>Shares its join topology and WHERE clause with {@link #buildListMethod} and
      * {@link #buildConnectionMethod} via {@link #emitFromBridgeAndParentJoin} and
      * {@link #buildWhereCondition}; the only per-cardinality divergence is the {@code List<Record>}
-     * return shape and the {@code scatterSingleByIdx} (1:1, null where no match) call. The shared
-     * topology anchors on {@code parentInput} and walks the bridging hops start-first out to
- * {@code terminalAlias}, which carries the projection, so a multi-hop single-cardinality
-     * {@code @splitQuery} (e.g. {@code customer -> store -> address}) resolves the terminal row per
-     * key in one batched query. Single-hop paths collapse the bridging loop to a no-op, reproducing
-     * the original single-hop shape.
+     * return shape and the {@code scatterSingleByIdx} call. The projection rides
+     * {@code terminalAlias}, so a multi-hop single-cardinality {@code @splitQuery}
+     * (e.g. {@code customer -> store -> address}) resolves the terminal row per key in one batched
+     * query; single-hop paths collapse the bridging loop to a no-op.
      *
      * <p>The bridging hops emit inner joins, consistent with the list and connection siblings: a
      * to-one chain resolves to {@code null} when any hop is absent (the row drops, and
      * {@code scatterSingleByIdx} fills {@code null}). Distinguishing intermediate-null from
- * terminal-null (LEFT JOINs) is out of scope and would have to span all three siblings.
+     * terminal-null (LEFT JOINs) is out of scope and would have to span all three siblings.
      */
     private static MethodSpec buildSingleMethod(
             TypeFetcherEmissionContext ctx,
@@ -969,7 +907,7 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // Connection-cardinality list method — window-function envelope
+    // Connection-cardinality list method: window-function envelope
     // -----------------------------------------------------------------------
 
     /**
@@ -992,7 +930,7 @@ public final class SplitRowsMethodEmitter {
      * pages "the next N items after cursor C" sees each parent independently filtered by
      * {@code (orderBy cols) > C}. With a globally meaningful ordering (primary key, or any
      * totally-ordered column set), this reads as "paginate these parents' connections in
-     * lockstep through the same cursor space" — which is the semantics graphql-java's
+     * lockstep through the same cursor space", which is the semantics graphql-java's
      * field-args model naturally produces.
      */
     private static MethodSpec buildConnectionMethod(
@@ -1101,15 +1039,12 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
             buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
 
-        // Inner windowed SELECT — attaches .orderBy()/.seek() for cursor-driven filtering; the
-        // OS-level seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.
+        // Inner windowed SELECT attaches .orderBy()/.seek() for cursor-driven filtering; the
+        // seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.
         var inner = CodeBlock.builder();
         inner.add("$T<?> ranked = dsl\n", TABLE);
         inner.indent();
         inner.add(".select(selectFields)\n");
-        // Join topology + WHERE shared with the list and single siblings via
-        // emitFromBridgeAndParentJoin / buildWhereCondition; the connection-specific window tail
-        // (.orderBy/.seek/.asTable) is appended after.
         emitFromBridgeAndParentJoin(inner, path, aliases, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         inner.add(".where(where)\n");
@@ -1120,7 +1055,7 @@ public final class SplitRowsMethodEmitter {
         body.add(inner.build());
 
         // Outer: filter by row_number. DSL.select() with no args projects every field from the
-        // subquery — including __idx__ and the original selection; the __rn__ column is referenced
+        // subquery, including __idx__ and the original selection; the __rn__ column is referenced
         // only in the WHERE clause and gets pulled into the projection too, which the scatter
         // ignores (it reads by name, not by index).
         var outer = CodeBlock.builder();
@@ -1139,9 +1074,9 @@ public final class SplitRowsMethodEmitter {
         // hoisted WHERE as the page query, but no orderBy/seek so the count is cursor-independent.
         // Each per-parent ConnectionResult pairs it with an __idx__ = i condition; the generated
         // ConnectionHelper.totalCount then runs SELECT count(*) FROM countSource WHERE __idx__ = i
-        // lazily on selection. Mirrors B4c-2's count semantics (MultiTablePolymorphicEmitter
-        // .buildBatchedConnectionRowsMethod): zero count SQL when totalCount is unselected, N
-        // count queries for a batch of N parents when selected.
+        // lazily on selection. Same count semantics as MultiTablePolymorphicEmitter's batched
+        // connection rows method: zero count SQL when totalCount is unselected, N count queries
+        // for a batch of N parents when selected.
         var count = CodeBlock.builder();
         count.add("$T<?> countSource = dsl\n", TABLE);
         count.indent();
@@ -1165,7 +1100,7 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // Scatter helper — emitted once per fetcher class that has any Split* field.
+    // Scatter helpers, emitted once per fetcher class that has any Split* field.
     // -----------------------------------------------------------------------
 
     /**
@@ -1323,7 +1258,7 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // ServiceTableField — lift-back projection
+    // ServiceTableField: lift-back projection
     // -----------------------------------------------------------------------
 
     /**
@@ -1396,7 +1331,7 @@ public final class SplitRowsMethodEmitter {
         ClassName typeClass = ClassName.get(outputPackage + ".types", rt.returnTypeName());
 
         var body = CodeBlock.builder();
-        // 1. Call the developer's @service method — returns real XRecords in the loader container.
+        // 1. Call the developer's @service method: returns real XRecords in the loader container.
         body.addStatement("$T fetched = $L", serviceReturn, serviceCall);
 
         // 2. Normalise to a parent-indexed List<List<XRecord>> (and, for the mapped container, the

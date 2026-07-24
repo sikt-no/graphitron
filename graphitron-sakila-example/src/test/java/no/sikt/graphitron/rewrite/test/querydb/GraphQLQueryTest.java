@@ -129,11 +129,9 @@ class GraphQLQueryTest {
 
     @Test
     void aliasingScalar_registeredUnderSdlNameAndResolvesEndToEnd() {
-        // Build-through proof: Graphitron.buildSchema(...) in @BeforeAll already assembles this
-        // schema; before the fix it threw "type LocalDate not found in schema" because the
-        // LocalDate scalar (an alias of ExtendedScalars.Date, intrinsic name "Date") was
-        // registered under "Date". Assert the scalar is registered under its SDL name so the
-        // Customer.createDate typeRef("LocalDate") resolves.
+        // The LocalDate scalar is an alias of ExtendedScalars.Date (intrinsic name "Date").
+        // It must register under its SDL name, not the constant's name, or the
+        // Customer.createDate typeRef("LocalDate") fails schema assembly.
         var assembled = graphql.getGraphQLSchema();
         assertThat(assembled.getType("LocalDate"))
             .as("aliasing scalar must register under its SDL name, not the constant's name")
@@ -206,12 +204,11 @@ class GraphQLQueryTest {
     void customersByAddressDistrict_fkTargetNodeIdOverrideCondition_filtersByForeignTable() {
         // CustomerAddressNodeFilter.addressId carries @nodeId(typeName: "Address") +
         // @condition(override: true). customer reaches address via customer_address_id_fkey, so the
-        // condition method (addressDistrictAlberta) receives the FK-target Address alias, not the
-        // customer table, emitted as a correlated EXISTS. Seed: addresses 1 and 3 are 'Alberta',
+        // condition method (addressDistrictAlberta) must receive the FK-target Address alias, not
+        // the customer table, emitted as a correlated EXISTS. Seed: addresses 1 and 3 are 'Alberta',
         // held by customers Smith (addr 1), Williams (addr 3), and Jones (addr 1). The empty filter
         // exercises the override path: the decoded-id predicate is dropped and the method owns the
-        // WHERE entirely. Pre-fix the generated call handed the method the customer table and either
-        // failed to compile (concrete Address parameter) or filtered the wrong table.
+        // WHERE entirely.
         Map<String, Object> data = execute("{ customersByAddressDistrict(filter: {}) { lastName } }");
         assertThat(data).extractingByKey("customersByAddressDistrict", as(list(Map.class)))
             .extracting(c -> c.get("lastName"))
@@ -238,9 +235,7 @@ class GraphQLQueryTest {
         // shape (composite NodeType keys). project_note reaches project via a composite FK
         // (org_id, project_id); projectNameAtlas receives an aliased Project inside a correlated
         // EXISTS whose correlation ANDs both composite-FK slots. Seed: project (1,100) is 'Atlas'
-        // with notes Atlas-N1..N3; (1,101)=Beacon and (2,100)=Cipher are filtered out. Pre-fix the
-        // composite arm emitted a plain ConditionFilter passing the project_note table to a method
-        // declaring Project, failing at consumer compile (the opptak Regelverksamling shape).
+        // with notes Atlas-N1..N3; (1,101)=Beacon and (2,100)=Cipher are filtered out.
         Map<String, Object> data = execute("{ projectNotesByProject(filter: {}) { body } }");
         assertThat(data).extractingByKey("projectNotesByProject", as(list(Map.class)))
             .extracting(c -> c.get("body"))
@@ -256,9 +251,9 @@ class GraphQLQueryTest {
         // promoted to project_note via findReturnTablesForInput, so the divergence is driven by the
         // override directive, not by the absence of @table. It still resolves against project_note;
         // projectNameAtlas receives an aliased Project inside a correlated EXISTS over the composite
-        // (org_id, project_id) FK. This non-table routing is what the @table fixtures missed: the
-        // structural validator walks only TableInputType (validateTableInputType), so the broken call
-        // slipped through to the consumer's javac (exactly the opptak symptom).
+        // (org_id, project_id) FK. This non-table routing is the coverage gap the @table fixtures
+        // leave: the structural validator walks only TableInputType (validateTableInputType), so a
+        // broken call here surfaces only at the consumer's javac.
         Map<String, Object> data = execute("{ projectNotesByPlainFilter(filter: {}) { body } }");
         assertThat(data).extractingByKey("projectNotesByPlainFilter", as(list(Map.class)))
             .extracting(c -> c.get("body"))
@@ -282,10 +277,9 @@ class GraphQLQueryTest {
     void store_customersByAddressDistrict_inlineFkTargetOverride_filtersByForeignTable() {
         // Inline child TableField path (InlineTableFieldEmitter). Store.customersByAddressDistrict
         // correlates store -> customer, then the FK-target @nodeId(Address) @condition(override) on the
-        // filter is emitted as a correlated EXISTS handing addressDistrictAlberta an aliased Address.
-        // Seed: store 1 holds Smith + Jones (address 1, Alberta), store 2 holds Williams (address 3,
-        // Alberta). Pre-fix the inline emitter passed the customer alias to a method declaring Address
-        // and failed to compile (the SakFetchers shape that regressed in 10.0.0-RC16).
+        // filter is emitted as a correlated EXISTS handing addressDistrictAlberta an aliased Address,
+        // never the customer alias (a method declaring Address cannot take it). Seed: store 1 holds
+        // Smith + Jones (address 1, Alberta), store 2 holds Williams (address 3, Alberta).
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrict(filter: {}) { lastName } } }");
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
@@ -323,34 +317,31 @@ class GraphQLQueryTest {
     @Test
     void store_customersByFirstName_inlineScalarCondition_narrowsByArgument() {
         // Inline (non-@splitQuery) @reference child list whose filter carries a scalar
-        // @condition arg (customer.first_name = ?). Pre-fix the inline emitter read the argument off
-        // the ancestor fetcher's env (env.getArgument("filter")), which is null there, so the
-        // predicate collapsed to noCondition() and the field returned ALL of the store's customers.
-        // The fix reads the argument off the inline field's own SelectedField, so it narrows.
-        // Seed by store: store 1 = {Mary, Patricia, Barbara}, store 2 = {Linda, Elizabeth}.
+        // @condition arg (customer.first_name = ?). The inline emitter must read the argument off
+        // the inline field's own SelectedField; the ancestor fetcher's env.getArgument("filter") is
+        // null there, which collapses the predicate to noCondition() and returns ALL of the store's
+        // customers. Seed by store: store 1 = {Mary, Patricia, Barbara}, store 2 = {Linda, Elizabeth}.
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1, 2]) { storeId customersByFirstName(filter: {firstName: \"Mary\"}) { firstName } } }");
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
             .anySatisfy(s -> {
                 assertThat(s.get("storeId")).isEqualTo(1);
-                // Narrowed to exactly Mary — not the pre-fix unfiltered {Mary, Patricia, Barbara}.
+                // Narrowed to exactly Mary, not the unfiltered {Mary, Patricia, Barbara}.
                 assertThat((List<Map<String, Object>>) s.get("customersByFirstName"))
                     .extracting(c -> c.get("firstName")).containsExactly("Mary");
             })
             .anySatisfy(s -> {
                 assertThat(s.get("storeId")).isEqualTo(2);
-                // Mary is not a store-2 customer: correct behaviour returns empty; the pre-fix bug
-                // would return store 2's unfiltered customers (the reproducer's "returns rows it did
-                // not ask for" shape).
+                // Mary is not a store-2 customer, so empty; a collapsed predicate would instead
+                // return store 2's unfiltered customers ("returns rows it did not ask for").
                 assertThat((List<Map<String, Object>>) s.get("customersByFirstName")).isEmpty();
             });
     }
 
     @Test
     void store_customersByFirstName_inlineVsSplit_identicalResults() {
-        // The @splitQuery sibling has always resolved the argument correctly (its env genuinely
-        // is the field's own environment). Pin that the fixed inline path now matches it byte-for-byte
-        // for the identical filter — inline/split parity.
+        // Inline/split parity: the @splitQuery sibling's env genuinely is the field's own
+        // environment, so both paths must return identical rows for the identical filter.
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1]) {"
             + " inlineList: customersByFirstName(filter: {firstName: \"Mary\"}) { firstName }"
@@ -367,10 +358,10 @@ class GraphQLQueryTest {
 
     @Test
     void store_customersFirstN_inlinePagination_limitsRows() {
-        // Inline @reference list `first` pagination. Pre-fix the limit was read off the ancestor
-        // env (env.getArgument("first")), so `first` was silently ignored (Integer.MAX_VALUE) and all
-        // rows came back. The fix reads it off the inline field's SelectedField. Store 1 has three
-        // customers ordered by primary key (Mary, Patricia, Barbara); first: 2 keeps the first two.
+        // Inline @reference list `first` pagination. The limit must come off the inline field's
+        // SelectedField; read off the ancestor env it is null, `first` is silently ignored
+        // (Integer.MAX_VALUE) and all rows come back. Store 1 has three customers ordered by
+        // primary key (Mary, Patricia, Barbara); first: 2 keeps the first two.
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1]) { customersFirstN(first: 2) { firstName } } }");
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
@@ -384,10 +375,10 @@ class GraphQLQueryTest {
     void store_customersByNodeId_inlineDecodeNarrows_foreignNodeIdReturnsEmpty() {
         // Inline (non-@splitQuery) @reference child list whose filter carries a same-table
         // @nodeId field. The decoded predicate (customer.customer_id IN (decoded)) genuinely consumes
-        // the argument, so it is the reproducer's decode-with-value path (unlike customersByAddressDistrict,
-        // whose @condition(override) ignores its addressId). Pre-fix the inline emitter read the filter
-        // off the ancestor env (null), so the decode saw null and the predicate collapsed — the field
-        // returned ALL of the store's customers. The fix reads it off the field's own SelectedField.
+        // the argument, so this is the decode-with-value path (unlike customersByAddressDistrict,
+        // whose @condition(override) ignores its addressId). The filter must come off the field's own
+        // SelectedField; off the ancestor env it is null, the decode sees null and the collapsed
+        // predicate returns ALL of the store's customers.
         // Seed: customer 3 (Linda) belongs to store 2. Filtering store 1's children by Linda's node id
         // must return empty (a node id NOT under the parent); the same filter under store 2 returns Linda,
         // proving the decode narrows rather than always-empties.
@@ -397,8 +388,8 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
             .anySatisfy(s -> {
                 assertThat(s.get("storeId")).isEqualTo(1);
-                // Linda is a store-2 customer: not under store 1, so empty. Pre-fix returned store 1's
-                // unfiltered customers (the reproducer's "returns rows it did not ask for" shape).
+                // Linda is a store-2 customer: not under store 1, so empty (not store 1's
+                // unfiltered customers).
                 assertThat((List<Map<String, Object>>) s.get("customersByNodeId")).isEmpty();
             })
             .anySatisfy(s -> {
@@ -410,9 +401,8 @@ class GraphQLQueryTest {
 
     @Test
     void store_customersByNodeId_inlineVsSplit_identicalResults() {
-        // The @splitQuery sibling has always resolved the argument correctly (its env is the
-        // field's own environment). Pin that the fixed inline decode path now matches it for the
-        // identical @nodeId filter — inline/split parity. Store 2 = {Linda (3), Elizabeth (5)}.
+        // Inline/split parity for the @nodeId decode path: both must return identical rows for
+        // the identical filter. Store 2 = {Linda (3), Elizabeth (5)}.
         String linda = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
         String elizabeth = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 5);
         Map<String, Object> data = execute(
@@ -435,7 +425,7 @@ class GraphQLQueryTest {
         // against the root customer table) AND an FK-target @nodeId @condition(override)
         // (addressDistrictAlberta, against an aliased Address via EXISTS). The QueryConditions shim ANDs
         // both terms. Alberta customers are Smith, Williams, Jones; Jones is inactive, so the active
-        // term drops it. Guards the multi-filter accumulation where soknadsmangeltyper regressed.
+        // term drops it. Guards the multi-filter accumulation.
         Map<String, Object> data = execute("{ customersByAddressDistrictActive(filter: {}) { lastName } }");
         assertThat(data).extractingByKey("customersByAddressDistrictActive", as(list(Map.class)))
             .extracting(c -> c.get("lastName"))
@@ -458,14 +448,11 @@ class GraphQLQueryTest {
     // City service children (cities_cityUppercase_* / cities_cityLowercase_* below).
     @Test
     void films_titleLowercase_resolvesViaServiceRecordFieldDataLoader_row1Source() {
-        // L6 sibling: identical wiring to titleUppercase but the developer-side method
-        // takes Set<Row1<Integer>> (Row source-shape) and returns Map<Row1<Integer>, String>.
-        // The classifier routes Row1 sources to the Wrap.Row source shape (vs Wrap.Record for the
-        // Record1 sibling); the framework's Row-wrap key element type Row1<Integer>
-        // matches the developer's declaration. Confirms the field<N>()-based dispatch path
-        // round-trips cleanly through the SQL VALUES table to the database and back, with
-        // value-based Row.equals/hashCode joining the developer's response Map to the
-        // framework's input keys.
+        // Identical wiring to titleUppercase but the developer-side method takes
+        // Set<Row1<Integer>> (Wrap.Row source shape, vs Wrap.Record for the Record1 sibling)
+        // and returns Map<Row1<Integer>, String>. Confirms the Row-keyed dispatch round-trips
+        // through the SQL VALUES table and back, with value-based Row.equals/hashCode joining
+        // the developer's response Map to the framework's input keys.
         Map<String, Object> data = execute("{ films { title titleLowercase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .hasSize(5)
@@ -480,16 +467,12 @@ class GraphQLQueryTest {
 
     @Test
     void films_titleTitlecase_resolvesViaServiceRecordFieldDataLoader_tableRecordSource() {
-        // L6 sibling: identical wiring to titleUppercase / titleLowercase but the
-        // developer-side method takes Set<FilmRecord> (typed-TableRecord source-shape) and
-        // returns Map<FilmRecord, String>. The classifier routes Set<X extends TableRecord>
-        // to the Wrap.TableRecord source shape (carrying FilmRecord); the rows-method
-        // emitter passes through `keys` directly because the generated lambda's keys local is
-        // already typed Set<FilmRecord>. Confirms the typed extraction
-        // (env.getSource().into(Tables.FILM)) round-trips through the DataLoader and the
-        // developer can read column values via FilmRecord.getTitle() without an extra fetch.
-        // Note: this query selects `title` alongside, so it does not by itself pin the
-        // "fully-populated parent records" contract — that lives in
+        // Identical wiring to titleUppercase / titleLowercase but the developer-side method
+        // takes Set<FilmRecord> (Wrap.TableRecord source shape) and returns
+        // Map<FilmRecord, String>. Confirms the typed extraction round-trips through the
+        // DataLoader and the developer can read column values via FilmRecord.getTitle()
+        // without an extra fetch. Note: this query selects `title` alongside, so it does not
+        // by itself pin the "fully-populated parent records" contract; that lives in
         // films_titleTitlecase_withoutSelectingTitle_readsNonKeyColumnOffSourceRecord.
         Map<String, Object> data = execute("{ films { title titleTitlecase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
@@ -506,16 +489,16 @@ class GraphQLQueryTest {
 
     @Test
     void films_titleTitlecase_withoutSelectingTitle_readsNonKeyColumnOffSourceRecord() {
-        // The unmasked reproducer for the typed-TableRecord source-shape contract. The
-        // query selects ONLY the service child — no `title`, no `id` — so nothing in the client
+        // The unmasked fixture for the typed-TableRecord source-shape contract. The query
+        // selects ONLY the service child (no `title`, no `id`), so nothing in the client
         // selection projects the `title` column. The service body reads film.getTitle() off the
         // source record (a non-key column), which the manual documents as supported: "The
         // framework supplies fully-populated parent records (every column on the parent table)"
         // (handle-services.adoc). Film.$fields must therefore project the full parent row
-        // whenever a TableRecord-sourced service child is selected; pre-fix, getTitle() read
-        // null off the partial record and the field silently resolved to a titlecased null.
-        // This test is the live behaviour behind the manual's "fully-populated parent records"
-        // claim — if the projection regresses, this goes red, not just the docs stale.
+        // whenever a TableRecord-sourced service child is selected; on a partial record,
+        // getTitle() reads null and the field silently resolves to a titlecased null. This test
+        // is the live behaviour behind the manual's claim: if the projection regresses, this
+        // goes red, not just the docs stale.
         Map<String, Object> data = execute("{ films { titleTitlecase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .extracting(f -> f.get("titleTitlecase"))
@@ -530,15 +513,14 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException() {
-        // Defect 1 reproducer (multiset alias collision in key extraction). Film.Length is a
-        // multiset-backed object field whose projection is aliased "Length", case-insensitively
-        // shadowing the physical FILM.LENGTH (smallint) column. titleTitlecase is a
-        // Wrap.TableRecord @service child that projects the full parent row and rebuilds a
-        // FilmRecord from it. Pre-fix the rebuild did env.getSource().into(Tables.FILM), which maps
-        // by column name; the "Length" multiset Result shadowed FILM.LENGTH and could not convert
-        // to smallint, so every film crashed with a MappingException (and the raw record-dumping
-        // message escaped redaction — Defect 2). Post-fix the full row is projected under reserved
-        // __src_<col>__ aliases and rebuilt column by column, so the multiset alias cannot collide.
+        // Multiset alias collision in key extraction. Film.Length is a multiset-backed object
+        // field whose projection is aliased "Length", case-insensitively shadowing the physical
+        // FILM.LENGTH (smallint) column. titleTitlecase is a Wrap.TableRecord @service child
+        // that projects the full parent row and rebuilds a FilmRecord from it. A by-column-name
+        // rebuild (env.getSource().into(Tables.FILM)) lets the "Length" multiset Result shadow
+        // FILM.LENGTH, fail the smallint conversion, and crash every film with a
+        // MappingException; the full row is therefore projected under reserved __src_<col>__
+        // aliases and rebuilt column by column, so the multiset alias cannot collide.
         // Selecting only the two colliding participants isolates the seam.
         Map<String, Object> data = execute("{ films { titleTitlecase Length { inventoryId } } }");
         var films = (java.util.List<Map<String, Object>>) data.get("films");
@@ -564,12 +546,10 @@ class GraphQLQueryTest {
         // The service-returned-parent kind for the Wrap.TableRecord key extraction fork.
         // filmsByService runs its own selectFrom(FILM) and hands back Result<FilmRecord> with no
         // framework projection, so the parent row carries the real columns and NO reserved
-        // __src_*__ aliases. titleTitlecase is a Wrap.TableRecord @service child whose key
-        // extraction rebuilds a FilmRecord from the parent source. Pre-fix the extraction read
-        // source.get("__src_film_id__", ...) unconditionally and threw
-        // IllegalArgumentException: Field "__src_..." is not contained in row type on every film;
-        // the runtime `source instanceof FilmRecord` fork now copies the typed parent's columns
-        // directly. The SQL-parent kind of the same field stays pinned by
+        // __src_*__ aliases. The runtime `source instanceof FilmRecord` fork must copy the typed
+        // parent's columns directly; an unconditional source.get("__src_film_id__", ...) read
+        // throws IllegalArgumentException (field not contained in row type) on every film.
+        // The SQL-parent kind of the same field stays pinned by
         // films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException.
         Map<String, Object> data = execute("{ filmsByService(ids: [1, 2]) { titleTitlecase } }");
         var films = (java.util.List<Map<String, Object>>) data.get("filmsByService");
@@ -600,12 +580,11 @@ class GraphQLQueryTest {
 
     @Test
     void films_titleUppercase_resolvesViaServiceRecordFieldDataLoader() {
-        // Phase B: @service child field with a scalar return. The generator-emitted
-        // rows-method body calls FilmService.titleUppercase via the parameterised
-        // ArgCallEmitter (Sources -> keys, DslContext -> dsl local). Each key is one parent
-        // FILM_ID; the developer's method returns Map<Row1<Integer>, String> with uppercased
-        // titles. End-to-end verification that the Phase A plumbing (the KeyLift/SourceKey model,
-        // IMPLEMENTED_LEAVES, shared emitters) works with Phase B's body emission against PostgreSQL.
+        // @service child field with a scalar return. The generator-emitted rows-method body
+        // calls FilmService.titleUppercase via the parameterised ArgCallEmitter (Sources -> keys,
+        // DslContext -> dsl local). Each key is one parent FILM_ID; the developer's method
+        // returns Map<Row1<Integer>, String> with uppercased titles. End-to-end verification of
+        // the KeyLift/SourceKey model and shared emitters against PostgreSQL.
         Map<String, Object> data = execute("{ films { title titleUppercase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .hasSize(5)
@@ -649,12 +628,12 @@ class GraphQLQueryTest {
     // ---------------------------------------------------------------------------------------------
     // Aliased duplicate reference selections (result-key-aware projection).
     //
-    // Selecting the same inline reference / computed field twice under different aliases used to
-    // mint two SELECT terms with the same field-named SQL alias (a duplicate-alias jOOQ error),
-    // and the source-only read could not tell two aliases apart. Projections are now aliased by the
-    // runtime result key under the reserved "__rk_" prefix, and the reads are env-dependent
-    // (env.getField().getResultKey()), so each alias resolves independently. execute() already
-    // asserts zero GraphQL errors, so reaching the value assertions proves no duplicate-alias crash.
+    // Selecting the same inline reference / computed field twice under different aliases must not
+    // mint two SELECT terms with the same field-named SQL alias (a duplicate-alias jOOQ error).
+    // Projections are aliased by the runtime result key under the reserved "__rk_" prefix, and the
+    // reads are env-dependent (env.getField().getResultKey()), so each alias resolves
+    // independently. execute() already asserts zero GraphQL errors, so reaching the value
+    // assertions proves no duplicate-alias crash.
     // ---------------------------------------------------------------------------------------------
 
     @Test
@@ -703,9 +682,10 @@ class GraphQLQueryTest {
 
     @Test
     void aliasedDuplicateListTableField_resolveIndependently() {
-        // Inline list-cardinality TableField (Film.Length -> [Inventory!]!) selected twice under two
-        // aliases. Pre-fix this minted two DSL.multiset(...).as("Length") terms (duplicate alias).
-        // The two aliases carry the same sub-selection, so per film they must return equal lists.
+        // Inline list-cardinality TableField (Film.Length -> [Inventory!]!) selected twice under
+        // two aliases (the shape that mints duplicate DSL.multiset(...).as("Length") terms if
+        // unbucketed). The two aliases carry the same sub-selection, so per film they must return
+        // equal lists.
         Map<String, Object> data = execute("{ films { filmId a: Length { inventoryId } b: Length { inventoryId } } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .hasSize(5)
@@ -749,11 +729,11 @@ class GraphQLQueryTest {
     void films_castMembers_referenceSubfieldResolvesViaServiceTableFieldLift() {
         // Lift-back execution-tier primary net. Film.castMembers is a list-cardinality child
         // @service (mapped container) returning film_actor rows; FilmActor.actor is a @reference
-        // (correlated multiset, not a stored column). Before the lift-back the verbatim service return carried
-        // no `actor` column and the reference fetcher threw
-        // 'Field "actor" is not contained in row type'; the lift re-projects each returned PK through
-        // FilmActor.$fields so the multiset is present. The execute() helper asserts zero GraphQL
-        // errors, so reaching the assertions already proves the reference no longer throws.
+        // (correlated multiset, not a stored column). The lift re-projects each returned PK through
+        // FilmActor.$fields so the multiset is present; a verbatim service return carries no
+        // `actor` column and the reference fetcher throws
+        // 'Field "actor" is not contained in row type'. The execute() helper asserts zero GraphQL
+        // errors, so reaching the assertions already proves the reference does not throw.
         // In-tree analogue of opptak's Sak.saksdokumenter -> Saksdokument.dokument.
         Map<String, Object> data = execute("""
             { films { filmId castMembers { actorId actor { firstName } } } }
@@ -843,15 +823,15 @@ class GraphQLQueryTest {
 
     @Test
     void inventoryById_filmCardDataNullAccessor_rendersFilmNullWithoutNpe() {
-        // Execution-tier fixture (the load-bearing net for the accessor ONE-arm null guard):
-        // the record-backed parent FilmCardData's film() accessor returns null for even film_ids
-        // (a nullable to-one @table relation that resolves to NO row on an otherwise-successful
-        // parent). buildAccessorKeySingle's `if (element == null) return completedFuture(null)`
-        // guard must render `film` as null for those rows rather than raising
+        // The load-bearing net for the accessor ONE-arm null guard: the record-backed parent
+        // FilmCardData's film() accessor returns null for even film_ids (a nullable to-one @table
+        // relation that resolves to NO row on an otherwise-successful parent).
+        // buildAccessorKeySingle's null guard must render `film` as null for those rows rather
+        // than raising
         //   Cannot invoke "...Record.into(...)" because "element" is null
-        // (the bug the ONE-arm guard fixes). execute(...) asserts result.getErrors() is empty, so the NPE, which
-        // would surface as a DataFetcher exception — is pinned out behaviourally, not by grepping the
-        // emitted `if (element == null)` out of the fetcher body (banned per the development principles).
+        // execute(...) asserts result.getErrors() is empty, so the NPE is pinned out
+        // behaviourally, not by grepping the emitted guard out of the fetcher body (banned per
+        // the development principles).
         //
         // Mixed batch: with the seed inventory_id N -> film_id N, inventories 1 and 3 (odd film_ids)
         // still resolve their full Film row through the same accessor-keyed (Arity.ONE) loader, proving the
@@ -1002,7 +982,7 @@ class GraphQLQueryTest {
 
     @Test
     void films_filteredByArgNodeId_returnsRowsMatchingDecodedIds() {
-        // Argument-level same-table @nodeId now classifies as QueryTableField with a
+        // Argument-level same-table @nodeId classifies as QueryTableField with a
         // BodyParam.In filter against film.film_id (no lookup-promotion). Each opaque ID
         // decodes once via ThrowOnMismatch; well-formed ids decode cleanly and the
         // predicate emits as `WHERE film_id IN (?, ?)`. Result rows correspond to the supplied
@@ -1017,11 +997,11 @@ class GraphQLQueryTest {
 
     @Test
     void filmsByNodeIdArgWithTitleFilter_composesPkInWithSiblingFilter() {
-        // Acceptance: same-table @nodeId composed with a sibling scalar filter classifies
-        // as QueryTableField (not QueryLookupTableField) with a BodyParam.In on film.film_id
-        // alongside a BodyParam.Eq on film.title. The old lookup-promotion gate dropped
-        // sibling filter args silently; the lift puts them on the same rail. Encode three
-        // film ids; only the one whose title matches survives the AND.
+        // Same-table @nodeId composed with a sibling scalar filter classifies as
+        // QueryTableField (not QueryLookupTableField) with a BodyParam.In on film.film_id
+        // alongside a BodyParam.Eq on film.title, so sibling filter args ride the same rail
+        // instead of being dropped silently. Encode three film ids; only the one whose title
+        // matches survives the AND.
         String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
         String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
         String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
@@ -1045,13 +1025,12 @@ class GraphQLQueryTest {
     @Test
     void filmsByEffectiveNullability_omittedFilter_returnsUnfilteredBaseline() {
         // The nullable enclosing `filter: FilmIdListFilter` carries a non-null inner
-        // `filmIds: [Int!]!`. Before the fix the generator passed the inner field's own non-null
-        // declaration straight into BodyParam.nonNull, so the condition method emitted an
-        // unguarded `condition.and(film.film_id.in(null))` when the filter Map traversal
-        // returned null. jOOQ renders `.in(null)` as the literal `false`, silently producing
-        // an empty result set. Now the BodyParam carries effective runtime nullability
-        // (AND of the enclosing chain), so the emitter wraps the condition in a null guard
-        // and the unfiltered baseline (all 5 sakila films) survives.
+        // `filmIds: [Int!]!`. The BodyParam must carry effective runtime nullability (AND of
+        // the enclosing chain), not the inner field's own non-null declaration: without the
+        // null guard the condition method emits an unguarded
+        // `condition.and(film.film_id.in(null))` when the filter Map traversal returns null,
+        // and jOOQ renders `.in(null)` as the literal `false`, silently producing an empty
+        // result set. With the guard, the unfiltered baseline (all 5 sakila films) survives.
         //
         // This is the only tier that observes jOOQ's `.in(null)` -> `false` rendering:
         // pipeline tier asserts on the classified BodyParam.nonNull slot, compilation tier
@@ -1068,13 +1047,12 @@ class GraphQLQueryTest {
 
     @Test
     void filmsByNodeIdArg_malformedIds_surfacesClientErrorNotBaseline() {
-        // This inverts the former baseline behaviour: an authored @nodeId filter now throws
-        // on a malformed id rather than dropping it silently. filmsByNodeIdArg is a top-level fetch
-        // field (schema line ~191); the throw propagates out of the WHERE-IN decode helper and the
-        // no-channel catch arm routes it through ErrorRouter.surfaceClientErrorOrRedact, so the real
-        // client-facing message reaches the response errors array and the field resolves to null.
-        // This is the direct regression for the reported bug (soknadId: ["IKKE_EN_ID"] returned the
-        // full table); the all-malformed case must NOT degrade into the empty-list baseline.
+        // An authored @nodeId filter throws on a malformed id rather than dropping it silently.
+        // filmsByNodeIdArg is a top-level fetch field; the throw propagates out of the WHERE-IN
+        // decode helper and the no-channel catch arm routes it through
+        // ErrorRouter.surfaceClientErrorOrRedact, so the real client-facing message reaches the
+        // response errors array and the field resolves to null. The all-malformed case must NOT
+        // degrade into the empty-list baseline (silently dropped ids once returned the full table).
         graphql.ExecutionResult result = executeRaw(
             "{ filmsByNodeIdArg(ids: [\"garbage-1\", \"garbage-2\"]) { filmId title } }");
         assertThat(result.getErrors())
@@ -1196,12 +1174,11 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnectionByOptionalIds_idsEmptyList_paginatesFullTableAndCountsAll() {
-        // Regression (matches the external bug report exactly): an @asConnection query
-        // with a list @nodeId filter receiving an empty list [] must paginate the full table
-        // and report the full total, not zero the query. Apollo Client serialises an empty
-        // selection as [], so this once silently dropped all rows (IN () = false AND-ed
-        // into WHERE). The fix drops the empty list to noCondition on the fetch path; the count
-        // path composes the same condition method, so totalCount sees the full table too.
+        // An @asConnection query with a list @nodeId filter receiving an empty list [] must
+        // paginate the full table and report the full total, not zero the query (Apollo Client
+        // serialises an empty selection as []; an `IN ()` AND-ed into WHERE drops all rows).
+        // The empty list drops to noCondition on the fetch path; the count path composes the
+        // same condition method, so totalCount sees the full table too.
         Map<String, Object> data = execute(
             "{ filmsConnectionByOptionalIds(ids: [], first: 10) "
             + "{ totalCount nodes { filmId } } }");
@@ -1214,10 +1191,10 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnectionByOptionalIds_idsSuppliedWithSiblingFilter_composes() {
-        // Acceptance: PK-IN filter from same-table @nodeId composes with a sibling
-        // condition-driven filter (the "siblings compose" guarantee, now lifted onto the
-        // connection rail). Three ids span films with three different titles; constrain by
-        // one of those titles and a single film survives the AND.
+        // PK-IN filter from same-table @nodeId composes with a sibling condition-driven
+        // filter on the connection rail (the "siblings compose" guarantee). Three ids span
+        // films with three different titles; constrain by one of those titles and a single
+        // film survives the AND.
         String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
         String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
         String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
@@ -1356,12 +1333,10 @@ class GraphQLQueryTest {
     @Test
     void films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline() {
         // An empty list on a fetch-path list-IN filter narrows by nothing
-        // (DSL.noCondition() identity) rather than emitting `IN () = false`, which jOOQ
-        // renders as the constant `false` and would zero the query. This restores the G9
-        // behaviour for fetch filters (Apollo serialising an empty selection as [] meant
-        // "no filter"), reverting the deliberate G9→G10 deviation that aligned [] with the
-        // unsatisfiable column-equality body. The null/omitted case already drops to
-        // noCondition; [] is now its list-arity sibling.
+        // (DSL.noCondition() identity) rather than emitting `IN ()`, which jOOQ renders as the
+        // constant `false` and would zero the query. Apollo serialises an empty selection as [],
+        // meaning "no filter". The null/omitted case already drops to noCondition; [] is its
+        // list-arity sibling.
         Map<String, Object> data = execute(
             "{ filmsBySameTableNodeId(filter: {filmIds: []}) { filmId } }");
         assertThat(data).extractingByKey("filmsBySameTableNodeId", as(LIST)).hasSize(5);
@@ -1546,9 +1521,9 @@ class GraphQLQueryTest {
     @Test
     void filmsConnection_rejectsFirstAndLastTogether() {
         // Relay spec: must reject when both first and last are supplied. The connection helper
-        // throws GraphitronClientException (migrated from IllegalArgumentException), which
-        // the no-channel disposition surfaces with the real message instead of redacting to a
-        // correlation-id 500: a client mistake reads as a client error.
+        // throws GraphitronClientException, which the no-channel disposition surfaces with the
+        // real message instead of redacting to a correlation-id 500: a client mistake reads as
+        // a client error.
         var result = executeRaw(
             "{ filmsConnection(first: 2, last: 2) { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();
@@ -1592,7 +1567,7 @@ class GraphQLQueryTest {
 
     // ===== filmsConnection — malformed cursor decode =====
     // A malformed after/before cursor is the same "client handed us an opaque token" class of
-    // mistake as a bad node id: decodeCursor now collapses every wire-input decode failure into a
+    // mistake as a bad node id: decodeCursor collapses every wire-input decode failure into a
     // GraphitronClientException("cursor is not valid (was: \"<echo>\")") the no-channel disposition
     // surfaces, instead of letting the raw runtime exception redact into a correlation-id 500. Each
     // test pins the exact message and doesNotContain the redaction sentinel, mirroring
@@ -1601,7 +1576,7 @@ class GraphQLQueryTest {
     @Test
     void filmsConnection_malformedBase64AfterCursor_surfacesClientError() {
         // Failure mode 1: Base64.getDecoder().decode throws IllegalArgumentException on a token
-        // that is not valid Base64. Previously a redacted 500.
+        // that is not valid Base64.
         var result = executeRaw(
             "{ filmsConnection(first: 2, after: \"not-base64!!!\") { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();
@@ -1631,7 +1606,7 @@ class GraphQLQueryTest {
     void filmsByRateDescTitleAsc_underSplitAfterCursor_surfacesClientError() {
         // Failure mode 2: too few tokens. filmsByRateDescTitleAsc orders on two columns
         // (RENTAL_RATE, TITLE), but this NUL-free cursor decodes to a single token — arity
-        // mismatch. Previously tokens[1] threw ArrayIndexOutOfBoundsException and redacted.
+        // mismatch (unguarded, tokens[1] throws ArrayIndexOutOfBoundsException and redacts).
         String cursor = java.util.Base64.getEncoder()
             .encodeToString("2.99".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var result = executeRaw(
@@ -1644,9 +1619,9 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_overSplitAfterCursor_surfacesClientError() {
-        // New behaviour: too many tokens. "1\u00002" decodes to two tokens against the single
-        // FILM_ID order-by column. Strict arity rejects it; the old loop silently ignored the
-        // extra token, so an over-split (forged/stale) cursor used to be tolerated.
+        // Too many tokens: "1\u00002" decodes to two tokens against the single
+        // FILM_ID order-by column. Strict arity rejects an over-split (forged/stale) cursor
+        // rather than silently ignoring the extra token.
         String cursor = java.util.Base64.getEncoder()
             .encodeToString("1\u00002".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var result = executeRaw(
@@ -2106,8 +2081,8 @@ class GraphQLQueryTest {
         //   Genre (id=1)
         //   └── Action (id=2)
         //       └── Thriller (id=5)
-        // Depth-2 query: start at Thriller, walk parent → parent. Verifies Plan Decision 5's
-        // "recursion terminates on client selection depth" invariant end-to-end.
+        // Depth-2 query: start at Thriller, walk parent → parent. Verifies end-to-end that
+        // recursion terminates on client selection depth.
         Map<String, Object> data = execute(
             "{ categoryById(category_id: [5]) { name parent { name parent { name } } } }");
         var thriller = assertThat(data).extractingByKey("categoryById", as(LIST))
@@ -2154,7 +2129,7 @@ class GraphQLQueryTest {
             .extractingByKey("parent").isNull();
     }
 
-    // ===== argres Phase 2a — inline LookupTableField (Film.actors via film_actor junction) =====
+    // ===== inline LookupTableField (Film.actors via film_actor junction) =====
 
     @Test
     void inlineLookupTableField_returnsMatchingActors() {
@@ -2287,9 +2262,9 @@ class GraphQLQueryTest {
         // SplitParent.tags (@splitQuery) whose FK split_parent_tag.parent_code references
         // split_parent.parent_code — a non-PK UNIQUE column, not the parent_id PK. The split-rows
         // fetcher must project parent_code (the FK's referenced column) into parentInput and
-        // correlate on it. Before the fix, parentInput was keyed by the parent PK, the correlation
-        // predicate referenced an absent parentInput column, jOOQ resolved it to NULL, and every
-        // parent returned an empty list. The seed gives ALPHA two tags and BETA one.
+        // correlate on it; keyed by the parent PK instead, the correlation predicate references
+        // an absent parentInput column, jOOQ resolves it to NULL, and every parent returns an
+        // empty list. The seed gives ALPHA two tags and BETA one.
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ splitParents { parentCode tags { tag } } }");
@@ -2316,8 +2291,8 @@ class GraphQLQueryTest {
         // SplitFilterParent.targetSplit is a single-cardinality @splitQuery whose hop-0
         // {key:, condition:} filter reads the parent's `include` column. Parents 1 and 2 point at
         // the SAME target row (target_id=1); the filter passes for parent 1 (include=true) and
-        // fails for parent 2 (include=false). A slot-keyed batch (the former OnFkSlots grain)
-        // would collapse both parents onto key target_id=1 and hand them one shared verdict;
+        // fails for parent 2 (include=false). A slot-keyed batch would collapse both parents
+        // onto key target_id=1 and hand them one shared verdict;
         // parent-PK keying (OnParentJoin) gives each its own. targetInline is the inline sibling —
         // asserting both proves the split form reproduces the inline form's per-parent rows exactly.
         Map<String, Object> data = execute(
@@ -2348,9 +2323,9 @@ class GraphQLQueryTest {
     // converter_campus.org_code -> converter_org.org_code is a BIGINT domain (org_code_domain)
     // whose jOOQ columns carry Converter<Long, String> (OrgCodeStringConverter), so the DataLoader
     // key is Row1<String> while the SQL type is the domain. The rows method's parent-input VALUES
-    // cells must rebind each scalar at the column's Converter DataType; before the fix the raw key
-    // Field bound as varchar and PostgreSQL rejected the correlation JOIN with "operator does not
-    // exist: org_code_domain = character varying", nulling every child out.
+    // cells must rebind each scalar at the column's Converter DataType; a raw key Field binds as
+    // varchar and PostgreSQL rejects the correlation JOIN with "operator does not exist:
+    // org_code_domain = character varying", nulling every child out.
 
     @SuppressWarnings("unchecked")
     @Test
@@ -2588,9 +2563,10 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void referenceFilter_inputObjectField_filtersByJoinedColumn() {
-        // Surface 1 (the motivating bug): the @reference filter field lives inside a @table
-        // input object; the terminal column (country.country) is absent from the local city table.
-        // The former build mis-bound it against city and failed to compile the conditions class.
+        // Surface 1: the @reference filter field lives inside a @table input object; the
+        // terminal column (country.country) is absent from the local city table, so the
+        // condition must bind against the joined country table (a city-side mis-bind fails
+        // the conditions class compile).
         Map<String, Object> data = execute(
             "{ citiesByCountryFilter(filter: {countryName: \"United States\"}) { cityName } }");
         List<Map<String, Object>> cities = (List<Map<String, Object>>) data.get("citiesByCountryFilter");
@@ -2766,7 +2742,7 @@ class GraphQLQueryTest {
 
     @Test
     void splitTableField_singleCardinality_nullFk_shortCircuitsWithoutLoaderDispatch() {
-        // Store 2 has manager_staff_id = NULL in init.sql. The §4 null-FK short-circuit in
+        // Store 2 has manager_staff_id = NULL in init.sql. The null-FK short-circuit in
         // StoreFetchers.manager returns CompletableFuture.completedFuture(null) before
         // dispatching to the DataLoader, so no rows-method round-trip fires for that store.
         QUERY_COUNT.set(0);
@@ -3342,8 +3318,8 @@ class GraphQLQueryTest {
     @Test
     void splitQueryConnection_totalCount_isLazyOnSelection() {
         // graphql-java only invokes the registered totalCount resolver on selection: no count
-        // SQL when the field is unselected, per-parent count statements when it is (matching
-        // the B4c-2 cost profile: N lazy count queries for a batch of N parents).
+        // SQL when the field is unselected, per-parent count statements when it is (N lazy
+        // count queries for a batch of N parents).
         SQL_LOG.clear();
         execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
             + "{ nodes { actorId } } } }");
@@ -3362,12 +3338,12 @@ class GraphQLQueryTest {
 
     @Test
     void splitQueryConnection_negativeFirst_surfacesClientErrorThroughAsyncArm() {
-        // Load-bearing test for the async no-channel flip: the nested (DataLoader-based)
+        // Load-bearing test for the async no-channel arm: the nested (DataLoader-based)
         // connection's pageRequest guard throws inside the batch lambda, DataLoader wraps it in
-        // a CompletionException, and the fetcher's .exceptionally arm — surfaceClientErrorOrRedact
-        // now, plain redact before — unwraps the cause chain and surfaces the real message.
-        // A root-connection test alone would pass without the flip (the sync catch arm has
-        // surfaced client errors all along).
+        // a CompletionException, and the fetcher's .exceptionally arm
+        // (surfaceClientErrorOrRedact) must unwrap the cause chain and surface the real message.
+        // A root-connection test alone would not cover this arm; the sync catch arm surfaces
+        // client errors independently.
         var result = executeRaw(
             "{ filmById(film_id: [\"1\"]) { actorsConnection(first: -1) { nodes { lastName } } } }");
         assertThat(result.getErrors()).isNotEmpty();
@@ -3397,13 +3373,13 @@ class GraphQLQueryTest {
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
     }
 
-    // ===== argres Phase 4: @condition on INPUT_FIELD_DEFINITION =====
+    // ===== @condition on INPUT_FIELD_DEFINITION =====
 
     @Test
     @SuppressWarnings("unchecked")
     void inputFieldCondition_tableInput_filtersByFilmId() {
         // FilmConditionInput.filmId carries @condition → condition is classified, wired,
-        // and called at runtime. Phase 4b threads nested-arg extraction through ArgCallEmitter,
+        // and called at runtime. Nested-arg extraction is threaded through ArgCallEmitter,
         // so filmId arrives as the actual String passed in the Map; filmIdCondition builds a
         // real Film.FILM_ID = ? predicate. Expect exactly one row matching filmId == 1.
         Map<String, Object> data = execute(
@@ -3420,8 +3396,7 @@ class GraphQLQueryTest {
         // three 2.99 films (ADAPTATION HOLES, AFFAIR PREJUDICE, AGENT TRUMAN): >= 2.0 excludes
         // ACADEMY DINOSAUR (0.99) and <= 3.0 excludes ACE GOLDFINGER (4.99). The unique 3-film
         // result proves BOTH bounds bind to the right nested field — a swapped or dropped bound
-        // would yield 0 or 4 films. This is the test that proves the narrowed acceptance is
-        // correct, not merely non-erroring.
+        // would yield 0 or 4 films.
         String query = "{ %s(filter: {rentalRateRange: {fra: 2.0, til: 3.0}}) { title } }";
         List<Map<String, Object>> inferred = (List<Map<String, Object>>) execute(
             query.formatted("filmsByRentalRateRange")).get("filmsByRentalRateRange");
@@ -3490,7 +3465,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod() {
-        // alf production shape: outer @condition(override:true) composed with a plain
+        // Production shape: outer @condition(override:true) composed with a plain
         // (non-@table) input whose field carries @condition. Same divergence-pinning
         // assertion as the @table case: (film_id >= 2) AND (film_id = 1) → no rows.
         Map<String, Object> data = execute(
@@ -3571,7 +3546,7 @@ class GraphQLQueryTest {
         // FilmInfo.castByKey exercises the table-sourced BatchedLookupTableField arm under NestingField:
         // classifier, emitter, and wiring all route via BatchKeyField uniformly, so
         // @splitQuery + @lookupKey at nested depth takes the same path as the top-level
-        // Film.actorsBySplitLookup (:732 above).
+        // Film.actorsBySplitLookup.
         // actor_id: [1, 2] → film 1 gets {1, 2}; film 2 gets {1}.
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
@@ -3651,9 +3626,9 @@ class GraphQLQueryTest {
     @Test
     void node_compositeKeyWrongArityId_returnsNull() {
         // A well-formed id for the composite-key @node FilmActor (PK actor_id, film_id)
-        // whose decoded key has only one part. Pre-fix the batch decode sized cols by
-        // decoded.length and select<Type>Alt<N> read cols[1] → AIOOBE → redacted 500. A
-        // wrong-arity id is now treated exactly like a garbage/unknown id: null, no errors.
+        // whose decoded key has only one part. A wrong-arity id is treated exactly like a
+        // garbage/unknown id: null, no errors (an arity-blind decode reads past the decoded
+        // parts → AIOOBE → redacted 500).
         String underArity = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1);
         Map<String, Object> data = execute(
             "{ node(id: \"" + underArity + "\") { __typename } }");
@@ -3850,13 +3825,13 @@ class GraphQLQueryTest {
 
     @Test
     void nodes_paddedBase64Id_canonicalizesAndResolves() {
-        // Regression test for the canonicalisation fix: encoder emits no-padding URL base64,
-        // but the decoder accepts padded input where the total length is 4-byte-aligned.
+        // Canonicalisation: the encoder emits no-padding URL base64, but the decoder accepts
+        // padded input where the total length is 4-byte-aligned.
         // "Customer:1" (10 bytes) encodes to 14 chars unpadded; padding to 16 chars adds "==".
         // Without canonicalize, rowsNodes keys positions by the literal padded id but encode()
-        // produces the no-padding form, so the result row would never match the requested
-        // position and result[i] would stay null. Pre-fix, nodes(ids:) silently disagreed with
-        // node(id:) on inputs the decoder accepts.
+        // produces the no-padding form, so the result row never matches the requested position,
+        // result[i] stays null, and nodes(ids:) silently disagrees with node(id:) on inputs the
+        // decoder accepts.
         String canonical = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         String padded = canonical + "==";
         // Sanity: the padded form must round-trip via node(id:) too — pre-existing decoder
@@ -3932,7 +3907,7 @@ class GraphQLQueryTest {
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
     }
 
-    // The per-tenant partition proof lives with the multi-tenant fixture now: a nodes(ids:) batch
+    // The per-tenant partition proof lives with the multi-tenant fixture: a nodes(ids:) batch
     // spanning tenants issues one tenant-homogeneous group per decoded tenant, proven with inferred
     // bindings (no getTenantId override) in
     // TenantDivinedRoutingExecutionTest.nodes_batchSpanningTenants_partitionsPerDecodedTenant.
@@ -3962,9 +3937,9 @@ class GraphQLQueryTest {
     void queryTableMethod_popularFilms_filtersAndProjectsSelectedColumns() {
         // SampleQueryService.popularFilms returns filmTable.where(RENTAL_RATE >= minRentalRate).
         // The generated jOOQ Film overrides where() to return Film (not Table<R>), so the
-        // filtered derived table preserves the specific type required by Invariants §3 — no
-        // downcast needed when the framework projects via FilmType.$fields(...). Of the 5
-        // seeded films, only ACE GOLDFINGER (rental_rate=4.99) clears the >= 3.0 threshold.
+        // filtered derived table preserves the specific type — no downcast needed when the
+        // framework projects via FilmType.$fields(...). Of the 5 seeded films, only
+        // ACE GOLDFINGER (rental_rate=4.99) clears the >= 3.0 threshold.
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute("{ popularFilms(minRentalRate: 3.0) { title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("popularFilms");
@@ -4029,7 +4004,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void queryServiceTable_filmsByListPath_argMappingWalksThroughIntermediateList() {
-        // Phase D-list: argMapping `filmIds: input.items.id` has an intermediate list
+        // argMapping `filmIds: input.items.id` has an intermediate list
         // segment (`items: [FilmIdItem!]!`). The generated fetcher must `.stream().map(...)`
         // each item, project its `id`, and `.toList()` to produce the List<Integer> the
         // service expects. Proves element-wise list traversal at emit time.
@@ -4042,7 +4017,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void queryServiceTable_filmsByNestedListPath_argMappingWalksTwoIntermediateLists() {
-        // Phase D-list (two-list-deep): argMapping `filmIdGroups: input.groups.items.id`
+        // Two-list-deep: argMapping `filmIdGroups: input.groups.items.id`
         // streams once over `groups` and once over each group's `items`, producing a
         // List<List<Integer>>. The service flattens before the SQL `IN (...)`.
         Map<String, Object> data = execute(
@@ -4054,7 +4029,7 @@ class GraphQLQueryTest {
         assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2, 4, 5);
     }
 
-    // ===== TableInterfaceType (Track A) =====
+    // ===== TableInterfaceType =====
 
     @Test
     @SuppressWarnings("unchecked")
@@ -4265,7 +4240,7 @@ class GraphQLQueryTest {
             assertThat(i.get("description")).isNotNull());
     }
 
-    // ===== Multi-table polymorphic InterfaceType / UnionType (Track B2) =====
+    // ===== Multi-table polymorphic InterfaceType / UnionType =====
     //
     // Searchable is implemented by Film (table: film) and Actor (table: actor) on
     // heterogeneous tables. The generated fetcher is two-stage: stage 1 is a narrow
@@ -4380,7 +4355,7 @@ class GraphQLQueryTest {
             .allSatisfy(i -> assertThat(i.get("__typename")).isEqualTo("Film"));
     }
 
-    // ===== Multi-table polymorphic Connection (Track B4a) =====
+    // ===== Multi-table polymorphic Connection =====
     //
     // searchConnection wraps the same Searchable interface as Query.search but in @asConnection
     // form. The emitter wraps the per-branch UNION ALL in a derived table 'pages' so cursor
@@ -4521,7 +4496,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void searchConnection_totalCount_returnsTotalRowCountAcrossParticipants() {
-        // B4b: ConnectionResult now carries the UNION-ALL derived table 'pages' so
+        // ConnectionResult carries the UNION-ALL derived table 'pages' so
         // ConnectionHelper.totalCount runs SELECT count(*) FROM (UNION ALL Film + Actor) AS pages.
         // 5 films + 3 actors = 8 total; the count is independent of the page window.
         Map<String, Object> data = execute("""
@@ -4681,12 +4656,12 @@ class GraphQLQueryTest {
         assertThat(conn.get("totalCount")).isEqualTo(6);
     }
 
-    // ===== ChildField.UnionField (Track B3) =====
+    // ===== ChildField.UnionField =====
     //
     // Address.occupants returns a union of Customer + Staff rows whose address_id matches
     // the parent Address record. Stage-1 narrow UNION ALL adds a per-branch
     // .where(<participant>.address_id = parentRecord.address_id) predicate; stage-2
-    // dispatches per typename, the same shape B2 uses for the root case.
+    // dispatches per typename, the same shape as the root polymorphic case.
 
     @Test
     @SuppressWarnings("unchecked")
@@ -4749,13 +4724,12 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void addressOccupants_asymmetricFragment_responsePayloadDropsInactiveBranch() {
         // Behavioural pin: an asymmetric inline fragment over the union projects firstName
-        // only on Customer. Before the fix the wire payload was already correct (graphql-java drops
-        // the unselected field at serialisation), but the rendered SQL over-selected
-        // staff.first_name. The per-typename wrapper restricts the selection at the SQL
-        // layer; this test pins the response shape alongside the SQL-layer proof in
-        // PolymorphicProjectionQueryTest. A future regression that inverts the bug
-        // (under-selecting active branches) would fail loudly here as a null firstName on
-        // active Customer rows.
+        // only on Customer. graphql-java drops unselected fields at serialisation, so the wire
+        // payload alone cannot catch SQL over-selection; the per-typename wrapper restricts
+        // the selection at the SQL layer, and the SQL-layer proof lives in
+        // PolymorphicProjectionQueryTest. This test pins the response shape: a regression that
+        // under-selects active branches fails loudly here as a null firstName on active
+        // Customer rows.
         Map<String, Object> data = execute("""
             { customerById(customer_id: ["3"], store_id: "2") {
                 address {
@@ -4816,13 +4790,12 @@ class GraphQLQueryTest {
             .containsExactlyInAnyOrder("Linda", "Mike");
     }
 
-    // ===== ChildField.UnionField + @asConnection (Track B4c-1) =====
+    // ===== ChildField.UnionField + @asConnection =====
     //
     // Address.occupantsConnection wraps the same union as Address.occupants but in connection
-    // mode. Per-branch parent-FK WHERE (B3) lives inside each UNION ALL branch; the outer
+    // mode. The per-branch parent-FK WHERE lives inside each UNION ALL branch; the outer
     // pagesTable derived table feeds .seek/.limit and ConnectionResult.table() so totalCount
-    // counts only this parent's occupants. Per-parent inline shape — DataLoader-batched
-    // windowed CTE form is the B4c-2 follow-up.
+    // counts only this parent's occupants.
 
     @Test
     @SuppressWarnings("unchecked")
@@ -4921,13 +4894,12 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void addressOccupantsConnection_dataLoaderBatchesAcrossParents() {
-        // Track B4c-2 batching ratchet: with N parents fetching occupantsConnection in
-        // one request, the DataLoader collapses the per-branch UNION-ALL page-rows query to
-        // ONE invocation regardless of N. The {@code as "parentInput"} VALUES table is unique
-        // to the rows-method (stage 2's per-typename helpers use {@code customerInput} /
+        // Batching ratchet: with N parents fetching occupantsConnection in one request, the
+        // DataLoader collapses the per-branch UNION-ALL page-rows query to ONE invocation
+        // regardless of N. The {@code as "parentInput"} VALUES table is unique to the
+        // rows-method (stage 2's per-typename helpers use {@code customerInput} /
         // {@code staffInput} aliases), so a single occurrence in SQL_LOG = one batched query.
-        // Without B4c-2 (or under B4c-1's per-parent inline shape) this would fire one
-        // UNION-ALL per parent.
+        // A per-parent inline shape would fire one UNION-ALL per parent.
         SQL_LOG.clear();
         Map<String, Object> data = execute("""
             { customers(active: true) {
@@ -4952,8 +4924,7 @@ class GraphQLQueryTest {
             assertThat(conn).isNotNull();
         });
         // The page-rows rows-method fires ONE UNION-ALL with parentInput VALUES regardless
-        // of how many parents we ask about — that is the whole point of the DataLoader
-        // promotion from B4c-1 (per-parent inline) to B4c-2 (batched).
+        // of how many parents we ask about.
         var parentInputQueries = SQL_LOG.stream()
             .filter(s -> s.contains("as \"parentinput\""))
             .toList();
@@ -4965,8 +4936,8 @@ class GraphQLQueryTest {
     // ===== Composite-PK parent for child interface @asConnection =====
     //
     // Project's PK is (org_id, project_id); ProjectNote and ProjectEvent FK back via
-    // composite (org_id, project_id) → project. The B4c-2 RowN widening pins Row1 → Row2 at the
-    // unit-tier (TypeFetcherGeneratorTest); these tests carry it through to PostgreSQL.
+    // composite (org_id, project_id) → project. The RowN widening (Row1 → Row2) is pinned at
+    // the unit tier (TypeFetcherGeneratorTest); these tests carry it through to PostgreSQL.
     //
     // Seed (init.sql):
     //   project (org_id, project_id, name): (1,100,'Atlas'), (1,101,'Beacon'), (2,100,'Cipher')
@@ -5093,12 +5064,12 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void projectItemsConnection_dataLoaderBatchesAcrossParents() {
-        // Track B4c-2 batching ratchet for composite-PK parents: with 3 parents (Atlas,
-        // Beacon, Cipher) fetching items in one request, the DataLoader collapses the per-branch
-        // UNION-ALL page-rows query to ONE invocation. parentInput VALUES is keyed Row3<Integer,
+        // Batching ratchet for composite-PK parents: with 3 parents (Atlas, Beacon, Cipher)
+        // fetching items in one request, the DataLoader collapses the per-branch UNION-ALL
+        // page-rows query to ONE invocation. parentInput VALUES is keyed Row3<Integer,
         // Integer, Integer> (idx + composite parent PK) and the per-branch JOIN ON emits an
-        // AND-chain over (org_id, project_id). Without B4c-2's RowN widening this would have
-        // failed to compile; without B4c-2's batching this would fire 3 separate UNION-ALLs.
+        // AND-chain over (org_id, project_id). Without the RowN widening this fails to
+        // compile; unbatched it fires 3 separate UNION-ALLs.
         SQL_LOG.clear();
         Map<String, Object> data = execute("""
             { projects {
@@ -5152,7 +5123,7 @@ class GraphQLQueryTest {
         assertThat(staffRow.get("firstName")).isEqualTo("Mike");
     }
 
-    // ===== Phase 2: INSERT emitter (DML mutation, TableBoundReturnType) =====
+    // ===== INSERT emitter (DML mutation, TableBoundReturnType) =====
 
     @Test
     @SuppressWarnings("unchecked")
@@ -5201,7 +5172,7 @@ class GraphQLQueryTest {
         // function inserting a rental row) inside dsl.transactionResult(...) and captures the
         // returned rental_id; step 2 re-reads the committed row from the rental table after the
         // commit. The response row and the independent jOOQ read below both observe the
-        // committed state — the item's pinned contract.
+        // committed state.
         int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
         Integer rentalId = null;
         try {
@@ -5417,7 +5388,7 @@ class GraphQLQueryTest {
 
     @Test
     void describeEndorsement_omittedKeys_leaveColumnsUnwritten() {
-        // Null-semantics (D4): an omitted nullable FK reference and an omitted nullable plain column
+        // Null semantics: an omitted nullable FK reference and an omitted nullable plain column
         // are not loaded — changed=false — so they would be excluded from the INSERT/UPDATE. The only
         // tier that can observe changed=false exclusion.
         Map<String, Object> data = execute("mutation { describeEndorsement(in: {}) }");
@@ -5427,7 +5398,7 @@ class GraphQLQueryTest {
 
     @Test
     void describeEndorsement_explicitNull_writesNull() {
-        // Null-semantics (D4): an explicit null on the nullable FK reference and the nullable plain
+        // Null semantics: an explicit null on the nullable FK reference and the nullable plain
         // column is present (changed=true) and loaded as NULL — distinct from omitted.
         Map<String, Object> data = execute(
             "mutation { describeEndorsement(in: {filmId: null, note: null}) }");
@@ -5437,7 +5408,7 @@ class GraphQLQueryTest {
 
     @Test
     void describeEndorsement_setValues_decodeAndLoad() {
-        // Null-semantics (D4): a present nullable FK reference decodes-and-loads onto the FK child
+        // Null semantics: a present nullable FK reference decodes-and-loads onto the FK child
         // column (endorsed_film = the decoded Film id), and a present plain value loads — the most direct
         // pin of the generalization that nullable FK-reference decodes follow the same conditional-load
         // path as plain columns.
@@ -5450,19 +5421,18 @@ class GraphQLQueryTest {
 
     @Test
     void upsertAddress_omittedSameTableIdentity_serviceInsertAssignsPk() {
-        // D4 execution pin (nullable same-table identity, omitted): addressId @nodeId(typeName:
-        // "Address") resolves to AddressRecord's own PK (address_id). Omitting it leaves address_id unset
-        // (changed=false); a same-table identity used to always throw on null, so this is the exact
-        // throw→skip behavior change D4 folds in. The @service owns the INSERT; the database assigns the
-        // serial PK, which jOOQ refreshes back. The only tier that can observe the changed=false → unset
-        // PK → DB-assigned outcome.
+        // Nullable same-table identity, omitted: addressId @nodeId(typeName: "Address") resolves
+        // to AddressRecord's own PK (address_id). Omitting it leaves address_id unset
+        // (changed=false) rather than throwing on the null identity (skip-not-throw). The
+        // @service owns the INSERT; the database assigns the serial PK, which jOOQ refreshes
+        // back. The only tier that can observe the changed=false → unset PK → DB-assigned outcome.
         Map<String, Object> data = execute("mutation { upsertAddress(in: {}) }");
         assertThat(data).extractingByKey("upsertAddress").isEqualTo("omitted: pkAssignedByDb=true");
     }
 
     @Test
     void upsertAddress_setSameTableIdentity_decodeLandsOnPk() {
-        // D4 execution pin (nullable same-table identity, set): a present addressId decodes and
+        // Nullable same-table identity, set: a present addressId decodes and
         // lands on the record's own PK address_id (the update path) — the same conditional-load path the
         // nullable FK reference and plain column take, here for the record's own identity.
         String addressId2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 2);
@@ -5560,15 +5530,14 @@ class GraphQLQueryTest {
             .as("the mutation does not succeed with a wrong-type NodeId").isNull();
     }
 
-    // ===== Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
+    // ===== missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
 
     @Test
     @SuppressWarnings("unchecked")
     void createFilm_omittedFieldUsesColumnDefault() {
-        // Phase B: omitted columns now bind DSL.defaultValue(...) per cell instead of typed
-        // null. Sakila's `rental_duration` is `smallint NOT NULL DEFAULT 3`; omitting it from
-        // the input lets the DB default land. Before the fix, the emitter wrote typed null and
-        // surfaced a NOT-NULL constraint violation.
+        // Omitted columns bind DSL.defaultValue(...) per cell, not typed null (typed null
+        // surfaces a NOT-NULL constraint violation here). Sakila's `rental_duration` is
+        // `smallint NOT NULL DEFAULT 3`; omitting it from the input lets the DB default land.
         String marker = "R77-PHASE-B-OMIT-" + java.util.UUID.randomUUID();
         try {
             Map<String, Object> data = execute("""
@@ -5591,12 +5560,12 @@ class GraphQLQueryTest {
 
     @Test
     void createFilm_explicitNullRaisesError() {
-        // Phase B: explicit null is preserved by Map.containsKey == true and binds typed
+        // Explicit null is preserved by Map.containsKey == true and binds typed
         // null via DSL.val(null, dataType). On `rental_duration` (NOT NULL no default) this
         // surfaces an IntegrityConstraintViolationException; the fetcher's try/catch routes
         // through ErrorRouter.redact (no error channel on createFilm), producing a single
-        // redacted error and null data. Locks in the explicit-null branch the missing-vs-null
-        // section explicitly accommodates.
+        // redacted error and null data. Locks in the explicit-null branch of the
+        // missing-vs-null semantics.
         String marker = "R77-PHASE-B-NULL-" + java.util.UUID.randomUUID();
         graphql.ExecutionResult result = executeRaw("""
             mutation {
@@ -5612,7 +5581,7 @@ class GraphQLQueryTest {
             .execute();
     }
 
-    // ===== Phase 4: UPDATE emitter (DML mutation, TableBoundReturnType) =====
+    // ===== UPDATE emitter (DML mutation, TableBoundReturnType) =====
 
     @Test
     @SuppressWarnings("unchecked")
@@ -5696,7 +5665,7 @@ class GraphQLQueryTest {
         }
     }
 
-    // ===== Phase 5: UPSERT emitter (DML mutation, TableBoundReturnType) =====
+    // ===== UPSERT emitter (DML mutation, TableBoundReturnType) =====
 
     @Test
     @SuppressWarnings("unchecked")
@@ -5774,17 +5743,16 @@ class GraphQLQueryTest {
         }
     }
 
-    // ===== Phase C: missing-vs-null on single-row UPDATE / UPSERT-update-branch =====
+    // ===== missing-vs-null on single-row UPDATE / UPSERT-update-branch =====
 
     @Test
     @SuppressWarnings("unchecked")
     void updateFilm_omittedFieldLeavesColumnAlone_explicitNullWritesNull() {
-        // Phase C: dynamic SET. The runtime SET clause is built from `in.keySet()` so
-        // omitted fields drop out of the UPDATE entirely (PATCH semantics; preserves the
-        // existing row's value), while explicit-null fields bind typed null and write SQL
-        // NULL to the column. Before the fix the emitter wrote typed null on every setFields()
-        // entry regardless of whether the input map carried the key, silently nulling out
-        // omitted columns.
+        // Dynamic SET: the runtime SET clause is built from `in.keySet()` so omitted fields
+        // drop out of the UPDATE entirely (PATCH semantics; preserves the existing row's
+        // value), while explicit-null fields bind typed null and write SQL NULL to the
+        // column. A static SET writing typed null for every setFields() entry would silently
+        // null out omitted columns.
         String originalTitle       = "R77-PHASE-C-FILM-" + java.util.UUID.randomUUID();
         String originalDescription = "R77-PHASE-C-DESC-" + java.util.UUID.randomUUID();
         String updatedTitle        = "R77-PHASE-C-FILM-UPDATED-" + java.util.UUID.randomUUID();
@@ -5830,7 +5798,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_omittedFieldOnUpdateBranchLeavesColumnAlone() {
-        // Phase C: UPSERT update-branch shares UPDATE's dynamic SET. When the conflict
+        // UPSERT update-branch shares UPDATE's dynamic SET. When the conflict
         // branch fires, the SET map walks `in`'s present-key set with `DSL.excluded(col)` as
         // the value. An omitted column drops out of `DO UPDATE SET` entirely (PATCH semantics
         // on the update branch), so the existing row's value survives the upsert. Without
@@ -5841,9 +5809,7 @@ class GraphQLQueryTest {
         // Sakila's `rental_duration` is `smallint NOT NULL DEFAULT 3`. We pre-insert the row
         // with `rental_duration = 7`, then upsert *without* `rentalDuration` in the input.
         // The conflict fires; the dynamic SET map contains only the supplied keys (title,
-        // languageId), so rental_duration drops out of DO UPDATE SET and stays at 7. Before the fix
-        // it would be overwritten with EXCLUDED.rental_duration which (because the INSERT
-        // branch's value cell was `DEFAULT`) resolves to 3.
+        // languageId), so rental_duration drops out of DO UPDATE SET and stays at 7.
         String originalTitle = "R77-PHASE-C-UPSERT-" + java.util.UUID.randomUUID();
         String upsertedTitle = "R77-PHASE-C-UPSERTED-" + java.util.UUID.randomUUID();
         var filmTable = org.jooq.impl.DSL.table("film");
@@ -5876,11 +5842,10 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_omittedFieldOnInsertBranchUsesColumnDefault() {
-        // Phase B + C: when the upsert hits the INSERT branch (no conflict), per-cell
-        // containsKey-gated DEFAULT applies. Sakila's `rental_duration` is NOT NULL DEFAULT 3.
-        // Omitting `rentalDuration` from the input lets DSL.defaultValue(...) bind in the
-        // VALUES list, and the DB default lands. Deferred from Phase B (FilmUpsertInput
-        // didn't carry rentalDuration until Phase C added it).
+        // When the upsert hits the INSERT branch (no conflict), per-cell containsKey-gated
+        // DEFAULT applies. Sakila's `rental_duration` is NOT NULL DEFAULT 3. Omitting
+        // `rentalDuration` from the input lets DSL.defaultValue(...) bind in the VALUES list,
+        // and the DB default lands.
         int filmId = 999_002;
         String marker = "R77-PHASE-C-UPSERT-INSERT-BRANCH-" + java.util.UUID.randomUUID();
         var filmTable = org.jooq.impl.DSL.table("film");
@@ -5901,7 +5866,7 @@ class GraphQLQueryTest {
         }
     }
 
-    // ===== Phase F: no-set-fields-present runtime check, single-row analogues =====
+    // ===== no-set-fields-present runtime check, single-row analogues =====
 
     @Test
     void updateFilm_onlyLookupKeyFields_raisesError() {
@@ -5959,14 +5924,11 @@ class GraphQLQueryTest {
     // payload-factory's defaulted slot ('title' = null only on the catch arm; populated on the
     // straight return).
     //
-    // The fixture intentionally uses two GENERIC handlers (over a DATABASE/VALIDATION mix). The
-    // bug we shipped fired on every @error type the loop emitted, regardless of handler kind;
+    // The fixture intentionally uses two GENERIC handlers (over a DATABASE/VALIDATION mix): the
+    // shipped bug fired on every @error type the loop emitted, regardless of handler kind, and
     // two GENERIC entries exercise the per-@error DataFetcher loop and the union TypeResolver's
     // multi-branch dispatch without dragging in jOOQ's SQLException semantics or the Jakarta
-    // validation pre-step (which has its own dependency footprint). DATABASE / VALIDATION end-
-    // to-end coverage lands with the rest of the "Test fixture updates for source-direct
-    // dispatch" Remaining-work bullet, on the four named fixtures (SakPayload, DeleteFilmPayload,
-    // and the validator integration).
+    // validation pre-step (which has its own dependency footprint).
 
     @Test
     @SuppressWarnings("unchecked")
@@ -6066,10 +6028,9 @@ class GraphQLQueryTest {
     // try/catch wrapper or the per-fetcher dispatch fork lands as a build failure rather than
     // a production schema break.
     //
-    // The fixture intentionally leaves DML mutation @error coverage (insert/update/upsert/delete
-    // payload assemblies) to later work; those variants share the channel slot but
-    // emit different bodies (the DML payload-assembly arm), so an end-to-end fixture there
-    // belongs with the four named source-direct fixtures (SakPayload, DeleteFilmPayload, ...).
+    // DML mutation @error coverage (insert/update/upsert/delete payload assemblies) is out of
+    // this fixture's scope: those variants share the channel slot but emit different bodies
+    // (the DML payload-assembly arm).
 
     @Test
     @SuppressWarnings("unchecked")
@@ -6204,8 +6165,7 @@ class GraphQLQueryTest {
     //
     // submitFilmReviewWithFilm returns a FilmReviewWithFilmPayload whose `film` field is a
     // @table-bound DataLoader lookup (record-sourced BatchedTableField, @sourceRow leaf-PK keyed off the payload's
-    // filmId) sibling to the WrapperArm errors field. This is the pairing the Outcome inventory found
-    // nowhere in sakila and that the retired arm-switch allow-list wrongly rejected. Both arms run
+    // filmId) sibling to the WrapperArm errors field. Both arms run
     // against the real generated fetchers: the success arm batch-loads the Film off
     // Outcome.Success.value(); the error arm narrows Success, sees the ErrorList arm, and returns
     // completedFuture(null) before key extraction (no NPE on a missing key), rendering film: null
@@ -6242,9 +6202,9 @@ class GraphQLQueryTest {
     void submitFilmReviewWithFilm_invalidRating_armSwitchRendersFilmNull() {
         // Error arm: rating outside [1,10] throws; the throwable lands on Outcome.ErrorList. The
         // @table-bound film fetcher arm-switches to completedFuture(null) before touching the
-        // DataLoader — the regression the arm-switch fixes (an un-arm-switched @table child would read a
-        // property off the Outcome object or NPE on a missing key). film renders null, the sibling
-        // errors field stays reachable, and reviewId resolves null on the error arm.
+        // DataLoader (an un-arm-switched @table child reads a property off the Outcome object or
+        // NPEs on a missing key). film renders null, the sibling errors field stays reachable,
+        // and reviewId resolves null on the error arm.
         Map<String, Object> data = execute("""
             mutation {
                 submitFilmReviewWithFilm(filmId: 1, rating: 11) {
@@ -6275,8 +6235,8 @@ class GraphQLQueryTest {
     // serviceFilmByIdWithErrors returns a bare FilmRecord into { film: Film, errors: [...] }. The
     // producer wraps the record in Outcome; the `film` field is a record-sourced BatchedTableField with the
     // OUTCOME_SUCCESS envelope, so its fetcher narrows Outcome.Success and reads off success.value()
-    // (success arm) or returns null (ErrorList arm). Before the fix the fetcher cast the Outcome source
-    // straight to FilmRecord and threw ClassCastException — the opptak buckets B/D defect.
+    // (success arm) or returns null (ErrorList arm). An envelope-blind fetcher casts the Outcome
+    // source straight to FilmRecord and throws ClassCastException (the opptak defect).
 
     @Test
     @SuppressWarnings("unchecked")
@@ -6330,10 +6290,8 @@ class GraphQLQueryTest {
     // serviceFilmsByIdsWithErrors returns List<FilmRecord> into { films: [Film!], errors: [...] }
     // — the opptak leggTilTagger shape. The films fetcher exercises the MANY + OUTCOME_SUCCESS
     // combination: narrow Outcome.Success, cast success.value() to List<FilmRecord>, re-select by
-    // PK in input order. (The carrier used to also carry a redundant @splitQuery on the data
-    // field purely to fire the tolerated-redundant advisory; that path is now pinned on minimal
-    // SDL at pipeline tier by SingleRecordTableFieldServiceProducerPipelineTest, so the directive
-    // was dropped from this fixture and the carrier re-selects by PK regardless.)
+    // PK in input order. (The tolerated-redundant @splitQuery advisory path is pinned at
+    // pipeline tier by SingleRecordTableFieldServiceProducerPipelineTest, not here.)
 
     @Test
     @SuppressWarnings("unchecked")
@@ -6492,9 +6450,7 @@ class GraphQLQueryTest {
     void createFilmWithErrors_validLanguage_returnsHappyPathPayload() {
         // Happy path: valid language_id round-trips through the carrier-walk DML fetcher. The
         // catch arm doesn't fire; the data field's follow-up SELECT projects the inserted row.
-        // errors slot resolves to an empty list (graphql-java treats absent localContext as
-        // null and the SDL-level errors-field resolver returns []). Confirms the LocalContext
-        // wiring doesn't perturb non-error returns.
+        // Confirms the LocalContext wiring doesn't perturb non-error returns.
         String title = "R12-LC-HAPPY-" + java.util.UUID.randomUUID();
         try {
             var rawResult = executeRaw("""
@@ -6731,7 +6687,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void allSubjects_inlineFragmentDetail_joinsWithoutAmbiguousColumn() {
-        // Composite case (subsumes the earlier discriminator-qualification workaround this fixture used to carry). Each concrete
+        // Composite case. Each concrete
         // type declares its own detail @table (jti_app_account / jti_person); the interface fetcher
         // LEFT JOINs each detail table on the composite child->parent key, gated by the discriminator
         // value, and projects the participant's detail-exclusive column off the detail alias. The
@@ -6782,9 +6738,9 @@ class GraphQLQueryTest {
         // alongside a cross-table detail field. The interface exposes subjectKind as a queryable field,
         // so the participant $fields projects the real subject_kind column; without a synthetic routing
         // alias the discriminated TypeResolver's bare read of "subject_kind" matches both that projection
-        // and the routing copy ("Ambiguous match found", resolved by luck). The fix projects the routing
-        // copy as "__discriminator__" and the TypeResolver reads that alias, so routing is unambiguous and
-        // the user-facing subjectKind field still resolves from its own column.
+        // and the routing copy ("Ambiguous match found", resolved by luck). The routing copy is
+        // projected as "__discriminator__" and the TypeResolver reads that alias, so routing is
+        // unambiguous and the user-facing subjectKind field still resolves from its own column.
         SQL_LOG.clear();
         Map<String, Object> data = execute("""
             { allSubjects {
@@ -6861,7 +6817,7 @@ class GraphQLQueryTest {
         // Standalone use: the joined-table concrete type queried outside its interface. The
         // fetcher selects FROM party_individual; displayName (inherited, base-resident) resolves
         // through the parent @reference join back to party, while partyId / birthDate read directly
-        // off the detail table. This is the regression guard for the property the redesign exists for.
+        // off the detail table. Regression guard for standalone inherited-field resolution.
         Map<String, Object> data = execute("""
             { allIndividuals {
                 partyId
