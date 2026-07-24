@@ -46,7 +46,7 @@ The routed bullet named `BuildContext`'s two channel-rule comments; the defect i
 
 - The error-channel rule spec (`error-handling-parity.md`, deleted): §1/§2b/§2c/§3/§5 cites across `FieldBuilder` (the bulk), `BuildContext`, `ErrorMappingsClassGenerator`, `GraphitronSchemaValidator`, `GraphitronType`, `WithErrorChannel`, plus prose citations of the dead file name itself.
 - The "Invariants §1/§2/§3" family across `TypeFetcherGenerator`, `ArgCallEmitter`, `GraphitronSchemaValidator`.
-- Any sibling dead plan-file §-anchor an implementation-time grep for `§` surfaces (JLS cites like §14.4.2 / §12.4.1 are live references to the Java Language Specification and stay).
+- Any sibling dead plan-file §-anchor an implementation-time grep for `§` surfaces. External-spec cites are live references and stay: JLS cites like §14.4.2 / §12.4.1, and the LSP-protocol §2.1.1 cite in `graphitron-lsp`'s `Positions`.
 
 One mechanical fix rule per site: replace the ordinal with a `{@link}` to the live enforcer that carries the rule (`FieldBuilder#checkChannelLevelHandlerRules`, `ChannelRuleChecks#checkDuplicateMatchCriteria` and siblings, the fixture-pinned diagnostics), or delete the ordinal where the surrounding prose already names the fact. Where grouping information matters (parse-time table vs payload shape vs dispatch vs validation wrapper), state it in prose at intent altitude; do **not** author a numbered rule inventory in the architecture docs, which would be exactly the unguarded inventory "Principles are stated at altitude" rejects. The ordinal has also leaked into identifiers: `BuildContext`'s `rule7`/`rule8` locals get renamed to their rule names (`handlerCardinality` / `duplicateMatchCriteria` or similar).
 
@@ -64,6 +64,6 @@ Coordination: the direct-SQL OnlyChild item (`roadmap/direct-sql-onlychild-reent
 
 - Each of the five claims resolved as specified: pinned to a named test, repointed to a gate-checked `{@link}`, or corrected in code with the false prose deleted; no claim rewritten as fresh unpinned confident prose.
 - Claim 1's execution test and claim 5's meta-test land with the javadoc edits that name them; claim 3 lands the constructor invariant with all five restatement sites reconciled in one commit.
-- Claim 4 leaves zero dead §-anchors in main-source comment regions (`grep -rn '§' graphitron*/src/main/java` shows only JLS cites and R496-owned/R521-owned sites), and no new numbered inventory anywhere.
+- Claim 4 leaves zero dead §-anchors in main-source comment regions (`grep -rn '§' graphitron*/src/main/java` shows only external-spec cites (JLS, LSP protocol) and R496-owned/R521-owned sites), and no new numbered inventory anywhere.
 - Full reactor green under `mvn install -Plocal-db` with the `{@link}` reference gate and `RoadmapReferenceGuardTest` active.
 - Follow-ons filed for anything routed out rather than resolved.
