@@ -192,6 +192,14 @@ public final class ConnectionRuntimeClassGenerator {
     public static final String FAN_OUT_TENANTS_KEY_FIELD = "FAN_OUT_TENANTS_KEY";
     /** The literal value of the emitted {@code FAN_OUT_TENANTS_KEY} constant (also written by the factory). */
     public static final String FAN_OUT_TENANTS_KEY_VALUE = "no.sikt.graphitron.request.fanOutTenants";
+    /**
+     * The client-facing {@code extensions.classification} vocabulary for per-tenant fan-out
+     * failures: one value per non-success {@code Outcome} arm, emitted as named constants on the
+     * carrier's {@code FanOutFailure} so the wire contract is single-sourced and greppable.
+     */
+    public static final String FAN_OUT_FAILED_CLASSIFICATION = "TenantFanOutFailed";
+    /** {@link #FAN_OUT_FAILED_CLASSIFICATION}'s deadline sibling. */
+    public static final String FAN_OUT_TIMED_OUT_CLASSIFICATION = "TenantFanOutTimedOut";
 
     private ConnectionRuntimeClassGenerator() {}
 
@@ -1428,11 +1436,17 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)")
             .addStatement("LOGGER.error($S, failed.key(), correlationId, failed.cause())",
                 "Tenant fan-out failed for tenant {}; correlation id = {}")
-            .addStatement("return new FanOutFailure(correlationId.toString(), $S)", "TenantFanOutFailed")
+            .addStatement("return new FanOutFailure(correlationId.toString(), FanOutFailure.FAILED)")
             .endControlFlow()
+            .beginControlFlow("if (outcome instanceof Outcome.TimedOut)")
             .addStatement("LOGGER.error($S, outcome.key(), correlationId)",
                 "Tenant fan-out timed out for tenant {}; correlation id = {}")
-            .addStatement("return new FanOutFailure(correlationId.toString(), $S)", "TenantFanOutTimedOut")
+            .addStatement("return new FanOutFailure(correlationId.toString(), FanOutFailure.TIMED_OUT)")
+            .endControlFlow()
+            .addComment("Callers guard out Success, and Java 17 offers no sealed-switch exhaustiveness here:")
+            .addComment("fail loud so a future Outcome arm cannot silently misclassify as a timeout.")
+            .addStatement("throw new $T($S + outcome)", IllegalStateException.class,
+                "Unclassifiable fan-out outcome: ")
             .addJavadoc("Redaction seam for per-tenant failures: the cause and tenant go to the server log\n"
                 + "under a fresh correlation id; only the id and a machine-readable classification\n"
                 + "travel to the client, on the marker.\n")
@@ -1447,6 +1461,16 @@ public final class ConnectionRuntimeClassGenerator {
                 + "element lists until {@link #collapseFanOut} turns it into a null element plus a\n"
                 + "path-bearing error. Carries only the redacted facts (correlation id, classification);\n"
                 + "the cause and the tenant key stay in the server log.\n")
+            .addField(FieldSpec.builder(String.class, "FAILED",
+                    Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$S", FAN_OUT_FAILED_CLASSIFICATION)
+                .addJavadoc("The {@code extensions.classification} value for a tenant whose worker threw.\n")
+                .build())
+            .addField(FieldSpec.builder(String.class, "TIMED_OUT",
+                    Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$S", FAN_OUT_TIMED_OUT_CLASSIFICATION)
+                .addJavadoc("The {@code extensions.classification} value for a tenant past the scatter deadline.\n")
+                .build())
             .addField(FieldSpec.builder(String.class, "correlationId", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(String.class, "classification", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()

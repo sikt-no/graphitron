@@ -1031,8 +1031,9 @@ public class TypeFetcherGenerator {
      *         FilmTable table = Tables.FILM;
      *         Condition condition = ...;
      *         List<SortField<?>> orderBy = ...;
+     *         List<Field<?>> selectFields = Film.$fields(env.getSelectionSet(), table, env);
      *         return TenantConnections.collapseFanOut(env, TenantConnections.fanOutRows(env, dsl -> dsl
-     *             .select(Film.$fields(env.getSelectionSet(), table, env))
+     *             .select(selectFields)
      *             .from(table).where(condition).orderBy(orderBy).fetch()));
      *     } catch (Exception e) { ... }
      * }
@@ -1055,11 +1056,19 @@ public class TypeFetcherGenerator {
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
         builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
+        // Hoist the selection-set projection onto the dispatch thread (the batched form's rows
+        // method does the same): the per-tenant lambda then touches only its own DSLContext and
+        // pre-computed locals, never env, so scatter workers read no shared graphql-java state.
+        var listOfField = ParameterizedTypeName.get(LIST,
+            ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
+                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
+        builder.addStatement("$T selectFields = $T.$$fields(env.getSelectionSet(), $L, env)",
+            listOfField, names.typeClass(), tableLocal);
         builder.addCode(CodeBlock.builder()
             .add("return $T.collapseFanOut(env, $T.fanOutRows(env, dsl -> dsl\n",
                 tenantConnections, tenantConnections)
             .indent()
-            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+            .add(".select(selectFields)\n")
             .add(".from($L)\n", tableLocal)
             .add(".where(condition)\n")
             .add(".orderBy(orderBy)\n")

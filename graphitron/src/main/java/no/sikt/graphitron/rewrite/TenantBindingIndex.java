@@ -147,6 +147,8 @@ public record TenantBindingIndex(
         private final Map<FieldCoordinates, TenantBinding> byCoordinate = new LinkedHashMap<>();
         private final Map<String, TenantBinding.EntityRepBound> byEntityType = new LinkedHashMap<>();
         private final List<ValidationError> rejections = new ArrayList<>();
+        /** Coordinates the fan-out ladder rejected, so the marker sweep never double-reports. */
+        private final Set<String> fanOutRejected = new HashSet<>();
 
         Fold(GraphQLSchema sdl,
              Map<FieldCoordinates, GraphitronField> fields,
@@ -180,7 +182,38 @@ public record TenantBindingIndex(
                     byCoordinate.put(coord, arm);
                 }
             }
+            sweepUnreachedFanOutMarkers();
             return new TenantBindingIndex(byCoordinate, byEntityType, rejections);
+        }
+
+        /**
+         * Completeness backstop: every {@code @tenantFanOut} application must end as a
+         * {@link TenantBinding.FanOut} verdict or a fan-out rejection. A marked coordinate the
+         * classification never modelled as an {@link OutputField} (a nesting type's member, a
+         * projected leaf, an already-unclassified field) would otherwise be silently ignored,
+         * and a silently ignored fan-out ask is incomplete data presented as complete; the sweep
+         * turns it into a validate-time rejection.
+         */
+        private void sweepUnreachedFanOutMarkers() {
+            for (var type : sdl.getAllTypesAsList()) {
+                if (type.getName().startsWith("__") || !(type instanceof GraphQLObjectType obj)) continue;
+                for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
+                    if (!field.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT)) continue;
+                    String coordinate = obj.getName() + "." + field.getName();
+                    if (byCoordinate.get(FieldCoordinates.coordinates(obj.getName(), field.getName()))
+                            instanceof TenantBinding.FanOut
+                        || fanOutRejected.contains(coordinate)) {
+                        continue;
+                    }
+                    rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                        "'" + coordinate + "' declares @tenantFanOut, but the coordinate never"
+                            + " reached the fan-out classification: either the field failed"
+                            + " classification on its own (see its error), or its parent is a"
+                            + " class-, record-, or nesting-backed type, where the fanned"
+                            + " fetcher boundary is deferred in v1. Move the field to a root or"
+                            + " @table-backed parent, or remove the directive.");
+                }
+            }
         }
 
         // ===== Per-field arm assignment =====
@@ -291,6 +324,13 @@ public record TenantBindingIndex(
                         + " generates the field's SQL itself, and the consumer-SQL fan-out"
                         + " combination is deferred. Remove one of the directives.");
             }
+            if (fieldDef.hasAppliedDirective(BuildContext.DIR_ROUTINE)) {
+                return rejectFanOut(coordinate,
+                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_ROUTINE),
+                    "'" + coordinate + "' combines @tenantFanOut with @routine: fan-out generates"
+                        + " the field's SQL itself, and a database routine's SQL is not"
+                        + " graphitron's to run per tenant. Remove one of the directives.");
+            }
             if (out.operation() instanceof Operation.Lookup) {
                 return rejectFanOut(coordinate,
                     List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_LOOKUP_KEY),
@@ -311,6 +351,21 @@ public record TenantBindingIndex(
                         + " polymorphic family is rejected in v1 (a cross-tenant union does not"
                         + " compose with multi-table dispatch staging). Fan out a concrete"
                         + " tenant-scoped object type.");
+            }
+            // The v1 emission surface: root fields, and children of table-backed parents (where
+            // the marker forces the same fetcher boundary @splitQuery does). A class-, record-,
+            // or nesting-backed parent's children resolve through emission arms the fanned
+            // fetcher does not intercept yet, so the marker there must reject loudly rather than
+            // be silently ignored; relaxing this later is additive.
+            GraphitronType parentType = types.get(coord.getTypeName());
+            if (!roots.contains(coord.getTypeName())
+                    && !(parentType instanceof GraphitronType.TableType)
+                    && !(parentType instanceof GraphitronType.NodeType)) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' fans out a field of a parent that is not a root or"
+                        + " @table-backed type: v1 supports @tenantFanOut on root fields and on"
+                        + " fields of @table parents; class-, record-, and nesting-backed parents"
+                        + " are deferred.");
             }
             if (!(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof graphql.schema.GraphQLList)) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
@@ -361,6 +416,7 @@ public record TenantBindingIndex(
         }
 
         private TenantBinding rejectFanOut(String coordinate, List<String> directives, String reason) {
+            fanOutRejected.add(coordinate);
             rejections.add(new ValidationError(
                 coordinate,
                 Rejection.directiveConflict(directives, reason),

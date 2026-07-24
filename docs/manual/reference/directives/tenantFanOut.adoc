@@ -32,6 +32,6 @@ Results keep each tenant's xref:orderBy.adoc[`@orderBy`] ordering within that te
 
 == Build-time rejections
 
-`@tenantFanOut` is rejected at build time on: mutation fields, non-list fields, xref:asConnection.adoc[`@asConnection`] fields, xref:lookupKey.adoc[`@lookupKey`] fields, interface- or union-typed fields, fields whose data is not tenant-scoped, fields where the tenant is already determined (an argument bound to the tenant column, or any ancestor that fixed the tenant, including another `@tenantFanOut`), and xref:service.adoc[`@service`] / `@tableMethod` fields (fan-out generates the SQL itself). It also rejects in builds that configure no `<tenantColumn>`: with no tenants, there is nothing to fan out over.
+`@tenantFanOut` is rejected at build time on: mutation fields, non-list fields, xref:asConnection.adoc[`@asConnection`] fields, xref:lookupKey.adoc[`@lookupKey`] fields, interface- or union-typed fields, fields whose data is not tenant-scoped, fields where the tenant is already determined (an argument bound to the tenant column, or any ancestor that fixed the tenant, including another `@tenantFanOut`), and xref:service.adoc[`@service`] / `@tableMethod` / xref:routine.adoc[`@routine`] fields (fan-out generates the SQL itself). In this first iteration the marker is supported on root fields and on fields of `@table`-backed parents; fields of class-, record-, or nesting-backed parents are rejected. It also rejects in builds that configure no `<tenantColumn>`: with no tenants, there is nothing to fan out over.
 
 xref:index.adoc[← Directives index]

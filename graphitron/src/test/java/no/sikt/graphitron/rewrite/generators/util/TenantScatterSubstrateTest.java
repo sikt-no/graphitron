@@ -187,6 +187,9 @@ class TenantScatterSubstrateTest {
         assertThat(outcomes).extracting(TenantScatterSubstrateTest::value)
             .as("each worker saw its own tenant's connection")
             .containsExactly("C-conn", "A-conn", "B-conn");
+        assertThat(events)
+            .as("per-tenant session identity mounted once per acquisition, also under concurrency")
+            .contains("connect:A", "connect:B", "connect:C");
         releaseAll(tc);
     }
 

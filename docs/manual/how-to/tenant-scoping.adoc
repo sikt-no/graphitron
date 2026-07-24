@@ -36,7 +36,7 @@ Routing is divined from the operation: an argument bound to the tenant column ro
 
 == 3. Fan a field out across tenants
 
-When no single tenant is named — "all results for this student", wherever they live — mark the field with xref:../reference/directives/tenantFanOut.adoc[`@tenantFanOut`]: the query runs once per tenant the request may see, in parallel, and the results come back as one list.
+When no single tenant is named ("all results for this student", wherever they live), mark the field with xref:../reference/directives/tenantFanOut.adoc[`@tenantFanOut`]: the query runs once per tenant the request may see, in parallel, and the results come back as one list.
 
 Derive the tenant collection from your request's claims and any other request-level policy (operational exclusions, residency, product rules; the seam is source-agnostic) and pass it through the generated factory. When your schema contains a `@tenantFanOut` field, the factory signature gains a dedicated parameter typed as a collection of your tenant key type, so a missing or mis-typed value is a compile error, not a runtime lookup:
 

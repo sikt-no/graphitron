@@ -151,6 +151,70 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
+    void markerOnRoutineFieldRejects() {
+        // Without this rung a marked routine field (table-returning, tenant-scoped, unbound)
+        // escapes every other rejection, classifies FanOut, and dies only at the
+        // generation-time DSL-site throw — the same located-rejection gap the @tableMethod
+        // rung closes.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              recentFilms(actorId: Int!, minLength: Int!): [Film!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
+                @tenantFanOut
+            }
+            """);
+
+        assertFanOutRejection(schema, "Query.recentFilms",
+            "a database routine's SQL is not graphitron's", "tenantFanOut", "routine");
+    }
+
+    @Test
+    void markerOnAChildLookupFieldRejects() {
+        // Child lookups report Operation.Lookup like root lookups, so one rung covers both.
+        var schema = build("""
+            type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
+            type Film @table(name: "film") {
+                title: String
+                actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+                    {key: "film_actor_film_id_fkey"},
+                    {key: "film_actor_actor_id_fkey"}
+                ]) @tenantFanOut
+            }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertFanOutRejection(schema, "Film.actorsByLookup",
+            "lookup enforces one row per input key", "tenantFanOut", "lookupKey");
+    }
+
+    @Test
+    void markerOnAFieldOfANestingParentRejects_v1SupportsRootsAndTableParents() {
+        // A nesting type's members never reach the fold as classified OutputField coordinates,
+        // so the marker sweep (the completeness backstop) is what turns this into a rejection:
+        // a silently ignored fan-out ask would be incomplete data presented as complete.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                meta: FilmMeta
+            }
+            type FilmMeta {
+                inventories: [Inventory!] @reference(path: [{key: "inventory_film_id_fkey"}]) @tenantFanOut
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+            }
+            """);
+
+        assertFanOutRejection(schema, "FilmMeta.inventories",
+            "never reached the fan-out classification", "tenantFanOut");
+    }
+
+    @Test
     void markerOnLookupFieldRejects() {
         var schema = build("""
             type Film @table(name: "film") { title: String }
