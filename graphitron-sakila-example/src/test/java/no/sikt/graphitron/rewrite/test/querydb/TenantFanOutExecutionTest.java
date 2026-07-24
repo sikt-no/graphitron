@@ -191,11 +191,14 @@ class TenantFanOutExecutionTest {
     void claimedButUnmappedTenant_failsTheRequestBeforeAnySql() {
         var result = execute("{ filmsEverywhere { title } }", List.of(1, 99));
 
+        // The correlation id is random hex and can legitimately contain the digits "99", so the
+        // tenant key's absence is proven by matching the whole redacted template rather than a
+        // negative contains check on the message.
         assertThat(result.getErrors())
             .as("the request's tenant set names an unhosted tenant: a request-level error,"
                 + " redacted on the wire (correlation-id reference; the tenant key stays in the"
                 + " server log)")
-            .anyMatch(e -> e.getMessage().contains("Reference: ") && !e.getMessage().contains("99"));
+            .anyMatch(e -> e.getMessage().matches("An error occurred\\. Reference: [0-9a-f-]{36}\\."));
         Map<String, Object> data = result.getData();
         assertThat(data == null || data.get("filmsEverywhere") == null).isTrue();
         assertThat(TENANT_1_OPENED.get())
