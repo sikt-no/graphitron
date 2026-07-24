@@ -10,9 +10,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
@@ -57,11 +55,12 @@ final class EnumMappingResolver {
      *
      * <ul>
      *   <li>{@link Valid}: every GraphQL enum value's runtime name is a Java constant.</li>
-     *   <li>{@link GraphqlNotEnum}: the GraphQL type name does not resolve to a classified enum
-     *       (mid-build, or a genuine "this isn't an enum" mistake). The two callers treat this
-     *       differently: the column path (where the Java side is definitely a jOOQ enum) surfaces a
-     *       mismatch; the {@code @service} enum path falls back to an unchecked {@code EnumValueOf}
-     *       so it does not over-reject when the type registry is empty.</li>
+     *   <li>{@link GraphqlNotEnum}: the GraphQL type name does not resolve to a classified enum,
+     *       i.e. it genuinely is not an enum (the verdict is recomputed registry-free through
+     *       {@link BuildContext#lookAheadVerdict}, so a mid-walk read cannot miss). The two
+     *       callers treat this differently: the column path (where the Java side is definitely a
+     *       jOOQ enum) surfaces a mismatch; the {@code @service} enum path falls back to an
+     *       unchecked {@code EnumValueOf}.</li>
      *   <li>{@link Divergence}: the GraphQL side is a classified enum but one or more values have
      *       no matching Java constant; carries the per-value diff so each caller shapes its own
      *       result (a column-flavoured {@link Mismatch} message, or a typed
@@ -87,12 +86,14 @@ final class EnumMappingResolver {
 
     /**
      * Compares every value of the GraphQL enum named {@code graphqlTypeName} (resolved through
-     * {@code ctx.types}) against the constant names of {@code javaEnumClass}. The comparison is
-     * on the pre-resolved {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue},
+     * {@link BuildContext#lookAheadVerdict}: this runs during field classification, when the enum
+     * may be a not-yet-visited child of the walk) against the constant names of
+     * {@code javaEnumClass}. The comparison is on the pre-resolved
+     * {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue},
      * the same form {@code EnumClass.valueOf(...)} receives at runtime.
      */
     EnumConstantParity checkEnumConstants(String graphqlTypeName, Class<?> javaEnumClass) {
-        var modelType = ctx.types == null ? null : ctx.types.get(graphqlTypeName);
+        var modelType = ctx.lookAheadVerdict(graphqlTypeName);
         if (!(modelType instanceof GraphitronType.EnumType enumType)) {
             return new EnumConstantParity.GraphqlNotEnum();
         }
@@ -118,25 +119,6 @@ final class EnumMappingResolver {
 
     EnumMappingResolver(BuildContext ctx) {
         this.ctx = ctx;
-    }
-
-    /**
-     * Builds a mapping from GraphQL enum value names to database string values when
-     * {@code graphqlTypeName} resolves to a classified {@link GraphitronType.EnumType}; returns
-     * {@code null} otherwise. Each value's DB string is the pre-resolved
-     * {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue}, lifted at classify
-     * time from {@code @field(name:)} (the value's own name when the directive is absent).
-     */
-    Map<String, String> buildTextEnumMapping(String graphqlTypeName) {
-        var modelType = ctx.types.get(graphqlTypeName);
-        if (!(modelType instanceof GraphitronType.EnumType enumType)) {
-            return null;
-        }
-        var mapping = new LinkedHashMap<String, String>();
-        for (var spec : enumType.values()) {
-            mapping.put(spec.sdlName(), spec.runtimeValue());
-        }
-        return mapping;
     }
 
     /**

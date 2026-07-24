@@ -83,7 +83,7 @@ class IdReferenceShimWarnFormatTest {
         input StudierettFilterInput @table(name: "studierett") {
           studieprogramIds: [ID!] @field(name: "STUDIEPROGRAM_ID")
         }
-        type Query { studierett: Studierett }
+        type Query { studierett(filter: StudierettFilterInput): Studierett }
         """;
 
     private static final String AMBIGUOUS_FK2_SDL = """
@@ -92,7 +92,7 @@ class IdReferenceShimWarnFormatTest {
         input StudierettFilterInput @table(name: "studierett") {
           registrarStudieprogramIds: [ID!] @field(name: "REGISTRAR_STUDIEPROGRAM_STUDIEPROGRAM_ID")
         }
-        type Query { studierett: Studierett }
+        type Query { studierett(filter: StudierettFilterInput): Studierett }
         """;
 
     // Single FK to a node-typed target → fkAmbiguous=false → WARN must NOT include @reference.
@@ -106,7 +106,7 @@ class IdReferenceShimWarnFormatTest {
         input BarFilterInput @table(name: "bar") {
           bazIds: [ID!] @field(name: "1_BAZ_ID")
         }
-        type Query { bar: Bar }
+        type Query { bar(filter: BarFilterInput): Bar }
         """;
 
     @Test

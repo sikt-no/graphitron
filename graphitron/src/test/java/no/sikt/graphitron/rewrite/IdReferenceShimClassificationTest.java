@@ -72,7 +72,7 @@ class IdReferenceShimClassificationTest {
             input StudierettFilterInput @table(name: "studierett") {
               studieprogramIds: [ID!] @field(name: "STUDIEPROGRAM_ID")
             }
-            type Query { studierett: Studierett }
+            type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
@@ -93,7 +93,7 @@ class IdReferenceShimClassificationTest {
             input StudierettFilterInput @table(name: "studierett") {
               studieprogramIds: [ID!]
             }
-            type Query { studierett: Studierett }
+            type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
@@ -112,7 +112,7 @@ class IdReferenceShimClassificationTest {
             input StudierettFilterInput @table(name: "studierett") {
               studieprogramId: ID
             }
-            type Query { studierett: Studierett }
+            type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");
@@ -135,7 +135,7 @@ class IdReferenceShimClassificationTest {
             input StudieprogramFilterInput @table(name: "studieprogram") {
               id: ID
             }
-            type Query { studieprogram: Studieprogram }
+            type Query { studieprogram(filter: StudieprogramFilterInput): Studieprogram }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudieprogramFilterInput");
@@ -157,7 +157,7 @@ class IdReferenceShimClassificationTest {
             input StudierettFilterInput @table(name: "studierett") {
               registrarStudieprogramIds: [ID!] @field(name: "REGISTRAR_STUDIEPROGRAM_STUDIEPROGRAM_ID")
             }
-            type Query { studierett: Studierett }
+            type Query { studierett(filter: StudierettFilterInput): Studierett }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("StudierettFilterInput");

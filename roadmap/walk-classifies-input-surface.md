@@ -27,23 +27,32 @@ function to the input edges, so inputs / scalars / enums are classified by the v
 reaches them, and the pre-walk leaf sweep is deleted. The result is one traversal that classifies
 every kind, output and input alike.
 
-## Why this is reachable now (the enabling fact)
+## Why this is reachable now (the enabling fact, as corrected in flight)
 
 The pre-walk sweep classifies leaves *before* the walk for a stated reason that R317 itself made
 stale: that "field classification reads input / scalar / enum verdicts from `ctx.types` during the
-walk" (the `prepareForWalk` javadoc). Every such read in `FieldBuilder` now goes through
-`TypeBuilder.lookAheadVerdict(...)`, which recomputes the verdict registry-free from SDL +
-reflection bindings + catalog. The marker comment in `FieldBuilder` records "the last `ctx.types`
-read in FieldBuilder; the read-free invariant now holds" (grep for that phrase; `FieldBuilder.java:6841` at the time of writing). So nothing forces a leaf's verdict to
-exist in the registry before the field that references it is classified. That is exactly the slack
-this item spends: a leaf can be registered *after* the field that reaches it, because the field's
-read of the leaf never touches the registry.
+walk" (the `prepareForWalk` javadoc). The spec's original claim was that every such read now goes
+through `TypeBuilder.lookAheadVerdict(...)` (registry-free recompute from SDL + reflection
+bindings + catalog). **Implementation found that claim held lexically for `FieldBuilder` only**:
+field classification transitively reached live `ctx.types` leaf reads in `EnumMappingResolver`
+(enum-constant parity), `InputBeanResolver` (jOOQ-record / `@table` input-param arms and the
+wire-coercion aggregate), `ServiceCatalog` (arg extraction, slot-type mapping, the arity-unique
+gate's aggregate scalar predicate), and `TypeBuilder.resolveInputElementJavaType` (input record
+shapes reading scalar verdicts). Under the extended walk those reads would have missed
+deterministically for root-level `@service` fields, mostly in the permissive direction (lost
+wire-coercion and enum-divergence rejections, a jOOQ-record param falling to the bean path).
 
-The read-free visitor invariant (R317 / R325) is therefore preserved, not weakened: the visit still
-only `register`s, never reads the registry under construction. Under the extended walk a field's
-argument input type is a not-yet-visited child of the field's parent, classified on a later enter,
-and the field's `lookAheadVerdict` read of it is registry-free, so order-independence holds for the
-input surface for the same reason it holds for the output surface.
+The shipped resolution extends the read-free program instead of working around it: keyed
+leaf reads route through `BuildContext.lookAheadVerdict` (delegating to the memoized
+`TypeBuilder.lookAheadVerdict`, registry-view fallback only for unit-tier harnesses that wire no
+`TypeBuilder`), and the scalar axis becomes a fixed point (`BuildContext.scalarVerdicts`,
+populated by `buildClassificationIndices` beside the node / table / error indices) consumed by
+both the aggregate predicates (`WireCoercionResolver.checkScalar`,
+`ScalarTypeResolver.isClassifiedScalarJavaType`) and the keyed scalar reads. With that, the
+read-free visitor invariant (R317 / R325) genuinely holds for the whole field-classification
+surface, and order-independence on the input edges follows for the same reason it holds for the
+output edges. R531 (`classify-time-registry-read-guard`) is filed to pin the now-multi-class
+invariant with a lexical meta-test.
 
 ## Decisions settled (forks the author and reviewer have closed)
 
@@ -61,9 +70,9 @@ input surface for the same reason it holds for the output surface.
   surfacing it belongs with the existing `warn-on-pruned-unreachable-types` backlog item (scoped to
   output types today), which this item's prune widens the surface for. Cross-reference, do not absorb.
 
-## The shape
+## The shape (shipped; deltas from the reviewed spec noted inline)
 
-Three moves, plus the deletions they enable:
+Three moves, plus the deletions they enable, all landed:
 
 1. **Extend `SchemaReachability.childrenOf`** with the input edges. For a `GraphQLObjectType` /
    `GraphQLInterfaceType`, descend each field's *argument* types (unwrapped) in addition to its
@@ -96,6 +105,32 @@ Three moves, plus the deletions they enable:
 3. **Delete the pre-walk leaf sweep** in `prepareForWalk` (the `getAllTypesAsList` loop calling
    `classifyAndRegister` on non-composite kinds). `prepareForWalk` keeps its other work; see below.
 
+Implementation deltas beyond the three moves (all in service of the corrected enabling fact and
+the guard shape below):
+
+- `SchemaReachability.outputTargets` became `fieldTargets` (output target plus argument types);
+  the class and method javadocs were rewritten as specced.
+- `BuildContext.lookAheadVerdict(String)` (new): the one mid-walk verdict seam for helper classes,
+  delegating to `TypeBuilder.lookAheadVerdict`; unit-tier fallback to the registry view.
+- `BuildContext.scalarVerdicts` (new fixed point) populated by `buildClassificationIndices`;
+  consumed by `ServiceCatalog.argExtraction` / `isClassifiedScalarJavaTypeName` /
+  `mapToJavaTypeName`, `InputBeanResolver`'s wire-coercion call, and
+  `TypeBuilder.resolveInputElementJavaType`.
+- `BuildContext.locationOf(GraphQLNamedType)` gained the missing `GraphQLInputObjectType` arm, so
+  the reconstructed rejection payload's location equals the seeded one for inputs.
+- The corpus `pivot` example's vocabulary enum (`Sprak`) lost its `@classifiedType(as: EnumType)`
+  annotation: `@pivot(vocabulary:)` references the enum by name only, never on a type coordinate,
+  so it is now pruned; the pivot classifier reads the value mapping straight off the SDL and the
+  `EnumType` verdict stays pinned by the corpus `enum-column` example.
+- **Survivor directive definitions seed their argument types** (`SchemaReachability.seeds`, gated
+  on `DeclaredDirectives.names()`, the same fact `SchemaDirectiveRegistry.isSurvivor` derives
+  from). Found at the execution tier: the emitted schema re-declares every non-generator-only
+  directive definition, so a scalar reachable only through such a definition's argument
+  (`federation__FieldSet` on `@key`) must classify or `GraphitronSchema.build()` dangles a type
+  reference. Graphitron's own build-time directives stay excluded, keeping the published-support-
+  type gate (`SortDirection`) the sole owner of support-type retention. Pinned by the
+  `SurvivorKind` case in `SchemaReachabilityTest` and the federation execution suites.
+
 ## What stays in `prepareForWalk` (and must be checked, not assumed)
 
 These passes iterate `getAllTypesAsList` for reasons independent of the walk and do **not** move:
@@ -123,11 +158,17 @@ These passes iterate `getAllTypesAsList` for reasons independent of the walk and
   holds an `UnclassifiedType`, the classes differ, so `TypeRegistry.register`'s final arm
   (`TypeRegistry.java:94-102`) **re-demotes to a fresh generic-structural `UnclassifiedType`**, clobbering
   the typed `Rejection` payload (`RecordBindingMultiProducer`) the validator and candidate-hint path
-  key on. The fix is mandatory, not conditional: make `classifyAndRegister` consult
-  `bindings.rejection(name)` *first*, mirroring `TypeBuilder.lookAheadVerdict`'s rejection-first check, so the
-  walk reconstructs the *same* `UnclassifiedType` payload and `register`'s `equals`-idempotent arm
-  (`TypeRegistry.java:80-82`) fires instead of the demote arm. Idempotency then holds by construction
-  (same payload), not by luck of reconciliation.
+  key on. The fix is mandatory, not conditional. **Shipped shape (stronger than the specced
+  mirror):** rather than mirroring the rejection-first check into a second body,
+  `classifyAndRegister` now registers `lookAheadVerdict(name)` itself, and the rejection-first
+  precedence has a single producer (`TypeBuilder.bindingRejectionVerdict`, also used by
+  `participantClassification`), so the payload the walk re-registers is `equals`-identical to the
+  seeded one by construction, and `register`'s `equals`-idempotent arm fires instead of the demote
+  arm. `lookAheadVerdict` is memoized per name (the registry and the look-ahead are two
+  materializations of one computation, and classification side effects such as the id-reference
+  shim WARN fire once per type however many edges read it); the memo is cleared at the end of
+  `prepareForWalk` because `resolveAll`'s DML grounding probes the payload scan mid-fold, and a
+  verdict computed then predates the fixed point.
 
 ## Slicing
 
@@ -145,35 +186,60 @@ or is folded with one that does:
    is part of this slice, not a follow-on: the re-demote drift is deterministic for every reachable
    rejected input the moment the walk visits it, so there is no "land it whole, fix drift if it
    appears" branch; the guard ships with the edges. Gated by the primary-gate coverage below.
+   Shipped as one slice as planned, with the guard in its single-producer form (see the
+   `surfaceMultiProducerRejections` note above) and the read-free precursor re-routes folded in
+   (they are payload-load-bearing the same way: deleting the sweep without them silently drops
+   wire-coercion and enum-parity rejections on `@service` coordinates).
 
-## Acceptance
+## Acceptance (delivered)
 
 - Primary gate (`GraphitronSchemaBuilderTest` truth table + sakila pipeline `TypeSpec` + Java-17
   `graphitron-sakila-example` compile + PostgreSQL execution tier) stays green.
-- A new case proving the prune: an input / enum / scalar declared in SDL but reached by no field or
-  argument is classified and present in `types()` before R335, absent after. This is the falsifiable
-  model delta. Include a **published-support-type sub-case** (`SortDirection` referenced only from an
-  unreachable coordinate): it is the one leaf whose verdict is itself a function of the all-declared
-  `retainedSupportTypes()` scan, so it is where a prune-vs-retain mismatch would hide.
-- A case proving order-independence on the input surface: a field whose argument is an input type
-  classifies correctly when that input type is visited after the field (the read-free invariant on the
-  input edges), mirroring R317's "no type registered before its discovering field is visited" test.
-- A case proving a reachable multi-producer-rejected input still ends as `UnclassifiedType`,
-  asserting on the **rejection variant** (`RecordBindingMultiProducer`), not merely on
-  `UnclassifiedType`-ness: the generic-structural re-demote would pass a class-only assertion while
-  silently swapping the payload, so the variant assertion is what guards the `bindings.rejection`-first
-  guard.
-- `SchemaReachabilityTest`'s `reachable ⊆ classified` invariant holds under the widened walk.
+- The prune proof: `SchemaReachabilityTest.walkClassifiesLeavesAndPrunesUnreachedOnes` (reached
+  `LeafProbeFilter` / `LeafProbeKind` present; `OrphanFilter` / `OrphanKind` / `OrphanStamp`
+  absent), including the **published-support-type sub-case** (`SortDirection` referenced only from
+  the unreachable `OrphanSortHolder`: retained by the all-declared `retainedSupportTypes()` scan,
+  pruned by the walk).
+- Order-independence on the input surface:
+  `SingleWalkClassificationOrderTest.noInputTypeIsRegisteredBeforeItsDiscoveringFieldIsVisited`,
+  mirroring the R317 output-surface test in the same class.
+- The rejection-variant proof:
+  `R96RecordBindingPipelineTest.multiProducerInput_reachableThroughTheWalk_keepsTypedRejection`
+  (reachable multi-producer input stays `UnclassifiedType` with the `RecordBindingMultiProducer`
+  payload, not a generic-structural re-demote).
+- `SchemaReachabilityTest`'s `reachable ⊆ classified` invariant holds under the widened walk
+  (recorded set stays output-only; the leaf prune is pinned by its own case, not by restating the
+  invariant).
+- Pre-existing coverage that now exercises the re-routed reads: the `@service` bean-enum parity
+  and jOOQ-record param suites (`GraphitronSchemaBuilderTest`, `JooqRecordServiceParamPipelineTest`)
+  and the wire-coercion cast-guard suite (`WireCoercionCastGuardPipelineTest`) all run against the
+  extended walk with leaves visited after their consuming fields.
+- Fixture migration: truth-table SDL fixtures that declared leaves nothing consumed gained
+  reaching coordinates (`leafReach<i>(in: X)` args or args on existing fields), since a declared
+  and consumed leaf is now the only classified leaf; `ServiceCatalogTest`'s consumer-scalar
+  unit case seeds `BuildContext.scalarVerdicts` instead of the registry.
 
 ## Relationship to other items
 
 - **R317** (Done): the parent. R335 extends R317's single-walk thesis from the output surface to the
   whole surface; it does not reopen any R317 mechanism.
-- **R97** (`consumer-derived-input-tables`, which absorbed R327's field-relative input
-  classification on 2026-06-22): orthogonal but adjacent, both touch input classification. R97 changes
-  *how* an input's table-boundness is derived (consumer-derived, retiring the
-  `findReturnTablesForInput` aggregate); R335 changes *where and when* an input is classified (on the
-  walk, reachability-pruned, vs the pre-walk all-declared sweep). No hard ordering; whichever lands
-  first, the other rebases onto the moved call site. Note the interplay in whichever ships second.
+- **R97** (`consumer-derived-input-tables`, Done 2026-07-24; absorbed R327's field-relative input
+  classification on 2026-06-22): R97 shipped first, so R335 is the second shipper and was built
+  against the consumer-derived call sites (`buildInputType` directive-driven only). R97 changed
+  *how* an input's table-boundness is derived; R335 changes *where and when* an input is classified
+  (on the walk, reachability-pruned, vs the pre-walk all-declared sweep).
+- **R519** (`remove-table-on-input-directive`, Spec): will delete `TableInputType`; its rebase over
+  this item is mechanical (the `InputBeanResolver` `@table`-conflict arm reads the verdict through
+  `BuildContext.lookAheadVerdict` now).
+- **R531** (`classify-time-registry-read-guard`, Backlog, filed by this item): the lexical
+  meta-test pinning the now-multi-class read-free invariant.
 - **warn-on-pruned-unreachable-types** (Backlog): R335 widens the pruned surface from output types to
   all kinds; that item's warning should grow to cover the leaves R335 starts pruning. Out of scope here.
+
+## Retired vocabulary
+
+- `EnumMappingResolver.buildTextEnumMapping` (dead method deleted; its unguarded registry read was
+  inside the class whose read discipline this item extends)
+- `SchemaReachability.outputTargets` (renamed to `fieldTargets` when the argument edges were added)
+- the "pre-walk leaf sweep" / "input / scalar / enum kinds the output walk never reaches" framing
+  (no kind is classified before the walk anymore)

@@ -14,7 +14,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 class EnumTypeGeneratorTest {
 
     private static final String ENUM_SCHEMA = """
-        type Query { x: String }
+        type Query { x(status: Status): String }
         enum Status {
           ACTIVE
           INACTIVE
@@ -22,7 +22,7 @@ class EnumTypeGeneratorTest {
         """;
 
     private static final String DEPRECATED_ENUM_SCHEMA = """
-        type Query { x: String }
+        type Query { x(mood: Mood): String }
         "Status of something."
         enum Mood {
           HAPPY
@@ -80,7 +80,7 @@ class EnumTypeGeneratorTest {
         // drives .value(...), the only argument graphql-java's Coercing layer compares
         // serialization-time runtime objects against.
         var body = findByName(generateFor("""
-            type Query { x: String }
+            type Query { x(id: PersonIdentifikasjon): String }
             enum PersonIdentifikasjon {
                 FODSELSNUMMER @field(name: "FØDSELSNUMMER")
                 ANNET
@@ -103,7 +103,7 @@ class EnumTypeGeneratorTest {
     @Test
     void generate_resultsAreAlphabeticallySorted() {
         var names = generateFor("""
-            type Query { x: String }
+            type Query { x(z: ZebraStatus, a: AlphaStatus): String }
             enum ZebraStatus { Z }
             enum AlphaStatus { A }
             """).stream().map(TypeSpec::name).toList();

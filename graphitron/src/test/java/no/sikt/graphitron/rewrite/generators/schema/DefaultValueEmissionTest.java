@@ -57,7 +57,7 @@ class DefaultValueEmissionTest {
     @Test
     void inputField_defaultBoolean_emitsDefaultValueProgrammatic() {
         var body = findInputBody("""
-            type Query { x: String }
+            type Query { x(filter: FilterInput): String }
             input FilterInput { active: Boolean = true }
             """, "FilterInputType");
         assertThat(body).contains(".defaultValueProgrammatic(true)");
@@ -66,7 +66,7 @@ class DefaultValueEmissionTest {
     @Test
     void inputField_withoutDefault_omitsDefaultValueCall() {
         var body = findInputBody("""
-            type Query { x: String }
+            type Query { x(filter: FilterInput): String }
             input FilterInput { keyword: String }
             """, "FilterInputType");
         assertThat(body).doesNotContain(".defaultValueProgrammatic(");

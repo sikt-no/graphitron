@@ -4505,7 +4505,7 @@ class GraphitronSchemaBuilderTest {
             "input type with no @table → classified as InputType",
             """
             input FilmInput { title: String! releaseYear: Int }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> assertThat(schema.type("FilmInput"))
                 .isInstanceOf(InputType.class)),
@@ -4514,7 +4514,7 @@ class GraphitronSchemaBuilderTest {
             "input with no reflected producer binding → PojoInputType with null fqClassName",
             """
             input FilmInput { id: ID }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var t = (PojoInputType) schema.type("FilmInput");
@@ -5005,7 +5005,7 @@ class GraphitronSchemaBuilderTest {
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: false)
             }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """);
         var errors = new GraphitronSchemaValidator().validate(schema);
         boolean hasUnboundOverrideFalseError = errors.stream()
@@ -5252,7 +5252,7 @@ class GraphitronSchemaBuilderTest {
             "input type with @table → TableInputType with ResolvedTable",
             """
             input CustomerInput @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: CustomerInput): String }
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
@@ -5273,7 +5273,7 @@ class GraphitronSchemaBuilderTest {
                 + "and a non-override consumer rejects at the field's source location)",
             """
             input CustomerInput @table(name: "customer") { noSuchField: Int! }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: CustomerInput): String }
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
@@ -5288,7 +5288,7 @@ class GraphitronSchemaBuilderTest {
             "input type with @table pointing to unknown DB table → UnclassifiedType",
             """
             input NoSuchInput @table(name: "no_such_table") { id: Int! }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: NoSuchInput): String }
             """,
             schema -> assertThat(schema.type("NoSuchInput"))
                 .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
@@ -5325,7 +5325,7 @@ class GraphitronSchemaBuilderTest {
               filmId: Int! @field(name: "film_id")
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
@@ -5349,7 +5349,7 @@ class GraphitronSchemaBuilderTest {
               filmId: Int! @field(name: "film_id")
               languageName: String @field(name: "name") @reference(path: [{key: "no_such_fkey"}])
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> assertThat(schema.type("FilmInput"))
                 .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
@@ -5362,7 +5362,7 @@ class GraphitronSchemaBuilderTest {
               filmId: Int! @field(name: "film_id")
               details: TitleInput!
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
@@ -5390,7 +5390,7 @@ class GraphitronSchemaBuilderTest {
               filmId: Int! @field(name: "film_id")
               details: BadInput!
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var tit = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
@@ -5448,7 +5448,7 @@ class GraphitronSchemaBuilderTest {
               filmId: Int! @field(name: "film_id")
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var it = (TableInputType) schema.type("FilmInput");
@@ -5467,7 +5467,7 @@ class GraphitronSchemaBuilderTest {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputRefCondition"})
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var it = (TableInputType) schema.type("FilmInput");
@@ -5489,7 +5489,7 @@ class GraphitronSchemaBuilderTest {
               details: TitleInput!
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputNestingCondition"})
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: FilmInput): String }
             """,
             schema -> {
                 var it = (TableInputType) schema.type("FilmInput");
@@ -5518,7 +5518,7 @@ class GraphitronSchemaBuilderTest {
                 customerId: Int! @field(name: "customer_id")
                 hidden: String @notGenerated
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: CustomerInput): String }
             """,
             schema -> {
                 var t = schema.type("CustomerInput");
@@ -5535,7 +5535,7 @@ class GraphitronSchemaBuilderTest {
                 customerId: Int! @field(name: "customer_id")
                 inner: InnerFilter
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: CustomerInput): String }
             """,
             schema -> {
                 var t = schema.type("CustomerInput");
@@ -5554,7 +5554,7 @@ class GraphitronSchemaBuilderTest {
             input InventoryFilterInput @table(name: "inventory") {
               filmIds: [ID!] @nodeId(typeName: "Film")
             }
-            type Query { inventory: Inventory }
+            type Query { inventory: Inventory leafReach1(in: InventoryFilterInput): String }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("InventoryFilterInput");
@@ -5578,7 +5578,7 @@ class GraphitronSchemaBuilderTest {
               languageIds: [ID!] @nodeId(typeName: "Language")
                                  @reference(path: [{key: "film_language_id_fkey"}])
             }
-            type Query { film: Film }
+            type Query { film: Film leafReach1(in: FilmFilterInput): String }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("FilmFilterInput");
@@ -5598,7 +5598,7 @@ class GraphitronSchemaBuilderTest {
             input FilmFilterInput @table(name: "film") {
               languageIds: [ID!] @nodeId(typeName: "Language")
             }
-            type Query { film: Film }
+            type Query { film: Film leafReach1(in: FilmFilterInput): String }
             """,
             schema -> assertThat(schema.type("FilmFilterInput")).isInstanceOf(UnclassifiedType.class)),
 
@@ -5611,7 +5611,7 @@ class GraphitronSchemaBuilderTest {
               languageIds: [ID!] @nodeId(typeName: "Language")
                                  @reference(path: [{key: "no_such_fkey"}])
             }
-            type Query { film: Film }
+            type Query { film: Film leafReach1(in: FilmFilterInput): String }
             """,
             schema -> assertThat(schema.type("FilmFilterInput")).isInstanceOf(UnclassifiedType.class)),
 
@@ -5623,7 +5623,7 @@ class GraphitronSchemaBuilderTest {
             input ActorFilterInput @table(name: "actor") {
               languageIds: [ID!] @nodeId(typeName: "Language")
             }
-            type Query { actor: Actor }
+            type Query { actor: Actor leafReach1(in: ActorFilterInput): String }
             """,
             schema -> assertThat(schema.type("ActorFilterInput")).isInstanceOf(UnclassifiedType.class)),
 
@@ -5635,7 +5635,7 @@ class GraphitronSchemaBuilderTest {
             input InventoryFilterInput @table(name: "inventory") {
               filmIds: [ID!] @nodeId(typeName: "Film") @field(name: "BOGUS_NAME")
             }
-            type Query { inventory: Inventory }
+            type Query { inventory: Inventory leafReach1(in: InventoryFilterInput): String }
             """,
             schema -> {
                 var tit = (TableInputType) schema.type("InventoryFilterInput");
@@ -5750,7 +5750,7 @@ class GraphitronSchemaBuilderTest {
             "R53: argMapping on @enum → UnclassifiedType (structural-inertness rejection)",
             """
             enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.dummyreferences.MoodEnum", argMapping: "x: y"}) { HAPPY SAD }
-            type Query { foo: String }
+            type Query { foo(mood: Mood): String }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("Mood");

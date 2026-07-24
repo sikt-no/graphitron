@@ -25,7 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code FilmMedia} is reachable only through the interface → implementor fan-out,</li>
  *   <li>{@code City} is reachable only through the {@code @node} seed scan (no field returns it),</li>
  *   <li>the synthesised {@code @asConnection} types are reachable through the rebuilt carrier field,</li>
- *   <li>{@code OrphanCat} is reached by nothing, so it is pruned: it is not classified.</li>
+ *   <li>{@code LeafProbeFilter} is reachable only through an argument edge, and
+ *       {@code LeafProbeKind} only through that input's field edge,</li>
+ *   <li>{@code OrphanCat}, {@code OrphanFilter}, {@code OrphanKind}, {@code OrphanStamp} and
+ *       {@code OrphanSortHolder} are reached by nothing, so they are pruned: not classified.</li>
  * </ul>
  */
 @PipelineTier
@@ -37,6 +40,7 @@ class SchemaReachabilityTest {
           search: FilmOrActor
           media: MediaItem
           films: [Film!]! @asConnection @defaultOrder(primaryKey: true)
+          leafProbe(filter: LeafProbeFilter): Film
         }
         type Film @table(name: "film") { title: String }
         type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
@@ -45,6 +49,14 @@ class SchemaReachabilityTest {
         type FilmMedia implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
         type City implements Node @table(name: "city") @node(keyColumns: ["city_id"]) { id: ID! @nodeId }
         type OrphanCat @table(name: "category") { name: String @field(name: "NAME") }
+        input LeafProbeFilter { title: String, kind: LeafProbeKind }
+        enum LeafProbeKind { PROBE_A PROBE_B }
+        input OrphanFilter { name: String }
+        enum OrphanKind { ORPHAN_A }
+        scalar OrphanStamp @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+        input OrphanSortHolder { dir: SortDirection }
+        directive @survivorProbe(kind: SurvivorKind) on FIELD_DEFINITION
+        enum SurvivorKind { PROBE }
         """;
 
     @Test
@@ -87,8 +99,9 @@ class SchemaReachabilityTest {
         // The orphan prune is now an invariant, not an observation: the field-first
         // walk is the sole classifier, so an output composite (object / interface / union) reached by
         // no field, union, interface, or seed is no longer classified. Restricted to output
-        // composites because reachableTypeNames only reports those; input types / scalars / enums stay
-        // classified through their own sweep and are out of this check's scope.
+        // composites because reachableTypeNames only records those; leaves are classified by the
+        // same walk but deliberately kept out of the observatory's recorded set (their prune is
+        // pinned by walkClassifiesLeavesAndPrunesUnreachedOnes below).
         var classifiedOutputComposites = bundle.model().types().keySet().stream()
             .filter(name -> bundle.assembled().getType(name) instanceof GraphQLObjectType
                 || bundle.assembled().getType(name) instanceof GraphQLInterfaceType
@@ -101,6 +114,37 @@ class SchemaReachabilityTest {
         assertThat(bundle.model().types())
             .as("the unreachable @table object is pruned, not classified")
             .doesNotContainKey("OrphanCat");
+    }
+
+    @Test
+    void walkClassifiesLeavesAndPrunesUnreachedOnes() {
+        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var types = bundle.model().types();
+
+        // The input surface is classified by the same walk: LeafProbeFilter is reached only
+        // through Query.leafProbe's argument edge, LeafProbeKind only through that input's own
+        // field edge. (The filter's `kind` field resolves to no film column, so the *field*
+        // Query.leafProbe rejects; the leaf types' own verdicts are independent of that and are
+        // what this test pins.)
+        assertThat(types).containsKeys("LeafProbeFilter", "LeafProbeKind");
+
+        // Declared but reached by no field or argument: pruned, exactly like OrphanCat above.
+        // Before the walk owned the input surface these were classified by the pre-walk sweep
+        // whether used or not.
+        assertThat(types).doesNotContainKeys("OrphanFilter", "OrphanKind", "OrphanStamp");
+
+        // The published-support-type sub-case: SortDirection is retained by the all-declared
+        // retainedSupportTypes() scan (OrphanSortHolder.dir references it) yet reachable from no
+        // coordinate, so it is pruned together with its unreachable holder. This is where a
+        // prune-vs-retain mismatch would hide: retention feeds the verdict, reachability decides
+        // membership in types().
+        assertThat(types).doesNotContainKeys("OrphanSortHolder", "SortDirection");
+
+        // A survivor directive definition (one the emitted schema re-declares, i.e. not a
+        // graphitron build-time directive) seeds its argument types: the emitted schema's
+        // directive declaration references them, so pruning would dangle a type reference
+        // (federation__FieldSet on @key is the production case).
+        assertThat(types).containsKey("SurvivorKind");
     }
 
     @Test

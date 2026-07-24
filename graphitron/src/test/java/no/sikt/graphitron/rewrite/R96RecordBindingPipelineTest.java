@@ -88,4 +88,38 @@ class R96RecordBindingPipelineTest {
             .contains("FilmRecord")
             .contains("LanguageRecord");
     }
+
+    @Test
+    void multiProducerInput_reachableThroughTheWalk_keepsTypedRejection() {
+        // The input-axis twin of the case above, pinned on the walk's argument edges: two
+        // @service producers consume ClashInput with different reflected parameter types
+        // (FilmRecord via modifyFilmRecord, TestInputBean via runWithInputBean), so the
+        // input-axis fold surfaces RecordBindingMultiProducer and surfaceMultiProducerRejections
+        // seeds the demotion before the walk. The walk then reaches ClashInput through the
+        // argument edge and classifyAndRegister's rejection-first guard re-registers the same
+        // payload. The assertion is on the rejection *variant*, not merely UnclassifiedType-ness:
+        // a live re-classification would re-demote to a generic structural rejection, which
+        // passes a class-only assertion while silently swapping the payload the validator and
+        // candidate-hint paths key on.
+        var schema = TestSchemaHelper.buildSchema("""
+            input ClashInput { title: String }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                viaRecord(in: ClashInput): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+                viaBean(input: ClashInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
+            }
+            """);
+
+        var t = schema.type("ClashInput");
+        assertThat(t).isInstanceOf(GraphitronType.UnclassifiedType.class);
+        var unc = (GraphitronType.UnclassifiedType) t;
+        assertThat(unc.rejection())
+            .isInstanceOf(Rejection.AuthorError.RecordBindingMultiProducer.class);
+        var mp = (Rejection.AuthorError.RecordBindingMultiProducer) unc.rejection();
+        assertThat(mp.sdlTypeName()).isEqualTo("ClashInput");
+        assertThat(mp.bindings()).hasSizeGreaterThanOrEqualTo(2);
+    }
 }

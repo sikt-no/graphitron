@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
@@ -10,6 +11,7 @@ import graphql.schema.GraphQLTypeVisitor;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.schema.SchemaTraverser;
+import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,9 +22,9 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * Reachability over the schema's output structure. {@link #reachableTypeNames} computes the set of
- * named output types (object / interface / union) reachable from the seeds; {@link #walk} drives a
- * classification visitor over the same surface.
+ * Reachability over the schema's whole declared-and-reached surface. {@link #reachableTypeNames}
+ * computes the set of named output types (object / interface / union) reachable from the seeds;
+ * {@link #walk} drives a classification visitor over the same traversal.
  *
  * <h3>Seeds</h3>
  * Query, Mutation and Subscription roots, plus every object type carrying an applied {@code @node}
@@ -36,13 +38,20 @@ import java.util.function.Function;
  * production attributed-registry path, not on every classify.
  *
  * <h3>Descent edges</h3>
- * The walk follows only output-structure edges, supplied through the
+ * The walk follows the output-structure edges (field output target, union member, interface
+ * implementor, object/interface {@code implements}) and the input edges (field argument type,
+ * input-object field type), supplied through the
  * {@link SchemaTraverser#SchemaTraverser(Function) custom child function} because graphql-java's
  * native {@code getChildren()} lacks the interface to implementor edge
- * ({@link GraphQLSchema#getImplementations(GraphQLInterfaceType)} supplies it here). Arguments and
- * input objects are deliberately not descended: classification binds arguments per field-usage,
- * never as standalone traversal events, and no output type is reachable only through an argument
- * position. Scalars and enums are leaves.
+ * ({@link GraphQLSchema#getImplementations(GraphQLInterfaceType)} supplies it here). The input
+ * edges make the classifying visitor reach input objects and the scalars / enums that sit only on
+ * argument and input-field coordinates, so the whole surface is classified by one traversal and an
+ * unreached leaf is pruned exactly like an unreached output composite. No default-value descent is
+ * needed: a default-value literal must conform to its declared type, so the type edges subsume
+ * every leaf a default value could reference. Scalars and enums are leaves. Survivor directive
+ * definitions additionally seed their argument types (see {@link #seeds}). The recorded
+ * <em>set</em> stays output-only ({@link #recordIfNamedType} filters to object / interface /
+ * union); the walk, not the observatory, owns the input edges' classification consequences.
  *
  * <p>The returned set includes the operation root type names themselves. Callers checking the
  * {@code reachable ⊆ classified} invariant exclude the roots: the classifier classifies a root's
@@ -69,11 +78,11 @@ public final class SchemaReachability {
     }
 
     /**
-     * Runs {@code visitor} over the same reachable output surface {@link #reachableTypeNames}
-     * measures (same seeds, same descent edges), classifying on enter. The {@link SchemaTraverser}
-     * fires the visitor's {@code visitGraphQL*Type} callbacks exactly once per node identity
-     * (graphql-java's {@code Traverser} routes re-encounters to {@code backRef}), so the visitor
-     * needs no dedup of its own.
+     * Runs {@code visitor} over the same reachable surface {@link #reachableTypeNames} traverses
+     * (same seeds, same descent edges, output and input alike), classifying on enter. The
+     * {@link SchemaTraverser} fires the visitor's {@code visitGraphQL*Type} callbacks exactly once
+     * per node identity (graphql-java's {@code Traverser} routes re-encounters to {@code backRef}),
+     * so the visitor needs no dedup of its own.
      */
     public static void walk(GraphQLSchema schema, GraphQLTypeVisitor visitor) {
         var expanded = new HashSet<GraphQLSchemaElement>();
@@ -83,10 +92,11 @@ public final class SchemaReachability {
     }
 
     /**
-     * The output-structure descent edges, shared by {@link #reachableTypeNames} and {@link #walk}.
+     * The descent edges, shared by {@link #reachableTypeNames} and {@link #walk}.
      * graphql-java schema elements use identity equality, so {@code expanded} dedupes by node
      * identity: once a node has been expanded its children are not re-pushed, which terminates the
-     * walk on recursive (cyclic) schema types regardless of the traverser's own visited tracking.
+     * walk on recursive (cyclic) schema and input types regardless of the traverser's own visited
+     * tracking, and dedups the scalars / enums shared by many coordinates.
      */
     private static List<GraphQLSchemaElement> childrenOf(
             GraphQLSchema schema, GraphQLSchemaElement element, Set<GraphQLSchemaElement> expanded) {
@@ -95,7 +105,7 @@ public final class SchemaReachability {
         }
         return switch (element) {
             case GraphQLObjectType obj -> {
-                var kids = outputTargets(obj.getFieldDefinitions());
+                var kids = fieldTargets(obj.getFieldDefinitions());
                 // An object's implemented interfaces are part of its emitted structure (the
                 // `implements I` clause references I), so a reachable object reaches its
                 // interfaces even when no field returns the interface: the federation case where
@@ -105,12 +115,19 @@ public final class SchemaReachability {
                 yield kids;
             }
             case GraphQLInterfaceType iface -> {
-                var kids = outputTargets(iface.getFieldDefinitions());
+                var kids = fieldTargets(iface.getFieldDefinitions());
                 kids.addAll(iface.getInterfaces());
                 kids.addAll(schema.getImplementations(iface));
                 yield kids;
             }
             case GraphQLUnionType union -> new ArrayList<>(union.getTypes());
+            case GraphQLInputObjectType input -> {
+                var kids = new ArrayList<GraphQLSchemaElement>(input.getFieldDefinitions().size());
+                for (var field : input.getFieldDefinitions()) {
+                    kids.add(GraphQLTypeUtil.unwrapAll(field.getType()));
+                }
+                yield kids;
+            }
             default -> List.of();
         };
     }
@@ -130,10 +147,14 @@ public final class SchemaReachability {
         }
     }
 
-    private static List<GraphQLSchemaElement> outputTargets(List<GraphQLFieldDefinition> fields) {
+    /** Each field's unwrapped output target plus each of its arguments' unwrapped types. */
+    private static List<GraphQLSchemaElement> fieldTargets(List<GraphQLFieldDefinition> fields) {
         var out = new ArrayList<GraphQLSchemaElement>(fields.size());
         for (var field : fields) {
             out.add(GraphQLTypeUtil.unwrapAll(field.getType()));
+            for (var arg : field.getArguments()) {
+                out.add(GraphQLTypeUtil.unwrapAll(arg.getType()));
+            }
         }
         return out;
     }
@@ -158,6 +179,22 @@ public final class SchemaReachability {
                     && (!obj.getAppliedDirectives("node").isEmpty()
                         || !obj.getAppliedDirectives("key").isEmpty())) {
                 seeds.add(obj);
+            }
+        }
+        // Directive definitions that survive into the emitted schema (everything not declared in
+        // graphitron's own directives.graphqls, the same fact
+        // no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry#isSurvivor derives
+        // from) are re-declared by the schema-class generator, so their argument types are part
+        // of the emitted structure the same way an object's implements clause is: a scalar
+        // reachable only through a survivor directive's argument (federation__FieldSet on @key)
+        // must classify, or the emitted schema dangles a type reference. Graphitron's build-time
+        // directives are excluded: their argument types are the directive support types, whose
+        // retention is the published-support-type gate's decision, not reachability's.
+        var generatorOnly = DeclaredDirectives.names();
+        for (var directive : schema.getDirectives()) {
+            if (generatorOnly.contains(directive.getName())) continue;
+            for (var arg : directive.getArguments()) {
+                seeds.add(GraphQLTypeUtil.unwrapAll(arg.getType()));
             }
         }
         return seeds;

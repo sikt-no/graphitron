@@ -79,6 +79,38 @@ class SingleWalkClassificationOrderTest {
             .isGreaterThan(discoveringFieldRecord);
     }
 
+    @Test
+    void noInputTypeIsRegisteredBeforeItsDiscoveringFieldIsVisited() throws IOException {
+        // The input-surface mirror of the test above: the walk's argument edges classify an
+        // input type only when the walk reaches it, which is after the field carrying the
+        // argument has been classified (the parent object's enter classifies its fields; the
+        // argument's input type is a child visited afterwards). The field's own read of the
+        // input is registry-free (TypeBuilder.lookAheadVerdict), so the late registration is
+        // sound. A pre-walk leaf sweep would register WalkOrderInput before any field and
+        // invert this assertion, which is the point: this pins the sweep's deletion.
+        TestSchemaHelper.buildSchema("""
+            type Query { walkOrderProbe(filter: WalkOrderInput): [WalkOrderFilm] }
+            type WalkOrderFilm @table(name: "film") { title: String }
+            input WalkOrderInput { title: String }
+            """);
+
+        var lines = Files.readAllLines(tracePath);
+        int discoveringFieldRecord = firstRecord(lines, "\"parent\":\"Query\"", "\"name\":\"walkOrderProbe\"");
+        int inputTypeRecord = firstRecord(lines, "\"op\":\"classify\"", "\"parent\":\"\"", "\"name\":\"WalkOrderInput\"");
+
+        assertThat(discoveringFieldRecord)
+            .as("Query.walkOrderProbe field-classify record must be present in the trace")
+            .isGreaterThanOrEqualTo(0);
+        assertThat(inputTypeRecord)
+            .as("WalkOrderInput type-classify record must be present in the trace")
+            .isGreaterThanOrEqualTo(0);
+        assertThat(inputTypeRecord)
+            .as("the walk classifies WalkOrderInput only when the argument edge reaches it, "
+                + "after its discovering field Query.walkOrderProbe is classified; a pre-walk "
+                + "leaf sweep would register WalkOrderInput first")
+            .isGreaterThan(discoveringFieldRecord);
+    }
+
     /** First line index containing every given substring, or -1 if none. */
     private static int firstRecord(List<String> lines, String... substrings) {
         for (int i = 0; i < lines.size(); i++) {

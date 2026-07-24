@@ -307,7 +307,7 @@ class NodeIdPipelineTest {
             "input `id: ID!` on a composite-PK node-type table → composite ColumnBackedField with NodeIdDecodeKeys.SkipMismatchedElement",
             """
             input Foo @table(name: "bar") { id: ID! }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
@@ -323,7 +323,7 @@ class NodeIdPipelineTest {
             "input `personId: ID! @field(name: \"PERSON_ID\")` on a composite-PK node-type table → composite ColumnBackedField with NodeIdDecodeKeys (PERSON_ID has no column, nodeId metadata wins)",
             """
             input Foo @table(name: "bar") { personId: ID! @field(name: "PERSON_ID") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
@@ -341,7 +341,7 @@ class NodeIdPipelineTest {
             """
             type Bar @table(name: "bar") @node { id: ID! @nodeId }
             input Foo @table(name: "bar") { id: ID! @nodeId }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
@@ -361,7 +361,7 @@ class NodeIdPipelineTest {
             """
             type Baz @table(name: "baz") @node { id: ID! @nodeId }
             input BazSelector @table(name: "baz") { id: ID! @nodeId(typeName: "Baz") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: BazSelector): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("BazSelector");
@@ -376,7 +376,7 @@ class NodeIdPipelineTest {
             "input `id: ID! @nodeId` on a @table whose table has no matching object type → friendly error",
             """
             input Foo @table(name: "bar") { id: ID! @nodeId }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
@@ -392,7 +392,7 @@ class NodeIdPipelineTest {
             type BarA @table(name: "bar") @node { id: ID! @nodeId }
             type BarB @table(name: "bar") @node { id: ID! @nodeId }
             input Foo @table(name: "bar") { id: ID! @nodeId }
-            type Query { a: BarA b: BarB }
+            type Query { a: BarA b: BarB leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
@@ -410,7 +410,7 @@ class NodeIdPipelineTest {
                 + "and a non-override consumer rejects)",
             """
             input Foo @table(name: "qux") { id: ID! }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
@@ -429,7 +429,7 @@ class NodeIdPipelineTest {
             type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! }
             type SharedNodeProjection @table(name: "shared_node") { label: String }
             input SharedSelector @table(name: "shared_node") { id: ID! @nodeId(typeName: "SharedNode") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: SharedSelector): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("SharedSelector");
@@ -451,7 +451,7 @@ class NodeIdPipelineTest {
             type FooA implements Node @table(name: "bar") @node(typeId: "FooA") { id: ID! }
             type FooB implements Node @table(name: "bar") @node(typeId: "FooB") { id: ID! }
             input Selector @table(name: "bar") { id: ID! }
-            type Query { a: FooA b: FooB }
+            type Query { a: FooA b: FooB leafReach1(in: Selector): String }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("Selector");
@@ -466,7 +466,7 @@ class NodeIdPipelineTest {
                 + "silently changing it.",
             """
             input Foo @table(name: "baz") { bazRef: ID! }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
@@ -480,7 +480,7 @@ class NodeIdPipelineTest {
                 + "(R215 §3 defers column-coverage to consumption)",
             """
             input Foo @table(name: "bar") { id: [ID!]! }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
@@ -514,7 +514,7 @@ class NodeIdPipelineTest {
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
@@ -537,7 +537,7 @@ class NodeIdPipelineTest {
             """
             type LevelA implements Node @table(name: "level_a") @node(typeId: "LevelA", keyColumns: ["k1", "k2"]) { id: ID! @nodeId }
             input LevelBFilter @table(name: "level_b") { parentId: ID! @nodeId(typeName: "LevelA") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: LevelBFilter): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("LevelBFilter");
@@ -558,7 +558,7 @@ class NodeIdPipelineTest {
             """
             type Qux @table(name: "qux") { name: String }
             input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Qux") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
 
@@ -567,7 +567,7 @@ class NodeIdPipelineTest {
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "qux") { relatedId: [ID!]! @nodeId(typeName: "Baz") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
 
@@ -576,7 +576,7 @@ class NodeIdPipelineTest {
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "qux") { relatedId: ID! @nodeId(typeName: "Baz") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
 
@@ -589,7 +589,7 @@ class NodeIdPipelineTest {
             """
             type Qux implements Node @table(name: "qux") @node { id: ID! name: String }
             input Foo @table(name: "qux") { id: ID! @nodeId(typeName: "Qux") }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
@@ -636,7 +636,7 @@ class NodeIdPipelineTest {
             input Foo @table(name: "bar") {
               barRef: [ID!] @field(name: "1_baz_id")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
@@ -654,7 +654,7 @@ class NodeIdPipelineTest {
             input Foo @table(name: "bar") {
               barRef: [ID!] @field(name: "1bazids")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
@@ -670,7 +670,7 @@ class NodeIdPipelineTest {
             input Foo @table(name: "bar") {
               barRef: ID @field(name: "1bazid")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
@@ -685,7 +685,7 @@ class NodeIdPipelineTest {
             input Foo @table(name: "bar") {
               id: ID
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: Foo): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("Foo");
@@ -725,7 +725,7 @@ class NodeIdPipelineTest {
             input BarFilterInput @table(name: "bar") {
               ids: [ID!] @nodeId(typeName: "Bar")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: BarFilterInput): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
@@ -747,7 +747,7 @@ class NodeIdPipelineTest {
             input BazFilterInput @table(name: "baz") {
               ids: [ID!] @nodeId(typeName: "Baz")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: BazFilterInput): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BazFilterInput");
@@ -769,7 +769,7 @@ class NodeIdPipelineTest {
             input QuxFilterInput @table(name: "qux") {
               ids: [ID!] @nodeId(typeName: "Qux")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: QuxFilterInput): String }
             """,
             schema -> assertThat(schema.type("QuxFilterInput"))
                 .isInstanceOf(GraphitronType.UnclassifiedType.class)),
@@ -782,7 +782,7 @@ class NodeIdPipelineTest {
             input BarFilterInput @table(name: "bar") {
               ids: [ID!] @nodeId
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: BarFilterInput): String }
             """,
             schema -> {
                 var tit = (GraphitronType.TableInputType) schema.type("BarFilterInput");
@@ -801,7 +801,7 @@ class NodeIdPipelineTest {
             input BarFilterInput @table(name: "bar") {
               ids: [ID!] @nodeId
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: BarFilterInput): String }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("BarFilterInput");
@@ -818,7 +818,7 @@ class NodeIdPipelineTest {
             input BarFilterInput @table(name: "bar") {
               ids: [ID!] @nodeId
             }
-            type Query { a: BarA b: BarB }
+            type Query { a: BarA b: BarB leafReach1(in: BarFilterInput): String }
             """,
             schema -> {
                 var t = (GraphitronType.UnclassifiedType) schema.type("BarFilterInput");
@@ -1459,7 +1459,7 @@ class NodeIdPipelineTest {
             input ChildRefFilterInput @table(name: "child_ref") {
                 parentIds: [ID!] @nodeId(typeName: "ParentNode")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: ChildRefFilterInput): String }
             """,
             schema -> {
                 var t = schema.type("ChildRefFilterInput");
@@ -1484,7 +1484,7 @@ class NodeIdPipelineTest {
                     {key: "level_b_level_a_fk"}
                 ])
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: LevelCFilterInput): String }
             """,
             schema -> {
                 var input = (GraphitronType.TableInputType)
@@ -1519,7 +1519,7 @@ class NodeIdPipelineTest {
             input ReorderedChildFilter @table(name: "reordered_fk_child") {
                 parentIds: [ID!] @nodeId(typeName: "ReorderedPkParent")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: ReorderedChildFilter): String }
             """,
             schema -> {
                 var input = (GraphitronType.TableInputType) schema.type("ReorderedChildFilter");
@@ -1552,7 +1552,7 @@ class NodeIdPipelineTest {
             input ReorderedChildSingleFilter @table(name: "reordered_fk_child") {
                 parentId: ID! @nodeId(typeName: "ReorderedPkParent")
             }
-            type Query { x: String }
+            type Query { x: String leafReach1(in: ReorderedChildSingleFilter): String }
             """,
             schema -> {
                 var input = (GraphitronType.TableInputType) schema.type("ReorderedChildSingleFilter");

@@ -5,11 +5,13 @@ import graphql.language.DirectiveDefinition;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLSchemaElement;
 import graphql.schema.GraphQLType;
@@ -240,21 +242,20 @@ public class GraphitronSchemaBuilder {
 
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
-        // The single classify-and-emit walk: one traversal of the reachable output surface
-        // classifies each composite type on enter and the fields of each reached object in the
-        // same visit; see ClassifyingVisitor. Connection synthesis is a byproduct of visiting
-        // each field (ConnectionPromoter.synthesiseForField inside classifyFieldsOfObject); the
-        // walk accumulates the carrier rewrites and the synthesised names absent from the
-        // assembled schema.
+        // The single classify-and-emit walk: one traversal of the reachable surface (output and
+        // input edges alike) classifies each type on enter and the fields of each reached object
+        // in the same visit; see ClassifyingVisitor. Connection synthesis is a byproduct of
+        // visiting each field (ConnectionPromoter.synthesiseForField inside
+        // classifyFieldsOfObject); the walk accumulates the carrier rewrites and the synthesised
+        // names absent from the assembled schema.
         typeBuilder.prepareForWalk();
         var connectionRewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
         var synthesisedConnectionNames = new LinkedHashSet<String>();
         SchemaReachability.walk(ctx.schema, new ClassifyingVisitor(
             ctx, typeBuilder, fieldBuilder, connectionRewrites, synthesisedConnectionNames));
-        // The post-walk type-level work: classify the input / scalar / enum kinds the output
-        // walk never reaches, then the global validation reductions over the finished registry.
-        // Field classification is registry-read-free, so running the reductions after the walk
-        // changes no verdict.
+        // The post-walk type-level work: the global validation reductions over the finished
+        // registry. Field classification is registry-read-free, so running the reductions after
+        // the walk changes no verdict.
         typeBuilder.finishTypeClassification();
         // The reductions below register build-time diagnostics on ctx rather than demoting a
         // verdict; the validator drains the channel. See GraphitronSchema.diagnostics.
@@ -302,13 +303,13 @@ public class GraphitronSchemaBuilder {
 
     /**
      * The single classify-and-emit walk's visitor. Fired by
-     * {@link SchemaReachability#walk} once per reached composite (the schema traverser dispatches
-     * {@code enter} exactly once per node identity), it classifies each composite type on enter
+     * {@link SchemaReachability#walk} once per reached type (the schema traverser dispatches
+     * {@code enter} exactly once per node identity), it classifies each type on enter
      * ({@link TypeBuilder#classifyAndRegister}) and, for object types, classifies that object's fields in
      * the same visit ({@link #classifyFieldsOfObject}). Because field classification is registry-read-free,
      * classifying a type and its fields together is order-independent: a field's
-     * output target is a not-yet-visited child, resolved through the look-ahead / fixed-point indices, not
-     * a registry lookup.
+     * output target, argument input type, and the scalars / enums behind them are not-yet-visited
+     * children, resolved through the look-ahead / fixed-point indices, not a registry lookup.
      *
      * <p>The object's own verdict is registered before its fields classify, so the field work reads the
      * object's own registry entry (its parent verdict, set here or, for a producer-backed carrier /
@@ -357,6 +358,31 @@ public class GraphitronSchemaBuilder {
         @Override
         public TraversalControl visitGraphQLUnionType(
                 GraphQLUnionType node, TraverserContext<GraphQLSchemaElement> context) {
+            typeBuilder.classifyAndRegister(node);
+            return TraversalControl.CONTINUE;
+        }
+
+        // The leaf arms below reach here through the input edges (field argument type,
+        // input-object field type). They only classify; there is no field work, so unlike the
+        // object arm they need no fieldBuilder guard and fire identically on the types-only seam.
+
+        @Override
+        public TraversalControl visitGraphQLInputObjectType(
+                GraphQLInputObjectType node, TraverserContext<GraphQLSchemaElement> context) {
+            typeBuilder.classifyAndRegister(node);
+            return TraversalControl.CONTINUE;
+        }
+
+        @Override
+        public TraversalControl visitGraphQLScalarType(
+                GraphQLScalarType node, TraverserContext<GraphQLSchemaElement> context) {
+            typeBuilder.classifyAndRegister(node);
+            return TraversalControl.CONTINUE;
+        }
+
+        @Override
+        public TraversalControl visitGraphQLEnumType(
+                GraphQLEnumType node, TraverserContext<GraphQLSchemaElement> context) {
             typeBuilder.classifyAndRegister(node);
             return TraversalControl.CONTINUE;
         }

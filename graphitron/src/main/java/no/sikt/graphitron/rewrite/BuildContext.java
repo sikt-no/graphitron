@@ -211,6 +211,16 @@ class BuildContext {
      */
     Map<String, Map<String, ParticipantRef.TableBound.CrossTableField>> crossTableFieldsByParticipant = Map.of();
     /**
+     * Fixed-point scalar verdicts, SDL scalar name &rarr; {@code classifyScalarType}'s verdict
+     * (a {@link GraphitronType.ScalarType}, or an {@link GraphitronType.UnclassifiedType} for a
+     * rejected declaration). Populated once by {@link TypeBuilder#buildClassificationIndices} over
+     * all declared scalars, registry-free, so the wire-coercion predicate
+     * ({@code WireCoercionResolver.checkScalar}) and the service slot-type mapping read the scalar
+     * axis mid-walk without observing walk order. Empty for tests that build a registry without
+     * running the classification walk.
+     */
+    Map<String, GraphitronType> scalarVerdicts = Map.of();
+    /**
      * Set by {@link GraphitronSchemaBuilder} immediately after constructing {@link ServiceCatalog}.
      * Used by {@link #resolveConditionRef} for condition-join method reflection.
      */
@@ -227,6 +237,23 @@ class BuildContext {
      * {@code prepareForWalk} to have run first).
      */
     TypeBuilder typeBuilder;
+
+    /**
+     * The verdict of a type referenced from a coordinate under classification, safe to call
+     * mid-walk. Reading {@link #types} during the walk observes walk order (a referenced leaf or
+     * composite may be a not-yet-visited child), so this recomputes registry-free through
+     * {@link TypeBuilder#lookAheadVerdict}, the same seam the return-type and DML-element
+     * resolvers use, under the same name. Unit-tier callers that wire no {@link #typeBuilder}
+     * (e.g. a {@code new BuildContext(null, null, ...)} reflection-test harness) fall back to the
+     * registry view, which for them is pre-populated or deliberately empty; every production path
+     * wires the builder before classification starts.
+     */
+    GraphitronType lookAheadVerdict(String typeName) {
+        if (typeBuilder != null) {
+            return typeBuilder.lookAheadVerdict(typeName);
+        }
+        return types == null ? null : types.get(typeName);
+    }
 
     /**
      * SDL-level scalar applied-directive map, populated by {@link GraphitronSchemaBuilder} from
@@ -452,11 +479,12 @@ class BuildContext {
     /** Dispatches to the correct typed overload for any {@link GraphQLNamedType}. */
     static SourceLocation locationOf(GraphQLNamedType namedType) {
         return switch (namedType) {
-            case GraphQLObjectType t    -> locationOf(t);
-            case GraphQLInterfaceType t -> locationOf(t);
-            case GraphQLUnionType t     -> locationOf(t);
+            case GraphQLObjectType t      -> locationOf(t);
+            case GraphQLInterfaceType t   -> locationOf(t);
+            case GraphQLUnionType t       -> locationOf(t);
+            case GraphQLInputObjectType t -> locationOf(t);
             case graphql.schema.GraphQLScalarType t -> locationOf(t);
-            default                     -> null;
+            default                       -> null;
         };
     }
 

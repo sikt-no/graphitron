@@ -314,10 +314,13 @@ public final class ClassifiedCorpus {
          * sibling classifies the batched leaf with the identical verdict, exactly as child-table
          * inline/split pairs do. The vocabulary enum maps slot names to discriminator tokens at
          * @field(name:)'s canonical ENUM_VALUE site; the identity case (slot names = tokens)
-         * omits it.
+         * omits it. The vocabulary enum itself carries no @classifiedType: @pivot(vocabulary:)
+         * references it by name only, never on a type coordinate, so the classify-and-emit walk
+         * never reaches it and it is pruned (the pivot classifier reads its value mapping straight
+         * off the SDL). The EnumType verdict is pinned by the enum-column example above.
          */
         new Example("pivot", """
-            enum Sprak @classifiedType(as: EnumType) {
+            enum Sprak {
               nn @field(name: "nno")
               nb @field(name: "nob")
             }

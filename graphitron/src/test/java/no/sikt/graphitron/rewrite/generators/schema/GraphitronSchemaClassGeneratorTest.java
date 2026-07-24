@@ -76,7 +76,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_includesEnumsAndInputsAsAdditionalTypes() {
         var body = buildBody("""
-            type Query { x: String }
+            type Query { x(filter: FilterInput, status: Status): String }
             enum Status { A B }
             input FilterInput { q: String }
             """);

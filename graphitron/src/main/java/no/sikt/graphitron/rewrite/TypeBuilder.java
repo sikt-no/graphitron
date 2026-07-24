@@ -115,6 +115,8 @@ class TypeBuilder {
 
     /** Lazily computed by {@link #retainedSupportTypes()}; null until the first support-type gate runs. */
     private Set<String> retainedSupportTypes;
+    /** Per-name memo for {@link #lookAheadVerdict}; {@code Optional.empty()} caches a null verdict. */
+    private final Map<String, Optional<GraphitronType>> lookAheadMemo = new java.util.HashMap<>();
 
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
@@ -177,19 +179,16 @@ class TypeBuilder {
      * The pre-walk preparation, shared by the production single walk
      * ({@link GraphitronSchemaBuilder#buildSchema}) and the types-only test seam
      * ({@link GraphitronSchemaBuilder#buildContextForTests}). Resolves the reflection-driven
-     * SDL-to-backing-class bindings, builds the fixed-point classification indices, and classifies
-     * every SDL kind the output walk never reaches: input types, scalars, and enums (they sit only
-     * on argument / input-field coordinates the walk does not descend). These leaf kinds are
-     * classified <em>before</em> the walk because field classification reads their verdicts from
-     * {@code ctx.types} during the walk (e.g. {@code MutationInputResolver},
-     * {@code EnumMappingResolver}, {@code ServiceCatalog}'s scalar binding). The directive-ignored
-     * warnings and the multi-producer rejection demotions also run here, so a rejected input is
-     * read as its {@link UnclassifiedType} demotion during the walk.
+     * SDL-to-backing-class bindings and builds the fixed-point classification indices. No type is
+     * classified here: every kind, output composite and input / scalar / enum leaf alike, is
+     * classified as the walk reaches it ({@link #classifyAndRegister}); an unreached type of any
+     * kind is an orphan, deliberately pruned. Field classification never reads a referenced type's
+     * verdict from the registry under construction; it recomputes through
+     * {@link #lookAheadVerdict} (see {@link BuildContext#lookAheadVerdict}), so a leaf may be
+     * visited after the field that references it.
      *
-     * <p>The output composite types are <em>not</em> classified here; each is classified as the
-     * walk reaches it ({@link #classifyAndRegister}). The one validation reduction that depends on
-     * the composites ({@link #validateNodeTypeIdUniqueness}) runs after the walk
-     * ({@link #finishTypeClassification}).
+     * <p>The one validation reduction that depends on the walk's output
+     * ({@link #validateNodeTypeIdUniqueness}) runs after it ({@link #finishTypeClassification}).
      */
     void prepareForWalk() {
         bindings = new RecordBindingResolver(ctx, svc);
@@ -206,18 +205,6 @@ class TypeBuilder {
         // via the same producers classification uses (buildTableType / buildTableInterfaceType),
         // not from the registry, so they may be built before the walk.
         buildClassificationIndices();
-        // Classify the input / scalar / enum kinds the output walk never reaches. Output
-        // composites (object / interface / union) are classified on the walk; an unreached
-        // composite is an orphan, deliberately pruned, so skip them here.
-        for (var namedType : ctx.schema.getAllTypesAsList()) {
-            if (namedType.getName().startsWith("__")) continue;
-            if (namedType instanceof GraphQLObjectType
-                    || namedType instanceof GraphQLInterfaceType
-                    || namedType instanceof GraphQLUnionType) {
-                continue;
-            }
-            classifyAndRegister(namedType);
-        }
         // Emit the directive-ignored warning in a dedicated pass over getAllTypesAsList so the
         // warning order is stable (SDL order) and independent of walk order. It reads only the
         // reflection-binding fixed point and SDL directives, never the registry.
@@ -225,28 +212,67 @@ class TypeBuilder {
             if (namedType.getName().startsWith("__")) continue;
             emitDirectiveIgnoredWarning(namedType);
         }
-        // Surface multi-producer rejections as UnclassifiedType before the walk so a rejected
-        // input reads as its demotion during field classification. The only composite this demotes
-        // is a directiveless object, whose classifyType verdict is null, so the walk does not
-        // overwrite the demotion.
+        // Surface multi-producer rejections as UnclassifiedType before the walk. When the walk
+        // reaches a rejected type, classifyAndRegister's rejection-first guard reconstructs the
+        // same payload, so the register is an equals-idempotent no-op, never a re-demote.
         surfaceMultiProducerRejections();
+        // resolveAll's DML grounding probes the structural payload scan (and through it
+        // lookAheadVerdict) while the binding fold is still forming; verdicts computed then
+        // predate the fixed point and must not stick. Only post-preparation verdicts memoize.
+        lookAheadMemo.clear();
     }
 
     /**
      * Classifies one reached type and registers its verdict, the per-type work the single walk
-     * drives on enter (see {@link GraphitronSchemaBuilder}'s {@code ClassifyingVisitor}).
-     * {@link #classifyType} is registry-free, so the verdict is identical regardless of how much
-     * of the registry exists yet. A {@code null} verdict (a directiveless object: a nesting
-     * target, a producer-backed carrier, or an orphan) registers nothing here; that verdict lands
-     * at the producing / embedding edge during field classification, or stays absent for an
-     * orphan. Also drives the input / scalar / enum sweep in {@link #prepareForWalk}.
+     * drives on enter (see {@link GraphitronSchemaBuilder}'s {@code ClassifyingVisitor}). The
+     * verdict is {@link #lookAheadVerdict}'s, so the registry entry and every mid-walk read of
+     * the same type are two materializations of one (memoized) computation: the rejection-first
+     * guard, the {@link #classifyType} verdict and the carrier fallback cannot drift between the
+     * registering visit and a reading edge, and classification side effects (the id-reference
+     * shim WARN, participant diagnostics) fire once per type however many edges read it. In
+     * particular a binding-rejected type re-registers the exact {@link UnclassifiedType} that
+     * {@link #surfaceMultiProducerRejections} seeded, so {@code TypeRegistry.register}'s
+     * equals-idempotent arm fires; classifying it live instead would hit the
+     * incompatible-classes demote arm and clobber the typed payload with a generic structural
+     * one.
+     *
+     * <p>A {@code null} verdict (a directiveless nesting target or orphan) registers nothing
+     * here; the nesting verdict lands at the embedding edge during field classification, or
+     * stays absent for an orphan.
      */
     GraphitronType classifyAndRegister(GraphQLNamedType namedType) {
-        var gType = classifyType(namedType);
+        var gType = lookAheadVerdict(namedType.getName());
         if (gType != null) {
             ctx.typeRegistry.register(namedType.getName(), gType);
         }
         return gType;
+    }
+
+    /**
+     * The reproduced multi-producer demotion for a binding-rejected type, or {@code null} when
+     * the type carries no rejection. The single producer of the rejection-first precedence,
+     * shared by {@link #lookAheadVerdict} (which {@link #classifyAndRegister} routes through)
+     * and {@link #participantClassification}: because every consumer constructs the demotion
+     * here, the {@link UnclassifiedType} the walk re-registers is {@code equals}-identical to
+     * the one {@link #surfaceMultiProducerRejections} seeded, and {@code TypeRegistry.register}'s
+     * idempotent arm fires by construction rather than by mirrored bodies staying in sync.
+     *
+     * <p>Scoped to the kinds the record-binding fold governs, exactly like
+     * {@link #surfaceMultiProducerRejections}: objects and input objects. The fold's accessor
+     * probes can accrue observations against a <em>scalar</em> SDL child (an {@code ID} input
+     * field whose Java accessor returns a record class), and such a "rejection" on a built-in
+     * scalar is fold noise, not an authoring error; a scalar or enum never takes its verdict from
+     * a backing class, so it classifies live regardless of the fold.
+     */
+    private UnclassifiedType bindingRejectionVerdict(String typeName, GraphQLNamedType named) {
+        if (!(named instanceof GraphQLObjectType || named instanceof GraphQLInputObjectType)) {
+            return null;
+        }
+        var rejection = bindings.rejection(typeName).orElse(null);
+        if (rejection == null) {
+            return null;
+        }
+        return new UnclassifiedType(typeName, locationOf(named), rejection);
     }
 
     /**
@@ -410,20 +436,37 @@ class TypeBuilder {
      * {@link FieldBuilder} is decided separately by {@link #isDirectivelessNestingTarget}, not by
      * this verdict.
      *
-     * <p>The multi-producer rejection guard runs first, mirroring
-     * {@link #participantClassification}: {@link #surfaceMultiProducerRejections} demotes every
+     * <p>The multi-producer rejection guard ({@link #bindingRejectionVerdict}) runs first:
+     * {@link #surfaceMultiProducerRejections} demotes every
      * binding-rejected type (result <em>and</em> input) to {@link UnclassifiedType} before the
      * field pass reads it, so the look-ahead reproduces that demotion rather than the live verdict
      * {@link #classifyType} would compute. The other post-walk demotions do not change any arm
      * this look-ahead is read for: a typeId-collided node is read through the {@code NodeIndex}
      * (and is table-backed, never one of these arms), and the case-fold collision pass runs after
      * the field walk.
+     *
+     * <p>Memoized per type name: after {@link #prepareForWalk} every input this reads (SDL,
+     * reflection bindings, catalog, the carrier fixed point) is fixed, so the verdict is a pure
+     * function of the name and the memo makes the registry and the look-ahead two materializations
+     * of one computation. During {@code prepareForWalk} itself the inputs are still forming (the
+     * DML grounding probes the payload scan mid-fold), so {@code prepareForWalk} clears the memo
+     * at its end and only post-fixed-point verdicts stick.
      */
     GraphitronType lookAheadVerdict(String typeName) {
+        var memo = lookAheadMemo.get(typeName);
+        if (memo != null) {
+            return memo.orElse(null);
+        }
+        GraphitronType verdict = computeLookAheadVerdict(typeName);
+        lookAheadMemo.put(typeName, Optional.ofNullable(verdict));
+        return verdict;
+    }
+
+    private GraphitronType computeLookAheadVerdict(String typeName) {
         if (!(ctx.schema.getType(typeName) instanceof GraphQLNamedType named)) return null;
-        var rejection = bindings.rejection(typeName).orElse(null);
-        if (rejection != null) {
-            return new UnclassifiedType(typeName, locationOf(named), rejection);
+        var demoted = bindingRejectionVerdict(typeName, named);
+        if (demoted != null) {
+            return demoted;
         }
         var verdict = classifyType(named);
         if (verdict != null) return verdict;
@@ -456,12 +499,14 @@ class TypeBuilder {
     /**
      * Builds the fixed-point reverse indices ({@link BuildContext#nodes},
      * {@link BuildContext#tables}, {@link BuildContext#errors},
-     * {@link BuildContext#crossTableFieldsByParticipant}) the field pass reads at classification
+     * {@link BuildContext#crossTableFieldsByParticipant}) and the scalar fixed point
+     * ({@link BuildContext#scalarVerdicts}) the field pass reads at classification
      * edges. Derived from the SDL declarations via the same producers classification uses
      * ({@link #buildTableType} for nodes and tables, {@link #buildTableInterfaceType} for
-     * table-interfaces, {@link #buildErrorType} for errors).
+     * table-interfaces, {@link #buildErrorType} for errors, {@link #classifyScalarType} for
+     * scalars).
      *
-     * <p>All four indices are directive-scanned over <b>all</b> declared types (a superset of the
+     * <p>All the indices are directive-scanned over <b>all</b> declared types (a superset of the
      * reachable set), which lets them be built before the walk, and are <b>pure</b>: no demotion,
      * no reachability prune, and no typeId-uniqueness exclusion
      * ({@link #validateNodeTypeIdUniqueness} is the sole owner of uniqueness, as a validation
@@ -528,6 +573,22 @@ class TypeBuilder {
         var participantIndex = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
         byParticipant.forEach((k, v) -> participantIndex.put(k, Map.copyOf(v)));
         ctx.crossTableFieldsByParticipant = Map.copyOf(participantIndex);
+
+        // The scalar fixed point: SDL scalar name -> classifyScalarType's verdict, the axis the
+        // wire-coercion predicate (WireCoercionResolver.checkScalar) and the service slot-type
+        // mapping read mid-walk. Same rationale as the indices above: an all-declared,
+        // registry-free superset, so a scalar-axis read never observes walk order; an unreachable
+        // scalar's entry is never read from a reachable coordinate.
+        var scalarVerdicts = new LinkedHashMap<String, GraphitronType>();
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            if (!(named instanceof graphql.schema.GraphQLScalarType scalarType)) continue;
+            var verdict = classifyScalarType(scalarType);
+            if (verdict != null) {
+                scalarVerdicts.put(named.getName(), verdict);
+            }
+        }
+        ctx.scalarVerdicts = java.util.Collections.unmodifiableMap(scalarVerdicts);
     }
 
     /**
@@ -664,21 +725,24 @@ class TypeBuilder {
      * The participant's classification verdict, computed as a pure function of SDL plus the
      * already-resolved reflection bindings, with <em>no</em> read of the type registry, so
      * {@link #buildParticipantList} can run before the registry is populated. A multi-producer
-     * rejection ({@link RecordBindingResolver#rejection}) is reproduced first, as an
+     * rejection ({@link #bindingRejectionVerdict}) is reproduced first, as an
      * {@link UnclassifiedType} (routing to {@link #buildParticipantList}'s error arm); otherwise
      * the verdict is {@link #classifyType}'s, which is {@code null} for a directiveless object (a
      * directiveless single-record carrier classifies only at the producing edge via
      * {@link #carrierVerdict}, so it is {@code null} here too).
      *
-     * <p>{@code classifyType} is a value-builder over SDL + bindings + catalog with no registry or
-     * accumulator writes, so re-invoking it here is safe; its only side effect is a rare
-     * {@code LOGGER.warn} for a {@code @node} keyColumns order mismatch.
+     * <p>{@code classifyType} is a value-builder over SDL + bindings + catalog with no registry
+     * writes, so re-invoking it here yields the same verdict. It is not fully side-effect-free:
+     * the {@code @table @discriminate} interface arm registers located diagnostics
+     * ({@code ctx.addDiagnostic} in {@link #buildParticipantList}'s join resolution) and the
+     * {@code @node} keyColumns order mismatch logs a {@code LOGGER.warn}, so re-invocation can
+     * repeat those emissions.
      */
     private GraphitronType participantClassification(String typeName) {
         var named = (GraphQLNamedType) ctx.schema.getType(typeName);
-        var rejection = bindings.rejection(typeName).orElse(null);
-        if (rejection != null) {
-            return new UnclassifiedType(typeName, named == null ? null : locationOf(named), rejection);
+        var demoted = bindingRejectionVerdict(typeName, named);
+        if (demoted != null) {
+            return demoted;
         }
         return named == null ? null : classifyType(named);
     }
@@ -1728,13 +1792,14 @@ class TypeBuilder {
             if (resolution instanceof ScalarResolution.Resolved r) {
                 return r.javaType();
             }
-            // Consumer-declared scalar that didn't resolve as a spec built-in: defer to whatever
-            // the ScalarType classifier produced, if any. The classifier has either succeeded
-            // (the entry is a GraphitronType.ScalarType on ctx.typeRegistry) or rejected the
-            // type; if it rejected, the surrounding input type would already be UnclassifiedType
-            // by reachable-closure on the input field. Treat absence as Object so the validator
-            // walk still works; jOOQ rebinds at value-set time via getDataType().
-            var classified = ctx.typeRegistry.get(scalar.getName());
+            // Consumer-declared scalar that didn't resolve as a spec built-in: defer to the
+            // scalar fixed point (BuildContext.scalarVerdicts, registry-free, so this read is
+            // safe while the walk is mid-flight). The classifier has either succeeded (a
+            // GraphitronType.ScalarType entry) or rejected the type; if it rejected, the
+            // surrounding input type would already be UnclassifiedType by reachable-closure on
+            // the input field. Treat absence as Object so the validator walk still works; jOOQ
+            // rebinds at value-set time via getDataType().
+            var classified = ctx.scalarVerdicts.get(scalar.getName());
             if (classified instanceof GraphitronType.ScalarType st) {
                 return st.resolution().javaType();
             }

@@ -160,14 +160,15 @@ final class InputBeanResolver {
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
-            // The type pass already classified this SDL input as JooqTableRecordInputType, table
-            // and all; read that answer rather than re-resolving. A jOOQ-record param binds on the
+            // The classifier's verdict for this SDL input is JooqTableRecordInputType, table and
+            // all; read that answer rather than re-resolving. lookAheadVerdict recomputes it
+            // registry-free: this runs during field classification, when the input may be a
+            // not-yet-visited child of the walk. A jOOQ-record param binds on the
             // column axis (@field(name:) → ColumnRef, plus optional @nodeId identity decodes), not
             // the Java-member axis the bean path uses. Sits after the shared input-object gates
             // above so it reuses the loadable / Map / cardinality-parity checks; the walker relies
             // on that parity to read list-ness off the Java type alone.
-            if (ctx.types != null
-                    && ctx.types.get(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
+            if (ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
                 JooqBuilt jbuilt = buildJooqRecord(jtr, iot, p.name(), method.methodName(),
                     method.className(), arg.graphqlArgName());
                 if (jbuilt instanceof JooqBuilt.Fail jf) {
@@ -185,9 +186,8 @@ final class InputBeanResolver {
             // misleading "bean class … has no fields matching"; reject it honestly instead.
             // Gated on isTableRecord, narrower than isJooqRecord on purpose: a non-table Record
             // has no TableRef and keeps falling through to the bean path.
-            if (ctx.types != null
-                    && isTableRecord(elementClass)
-                    && ctx.types.get(iot.getName()) instanceof GraphitronType.TableInputType) {
+            if (isTableRecord(elementClass)
+                    && ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.TableInputType) {
                 return new Result.Failed(Rejection.structural(
                     "parameter '" + p.name() + "' on method '" + method.methodName() + "' in class '"
                     + method.className() + "' is jOOQ record '" + elementClass.getName() + "', but the"
@@ -725,8 +725,11 @@ final class InputBeanResolver {
                 // SDL scalar is assignable to that declared type (numeric width, ID-as-numeric,
                 // and domain-type mismatches all reject). The predicate is the sole producer of
                 // Direct here.
+                // The scalar fixed point, not the live registry view: this runs during field
+                // classification, when a reachable scalar may be a not-yet-visited child of the
+                // walk.
                 var wire = WireCoercionResolver.checkScalar(sdlElt.elementType(), javaElementTypeName,
-                    ctx.types == null ? null : ctx.types.values(),
+                    ctx.scalarVerdicts.values(),
                     "input-bean field '" + sdlFieldName + "' on parameter '" + paramName + "' of method '"
                         + methodName + "' in class '" + className + "'");
                 if (wire instanceof WireCoercionResolver.Result.Rejected rej) {

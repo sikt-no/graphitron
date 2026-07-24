@@ -716,16 +716,17 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_arityUnique_consumerScalarParam_routesThroughClassifier() {
         // The arity-unique gate must treat consumer-defined scalars symmetrically with
-        // spec built-ins. With a Decimal -> BigDecimal scalar registered in ctx.types, a
-        // BigDecimal parameter against a named input object slot defers to the dot-path
-        // hint the same way a String parameter does — proving the predicate routes through
-        // the model's scalar classification rather than a hard-coded allow-list.
+        // spec built-ins. With a Decimal -> BigDecimal scalar carried in the scalar fixed
+        // point (BuildContext.scalarVerdicts, the seam mapToJavaTypeName and the arity-unique
+        // gate read), a BigDecimal parameter against a named input object slot defers to the
+        // dot-path hint the same way a String parameter does — proving the predicate routes
+        // through the model's scalar classification rather than a hard-coded allow-list.
         var ctx = new BuildContext(null, null, stubRewriteContext());
         var decimalScalar = graphql.schema.GraphQLScalarType.newScalar()
             .name("Decimal").coercing(graphql.schema.GraphQLScalarType.newScalar()
                 .name("_").coercing(new graphql.schema.Coercing<Object, Object>() {}).build().getCoercing())
             .build();
-        ctx.typeRegistry.register("Decimal", new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(
+        ctx.scalarVerdicts = Map.of("Decimal", new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(
             "Decimal",
             new graphql.language.SourceLocation(1, 1),
             new no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved(

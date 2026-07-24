@@ -784,7 +784,9 @@ class ServiceCatalog {
      * wire-coercion check then passes through conservatively rather than over-rejecting.
      */
     ArgExtraction argExtraction(String typeName, GraphQLInputType sdlLeafType, String site) {
-        var classifiedTypes = ctx.types == null ? null : ctx.types.values();
+        // The scalar fixed point, not the live registry view: this runs during field
+        // classification, when a reachable scalar may be a not-yet-visited child of the walk.
+        var classifiedTypes = ctx.scalarVerdicts.values();
         Class<?> javaClass;
         try {
             javaClass = Class.forName(typeName, false, ctx.codegenLoader());
@@ -1287,13 +1289,13 @@ class ServiceCatalog {
 
     /**
      * Adapter onto {@link ScalarTypeResolver#isClassifiedScalarJavaType}. The resolver owns the
-     * predicate; this method threads {@code ctx.types.values()} in so the inference's
+     * predicate; this method threads the scalar fixed point
+     * ({@link BuildContext#scalarVerdicts}, registry-free, safe mid-walk) in so the inference's
      * arity-unique gate consults the same source of truth that {@link #mapToJavaTypeName}
      * routes through for the forward direction.
      */
     private boolean isClassifiedScalarJavaTypeName(String javaTypeName) {
-        return ScalarTypeResolver.isClassifiedScalarJavaType(
-            javaTypeName, ctx.types == null ? null : ctx.types.values());
+        return ScalarTypeResolver.isClassifiedScalarJavaType(javaTypeName, ctx.scalarVerdicts.values());
     }
 
     /**
@@ -1329,7 +1331,8 @@ class ServiceCatalog {
      * for types the search can't translate confidently (unclassified scalars, enums, named
      * input objects), so the caller skips that candidate rather than guessing.
      *
-     * <p>Scalars route through {@code ctx.types} so the classifier's
+     * <p>Scalars route through the scalar fixed point ({@link BuildContext#scalarVerdicts}) so
+     * the classifier's
      * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} is the single source of
      * truth for the Java type binding; consumer scalars resolved via {@code @scalarType} produce
      * their resolved Java type FQN.
@@ -1351,12 +1354,12 @@ class ServiceCatalog {
         }
         String inner;
         if (current instanceof GraphQLScalarType s) {
-            // Prefer the classified ScalarType from the model when available; fall back to the
-            // resolver's closed spec-built-in table for unit-tier callers that exercise
-            // mapToJavaTypeName without a full classified type registry (ctx.types null or empty).
+            // Prefer the classifier's ScalarType verdict from the scalar fixed point
+            // (BuildContext.scalarVerdicts, registry-free, safe to read while the walk is
+            // mid-flight); fall back to the resolver's closed spec-built-in table for unit-tier
+            // callers that exercise mapToJavaTypeName without the fixed point populated.
             TypeName javaType = null;
-            if (ctx.types != null
-                    && ctx.types.get(s.getName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st) {
+            if (ctx.scalarVerdicts.get(s.getName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st) {
                 javaType = st.resolution().javaType();
             }
             if (javaType == null) {

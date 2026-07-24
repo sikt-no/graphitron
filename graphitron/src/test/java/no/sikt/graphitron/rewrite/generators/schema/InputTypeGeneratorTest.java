@@ -14,7 +14,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 class InputTypeGeneratorTest {
 
     private static final String INPUT_SCHEMA = """
-        type Query { x: String }
+        type Query { x(filter: FilterInput): String }
         "A search filter."
         input FilterInput {
           keyword: String
@@ -94,7 +94,7 @@ class InputTypeGeneratorTest {
     @Test
     void generate_resultsAreAlphabeticallySorted() {
         var names = generateFor("""
-            type Query { x: String }
+            type Query { x(z: ZebraFilter, a: AlphaFilter): String }
             input ZebraFilter { x: String }
             input AlphaFilter { x: String }
             """).stream().map(TypeSpec::name).toList();
