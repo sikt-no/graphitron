@@ -90,13 +90,23 @@ import java.util.StringJoiner;
  * failure evicts immediately: later serial mutation fields must fail on a dead connection rather
  * than run with unproven identity.
  *
- * <h2>Load-bearing invariant: one connection per operation</h2>
- * Pinning exactly one connection per operation is safe only because generated batch loaders execute
- * SQL synchronously on the dispatch thread ({@code RowsMethodCall.batchLoaderLambda} emits
+ * <h2>Load-bearing invariant: one connection per operation, one thread per connection</h2>
+ * Pinning exactly one connection per distinct source within an operation is safe because generated
+ * batch loaders execute SQL synchronously on the dispatch thread
+ * ({@code RowsMethodCall.batchLoaderLambda} emits
  * {@code CompletableFuture.completedFuture(rows(keys, dfe))}). That invariant is pinned at its
  * emission site by {@code RowsMethodCallTest}'s synchronous-body assertion; a future "make loaders
  * async" change fails there rather than as a distant execution-tier flake. See that test's javadoc,
  * which links back here.
+ *
+ * <p>In multi-tenant builds the carrier's {@code scatter} helper is the one deliberate exception,
+ * and it preserves both halves of the invariant for a revised reason: concurrency is confined to
+ * scatter's bounded workers, each owning exactly one keyed connection single-threaded through
+ * {@code dslFor(key)}, while the dispatch thread is blocked inside the join for the scatter's whole
+ * duration (so it cannot race the workers, and the default connection stays dispatch-owned,
+ * structurally: workers receive only the keyed {@code DSLContext}). Generated fetchers stay
+ * synchronous; the fanned fetcher calls {@code scatter} and blocks, and concurrency never leaks
+ * into fetcher bodies.
  *
  * <h2>Session hooks (slice 3)</h2>
  * With no {@code <sessionState>} configured the runtime bakes {@code SessionHook.NONE} (a no-op
@@ -144,12 +154,28 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName JDBC_TYPES = ClassName.get("java.sql", "Types");
     private static final ClassName DATA_SOURCE = ClassName.get("javax.sql", "DataSource");
     private static final ClassName EXECUTOR = ClassName.get("java.util.concurrent", "Executor");
+    private static final ClassName EXECUTORS = ClassName.get("java.util.concurrent", "Executors");
     private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
     private static final ClassName OBJECTS = ClassName.get("java.util", "Objects");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName HASH_MAP = ClassName.get("java.util", "HashMap");
     private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
+    private static final ClassName LINKED_HASH_SET = ClassName.get("java.util", "LinkedHashSet");
     private static final ClassName NO_SUCH_ELEMENT = ClassName.get("java.util", "NoSuchElementException");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    private static final ClassName SET = ClassName.get("java.util", "Set");
+    private static final ClassName COLLECTION = ClassName.get("java.util", "Collection");
+    private static final ClassName DURATION = ClassName.get("java.time", "Duration");
+    private static final ClassName FUNCTION = ClassName.get("java.util.function", "Function");
+    private static final ClassName CONCURRENT_HASH_MAP = ClassName.get("java.util.concurrent", "ConcurrentHashMap");
+    private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
+    private static final ClassName COMPLETION_EXCEPTION = ClassName.get("java.util.concurrent", "CompletionException");
+    private static final ClassName EXECUTION_EXCEPTION = ClassName.get("java.util.concurrent", "ExecutionException");
+    private static final ClassName TIMEOUT_EXCEPTION = ClassName.get("java.util.concurrent", "TimeoutException");
+    private static final ClassName TIME_UNIT = ClassName.get("java.util.concurrent", "TimeUnit");
+    private static final ClassName ATOMIC_INTEGER = ClassName.get("java.util.concurrent.atomic", "AtomicInteger");
+    private static final ClassName THREAD_LOCAL = ClassName.get("java.lang", "ThreadLocal");
     private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
@@ -193,13 +219,14 @@ public final class ConnectionRuntimeClassGenerator {
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
 
         RuntimeHookProjection projection = projectHookFacts(sessionState, sessionHook, sessionHookImpl);
+        boolean multiTenant = tenantKeyType != null;
 
         var units = new ArrayList<TypeSpec>();
         units.add(sessionHook(sessionHook));
-        units.add(pinnedConnection(pinnedConnection, sessionHook));
-        units.add(runtime(sessionHook, pinnedConnection, instrumentation, projection, tenantKey));
+        units.add(pinnedConnection(pinnedConnection, sessionHook, multiTenant));
+        units.add(runtime(sessionHook, pinnedConnection, instrumentation, projection, tenantKey, multiTenant));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            tenantKeyType != null));
+            multiTenant));
         TypeSpec impl = sessionHookImpl(sessionHook, sessionState);
         if (impl != null) {
             units.add(impl);
@@ -323,8 +350,13 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** The acquisition-scoped pinned connection: acquire/release lifecycle with fail-closed + evict. */
-    private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName sessionHook) {
+    /**
+     * The acquisition-scoped pinned connection: acquire/release lifecycle with fail-closed + evict.
+     * Multi-tenant builds additionally emit {@code abort()}, the straggler seam the scatter helper's
+     * timeout path routes through: evict without the disconnect hook, safe against a worker that may
+     * still be executing on the connection.
+     */
+    private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName sessionHook, boolean multiTenant) {
         var connectionField = FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build();
         var hookField = FieldSpec.builder(sessionHook, "hook", Modifier.PRIVATE, Modifier.FINAL).build();
         var claimsField = FieldSpec.builder(String.class, "claims", Modifier.PRIVATE, Modifier.FINAL)
@@ -511,7 +543,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "{@code throw rethrow(cause)}.\n")
             .build();
 
-        return TypeSpec.classBuilder(PINNED_CONNECTION_CLASS_NAME)
+        var builder = TypeSpec.classBuilder(PINNED_CONNECTION_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addSuperinterface(AutoCloseable.class)
             .addJavadoc("One pinned connection with per-request identity mounted for its acquisition-scoped\n"
@@ -530,7 +562,11 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(constructor)
             .addMethod(acquire)
             .addMethod(connectionAccessor)
-            .addMethod(release)
+            .addMethod(release);
+        if (multiTenant) {
+            builder.addMethod(abortMethod());
+        }
+        return builder
             .addMethod(close)
             .addMethod(afterSettle)
             .addMethod(evict)
@@ -539,9 +575,42 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** The application-scoped runtime holding the DataSource, dialect, and baked session hook. */
+    /**
+     * {@code abort()}: the straggler release path. A scatter worker past its deadline may still be
+     * mid-statement on this connection, so neither the disconnect hook (a second concurrent user of
+     * the connection) nor {@code close()} (returns a possibly-live connection to the pool) is safe;
+     * {@code Connection.abort} is the JDBC primitive designed for exactly this. {@code synchronized}
+     * because a straggler worker's self-abort and the dispatch thread's {@code releaseAll} can race
+     * on the same instance; {@code release()} needs no synchronization (release and abort never
+     * target the same instance — the carrier's per-key remove arbitrates which path processes an
+     * entry, and release is only chosen for keys whose worker has settled).
+     */
+    private static MethodSpec abortMethod() {
+        return MethodSpec.methodBuilder("abort")
+            .addModifiers(Modifier.PUBLIC, Modifier.SYNCHRONIZED)
+            .returns(void.class)
+            .beginControlFlow("if (released)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("released = true")
+            .addStatement("evict(connection, abortExecutor)")
+            .addJavadoc("Evicts the connection without running the disconnect hook, for a connection whose\n"
+                + "worker may still be executing on it (a scatter straggler past the join deadline). The\n"
+                + "identity cannot be proven unmounted and the connection cannot be proven idle, so it is\n"
+                + "aborted and never returned to the pool; the straggler's eventual completion lands\n"
+                + "harmlessly on the dead connection. Idempotent, and safe against a concurrent abort.\n")
+            .build();
+    }
+
+    /**
+     * The application-scoped runtime holding the DataSource, dialect, and baked session hook.
+     * Multi-tenant builds additionally carry the fan-out execution configuration (the bounded
+     * scatter executor and the scatter deadline), as two flat constructor scalars plus an optional
+     * consumer-supplied {@code Executor} overload; deployment-time values, so they never touch the
+     * Mojo. Single-tenant emission is byte-identical to the pre-fan-out shape.
+     */
     private static TypeSpec runtime(ClassName sessionHook, ClassName pinnedConnection, ClassName instrumentation,
-                                    RuntimeHookProjection projection, TypeName tenantKey) {
+                                    RuntimeHookProjection projection, TypeName tenantKey, boolean multiTenant) {
         CodeBlock hookInitializer = projection.hookInitializer();
         boolean requiresPostgres = projection.requiresPostgres();
         var dataSourceField = FieldSpec.builder(DATA_SOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -560,19 +629,58 @@ public final class ConnectionRuntimeClassGenerator {
         var abortExecutorField = FieldSpec.builder(EXECUTOR, "abortExecutor", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("$T::run", Runnable.class)
             .build();
+        // Fan-out execution configuration (multi-tenant builds only): the bounded scatter executor
+        // and the scatter deadline. A second, independent executor beside abortExecutor; the two are
+        // orthogonal and never conflated.
+        var defaultFanOutConcurrencyField = FieldSpec.builder(int.class, "DEFAULT_FAN_OUT_CONCURRENCY",
+                Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .initializer("8")
+            .addJavadoc("Default scatter concurrency cap: tenants in flight per fanned field.\n")
+            .build();
+        var defaultFanOutTimeoutField = FieldSpec.builder(DURATION, "DEFAULT_FAN_OUT_TIMEOUT",
+                Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.ofSeconds(10)", DURATION)
+            .addJavadoc("Default scatter deadline per fanned field.\n")
+            .build();
+        var fanOutExecutorField = FieldSpec.builder(EXECUTOR, "fanOutExecutor", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The bounded executor scatter workers run on. Independent of {@link #abortExecutor}\n"
+                + "(same-thread, for {@code Connection.abort} only); the two are never conflated.\n")
+            .build();
+        var fanOutTimeoutField = FieldSpec.builder(DURATION, "fanOutTimeout", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The per-scatter deadline, enforced by the scatter join whichever executor runs the\n"
+                + "workers.\n")
+            .build();
+
+        var mapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), DATA_SOURCE);
 
         // Canonical constructor: default source (untenanted / single-tenant) plus the per-tenant map. The
-        // two-arg single-tenant form delegates here with an empty map.
+        // two-arg single-tenant form delegates here with an empty map. In multi-tenant builds the
+        // canonical grows the two fan-out slots (executor + deadline); the map-only form delegates
+        // with the documented defaults.
         var canonicalBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
-            .addParameter(ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), DATA_SOURCE),
-                "dataSourcesByTenant")
-            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(mapParamType, "dataSourcesByTenant")
+            .addParameter(SQL_DIALECT, "dialect");
+        if (multiTenant) {
+            canonicalBuilder
+                .addParameter(EXECUTOR, "fanOutExecutor")
+                .addParameter(DURATION, "fanOutTimeout");
+        }
+        canonicalBuilder
             .addStatement("this.dataSource = $T.requireNonNull(defaultDataSource, $S)", OBJECTS, "defaultDataSource")
             .addStatement("this.dataSourcesByTenant = new $T<>($T.requireNonNull(dataSourcesByTenant, $S))",
                 LINKED_HASH_MAP, OBJECTS, "dataSourcesByTenant")
             .addStatement("this.dialect = $T.requireNonNull(dialect, $S)", OBJECTS, "dialect");
+        if (multiTenant) {
+            canonicalBuilder
+                .addStatement("this.fanOutExecutor = $T.requireNonNull(fanOutExecutor, $S)", OBJECTS, "fanOutExecutor")
+                .addStatement("this.fanOutTimeout = $T.requireNonNull(fanOutTimeout, $S)", OBJECTS, "fanOutTimeout")
+                .beginControlFlow("if (fanOutTimeout.isZero() || fanOutTimeout.isNegative())")
+                .addStatement("throw new $T($S + fanOutTimeout)", IllegalArgumentException.class,
+                    "fanOutTimeout must be positive, got: ")
+                .endControlFlow();
+        }
         if (requiresPostgres) {
             // The <variables> sugar bakes PostgreSQL set_config statements at build time, but the dialect
             // arrives only here at construction; guard fail-closed so a mismatched dialect fails loudly at
@@ -593,7 +701,13 @@ public final class ConnectionRuntimeClassGenerator {
                 + "consumer (or their framework) still owns pool creation and tuning.\n"
                 + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
                 + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
-                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
+                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
+                + (multiTenant
+                    ? "@param fanOutExecutor the executor scatter workers run on; the supplier owns its\n"
+                        + "concurrency bound (e.g. virtual threads); must not be {@code null}\n"
+                        + "@param fanOutTimeout the per-scatter deadline, enforced by the join whichever\n"
+                        + "executor runs the workers; must be positive\n"
+                    : ""))
             .build();
 
         var constructor = MethodSpec.constructorBuilder()
@@ -606,6 +720,75 @@ public final class ConnectionRuntimeClassGenerator {
                 + "on top of the consumer's pool.\n"
                 + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
                 + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
+            .build();
+
+        // Multi-tenant fan-out configuration: two delegating overloads over the executor-form
+        // canonical. The map-only form bakes the documented defaults; the int-cap form builds the
+        // default bounded pool of platform threads sized by the cap. Deployment-time values, so the
+        // constructor surface (not the Mojo) is where they live.
+        var mapOnlyConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(DATA_SOURCE, "defaultDataSource")
+            .addParameter(mapParamType, "dataSourcesByTenant")
+            .addParameter(SQL_DIALECT, "dialect")
+            .addStatement("this(defaultDataSource, dataSourcesByTenant, dialect, DEFAULT_FAN_OUT_CONCURRENCY,"
+                + " DEFAULT_FAN_OUT_TIMEOUT)")
+            .addJavadoc("Builds the tenant-routing runtime with the default fan-out configuration:\n"
+                + "{@link #DEFAULT_FAN_OUT_CONCURRENCY} scatter workers in flight and the\n"
+                + "{@link #DEFAULT_FAN_OUT_TIMEOUT} scatter deadline.\n"
+                + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
+                + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
+                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
+            .build();
+        var cappedConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(DATA_SOURCE, "defaultDataSource")
+            .addParameter(mapParamType, "dataSourcesByTenant")
+            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(int.class, "fanOutConcurrency")
+            .addParameter(DURATION, "fanOutTimeout")
+            .addStatement("this(defaultDataSource, dataSourcesByTenant, dialect,"
+                + " boundedFanOutPool(fanOutConcurrency), fanOutTimeout)")
+            .addJavadoc("Builds the tenant-routing runtime with an explicit fan-out cap and deadline; the\n"
+                + "runtime owns a bounded pool of platform threads sized by the cap. To own threading\n"
+                + "yourself (e.g. virtual threads), use the {@code Executor}-form constructor instead.\n"
+                + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
+                + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
+                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
+                + "@param fanOutConcurrency the maximum scatter workers in flight; at least 1\n"
+                + "@param fanOutTimeout the per-scatter deadline; must be positive\n")
+            .build();
+        var boundedFanOutPool = MethodSpec.methodBuilder("boundedFanOutPool")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(EXECUTOR)
+            .addParameter(int.class, "fanOutConcurrency")
+            .beginControlFlow("if (fanOutConcurrency < 1)")
+            .addStatement("throw new $T($S + fanOutConcurrency)", IllegalArgumentException.class,
+                "fanOutConcurrency must be at least 1, got: ")
+            .endControlFlow()
+            .addStatement("$T names = new $T()", ATOMIC_INTEGER, ATOMIC_INTEGER)
+            .addCode("return $T.newFixedThreadPool(fanOutConcurrency, task -> {\n", EXECUTORS)
+            .addCode("    $T thread = new $T(task, $S + names.incrementAndGet());\n",
+                Thread.class, Thread.class, "graphitron-fanout-")
+            .addCode("    thread.setDaemon(true);\n")
+            .addCode("    return thread;\n")
+            .addCode("});\n")
+            .addJavadoc("The default scatter executor: a fixed pool of daemon platform threads sized by the\n"
+                + "cap (generated output targets Java 17, so no virtual threads here; a consumer on a newer\n"
+                + "JVM supplies its own {@code Executor} instead). Daemon threads, so an application\n"
+                + "shutdown is never held open by idle fan-out workers.\n")
+            .build();
+        var fanOutExecutorAccessor = MethodSpec.methodBuilder("fanOutExecutor")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(EXECUTOR)
+            .addStatement("return fanOutExecutor")
+            .addJavadoc("The executor scatter workers run on.\n")
+            .build();
+        var fanOutTimeoutAccessor = MethodSpec.methodBuilder("fanOutTimeout")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(DURATION)
+            .addStatement("return fanOutTimeout")
+            .addJavadoc("The per-scatter deadline, enforced by the scatter join.\n")
             .build();
 
         var dialectAccessor = MethodSpec.methodBuilder("dialect")
@@ -673,25 +856,42 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@return a builder with the owned-connection instrumentation attached, ready for {@code .build()}\n")
             .build();
 
-        return TypeSpec.classBuilder(RUNTIME_CLASS_NAME)
+        var builder = TypeSpec.classBuilder(RUNTIME_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Application-scoped runtime that owns the connection lifecycle: built once at wiring\n"
                 + "time via {@code Graphitron.runtime(dataSource, dialect)}, it pins one connection per\n"
                 + "operation, mounts and unmounts per-request identity through the {@link $T} seam, and\n"
                 + "demarcates operation-typed transactions (via the instrumentation {@link #newGraphQL} attaches).\n"
-                + "Holds no per-request state.\n", sessionHook)
-            .addField(dataSourceField)
+                + "Holds no per-request state.\n", sessionHook);
+        if (multiTenant) {
+            builder.addField(defaultFanOutConcurrencyField)
+                .addField(defaultFanOutTimeoutField);
+        }
+        builder.addField(dataSourceField)
             .addField(tenantSourcesField)
             .addField(dialectField)
             .addField(hookField)
-            .addField(abortExecutorField)
-            .addMethod(canonicalConstructor)
-            .addMethod(constructor)
+            .addField(abortExecutorField);
+        if (multiTenant) {
+            builder.addField(fanOutExecutorField)
+                .addField(fanOutTimeoutField);
+        }
+        builder.addMethod(canonicalConstructor);
+        if (multiTenant) {
+            builder.addMethod(cappedConstructor)
+                .addMethod(mapOnlyConstructor);
+        }
+        builder.addMethod(constructor)
             .addMethod(dialectAccessor)
             .addMethod(acquire)
             .addMethod(acquireForTenant)
-            .addMethod(newGraphQL)
-            .build();
+            .addMethod(newGraphQL);
+        if (multiTenant) {
+            builder.addMethod(fanOutExecutorAccessor)
+                .addMethod(fanOutTimeoutAccessor)
+                .addMethod(boundedFanOutPool);
+        }
+        return builder.build();
     }
 
     /**
@@ -720,13 +920,46 @@ public final class ConnectionRuntimeClassGenerator {
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var claimsField = FieldSpec.builder(String.class, "claims", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
-        var pinnedField = FieldSpec.builder(pinnedMapType, "pinnedByTenant", Modifier.PRIVATE, Modifier.FINAL)
-            .initializer("new $T<>()", LINKED_HASH_MAP)
+        var pinnedField = multiTenant
+            ? FieldSpec.builder(pinnedMapType, "pinnedByTenant", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", CONCURRENT_HASH_MAP)
+                .addJavadoc("Concurrent with per-key single acquisition ({@code computeIfAbsent}): scatter\n"
+                    + "partitions distinct keys one worker each, but nothing structural prevents a worker and\n"
+                    + "the dispatch thread racing the same key, so one-pin-per-key is this map's contract,\n"
+                    + "not an accident of the callers.\n")
+                .build()
+            : FieldSpec.builder(pinnedMapType, "pinnedByTenant", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", LINKED_HASH_MAP)
+                .build();
+        var timedOutField = FieldSpec.builder(ParameterizedTypeName.get(SET, tenantKey), "timedOutTenants",
+                Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("$T.newKeySet()", CONCURRENT_HASH_MAP)
+            .addJavadoc("Tenant keys whose scatter worker missed the join deadline. A {@code TimedOut} outcome\n"
+                + "means the join stopped waiting, not that the worker stopped working, so a timed-out\n"
+                + "key's pinned connection may still be executing: {@link #dslFor} never hands it out\n"
+                + "again, and {@link #releaseAll} routes it through {@code PinnedConnection.abort()}\n"
+                + "instead of a close that would return a possibly-live connection to the pool.\n")
+            .build();
+        var closedField = FieldSpec.builder(boolean.class, "closed", Modifier.PRIVATE, Modifier.VOLATILE)
+            .addJavadoc("Set by {@link #releaseAll} before draining, so a straggler worker that finishes\n"
+                + "pinning after the operation completed aborts its own connection instead of leaking it.\n")
+            .build();
+        var scatterWorkerMarkerField = FieldSpec.builder(
+                ParameterizedTypeName.get(THREAD_LOCAL, ClassName.get(Boolean.class)), "SCATTER_WORKER",
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("new $T<>()", THREAD_LOCAL)
+            .addJavadoc("Marks scatter worker threads for the re-entrancy guard: a {@code perTenant} body\n"
+                + "calling {@link #scatter} would make a bounded pool wait on itself and deadlock, so the\n"
+                + "violation throws immediately instead.\n")
             .build();
         var defaultPinnedField = FieldSpec.builder(pinnedConnection, "defaultPinned", Modifier.PRIVATE)
             .addJavadoc("The default-source pinned connection serving untenanted SQL, pinned on first\n"
                 + "{@link #dslDefault()} use. A field rather than a reserved map key: the map is keyed by\n"
-                + "the typed divined tenant value, and no tenant value means the default source.\n")
+                + "the typed divined tenant value, and no tenant value means the default source.\n"
+                + "Needs no concurrency work: scatter workers cannot reach it ({@code perTenant} receives\n"
+                + "only the keyed {@code DSLContext}, structurally), and the dispatch thread that owns it\n"
+                + "is blocked in the scatter join while workers run, so its check-then-pin stays a serial\n"
+                + "code path.\n")
             .build();
 
         var constructor = MethodSpec.constructorBuilder()
@@ -737,22 +970,68 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("this.runtime = runtime")
             .addStatement("this.claims = claims")
             .addStatement("this.commitPolicy = commitPolicy")
-            .addJavadoc("Builds a per-operation carrier over {@code runtime} for one request's {@code claims}\n"
-                + "and commit policy. One instance per operation; not thread-safe (a single operation's\n"
-                + "fetchers run serially on the dispatch thread).\n")
+            .addJavadoc(multiTenant
+                ? "Builds a per-operation carrier over {@code runtime} for one request's {@code claims}\n"
+                    + "and commit policy. One instance per operation. Concurrency is confined to\n"
+                    + "{@link #scatter}'s bounded workers, each owning one keyed connection single-threaded\n"
+                    + "through {@link #dslFor}, with the dispatch thread blocked on the join for the\n"
+                    + "scatter's whole duration; every other access runs serially on the dispatch thread.\n"
+                : "Builds a per-operation carrier over {@code runtime} for one request's {@code claims}\n"
+                    + "and commit policy. One instance per operation; not thread-safe (a single operation's\n"
+                    + "fetchers run serially on the dispatch thread).\n")
             .build();
 
-        var dslFor = MethodSpec.methodBuilder("dslFor")
+        var dslForBuilder = MethodSpec.methodBuilder("dslFor")
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
             .addParameter(tenantKey, "tenantKey")
-            .addException(SQL_EXCEPTION)
-            .addStatement("$T pinned = pinnedByTenant.get(tenantKey)", pinnedConnection)
-            .beginControlFlow("if (pinned == null)")
-            .addComment("First use of this key in the operation: pin one connection and mount identity on it.")
-            .addStatement("pinned = runtime.acquireForTenant(tenantKey, claims)")
-            .addStatement("pinnedByTenant.put(tenantKey, pinned)")
-            .endControlFlow()
+            .addException(SQL_EXCEPTION);
+        if (multiTenant) {
+            dslForBuilder
+                .beginControlFlow("if (timedOutTenants.contains(tenantKey))")
+                .addComment("The key's scatter worker missed the join deadline; its connection may still be")
+                .addComment("executing, so it is never reused within the operation.")
+                .addStatement("throw new $T($S + tenantKey + $S)", IllegalStateException.class,
+                    "Tenant '", "' timed out earlier in this operation; its connection is never reused.")
+                .endControlFlow()
+                .addStatement("$T pinned", pinnedConnection)
+                .beginControlFlow("try")
+                .addComment("Per-key single acquisition, also under concurrent scatter workers: exactly one pin")
+                .addComment("per key even when a worker and the dispatch thread race the same key. The checked")
+                .addComment("acquisition failure tunnels out of the compute lambda unchanged.")
+                .addCode("pinned = pinnedByTenant.computeIfAbsent(tenantKey, key -> {\n")
+                .addCode("    try {\n")
+                .addCode("        return runtime.acquireForTenant(key, claims);\n")
+                .addCode("    } catch ($T e) {\n", SQL_EXCEPTION)
+                .addCode("        throw new $T(e);\n", COMPLETION_EXCEPTION)
+                .addCode("    }\n")
+                .addCode("});\n")
+                .nextControlFlow("catch ($T e)", COMPLETION_EXCEPTION)
+                .beginControlFlow("if (e.getCause() instanceof $T sql)", SQL_EXCEPTION)
+                .addStatement("throw sql")
+                .endControlFlow()
+                .addStatement("throw e")
+                .endControlFlow()
+                .beginControlFlow("if (closed || timedOutTenants.contains(tenantKey))")
+                .addComment("The operation moved on (released, or this key's join deadline passed) while the pin")
+                .addComment("was in flight; never hand out a connection the release path can no longer own.")
+                .addStatement("$T stale = pinnedByTenant.remove(tenantKey)", pinnedConnection)
+                .beginControlFlow("if (stale != null)")
+                .addStatement("stale.abort()")
+                .endControlFlow()
+                .addStatement("throw new $T($S + tenantKey + $S)", IllegalStateException.class,
+                    "Tenant '", "' was pinned after its scatter deadline or after the operation completed.")
+                .endControlFlow();
+        } else {
+            dslForBuilder
+                .addStatement("$T pinned = pinnedByTenant.get(tenantKey)", pinnedConnection)
+                .beginControlFlow("if (pinned == null)")
+                .addComment("First use of this key in the operation: pin one connection and mount identity on it.")
+                .addStatement("pinned = runtime.acquireForTenant(tenantKey, claims)")
+                .addStatement("pinnedByTenant.put(tenantKey, pinned)")
+                .endControlFlow();
+        }
+        var dslFor = dslForBuilder
             .addStatement("$T connection = pinned.connection()", CONNECTION)
             .addComment("Bind a DSLContext to the pinned connection and swap in the transaction provider, the")
             .addComment("same recipe slice 2 uses for the single-connection path. jOOQ's single-connection")
@@ -786,8 +1065,14 @@ public final class ConnectionRuntimeClassGenerator {
 
         var releaseAllBuilder = MethodSpec.methodBuilder("releaseAll")
             .addModifiers(Modifier.PUBLIC)
-            .returns(void.class)
-            .addStatement("$T failure = null", RuntimeException.class);
+            .returns(void.class);
+        if (multiTenant) {
+            releaseAllBuilder
+                .addComment("Close before draining, so a straggler worker that finishes pinning after this point")
+                .addComment("aborts its own connection instead of leaking a fresh pin into a completed operation.")
+                .addStatement("closed = true");
+        }
+        releaseAllBuilder.addStatement("$T failure = null", RuntimeException.class);
         if (multiTenant) {
             releaseAllBuilder
                 .beginControlFlow("if (defaultPinned != null)")
@@ -797,36 +1082,79 @@ public final class ConnectionRuntimeClassGenerator {
                 .addStatement("failure = e")
                 .endControlFlow()
                 .addStatement("defaultPinned = null")
+                .endControlFlow()
+                .beginControlFlow("for ($T key : pinnedByTenant.keySet())", tenantKey)
+                .addComment("remove() arbitrates each entry to exactly one processor, against a straggler's")
+                .addComment("concurrent self-abort of the same entry.")
+                .addStatement("$T pinned = pinnedByTenant.remove(key)", pinnedConnection)
+                .beginControlFlow("if (pinned == null)")
+                .addStatement("continue")
+                .endControlFlow()
+                .beginControlFlow("if (timedOutTenants.contains(key))")
+                .addComment("A TimedOut outcome means the join stopped waiting, not that the worker stopped")
+                .addComment("working: the connection may still be mid-statement. A JDBC call cannot be safely")
+                .addComment("killed, so route the straggler through the abort seam; never close or return a")
+                .addComment("connection whose worker may still be executing on it.")
+                .addStatement("pinned.abort()")
+                .addStatement("continue")
+                .endControlFlow()
+                .beginControlFlow("try")
+                .addStatement("pinned.release()")
+                .nextControlFlow("catch ($T e)", RuntimeException.class)
+                .addComment("release() already evicted this connection on disconnect failure; keep releasing the")
+                .addComment("rest so one tenant's failed unmount never orphans another's connection.")
+                .beginControlFlow("if (failure == null)")
+                .addStatement("failure = e")
+                .endControlFlow()
+                .endControlFlow()
                 .endControlFlow();
+        } else {
+            releaseAllBuilder
+                .beginControlFlow("for ($T pinned : pinnedByTenant.values())", pinnedConnection)
+                .beginControlFlow("try")
+                .addStatement("pinned.release()")
+                .nextControlFlow("catch ($T e)", RuntimeException.class)
+                .addComment("release() already evicted this connection on disconnect failure; keep releasing the")
+                .addComment("rest so one tenant's failed unmount never orphans another's connection.")
+                .beginControlFlow("if (failure == null)")
+                .addStatement("failure = e")
+                .endControlFlow()
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("pinnedByTenant.clear()");
         }
         var releaseAll = releaseAllBuilder
-            .beginControlFlow("for ($T pinned : pinnedByTenant.values())", pinnedConnection)
-            .beginControlFlow("try")
-            .addStatement("pinned.release()")
-            .nextControlFlow("catch ($T e)", RuntimeException.class)
-            .addComment("release() already evicted this connection on disconnect failure; keep releasing the")
-            .addComment("rest so one tenant's failed unmount never orphans another's connection.")
-            .beginControlFlow("if (failure == null)")
-            .addStatement("failure = e")
-            .endControlFlow()
-            .endControlFlow()
-            .endControlFlow()
-            .addStatement("pinnedByTenant.clear()")
             .beginControlFlow("if (failure != null)")
             .addStatement("throw failure")
             .endControlFlow()
-            .addJavadoc("Releases every pinned connection on every completion path (success, error,\n"
-                + "cancellation): each {@code release()} unmounts identity and returns or evicts its own\n"
-                + "connection, and one tenant's disconnect failure does not orphan the others. Idempotent:\n"
-                + "the map is cleared, so a redundant call is a no-op. Rethrows the first release failure after\n"
-                + "attempting them all.\n")
+            .addJavadoc(multiTenant
+                ? "Releases every pinned connection on every completion path (success, error,\n"
+                    + "cancellation): each {@code release()} unmounts identity and returns or evicts its own\n"
+                    + "connection, and one tenant's disconnect failure does not orphan the others. Idempotent:\n"
+                    + "the map is drained, so a redundant call is a no-op. Rethrows the first release failure\n"
+                    + "after attempting them all. A tenant whose scatter worker missed the join deadline is\n"
+                    + "routed through {@code PinnedConnection.abort()}: its worker may still be executing, so\n"
+                    + "the connection is evicted, never closed under a live statement nor returned to the pool.\n"
+                : "Releases every pinned connection on every completion path (success, error,\n"
+                    + "cancellation): each {@code release()} unmounts identity and returns or evicts its own\n"
+                    + "connection, and one tenant's disconnect failure does not orphan the others. Idempotent:\n"
+                    + "the map is cleared, so a redundant call is a no-op. Rethrows the first release failure after\n"
+                    + "attempting them all.\n")
             .build();
 
         var carrier = TypeSpec.classBuilder(TENANT_CONNECTIONS_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("Per-operation carrier of the tenant-keyed pinned connections for one request. See\n"
-                + "{@code ConnectionRuntimeClassGenerator} for the full contract.\n")
-            .addField(runtimeField)
+            .addJavadoc(multiTenant
+                ? "Per-operation carrier of the tenant-keyed pinned connections for one request. See\n"
+                    + "{@code ConnectionRuntimeClassGenerator} for the full contract. Concurrency is confined\n"
+                    + "to {@link #scatter}'s bounded workers; everything else runs serially on the dispatch\n"
+                    + "thread.\n"
+                : "Per-operation carrier of the tenant-keyed pinned connections for one request. See\n"
+                    + "{@code ConnectionRuntimeClassGenerator} for the full contract.\n");
+        if (multiTenant) {
+            carrier.addField(scatterWorkerMarkerField);
+        }
+        carrier.addField(runtimeField)
             .addField(claimsField)
             .addField(policyField)
             .addField(pinnedField)
@@ -837,20 +1165,233 @@ public final class ConnectionRuntimeClassGenerator {
         // keyed-acquisition surface shipped with the connection lifecycle.
         if (multiTenant) {
             carrier.addField(defaultPinnedField)
+                .addField(timedOutField)
+                .addField(closedField)
                 .addMethod(dslDefault);
         }
         carrier.addMethod(releaseAll);
         if (multiTenant) {
-            carrier.addMethod(ofEnvironment(self))
+            carrier.addMethod(scatterMethod(self, tenantKey))
+                .addMethod(scatterWorkerMethod(self, tenantKey))
+                .addMethod(ofEnvironment(self))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(staticDslDefault(self))
                 .addMethod(divinedTenant(tenantKey))
                 .addMethod(divinedTenantAgree())
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
-                .addMethod(tenantLoaderName());
+                .addMethod(tenantLoaderName())
+                .addType(outcomeType(self, tenantKey));
         }
         return carrier.build();
+    }
+
+    /**
+     * {@code <R> List<Outcome<R>> scatter(Collection<K> keys, Function<DSLContext, R> perTenant)}:
+     * the one place concurrency lives in the runtime. Every distinct key gets one worker on the
+     * runtime's bounded fan-out executor; each worker resolves its {@code DSLContext} through
+     * {@code dslFor(key)} so the pin-and-mount recipe stays single-sourced and per-tenant RLS
+     * composes unchanged. The calling dispatch thread blocks in the join until every worker
+     * completes or the deadline passes, then returns outcomes in key iteration order. Policy-neutral
+     * about partial failure: every tenant ends as exactly one {@code Outcome}, nothing is dropped or
+     * cancelled at this layer, and the caller decides what a {@code Failed} or {@code TimedOut}
+     * tenant means.
+     */
+    private static MethodSpec scatterMethod(ClassName self, TypeName tenantKey) {
+        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var outcome = self.nestedClass("Outcome");
+        var outcomeOfR = ParameterizedTypeName.get(outcome, r);
+        return MethodSpec.methodBuilder("scatter")
+            .addModifiers(Modifier.PUBLIC)
+            .addTypeVariable(r)
+            .returns(ParameterizedTypeName.get(LIST, outcomeOfR))
+            .addParameter(ParameterizedTypeName.get(COLLECTION, tenantKey), "keys")
+            .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, r), "perTenant")
+            .beginControlFlow("if ($T.TRUE.equals(SCATTER_WORKER.get()))", Boolean.class)
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "scatter is not re-entrant: a perTenant body must never call scatter (a bounded pool"
+                    + " waiting on itself deadlocks).")
+            .endControlFlow()
+            .addComment("Distinct keys, one worker each, in the caller's iteration order: a duplicate key")
+            .addComment("would put a second concurrent worker on one pinned connection.")
+            .addStatement("$T<$T> order = new $T<>(new $T<>(keys))", LIST, tenantKey, ARRAY_LIST, LINKED_HASH_SET)
+            .addStatement("$T<$T<$T>> futures = new $T<>(order.size())",
+                LIST, COMPLETABLE_FUTURE, outcomeOfR, ARRAY_LIST)
+            .beginControlFlow("for ($T key : order)", tenantKey)
+            .addStatement("futures.add($T.supplyAsync(() -> scatterWorker(key, perTenant), runtime.fanOutExecutor()))",
+                COMPLETABLE_FUTURE)
+            .endControlFlow()
+            .addStatement("long deadline = $T.nanoTime() + runtime.fanOutTimeout().toNanos()", System.class)
+            .addStatement("$T<$T> outcomes = new $T<>(order.size())", LIST, outcomeOfR, ARRAY_LIST)
+            .beginControlFlow("for (int i = 0; i < order.size(); i++)")
+            .addStatement("$T key = order.get(i)", tenantKey)
+            .beginControlFlow("try")
+            .addStatement("outcomes.add(futures.get(i).get($T.max(0L, deadline - $T.nanoTime()), $T.NANOSECONDS))",
+                Math.class, System.class, TIME_UNIT)
+            .nextControlFlow("catch ($T e)", TIMEOUT_EXCEPTION)
+            .addComment("The join stops waiting; the worker is not interrupted (a JDBC call cannot be safely")
+            .addComment("killed). The key is quarantined: dslFor never reuses it and releaseAll aborts it.")
+            .addStatement("timedOutTenants.add(key)")
+            .addStatement("outcomes.add(new Outcome.TimedOut<>(key))")
+            .nextControlFlow("catch ($T e)", EXECUTION_EXCEPTION)
+            .addComment("Defensive: the worker catches Throwable itself; only an executor-level failure lands here.")
+            .addStatement("outcomes.add(new Outcome.Failed<>(key, e.getCause()))")
+            .nextControlFlow("catch ($T e)", InterruptedException.class)
+            .addStatement("$T.currentThread().interrupt()", Thread.class)
+            .addStatement("outcomes.add(new Outcome.Failed<>(key, e))")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return outcomes")
+            .addJavadoc("Runs {@code perTenant} once per distinct key on the runtime's bounded fan-out\n"
+                + "executor, each worker on its own tenant's pinned connection (resolved through\n"
+                + "{@link #dslFor}, so per-tenant session identity and RLS compose unchanged), and blocks\n"
+                + "until every worker completes or the deadline passes. Outcomes come back in the iteration\n"
+                + "order of {@code keys} (duplicates collapse to the first occurrence), one per key:\n"
+                + "{@code Success} (an empty result is a Success carrying an empty value, distinct from\n"
+                + "failure), {@code Failed} (the worker threw; the cause is carried, never swallowed), or\n"
+                + "{@code TimedOut} (the deadline passed first; the worker is not interrupted, its\n"
+                + "connection is quarantined and aborted at release). Policy-neutral about partial failure:\n"
+                + "nothing is dropped or cancelled here, and the caller decides what non-success means.\n"
+                + "Workers never touch the default connection, and the dispatch thread is blocked inside\n"
+                + "the join for the scatter's whole duration. Not re-entrant: a {@code perTenant} body\n"
+                + "calling scatter throws immediately rather than deadlocking the bounded pool.\n"
+                + "@param keys the fan-out domain, iterated in order; duplicates collapse\n"
+                + "@param perTenant the per-tenant unit of work, handed only the keyed {@code DSLContext}\n")
+            .build();
+    }
+
+    /** The scatter worker body: marker for the re-entrancy guard, Success/Failed fold, never throws. */
+    private static MethodSpec scatterWorkerMethod(ClassName self, TypeName tenantKey) {
+        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var outcome = self.nestedClass("Outcome");
+        return MethodSpec.methodBuilder("scatterWorker")
+            .addModifiers(Modifier.PRIVATE)
+            .addTypeVariable(r)
+            .returns(ParameterizedTypeName.get(outcome, r))
+            .addParameter(tenantKey, "key")
+            .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, r), "perTenant")
+            .addStatement("SCATTER_WORKER.set($T.TRUE)", Boolean.class)
+            .beginControlFlow("try")
+            .addStatement("return new Outcome.Success<>(key, perTenant.apply(dslFor(key)))")
+            .nextControlFlow("catch ($T cause)", Throwable.class)
+            .addStatement("return new Outcome.Failed<>(key, cause)")
+            .nextControlFlow("finally")
+            .addStatement("SCATTER_WORKER.remove()")
+            .endControlFlow()
+            .addJavadoc("One tenant's unit of work on a fan-out executor thread: pin-or-reuse the key's\n"
+                + "connection through {@link #dslFor}, apply {@code perTenant}, fold the result or any\n"
+                + "throwable into exactly one {@code Outcome}. Never throws; the cause travels on the\n"
+                + "{@code Failed} arm.\n")
+            .build();
+    }
+
+    /**
+     * The per-tenant scatter outcome taxonomy: a sealed interface with one arm per way a tenant's
+     * unit of work can end. Emitted as final classes with record-style accessors (the generated
+     * output targets Java 17 and the emitter writes explicit classes); all three arms live in this
+     * compilation unit, so the sealed interface needs no {@code permits} clause.
+     */
+    private static TypeSpec outcomeType(ClassName self, TypeName tenantKey) {
+        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var outcome = self.nestedClass("Outcome");
+        var outcomeOfR = ParameterizedTypeName.get(outcome, r);
+
+        var keyAccessor = MethodSpec.methodBuilder("key")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .returns(tenantKey)
+            .addJavadoc("The tenant key this outcome belongs to.\n")
+            .build();
+
+        var success = TypeSpec.classBuilder("Success")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addTypeVariable(r)
+            .addSuperinterface(outcomeOfR)
+            .addJavadoc("The worker completed; {@code value} is {@code perTenant}'s result. An empty result\n"
+                + "is a Success carrying an empty value, distinct from {@code Failed}: conflating the two\n"
+                + "is exactly the incomplete-presented-as-complete confusion the error posture prevents.\n")
+            .addField(FieldSpec.builder(tenantKey, "key", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(r, "value", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(tenantKey, "key")
+                .addParameter(r, "value")
+                .addStatement("this.key = key")
+                .addStatement("this.value = value")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("key")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(tenantKey)
+                .addStatement("return key")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("value")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(r)
+                .addStatement("return value")
+                .addJavadoc("The worker's result; may be an empty collection, never a signal of failure.\n")
+                .build())
+            .build();
+
+        var failed = TypeSpec.classBuilder("Failed")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addTypeVariable(r)
+            .addSuperinterface(outcomeOfR)
+            .addJavadoc("The worker threw; {@code cause} carries the throwable, never swallowed.\n")
+            .addField(FieldSpec.builder(tenantKey, "key", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(Throwable.class, "cause", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(tenantKey, "key")
+                .addParameter(Throwable.class, "cause")
+                .addStatement("this.key = key")
+                .addStatement("this.cause = cause")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("key")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(tenantKey)
+                .addStatement("return key")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("cause")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(Throwable.class)
+                .addStatement("return cause")
+                .addJavadoc("What the worker threw.\n")
+                .build())
+            .build();
+
+        var timedOut = TypeSpec.classBuilder("TimedOut")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addTypeVariable(r)
+            .addSuperinterface(outcomeOfR)
+            .addJavadoc("The scatter deadline passed before the worker completed. The join stopped waiting;\n"
+                + "the worker was not stopped, and its connection is quarantined for the rest of the\n"
+                + "operation and aborted at release.\n")
+            .addField(FieldSpec.builder(tenantKey, "key", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(tenantKey, "key")
+                .addStatement("this.key = key")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("key")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(tenantKey)
+                .addStatement("return key")
+                .build())
+            .build();
+
+        return TypeSpec.interfaceBuilder("Outcome")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.SEALED)
+            .addTypeVariable(r)
+            .addJavadoc("One tenant's {@link #scatter} outcome: exactly one arm per key. The substrate\n"
+                + "reports; the caller decides what non-success means (partial data, a request error,\n"
+                + "anything between); no outcome is ever dropped silently at this layer.\n")
+            .addMethod(keyAccessor)
+            .addType(success)
+            .addType(failed)
+            .addType(timedOut)
+            .build();
     }
 
     /**

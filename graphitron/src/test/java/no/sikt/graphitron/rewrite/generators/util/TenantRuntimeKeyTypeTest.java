@@ -87,6 +87,78 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
+    void multiTenantRuntimeShipsTheFanOutConfigurationSurface() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+
+        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        assertThat(runtime)
+            // Two flat scalars with named defaults, no builder or config record.
+            .contains("int DEFAULT_FAN_OUT_CONCURRENCY = 8")
+            .contains("java.time.Duration DEFAULT_FAN_OUT_TIMEOUT = java.time.Duration.ofSeconds(10)")
+            // The executor-form canonical (consumer owns the concurrency bound) and the int-cap
+            // overload (runtime owns a bounded platform-thread pool).
+            .contains("java.util.concurrent.Executor fanOutExecutor,")
+            .contains("int fanOutConcurrency,")
+            .contains("boundedFanOutPool(fanOutConcurrency)")
+            .contains("thread.setDaemon(true)")
+            // The accessors the carrier's scatter join reads.
+            .contains("java.util.concurrent.Executor fanOutExecutor()")
+            .contains("java.time.Duration fanOutTimeout()");
+    }
+
+    @Test
+    void multiTenantCarrierShipsTheScatterSurface() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+
+        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        assertThat(carrier)
+            // The scatter method: typed keys, per-tenant unit of work, outcomes in key order.
+            .contains("scatter(")
+            .contains("java.util.Collection<java.lang.Integer> keys")
+            .contains("java.util.function.Function<org.jooq.DSLContext, R> perTenant")
+            // The outcome taxonomy: sealed, one arm per way a tenant's work can end.
+            .contains("sealed interface Outcome<R>")
+            .contains("final class Success<R> implements")
+            .contains("final class Failed<R> implements")
+            .contains("final class TimedOut<R> implements")
+            // Concurrent pinning with per-key single acquisition, and the straggler quarantine.
+            .contains("java.util.concurrent.ConcurrentHashMap<>()")
+            .contains("pinnedByTenant.computeIfAbsent(")
+            .contains("timedOutTenants")
+            // The re-entrancy guard fails loudly instead of deadlocking the bounded pool.
+            .contains("scatter is not re-entrant");
+
+        var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
+        assertThat(pinned)
+            .as("the straggler abort seam: evict without the disconnect hook")
+            .contains("synchronized void abort()");
+    }
+
+    @Test
+    void singleTenantOmitsTheFanOutSubstrate() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionStateConfig.none());
+
+        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        assertThat(runtime)
+            .doesNotContain("fanOut")
+            .doesNotContain("FAN_OUT")
+            .doesNotContain("java.time.Duration");
+
+        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        assertThat(carrier)
+            .doesNotContain("scatter")
+            .doesNotContain("Outcome")
+            .doesNotContain("ConcurrentHashMap")
+            .doesNotContain("timedOutTenants");
+
+        var pinned = render(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME);
+        assertThat(pinned).doesNotContain("synchronized void abort()");
+    }
+
+    @Test
     void singleTenantKeepsTheErasedObjectShape() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionStateConfig.none());
