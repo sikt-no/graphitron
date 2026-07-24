@@ -15,8 +15,7 @@ import java.util.Objects;
  * @param joinPath the resolved {@code @reference} path from the parent table to the attribute
  *     table. A single FK hop ({@link JoinStep.Hop} with {@link On.ColumnPairs}): the batched
  *     delivery's one-record-per-parent invariant requires the whole parent-input → terminus chain
- *     to be key-preserving, which the single left join guarantees only for this shape. Enforced by
- *     the compact constructor; the classifier rejects other shapes before construction.
+ *     to be key-preserving, which the single left join guarantees only for this shape.
  * @param pivotTable the attribute table the path terminates at (the join terminus both
  *     {@link #discriminator()} and {@link #value()} resolve against).
  * @param discriminator the resolved {@code on:} column: each selected slot projects
@@ -68,7 +67,7 @@ public record PivotSpec(
         return (JoinStep.Hop) joinPath.get(0);
     }
 
-    /** The FK column pairs of {@link #hop()} — the parent → attribute-table correlation. */
+    /** The FK column pairs of {@link #hop()}: the parent → attribute-table correlation. */
     public On.ColumnPairs pairs() {
         return (On.ColumnPairs) hop().on();
     }

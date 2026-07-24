@@ -14,26 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit-tier coverage of the {@link SourceKey} residue: the {@code (columns, wrap)} pair and the
  * {@link SourceKey#keyElementType()} derivation.
  *
- * <p>Dispositions of the retired compact-constructor invariant families (slice 3; the
- * {@code target} / {@code path} families are dispositioned in the slice-1/2 history of this
- * javadoc):
+ * <p>Coupling between key sources and wraps is not enforced here:
  *
  * <ul>
- *   <li>{@code SourceRowsCall} ⇒ {@code Wrap.Row} and {@code AccessorCall} ⇒ {@code Wrap.Record}:
- *       unrepresentable by construction — the lift arms pin their key shape via
- *       {@link KeyLift#wrap()}, the derivation every lift-carrying leaf constructs its residue
- *       through; {@link KeyLiftTest} pins the derivation and the
+ *   <li>Lift-carrying leaves construct their residue through {@link KeyLift#wrap()}, so a lift
+ *       arm cannot pair with a foreign wrap; {@link KeyLiftTest} pins the derivation and the
  *       {@link KeyLift#checkResidueAgreement} construction-rule tripwire.</li>
- *   <li>{@code ResultRowWalk} ⇒ {@code Wrap.Record}/{@code Wrap.TableRecord} and
- *       {@code ResultRowWalk(OUTCOME_SUCCESS)} ⇒ {@code Wrap.TableRecord} (the hard one): the
- *       named join site is {@link ChildField.SingleRecordIdField}'s compact constructor — the
- *       only envelope-bearing typed-record read left once the DML {@code Wrap.Record} walk died
- *       into the re-fetch — which requires {@code Wrap.TableRecord} unconditionally
- *       (strictly stronger than the retired conditional coupling). Pinned by
+ *   <li>{@link ChildField.SingleRecordIdField}'s compact constructor requires
+ *       {@code Wrap.TableRecord} unconditionally; pinned by
  *       {@link SingleRecordIdFieldKeyShapeInvariantTest}.</li>
- *   <li>The service arms' shape duplication ({@code ServiceTableRecord} carrying the producer's
- *       record class) left with the reader seal; the service residue is read straight off the
- *       {@link MethodRef.Param.Sourced} signature fact.</li>
+ *   <li>The service residue is read straight off the {@link MethodRef.Param.Sourced}
+ *       signature fact.</li>
  * </ul>
  */
 @UnitTier

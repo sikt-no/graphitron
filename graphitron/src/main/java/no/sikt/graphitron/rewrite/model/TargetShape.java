@@ -8,21 +8,18 @@ package no.sikt.graphitron.rewrite.model;
  * {@link Field}) and the {@link Connection} container shape a source can never be.
  *
  * <ul>
- *   <li>{@link Table} / {@link Column} — the catalog side: a catalog table-bound result, or a single
+ *   <li>{@link Table} / {@link Column}: the catalog side, a catalog table-bound result, or a single
  *       column projected from a table-backed parent.</li>
- *   <li>{@link Record} / {@link Field} — the Java side: a service / DML record-backed object, or a
+ *   <li>{@link Record} / {@link Field}: the Java side, a service / DML record-backed object, or a
  *       scalar reflected off such a record. {@code Table : Column :: Record : Field}.</li>
- *   <li>{@link Connection} — the Relay-connection container shape, wrapping the inner element shape.
+ *   <li>{@link Connection}: the Relay-connection container shape, wrapping the inner element shape.
  *       Its many-ness lives on its own {@code edges} / {@code nodes} fields, classified normally; the
- *       windowed-<em>read</em> verb lives on {@link Operation.Paginate}. This is the decomposition of
- *       the fused {@code TableConnection} mapping.</li>
- *   <li>{@link Interface} / {@link Union} — the polymorphic shapes. Both are catalog-bound today (every
- *       participant is a {@code @table} / NodeType), the catalog projection landing on participant rows.
- * <strong>Modeled-but-unpopulated payload:</strong> the
- *       participant set, per-participant join paths, and the {@code Interface(Table | Record)} backing
- *       distinction the spec carries on these shapes are not populated this slice (the
- *       {@code mapping()} bridge needs only the shape identity); the corpus coordinate that pins them
- *       lands with slice 4. {@code Union} is target-only and {@code Table}-backed only.</li>
+ *       windowed-<em>read</em> verb lives on {@link Operation.Paginate}.</li>
+ *   <li>{@link Interface} / {@link Union}: the polymorphic shapes. Both are catalog-bound (every
+ *       participant is a {@code @table} / NodeType), the catalog projection landing on participant
+ *       rows. They carry no payload (no participant set, join paths, or backing distinction);
+ *       consumers dispatch on the shape identity alone. {@code Union} is target-only and
+ *       {@code Table}-backed only.</li>
  * </ul>
  */
 public sealed interface TargetShape {
@@ -36,8 +33,8 @@ public sealed interface TargetShape {
     record Field() implements TargetShape {}
     /** A Relay connection wrapping its inner element shape. */
     record Connection(TargetShape inner) implements TargetShape {}
-    /** A multi-table polymorphic interface result. Payload modeled-but-unpopulated.*/
+    /** A multi-table polymorphic interface result. */
     record Interface() implements TargetShape {}
-    /** A multi-table polymorphic union result ({@code Table}-backed, target-only). Payload modeled-but-unpopulated.*/
+    /** A multi-table polymorphic union result ({@code Table}-backed, target-only). */
     record Union() implements TargetShape {}
 }

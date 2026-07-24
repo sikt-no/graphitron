@@ -6,34 +6,24 @@ import no.sikt.graphitron.javapoet.TypeName;
 import java.util.List;
 
 /**
- * A developer-supplied {@code @condition} method on a {@code FIELD_DEFINITION}.
- *
- * <p>Implements both {@link WhereFilter} and {@link MethodRef}: a condition method IS a method
- * reference with the additional contract that the fetcher generator calls it as a WHERE-clause
- * contribution.
+ * A developer-supplied {@code @condition} method on a {@code FIELD_DEFINITION}: a
+ * {@link MethodRef} the fetcher generator calls as a WHERE-clause contribution.
  *
  * <p>The condition method signature is:
  * <pre>
  *     Condition method(Table&lt;?&gt; targetTable, arg1, arg2, ...)
  * </pre>
- * where the parameters are in declaration order via {@link #params()}.
+ * with parameters in declaration order via {@link #params()}.
  *
  * <p>The first parameter always has {@link ParamSource.Table} as its source (the target table
- * alias) and is implicit — it is not represented in {@link #callParams()}. Subsequent parameters
- * have {@link ParamSource.Arg} (bound via {@code DataFetchingEnvironment.getArgument}) or
- * {@link ParamSource.Context} (bound via {@code GraphitronContext.getContextArgument}).
+ * alias) and is implicit: it is not represented in {@link #callParams()}. Subsequent parameters
+ * have {@link ParamSource.Arg} or {@link ParamSource.Context}.
  *
- * <p>The {@code override} flag from the {@code @condition} directive is consumed by the builder:
- * when {@code override: true} is set, the builder omits any {@link GeneratedConditionFilter} that
- * would otherwise be generated for the field's arguments. {@link ConditionFilter} itself never
- * carries an override flag — the suppression is expressed entirely by the absence of the
- * {@link GeneratedConditionFilter} entry in the field's {@code filters} list.
- *
- * <p>{@link #callParams()} is inherited from {@link MethodRef#callParams()}, which skips implicit
- * parameters and maps each extracted parameter's source to the appropriate
- * {@link CallSiteExtraction}. Richer extraction strategies
- * (e.g. {@link CallSiteExtraction.EnumValueOf}) can be set at build time in the builder;
- * the generator requires no changes.
+ * <p>The {@code override} flag from the {@code @condition} directive is consumed by the builder
+ * ({@code FieldBuilder}), which on {@code override: true} omits the {@link GeneratedConditionFilter}
+ * otherwise generated for the field's arguments. This record never carries an override flag; the
+ * suppression is expressed entirely by the absence of the {@link GeneratedConditionFilter} entry
+ * in the field's {@code filters} list.
  */
 public record ConditionFilter(
     String className,

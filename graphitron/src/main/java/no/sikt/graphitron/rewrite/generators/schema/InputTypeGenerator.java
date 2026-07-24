@@ -23,11 +23,9 @@ import java.util.List;
  * {@code public static GraphQLInputObjectType type()} method that rebuilds the input object
  * as a programmatic graphql-java type at runtime.
  *
- * <p>Second of the Commit B leaf-type emitters. Introspection (names starting with {@code __})
- * and federation-injected (names starting with {@code _}) types are skipped. Directive-
- * declaration input-object types (those declared directly in {@code directives.graphqls} such
- * as {@code ErrorHandler}, {@code ReferenceElement}, {@code ExternalCodeReference}) never
- * appear in {@link GraphitronSchema#types()}: they exist only to give Graphitron's own
+ * <p>Introspection ({@code __}-prefixed) and federation-injected ({@code _}-prefixed) types are
+ * skipped. Directive-declaration input-object types (declared in {@code directives.graphqls})
+ * never appear in {@link GraphitronSchema#types()}: they exist only to give Graphitron's own
  * build-time directives argument shapes, and the classifier skips them per
  * {@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes}.
  *
@@ -37,10 +35,8 @@ import java.util.List;
  *
  * <p>The {@code type()} method body is statement-shaped; each input-field reaches the local
  * builder via a {@code private static} {@code inputFieldDef_<sdlName>()} factory method
- * collected through {@link HelperMethodSink}. Bounds the chain depth on every emitted
- * statement independently of input-object field count.
- *
- * <p>Descriptions and deprecation reasons are preserved.
+ * collected through {@link HelperMethodSink}, bounding chain depth independently of
+ * input-object field count.
  */
 public final class InputTypeGenerator {
 

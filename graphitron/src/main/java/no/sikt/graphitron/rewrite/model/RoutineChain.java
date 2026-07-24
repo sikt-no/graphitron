@@ -9,26 +9,16 @@ import java.util.List;
  * it in authored directive order. The single-node shape is {@code hops = []}, where the
  * routine result is also the terminus.
  *
- * <p>Extracted from {@code QueryField.QueryRoutineTableField}'s compact constructor so the
- * read leaf and the mutation write leaf ({@code MutationField.MutationRoutineWriteField}) share
- * one enforcer for the chain invariants instead of duplicating them; both embed this record and
- * expose it through the {@link RoutineChainField} capability interface. A chain-wide invariant
- * change (for example a future {@code DataType} lift) edits this constructor once.
+ * <p>Shared invariant enforcer for the read leaf ({@link QueryField.QueryRoutineTableField}) and
+ * the mutation write leaf ({@link MutationField.MutationRoutineWriteField}); both embed this
+ * record and expose it through {@link RoutineChainField}. Each leaf adds its own invariants on
+ * top: the read leaf's terminus rule against its return type, the write leaf's non-empty
+ * {@code hops}.
  *
- * <p>Invariants pinned here (the shared set; each leaf adds its own — the read leaf's terminus
- * rule against its return type, the write leaf's non-empty {@code hops}):
- * <ul>
- *   <li>{@code start} is non-null and binds every routine parameter from a GraphQL argument
- *       ({@link ParamSource.Arg}): a root chain's head has no previous node, so
- *       {@code RoutineDirectiveResolver} rejects {@code columnMapping} at root and mints only
- *       {@code Arg} bindings. Pinning the acceptance at the producer is what lets the shared
- *       {@code RoutineCallEmitter} path assume {@code PreviousNodeRef.None} carries no
- *       {@link ParamSource.SourceColumn} read.</li>
- *   <li>Every hop is an {@code @reference}-contributed {@link JoinStep.Hop} over a
- *       {@link TableExpr.Catalog} target, never {@link On.Lateral}: the chain's one routine node
- * is the start — a second routine node classifies as typed {@code Deferred} and must
- *       not reach this carrier.</li>
- * </ul>
+ * <p>The start-binding guard (every routine parameter bound from a {@link ParamSource.Arg}) is
+ * what lets the shared {@link no.sikt.graphitron.rewrite.generators.RoutineCallEmitter} path
+ * assume {@link no.sikt.graphitron.rewrite.generators.PreviousNodeRef.None} carries no
+ * {@link ParamSource.SourceColumn} read.
  */
 public record RoutineChain(TableExpr.RoutineCall start, List<JoinStep> hops) {
 

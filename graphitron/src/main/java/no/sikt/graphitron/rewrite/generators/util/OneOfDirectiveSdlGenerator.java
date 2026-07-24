@@ -18,25 +18,22 @@ import java.util.List;
  * and therefore drops the {@code @oneOf} directive definition. See
  * {@link OneOfDirectiveSdl} for the full diagnosis.
  *
- * <p>This is the runtime mirror of the codegen-side {@link OneOfDirectiveSdl}: the consumer
- * compiles the generated {@code GraphitronSchema} against graphql-java + federation-jvm only,
- * with the {@code graphitron} codegen module deliberately off its classpath, so the runtime arm
- * cannot call {@code OneOfDirectiveSdl} directly. The single semantic invariant, the exact
- * definition string, is single-sourced: the emitted {@code DEFINITION} literal comes from
+ * <p>Runtime mirror of the codegen-side {@link OneOfDirectiveSdl}: the consumer compiles the
+ * generated {@code GraphitronSchema} against graphql-java + federation-jvm only, with the
+ * {@code graphitron} codegen module deliberately off its classpath, so the runtime arm cannot
+ * call {@code OneOfDirectiveSdl} directly. The exact definition string is single-sourced from
  * {@link OneOfDirectiveSdl#DEFINITION}.
  *
- * <p>{@code GraphitronSchemaClassGenerator} wraps the federation {@code build}'s final
- * {@code return fb.build()} in {@code OneOfDirectiveSdl.withOneOfDefinition(...)} only when the
- * schema uses {@code @oneOf}; {@code GraphQLRewriteGenerator} emits this helper under the same gate
- * conjoined with {@code federationLink} (the helper has no caller on a non-federation schema, whose
- * file arm already prints the definition through graphql-java's {@code SchemaPrinter}). The
- * writer's orphan sweep removes the emitted source if a schema later drops {@code @oneOf} or
- * federation.
+ * <p>{@link no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator} wraps
+ * the federation build in {@code OneOfDirectiveSdl.withOneOfDefinition(...)} only when the schema
+ * uses {@code @oneOf}; {@link no.sikt.graphitron.rewrite.GraphQLRewriteGenerator} emits this
+ * helper under the same gate conjoined with {@code federationLink} (the helper has no caller on a
+ * non-federation schema, whose file arm already prints the definition through graphql-java's
+ * {@code SchemaPrinter}). The writer's orphan sweep removes the emitted source if a schema drops
+ * {@code @oneOf} or federation.
  *
  * <p>Generated as a source file so consuming projects take no runtime dependency on graphitron;
- * every type it references ({@code GraphQLSchema}, {@code ServiceSDLPrinter},
- * {@code StaticDataFetcher}, {@code FieldCoordinates}) is already on the consumer's compile
- * classpath.
+ * every type the helper references is already on the consumer's compile classpath.
  */
 public final class OneOfDirectiveSdlGenerator {
 
@@ -75,8 +72,8 @@ public final class OneOfDirectiveSdlGenerator {
         body.addStatement("return schema");
         body.endControlFlow();
         body.addStatement("String sdl = $T.generateServiceSDLV2(schema)", SERVICE_SDL_PRINTER);
-        // Future-proofing: if a graphql-java release starts printing the spec-built-in definition,
-        // leave the served value untouched rather than appending a duplicate.
+        // Idempotence guard: when the printed SDL already carries the definition, leave the
+        // served value untouched rather than appending a duplicate.
         body.beginControlFlow("if (sdl.contains($S))", "directive @oneOf");
         body.addStatement("return schema");
         body.endControlFlow();

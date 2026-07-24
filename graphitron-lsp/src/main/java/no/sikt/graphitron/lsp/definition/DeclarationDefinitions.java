@@ -15,28 +15,25 @@ import java.util.Optional;
  * Goto-definition for an SDL <em>declaration name</em>: the cursor sits on a
  * type-declaration name or a field / input-value-declaration name (not a
  * directive argument), and the editor jumps to the Java the model bound that
- * declaration to. The declaration name is where the cursor naturally rests, and
- * for reflection-bound types it is the <em>only</em> navigation handle (they
- * carry no class-naming directive at all).
+ * declaration to. For reflection-bound types the declaration name is the
+ * <em>only</em> navigation handle; they carry no class-naming directive.
  *
  * <p>Parallel to {@link Definitions} (directive-argument bindings) and
- * {@link IntraSchemaDefinitions} (intra-schema type references): all three are
- * chained with {@code .or()} in the definition handler. The shared
- * declaration-name trigger is owned by {@link SdlDeclaration#findContaining}
- * (the same primitive {@code DeclarationHovers} keys on), so this provider and
- * the hover arm cannot drift on "is this leaf a declaration name?".
+ * {@link IntraSchemaDefinitions} (intra-schema type references); all three are
+ * chained with {@code .or()} in the definition handler. The declaration-name
+ * trigger is owned by {@link SdlDeclaration#findContaining}, the same primitive
+ * {@code DeclarationHovers} keys on, so this provider and the hover arm cannot
+ * drift on "is this leaf a declaration name?".
  *
- * <p>The <em>binding</em> resolution is also shared: {@link DeclTarget#resolve}
- * performs the one backing-switch from SDL coordinate to a named jOOQ / Java
- * declaration, and this provider only projects each {@link DeclTarget} variant
- * to a {@code Location}. The declaration-name hover arm projects the same
- * {@code DeclTarget} to a Javadoc overlay, so hover/goto parity is structural:
- * both switch over the same target, and a new backing permit breaks both
- * switches at compile time. The catalog / class / column / field arms route
- * through the sealed {@link DefinitionTarget} and {@link Definitions#resolve},
- * the single empty-resolution contract: {@code Located} jumps,
- * {@code SourceAbsent} stays put. The method arm shares
- * {@link Definitions#methodLocation} with the hover overlay, so its
+ * <p>{@link DeclTarget#resolve} performs the one backing-switch from SDL
+ * coordinate to a named jOOQ / Java declaration; this provider only projects
+ * the result. The declaration-name hover arm switches over the same
+ * {@link DeclTarget}, so hover/goto parity is structural: a new backing permit
+ * breaks both switches at compile time. The catalog / class / column / field
+ * arms route through the sealed {@link DefinitionTarget} and
+ * {@link Definitions#resolve}, the single empty-resolution contract
+ * ({@code Located} jumps, {@code SourceAbsent} stays put); the method arm
+ * shares {@link Definitions#methodLocation} with the hover overlay, so its
  * arity-then-name resolution cannot drift from hover's.
  */
 public final class DeclarationDefinitions {

@@ -9,20 +9,17 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * accepts the applications (an undeclared directive application fails schema assembly).
  *
  * <p>The enums make the assertion validated SDL-side: a typo in a {@code source}, {@code operation}, or
- * {@code target} value is a parse/assembly error graphql-java rejects before the harness runs, and
- * the values autocomplete in a schema-aware editor.
+ * {@code target} value is a parse/assembly error graphql-java rejects before the harness runs.
  *
  * <ul>
- *   <li>{@code @classified(source: SourceWrapper!, operation: Operation!, target: TargetWrapper!,
- *       targetShape: TargetShape!, sourceShape: SourceShape)} on output {@code FIELD_DEFINITION}s
- * asserts the three-axis {@link DimensionTuple} the field classifies to. Each endpoint is a
- *       {@code wrapper(shape)} pair: {@code source:} is the arrival wrapper plus a {@code sourceShape:}
- *       for the nested arms, {@code target:} the output wrapper plus a {@code targetShape:}. The enums
- * mirror the field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} /
+ *   <li>{@code @classified} on output field definitions asserts the three-axis
+ *       {@link DimensionTuple} the field classifies to; each endpoint is a wrapper plus a shape,
+ *       and the enums mirror the field model's sealed-arm sets ({@code GraphitronSchema.sourceOf} /
  *       {@code OutputField.operation()} / {@code OutputField.target()}).</li>
- *   <li>{@code @classifiedType(as: TypeVerdict!)} asserts the {@code GraphitronType} sealed leaf a
- *       type classifies to. {@code TypeVerdict} enumerates those leaves minus the failure leaf
- *       {@code UnclassifiedType}; {@link ClassifiedHarness} mirrors the enum against the live leaf set.</li>
+ *   <li>{@code @classifiedType(as:)} asserts the {@code GraphitronType} sealed leaf a type
+ *       classifies to; {@code TypeVerdict} enumerates those leaves minus the failure leaf
+ *       {@code UnclassifiedType}, and {@link ClassifiedHarness} mirrors the enum against the live
+ *       leaf set.</li>
  * </ul>
  */
 public final class ClassifiedDsl {
@@ -40,8 +37,7 @@ public final class ClassifiedDsl {
      * {@code GraphitronType}: {@link ClassifiedHarness#typeVerdictEnumConstants()} (this list) is
      * checked against {@link ClassifiedHarness#graphitronTypeNonFailureLeafNames()} (the live leaf
      * set) by {@code ClassifiedDslTest#typeVerdictMirrorsGraphitronTypeLeaves()}, which fails the
-     * build if the two ever drift, the validator-mirrors-classifier discipline applied to the type
-     * half of the DSL.
+     * build if the two ever drift.
      */
     public static final String PRELUDE = """
         enum SourceWrapper { Query Mutation OnlyChild Child }

@@ -20,15 +20,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The three rules under test:
  *
  * <ul>
- *   <li><b>1a</b> — any field-level {@code @reference} is a structural rejection (directive
+ *   <li><b>1a</b>: any field-level {@code @reference} is a structural rejection (directive
  *       presence, not path shape: condition, multi-hop, and explicit single-hop {@code {key:}}
  *       all reject identically). A single stated path cannot express a distinct join per
  *       participant.</li>
- *   <li><b>1b</b> — a same-table participant (participant table equals the parent/hub table)
- *       produces an empty auto-path and is rejected as a deferred capability keyed to
- *       {@code per-participant-multitable-child-join-paths}.</li>
- *   <li><b>1c</b> — a zero-FK / multi-FK auto-discovery failure carries the multi-table-child
- *       context wrapper (pointing at the deferred capability) rather than the bare
+ *   <li><b>1b</b>: a same-table participant (participant table equals the parent/hub table)
+ *       produces an empty auto-path and is rejected with a structural steer to state the
+ *       self-referencing key via {@code @referenceFor}.</li>
+ *   <li><b>1c</b>: a zero-FK / multi-FK auto-discovery failure carries the multi-table-child
+ *       context wrapper (steering to {@code @referenceFor}) rather than the bare
  *       "add a @reference directive" steer.</li>
  * </ul>
  *
@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class MultiTableChildReferencePathRejectionPipelineTest {
 
-    /** Two participants that both FK to {@code film} — the supported auto-discovered shape. */
+    /** Two participants that both FK to {@code film}: the supported auto-discovered shape. */
     private static final String INTERFACE_PARTICIPANTS = """
         interface FilmReferrer { rowId: Int }
         type Inventory implements FilmReferrer @table(name: "inventory") {
@@ -76,7 +76,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
 
     @Test
     void interfaceChild_multiHopReference_rejectedStructurally() {
-        // Same rejection as the condition path — the rule is directive presence, not path shape.
+        // Same rejection as the condition path; the rule is directive presence, not path shape.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type Film @table(name: "film") {
               referrer: FilmReferrer @reference(path: [{key: "inventory_film_id_fkey"}, {key: "content_film_id_fkey"}])
@@ -143,9 +143,8 @@ class MultiTableChildReferencePathRejectionPipelineTest {
     @Test
     void interfaceChild_sameTableParticipant_withoutReferenceFor_steersToReferenceFor() {
         // FilmSelf is backed by the same table (film) as the parent/hub. parsePath skips FK
-        // auto-discovery when source and target tables match, so no correlation is auto-derivable.
-        // With @referenceFor shipping the self-FK route in slice 1, this is now an author-correctable
-        // structural steer (state the self-referencing key), not a deferred capability.
+        // auto-discovery when source and target tables match, so no correlation is auto-derivable;
+        // the rejection steers the author to state the self-referencing key via @referenceFor.
         var schema = TestSchemaHelper.buildSchema("""
             interface FilmThing { rowId: Int }
             type FilmSelf implements FilmThing @table(name: "film") { rowId: Int @field(name: "film_id") }
@@ -167,7 +166,7 @@ class MultiTableChildReferencePathRejectionPipelineTest {
     void interfaceChild_zeroFkParticipant_wrapsAutoDiscoveryFailureWithContext() {
         // Neither inventory nor store has an FK to actor, so auto-discovery finds zero FKs. The
         // generic fkCountMessage steers toward "add a @reference directive", which on these fields
-        // leads straight into rule 1a; the wrapper redirects authors to the deferred capability.
+        // leads straight into rule 1a; the wrapper steers to @referenceFor instead.
         var schema = TestSchemaHelper.buildSchema("""
             interface ActorThing { rowId: Int }
             type Inventory implements ActorThing @table(name: "inventory") { rowId: Int @field(name: "inventory_id") }

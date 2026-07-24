@@ -16,42 +16,20 @@ import java.util.List;
 /**
  * Resolves the {@link ErrorChannel.Mapped} carrier for an in-scope ({@code @service}
  * / {@code @tableMethod}) outcome field from its classified {@link OutcomeType}. The output-walking
- * analogue of {@code ServiceMethodCallWalker}: a thin producer over an explicit substrate,
- * different SDL surface (the outcome type and its errors field rather than the field's arguments).
+ * analogue of {@link ServiceMethodCallWalker}, over a different SDL surface (the outcome type and
+ * its errors field rather than the field's arguments).
  *
- * <h3>Stages</h3>
- *
- * <ol>
- *   <li><b>Identify mapped {@code @error} types.</b> Read directly off
- *       {@link OutcomeType#errorsField()}; the {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField}
- *       already carries the flattened list (single {@code @error}, union members, or interface
- *       implementations) in source order, so the walker does not re-scan.</li>
- *   <li><b>Run channel-level rules.</b> Rule 7 (multi-VALIDATION) and rule 8 (duplicate
- *       match-criteria) via {@link ChannelRuleChecks}; each firing produces a
- *       {@link ErrorChannelWalkerError.ChannelRuleViolation} with the rule number and detail.</li>
- *   <li><b>Reflect on handler source-classes for accessor coverage</b> via
- *       {@link HandlerAccessorCheck}; each miss produces a
- *       {@link ErrorChannelWalkerError.HandlerSourceAccessorMissing}.</li>
- *   <li><b>Resolve the mappings-constant name</b> as {@code SCREAMING_SNAKE(outcomeTypeName)}; the
- *       build-scoped {@code MappingsConstantNameDedup} pass applies any collision suffix later,
- *       exactly as it does for the bare per-field name on the legacy path.</li>
- * </ol>
+ * <p>The {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField} already carries the
+ * flattened {@code @error} type list (single type, union members, or interface implementations)
+ * in source order, so the walker reads it rather than re-scanning the SDL.
  *
  * <p>Errors collect across stages rather than short-circuiting. {@link WalkerResult.Ok} carries the
  * {@link ErrorChannel.Mapped}; {@link WalkerResult.Err} carries the typed
- * {@link ErrorChannelWalkerError} arms, signalling the orchestrator to drop the field from the
- * classified set (no fallback to {@code UnclassifiedField}).
+ * {@link ErrorChannelWalkerError} arms, and the orchestrator drops the field from the classified
+ * set (no fallback to {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}).
  *
- * <h3>Substrate (In Progress revision of the spec signature)</h3>
- *
- * The spec sketched {@code walk(OutcomeType, ClassLoader, MappingsConstantNameDedup)}. Two
- * adjustments fell out at implementation time: the accessor-coverage stage needs the
- * {@link GraphQLSchema} (to read each {@code @error} type's declared SDL fields) and a
- * {@link ReflectTypeResolver} (to map those field types onto the reflect types the accessor check
- * resolves against), so both are parameters; and {@code MappingsConstantNameDedup} is a
- * post-classification cross-field pass with no per-field entry point, so the walker stamps the bare
- * name and the existing dedup pass rewrites collisions downstream, matching how the legacy
- * per-field classifier already works.
+ * <p>The walker stamps the bare mappings-constant name; the build-scoped, post-classification
+ * {@link no.sikt.graphitron.rewrite.MappingsConstantNameDedup} pass rewrites collisions downstream.
  */
 public final class ErrorChannelWalker {
 

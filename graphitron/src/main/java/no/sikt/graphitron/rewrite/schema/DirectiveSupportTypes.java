@@ -10,13 +10,13 @@ import java.util.Set;
  *
  * <p>The set is <em>derived</em> from {@link RewriteSchemaLoader#directivesSdl()}, not
  * hand-maintained: a type belongs here iff it is declared in {@code directives.graphqls}.
- * Editing that file changes the set; {@code DirectiveSupportTypesTest} pins the expected
- * membership so the change is made consciously. Sibling of {@link DeclaredDirectives}, which
+ * {@code DirectiveSupportTypesTest} pins the expected membership so edits to that file are
+ * made consciously. Sibling of {@link DeclaredDirectives}, which
  * derives the directive-<em>name</em> set from the same parse.
  *
  * <p>Within the set there are two tiers:
  * <ul>
- *   <li><b>Published</b> ({@link #published()}; today exactly {@code SortDirection}): a
+ *   <li><b>Published</b> ({@link #published()}): a
  *       client-facing reference is sanctioned. The classifier retains the type (classified,
  *       registered at runtime, printed in the published SDL) iff some coordinate of a
  *       non-support type references it.</li>

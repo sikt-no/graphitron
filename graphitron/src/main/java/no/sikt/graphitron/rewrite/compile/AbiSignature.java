@@ -26,28 +26,18 @@ import java.util.Map;
  *
  * <p>The surface captured is exactly what a <em>dependent</em> unit recompiles against: type kind,
  * modifiers, type variables (with bounds), supertype, implemented interfaces, type-level annotations,
- * and, per member, its signature (field type; method type variables and return/parameter/thrown types)
- * with its annotations, plus the
- * <em>value</em> of every {@code static final} constant (because javac inlines those into callers, so
- * a value change is an ABI change even though no signature moves). What it deliberately drops is the
- * body: method code, static/instance initializer blocks, and javadoc. That drop is what makes a
- * body-only edit non-propagating (the spec's pruning clause); keeping the surface a superset of
- * javac's true cross-unit dependencies is what keeps the incremental compile sound (the completeness
- * clause).
+ * per-member signatures with their annotations, plus the <em>value</em> of every {@code static final}
+ * constant (javac inlines those into callers, so a value change is an ABI change even though no
+ * signature moves). Bodies are deliberately dropped: method code, initializer blocks, javadoc. The
+ * drop is what makes a body-only edit non-propagating; keeping the surface a superset of javac's true
+ * cross-unit dependencies is what keeps the incremental compile sound.
  *
  * <p>Two deliberate over-approximations, both correctness-safe (they can only <em>widen</em> the
  * surface, never drop a real dependency) and both pruning-harmless on deterministic generated output:
  * members are canonicalised order-independently (a pure reorder does not move the hash), and every
- * {@code static final} initializer is folded in, not only provably compile-time-constant ones (a
- * runtime-constant value edit over-propagates, but the generator does not emit such edits in
- * isolation). Non-private visibility is <em>not</em> filtered: a private-member change over-propagates
- * rather than risk dropping a surface a same-package dependent can see.
- *
- * <p>This hash is <strong>derived state, not a parallel type system</strong>: the surface it encodes
- * is the same type facts the classified model already carries (supertypes, signatures, field types).
- * Per "model metadata over parallel type systems", once the data model surfaces those facts it is a
- * candidate to derive from them directly instead of re-reading the rendered {@link TypeSpec}, the same
- * re-source-from-facts move as the {@code CompileDependencyGraph} sourcing seam.
+ * {@code static final} initializer is folded in, not only provably compile-time-constant ones.
+ * Non-private visibility is <em>not</em> filtered: a private-member change over-propagates rather
+ * than risk dropping a surface a same-package dependent can see.
  */
 public final class AbiSignature {
 
@@ -169,7 +159,7 @@ public final class AbiSignature {
 
     /**
      * Type variables in declaration order (they are positional: {@code Foo<A, B>} binds by index, so a
-     * reorder is itself an ABI change), each with its bounds — a bound change alone (no signature
+     * reorder is itself an ABI change), each with its bounds; a bound change alone (no signature
      * mentioning the variable moves) must still move the hash.
      */
     private static String typeVariables(List<TypeVariableName> typeVariables) {

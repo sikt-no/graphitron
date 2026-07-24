@@ -16,32 +16,19 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The typed-accessor match on a free-form DTO payload parent must compare jOOQ table
- * identity, not the bare {@code @table} name. Driven over the existing multischema fixture, whose
- * two {@code event} tables ({@code multischema_a.event} / {@code multischema_b.event}) share the
- * bare SQL name {@code event}, so the payload element type's {@code @table} is <em>forced</em> to
- * be schema-qualified to disambiguate.
+ * The typed-accessor match on a free-form DTO payload parent must compare jOOQ table identity
+ * ({@code tableClass}), not the bare {@code @table} name. Driven over the multischema fixture,
+ * whose two {@code event} tables ({@code multischema_a.event} / {@code multischema_b.event}) share
+ * the bare SQL name {@code event}, so the payload element type's {@code @table} must be
+ * schema-qualified to disambiguate.
  *
- * <p>The accessor-side {@link no.sikt.graphitron.rewrite.model.TableRef} is resolved by
- * record-class identity ({@code ServiceCatalog.resolveTableByRecordClass}) and carries jOOQ's
- * unqualified canonical name {@code "event"}; the element side carries the verbatim qualified echo
- * {@code "multischema_a.event"}. Previously the match compared those two names and dropped the
- * accessor, rejecting the field with the {@code BatchedTableField … requires a typed accessor or
- * @sourceRow} error; the compare now routes through the reified {@code tableClass} identity.
- *
- * <p>Two directions are pinned. Both are real classifier outcomes reached through the full SDL →
- * classify pipeline:
- * <ol>
- *   <li>Qualified match (the reported bug): accessor returns {@code multischema_a}'s
- *       {@code EventRecord}, element type is {@code @table(name: "multischema_a.event")} → classifies
- *       green as a {@link ChildField.BatchedTableField} with an accessor-derived source. A false
- *       negative under the old bare-name compare.</li>
- *   <li>Genuine mismatch (the tightening guard): accessor returns {@code multischema_b}'s
- *       {@code EventRecord} against the same {@code multischema_a.event} element type → the accessor
- *       is dropped and the field rejects. Identity comparison also closes the latent false-positive
- *       direction, where a bare-name compare over colliding schemas would match the wrong schema's
- *       record.</li>
- * </ol>
+ * <p>The two sides' names never agree: the accessor-side
+ * {@link no.sikt.graphitron.rewrite.model.TableRef} is resolved by record-class identity
+ * ({@code ServiceCatalog.resolveTableByRecordClass}) and carries jOOQ's unqualified canonical name
+ * {@code "event"}, while the element side carries the verbatim qualified echo
+ * {@code "multischema_a.event"}. Only class identity can match them, and only class identity can
+ * tell colliding schemas apart. Both directions are pinned below, each a real classifier outcome
+ * reached through the full SDL-to-classify pipeline.
  */
 @PipelineTier
 class TypedAccessorSchemaQualifiedIdentityPipelineTest {
@@ -89,8 +76,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
     void qualifiedTableEcho_matchesAccessorByClassIdentity_classifiesBatchedTableField() {
         // SchemaAEventsPayload exposes `List<EventRecord> events()` where EventRecord is
         // multischema_a's. The element type's @table echo "multischema_a.event" never equals the
-        // accessor table's bare canonical name "event", so the old bare-name compare dropped
-        // the accessor and rejected. The compare is now tableClass-vs-tableClass.
+        // accessor table's bare canonical name "event"; only the tableClass identity compare matches.
         var schema = TestSchemaHelper.buildSchema(sdl("makeR441SchemaAEventsPayload"), multiSchemaContext());
 
         var field = schema.field("EventPayload", "events");
@@ -112,8 +98,8 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
     void differentSchemaRecord_doesNotMatchQualifiedEcho_fieldRejects() {
         // SchemaBEventsPayload's accessor returns multischema_b's EventRecord; the element type
         // stays @table(name: "multischema_a.event"). The accessor denotes a different table by
-        // class identity, so it is dropped and the field rejects — the tightening guard that a
-        // bare-name compare over colliding schemas would have matched the wrong schema's record.
+        // class identity, so it is dropped and the field rejects: a bare-name compare over
+        // colliding schemas would bind the wrong schema's record.
         var schema = TestSchemaHelper.buildSchema(sdl("makeR441SchemaBEventsPayload"), multiSchemaContext());
 
         var field = schema.field("EventPayload", "events");

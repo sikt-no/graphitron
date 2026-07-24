@@ -14,16 +14,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline coverage for a scalar {@code @reference} field whose FK path terminates on a table
- * whose bare name collides across generated schemas must resolve the column against the FK-pinned
+ * Pipeline coverage: a scalar {@code @reference} field whose FK path terminates on a table whose
+ * bare name collides across generated schemas must resolve the column against the FK-pinned
  * terminal {@link no.sikt.graphitron.rewrite.model.TableRef} (class identity), not re-resolve the
- * bare SQL name through the catalog. Previously, {@code ServiceCatalog.terminalTableSqlName}
- * collapsed the identity-resolved terminal ref to a bare name string and
- * {@code JooqCatalog.findColumn(String, ...)} hit {@code TableResolution.Ambiguous} on the
- * colliding name, demoting the field to {@link GraphitronField.UnclassifiedField} with a spurious
- * "column could not be resolved" author error — with no author-side workaround, since the
- * {@code @reference} key names the FK on the source table and carries no syntax to qualify the
- * FK terminal.
+ * bare SQL name through the catalog. A bare-name lookup is ambiguous on the colliding name and
+ * would spuriously demote the field to {@link GraphitronField.UnclassifiedField}, with no
+ * author-side workaround: the {@code @reference} key names the FK on the source table and carries
+ * no syntax to qualify the FK terminal.
  *
  * <p>Sibling of {@link QualifiedReturnTypeReferencePipelineTest} (object-return-type
  * terminal verdict) and {@link QualifiedSourceReferencePipelineTest} (source {@code @table}
@@ -34,9 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code code} only on B's.
  *
  * <p>Assertions land at the classifier/model surface. The schema-pinned test (reading {@code code})
- * pins that the fix resolves against the FK-pinned schema A copy rather than scanning every schema
- * for a match; the unknown-column test pins the diagnostic path's candidate list, which previously
- * was empty on a colliding terminal (the bare-name candidate lookup was ambiguity-broken too).
+ * pins that resolution goes against the FK-pinned schema A copy rather than scanning every schema
+ * for a match; the unknown-column test pins that the diagnostic's candidate list stays non-empty
+ * on a colliding terminal.
  */
 @PipelineTier
 class QualifiedTerminalReferenceColumnPipelineTest {
@@ -75,9 +72,8 @@ class QualifiedTerminalReferenceColumnPipelineTest {
 
     @Test
     void collidingTerminal_columnOnPinnedSchema_classifiesAsColumnReferenceField() {
-        // 'name' exists on multischema_a.event (the FK-pinned terminal). Previously the bare-name
-        // terminal lookup was ambiguous across the two 'event' tables and demoted the field to
-        // UnclassifiedField; the identity-carrying resolver classifies it green.
+        // 'name' exists on multischema_a.event, the FK-pinned terminal; a bare-name lookup would
+        // be ambiguous across the two 'event' tables.
         var field = classify(
             "eventName: String @field(name: \"name\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");
         assertThat(field)
@@ -91,8 +87,8 @@ class QualifiedTerminalReferenceColumnPipelineTest {
     @Test
     void collidingTerminal_columnOnlyOnOtherSchema_stillRejects() {
         // 'code' exists only on multischema_b.event; the FK pins multischema_a.event. This must
-        // stay an unknown-column author error — the fix resolves against the FK-pinned schema A
-        // copy, it does not search all schemas for any table carrying the column.
+        // stay an unknown-column author error: resolution reads the FK-pinned schema A copy, it
+        // does not search all schemas for any table carrying the column.
         var field = classify(
             "eventName: String @field(name: \"code\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");
         assertThat(field)
@@ -105,9 +101,8 @@ class QualifiedTerminalReferenceColumnPipelineTest {
 
     @Test
     void collidingTerminal_genuineUnknownColumn_rejectsWithNonEmptyCandidates() {
-        // 'bogus' exists nowhere; the author error must fire, and its candidate list must now
-        // enumerate A's event columns. Previously the diagnostic's candidate lookup went through the
-        // same ambiguity-broken bare-name resolve and came back empty on a colliding terminal.
+        // 'bogus' exists nowhere; the author error must fire, and its candidate list must
+        // enumerate A's event columns even though the terminal's bare name collides.
         var field = classify(
             "eventName: String @field(name: \"bogus\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");
         assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);

@@ -28,27 +28,17 @@ import java.util.stream.Stream;
  * class loader over the resulting bytecode, so a {@code @UnitTier} test can instantiate and drive
  * the <em>real emitted bytes</em> rather than assert on their source string.
  *
- * <p>This harness exists because the connection-lifecycle runtime is emitted into the consumer's
- * output package (never shipped as a graphitron artifact), yet {@code @UnitTier} coverage is wanted
- * for acquisition/connect/disconnect/release ordering "over a fake {@code DataSource}".
- * The only way to exercise emitted behaviour in the {@code graphitron} module's unit tier is to
- * compile the {@code TypeSpec}s and load them; the {@link
- * no.sikt.graphitron.rewrite.compile.IncrementalCompileEngine} compiles-and-byte-compares but never
- * loads-and-invokes, so this is a separate, deliberately minimal, test-scoped seam.
+ * <p>Emitted runtime classes live only in the consumer's output package, never in a shipped
+ * graphitron artifact, so exercising their behaviour in this module's unit tier requires compiling
+ * and loading the {@code TypeSpec}s. The
+ * {@link no.sikt.graphitron.rewrite.compile.IncrementalCompileEngine} compiles-and-byte-compares
+ * but never loads-and-invokes, so this is a separate, deliberately minimal, test-scoped seam.
  *
- * <p>Mechanics mirror the {@link no.sikt.graphitron.rewrite.compile.IncrementalCompileEngine}:
- * {@link ToolProvider#getSystemJavaCompiler()} over a
- * {@link StandardJavaFileManager} whose class path is harvested from
- * {@code System.getProperty("java.class.path")} (so jOOQ, graphql-java, and the JDK resolve exactly
- * as they do in the reactor build), sources rendered via JavaPoet's own
- * {@link JavaFile#toJavaFileObject()}. Compilation failure throws with the collected diagnostics so
- * a malformed emission surfaces as a test failure at the emitting generator, not a cryptic
- * {@code ClassNotFoundException} downstream.
- *
- * <p>The loader is parented to this class's loader so emitted references to library types resolve
- * against the same instances the test sees; only the freshly compiled {@code .class} files come from
- * the temp output dir. {@link #close()} closes the loader and deletes the temp tree; use
- * try-with-resources.
+ * <p>The compile class path is harvested from {@code java.class.path}, so jOOQ, graphql-java, and
+ * the JDK resolve exactly as in the reactor build. The loader is parented to this class's loader so
+ * emitted references to library types resolve against the same instances the test sees; only the
+ * freshly compiled {@code .class} files come from the temp output dir. {@link #close()} closes the
+ * loader and deletes the temp tree; use try-with-resources.
  */
 public final class EmittedCodeHarness implements AutoCloseable {
 

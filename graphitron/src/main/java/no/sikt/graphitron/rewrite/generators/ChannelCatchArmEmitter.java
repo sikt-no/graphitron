@@ -12,30 +12,15 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Emits the body of a synchronous fetcher's {@code catch (Throwable e)} arm for an
- * {@link no.sikt.graphitron.rewrite.model.WithErrorChannel} field. One seam serves all three
- * transports so consumers dispatch on the optional carrier rather than branching across parallel
- * {@code catchArm} overloads:
+ * Emits the body of a synchronous fetcher's {@code catch (Throwable e)} arm for a
+ * {@link no.sikt.graphitron.rewrite.model.WithErrorChannel} field. One seam serves every
+ * transport: consumers dispatch on the optional {@link ErrorChannel} carrier instead of
+ * branching across parallel {@code catchArm} overloads.
  *
- * <ul>
- *   <li>{@code Optional.empty()} : {@code return ErrorRouter.surfaceClientErrorOrRedact(e, env);}
- *       (the shared no-channel disposition).</li>
- *   <li>{@link ErrorChannel.Mapped} : the inline mapping-walk loop that, on the first matching
- *       {@code (Mapping, cause)}, returns {@code DataFetcherResult.<P>newResult()
- *       .data(new Outcome.ErrorList<>(List.of(t))).build()}, falling through to
- *       {@code ErrorRouter.redact} on no match. {@code P} is the {@code valueType} the caller
- *       passes (the {@code Outcome<X>} parameterisation).</li>
- *   <li>{@link ErrorChannel.LocalContext} : the DML sentinel arm,
- *       {@code return ErrorRouter.dispatchToLocalContext(e, ErrorMappings.<CONST>, env, sentinel);}.
- *       Reachable only for DML fields; the classifier guarantees in-scope fields never carry
- *       {@code LocalContext}. Requires a non-null {@code localContextSentinel}.</li>
- * </ul>
- *
- * <p>The thrown value is the local {@code e} (matching the existing fetcher try/catch discipline);
- * the loop's cause-walk binds readable locals {@code cause} and {@code mapping} (the commit-3
- * generated-code-style pass retired the earlier dunder-prefixed names). Scoped to the synchronous
- * catch arm in slice-1 commit 2; the async {@code .exceptionally(...)} tail is rewired to this
- * carrier at the in-scope flip.
+ * <p>{@code valueType} is the {@code Outcome<X>} parameterisation of the
+ * {@link ErrorChannel.Mapped} arm's {@code DataFetcherResult}. The
+ * {@link ErrorChannel.LocalContext} arm (the DML transport) requires a non-null
+ * {@code localContextSentinel}.
  */
 public final class ChannelCatchArmEmitter {
 
@@ -47,9 +32,6 @@ public final class ChannelCatchArmEmitter {
             String outputPackage,
             CodeBlock localContextSentinel) {
         if (channel.isEmpty()) {
-            // No-channel disposition routes through surfaceClientErrorOrRedact: a
-            // GraphitronClientException surfaces its real message; everything else still redacts.
-            // One definition for all no-channel emit sites.
             return CodeBlock.of("return $L;\n",
                 ErrorRouterClassGenerator.noChannelRouterCall(outputPackage, "e"));
         }
@@ -67,9 +49,6 @@ public final class ChannelCatchArmEmitter {
                     lc.mappingsConstantName(),
                     localContextSentinel);
             }
-            // PayloadClass is retired by the in-scope flip and never reaches this seam (the legacy
-            // dispatchCatchArm still owns it during the additive window); not a case here because
-            // ChannelCatchArmEmitter is the wrapper-transport seam only.
             case ErrorChannel.PayloadClass pc -> throw new IllegalStateException(
                 "ChannelCatchArmEmitter does not emit ErrorChannel.PayloadClass; that arm routes "
                 + "through the legacy dispatchCatchArm until it is deleted in slice-1 commit 4");

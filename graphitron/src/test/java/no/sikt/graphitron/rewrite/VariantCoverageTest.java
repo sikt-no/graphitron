@@ -23,38 +23,34 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 /**
  * Meta-test: every sealed leaf of {@link GraphitronField} and {@link GraphitronType}
  * must have at least one classification case whose {@link ClassificationCase#variants()}
- * includes it, <em>or</em> a leaf the spec-by-example corpus demonstrates
- * ({@link ClassifiedCorpus#coveredLeaves()}), or a documented entry in {@link #NO_CASE_REQUIRED}.
- *
- * <p>Phase 2 of {@code plan-variant-coverage-meta-test.md}. Complements
+ * includes it, be demonstrated by the spec-by-example corpus
+ * ({@link ClassifiedCorpus#coveredLeaves()}), or carry a documented entry in
+ * {@link #NO_CASE_REQUIRED}. Complements
  * {@link GeneratorCoverageTest#everyGraphitronFieldLeafHasAKnownDispatchStatus} (generator
  * dispatch coverage) by asserting that classification itself is demonstrated for every leaf.
  *
- * <p>Coverage is split by who owns the verdict truth, retiring the earlier union net:
+ * <p>Coverage is split by who owns the verdict truth:
  *
  * <ul>
  *   <li><b>Output-field and type leaves</b> ({@link OutputField} leaves and every non-failure
- *       {@link GraphitronType} leaf) are owned by the spec-by-example corpus as the
- *       <em>single source of truth</em>; {@link #everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus()}
- *       requires each to be demonstrated by a {@link ClassifiedCorpus} fixture (the corpus is classified
- *       and its per-coordinate leaves collected), not by an enum row. This is the milestone:
- *       full successful output-field and type corpus coverage.</li>
- *   <li><b>Input-field leaves</b> ({@link InputField}) stay covered by the
- *       {@code GraphitronSchemaBuilderTest} enum truth table, their own game and out of scope for the
- *       corpus; {@link #everyInputFieldLeafHasAnEnumClassificationCase()} keeps that obligation.</li>
- *   <li>The failure leaves ({@code UnclassifiedField} / {@code UnclassifiedType}) are out of scope for
- *       both: the corpus asserts successful classification only, and the failure path gets a separate
- *       mechanism later.</li>
+ *       {@link GraphitronType} leaf): the spec-by-example corpus is the single source of truth;
+ *       {@link #everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus()} requires each to be
+ *       demonstrated by a {@link ClassifiedCorpus} fixture, not by an enum row.</li>
+ *   <li><b>Input-field leaves</b> ({@link InputField}): covered by the
+ *       {@code GraphitronSchemaBuilderTest} enum truth table via
+ *       {@link #everyInputFieldLeafHasAnEnumClassificationCase()}.</li>
+ *   <li>The failure leaves ({@code UnclassifiedField} / {@code UnclassifiedType}) are out of scope
+ *       for both: the corpus asserts successful classification only.</li>
  * </ul>
  *
- * <p>{@link #NO_CASE_REQUIRED} remains the documented escape hatch shared by both obligations.
+ * <p>{@link #NO_CASE_REQUIRED} is the documented escape hatch shared by both obligations.
  */
 @PipelineTier
 class VariantCoverageTest {
 
     /**
      * Leaves that legitimately need no classification test case. Each entry carries a
-     * one-line reason. The goal is for this map to stay small — every schema-reachable
+     * one-line reason. The goal is for this map to stay small; every schema-reachable
      * leaf should have a case showing the classifier lands there.
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.ofEntries(

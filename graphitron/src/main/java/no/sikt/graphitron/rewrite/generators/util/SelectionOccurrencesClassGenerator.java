@@ -19,34 +19,21 @@ import java.util.List;
  * of every occurrence's sub-selection, or the sides diverge (a sub-field requested under only one
  * path is missing from the SELECT and the reader fails with a jOOQ "not contained in row type"
  * error). This class carries the three schema-independent statics that loop leans on:
+ * {@code mergeByResultKey} (the union merge), {@code canonical} (name guard: fails loud when a
+ * bucket's occurrences name different fields), and {@code requireConsistentArguments} (argument
+ * guard: emitted only into switch arms that read runtime arguments, where serving the first
+ * occurrence's arguments for every path would be silent wrong data).
  *
- * <ul>
- *   <li>{@code mergeByResultKey(occurrences)} — the union: merges each occurrence's
- *       {@code getSelectionSet().getFieldsGroupedByResultKey()} into one insertion-ordered map,
- *       concatenating bucket lists per key.</li>
- *   <li>{@code canonical(resultKey, occurrences)} — the universal name guard: the switch dispatches
- *       on one field name per bucket, so occurrences that disagree on {@code getName()} (two
- *       distinct fields aliased to one result key across sibling selection sets) are
- *       unrepresentable for <em>every</em> arm; fail loud instead of silently running one field's
- *       arm over another field's sub-selection. Returns the first occurrence as the canonical one
- *       once the guard passes.</li>
- *   <li>{@code requireConsistentArguments(resultKey, occurrences)} — the arm-scoped argument guard:
- *       emitted only into switch arms whose body reads runtime arguments off the
- *       {@code SelectedField}, where serving the first occurrence's arguments for every path would
- *       be silent wrong data.</li>
- * </ul>
- *
- * <p>The statics are schema-independent graphql-java manipulation (identical bytecode for every
- * schema), so they live here as a shared runtime scaffold rather than as per-class private helpers
- * copied into every generated type class. Sibling of {@code PolymorphicSelectionSet}, which stays
- * a pure delegating view; this class owns the occurrence-list semantics.
+ * <p>The statics are identical bytecode for every schema, so they live here as a shared runtime
+ * scaffold rather than as per-class private helpers copied into every generated type class.
+ * Sibling of {@code PolymorphicSelectionSet} (a pure delegating view); this class owns the
+ * occurrence-list semantics.
  *
  * <p>Both guards throw the generated {@code GraphitronClientException}
  * ({@link no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator}):
- * the divergence is a client-side query mistake (conflicting selections merged onto one result
- * key), and {@code ErrorRouter.surfaceClientErrorOrRedact} surfaces that marker's message to the
- * client where a plain runtime exception would be redacted to a correlation id. Same disposition
- * as {@code ConnectionHelper}'s malformed-cursor guard.
+ * the divergence is a client-side query mistake, and {@code ErrorRouter.surfaceClientErrorOrRedact}
+ * surfaces that marker's message to the client where a plain runtime exception would be redacted
+ * to a correlation id. Same disposition as {@code ConnectionHelper}'s malformed-cursor guard.
  *
  * <p>Generated as a source file so consuming projects have no runtime dependency on Graphitron.
  */
@@ -64,8 +51,6 @@ public final class SelectionOccurrencesClassGenerator {
     private SelectionOccurrencesClassGenerator() {}
 
     public static List<TypeSpec> generate(String outputPackage) {
-        // Client-error marker: the divergence guards throw it so the no-channel disposition
-        // surfaces the real message instead of redacting to a correlation id.
         var clientException = ClassName.get(outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
         var listOfSelectedField = ParameterizedTypeName.get(LIST, SELECTED_FIELD);

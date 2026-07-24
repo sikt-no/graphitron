@@ -22,28 +22,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Execution-tier coverage for the list-arm DataLoader-batched multi-table polymorphic
  * child fetcher. Exercises {@code Address.occupants: [AddressOccupant!]!} (union of
- * {@code Customer | Staff}) over the full sakila customer fanout selecting their address
- * occupants; pins the batched-statement count so a regression to per-parent fanout (the
- * earlier shape, which fired ~N+1 statements per parent) fails loudly.
+ * {@code Customer | Staff}) over the full sakila customer fanout and pins the exact
+ * statement count, so a regression to per-parent fanout (statements scaling linearly
+ * with customer count) fails loudly.
  *
- * <p>Previously: per-parent inline fetcher → one stage-1 UNION ALL plus one per-typename SELECT
- * per typename present, repeated for every parent invocation. The count grew linearly with
- * the customer count.
- *
- * <p>Now: one DataLoader-batched stage-1 UNION ALL with {@code JOIN parentInput} over
- * the distinct address PKs, plus one stage-2 SELECT per participant typename — three child
- * statements regardless of customer count. The top-level customers query brings the total
- * to 4. The dedup over repeated address PKs is exercised because sakila has multiple
- * customers per address.
- *
- * <p>Exact-count is the right grain: each of the four statements maps to a documented
- * architectural commitment (one parent-rows query, one DataLoader-batched stage-1 union, one
- * stage-2 SELECT per participant typename). Upper-bound would let a regression to a 5- or
- * 6-statement intermediate slip through. Forward-pointer: if a future change splits the
- * batched UNION ALL across multiple SQL roundtrips (e.g. per-participant {@code loadMany}
- * dispatch), the count rises and the test re-pins to the new architectural commitment; the
- * exact-count grain stays correct because each new statement still maps to a specific design
- * choice.
+ * <p>Exact-count is the right grain: each statement maps to an architectural commitment
+ * (one parent-rows query, one DataLoader-batched stage-1 UNION ALL joining the distinct
+ * address PKs, one stage-2 SELECT per participant typename). An upper bound would let a
+ * regression to a 5- or 6-statement intermediate shape slip through. When the emitted
+ * shape deliberately changes, re-pin the count to the new commitment.
  */
 @ExecutionTier
 class AddressOccupantsListBatchingTest {

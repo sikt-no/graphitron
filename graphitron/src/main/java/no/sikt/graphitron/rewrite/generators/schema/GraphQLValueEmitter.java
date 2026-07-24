@@ -10,22 +10,12 @@ import java.util.Map;
  * {@code getValue()} on an argument / input field / applied-directive argument) into a
  * {@link CodeBlock} that reconstructs the value at runtime.
  *
- * <p>Supports the coerced Java shapes graphql-java produces:
- * <ul>
- *   <li>{@code null}</li>
- *   <li>{@link String}, {@link Boolean}, {@link Integer}, {@link Long}, {@link Double},
- *       {@link Float}</li>
- *   <li>{@link List} of any supported element</li>
- *   <li>{@link Map} of {@code String} keys to any supported element (input-object literals)</li>
- * </ul>
- *
- * <p>Enum values show up as plain strings (graphql-java coerces them to their string name when
- * the argument type is declared as an enum, and we emit the same string unchanged; when passed
- * to {@code valueProgrammatic} on a target whose type is an enum, graphql-java re-coerces).
+ * <p>Enum values arrive as plain strings (graphql-java coerces them to their string name) and are
+ * emitted unchanged; graphql-java re-coerces when the target type is an enum.
  *
  * <p>Used from {@link InputTypeGenerator} and {@link ObjectTypeGenerator} for
  * {@code .defaultValueProgrammatic(...)} emission on input fields and field arguments.
- * Applied-directive argument values do not pass through here; they go through
+ * Applied-directive argument values instead go through
  * {@link AppliedDirectiveEmitter}, which preserves AST shape via graphql-java's
  * {@code ValuesResolver.valueToLiteral} so federation-jvm can read them as
  * {@link graphql.language.Value} nodes.

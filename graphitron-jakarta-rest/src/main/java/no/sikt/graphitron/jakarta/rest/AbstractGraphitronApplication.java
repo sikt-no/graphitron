@@ -28,8 +28,8 @@ import java.util.function.Supplier;
  *
  * <p>The schema supplier is a lambda over the static facade, so this base never names a per-subgraph
  * type; the only generated-symbol references live in the tiny subclass. Generating the adapter would
- * couple every generated codebase to a {@code graphitron-jakarta-rest} version and break the
- * generator/runtime decoupling the generator deliberately keeps, so it stays hand-written.
+ * couple every generated codebase to a {@code graphitron-jakarta-rest} version, so it stays
+ * hand-written.
  */
 public abstract class AbstractGraphitronApplication implements GraphitronApplication {
 
@@ -46,7 +46,7 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
 
     /**
      * Builds the schema on first call and caches it, so the engine and the {@code /schema} endpoint
-     * share one built schema. Thread-safe via double-checked locking; the supplier runs at most once.
+     * share one built schema. Thread-safe; the supplier runs at most once.
      */
     @Override
     public final GraphQLSchema schema() {
@@ -62,7 +62,4 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
         }
         return local;
     }
-
-    // graphiqlEnabled() is inherited as a default method from GraphitronApplication (default true);
-    // a concrete subgraph adapter overrides it to gate GraphiQL behind its own configuration.
 }

@@ -14,26 +14,17 @@ import java.util.List;
  *
  * <p>The stably-named marker for a <em>client</em> mistake surfaced from a generated fetcher: a
  * malformed or wrong-type {@code @nodeId} filter value throws it carrying a human-readable
- * message. Two roles, both load-bearing:
- *
- * <ul>
- *   <li><b>Surfacing marker.</b> The no-channel fetcher catch arm routes through
- *       {@code ErrorRouter.surfaceClientErrorOrRedact}, which walks the cause chain and surfaces an
- *       instance of this type as a real {@code GraphQLError} (its message reaches the client)
- *       instead of redacting it to a correlation id. Genuine internal faults, which are not
- *       instances of this type, still redact.</li>
- *   <li><b>Stable {@code @error} anchor.</b> When bare-entity query fields gain a payload object
- * that can host {@code @error} handlers, a {@code GENERIC} handler matching this
- *       class routes the same throw through the channel with zero change at the throw site
- *       ({@code ExceptionMapping.match} is {@code instanceof}). Future client-error producers
- *       subtype it.</li>
- * </ul>
+ * message. The no-channel fetcher catch arm routes it through the generated
+ * {@code ErrorRouter.surfaceClientErrorOrRedact} (see {@link ErrorRouterClassGenerator}), which
+ * surfaces an instance of this type as a real {@code GraphQLError} instead of redacting it to a
+ * correlation id; genuine internal faults still redact. The stable name is also the
+ * {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches with zero change at
+ * the throw site.
  *
  * <p>Subclasses {@link graphql.GraphqlErrorException} so it <em>is</em> a {@link graphql.GraphQLError}
- * (channel-matchable, natively serialisable into the response {@code errors} array) and carries a
- * message through the library's builder. Generated as a source file rather than shipped in a
- * runtime jar, preserving the rewrite's no-runtime-jar invariant (the same reason {@code ErrorRouter}
- * is generated).
+ * (channel-matchable, natively serialisable into the response {@code errors} array). Generated as
+ * a source file rather than shipped in a runtime jar, preserving the rewrite's no-runtime-jar
+ * invariant.
  */
 public final class GraphitronClientExceptionClassGenerator {
 

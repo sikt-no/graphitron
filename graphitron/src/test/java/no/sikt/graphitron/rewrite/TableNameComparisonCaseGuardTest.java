@@ -17,29 +17,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * case-preserved verbatim {@code @table(name:)} echo, so the <em>same</em> logical table can surface
  * as two differently-cased {@code tableName()} strings: the verbatim {@code @table} casing on one
  * operand, the lowercase jOOQ {@code Table.getName()} casing the record-class resolution path feeds
- * in on the other. Comparing those strings with case-sensitive {@code .equals} silently mis-decides
- * under an Oracle-style UPPERCASE {@code @table} over a lowercase jOOQ catalog: that was the bug
- * ({@code collectAccessorMatches} dropping a record-composite carrier child), and
- * {@code FieldBuilder.resolveCarrierIdEncoder} was one explicit {@code @nodeId(typeName:)} hop from
- * the same defect.
+ * in on the other. A raw {@code tableName()} comparison therefore silently mis-decides under an
+ * Oracle-style UPPERCASE {@code @table} over a lowercase jOOQ catalog.
  *
- * <p>Phase 2 moved the canonical identity comparison onto the type
+ * <p>The canonical identity comparison lives on the type
  * ({@link no.sikt.graphitron.rewrite.model.TableRef#sameTable(String)} /
  * {@code denotesSameTableAs(TableRef)}), so every consumer routes through one case-insensitive
- * predicate instead of re-deriving the case-folding contract the jOOQ catalog already guarantees.
- * This guard is then a backstop on a predicate that is correct by construction: it forbids
- * <em>any</em> raw {@code tableName()} comparison, either operand orientation, either case-sensitivity.
- * The single legitimate home for a raw comparison is the predicate's own body in
- * {@code model/TableRef.java}, excluded here (the {@code UnifiedEmissionPinsTest}
- * "exclude the unified emitter itself" pattern).
+ * predicate. This guard forbids <em>any</em> raw {@code tableName()} comparison elsewhere, either
+ * operand orientation, either case-sensitivity. The single legitimate home for a raw comparison is
+ * the predicate's own body in {@code model/TableRef.java}, excluded from the scan.
  *
  * <p>The scan is orientation-complete and spelling-closed for the comparison mode, not a total
  * invariant: other spellings ({@code Objects.equals}, {@code ==}, {@code Set.contains}) and the
  * lookup-key consumption mode are out of scope.
- *
- * <p>The scanned-file count is asserted nonzero: a copy of the precedent's
- * ({@code UnifiedEmissionPinsTest}) non-recursive {@code Files.list} over the wrong subtree would
- * scan zero {@code .java} files and pass vacuously, an enforced-but-checking-nothing guard.
  *
  * <p>If a raw {@code tableName()} comparison is ever legitimately required, it belongs on
  * {@code TableRef} (excluded here); touching this assertion is the deliberate architectural review

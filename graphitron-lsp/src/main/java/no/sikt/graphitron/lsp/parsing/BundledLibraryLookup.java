@@ -15,34 +15,26 @@ import java.util.Locale;
  * Resolves both native pieces of the tree-sitter GraphQL parser against the
  * per-platform shared libraries that ship in
  * {@code no.sikt:graphitron-tree-sitter-natives}: the grammar (exporting
- * {@code tree_sitter_graphql}) and the tree-sitter runtime
- * ({@code libtree-sitter}, exporting the {@code ts_*} symbols). The natives jar
- * carries one of each per supported platform under {@code lib/<os>-<arch>/}
- * ({@code libtree-sitter-graphql.{so,dylib}} + {@code libtree-sitter.{so,dylib}}
- * on POSIX; {@code tree-sitter-graphql.dll} + {@code tree-sitter.dll} on
- * Windows).
+ * {@code tree_sitter_graphql}) and the tree-sitter runtime (exporting the
+ * {@code ts_*} symbols). The natives jar carries one of each per supported
+ * platform under {@code lib/<os>-<arch>/}; {@link #resolvePlatform} maps the
+ * host to the directory and file names.
  *
  * <p>This class is the registered jtreesitter {@link NativeLibraryLookup} SPI
  * service (see {@code META-INF/services/io.github.treesitter.jtreesitter.NativeLibraryLookup}).
  * jtreesitter calls it at {@code TreeSitter} class-init to bind the runtime
  * {@code ts_*} symbols, and {@link GraphqlLanguage} also passes its result to
  * {@link io.github.treesitter.jtreesitter.Language#load} to resolve the grammar
- * entry point. The returned lookup composes {@code grammar.or(runtime)}, which
- * serves both roles at once: the runtime half supplies {@code ts_*}, the grammar
- * half supplies {@code tree_sitter_graphql}.
+ * entry point, so the returned lookup serves both roles at once.
  *
- * <p>Both libraries are extracted from the classpath to temporary files the
- * first time the lookup is asked for them; subsequent lookups reuse the same
- * files. The {@link Arena} jtreesitter passes in keeps the mappings alive for
- * the JVM's lifetime.
+ * <p>Both libraries are extracted from the classpath to temp files once and
+ * reused across lookups. The {@link Arena} jtreesitter passes in keeps the
+ * mappings alive for the JVM's lifetime.
  *
- * <p>Because the runtime is bundled, the LSP has <em>no</em> native system
- * dependency: there is nothing to install. An unsupported host architecture
- * fails fast at {@link #resolvePlatform} with an
- * {@link UnsupportedOperationException} naming the {@code os.name} /
- * {@code os.arch} it saw and the supported set. A load failure of the bundled
- * runtime (corrupt extract, a {@code noexec} temp dir, a missing system C
- * runtime) surfaces through {@link GraphqlLanguage}'s single
+ * <p>Because the runtime is bundled, the LSP has no native system dependency.
+ * An unsupported host platform fails fast in {@link #resolvePlatform}; a load
+ * failure of the bundled runtime (corrupt extract, a {@code noexec} temp dir,
+ * a missing system C runtime) surfaces through {@link GraphqlLanguage}'s
  * bundled-load-failure diagnostic.
  */
 public final class BundledLibraryLookup implements NativeLibraryLookup {

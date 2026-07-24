@@ -25,27 +25,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code holds-records} half), a leaf wired with the wrong {@code sourceShape} arm would silently
  * flip a re-fetch verdict with no failing test.
  *
- * <p>This test converts that javadoc invariant into a pinned one. The projection's independent
- * source of truth is the parent GraphQL type's classified backing, produced by the
- * <em>type</em>-classification step ({@link GraphitronType}), separately from the
+ * <p>The projection's independent source of truth is the parent GraphQL type's classified backing,
+ * produced by the <em>type</em>-classification step ({@link GraphitronType}), separately from the
  * <em>field</em>-leaf classification that {@code sourceShape()} switches on. The invariant
- * ({@link #projectedFromParentBacking}):
- *
- * <pre>{@code c.sourceShape() == Table  iff  schema.type(c.parentTypeName()) is a TableBackedType
- *                          == Record otherwise}</pre>
- *
- * is asserted for <em>every</em> classified {@link ChildField} the spec-by-example corpus
- * demonstrates ({@link ClassifiedCorpus}), so the leaf-identity switch is cross-checked against the
- * independently-classified parent backing rather than against itself. This is the source-shape
- * analogue of the validator's retired {@code dispatchPerformsReFetch} mirror (replaced by the
- * reentry implementedness guard once the reentry emit was reshaped to route on the model facts
- * directly); unlike that mirror, the parent-backing walk here is a genuinely independent
- * derivation, so this cross-check keeps earning its keep.
+ * ({@link #projectedFromParentBacking}) is asserted for <em>every</em> classified {@link ChildField}
+ * the spec-by-example corpus demonstrates ({@link ClassifiedCorpus}), so the leaf-identity switch is
+ * cross-checked against a genuinely independent derivation rather than against itself.
  *
  * <p>{@link #everyChildFieldLeafIsCoveredOrDocumented()} keeps it honest as the leaf set grows: every
  * concrete {@link ChildField} sealed leaf is either exercised by the corpus walk (and thus verified
- * above) or carries a one-line entry in {@link #NOT_CORPUS_COVERED}. A new leaf added with no corpus
- * fixture fails that guard until it is covered or documented, so the mirror cannot silently lapse.
+ * above) or carries a one-line entry in {@link #NOT_CORPUS_COVERED}, so the mirror cannot silently
+ * lapse.
  */
 @PipelineTier
 class SourceShapeProjectionTest {

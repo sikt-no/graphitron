@@ -11,26 +11,22 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
- * Generates the {@code PolymorphicSelectionSet} utility class, emitted once per code-generation run.
- *
- * <p>Carries a single static factory, {@code restrictTo(source, concreteTypeName)}, that returns a
- * delegating view of a {@code DataFetchingFieldSelectionSet}. The view's
+ * Generates the {@code PolymorphicSelectionSet} utility class, emitted once per code-generation
+ * run. Its single static factory, {@code restrictTo(source, concreteTypeName)}, returns a
+ * delegating view of a {@code DataFetchingFieldSelectionSet} whose
  * {@code getFieldsGroupedByResultKey()} retains only entries whose
- * {@code SelectedField.getObjectTypeNames()} contains {@code concreteTypeName}; all other methods
- * delegate to the source unchanged.
+ * {@code SelectedField.getObjectTypeNames()} contains {@code concreteTypeName}.
  *
- * <p>The Stage-2 per-typename SELECT in the multi-table polymorphic dispatcher
- * ({@code MultiTablePolymorphicEmitter.buildPerTypenameSelect}) feeds the wrapped view into the
- * emitted {@code <Type>.$fields(...)} call so each per-typename SELECT projects only columns
- * actually selected for that variant. The wrapper closes the over-selection hole where a
- * per-typename SELECT would otherwise project columns belonging to sibling participants.
+ * <p>The stage-2 per-typename SELECT in
+ * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter} feeds the wrapped
+ * view into the emitted {@code <Type>.$fields(...)} call so each per-typename SELECT projects
+ * only columns actually selected for that variant, never columns belonging to sibling
+ * participants.
  *
- * <p>Design note: this is a deliberate, localised wire-boundary adapter (a delegating proxy over a
- * graphql-java interface), justified because the {@code $fields} contract reads
- * {@code SelectedField.getSelectionSet()} during nested-projection recursion. A bare
- * {@code Map<String, List<SelectedField>>} argument would not survive that contract; returning
- * {@code DataFetchingFieldSelectionSet} is the minimum-disruption shape that keeps the diff
- * localised to one emitter call site. The wrapper sits at the same wire-boundary tier as
+ * <p>Design note: a delegating proxy over a graphql-java interface is justified here because the
+ * {@code $fields} contract reads {@code SelectedField.getSelectionSet()} during nested-projection
+ * recursion; a bare {@code Map<String, List<SelectedField>>} argument would not survive that
+ * contract. The wrapper sits at the same wire-boundary tier as
  * {@code ConnectionHelper.encodeCursor} / {@code decodeCursor}: <em>wire-format encoding is a
  * boundary concern, never a model concern</em>. The shape is not a template for further proxies
  * over graphql-java types.
@@ -62,9 +58,7 @@ public class PolymorphicSelectionSetClassGenerator {
             .addStatement("this.concreteTypeName = concreteTypeName")
             .build();
 
-        // The one materially-overridden method. Walks the source's grouped map, filters each
-        // entry's SelectedFields by getObjectTypeNames().contains(concreteTypeName), drops keys
-        // whose filtered list is empty.
+        // The one materially-overridden method.
         var getFieldsGrouped = MethodSpec.methodBuilder("getFieldsGroupedByResultKey")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
@@ -85,9 +79,8 @@ public class PolymorphicSelectionSetClassGenerator {
             .addStatement("return result")
             .build();
 
-        // Delegations. Every other method on DataFetchingFieldSelectionSet defers to source so
-        // graphql-java's contract (especially the nested-projection recursion that walks
-        // SelectedField.getSelectionSet()) keeps working without a parallel implementation.
+        // Every other method defers to source so graphql-java's nested-projection recursion
+        // (which walks SelectedField.getSelectionSet()) keeps working.
         var stringVarArg = ArrayTypeName.of(String.class);
 
         var contains = MethodSpec.methodBuilder("contains")

@@ -12,27 +12,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier coverage: the implicit-predicate BodyParam.nonNull slot reflects
  * <em>effective</em> runtime nullability at the call site (the AND of the top-level argument's
  * declared nullability and every {@link no.sikt.graphitron.rewrite.model.InputField.NestingField}
- * on the path) rather than the inner field's own SDL-declared nullability.
- *
- * <p>The three cases together exercise the three transitions of the conjunction lifted into
- * {@link FieldBuilder#walkInputFieldConditions} (signature {@code effectiveNonNull}):
- * <ol>
- *   <li>nullable enclosing arg + non-null inner field → false (the primary bug; without the fix
- *       the generator emits an unguarded {@code condition.and(table.col.in(null))} that jOOQ
- *       renders as the literal {@code false}, silently producing an empty result set);</li>
- *   <li>non-null enclosing arg + non-null inner field → true (pins the fix against
- *       over-correction; the unguarded emission stays);</li>
- *   <li>non-null enclosing arg + nullable intermediate {@code NestingField} + non-null inner
- *       field → false (exercises the recursive AND on the wrapper level; without it cases 1 and
- *       2 still pass while a buggy implementation that skips the wrapper-level AND leaves the
- *       inner field unguarded under a present-but-unset intermediate Map).</li>
- * </ol>
+ * on the path) rather than the inner field's own SDL-declared nullability. The conjunction lives
+ * in {@link FieldBuilder#walkInputFieldConditions} ({@code effectiveNonNull}); a false result is
+ * load-bearing because an unguarded {@code condition.and(table.col.in(null))} renders as the
+ * jOOQ literal {@code false} and silently empties the result set. The three tests cover the
+ * three transitions: nullable enclosing arg, both levels non-null, and a nullable intermediate
+ * {@code NestingField} wrapper under a non-null arg (the recursive AND on the wrapper level,
+ * which the first two cases cannot distinguish).
  *
  * <p>Asserts on the classified {@link BodyParam#nonNull()} slot, not on the rendered method
  * body (code-string assertions on emitted bodies are banned at every tier per
  * {@code docs/architecture/explanation/development-principles.adoc}). Execution-tier coverage of
- * the runtime {@code .in(null) -> false} rendering rides on the Sakila execution test that
- * exercises a list-shaped optional filter through real Postgres.
+ * the runtime {@code .in(null)} rendering lives in the Sakila test
+ * {@code GraphQLQueryTest.filmsByEffectiveNullability_omittedFilter_returnsUnfilteredBaseline}.
  */
 @PipelineTier
 class NestedInputFieldEffectiveNonNullPipelineTest {

@@ -32,9 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and against the classified model, it asserts that
  *
  * <ul>
- *   <li><b>model → command</b>: every schema coordinate the covered family claims — derived from
+ *   <li><b>model → command</b>: every schema coordinate the covered family claims (derived from
  *       the site-level fact, {@code emitsKeyedReQuery() && field instanceof BatchKeyField},
- *       never a hand tag — has exactly one committed command;</li>
+ *       never a hand tag) has exactly one committed command;</li>
  *   <li><b>command → emit</b>: every committed command's {@code (unit, typePath, method)} is a
  *       method the run actually declared (a command with no method behind it is a mint that
  *       bypassed the declaration, i.e. census drift);</li>
@@ -43,10 +43,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <p>The covered family spans the whole reentry family: the DataLoader-backed leaves
- * (rows/load methods, slices 1-3) and the projected / discriminated DML arms (the named rows
- * companion holding the follow-up SELECT, slice 4). The root {@code @service} passthrough pin
- * keeps the one deliberate absence visible: value-level re-fetch without a site-level re-query
- * commits nothing, by the fact, not by omission.
+ * (rows/load methods) and the projected / discriminated DML arms (the named rows companion
+ * holding the follow-up SELECT). The root {@code @service} passthrough pin keeps the one
+ * deliberate absence visible: value-level re-fetch without a site-level re-query commits
+ * nothing, by the fact, not by omission.
  */
 @PipelineTier
 class ReentryCommandClosureTest {
@@ -107,10 +107,10 @@ class ReentryCommandClosureTest {
     }
 
     /**
-     * The covered-family boundary, derived from the model's site-level fact — never a tag. The
-     * structural conjunct names the two shapes whose reentry unit is a named method today: the
-     * DataLoader-backed leaves (rows/load methods) and, since slice 4, the projected /
-     * discriminated DML arms (the rows companion holding the follow-up SELECT).
+     * The covered-family boundary, derived from the model's site-level fact, never a tag. The
+     * structural conjunct names the two shapes whose reentry unit is a named method: the
+     * DataLoader-backed leaves (rows/load methods) and the projected / discriminated DML arms
+     * (the rows companion holding the follow-up SELECT).
      */
     private static Set<String> coveredCoordinates() {
         return model.fields().values().stream()
@@ -187,9 +187,9 @@ class ReentryCommandClosureTest {
             .isFalse();
         assertThat(commands).noneMatch(c -> c.coordinate().equals("Query.externalFilm"));
 
-        // Projected DML (slice 4): the follow-up SELECT lives in the named rows companion and
-        // its command is committed through the same registry — the reentry family's registry
-        // coverage is whole.
+        // Projected DML: the follow-up SELECT lives in the named rows companion and its command
+        // is committed through the same registry, so the reentry family's registry coverage is
+        // whole.
         OutputField createFilm = (OutputField) model.field("Mutation", "createFilm");
         assertThat(createFilm.emitsKeyedReQuery()).isTrue();
         assertThat(commands)

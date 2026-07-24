@@ -118,6 +118,26 @@ hand-written standards:
   names as the other four copies; the same name must always mean the same code. Merge behind the
   context lookup or rename the variant.
 
+## Emitted-text findings routed from the javadoc sweep
+
+The comment-trimming sweep (R524) was constrained to comment/javadoc regions and could not touch
+string literals, so these generator main-source literals that render into generated output or
+diagnostics are collected here:
+
+- `ErrorRouterClassGenerator`, `FieldBuilder`, and `WithErrorChannel` emit javadoc citing the
+  dead `error-handling-parity.md` spec file and carrying future-work phrasing.
+- `GraphitronConnectionInstrumentationGenerator`'s incremental-delivery rejection message says
+  "it is a named follow-on".
+- `BuildContext` emits "file a roadmap item if this shape needs admission" and "a future Backlog
+  item may admit multi-data carriers" diagnostics; consumers have no `roadmap/` directory.
+- `ConnectionRuntimeClassGenerator`'s `.addJavadoc` literals mention work "slices".
+- `ChannelCatchArmEmitter`'s invariant-throw message narrates its own deletion plan ("until it
+  is deleted in slice-1 commit 4").
+- `GraphitronClientExceptionClassGenerator`'s emitted javadoc references a future query
+  `@error` handler.
+- `ConstraintViolationsClassGenerator`'s emitted javadoc restates its generator class doc at
+  length; align with whatever per-class on-ramp convention this item lands.
+
 Statement-form defects (nested instanceof-ternary chains, insert-value ternaries, repeated inline
 discriminator expressions) are tracked by R334, whose scope this audit expands; they are out of
 scope here. Coverage stays at the compile/execution tier; pipeline tests must not assert on

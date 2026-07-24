@@ -14,30 +14,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Drift-protection seam between {@code directives.graphqls} deprecation markers and
- * the {@link SdlActions} registry. Mirrors the pattern of
- * {@code DeprecationsDocCoverageTest} (SDL ↔ docs index) one layer down: SDL ↔ tooling.
+ * the {@link SdlActions} registry. Mirrors {@code DeprecationsDocCoverageTest}
+ * (SDL ↔ docs index) one layer down: SDL ↔ tooling.
  *
- * <p>Deprecation comments and quick-fix actions are independent: a deprecation
- * may carry no action, and a quick fix is registered explicitly rather than divined
- * from the deprecation's prose. So there is no "every deprecation must have a
- * migration" invariant. The one coupling that remains is a stale-reference guard:
+ * <p>Deprecation comments and quick-fix actions are independent: a deprecation may
+ * carry no action, and a quick fix is registered explicitly rather than divined from
+ * the deprecation's prose, so there is no "every deprecation must have a migration"
+ * invariant. The enforced coupling is a stale-reference guard: every
+ * {@link SdlAction#targets()} entry must point at an existing marker, so an action
+ * whose deprecation was removed, or whose directive or arg was renamed or deleted,
+ * breaks the build.
  *
- * <ul>
- *   <li>Every {@link SdlAction#targets()} entry that names a deprecation must point at
- *       an existing marker. A stale action (target whose deprecation was removed, or
- *       whose directive / arg was renamed or deleted) breaks the build.</li>
- * </ul>
- *
- * <p>The at-landing-time canonical set of deprecated coordinates is also pinned here;
- * a hand-edit that adds (or loses) a deprecation flips this assertion, so a marker
- * change is a deliberate edit rather than a silent one.
- *
- * <p>Both sides of the seam key on {@link SchemaCoordinate}: the vocabulary's
- * {@link LspVocabulary#deprecatedCoordinates()} and the registry's
- * {@link SdlAction#targets()} both hold {@code Set<SchemaCoordinate>}. The previous
- * parallel {@code SdlAction.DeprecationTarget} hierarchy collapsed into the
- * {@link LspVocabulary} type when LSP completion and diagnostics were rebuilt
- * around GraphQL schema coordinates.
+ * <p>The canonical set of deprecated coordinates is also pinned exactly; a hand-edit
+ * that adds (or loses) a deprecation flips that assertion, making a marker change a
+ * deliberate edit rather than a silent one.
  */
 class SdlActionDriftTest {
 
@@ -49,10 +39,10 @@ class SdlActionDriftTest {
             new SchemaCoordinate.InputField("ExternalCodeReference", "name"),
             new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
             new SchemaCoordinate.Directive("index"),
-            // @record's docstring carries the @deprecated marker, so the deprecation
-            // convention is uniform (hover / deprecatedCoordinates). It carries no registered
-            // migration action; its removal is offered contextually by the redundant-record
-            // advisory's build-side fix, and a deprecation without an action is fine.
+            // @record's docstring carries the @deprecated marker, keeping the deprecation
+            // convention uniform (hover / deprecatedCoordinates). No migration action is
+            // registered: its removal is offered by the redundant-record advisory's
+            // build-side fix, and a deprecation without an action is fine.
             new SchemaCoordinate.Directive("record")
         );
     }

@@ -64,8 +64,8 @@ class IdReferenceShimClassificationTest {
 
         // Case 4a: @field(name:) value = "STUDIEPROGRAM_ID" → raw map key "studieprogram_id" →
         // matches FK1. Without pre-column placement the column lookup would find the
-        // studieprogram_id column and classify as ColumnField; the shim wins because it runs
-        // first for ID-typed fields.
+        // studieprogram_id column and classify as ColumnBackedField; the shim wins because it
+        // runs first for ID-typed fields.
         SHIM_EXPLICIT_FIELD(
             "[ID!] @field(name: \"STUDIEPROGRAM_ID\") → shim fires before column lookup → ColumnReferenceField with NodeIdDecodeKeys",
             SHARED_SDL_PREFIX + """
@@ -85,7 +85,7 @@ class IdReferenceShimClassificationTest {
                 assertThat(f.joinPath()).hasSize(1);
             }),
 
-        // Case 4b: bare plural field name — default columnName = "studieprogramIds" →
+        // Case 4b: bare plural field name; default columnName = "studieprogramIds" →
         // lowercase "studieprogramids" hits the plural camel map key.
         SHIM_BARE_LIST(
             "[ID!] with bare plural field name studieprogramIds → plural map key hit → ColumnReferenceField with NodeIdDecodeKeys",
@@ -104,7 +104,7 @@ class IdReferenceShimClassificationTest {
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             }),
 
-        // Case 4c: bare scalar field name — default columnName = "studieprogramId" →
+        // Case 4c: bare scalar field name; default columnName = "studieprogramId" →
         // lowercase "studieprogramid" hits the camelCase map key.
         SHIM_BARE_SCALAR(
             "ID (scalar) bare field name studieprogramId → camelCase map key hit → ColumnReferenceField with NodeIdDecodeKeys",
@@ -126,9 +126,8 @@ class IdReferenceShimClassificationTest {
         // Case 4d: bare id: ID on a table that has nodeId metadata but no outgoing FKs.
         // studieprogram has __NODE_TYPE_ID but no outgoing FK → empty qualifier map →
         // "id" doesn't match → column lookup misses (no column named "id") →
-        // falls to the synthesis shim, which routes onto ColumnField with
-        // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType) instead of
-        // the retired wire-shape NodeIdField.
+        // falls to the synthesis shim, which routes onto ColumnBackedField with
+        // NodeIdDecodeKeys.SkipMismatchedElement (arity-1 single-PK NodeType).
         DOES_NOT_SHIM_OWN_ID(
             "bare id: ID on node-typed @table with no outgoing FKs → ColumnField with NodeIdDecodeKeys (post-R50; retired wire-shape NodeIdField successor)",
             """

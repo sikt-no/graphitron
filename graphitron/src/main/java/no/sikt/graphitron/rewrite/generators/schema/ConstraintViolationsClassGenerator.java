@@ -13,32 +13,16 @@ import java.util.List;
  * Generates the {@code ConstraintViolations} helper class emitted at
  * {@code <outputPackage>.schema.ConstraintViolations}, once per code-generation run.
  *
- * <p>Translates a single {@code jakarta.validation.ConstraintViolation} into a
- * {@link graphql.GraphQLError} for the wrapper's pre-execution validator step.
- * The translation walks the violation's bean property path and concatenates it with the
- * field's response path and the bound input argument name to produce a GraphQL error
- * whose {@code path} segments alternate field names, list indices, and argument keys
- * exactly as the schema author would expect.
- *
- * <ul>
- *   <li>{@code getMessage()} → {@code message}. Jakarta's {@code MessageInterpolator} has
- *       already resolved the localised string by the time the violation surfaces.</li>
- *   <li>Property path → response path: {@code env.getExecutionStepInfo().getPath().toList()}
- *       prefix, then the SDL argument key, then each {@code Path.Node} in declaration order
- *       ({@code getName()} for {@code PROPERTY} / {@code BEAN}, {@code getIndex()} for
- *       {@code CONTAINER_ELEMENT}, {@code getKey()} for map entries).</li>
- *   <li>{@code constraint} → {@code extensions["constraint"]}. The constraint annotation's
- *       simple name (e.g. {@code "NotBlank"}, {@code "Size"}) is placed in the GraphQL error's
- *       extensions map. Schema authors opt into client visibility by declaring an
- *       {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type; the
- *       per-handler accessor reflection check on the carrier confirms
- *       {@code GraphQLError.getExtensions()} satisfies the read at classify time. Schemas that
- *       don't declare such a field never see it (graphql-java's {@code PropertyDataFetcher}
- *       only reads SDL-declared fields).</li>
- * </ul>
- *
- * <p>Spec: {@code error-handling-parity.md} §5, "{@code ConstraintViolation} →
- * {@code GraphQLError} translation".
+ * <p>The generated method translates one {@code jakarta.validation.ConstraintViolation} into a
+ * {@link graphql.GraphQLError} for the wrapper's pre-execution validator step: the violation's
+ * message (already interpolated by Jakarta's {@code MessageInterpolator}), a {@code path} that
+ * splices the field's execution path, the bound argument name, and the bean property path, and
+ * an {@code extensions} map carrying the violated constraint annotation's simple name under
+ * {@code "constraint"}. Schema authors opt into client visibility of the constraint name by
+ * declaring an {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type;
+ * the per-handler source-class accessor check
+ * ({@link no.sikt.graphitron.rewrite.walker.internal.HandlerAccessorCheck}) confirms at
+ * classify time that {@code GraphQLError.getExtensions()} satisfies the read.
  */
 public final class ConstraintViolationsClassGenerator {
 
@@ -82,9 +66,6 @@ public final class ConstraintViolationsClassGenerator {
             .addStatement("path.add(argName)")
             .beginControlFlow("for ($T node : violation.getPropertyPath())", PATH.nestedClass("Node"))
             .addStatement("$T kind = node.getKind()", ELEMENT_KIND)
-            // Distinct arms per node kind: PROPERTY/BEAN write the name, CONTAINER_ELEMENT
-            // writes the int index (list element) or string key (map entry); other kinds are
-            // skipped so the path stays clean.
             .beginControlFlow("if (kind == $T.CONTAINER_ELEMENT)", ELEMENT_KIND)
             .beginControlFlow("if (node.getIndex() != null)")
             .addStatement("path.add(node.getIndex())")
@@ -95,10 +76,9 @@ public final class ConstraintViolationsClassGenerator {
             .addStatement("path.add(node.getName())")
             .endControlFlow()
             .endControlFlow()
-            // Extensions: a single entry keyed by "constraint" with the constraint annotation's
-            // simple name. Allocated unconditionally; schemas that don't declare an
-            // extensions-shaped field on their @error type never expose it (graphql-java's
-            // PropertyDataFetcher only reads SDL-declared fields).
+            // Allocated unconditionally; schemas that don't declare an extensions-shaped field
+            // on their @error type never expose it (graphql-java's PropertyDataFetcher only
+            // reads SDL-declared fields).
             .addStatement("$T extensions = new $T<>()", mapOfStringObject, LINKED_HASH_MAP)
             .addStatement("extensions.put(\"constraint\", violation.getConstraintDescriptor()"
                 + ".getAnnotation().annotationType().getSimpleName())")

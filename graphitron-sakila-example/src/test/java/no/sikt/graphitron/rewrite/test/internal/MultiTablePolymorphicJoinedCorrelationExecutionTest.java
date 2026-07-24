@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Fixtures ({@code schema.graphqls}), all on the {@code Film} parent:
  *
  * <ul>
- *   <li><b>Slice 2 — multi-hop.</b> {@code Film.firstMemberViaJunction} (single),
+ *   <li><b>Multi-hop.</b> {@code Film.firstMemberViaJunction} (single),
  *       {@code Film.membersViaJunction} (list) and {@code Film.membersViaJunctionConnection}
  *       (connection) return {@code FilmCastMember}. Its {@code ActorMember} participant (backed by
  *       {@code actor}) states the two-hop route {@code film -> film_actor -> actor} with
@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       parent and value-binds hop-0 ({@code film_actor.film_id}) to the parent {@code film_id}. The
  *       {@code FilmInventory} participant ({@code inventory}) keeps the field multi-table via
  *       auto-discovery ({@code inventory.film_id -> film}).</li>
- *   <li><b>Slice 3 — condition.</b> {@code Film.firstByCondition} (single) and
+ *   <li><b>Condition.</b> {@code Film.firstByCondition} (single) and
  *       {@code Film.castByCondition} (list) return {@code FilmCondRef}. Its {@code ActorCondMember}
  *       participant states a {@code {condition:}} route ({@code filmActorsViaCondition}, an
  *       {@code EXISTS} over {@code film_actor}); the emitter joins the parent {@code film} table
@@ -95,7 +95,7 @@ class MultiTablePolymorphicJoinedCorrelationExecutionTest {
     private static final String COND_SELECTION =
         "{ __typename ... on ActorCondMember { rowId name } ... on InvCondMember { rowId } }";
 
-    // ===== Slice 2: multi-hop FK chain (film -> film_actor -> actor) =====
+    // ===== Multi-hop FK chain (film -> film_actor -> actor) =====
 
     @SuppressWarnings("unchecked")
     @Test
@@ -157,7 +157,7 @@ class MultiTablePolymorphicJoinedCorrelationExecutionTest {
         assertThat(actorNames).containsExactlyInAnyOrder("PENELOPE", "NICK");
     }
 
-    // ===== Slice 3: condition correlation (parent film aliased, EXISTS predicate) =====
+    // ===== Condition correlation (parent film aliased, EXISTS predicate) =====
 
     @SuppressWarnings("unchecked")
     @Test

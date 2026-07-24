@@ -15,35 +15,17 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The remnant backstop of the field-dimensional model pivot. That pivot retired the
- * {@code carrier x intent x mapping} model; the preceding slices deleted the four dimension types
- * ({@code Carrier}, {@code Intent}, {@code Mapping}, {@code SourceCardinality}) and the
- * {@code Mapping.TableConnection} value (decomposed into {@code Single(Connection)} + a read
- * operation). The mandate is that the old model is <em>gone</em>, not merely shadowed by the new one.
+ * Source-file scan asserting the retired {@code carrier x intent x mapping} field-dimensional
+ * model stays <em>gone</em>, not merely shadowed by the current model: the four dimension type
+ * files are deleted, nothing imports them, and the distinctive retired names appear nowhere.
  *
- * <p>This is a source-file scan, the same shape {@code UnifiedEmissionPinsTest} uses, and it is a
- * deliberately narrow <strong>type-resurrection</strong> guard, not a prose grep. Per the spec
- * ("The grep is not a coverage check and must not be relied on as one"), exhaustiveness is the
- * coverage gate's job ({@code ClassifiedDslTest.everyDimensionValueIsExercised}, the disjoint partition
- * over the {@code source} / {@code Operation} seals); the explanatory-prose sweep is the docs and
- * test-comment passes. This guard's single job is to fail the build if a retired dimension <em>type</em>
- * comes back. It keys on imports and whole-word references rather than bare-word prose so it cannot fire
- * on the legitimate historical references the model javadoc keeps (for example "the fused
- * {@code TableConnection} mapping decomposed into {@code Single(Connection)}", which documents the new
- * model by naming what it replaced).
- *
- * <ul>
- *   <li>{@link #retiredTypeSourceFilesAreDeleted()} — none of the four type files exists under the tree.</li>
- *   <li>{@link #noSourceFileImportsARetiredModelType()} — nothing imports a retired type from the model
- *       package, the only way (outside the model package itself) to reference a resurrected one.</li>
- *   <li>{@link #distinctiveRetiredNamesAppearNowhere()} — the two distinctive names {@code Intent} and
- *       {@code SourceCardinality} (which collide with no live identifier or English word, unlike
- *       {@code Carrier} / {@code Mapping}) appear nowhere as whole words, catching both a resurrected
- *       type and any stale prose that still names them.</li>
- *   <li>{@link #carveOutTypesSurvive()} — the deliberately-kept neighbours ({@code SourceShape},
- *       {@code LookupMapping}, {@code MappingEntry}) still exist, so the guard cannot be satisfied by
- *       over-deletion.</li>
- * </ul>
+ * <p>This is a deliberately narrow <strong>type-resurrection</strong> guard, not a prose grep and
+ * not a coverage check. Exhaustiveness over the current dimensions is the coverage gate's job
+ * ({@code ClassifiedDslTest.everyDimensionValueIsExercised} in the {@code classifieddsl} package).
+ * The guard keys on imports and whole-word references rather than bare-word prose so it cannot
+ * fire on legitimate references the model javadoc keeps when documenting the current model by
+ * naming what it replaced. {@link #carveOutTypesSurvive()} pins the kept-by-design neighbours,
+ * so the guard cannot be satisfied by over-deletion.
  */
 @UnitTier
 class RetiredDimensionTypesAreGoneTest {
@@ -51,7 +33,7 @@ class RetiredDimensionTypesAreGoneTest {
     private static final List<Path> SOURCE_ROOTS =
         List.of(Path.of("src/main/java"), Path.of("src/test/java"));
 
-    /** The four dimension types retired by the pivot (their source files must not exist). */
+    /** The four retired dimension types; their source files must not exist. */
     private static final List<String> RETIRED_TYPE_FILES =
         List.of("Carrier.java", "Intent.java", "Mapping.java", "SourceCardinality.java");
 
@@ -67,7 +49,7 @@ class RetiredDimensionTypesAreGoneTest {
     /** Names distinctive enough that a whole-word match is always a retired reference, never prose. */
     private static final List<String> DISTINCTIVE_RETIRED_NAMES = List.of("Intent", "SourceCardinality");
 
-    /** Kept-by-design neighbours the deletions must not have swept (the spec's explicit carve-outs). */
+    /** Kept-by-design neighbours the deletions must not have swept. */
     private static final List<String> CARVE_OUT_FILES =
         List.of("SourceShape.java", "LookupMapping.java", "MappingEntry.java");
 

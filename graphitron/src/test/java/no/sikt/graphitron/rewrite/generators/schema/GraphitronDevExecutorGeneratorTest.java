@@ -33,8 +33,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code GraphitronTransactionProviderGeneratorTest} (compiled and driven).</li>
  *   <li>Alphabetical contextArgument binding: the executor's call into the facade's typed
  *       {@code newOwnedExecutionInput} is type-checked by the L5 compile gate over the
- *       sakila-example schemas (a mis-ordered binding with distinct types fails that compile),
- *       with the signature-stability half pinned by the sibling
+ *       sakila-example schemas (mis-ordering fails that compile only because the bound types
+ *       are distinct); signature stability is pinned by the sibling
  *       {@code GraphitronDevExecutorGeneratorPipelineTest}.</li>
  *   <li>The no-sessionState normalize arm (null claims accepted when no hook is configured):
  *       compiled by the same L5 gate via sakila-example's multischema variant, which configures
@@ -83,8 +83,8 @@ class GraphitronDevExecutorGeneratorTest {
 
     @Test
     void federationSchema_emitsNothing() {
-        // V0 targets the non-federation path: a federation subgraph builds through the two-arg
-        // buildSchema and needs an entity fetcher, so its executor is a follow-on variant.
+        // A federation subgraph builds through the two-arg buildSchema and needs an entity
+        // fetcher, neither of which this executor provides, so federation schemas emit nothing.
         var result = GraphitronDevExecutorGenerator.generate(
             emptySchema(), "com.example", SessionStateConfig.none(), true);
         assertThat(result).isEmpty();

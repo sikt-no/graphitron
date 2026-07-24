@@ -83,10 +83,7 @@ class RoadmapReferenceGuardTest {
         List<RoadmapReferenceScanner.Finding> findings = new ArrayList<>();
         int scanned = 0;
         for (String module : GuardScope.IN_SCOPE_MODULES) {
-            // Main sources only: string literals that render to a consumer surface (author-facing
-            // rejection messages, invariant-throw messages, documentation emitted into generated
-            // output). A test's @DisplayName or assertion description citing an item as provenance
-            // renders to no such surface, so the test tree is out of this projection's scope.
+            // Main sources only; rationale in the class javadoc.
             Path root = repoRoot.resolve(module).resolve("src/main/java");
             if (!Files.isDirectory(root)) continue;
             findings.addAll(RoadmapReferenceScanner.scanStrings(root));
