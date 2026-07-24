@@ -26,8 +26,10 @@ last-updated: 2026-07-24
 > - **Phase 4** (housekeeping) → **R520** (`table-on-input-removal-housekeeping`)
 >
 > The rationale sections below (fact-model framing, redundancy argument, "what
-> `@table` on input still drives") remain the shared background for the whole axis
-> and are referenced by R519.
+> `@table` on input still drives") are the shared background for the whole axis.
+> Because this file is deleted when R97 reaches Done, that rationale also lives in
+> the permanent concept explainer `concepts/consumer-derived-input-tables.html`,
+> which R519 (the removal home) references.
 
 The `@table` directive on input types declares "this input maps to columns
 of table X". The classifier consumes it to produce

@@ -94,6 +94,15 @@ PostgreSQL execution tier); the LSP projection replacement or its deliberate dro
 ## Out of scope
 
 Removing `@table` on `OBJECT` / `INTERFACE` (load-bearing `TableType` /
-`TableInterfaceType`). Phase 4 housekeeping (R520). See R97 for the full
-fact-model rationale ("Why there is nothing to classify") and the redundancy
-argument this removal rests on.
+`TableInterfaceType`). Phase 4 housekeeping (R520).
+
+## Rationale
+
+The fact-model framing this removal rests on ("the input type is not an entity;
+its table is a property of the consuming field's fact") lives in the permanent
+concept explainer
+[`concepts/consumer-derived-input-tables.html`](concepts/consumer-derived-input-tables.html),
+which survives R97's Done deletion. In short: `@table` on an input duplicates a
+signal already derivable from the consuming field's return-type table, the same
+redundancy `@record` was (R96). With consumer-derived resolution complete (R97
+Phase 2 + 2b, R457/R515), the directive drives nothing and can be removed.
