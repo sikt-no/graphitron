@@ -7,25 +7,18 @@ import java.util.List;
 /**
  * The {@code operation} axis: the verb a field <em>performs</em>, spanning the edge from its
  * {@link Source} arrival to its {@link Target} projection. A sealed interface with {@code record}
- * arms, replacing the retired flat {@code intent} enum: every arm carries the slots its kind needs,
- * which an enum constant cannot hold without a kitchen-sink of optionals (the cross-product disease
- * the dimensional model exists to cure). This also aligns the verb axis with the already-sealed {@link Source}, so all
- * three axes are sealed hierarchies.
+ * arms: each arm carries exactly the slots its kind needs, which a flat enum cannot hold without
+ * a kitchen-sink of optionals (the cross-product disease the dimensional model exists to cure).
+ * All three axes ({@link Source}, {@link Target}, this) are sealed hierarchies.
  *
  * <p>Built populated by the leaf producers ({@code QueryField} / {@code MutationField} /
  * {@code ChildField} compute {@link OutputField#operation()} by switching on leaf identity and
- * pulling the arm payload from the slots the leaf already carries). The arm set is the <em>full
- * model</em> the dimensional-model pivot settled; the classifier populates only the arms the current leaf set reaches, so
- * several arms are <em>modeled-but-unpopulated</em> (declared gaps, never silently absent): the
- * connection operations {@link Count} / {@link Facet} sit behind the ConnectionType quarantine, the
- * Federation {@link EntityResolve} has no classified leaf, and the condition-matched writes
- * {@link UpdateMatching} / {@link DeleteMatching} are unimplemented.
- *
- * <p>{@code operation()} is the verb-axis primitive; it replaced the former
- * {@code intent} axis, and the {@code @classified} corpus was migrated onto it. The read/write split
- * the former {@code QueryService} / {@code MutationService} pair encoded is recovered from {@link Source}
- * (the {@link Source.Root.Query} / {@link Source.Root.Mutation} legality gate), so {@link ServiceCall}
- * carries no read/write bit.
+ * pulling the arm payload from the slots the leaf already carries). The classifier populates only
+ * the arms the current leaf set reaches, so several arms are <em>modeled-but-unpopulated</em>
+ * (declared gaps, never silently absent): the connection operations {@link Count} / {@link Facet}
+ * sit behind the ConnectionType quarantine, the Federation {@link EntityResolve} has no classified
+ * leaf, and the condition-matched writes {@link UpdateMatching} / {@link DeleteMatching} are
+ * unimplemented.
  */
 public sealed interface Operation {
 
@@ -46,10 +39,8 @@ public sealed interface Operation {
      * A <em>windowed</em> catalog read producing a connection: the sibling of {@link Count} /
      * {@link Facet} in the connection-operation family, distinct from {@link Fetch}. Carries the same
      * filter surface and ordering as {@link Fetch} (ordering is load-bearing, cursor stability needs a
-     * total order) <em>plus</em> the pagination window ({@code first} / {@code after} / {@code last} /
-     * {@code before}). This is the home of pagination, which the fused {@code TableConnection} mapping
-     * had mis-filed on the target axis; the connection <em>shape</em> stays on {@link Target} as
-     * {@code Single(Connection)}, the windowed-<em>read</em> verb is here.
+     * total order) <em>plus</em> the pagination window. The windowed-<em>read</em> verb lives here;
+     * the connection <em>shape</em> stays on {@link Target} as {@code Single(Connection)}.
      */
     record Paginate(List<WhereFilter> filters, OrderBySpec orderBy, PaginationSpec pagination) implements Operation {
         public Paginate { filters = List.copyOf(filters); }
@@ -59,23 +50,19 @@ public sealed interface Operation {
     record Lookup(LookupMapping lookupMapping) implements Operation {}
 
     /**
-     * A developer {@code @service} invocation. The former {@code QueryService} /
-     * {@code MutationService} verb pair is collapsed here: read-vs-write is the {@link Source.Root.Query} /
-     * {@link Source.Root.Mutation} legality gate now, not an operation fact, so this arm carries no
+     * A developer {@code @service} invocation. Read-vs-write is the {@link Source.Root.Query} /
+     * {@link Source.Root.Mutation} legality gate, not an operation fact, so this arm carries no
      * read/write bit (the position is read off {@link OutputField#source(Arrival)}).
      *
-     * <p><strong>Transitional payload.</strong> The call still arrives in the two carrier shapes the
-     * shipped code has not unified: root {@code @service} leaves carry the
+     * <p>The call arrives in two carrier shapes: root {@code @service} leaves carry the
      * {@link ServiceMethodCall} structured-invocation carrier, child {@code @service} leaves carry a
      * reflected {@link MethodRef}. That difference tracks arrival position ({@link Source.Root} vs
-     * {@link Source.Child}), <em>not</em> an operation-axis distinction; a later emit re-platforming
-     * unifies the two into one call carrier. Until then this arm holds whichever the producing leaf
-     * built, under {@link Call} (plumbing for the two pre-unification shapes, not a semantic axis).
+     * {@link Source.Child}), <em>not</em> an operation-axis distinction; this arm holds whichever
+     * the producing leaf built, under {@link Call}.
      */
     record ServiceCall(Call call) implements Operation {
         /**
-         * Transitional holder for the two un-unified {@code @service} call carriers (see
-         * {@link ServiceCall}). Collapses to one carrier once the emit is re-platformed; the arm
+         * Holder for the two {@code @service} call carriers (see {@link ServiceCall}); the arm
          * names describe the carrier type held, not an operation distinction.
          */
         sealed interface Call {
@@ -147,9 +134,9 @@ public sealed interface Operation {
     record DeleteMatching() implements Operation {}
 
     /**
- * A database-routine write: the routine call is the write verb, committed inside the
-     * per-field transaction before the chain's follow-up re-read runs. This is the
-     * procedure-write arm, on the {@link Source.Root.Mutation} source. The arm carries no payload: the call surface and hops
+     * A database-routine write: the routine call is the write verb, committed inside the
+     * per-field transaction before the chain's follow-up re-read runs. Sits on the
+     * {@link Source.Root.Mutation} source. Carries no payload: the call surface and hops
      * live on the leaf's {@code RoutineChain} (read via {@code RoutineChainField}), and the
      * response shape (the post-commit terminus projection) is a {@link Target} fact.
      */

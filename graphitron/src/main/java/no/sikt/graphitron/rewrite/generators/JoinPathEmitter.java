@@ -37,8 +37,8 @@ public final class JoinPathEmitter {
      * should separately read {@link TableRef#tableClass()} from each step.
      *
      * @param path           the full join path
-     * @param terminalTable  terminal target table (needed when the last step is a condition-join
-     *                       with no pre-resolved target; pass {@code null} otherwise)
+     * @param terminalTable  unused (every {@link JoinStep} permit carries its own target table);
+     *                       pass {@code null}
      */
     public static List<String> generateAliases(List<JoinStep> path, TableRef terminalTable) {
         var aliases = new ArrayList<String>(path.size());
@@ -56,12 +56,11 @@ public final class JoinPathEmitter {
     }
 
     /**
-     * The single synthesized alias for the hop-less {@link
- * no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots} shape: the same
-     * derivation {@link #generateAliases} applies to a single-hop path — the target table's
+     * The single synthesized alias for the hop-less
+     * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation.OnLiftedSlots} shape: the same
+     * derivation {@link #generateAliases} applies to a single-hop path, i.e. the target table's
      * simple class name, first character lowercased, suffixed with hop index {@code 0}
-     * (e.g. {@code "f0"} for {@code Film}). Byte-compatible with the retired
-     * single-{@code LiftedHop} path's alias.
+     * (e.g. {@code "f0"} for {@code Film}).
      */
     public static String liftedAlias(TableRef targetTable) {
         String javaName = targetTable.tableClass().simpleName();
@@ -71,15 +70,13 @@ public final class JoinPathEmitter {
 
     private static String targetJavaClassName(JoinStep step, int index, int size, TableRef terminalTable) {
         // Every JoinStep permit implements HasTargetTable, so the read is uniform without a
-        // sealed switch. The
-        // terminalTable parameter is retained for the rare unit-test setup that constructs a
-        // JoinStep without a resolved target; the parameter retires when those test setups update.
+        // sealed switch; the index, size, and terminalTable parameters are unused.
         return ((JoinStep.HasTargetTable) step).targetTable().tableClass().simpleName();
     }
 
     /**
-     * Emits the table expression a hop's alias declaration binds — the single materialization
- * switch on the hop's {@link TableExpr} target. Callers append {@code.as(alias)}.
+     * Emits the table expression a hop's alias declaration binds: the single materialization
+     * switch on the hop's {@link TableExpr} target. Callers append {@code .as(alias)}.
      * All alias-declaration loops route through this helper so a new {@link TableExpr} arm
      * forces exactly one emit-side acknowledgment; {@link JoinStep.HasTargetTable#targetTable()}
      * stays the read for alias <em>naming</em> and terminus checks, never for materialization.
@@ -100,7 +97,7 @@ public final class JoinPathEmitter {
      * {@code conditionsClassName} feed {@link ArgCallEmitter#buildMethodBackedCallArgs} for a
      * {@link TableExpr.MethodCall} node. The three-arg overload passes {@code null} for both;
      * a {@code MethodCall} node reaching it is a wiring bug (only the batched rows-method
-     * prelude materializes method-called nodes — a record-backed parent's children are always
+     * prelude materializes method-called nodes; a record-backed parent's children are always
      * DataLoader-batched, never inline-projected), guarded loudly below.
      */
     public static CodeBlock emitTableExpression(JoinStep step, PreviousNodeRef previousNode,
@@ -128,8 +125,8 @@ public final class JoinPathEmitter {
     }
 
     /**
-     * Emits the join-in of a bridging hop's origin alias with its ON clause — the single
- * dispatch on {@link On.Keying}. {@link On.Keying.ForeignKey} emits the legible
+     * Emits the join-in of a bridging hop's origin alias with its ON clause: the single
+     * dispatch on {@link On.Keying}. {@link On.Keying.ForeignKey} emits the legible
      * {@code .join(prev).onKey(Keys.<FK>)}; {@link On.Keying.NameMatchedKey} has no {@code Keys}
      * constant, so it emits the explicit column-equality conjunction over the pairs'
      * {@code slots}: {@code .join(prev).on(prev.<sourceSide>.eq(hop.<targetSide>))...}.
@@ -149,7 +146,7 @@ public final class JoinPathEmitter {
     /**
      * Forward-order sibling of {@link #emitBridgingJoin} for chains emitted start-first (the
      * root routine chain's fetcher): the FROM clause holds the chain's start, so each hop
-     * joins its <em>own</em> alias in — {@code .join(hop)} — with the same keying-dispatched ON.
+     * joins its <em>own</em> alias in ({@code .join(hop)}) with the same keying-dispatched ON.
      */
     public static CodeBlock emitForwardJoin(On.ColumnPairs cp, String prevAlias, String hopAlias) {
         return emitKeyedJoin(cp, /*joinedAlias=*/hopAlias, prevAlias, hopAlias);
@@ -230,16 +227,13 @@ public final class JoinPathEmitter {
      * {@code targetSide} the column on the target (first-hop) table, regardless of which end of
      * the catalog FK each maps to.
      *
-     * <p>Composite FKs AND the paired columns. Single-column FKs are the common case; the slot
-     * iteration supports both uniformly. Empty-slot fallback (jOOQ catalog unavailable at build
+     * <p>Empty-slot fallback (jOOQ catalog unavailable at build
      * time) emits a runtime-throwing {@code DSL.noCondition()} stub so the mismatch surfaces at
      * execution rather than silently producing broken SQL.
      */
     public static CodeBlock emitCorrelationWhere(On.ColumnPairs first, String firstAlias,
             String parentAlias) {
         if (first.slotCount() == 0) {
-            // No slots — jOOQ catalog was unavailable at build time. Emit a runtime-throwing
-            // stub so the mismatch surfaces at execution rather than silently producing broken SQL.
             return CodeBlock.of("$T.noCondition()",
                 ClassName.get("org.jooq.impl", "DSL"));
         }
@@ -260,10 +254,9 @@ public final class JoinPathEmitter {
      * Emits a {@code <className>.<methodName>(srcAlias, tgtAlias)} invocation used by
      * {@link JoinStep.Hop#filter()} (added to the enclosing WHERE) and by
      * {@link no.sikt.graphitron.rewrite.model.On.Predicate#condition()} (used as the join ON
-     * clause). Takes the
-     * {@link JoinConditionRef} wrapper directly — the two-argument calling convention is the
-     * wrapper's contract, so call sites hand over the typed reference rather than extracting
-     * a raw {@code MethodRef}.
+     * clause). Takes the {@link JoinConditionRef} wrapper directly: the two-argument calling
+     * convention is the wrapper's contract, so call sites hand over the typed reference rather
+     * than extracting a raw {@code MethodRef}.
      */
     public static CodeBlock emitTwoArgMethodCall(JoinConditionRef condition, String srcAlias, String tgtAlias) {
         var method = condition.method();

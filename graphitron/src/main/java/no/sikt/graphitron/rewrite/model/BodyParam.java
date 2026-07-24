@@ -4,36 +4,17 @@ import java.util.List;
 
 /**
  * One parameter of a generated condition method, as seen from the method body generator.
+ * Carries what {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} needs
+ * to emit both the method signature and the method body for one filter argument.
  *
- * <p>Carries everything {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}
- * needs to emit both the method signature and the method body for one filter argument:
- *
- * <ul>
- *   <li>{@link #name()} — the parameter name (matches the GraphQL argument name).</li>
- *   <li>{@code javaType()} (on {@link Eq} / {@link In} only) — the fully qualified Java type
- *       for the method parameter (e.g. {@code "java.lang.String"} for scalars, the enum class
- *       name for {@link CallSiteExtraction.EnumValueOf}). Row-shape variants
- *       ({@link RowEq} / {@link RowIn}) compute their parameter type from {@code columns}
- *       directly — see {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}.</li>
- *   <li>{@link #nonNull()} — effective runtime nullability at the call site: the AND of the
- *       binding source's own declared nullability and every enclosing link's nullability
- *       (top-level argument plus each intermediate {@link InputField.NestingField}). The
- *       producer ({@code FieldBuilder.projectFilters} for top-level scalar args;
- *       {@code FieldBuilder.walkInputFieldConditions} for nested input fields) is responsible
- *       for computing the conjunction;
- *       {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} is then allowed
- *       to assume non-null when the flag is {@code true} and emits an unguarded
- *       {@code condition.and(...)}; when {@code false} the condition is wrapped in a null
- *       check. The flag is NOT the binding's own SDL-declared nullability — for that, read
- *       {@code nonNull} directly.</li>
- *   <li>{@link #list()} — whether the parameter is a list. Derived from the predicate-arm
- *       identity for {@link ColumnPredicate}: {@code Eq} / {@code RowEq} are scalar,
- *       {@code In} / {@code RowIn} are list. The slot does not exist as a record component on
- *       the predicate arms — the operator picks the value-arity, not a redundant flag.</li>
- *   <li>{@link #extraction()} — how to extract the value at the fetcher call site. Use
- *       {@link CallSiteExtraction.JooqConvert} for {@code ID} arguments that require jOOQ's
- *       {@code DataType.convert()} coercion at the call site.</li>
- * </ul>
+ * <p>{@link #nonNull()} is the effective runtime nullability at the call site: the AND of
+ * the binding source's own declared nullability and every enclosing link's nullability
+ * (top-level argument plus each intermediate {@link InputField.NestingField}). The producer
+ * ({@code FieldBuilder.projectFilters} for top-level scalar args,
+ * {@code FieldBuilder.walkInputFieldConditions} for nested input fields) computes the
+ * conjunction; the emitter assumes non-null when the flag is {@code true} and emits an
+ * unguarded {@code condition.and(...)}, and wraps the condition in a null check when
+ * {@code false}. The flag is NOT the binding's own SDL-declared nullability.
  *
  * <p>The parallel call-site view of this parameter is {@link CallParam}. A {@link BodyParam}
  * and its corresponding {@link CallParam} share the same {@code name} and {@code extraction}.
@@ -53,26 +34,11 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
     CallSiteExtraction extraction();
 
     /**
-     * A column-shaped predicate body. Sealed sub-taxonomy — the operator and value-arity are
-     * captured by the variant identity rather than a {@code boolean list} flag plus a uniform
-     * record. Each arm carries exactly the columns it needs:
-     *
-     * <ul>
-     *   <li>{@link Eq} — single-column scalar equality. Body emits {@code table.col.eq(arg)}.</li>
-     *   <li>{@link In} — single-column IN. Body emits {@code table.col.in(arg)}.</li>
-     *   <li>{@link RowEq} — composite-key single-tuple comparison. Body emits
-     *       {@code DSL.row(c1, ..., cN).eq(DSL.row(v1, ..., vN))}. Used for composite-PK NodeId
-     *       equality.</li>
-     *   <li>{@link RowIn} — composite-key row-IN. Body emits
-     *       {@code DSL.row(c1, ..., cN).in(rows)}. Used by composite-PK row-IN filters where
-     *       per-Node {@code decode<TypeName>} helpers feed typed key tuples.</li>
-     * </ul>
-     *
-     * <p>The body emitter switches exhaustively on these four arms: no
-     * {@code columns.size() == 1 ? ... : ...} ladder, no {@code list ? ... : ...} ladder.
-     * Adding a future operator (e.g. {@code RowGreaterThan} for keyset pagination tuples) is a
-     * new sealed arm plus an emitter switch arm; the same shape <em>Generation-thinking</em>
-     * expects.
+     * A column-shaped predicate body. The operator and value-arity are captured by the variant
+     * identity rather than a {@code boolean list} flag plus a uniform record, and each arm
+     * carries exactly the columns it needs, so the body emitter switches exhaustively over the
+     * four arms with no arity or list ladders; a new operator is a new sealed arm plus an
+     * emitter switch arm.
      */
     sealed interface ColumnPredicate extends BodyParam permits Eq, In, RowEq, RowIn {}
 
@@ -146,23 +112,20 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
     }
 
     /**
-     * A column predicate whose target column lives on a <em>joined</em> table, reached from the
-     * field's own table through a {@code @reference(path:)} join path. The wrapped {@link #inner}
-     * predicate is an ordinary {@link ColumnPredicate} whose {@link ColumnRef}s are bound to the
-     * <em>terminal</em> table; {@link #joinPath} carries how to reach that table.
+     * A column predicate whose target column lives on a joined table, reached from the field's
+     * own table through a {@code @reference(path:)} join path. The wrapped {@link #inner}
+     * predicate is an ordinary {@link ColumnPredicate} whose {@link ColumnRef}s are bound to
+     * the terminal table; {@link #joinPath} carries how to reach that table.
      *
-     * <p>The emitter ({@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}) turns
-     * this into a correlated {@code DSL.exists(DSL.selectOne().from(terminalAlias).join(...).where(
-     * <correlation back to the method's own table>.and(<inner predicate on terminalAlias>)))} ANDed
-     * into the method's condition. The method signature, call-site argument extraction, and
-     * null / empty-list guards are identical to the {@link #inner} local predicate — only the SQL
-     * shape differs — so {@link #name()}, {@link #list()}, {@link #nonNull()}, and
-     * {@link #extraction()} all delegate to {@code inner}.
+     * <p>{@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} emits this as a
+     * correlated {@code DSL.exists(...)} ANDed into the method's condition. The method
+     * signature, call-site extraction, and null / empty-list guards are identical to the
+     * {@link #inner} local predicate; only the SQL shape differs, so every accessor delegates
+     * to {@code inner}.
      *
-     * <p>This wrapping keeps the local-vs-remote axis off the operator/value-arity
-     * {@link ColumnPredicate} taxonomy (no {@code joinPath.isEmpty()} ladder on the four arms),
-     * mirroring how {@link FkTargetConditionFilter} wraps a {@link ConditionFilter} rather than
-     * bolting a {@code joinPath} field onto it.
+     * <p>The wrapping keeps the local-vs-remote axis off the operator/value-arity
+     * {@link ColumnPredicate} taxonomy, mirroring how {@link FkTargetConditionFilter} wraps a
+     * {@link ConditionFilter} rather than bolting a {@code joinPath} field onto it.
      */
     record RemoteColumnPredicate(
         List<JoinStep> joinPath,

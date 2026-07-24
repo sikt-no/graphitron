@@ -13,20 +13,14 @@ import java.util.List;
  * <p>Carrier-side counterpart of the payload-side
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField}: where {@code ErrorsField}
  * names the payload field that holds the list of typed errors at request time, this carrier
- * captures everything the emitter needs to construct that list : which {@code @error} types
+ * captures everything the emitter needs to construct that list: which {@code @error} types
  * are mapped, which payload class to instantiate, and the constant on the per-package
  * {@code ErrorMappings} helper that holds the dispatch table.
  *
- * <h2>Sealed split</h2>
- *
- * Two arms cover the two ways the catch-side ferry can hand errors back to graphql-java:
- * {@link PayloadClass} construction (the catch arm builds a developer payload class with the
- * errors list slotted in) and {@link LocalContext} (the catch arm emits
- * {@code data(null).localContext(errorsList).build()} and the errors-field DataFetcher reads
- * from {@code env.getLocalContext()}). Both arms share the {@link #mappedErrorTypes()} and
- * {@link #mappingsConstantName()} accessors, which is what the channel-agnostic consumers
- * ({@code MappingsConstantNameDedup}, {@code ErrorMappingsClassGenerator},
- * {@code CheckedExceptionMatcher}) need.
+ * <p>The arms differ in how the catch-side ferry hands errors back to graphql-java; the
+ * shared {@link #mappedErrorTypes()} and {@link #mappingsConstantName()} accessors are what
+ * the channel-agnostic consumers ({@code MappingsConstantNameDedup},
+ * {@code ErrorMappingsClassGenerator}, {@code CheckedExceptionMatcher}) need.
  */
 public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.PayloadClass, ErrorChannel.LocalContext {
 
@@ -70,29 +64,28 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
 
     /**
      * The catch arm constructs a developer payload class and slots the errors list into it.
-     * Active for every fetcher whose payload return is a class-backed shape today;
-     * it is the only arm for service-backed paths
+     * Active for every fetcher whose payload return is a class-backed shape; it is the only
+     * arm for service-backed paths
      * ({@code MutationServiceTableField}, {@code MutationServiceRecordField},
      * {@code QueryServiceTableField}, {@code QueryServiceRecordField}) and child
      * {@code @tableMethod} / child {@code @service} variants.
      *
      * <ul>
-     *   <li>{@code payloadClass} : the developer-supplied payload class (e.g.
+     *   <li>{@code payloadClass}: the developer-supplied payload class (e.g.
      *       {@code com.example.FilmPayload}). The emitter constructs the payload instance at
      *       the catch site by dispatching on {@code errorsSlot}: the
      *       {@link ErrorsSlot.CtorParameterIndex} arm prints {@code new FilmPayload(...)} with
-     *       the lambda parameter at the ctor index; the phase-2 setter arm prints
-     *       {@code var p = new FilmPayload(); p.setErrors(errors); ...; return p;}.</li>
-     *   <li>{@code errorsSlot} : where the errors list is bound on the payload. Sealed over the
-     *       all-fields-ctor parameter index (phase 1) and the bean-setter method (phase 2);
-     *       resolved by {@code FieldBuilder.resolvePayloadConstructionShape} once at classify
+     *       the lambda parameter at the ctor index; the {@link ErrorsSlot.SetterMethod} arm
+     *       prints {@code var p = new FilmPayload(); p.setErrors(errors); ...; return p;}.</li>
+     *   <li>{@code errorsSlot}: where the errors list is bound on the payload, sealed over the
+     *       all-fields-ctor parameter index and the bean-setter method. Resolved by
+     *       {@code FieldBuilder.resolvePayloadConstructionShape} once at classify
      *       time so each emitter dispatches on the arm without re-deriving.</li>
-     *   <li>{@code defaultedSlots} : every constructor parameter except the errors slot, paired
-     *       with its pre-resolved language default literal. Used by the all-fields-ctor arm of
-     *       {@code errorsSlot} to fill non-errors slots positionally; under the phase-2 setter
-     *       arm the list captures the per-non-errors-SDL-field defaults keyed by
-     *       {@link DefaultedSlot#index()} so the emitter walks identical structured information
-     *       either way.</li>
+     *   <li>{@code defaultedSlots}: every constructor parameter except the errors slot, paired
+     *       with its pre-resolved language default literal. The ctor-index arm fills non-errors
+     *       slots positionally from it; under the setter arm the list captures the
+     *       per-non-errors-SDL-field defaults keyed by {@link DefaultedSlot#index()}, so the
+     *       emitter walks identical structured information either way.</li>
      * </ul>
      */
     record PayloadClass(

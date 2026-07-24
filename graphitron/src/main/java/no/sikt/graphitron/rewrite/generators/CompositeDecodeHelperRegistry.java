@@ -16,11 +16,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-class collector for NodeId decode helpers. One instance is owned by
- * {@link QueryConditionsGenerator} for each emitted {@code <Root>Conditions} class. Call sites
- * that decode a NodeId argument register a helper through this collector instead of inlining the
- * decode-and-project chain; the registry deduplicates by {@link Key} so two condition methods
- * consuming the same NodeId type share one helper.
+ * Per-class collector for NodeId decode helpers, one instance per host class (see
+ * {@link #collectInto}). Call sites that decode a NodeId argument register a helper through this
+ * collector instead of inlining the decode-and-project chain; the registry deduplicates by
+ * {@link Key} so two methods consuming the same NodeId type share one helper.
  *
  * <p>Helpers are private static methods on the host {@code <Root>Conditions} class. They take an
  * {@code Object wire} and return the decoded key in the shape the call site binds against:
@@ -35,10 +34,9 @@ import java.util.Map;
  * <p>Skip and throw modes get separate helpers (different bodies). The throw arm raises the
  * generated {@code GraphitronClientException} on a {@code null} decode rather than filtering it
  * out, carrying a two-branch message that distinguishes structurally-malformed input from a
- * well-formed wrong-type id (it peeks the wire prefix via {@code NodeIdEncoder.peekTypeId}). The
- * statement-form throw replaces the expression-only {@code Supplier}-lambda-throw trick the inline
- * emission used to need to stay an expression; a developer can now breakpoint the decode
- * and read a meaningful stack frame.
+ * well-formed wrong-type id (it peeks the wire prefix via {@code NodeIdEncoder.peekTypeId}).
+ * The throw is statement-form, so a developer can breakpoint the decode and read a meaningful
+ * stack frame.
  */
 final class CompositeDecodeHelperRegistry {
 
@@ -52,7 +50,7 @@ final class CompositeDecodeHelperRegistry {
     /**
      * Output package of the generated code, used to reach the generated client-error type
      * {@code <outputPackage>.schema.GraphitronClientException} that a {@link Mode#THROW} helper
- * raises on a decode failure. Empty package is tolerated for the SKIP-only paths that
+     * raises on a decode failure. Empty package is tolerated for the SKIP-only paths that
      * never reach the client-error reference.
      */
     private final String outputPackage;
@@ -63,12 +61,10 @@ final class CompositeDecodeHelperRegistry {
 
     /**
      * Brackets the construct-thread-drain lifecycle so a registry can never be registered into
-     * without a matching drain. Constructs a fresh registry, hands it to {@code body} (which emits
-     * the methods whose filter call sites lift NodeId-decode helpers through it), then drains every
-     * collected helper onto {@code classBuilder}. The two steps are co-located so a generator that
-     * lifts a decode helper cannot silently forget to emit it — a dropped drain would otherwise
-     * surface only as a dangling {@code decode<Type>(...)} reference and a downstream consumer
-     * compile error, not a generator failure.
+     * without a matching drain: constructs a fresh registry, hands it to {@code body}, then drains
+     * every collected helper onto {@code classBuilder}. A dropped drain would otherwise surface
+     * only as a dangling {@code decode<Type>(...)} reference and a downstream consumer compile
+     * error, not a generator failure.
      *
      * <p>Used by {@link QueryConditionsGenerator}, {@link TypeClassGenerator}, and
      * {@link TypeFetcherGenerator}; each owns the {@link TypeSpec.Builder} the helpers land on.
@@ -82,8 +78,7 @@ final class CompositeDecodeHelperRegistry {
 
     /**
      * Registers a helper for {@code (decode, mode, list)} if not already present and returns its
-     * method name. Handles every arity: arity-1 decoders project the single key column
-     * ({@code key.value1()}); arity-N decoders project the composite tuple ({@code key.valuesRow()}).
+     * method name.
      */
     String register(HelperRef.Decode decode, Mode mode, boolean list) {
         Key key = new Key(decode.encoderClass(), decode.methodName(), mode, list);
@@ -101,9 +96,8 @@ final class CompositeDecodeHelperRegistry {
     }
 
     private static String helperName(String decodeMethod, Mode mode, boolean list, int arity) {
-        // Decoder methods are uniformly named `decode<TypeName>`; strip the prefix once and apply
-        // the (arity, list) suffix matrix to derive the helper name. Arity-1 projects a single key
-        // (`Key`/`Keys`); arity-N projects a composite tuple row (`Row`/`Rows`).
+        // Decoder methods are uniformly named `decode<TypeName>`; strip the prefix and derive
+        // the helper name from the (arity, list) suffix matrix below.
         String typeName = strippedTypeName(decodeMethod);
         String kind = arity == 1
             ? (list ? "Keys" : "Key")
@@ -114,7 +108,6 @@ final class CompositeDecodeHelperRegistry {
 
     private MethodSpec buildHelper(HelperRef.Decode decode, Mode mode, boolean list, String name) {
         int arity = decode.outputColumnShape().size();
-        // arity-1 binds the single key column directly; arity-N binds the typed Row<N> tuple.
         TypeName elementType = arity == 1
             ? decode.outputColumnShape().getFirst().columnType()
             : typedRow(decode.outputColumnShape());
@@ -148,7 +141,6 @@ final class CompositeDecodeHelperRegistry {
                     .addStatement("return key")
                     .unindent()
                     .add("})\n")
-                    // arity-1 projects the single key column; arity-N projects the composite tuple row.
                     .add(arity == 1 ? ".map($T::value1)\n" : ".map($T::valuesRow)\n", recordN)
                     .addStatement(".collect($T.toList())", collectors);
                 builder.addCode(b.build());
@@ -162,9 +154,9 @@ final class CompositeDecodeHelperRegistry {
             }
         } else {
             builder.addStatement("if (!(wire instanceof String nodeId)) return null");
-            // Typed local rather than `var`: the lint guard forbids `var` in emitted sources so
-            // inferred types stay searchable. Record<N> with the column tuple's java types is the
-            // exact return shape of NodeIdEncoder.decode<TypeName>(String).
+            // Typed local rather than `var`: GeneratedSourcesLintTest forbids `var` in emitted
+            // sources so inferred types stay searchable. Record<N> with the column tuple's java
+            // types is the exact return shape of NodeIdEncoder.decode<TypeName>(String).
             builder.addStatement("$T key = $T.$L(nodeId)", recordType, encoder, decodeMethod);
             String projection = arity == 1 ? "key.value1()" : "key.valuesRow()";
             if (mode == Mode.THROW) {
@@ -180,7 +172,7 @@ final class CompositeDecodeHelperRegistry {
     }
 
     /**
- * Emits the {@link Mode#THROW} failure path for a {@code null} decode return: peek the
+     * Emits the {@link Mode#THROW} failure path for a {@code null} decode return: peek the
      * wire value's type prefix, then throw the generated {@code GraphitronClientException} carrying
      * a two-branch message that distinguishes structurally-malformed input from a well-formed
      * wrong-type id. {@code peekArg} is the wire expression fed to {@code peekTypeId} (cast to
@@ -205,7 +197,7 @@ final class CompositeDecodeHelperRegistry {
      * Builds the ternary message expression. {@code peeked == null} (bad base64 / no colon) and
      * {@code peeked.equals(expectedTypeId)} (right type prefix, wrong key arity) both read as
      * "malformed"; any other non-null prefix is a well-formed wrong-type id and names the type it
-     * decoded to. The expected type name and id are generation-time constants.
+     * decoded to.
      */
     private static CodeBlock failureMessageExpr(String expectedTypeId, String typeName, String msgVar) {
         return CodeBlock.of(

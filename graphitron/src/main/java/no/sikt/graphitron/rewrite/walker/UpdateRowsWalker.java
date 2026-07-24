@@ -30,46 +30,39 @@ import java.util.Set;
  * column set is a subset of the input-covered columns, then partitions the input fields into the
  * WHERE (matched-key) and SET (everything else) halves.
  *
- * <p><b>Substrate concession (mirrors {@code ServiceMethodCallWalker}).</b> The spec's ideal
- * is a walker reading {@code GraphQLFieldDefinition} + jOOQ catalog directly and re-deriving the
- * column classification from raw SDL. Re-running {@code InputFieldResolver} /
+ * <p><b>Substrate concession (mirrors {@code ServiceMethodCallWalker}).</b> The walker
+ * translates over the already-classified {@link InputField} permits rather than re-deriving the
+ * column classification from raw SDL: re-running {@code InputFieldResolver} /
  * {@code EnumMappingResolver.buildLookupBindings} (with {@code @reference} FK-join and {@code @nodeId}
- * decode resolution) inside the walker would duplicate a substantial classifier. Following the same
- * walker substrate concession on blast-radius grounds, this walker instead translates
- * over the already-classified {@link InputField} permits the upstream classifier produced. The
- * follow-up that retires the intermediate and reflects from SDL directly is tracked as a Backlog
- * item ({@code updaterows-walker-sdl-substrate}). The {@code field} parameter is reserved for that
- * future direct-SDL substrate; the current translator does not read it. The walk is
+ * decode resolution) here would duplicate a substantial classifier. The {@code field} parameter
+ * exists for a direct-SDL substrate and is not read. The walk is
  * cardinality-independent: a self-FK {@code @reference} routes its columns wholly to SET on both the
  * single-row and bulk (list-input) forms, so the caller's list shape never reaches here.
  *
- * <p>The new logic this walker owns — PK-or-UK subset matching, SET/WHERE partition by key
- * membership, empty-SET rejection, and the override-condition rejection — is fully expressible over
- * the classified permits plus the jOOQ keys, so the concession costs nothing in this slice's scope.
- * Errors are collected across stages without short-circuiting so the LSP surfaces every per-field
- * issue at once.
+ * <p>Errors are collected across stages without short-circuiting so the LSP surfaces every
+ * per-field issue at once.
  *
  * <p><b>Nested grouping inputs.</b> A plain (non-{@code @table}) input object grouping
  * columns of the outer table classifies as an {@link InputField.NestingField}; the walker flattens
- * it in place ({@link #classifyInto}) into the same flat leaf carriers it would admit at the input
- * root, rewrapping each nested leaf's {@code extraction} as a
- * {@link CallSiteExtraction.NestedInputField} that records the SDL access path. The SET/WHERE
- * partition and the PK-or-UK match are column-identity-driven, so they run over the flattened
- * leaves unchanged; the access path rides on the leaf's {@link SetColumn} / {@link KeyColumn}
- * {@code extraction} for the emitter to descend the wire map. A list-typed nesting is rejected.
+ * it in place ({@link #classifyInto}) into the same flat leaf carriers it would admit at the
+ * input root. A list-typed nesting is rejected.
  */
 public final class UpdateRowsWalker {
 
-    /** A reshaped, column-bearing input field: the SDL field name, its target columns on the
+    /**
+     * A reshaped, column-bearing input field: the SDL field name, its target columns on the
      * input's own table, the extraction shape the emitter reuses, and whether the carrier is a
- * self-FK reference. A self-FK carrier's columns route wholly to the SET partition and
-     * never count toward WHERE-key coverage; every other carrier partitions by key membership. */
+     * self-FK reference. A self-FK carrier's columns route wholly to the SET partition and
+     * never count toward WHERE-key coverage; every other carrier partitions by key membership.
+     */
     private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
                                 boolean selfReference) {}
 
-    /** True when the carrier decodes a {@code @nodeId} (directly or behind a nested-input access path),
-     *  i.e. its value is only knowable at runtime — the distinction between a runtime-agreement
-     *  overlap and the build-time plain-field collision. */
+    /**
+     * True when the carrier decodes a {@code @nodeId} (directly or behind a nested-input access
+     * path), i.e. its value is only knowable at runtime: the distinction between a
+     * runtime-agreement overlap and the build-time plain-field collision.
+     */
     private static boolean isDecodeExtraction(CallSiteExtraction extraction) {
         var leaf = extraction instanceof CallSiteExtraction.NestedInputField nif ? nif.leaf() : extraction;
         return leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
@@ -95,11 +88,6 @@ public final class UpdateRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // The bulk self-FK reject that used to live here (Stage 2b) is gone. A self-FK
-        // @reference on a bulk (list-input) UPDATE routes exactly as the single-row form does — its
-        // shared column lands in the UPDATE … SET c = v.c FROM (VALUES …) derived table, which the
-        // bulk SET dedup now collapses to one v-column with a per-row WHERE∩SET agreement check.
-
         // Stage 3: union of every admitted field's target columns (all carriers, for diagnostics),
         // plus the identity-only subset (non-self-FK carriers) the key match is computed over.
         var inputColumns = new ArrayList<ColumnRef>();
@@ -116,8 +104,7 @@ public final class UpdateRowsWalker {
             }
         }
 
-        // Stage 4-5: PK-or-UK identification via the shared matcher. Find the
-        // first candidate key (PK preferred) whose column set the input covers — over the identity
+        // Stage 4-5: PK-or-UK identification via the shared matcher, over the identity
         // (non-self-FK) columns only. A self-FK points at a sibling row, so it can never
         // pin the row it lives on; a PK column reachable only through a self-FK fails coverage
         // (NoUniqueKeyCoverage), matching the semantic "your identity fields do not pin a key".
@@ -130,11 +117,11 @@ public final class UpdateRowsWalker {
 
         // Stage 6: partition each admitted field into the WHERE (matched-key) or SET (everything
         // else) half. A self-FK reference carrier routes wholly to SET regardless of key
-        // membership — its columns are a pointer to a sibling row, never this row's identity, so a
+        // membership: its columns are a pointer to a sibling row, never this row's identity, so a
         // shared key column it writes is an ordinary SET write (the FK forces it equal to the WHERE
         // value, agreement-checked at emit). Every other carrier partitions by membership; a
         // genuine straddle (a cross-table FK reference whose lifted columns span the key boundary)
-        // still rejects with MixedCarrierKeyMembership.
+        // rejects with MixedCarrierKeyMembership.
         var keySqlNames = sqlNameSet(matchedKey.columns());
         var setColumns = new ArrayList<SetColumn>();
         var keyColumns = new ArrayList<KeyColumn>();
@@ -194,20 +181,16 @@ public final class UpdateRowsWalker {
                 new UpdateRowsError.NoSetFields(table.tableName(), matchedKey)));
         }
 
-        // Stage 8: success.
         return new WalkerResult.Ok<>(new UpdateRows.Identified(matchedKey, setColumns, keyColumns));
     }
 
     /**
      * Flatten {@code fields} into {@link Contribution}s, descending into any
- * {@link InputField.NestingField} grouping input so a plain non-{@code @table} input that
+     * {@link InputField.NestingField} grouping input so a plain non-{@code @table} input that
      * groups columns of the outer table contributes the same flat leaf carriers it would at the
-     * input root. A nested leaf's {@code extraction} is rewrapped as a
-     * {@link CallSiteExtraction.NestedInputField} carrying the full SDL access path from the
-     * {@code @table} argument root to the leaf, so the emitter descends the wire map; a top-level
-     * leaf keeps its extraction unchanged (the access path is the single field name and the emit
-     * stays byte-identical). The PK-or-UK match downstream runs over the flattened leaves' resolved
-     * columns unchanged: a nested leaf's column counts toward key coverage exactly as a root leaf's.
+     * input root. Nested-leaf extractions are rewrapped via {@link #wrap}. The PK-or-UK match
+     * downstream runs over the flattened leaves' resolved columns unchanged: a nested leaf's
+     * column counts toward key coverage exactly as a root leaf's.
      */
     private void classifyInto(
         List<InputField> fields, List<String> prefix, String outerArgName,

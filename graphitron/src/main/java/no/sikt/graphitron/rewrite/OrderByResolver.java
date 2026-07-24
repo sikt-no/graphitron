@@ -37,44 +37,16 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * ({@link ServiceDirectiveResolver}, {@link TableMethodDirectiveResolver},
  * {@link ExternalFieldDirectiveResolver}, {@link LookupKeyDirectiveResolver}).
  *
- * <p>Three concrete result shapes ride under {@link Resolved.Ok}:
+ * <p>Three concrete result shapes ride under {@link Resolved.Ok}: {@link OrderBySpec.None}
+ * (ordering not applicable), {@link OrderBySpec.Fixed} ({@code @defaultOrder} or the parent
+ * table's primary key), and {@link OrderBySpec.Argument} (an {@code @orderBy} argument).
  *
- * <ul>
- *   <li>{@link OrderBySpec.None} when ordering is not applicable — single-value returns or
- *       non-table-bound fields.</li>
- *   <li>{@link OrderBySpec.Fixed} when an {@code @defaultOrder} directive is present, or the
- *       parent table has a primary key and no {@code @orderBy} argument is in play.</li>
- *   <li>{@link OrderBySpec.Argument} when an {@code @orderBy} argument is present and its
- *       input-type structure validates (sort enum + direction field).</li>
- * </ul>
- *
- * <p>Every rejection path adds exactly one message to the {@link Resolved.Rejected} arm. The
- * caller appends that message to its accumulating {@code errors} list and surfaces a
- * {@code TableFieldComponents.Rejected}. Notably, the resolver owns the fallback
- * "could not resolve @defaultOrder columns in table '...'" rejection message that was previously
- * synthesized at the {@code projectForFilter} call site — it belongs inside the resolver since
- * it's the rejection reason for one specific failure path (silent {@code null} from the column /
- * index lookup chain).
- *
- * <p>Implementation note: only the public {@link #resolve} entry point and the internal
- * {@code resolveDefaultOrderSpec} / {@code resolveOrderByArgSpec} return {@link Resolved}; the
- * deeper plumbing ({@code resolveColumnOrderSpec}, {@code resolveOrderEntries},
- * {@code resolveIndexColumns}, {@code resolveEnumValueOrderSpec}) keeps its nullable-return shape
- * since those helpers don't carry the rejection-message responsibility.
+ * <p>Every rejection path carries exactly one message in the {@link Resolved.Rejected} arm.
+ * The deeper helpers keep a nullable-return shape; their callers synthesise the message.
  */
 final class OrderByResolver {
 
-    /**
-     * Outcome of {@link #resolve}. Two terminal arms; the caller exhausts them with a switch or
-     * an instanceof.
-     *
-     * <ul>
-     *   <li>{@link Ok} — successful resolution; carries the resolved {@link OrderBySpec}.</li>
-     *   <li>{@link Rejected} — every error path: invalid {@code @orderBy} input type, missing
-     *       sort/direction enum field, unresolvable {@code @order} columns on an enum value,
-     *       or unresolvable {@code @defaultOrder} columns / index.</li>
-     * </ul>
-     */
+    /** Outcome of {@link #resolve}: {@link Ok} carries the {@link OrderBySpec}, {@link Rejected} the failure. */
     sealed interface Resolved {
         record Ok(OrderBySpec spec) implements Resolved {}
         record Rejected(Rejection rejection) implements Resolved {
@@ -177,7 +149,7 @@ final class OrderByResolver {
     /**
      * Resolves an {@code @order} directive on an enum value into a {@link OrderBySpec.Fixed}.
      *
-     * <p>The direction is not stored here — it comes from the runtime input object's direction
+     * <p>The direction is not stored here; it comes from the runtime input object's direction
      * field and is applied at code-generation time in the {@code *OrderBy} helper method.
      * Returns {@code null} and appends an error when catalog lookup fails.
      */
@@ -197,8 +169,6 @@ final class OrderByResolver {
             Object nameVal = nameArg != null ? nameArg.getValue() : null;
             String indexName = nameVal instanceof StringValue sv ? sv.getValue().strip()
                 : nameVal instanceof String s ? s.strip() : null;
-            // @order enum-value direction comes from the runtime input object, not the directive;
-            // ASC is the build-time fallback the *OrderBy helper flips at code-generation time.
             entries = resolveIndexColumns(tableSqlName, indexName, OrderBySpec.SortDirection.ASC);
         }
         if (entries == null) {
@@ -230,16 +200,10 @@ final class OrderByResolver {
     }
 
     /**
-     * Resolves the column entries from an {@code @order} or {@code @defaultOrder} directive.
-     *
-     * <p>All three source variants are resolved at build time:
-     * <ul>
-     *   <li>{@code index:} — columns come from the named index via the jOOQ catalog.</li>
-     *   <li>{@code primaryKey:} — columns come from the table's primary key.</li>
-     *   <li>{@code fields:} — each column name is looked up in the table via the jOOQ catalog.</li>
-     * </ul>
-     * Returns {@code null} when any lookup fails (index not found, PK absent, or a column name is
-     * unresolvable). The caller is responsible for generating a diagnostic message.
+     * Resolves the column entries from an {@code @order} or {@code @defaultOrder} directive
+     * ({@code index:}, {@code primaryKey:}, or {@code fields:}), all resolved at build time via
+     * the jOOQ catalog. Returns {@code null} when any lookup fails; the caller synthesises the
+     * diagnostic message.
      */
     private List<OrderBySpec.ColumnOrderEntry> resolveOrderEntries(
             GraphQLAppliedDirective dir, String tableSqlName, OrderBySpec.SortDirection defaultDirection) {

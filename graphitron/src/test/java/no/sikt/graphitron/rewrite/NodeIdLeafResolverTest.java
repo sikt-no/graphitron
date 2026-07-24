@@ -23,27 +23,19 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Resolver-tier coverage for {@link NodeIdLeafResolver}: asserts that the resolver picks
+ * Resolver-tier coverage for {@link NodeIdLeafResolver}: pins the variant choice itself,
+ * independent of carrier construction. The resolver picks
  * {@link NodeIdLeafResolver.Resolved.FkTarget.DirectFk DirectFk} when the FK's target columns
  * positionally match the NodeType's key columns, and
- * {@link NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk} when they differ
- * (the parent_node + child_ref reproducer where the FK targets {@code parent_node.alt_key}
- * but the NodeType keyColumn is {@code parent_node.pk_id}).
- *
- * <p>Resolver-tier unit test; the sibling resolvers ({@link OrderByResolver},
- * {@link LookupMappingResolver}, etc.) are exercised end-to-end through pipeline tests. The
- * coverage matters here because the variant choice
- * influences both call-site projections (the carrier shape on the argument and input-field
- * sides differs only in error vs. success arms, which is observable downstream); a
- * resolver-tier assertion locks the variant choice itself, independent of carrier
- * construction.
+ * {@link NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk TranslatedFk} when they differ.
+ * Sibling resolvers ({@link OrderByResolver}, {@link LookupMappingResolver}, etc.) are
+ * exercised end-to-end through pipeline tests.
  *
  * <p>Wiring: {@link GraphitronSchemaBuilder#buildContextForTests} runs the schema generator and
  * {@code TypeBuilder} but stops before field classification, returning the same fully-wired
- * {@link BuildContext} the orchestrator hands to {@link FieldBuilder}. This avoids consuming
- * the resolver via {@link FieldBuilder#classifyArgument} or
- * {@link BuildContext#classifyInputField}, so the resolver's variant choice is asserted
- * directly.
+ * {@link BuildContext} the orchestrator hands to {@link FieldBuilder}. The resolver is then
+ * asserted directly rather than through {@link FieldBuilder#classifyArgument} or
+ * {@link BuildContext#classifyInputField}.
  */
 @UnitTier
 class NodeIdLeafResolverTest {
@@ -59,7 +51,7 @@ class NodeIdLeafResolverTest {
      * Public (Sakila) catalog context. The self-FK fixture (the {@code email} / {@code mailbox}
      * pair, with the self-FK {@code email_in_reply_to_fk} sharing the {@code mailbox_id} child column
      * with the cross-table {@code email.mailbox_id -> mailbox} FK) lives in the public schema so the
-     * same shape is reachable from both the {@code graphitron}-module classifier tests here and the
+     * same shape is reachable from both these classifier tests and the
      * {@code graphitron-sakila-example} execution tier. See {@code init.sql}.
      */
     private static final RewriteContext PUBLIC_CTX = TestConfiguration.testContext();
@@ -197,10 +189,10 @@ class NodeIdLeafResolverTest {
         assertThat(direct.targetTable().tableName()).isEqualToIgnoringCase("level_a");
         assertThat(direct.keyColumns()).extracting(c -> c.sqlName()).containsExactly("k1", "k2");
         assertThat(direct.joinPath()).hasSize(2);
-        // Lifted tuple is on level_c (the parent's own table) — k1 and k2 positions of hop[0]'s
-        // source-side columns. SQL names line up positionally with LevelA's NodeType keys, so
-        // the predicate compiles to DSL.row(level_c.K1, level_c.K2).in(decodedKeys) — a single-
-        // table SELECT, identical in shape to single-hop direct-FK.
+        // The lifted tuple lives on level_c (the parent's own table): the k1 and k2 positions of
+        // hop[0]'s source-side columns. SQL names line up positionally with LevelA's NodeType
+        // keys, so the predicate compiles to DSL.row(level_c.K1, level_c.K2).in(decodedKeys), a
+        // single-table SELECT identical in shape to single-hop direct-FK.
         assertThat(direct.liftedSourceColumns())
             .extracting(c -> c.sqlName())
             .containsExactly("k1", "k2");
@@ -317,13 +309,13 @@ class NodeIdLeafResolverTest {
     @Test
     void selfFkReference_resolvesToDirectFk_landingOnSelfFkChildColumns() {
         // A same-table @nodeId(typeName: "Email") carrying an explicit @reference naming
-        // the self-FK email_in_reply_to_fk is NOT own-PK identity — it points at a *different* email
-        // row of the same table. The line-269 same-table short-circuit is gated on @reference being
-        // absent, so this falls through to resolveFkJoinPath, which orients the self-FK with
-        // selfRefFkOnSource=true. Result: DirectFk whose liftedSourceColumns are the self-FK's child
-        // columns (mailbox_id, in_reply_to_no) on email's own table — the decoded Email key
-        // (mailbox_id, message_no) maps onto them. No new sealed variant; same data shape as a
-        // cross-table FK.
+        // the self-FK email_in_reply_to_fk is NOT own-PK identity; it points at a different email
+        // row of the same table. The same-table short-circuit in NodeIdLeafResolver.resolve is
+        // gated on @reference being absent, so this falls through to resolveFkJoinPath, which
+        // orients the self-FK with selfRefFkOnSource=true. Result: DirectFk whose
+        // liftedSourceColumns are the self-FK's child columns (mailbox_id, in_reply_to_no) on
+        // email's own table; the decoded Email key (mailbox_id, message_no) maps onto them.
+        // No extra sealed variant; same data shape as a cross-table FK.
         String sdl = """
             type Email implements Node @table(name: "email") @node { id: ID! }
             type Query {
@@ -360,9 +352,9 @@ class NodeIdLeafResolverTest {
 
     @Test
     void sameTableNodeId_withoutReference_staysOwnPkIdentity() {
-        // The same email-backed leaf WITHOUT @reference is unchanged: a same-table
-        // @nodeId is own-PK identity (SameTable), not a self-FK. The @reference is the only thing that
-        // flips the meaning; absent it, line 269 still short-circuits to SameTable.
+        // The same email-backed leaf WITHOUT @reference: a same-table @nodeId is own-PK
+        // identity (SameTable), not a self-FK. The @reference is the only thing that flips the
+        // meaning; absent it, the same-table short-circuit still lands SameTable.
         String sdl = """
             type Email implements Node @table(name: "email") @node { id: ID! }
             type Query {
@@ -428,17 +420,15 @@ class NodeIdLeafResolverTest {
 
     @Test
     void reorderedFk_classifierAndRecordPaths_reconcileIdentically_offIdentityPermutation() {
-        // Reconciliation anti-drift, OFF the identity permutation. The email self-FK declares
-        // its child columns in node-key order, so the email anti-drift test above exercises both paths
-        // only on the identity permutation. Orientation is the self-FK-specific axis and is shared via
-        // resolveFkSlots; but RECONCILIATION (aligning FK child columns to node-key decode order) is
-        // orientation-agnostic and genuinely duplicated: the classifier path permutes via
-        // permutationToKeyColumns, the record path matches via a targetSide-name loop.
-        // The reordered_fk_child -> reordered_pk_parent FK
-        // references the parent PK in (pk_b, pk_c, pk_a) order while __NODE_KEY_COLUMNS is
-        // (pk_a, pk_b, pk_c), forcing a NON-identity permutation through both reconciliation
-        // implementations; they must still land identical child columns (fk_a, fk_b, fk_c). This pins
-        // the reconciliation surface the self-FK rides on, which the email fixture cannot reach.
+        // Reconciliation anti-drift, OFF the identity permutation. The email self-FK declares its
+        // child columns in node-key order, so the email anti-drift test above exercises both paths
+        // only on the identity permutation. Orientation is shared via resolveFkSlots, but
+        // reconciliation (aligning FK child columns to node-key decode order) is genuinely
+        // duplicated: the classifier path permutes via permutationToKeyColumns, the record path
+        // matches via a targetSide-name loop. The reordered_fk_child -> reordered_pk_parent FK
+        // references the parent PK in (pk_b, pk_c, pk_a) order while the node keys are
+        // (pk_a, pk_b, pk_c), forcing a NON-identity permutation through both implementations;
+        // they must still land identical child columns (fk_a, fk_b, fk_c).
         String sdl = """
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
             type ReorderedChild @table(name: "reordered_fk_child") {
@@ -461,9 +451,9 @@ class NodeIdLeafResolverTest {
         assertThat(direct.liftedSourceColumns()).extracting(c -> c.sqlName())
             .containsExactly("fk_a", "fk_b", "fk_c");
 
-        // Record-path reconciliation: the targetSide-name match loop, fed the resolver's own node keys, lands the
-        // identical child columns — proving the two duplicated reconciliations agree off the identity
-        // permutation, not just on it.
+        // Record-path reconciliation: the targetSide-name match loop, fed the resolver's own node
+        // keys, lands the identical child columns, proving the two duplicated reconciliations
+        // agree off the identity permutation, not just on it.
         var recordTargets = bctx.resolveRecordFkTargetColumns(
             childTable, "reordered_pk_parent", direct.keyColumns(), Optional.empty());
         assertThat(recordTargets).isInstanceOf(BuildContext.RecordFkTargets.Resolved.class);

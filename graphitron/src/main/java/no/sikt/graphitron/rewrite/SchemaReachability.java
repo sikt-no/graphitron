@@ -20,45 +20,34 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * The reachability observatory. Computes the set of named output types
- * (object / interface / union) reachable from the operation roots plus the federation seed scan,
- * by the same {@link SchemaTraverser} walk the field-first classification driver will be built on
- * in slice 3. This slice only <em>measures</em> reachability; it changes no classification
- * behaviour.
+ * Reachability over the schema's output structure. {@link #reachableTypeNames} computes the set of
+ * named output types (object / interface / union) reachable from the seeds; {@link #walk} drives a
+ * classification visitor over the same surface.
  *
  * <h3>Seeds</h3>
- * Query and Mutation roots, plus every object type carrying an applied {@code @node} or
- * {@code @key} directive. The directive scan is load-bearing: federation entity types
+ * Query, Mutation and Subscription roots, plus every object type carrying an applied {@code @node}
+ * or {@code @key} directive. The directive scan is load-bearing: federation entity types
  * ({@code _entities} / {@code _Entity} are injected post-build in
- * {@code GraphitronSchemaClassGenerator}) and a {@code @node} type that no field returns are
- * reachable through no field, so reachability cannot hinge on a {@code Query.node} /
- * {@code Query._entities} field being present. Both directive names are scanned because the
- * {@code @node} → {@code @key} synthesis ({@code KeyNodeSynthesiser}) runs only on the production
- * attributed-registry path, not on every classify; scanning both covers both paths.
- * Subscription is recognised-but-unsupported: it is seeded so the root type classifies (the
- * schema-class generator routes the subscription entry point), but its root fields classify to
- * {@code UnclassifiedField} and reach no supported targets.
+ * {@link no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator}) and a
+ * {@code @node} type that no field returns are reachable through no field, so reachability cannot
+ * hinge on a {@code Query.node} / {@code Query._entities} field being present. Both directive
+ * names are scanned because the {@code @node} to {@code @key} synthesis
+ * ({@link no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser}) runs only on the
+ * production attributed-registry path, not on every classify.
  *
  * <h3>Descent edges</h3>
- * The walk follows exactly the output-structure edges, supplied through the
- * {@link SchemaTraverser#SchemaTraverser(Function) custom child function} rather than graphql-java's
- * native {@code getChildren()}: a node descends into its fields' unwrapped output types, a union
- * into its members, and an interface additionally into its implementors
- * ({@link GraphQLSchema#getImplementations(GraphQLInterfaceType)}). The interface → implementor edge
- * is the asymmetry that makes this a custom child function: {@code GraphQLUnionType.getChildren()}
- * surfaces its members, but {@code GraphQLInterfaceType.getChildren()} does <em>not</em> surface its
- * implementors (only the reverse, implementor → interface, exists natively, and never fires here
- * because we do not descend object → interface). Supplying the forward edge per node makes interface
- * reachability a transitive fixpoint discovered at whatever depth the interface first appears.
+ * The walk follows only output-structure edges, supplied through the
+ * {@link SchemaTraverser#SchemaTraverser(Function) custom child function} because graphql-java's
+ * native {@code getChildren()} lacks the interface to implementor edge
+ * ({@link GraphQLSchema#getImplementations(GraphQLInterfaceType)} supplies it here). Arguments and
+ * input objects are deliberately not descended: classification binds arguments per field-usage,
+ * never as standalone traversal events, and no output type is reachable only through an argument
+ * position. Scalars and enums are leaves.
  *
- * <p>Arguments and input objects are deliberately not descended: classification binds arguments per
- * field-usage, never as standalone traversal events, and no output type is reachable only through an
- * argument position. Scalars and enums are leaves.
- *
- * <p>The returned set includes the operation root type names (Query / Mutation) themselves, since
- * the walk visits them. Callers checking the {@code reachable ⊆ classified} invariant exclude the
- * roots: the classifier classifies a root's <em>fields</em>, not the root <em>type</em>, so an
- * operation root is intentionally absent from {@link GraphitronSchema#types()}.
+ * <p>The returned set includes the operation root type names themselves. Callers checking the
+ * {@code reachable ⊆ classified} invariant exclude the roots: the classifier classifies a root's
+ * <em>fields</em>, not the root <em>type</em>, so an operation root is intentionally absent from
+ * {@link GraphitronSchema#types()}.
  */
 public final class SchemaReachability {
 
@@ -80,15 +69,11 @@ public final class SchemaReachability {
     }
 
     /**
-     * The single classify-and-emit walk. Runs {@code visitor} over the same
-     * reachable output surface {@link #reachableTypeNames} measures (same seeds, same descent
-     * edges), driving classification on enter rather than only collecting a name set. The
-     * {@link SchemaTraverser} fires the visitor's {@code visitGraphQL*Type} callbacks on enter
-     * exactly once per node identity (graphql-java's {@code Traverser} routes re-encounters to
-     * {@code backRef}), so a real visitor classifies each reached composite once, with no dedup of
-     * its own. The custom child function supplies the output-structure descent (field-output,
-     * union-member, interface-implementor, object/interface {@code implements}); see
-     * {@link #reachableTypeNames} for the edge rationale.
+     * Runs {@code visitor} over the same reachable output surface {@link #reachableTypeNames}
+     * measures (same seeds, same descent edges), classifying on enter. The {@link SchemaTraverser}
+     * fires the visitor's {@code visitGraphQL*Type} callbacks exactly once per node identity
+     * (graphql-java's {@code Traverser} routes re-encounters to {@code backRef}), so the visitor
+     * needs no dedup of its own.
      */
     public static void walk(GraphQLSchema schema, GraphQLTypeVisitor visitor) {
         var expanded = new HashSet<GraphQLSchemaElement>();
@@ -98,11 +83,10 @@ public final class SchemaReachability {
     }
 
     /**
-     * The output-structure descent edges, shared by {@link #reachableTypeNames} (which only measures)
-     * and {@link #walk} (which classifies on enter). graphql-java schema elements use identity
-     * equality, so {@code expanded} dedupes by node identity: once a node has been expanded its
-     * children are not re-pushed, which terminates the walk on recursive (cyclic) schema types
-     * regardless of the traverser's own visited tracking.
+     * The output-structure descent edges, shared by {@link #reachableTypeNames} and {@link #walk}.
+     * graphql-java schema elements use identity equality, so {@code expanded} dedupes by node
+     * identity: once a node has been expanded its children are not re-pushed, which terminates the
+     * walk on recursive (cyclic) schema types regardless of the traverser's own visited tracking.
      */
     private static List<GraphQLSchemaElement> childrenOf(
             GraphQLSchema schema, GraphQLSchemaElement element, Set<GraphQLSchemaElement> expanded) {
@@ -114,10 +98,9 @@ public final class SchemaReachability {
                 var kids = outputTargets(obj.getFieldDefinitions());
                 // An object's implemented interfaces are part of its emitted structure (the
                 // `implements I` clause references I), so a reachable object reaches its
-                // interfaces even when no field returns the interface — the federation case where
-                // a @node / @key implementor is seeded directly and the Node interface itself is
-                // returned by no field (it would otherwise be pruned and the implements clause
-                // would dangle).
+                // interfaces even when no field returns the interface: the federation case where
+                // a @node / @key implementor is seeded directly. Without this edge the interface
+                // would be pruned and the implements clause would dangle.
                 kids.addAll(obj.getInterfaces());
                 yield kids;
             }

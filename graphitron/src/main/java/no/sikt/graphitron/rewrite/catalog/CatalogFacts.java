@@ -15,7 +15,7 @@ import java.util.Optional;
  * artifacts, and swapped onto the live {@code Workspace} on every generator pass.
  *
  * <p><b>Load-bearing invariant:</b> every field on this record and its nested records holds only
- * <em>resolved immutable values</em> — {@link String}, {@code boolean}, {@link List}, {@link Map},
+ * <em>resolved immutable values</em>: {@link String}, {@code boolean}, {@link List}, {@link Map},
  * {@link Optional}. It must never retain a live jOOQ reflection handle ({@code Table<?>},
  * {@code ForeignKey<?,?>}, {@code org.jooq.Field}) or a {@code Class<?>}, because the
  * {@code codegenLoader} those reflect against is closed at the end of each {@code withCodegenScope}
@@ -26,10 +26,7 @@ import java.util.Optional;
  * <p>This is a sibling projection to the LSP's {@link CompletionData}, not a widening of it: the
  * two views share the one build-time catalog traversal but each carries exactly what its consumer
  * reads. {@code CompletionData.Column} keeps only the jOOQ Java field name (LSP completions suggest
- * the Java form); {@code CatalogFacts} is SQL-name-centric (discovery keys off the SQL name) and
- * carries the richer facts {@code catalog.describe} promises: SQL-and-Java column names, SQL data
- * types, primary / unique keys, indexes, and foreign keys in both directions with their column
- * pairs.
+ * the Java form); {@code CatalogFacts} is SQL-name-centric (discovery keys off the SQL name).
  *
  * <p>The map is keyed by the schema-qualified SQL table name ({@code "schema.table"}), which is the
  * stable table ID the discovery tools walk: FK endpoints ({@link OutgoingForeignKey#targetTable()} /

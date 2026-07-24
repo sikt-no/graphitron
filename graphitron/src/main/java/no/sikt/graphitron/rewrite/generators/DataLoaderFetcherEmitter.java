@@ -13,34 +13,22 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
 
 /**
  * Single entry point for emitting a DataFetcher's {@link MethodSpec} when the field is backed
- * by a DataLoader. Replaces the three handcrafted DataFetcher builders in
- * {@code TypeFetcherGenerator} ({@code buildServiceDataFetcher},
- * {@code buildSplitQueryDataFetcher}, {@code buildRecordBasedDataFetcher}) with one call to
- * {@link #build}. The five concrete fetcher shapes share the same outer dance:
+ * by a DataLoader. The concrete fetcher shapes share the same outer dance:
  *
  * <ol>
  *   <li>resolve the path-scoped DataLoader name via
  *       {@code env.getExecutionStepInfo().getPath()}</li>
  *   <li>register / look up the typed {@code DataLoader<K, V>} on the registry, picking the
- *       factory ({@code newDataLoader} vs {@code newMappedDataLoader}) by
- *       {@link LoaderRegistration#container()}</li>
- *   <li>extract the per-fetch key (or keys list) — caller-supplied as {@code keyExtraction}
- *       because the extraction shape depends on the parent record carrier (jOOQ table-row
- *       accessor vs backing-class accessor vs lifter call) and on per-field null-handling
- *       (single-cardinality split fields short-circuit on null FK; list-cardinality and
- *       record-parent fields don't)</li>
- *   <li>dispatch onto the loader per {@link LoaderRegistration#dispatch()}:
- *       {@link LoaderRegistration.Dispatch#LOAD_ONE} emits {@code return loader.load(key, env)}
- *       (the keyExtraction emitted a {@code key} local);
- *       {@link LoaderRegistration.Dispatch#LOAD_MANY} emits
- *       {@code return loader.loadMany(keys, ...)} (the keyExtraction emitted a {@code keys}
- *       local)</li>
- *   <li>chain the async tail — caller-supplied as {@code asyncWrapTail}, since the
- *       error-channel routing concerns vary by field shape</li>
+ *       factory by {@link LoaderRegistration#container()}</li>
+ *   <li>extract the per-fetch key (or keys list); caller-supplied as {@code keyExtraction}
+ *       because the extraction shape depends on the parent record carrier and on per-field
+ *       null-handling</li>
+ *   <li>dispatch onto the loader per {@link LoaderRegistration#dispatch()}</li>
+ *   <li>chain the async tail; caller-supplied as {@code asyncWrapTail}, since error-channel
+ *       routing varies by field shape</li>
  * </ol>
  *
- * <p>Three axes of variation collapse onto explicit parameters; the shared outer is emitted
- * once. {@link RowsMethodCall#batchLoaderLambda} is the matching factory for the BatchLoader
+ * <p>{@link RowsMethodCall#batchLoaderLambda} is the matching factory for the BatchLoader
  * lambda the caller would otherwise inline at this site.
  */
 public final class DataLoaderFetcherEmitter {
@@ -64,24 +52,19 @@ public final class DataLoaderFetcherEmitter {
      *                              is typically {@code Record} (single-cardinality / loadMany
      *                              contract) or {@code List<Record>} (list cardinality); for
      *                              service-side it follows the developer-declared return.
-     * @param outerReturnType       the fetcher's declared return type — already wrapped as
+     * @param outerReturnType       the fetcher's declared return type, already wrapped as
      *                              {@code CompletableFuture<DataFetcherResult<P>>} by the
      *                              caller (the per-class async-result helper).
-     * @param registration          the field's {@link LoaderRegistration}; chooses
-     *                              {@code newDataLoader} vs {@code newMappedDataLoader} via
-     *                              {@link LoaderRegistration#container()} and
-     *                              {@code load} vs {@code loadMany} via
-     *                              {@link LoaderRegistration#dispatch()}.
+     * @param registration          the field's {@link LoaderRegistration}; chooses the factory
+     *                              via {@link LoaderRegistration#container()} and the dispatch
+     *                              via {@link LoaderRegistration#dispatch()}.
      * @param batchLoaderLambda     the BatchLoader lambda CodeBlock, caller builds via
      *                              {@link RowsMethodCall#batchLoaderLambda}.
      * @param keyExtraction         pre-built CodeBlock declaring the {@code key} or {@code keys}
-     *                              local that the dispatch consumes. Per-field-shape variation
-     *                              (jOOQ table-row vs backing-class accessor vs lifter call)
-     *                              lives in the caller. The block may also short-circuit before
-     *                              reaching the dispatch line — single-cardinality split fields
-     *                              with a nullable FK emit
-     *                              {@code if (key_value == null) return ...; key = ...;} so the
-     *                              outer fetcher returns a completed null without touching the
+     *                              local that the dispatch consumes; per-field-shape variation
+     *                              lives in the caller. The block may short-circuit before the
+     *                              dispatch line: single-cardinality split fields with a
+     *                              nullable FK return a completed null without touching the
      *                              loader registry.
      * @param asyncWrapTail         pre-built CodeBlock chained after {@code loader.load(...)} /
      *                              {@code loader.loadMany(...)}; lifts the per-key value into a
@@ -111,7 +94,7 @@ public final class DataLoaderFetcherEmitter {
      * <em>before</em> touching the loader registry (an empty prelude is the non-outcome path).
      * {@code loaderNameDeclaration} is the loader-name statement, resolved per the field's tenant
      * binding by {@code TenantDslEmitter.loaderNameDeclaration}; the convenience overload
-     * defaults to the inline path join, byte-identical to the pre-tenant emission.
+     * defaults to the inline path join.
      */
     public static MethodSpec build(
             String fieldName,
@@ -131,16 +114,14 @@ public final class DataLoaderFetcherEmitter {
             ? "newMappedDataLoader"
             : "newDataLoader";
 
-        // The key extraction runs synchronously, before dispatch and before the async
-        // .exceptionally tail exists, so a throw out of it (e.g. a jOOQ into(...)/accessor failure)
-        // used to escape DataFetcher.get() unrouted — leaking a raw, record-dumping message past
-        // ErrorRouter's redaction. Wrap the extraction + dispatch + async tail in a
-        // try/catch(Throwable) whose arm routes through the SAME disposition the .exceptionally tail
-        // uses (threaded as syncCatchBody), lifted into a completed future. The
-        // preRegistrationPrelude (Outcome narrowing) stays outside the guard: its early return
-        // is deliberate control flow, not a failure path, and precedes loader registration by
-        // design. keyExtraction's own early returns (single-cardinality null-FK short-circuit) stay
-        // legal inside the try.
+        // The key extraction runs synchronously, before the async .exceptionally tail exists, so
+        // a throw out of it (e.g. a jOOQ into(...)/accessor failure) would escape
+        // DataFetcher.get() unrouted and leak a raw, record-dumping message past ErrorRouter's
+        // redaction. The try/catch(Throwable) routes such throws through the SAME disposition the
+        // .exceptionally tail uses (threaded as syncCatchBody), lifted into a completed future.
+        // The preRegistrationPrelude (Outcome narrowing) stays outside the guard: its early
+        // return is deliberate control flow, not a failure path. keyExtraction's own early
+        // returns (single-cardinality null-FK short-circuit) stay legal inside the try.
         var b = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(outerReturnType)

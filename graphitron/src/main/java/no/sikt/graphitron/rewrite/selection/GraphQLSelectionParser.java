@@ -20,24 +20,11 @@ import java.util.List;
  *
  * <h2>Extensions</h2>
  * <ul>
- *   <li><b>Naked selection sets</b> – the surrounding {@code { }} braces may be omitted when
+ *   <li><b>Naked selection sets</b>: the surrounding {@code { }} braces may be omitted when
  *       the input is a flat list of fields (e.g. {@code id alias: value field(arg: "x")}).</li>
- *   <li><b>Dots in field names</b> – a field name may contain {@code .} characters
+ *   <li><b>Dots in field names</b>: a field name may contain {@code .} characters
  *       (e.g. {@code some.dotted.field}).</li>
  * </ul>
- *
- * <h2>Usage</h2>
- * <pre>{@code
- * // Bracketed
- * List<ParsedField> fields = GraphQLSelectionParser.parse("{ id name address.city }");
- *
- * // Naked
- * List<ParsedField> fields = GraphQLSelectionParser.parse("id name address.city");
- *
- * // With alias and arguments
- * List<ParsedField> fields = GraphQLSelectionParser.parse(
- *     "id  fullName: name  search(query: \"foo\", limit: 10)");
- * }</pre>
  */
 public final class GraphQLSelectionParser {
 
@@ -63,17 +50,11 @@ public final class GraphQLSelectionParser {
     /**
      * Parses {@code input} as a comma-separated list of {@code key: dotted.path} entries.
      *
-     * <p>This is the shared entry point for {@code argMapping} dot-path expressions and
-     * {@code @experimental_constructType(selection: ...)}. Both grammars accept the same
-     * shape: one or more entries, each {@code NAME COLON NAME}, where the value-side name may
-     * contain dot-separated segments. Whitespace and commas between entries are insignificant
-     * (standard GraphQL convention; the lexer already handles this).
-     *
-     * <p>Empty / null / blank input yields an empty list. The parser raises
-     * {@link GraphQLSelectionParseException} on syntactic problems (missing colon, missing
-     * value name, empty path segment, unexpected token); duplicate-key detection is delegated
-     * to the consumer (since "duplicate Java parameter" reads differently from "duplicate
-     * GraphQL field" depending on the binder).
+     * <p>Shared entry point for {@code argMapping} dot-path expressions and
+     * {@code @experimental_constructType(selection: ...)}; both accept the same shape.
+     * Raises {@link GraphQLSelectionParseException} on syntactic problems. Duplicate-key
+     * detection is delegated to the consumer, since "duplicate Java parameter" reads
+     * differently from "duplicate GraphQL field" depending on the binder.
      */
     public static List<ParsedEntry> parseEntries(String input) {
         if (input == null || input.isBlank()) {
@@ -98,9 +79,8 @@ public final class GraphQLSelectionParser {
                     "expected a value name after ':' for entry '" + keyTok.value()
                     + "' but got " + valueTok);
             }
-            // Lexer's readName() accepts dots within names, so a dotted path arrives as one
-            // token. Split here so each segment is a clean identifier; reject the empty segment
-            // case (e.g. "a..b" or "a.") since neither the head nor any tail step may be empty.
+            // The lexer accepts dots within names, so a dotted path arrives as one token.
+            // Split into segments and reject empty ones (e.g. "a..b" or "a.").
             var parts = valueTok.value().split("\\.", -1);
             for (var part : parts) {
                 if (part.isEmpty()) {

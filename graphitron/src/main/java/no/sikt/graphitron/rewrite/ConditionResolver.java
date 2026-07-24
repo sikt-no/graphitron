@@ -14,41 +14,16 @@ import java.util.Set;
 
 /**
  * Resolves the {@code @condition} concern: builds {@link ConditionFilter} / {@link ArgConditionRef}
- * from {@code @condition} directives applied to either a GraphQL field or an individual argument,
- * and rewraps a {@link ConditionFilter} so its {@link ParamSource.Arg} params extract from a
- * nested position inside an outer input-argument {@code Map}. Sibling to {@link OrderByResolver},
+ * from {@code @condition} directives on a GraphQL field or an individual argument, and rewraps a
+ * {@link ConditionFilter} whose {@link ParamSource.Arg} params extract from a nested position
+ * inside an outer input-argument {@code Map}. Sibling to {@link OrderByResolver},
  * {@link LookupMappingResolver}, and {@link PaginationResolver}.
- *
- * <p>Three responsibilities cluster here, all centred on the {@code @condition} directive's
- * reflection contract:
- *
- * <ul>
- *   <li>{@link #resolveArg} — argument-level {@code @condition}: reflects the condition method
- *       via {@link ServiceCatalog#reflectTableMethod}, binding the argument to its same-named
- *       Java parameter by default and applying any {@code argMapping} overrides.</li>
- *   <li>{@link #resolveField} — field-level {@code @condition}: reflects the same way, but with
- *       all field arguments available as bindings rather than a single arg.</li>
- *   <li>{@link #rewrapForNested} — pure transformation that rebuilds a {@link ConditionFilter}
- *       whose {@link ParamSource.Arg} params need to be extracted from a nested position inside
- *       an outer input-argument {@code Map} (used by {@code walkInputFieldConditions} when
- *       gathering input-field-level {@code @condition} predicates).</li>
- * </ul>
- *
- * <p>Both resolvers return a sealed three-arm result ({@link ArgConditionResult} /
- * {@link FieldConditionResult}) carrying {@code None} (no directive present), {@code Ok}
- * (resolved successfully), or {@code Rejected} (reflection or argMapping failed).
  */
 final class ConditionResolver {
 
     /**
-     * Outcome of {@link #resolveArg}. Three terminal arms.
-     *
-     * <ul>
-     *   <li>{@link None} — the argument carries no {@code @condition} directive.</li>
-     *   <li>{@link Ok} — successful resolution; carries the resolved {@link ArgConditionRef}.</li>
-     *   <li>{@link Rejected} — argMapping error or reflection failure; carries a single
-     *       fully-prefixed message ready for the caller's accumulating errors list.</li>
-     * </ul>
+     * Outcome of {@link #resolveArg}. {@link Rejected} carries a single fully-prefixed message
+     * ready for the caller's accumulating errors list.
      */
     sealed interface ArgConditionResult {
         record None() implements ArgConditionResult {}
@@ -59,9 +34,9 @@ final class ConditionResolver {
     }
 
     /**
-     * Outcome of {@link #resolveField}. Three terminal arms; same shape as
-     * {@link ArgConditionResult} but the {@code Ok} arm carries a {@link ConditionFilter}
-     * directly (no override flag — only argument-level conditions carry that).
+     * Outcome of {@link #resolveField}. Same shape as {@link ArgConditionResult}, but the
+     * {@code Ok} arm carries a {@link ConditionFilter} directly; only argument-level
+     * conditions carry an override flag.
      */
     sealed interface FieldConditionResult {
         record None() implements FieldConditionResult {}
@@ -82,11 +57,9 @@ final class ConditionResolver {
     /**
      * Builds an {@link ArgConditionRef} from a {@code @condition} directive on one GraphQL
      * argument. Reflects the condition method via {@link ServiceCatalog#reflectTableMethod},
-     * binding the argument to its same-named Java parameter by default and applying any
-     * {@code argMapping} overrides on the {@code @condition} directive's
-     * {@code ExternalCodeReference}. Declared {@code contextArguments} go in
-     * {@code ctxKeys}. {@code @field(name:)} on the argument is the column-binding axis for the
-     * auto-equality path; the two axes coexist on the same slot.
+     * binding the argument to its same-named Java parameter by default; {@code argMapping}
+     * overrides that binding. {@code @field(name:)} on the argument is the column-binding axis
+     * for the auto-equality path; the two axes coexist on the same slot.
      */
     ArgConditionResult resolveArg(GraphQLArgument arg) {
         var cond = ctx.readConditionDirective(arg);
@@ -118,12 +91,8 @@ final class ConditionResolver {
 
     /**
      * Builds a field-level {@link ConditionFilter} from a {@code @condition} directive on the
-     * field definition. Reflects via {@link ServiceCatalog#reflectTableMethod}, binding every
-     * field argument to its same-named Java parameter by default and applying any
-     * {@code argMapping} overrides on the {@code @condition} directive's
-     * {@code ExternalCodeReference}. Declared {@code contextArguments} go in
-     * {@code ctxKeys}. {@code @field(name:)} on filter arguments is the column-binding axis;
-     * the two axes coexist on the same slot.
+     * field definition. Same reflection contract as {@link #resolveArg}, but every field
+     * argument is available as a binding.
      */
     FieldConditionResult resolveField(GraphQLFieldDefinition fieldDef) {
         var cond = ctx.readConditionDirective(fieldDef);
@@ -151,12 +120,11 @@ final class ConditionResolver {
     }
 
     /**
-     * Rebuilds a {@link ConditionFilter} whose {@link ParamSource.Arg} params need to be
-     * extracted from a nested position inside the enclosing input argument {@code Map} rather
-     * than from a top-level argument. Each {@code Arg} param's {@link CallSiteExtraction} is
-     * replaced with a {@link CallSiteExtraction.NestedInputField} carrying the path down from
-     * {@code outerArgName} to the leaf value. {@link ParamSource.Context} params and implicit
-     * {@link ParamSource.Table} params are left untouched.
+     * Rebuilds a {@link ConditionFilter} so its {@link ParamSource.Arg} params extract from a
+     * nested position inside the enclosing input-argument {@code Map}: each {@code Arg} param's
+     * {@link CallSiteExtraction} becomes a {@link CallSiteExtraction.NestedInputField} carrying
+     * the path down from {@code outerArgName} to the leaf value. Other param sources pass
+     * through unchanged.
      */
     ConditionFilter rewrapForNested(ConditionFilter src, String outerArgName, List<String> leafPath) {
         var rewritten = new ArrayList<MethodRef.Param>();
@@ -174,21 +142,15 @@ final class ConditionResolver {
     }
 
     /**
-     * Builds the full Map-traversal path for a rewrapped condition argument: {@code leafPath} (the
-     * walk's path from the outer argument down to the input field that carries the
-     * {@code @condition}) followed by the parameter's own descent into that input field's value —
+     * Builds the full Map-traversal path for a rewrapped condition argument: {@code leafPath}
+     * (the walk's path from the outer argument down to the input field carrying the
+     * {@code @condition}) followed by the parameter's own descent into that field's value, i.e.
      * the segments of {@code argPath} after its head. The head segment names the input field
-     * itself, which is already the last element of {@code leafPath}, so it is dropped to avoid
-     * duplication.
-     *
-     * <p>For a single-name binding ({@code argPath} is a bare {@link PathExpr.Head}) the tail is
-     * empty and the result is {@code leafPath} unchanged — the byte-identical behaviour every
-     * input-field {@code @condition} historically relied on, where the bound parameter reads the input
-     * field's own scalar value. A multi-segment {@code argPath} (an explicit
-     * {@code argMapping: "p: field.sub"} or the depth-1 binding inferred when {@code p} matches
-     * a nested field by name) appends the descent so the emitted
-     * {@link CallSiteExtraction.NestedInputField} reads {@code outerArg.…field.sub} rather than
-     * stopping at the wrapper input object and casting the whole {@code Map} to the leaf type.
+     * itself, which is already the last element of {@code leafPath}, so it is dropped. A
+     * multi-segment {@code argPath} (an explicit {@code argMapping: "p: field.sub"} or a depth-1
+     * binding inferred by name) appends the descent so the emitted
+     * {@link CallSiteExtraction.NestedInputField} reads the nested value rather than casting the
+     * whole wrapper {@code Map} to the leaf type.
      */
     private static List<String> nestedPath(List<String> leafPath, PathExpr argPath) {
         var segments = argPath.segments();

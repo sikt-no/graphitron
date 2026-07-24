@@ -27,25 +27,22 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
- * Generates one {@code <RootType>Conditions.java} per root operation type with at least
- * one {@link QueryField.QueryTableField} — today that means {@code QueryConditions.java}
- * alongside the eventual {@code MutationConditions.java}.
+ * Generates one {@code <RootType>Conditions.java} (e.g. {@code QueryConditions.java}) per root
+ * operation type with at least one {@link QueryField.QueryTableField}.
  *
  * <p>The class holds one {@code <fieldName>Condition(Table, DataFetchingEnvironment)} static
- * method per {@link QueryField.QueryTableField} on that root type. Each method seeds a
- * {@code DSL.noCondition()}, extracts filter args from {@link graphql.schema.DataFetchingEnvironment},
- * composes every entity-scoped condition-method call (e.g. {@code FilmConditions.filmsCondition})
- * into the seed, and returns the composed {@code Condition}.
+ * method per such field. Each method extracts filter args from the env, composes every
+ * entity-scoped condition-method call (e.g. {@code FilmConditions.filmsCondition}), and returns
+ * the composed {@code Condition}.
  *
- * <p><b>Layering.</b> {@code TypeConditionsGenerator} emits entity-scoped pure-function
- * classes ({@code FilmConditions}, {@code LanguageConditions}) that take typed argument
- * values and return {@code Condition}s — with no dependency on {@code graphql-java}.
- * {@code QueryConditionsGenerator} emits the env-aware shim layer on top: its generated
- * methods do the {@code env.getArgument(...)} extraction, enum coercion, and composition.
- * Fetcher bodies collapse to {@code QueryConditions.<name>Condition(<tableLocal>, env)}.
+ * <p><b>Layering.</b> {@link TypeConditionsGenerator} emits entity-scoped pure-function classes
+ * ({@code FilmConditions}) that take typed argument values and return {@code Condition}s, with
+ * no {@code graphql-java} dependency. This generator emits the env-aware shim on top:
+ * {@code env.getArgument(...)} extraction, enum coercion, and composition. Fetcher bodies
+ * collapse to {@code QueryConditions.<name>Condition(<tableLocal>, env)}.
  *
- * <p>Emitted {@code <fieldName>Condition} helpers take the aliased {@code Table} as a
- * parameter — see "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.
+ * <p>Emitted helpers take the aliased {@code Table} as a parameter; see "Helper-locality" in
+ * {@code docs/architecture/reference/emitter-conventions.adoc}.
  */
 public class QueryConditionsGenerator {
 
@@ -100,18 +97,14 @@ public class QueryConditionsGenerator {
      * The filter-minus-self fragments for a faceted {@code @asConnection} carrier.
      * The generated {@code <field>Condition} folds every filter predicate into one, so the fetcher
      * cannot ask it to skip a facet; these additive siblings reconstruct the split:
-     *
-     * <ul>
-     *   <li>{@code <field>FacetBaseCondition(table, env)} — every filter <em>except</em> the facet
-     *       fields' own predicates;</li>
-     *   <li>{@code <field>Facet_<g>Condition(table, env)} — facet {@code g}'s own predicate
-     *       alone.</li>
-     * </ul>
+     * {@code <field>FacetBaseCondition} (every filter <em>except</em> the facet fields' own
+     * predicates) and one {@code <field>Facet_<g>Condition} per facet ({@code g}'s own predicate
+     * alone).
      *
      * <p>Suppression is by argument omission: the fragment calls the same entity-scoped
      * {@code <ReturnType>Conditions} method with a {@code null} literal in a suppressed
-     * parameter's slot, which is exactly the absent-input to no-conjunct gate that method already
-     * applies (facet bindings are guaranteed nullable — {@code rejectFacetMisuse} rejects non-null
+     * parameter's slot, the absent-input to no-conjunct gate that method already applies
+     * (facet bindings are guaranteed nullable; {@code rejectFacetMisuse} rejects non-null
      * facet fields). The value binding stays inside the typed conditions boundary; nothing here
      * rebuilds a predicate from raw {@code env} values.
      *
@@ -219,9 +212,9 @@ public class QueryConditionsGenerator {
                 List.of()))
             .toList());
         // Declare the lifted locals the retained extraction expressions reference (mirrors
-        // buildConditionMethod). Omitting this loop makes the emitted fragment reference an
-        // undeclared `<outer>Map` local whenever two or more retained params share an outer arg,
-        // failing the consumer's javac.
+        // buildConditionMethod); omitting this leaves the fragment referencing an undeclared
+        // `<outer>Map` local whenever two or more retained params share an outer arg, failing
+        // the consumer's javac.
         for (var entry : liftedOuters.entrySet()) {
             builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
                 Map.class, entry.getValue(), entry.getKey(), Map.class);
@@ -321,11 +314,10 @@ public class QueryConditionsGenerator {
             .addParameter(jooqTableClass, "table")
             .addParameter(ENV, "env");
 
-        // Stamp @SuppressWarnings("unchecked") at this method, the narrowest enclosing member, when
-        // any call param's extraction emits an unchecked cast (CallParam.emitsUncheckedCast owns that
-        // fact: today a list-typed nested-input filter extracting as `(List<X>) map.get(key)`). The
-        // multitable MultiTablePolymorphicEmitter folds over the same model predicate, so the two
-        // hosts cannot drift.
+        // Stamp @SuppressWarnings("unchecked") at the narrowest enclosing member when any call
+        // param's extraction emits an unchecked cast. CallParam.emitsUncheckedCast owns that fact,
+        // and MultiTablePolymorphicEmitter folds over the same predicate, so the two hosts cannot
+        // drift.
         boolean needsUncheckedSuppression = filters.stream()
             .flatMap(f -> f.callParams().stream())
             .anyMatch(CallParam::emitsUncheckedCast);
@@ -335,8 +327,8 @@ public class QueryConditionsGenerator {
                 .build());
         }
 
-        // Pre-lift any JooqConvert+list arg into a local before the (possibly reduced) body —
-        // the extraction expression references it as `<name>Keys` when building call args.
+        // Pre-lift any JooqConvert+list arg into a local; the extraction expression references
+        // it as `<name>Keys` when building call args.
         for (var filter : filters) {
             for (var param : filter.callParams()) {
                 if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
@@ -346,34 +338,26 @@ public class QueryConditionsGenerator {
             }
         }
 
-        // Lift any NestedInputField outer arg referenced ≥2 times across all filters into a single
-        // typed Map<?, ?> local; per-arg expressions then start from that local instead of
-        // re-binding `map1` per call. Lift naming is `<camelCaseOuterArg>Map` to avoid colliding
-        // with method parameters (`table`, `env`) or with JooqConvert lifts (`<name>Keys`).
+        // Lift any NestedInputField outer arg referenced by two or more params into a single
+        // Map<?, ?> local, so per-arg expressions start from it instead of re-binding per call;
+        // naming rationale on computeLiftedOuters.
         var liftedOuters = computeLiftedOuters(filters);
         for (var entry : liftedOuters.entrySet()) {
             builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
                 Map.class, entry.getValue(), entry.getKey(), Map.class);
         }
 
-        // Reduce the noCondition()-and chain when there's nothing to compose. Zero filters land
-        // as `return DSL.noCondition()`; one filter folds to a direct return; two or more keep
-        // the seeded chain.
-        // ContextArg ParamSources can reach this callsite via @condition(contextArguments: [...])
-        // — the classifier lifts those to ParamSource.Context, and MethodRef.callParams() converts
-        // them to CallSiteExtraction.ContextArg in the filter's call params. ArgCallEmitter then
-        // emits graphitronContext(env).getContextArgument(env, name) into the QueryConditions
-        // class, which today has no graphitronContext helper — generated source fails to compile
-        // for users of the feature. Closing this gap requires giving QueryConditionsGenerator its
-        // own EmissionContext and emitting the helper when requested. Until then, the throwaway
-        // ctx here records into a context nothing drains.
+        // Known gap: ContextArg ParamSources can reach this callsite via
+        // @condition(contextArguments: [...]). ArgCallEmitter then emits
+        // graphitronContext(env).getContextArgument(env, name) into the QueryConditions class,
+        // which has no graphitronContext helper, so generated source fails to compile for users
+        // of the feature. The throwaway ctx here records into a context nothing drains.
         var ctx = new TypeFetcherEmissionContext();
 
         // Pre-declare one aliased jOOQ table local per FK-target join hop, shared with the
-        // inline fetcher emitters via FkTargetConditionEmitter. The correlated EXISTS each
-        // FkTargetConditionFilter emits references its target alias by name, but filter terms
-        // compose as expressions and cannot introduce locals themselves, so they are declared up
-        // front like the JooqConvert/liftedOuters lifts above. This is a top-level, non-recursive
+        // inline fetcher emitters via FkTargetConditionEmitter. Each correlated EXISTS references
+        // its target alias by name, but filter terms compose as expressions and cannot introduce
+        // locals, so they are declared up front like the lifts above. Top-level, non-recursive
         // method, so static SQL aliases suffice.
         var declarations = CodeBlock.builder();
         var fkTargetAliases = FkTargetConditionEmitter.declareAliases(declarations, filters, "table", false);

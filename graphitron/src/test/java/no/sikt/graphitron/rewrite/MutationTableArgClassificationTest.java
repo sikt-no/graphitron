@@ -131,8 +131,8 @@ class MutationTableArgClassificationTest {
 
     @Test
     void mutationTableArg_onInsert_classifiesViaRung2() {
-        // INSERT joined TABLE_ARG_SUPPORTED_VERBS: @mutation(table:) is the rung-2 write target for the
-        // encoded-ID / scalar-return shape whose return names no table. No @table on the input.
+        // INSERT is in TABLE_ARG_SUPPORTED_VERBS: @mutation(table:) is the rung-2 write target for
+        // the encoded-ID / scalar-return shape whose return names no table. No @table on the input.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node { id: ID! @nodeId name: String }
             input BarInput { name: String }
@@ -147,8 +147,8 @@ class MutationTableArgClassificationTest {
 
     @Test
     void mutationTableArg_onUpdate_classifiesViaRung2() {
-        // UPDATE joined TABLE_ARG_SUPPORTED_VERBS: @mutation(table:) is the rung-2 write target for the
-        // encoded-ID / scalar-return shape whose return names no table. No @table on the input.
+        // UPDATE is in TABLE_ARG_SUPPORTED_VERBS: @mutation(table:) is the rung-2 write target for
+        // the encoded-ID / scalar-return shape whose return names no table. No @table on the input.
         var schema = TestSchemaHelper.buildSchema("""
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") title: String }
             input FilmInput { filmId: Int! @field(name: "film_id") title: String }
@@ -163,8 +163,8 @@ class MutationTableArgClassificationTest {
 
     @Test
     void mutationTableArg_onUpsert_rejectsUnsupportedVerb() {
-        // The unsupported-verb guard narrowed to {UPSERT}: @mutation(table:) on the one remaining
-        // unwired verb still rejects loudly rather than being silently ignored.
+        // UPSERT is the one verb outside TABLE_ARG_SUPPORTED_VERBS: @mutation(table:) on it
+        // rejects loudly rather than being silently ignored.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput { filmId: Int! @field(name: "film_id") title: String }
@@ -217,14 +217,13 @@ class MutationTableArgClassificationTest {
 
     // ===== Payload-returning DELETE (the DmlEmitted @mutation(table:) grounding) =====
     //
-    // The core of the item: a payload-returning DELETE that names its write target on
-    // @mutation(table:) (with the deprecated @table removed from the input) must survive
-    // classification, not reject for want of a producer binding. Before the fix the binding grounder read the write
-    // target only off the input's @table, so a field-derived DELETE grounded no DmlEmitted, the payload
-    // never registered as a producer-backed carrier, the return classified down the ScalarReturnType
-    // arm, and the generic "return type not yet supported" rejection fired. Equivalence is asserted on
-    // the classified-model verdict (the field variant, the resolved carriers), never a string diff of
-    // generated bodies.
+    // A payload-returning DELETE that names its write target on @mutation(table:) (no @table on
+    // the input) must survive classification, not reject for want of a producer binding: the
+    // binding grounder must ground a DmlEmitted from the field-relative write target, or the
+    // payload never registers as a producer-backed carrier and the return falls down the
+    // ScalarReturnType arm to the generic "return type not yet supported" rejection. Equivalence
+    // is asserted on the classified-model verdict (the field variant, the resolved carriers),
+    // never a string diff of generated bodies.
 
     @Test
     void payloadDelete_single_mutationTableArg_classifiesLikeTableOnInput() {
@@ -304,8 +303,8 @@ class MutationTableArgClassificationTest {
         // Both rungs present and disagreeing: input @table names shared_node, @mutation(table:) names
         // baz (both single "id" PK). The payload's PK-echo pins @nodeId(typeName: "Baz"), so the field
         // classifies only if the write target is baz (the field rung). Were the input @table to win,
-        // the carrier's Baz-pinned encoder would mismatch shared_node and reject. This is the drift the
-        // shared precedence helper forecloses: the grounder can no longer bind a DmlEmitted on the
+        // the carrier's Baz-pinned encoder would mismatch shared_node and reject. The shared
+        // precedence helper forecloses the drift where the grounder binds a DmlEmitted on the
         // input's table while the classifier resolves the field's.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) { id: ID! @nodeId }
@@ -326,7 +325,7 @@ class MutationTableArgClassificationTest {
 
     @Test
     void payloadDelete_unknownMutationTable_rejectsLoudlyOnPayloadArm() {
-        // Position 4's dispatch pin: a payload-returning DELETE whose @mutation(table:) names an
+        // Dispatch pin: a payload-returning DELETE whose @mutation(table:) names an
         // unknown table must still land in classifyDeletePayloadField (which calls
         // resolveDeleteWriteTarget), so the loud unknown-table rejection fires rather than a silent
         // misground. The grounder's silent skip must not swallow the diagnostic.
@@ -454,7 +453,7 @@ class MutationTableArgClassificationTest {
     @Test
     void insertPayload_returnTableVsInputTableMismatch_rejectsWithTableMatchWording() {
         // Rung 1 vs rung 3: the payload data field's @table (film) disagrees with the input's @table
-        // (actor). The pre-existing requireDmlDataTableMatchesInputTable wording is kept byte-identical.
+        // (actor). The wording comes from requireDmlDataTableMatchesInputTable.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { film: Film }
@@ -736,8 +735,8 @@ class MutationTableArgClassificationTest {
     @Test
     void updateReturnTableVsInputTableMismatch_rejectsWithTableMatchWording() {
         // Rung 1 vs rung 3: the payload data field's @table (film) disagrees with the input's @table
-        // (actor). The pre-existing requireDmlDataTableMatchesInputTable wording is verb-parameterised
-        // and identical to INSERT's.
+        // (actor). The requireDmlDataTableMatchesInputTable wording is verb-parameterised and
+        // identical to INSERT's.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             type FilmPayload { film: Film }

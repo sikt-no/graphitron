@@ -24,11 +24,11 @@ import java.util.Optional;
  * catalog layouts produce schema-segmented FQNs without per-emit-site derivation:
  *
  * <ul>
- *   <li>{@code tableClass} — the generated jOOQ table class
+ *   <li>{@code tableClass}: the generated jOOQ table class
  *       (e.g. {@code multischema_a.tables.Widget})</li>
- *   <li>{@code recordClass} — the generated jOOQ record class
+ *   <li>{@code recordClass}: the generated jOOQ record class
  *       (e.g. {@code multischema_a.tables.records.WidgetRecord})</li>
- *   <li>{@code constantsClass} — the schema's {@code Tables} constants class
+ *   <li>{@code constantsClass}: the schema's {@code Tables} constants class
  *       (e.g. {@code multischema_a.Tables})</li>
  * </ul>
  *
@@ -37,18 +37,17 @@ import java.util.Optional;
  * {@code table.getPrimaryKey().getFields()} at parse time.
  *
  * <p>{@code allColumns} is the ordered list of every column on the table (each a fully resolved
- * {@link ColumnRef}), populated from the jOOQ table's fields at parse time in the same catalog
- * traversal that fixes {@code primaryKeyColumns}. It exists so emit-time consumers can enumerate
- * the whole row without reaching back for the catalog (which is closed by then): the
- * {@code SourceKey.Wrap.TableRecord} key reconstruction ({@code GeneratorUtils.buildKeyExtraction})
- * and the reserved-alias full-parent-row projection ({@code TypeClassGenerator}) both drive their
- * per-column emit off this one list, so the projected reserved-alias names and the names the key
- * read looks them up by are single-homed and cannot drift. Empty only when constructed outside the
- * catalog flow (test fixtures that do not exercise those paths).
+ * {@link ColumnRef}), populated in the same catalog traversal that fixes
+ * {@code primaryKeyColumns}. It exists so emit-time consumers can enumerate the whole row without
+ * reaching back for the catalog (which is closed by then): the {@code SourceKey.Wrap.TableRecord}
+ * key reconstruction ({@code GeneratorUtils.buildKeyExtraction}) and the reserved-alias
+ * full-parent-row projection ({@code TypeClassGenerator}) both drive their per-column emit off
+ * this one list, so the projected reserved-alias names and the names the key read looks them up
+ * by are single-homed and cannot drift. Empty only when constructed outside the catalog flow
+ * (test fixtures that do not exercise those paths).
  *
- * <p>When the owning GraphQL type also carries {@code @node}, the type is classified as
- * {@link GraphitronType.NodeType} instead of {@link GraphitronType.TableType}, with the
- * {@code @node} directive properties ({@code typeId} and key columns) stored directly on it.
+ * <p>A type carrying both {@code @table} and {@code @node} is classified as
+ * {@link GraphitronType.NodeType} rather than {@link GraphitronType.TableType}.
  */
 public record TableRef(
     String tableName,
@@ -70,7 +69,7 @@ public record TableRef(
      * either convention; trying Java name first handles custom jOOQ naming strategies where
      * {@code javaName} is not a simple {@code toUpperCase(sqlName)}.
      *
- * <p>This is the model-side matcher home: a consumer that already holds an
+     * <p>This is the model-side matcher home: a consumer that already holds an
      * identity-resolved ref resolves columns here instead of collapsing to a bare SQL name and
      * re-resolving through the catalog, which is ambiguous when the table name collides across
      * schemas. Returns empty on an unknown column, and always on refs constructed outside the
@@ -83,10 +82,9 @@ public record TableRef(
 
     /**
      * True when {@code other} names this table, compared case-insensitively. {@code tableName()}
-     * stays the verbatim {@code @table(name:)} echo for diagnostics; this is the canonical identity
-     * comparison, so consumers never re-establish the case-folding contract the jOOQ catalog already
-     * guarantees (and never drift to a case-sensitive {@code .equals}, the case-sensitivity bug). Null-safe:
-     * a null {@code other} is not this table.
+     * stays the verbatim {@code @table(name:)} echo for diagnostics; this is the canonical
+     * name comparison, so consumers never re-establish the case-folding contract the jOOQ
+     * catalog already guarantees. Null-safe: a null {@code other} is not this table.
      */
     public boolean sameTable(String other) {
         return other != null && tableName.equalsIgnoreCase(other);
@@ -94,7 +92,7 @@ public record TableRef(
 
     /**
      * True when {@code other} denotes the same table as this ref. Compares the reified jOOQ
-     * table-class identity ({@code tableClass}) when both sides carry one — this is what
+     * table-class identity ({@code tableClass}) when both sides carry one; that is what
      * distinguishes same-named tables across schemas and matches a schema-qualified {@code @table}
      * echo against jOOQ's unqualified canonical name. Falls back to the case-insensitive name
      * compare ({@link #sameTable(String)}) only when either side lacks a {@code tableClass}, which
@@ -103,12 +101,11 @@ public record TableRef(
      * {@code other} is not this table.
      *
      * <p>This is the model-side identity home for the same-table question. It agrees by
- * construction with {@code JooqCatalog}'s parse-boundary primitives, which compare raw
-     * jOOQ {@code Table<?>} classes ({@code endpoint.getClass() == resolvedSource.getClass()})
-     * while the raw objects are still in scope: both derive from the same generated jOOQ class at
-     * parse time. A consumer should pick by where it stands — at the parse boundary with raw jOOQ
-     * objects, use the catalog primitive; past the boundary with model refs, use this predicate —
-     * rather than growing a third mechanism.
+     * construction with {@code JooqCatalog}'s parse-boundary primitives, which compare raw
+     * jOOQ {@code Table<?>} classes while the raw objects are still in scope: both derive from
+     * the same generated jOOQ class at parse time. A consumer at the parse boundary with raw
+     * jOOQ objects uses the catalog primitive; past the boundary with model refs, this
+     * predicate. Do not grow a third mechanism.
      */
     public boolean denotesSameTableAs(TableRef other) {
         if (other == null) {

@@ -16,37 +16,23 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * The warm-managed, self-observing semantic index behind {@code catalog.search}. Owns the
- * content-hash-keyed Lucene index over the {@link CatalogFacts} descriptors, persisted under
+ * The warm-managed semantic index behind {@code catalog.search}. Owns the content-hash-keyed
+ * Lucene index over the {@link CatalogFacts} descriptors, persisted under
  * {@link RagConfig#cacheDir()} so a large catalog is not re-embedded on every {@code dev} restart.
  *
- * <p><strong>Refresh: lazy self-observe, no new dev trigger.</strong> The index is a pure derived
- * function of the live {@link CatalogFacts}, so it mirrors the {@code ReverseEdgeIndex.Cache}: no
- * {@code BuildArtifacts} component, no {@code Workspace} field, no {@code DevMojo} listener. Each
- * {@link #search} reads the {@code Supplier<CatalogFacts>} (the live {@code volatile}
- * {@code Workspace.catalogFacts()}) through two gates:
- * <ol>
- *   <li><strong>Reference identity.</strong> Same reference the live index was built from -> serve
- *   immediately. A no-op recompile that swaps the reference but not the content falls through to
- *   gate 2; everything else short-circuits here.</li>
- *   <li><strong>Content hash.</strong> On a changed reference, compose the descriptor corpus (cheap
- *   string work) and hash it ({@link CatalogDescriptors#corpusHash(List)}). A hash equal to the live
- *   index's hash means the content is unchanged: rebind the held reference and serve the existing
- *   index. Only a changed hash kicks a re-embed.</li>
- * </ol>
+ * <p>Refresh is lazy self-observation: the index is a pure derived function of the live
+ * {@link CatalogFacts}, and every {@link #search} re-reads the supplier through two gates
+ * (reference identity, then corpus content hash; see {@link #observe()}), so only a genuine
+ * content change kicks a re-embed. The re-embed runs on an {@link AsyncWarm} background daemon,
+ * off the classpath-watcher thread; while it runs the warm is {@link WarmState.Warming} and
+ * searches report the warming degradation. The prior store stays open until {@link #close()} so a
+ * swap never leaves a gap.
  *
- * <p>The re-embed runs on an {@link AsyncWarm} background daemon, off the classpath-watcher thread,
- * so the live catalog swap is never stalled by re-embedding. A content change re-enters
- * {@link WarmState.Warming} (the existing sealed shape; no new "refreshing" state), so the first
- * search during a rebuild reports the warming degradation message; on completion the new index
- * becomes live. The prior store is kept open until {@link #close()} so a swap never leaves a gap.
- *
- * <p><strong>Validity = corpus hash + embedder identity.</strong> The persisted index is valid only
- * for the embedder that built it. bge-small-en and the deferred {@code multilingual-e5-small} swap
- * are both 384-dim, so dimension alone cannot tell them apart: loading one model's index
- * under another is a silent correctness trap. An embedder-identity manifest
- * ({@code getClass().getName()} + {@code dimension()}) is written beside each index; the loader
- * rejects (rebuilds) any index whose recorded identity differs from the live embedder.
+ * <p>A persisted index is valid only for its corpus hash and the embedder that built it. Distinct
+ * embedding models can share a dimension, so dimension alone cannot tell their indexes apart, and
+ * loading one model's index under another is a silent correctness trap. An embedder-identity
+ * manifest ({@code getClass().getName()} + {@code dimension()}) is written beside each index; the
+ * loader rejects (rebuilds) any index whose recorded identity differs from the live embedder.
  */
 public final class CatalogSearchIndex implements AutoCloseable {
 

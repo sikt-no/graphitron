@@ -27,8 +27,7 @@ import java.util.Set;
  * @param schemaFileExtensions file-name suffixes (with leading dot) that count as GraphQL
  *                       schema files. Drives the {@code <schemaInputs>} post-scan filter,
  *                       the {@code graphitron:dev} watcher's trigger filter, and the
- *                       {@code SchemaProblemDiagnostic} orphan scan. Always at least one
- *                       entry; the Mojo seam rejects empty configuration.
+ *                       {@code SchemaProblemDiagnostic} orphan scan. Never empty.
  * @param codegenLoader  classloader the reflection path uses to resolve consumer-declared
  *                       service / record / condition / jOOQ-catalog classes. The Mojo builds a
  *                       {@link java.net.URLClassLoader} over the project's compile classpath
@@ -89,26 +88,19 @@ public record RewriteContext(
         schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         namedReferences = Map.copyOf(namedReferences);
         classpathRoots = List.copyOf(classpathRoots);
-        // Source roots are null-tolerant: callers that build a catalog without a Maven
-        // project (unit tier, validate-only) omit them and goto-definition / hover fall
-        // back to file-level / UNKNOWN locations.
+        // The last four components are null-tolerant: only the build mojos populate them
+        // (from <sessionState>, <lint>, <tenantColumn>, and the Maven project's source roots);
+        // every other caller passes null and gets the single-tenant, no-suppression,
+        // no-hook, UNKNOWN-positions defaults.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
-        // Lint suppression is null-tolerant: only the build mojos populate it from the <lint> block;
-        // every other caller (unit tier, LSP/MCP dev-loop) defaults to no suppression.
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
-        // Session-state config is null-tolerant: only the build mojos populate it from the
-        // <sessionState> block; every other caller defaults to no configured hook (SessionHook.NONE).
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
-        // The tenant column is null-tolerant and blank-collapsing: only multi-tenant builds
-        // configure <tenantColumn>; every other caller stays single-tenant (null).
         tenantColumn = tenantColumn == null || tenantColumn.isBlank() ? null : tenantColumn.trim();
     }
 
     /**
-     * Returns a copy of this context with {@code lintConfig} replaced. The other fields are shared by
-     * reference (all immutable or defensively copied by the canonical constructor). Lets a caller that
-     * built a context through a convenience constructor layer the {@code <lint>} suppression on
-     * afterwards without re-threading every field.
+     * Returns a copy with {@code lintConfig} replaced, so a convenience-constructor caller can
+     * layer the {@code <lint>} suppression on afterwards.
      */
     public RewriteContext withLintConfig(LintConfig lintConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
@@ -117,10 +109,8 @@ public record RewriteContext(
     }
 
     /**
-     * Returns a copy of this context with {@code sessionStateConfig} replaced. The other fields are
-     * shared by reference (all immutable or defensively copied by the canonical constructor). Lets a
-     * caller that built a context through a convenience constructor layer the {@code <sessionState>}
-     * configuration on afterwards without re-threading every field.
+     * Returns a copy with {@code sessionStateConfig} replaced, so a convenience-constructor caller
+     * can layer the {@code <sessionState>} configuration on afterwards.
      */
     public RewriteContext withSessionStateConfig(SessionStateConfig sessionStateConfig) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
@@ -129,10 +119,8 @@ public record RewriteContext(
     }
 
     /**
-     * Returns a copy of this context with {@code tenantColumn} replaced. The other fields are
-     * shared by reference (all immutable or defensively copied by the canonical constructor). Lets
-     * a caller that built a context through a convenience constructor layer the
-     * {@code <tenantColumn>} declaration on afterwards without re-threading every field.
+     * Returns a copy with {@code tenantColumn} replaced, so a convenience-constructor caller can
+     * layer the {@code <tenantColumn>} declaration on afterwards.
      */
     public RewriteContext withTenantColumn(String tenantColumn) {
         return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
@@ -140,11 +128,7 @@ public record RewriteContext(
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn);
     }
 
-    /**
-     * Back-compatible thirteen-arg constructor (pre-{@code tenantColumn}). Defaults
-     * {@code tenantColumn} to {@code null} so callers that predate multi-tenant routing, and every
-     * single-tenant caller, keep building without a tenant axis.
-     */
+    /** Thirteen-arg overload: defaults {@code tenantColumn} to {@code null} (single-tenant). */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Set<String> schemaFileExtensions,
@@ -166,9 +150,8 @@ public record RewriteContext(
     }
 
     /**
-     * Back-compatible eleven-arg constructor (pre-{@code lintConfig}). Defaults {@code lintConfig}
-     * to {@link LintConfig#empty()} so callers that predate lint suppression, and every non-Mojo
-     * caller, keep linting every author-owned type with every rule.
+     * Eleven-arg overload: defaults {@code lintConfig} to {@link LintConfig#empty()} (no
+     * suppression; every author-owned type is linted with every rule).
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -189,10 +172,8 @@ public record RewriteContext(
     }
 
     /**
-     * Back-compatible ten-arg constructor (pre-{@code compileSourceRoots}). Defaults
-     * {@code compileSourceRoots} to empty so callers that do not surface Java source
-     * roots keep working; their catalogs carry file-level / {@code UNKNOWN} positions
-     * as before.
+     * Ten-arg overload: defaults {@code compileSourceRoots} to empty, so the catalog carries
+     * file-level / {@code UNKNOWN} positions.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -214,8 +195,7 @@ public record RewriteContext(
     /**
      * Seven-arg overload for callers that supply {@code classpathRoots} but no explicit
      * {@code codegenLoader}; the loader defaults to the current thread's context classloader,
-     * which equals the system classloader in a JUnit-launched JVM. The resources
-     * directory defaults to a {@code generated-resources} sibling of {@code outputDirectory}.
+     * which equals the system classloader in a JUnit-launched JVM.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -232,13 +212,7 @@ public record RewriteContext(
             LintConfig.empty(), SessionStateConfig.none());
     }
 
-    /**
-     * Six-arg overload for unit-tier callers that don't care about classpath
-     * scanning. Defaults {@code classpathRoots} to the empty list,
-     * {@code codegenLoader} to the current thread's context classloader, and
-     * {@code schemaFileExtensions} to {@link #DEFAULT_SCHEMA_FILE_EXTENSIONS}.
-     * The resources directory defaults to a sibling of {@code outputDirectory}.
-     */
+    /** Six-arg overload for unit-tier callers that don't care about classpath scanning. */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
         Path basedir,

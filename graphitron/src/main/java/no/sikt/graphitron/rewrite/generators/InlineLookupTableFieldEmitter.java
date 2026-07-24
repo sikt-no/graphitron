@@ -21,27 +21,21 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_A
 
 /**
  * Builds the switch-arm body for one inline {@link ChildField.LookupTableField} in
- * {@link TypeClassGenerator}'s {@code $fields} method. Layers a VALUES + JOIN keyset onto
- * G5's correlated-subquery shape: the inner subquery is narrowed by both the FK-path parent
- * correlation and the {@code @lookupKey} input rows.
+ * {@link TypeClassGenerator}'s {@code $fields} method: a correlated subquery narrowed by both
+ * the FK-path parent correlation and a VALUES + JOIN keyset over the {@code @lookupKey} input rows.
  *
- * <p>The VALUES join uses an explicit {@code ON} predicate — not {@code USING} — because the
- * inner FK chain may traverse a junction table whose column names collide with the lookup-key
- * target columns (e.g. {@code film_actor.actor_id} alongside {@code actor.actor_id}).
- * {@code USING} requires the column to appear exactly once on each side of the join;
- * {@code ON} dereferences the VALUES column via {@code input.field(terminal.COL)} and therefore
- * stays unambiguous regardless of what the FK chain brings in.
+ * <p>The VALUES join uses an explicit {@code ON} predicate, not {@code USING}: the inner FK
+ * chain may traverse a junction table whose column names collide with the lookup-key target
+ * columns (e.g. {@code film_actor.actor_id} alongside {@code actor.actor_id}), and {@code USING}
+ * requires the column to appear exactly once on each side. {@code ON} dereferences the VALUES
+ * column via {@code input.field(terminal.COL)} and stays unambiguous.
  *
- * <p>Relies on classifier invariants:
+ * <p>Relies on a classifier invariant:
  * {@code LookupTableField.returnType().wrapper()} is neither {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Connection}
  * nor {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Single} (Single-cardinality
  * {@code @lookupKey} is rejected as a schema bug).
  *
- * <p>Handles both {@link On.ColumnPairs FK-derived} and {@link On.Predicate condition-join} hops uniformly:
- * targets read through {@link JoinStep.HasTargetTable}; the JOIN chain dispatches on step type;
- * step-0 parent correlation is read through {@link ChildField.LookupTableField#parentCorrelation()}.
- *
- * <p>Threads the nested-alias parameter through every emitted Table-bound helper call — see
+ * <p>Threads the nested-alias parameter through every emitted Table-bound helper call; see
  * "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.
  */
 public final class InlineLookupTableFieldEmitter {
@@ -52,23 +46,20 @@ public final class InlineLookupTableFieldEmitter {
 
     /**
      * Returns the {@code {...}} body to place inside a switch arm. Does <em>not</em> include the
-     * {@code case "name" ->} prefix — the caller composes that.
+     * {@code case "name" ->} prefix; the caller composes that.
      *
      * @param lf           the lookup-table field to emit
      * @param parentAlias  the local variable name for the parent alias in the generated code
      *                     ({@link TypeClassGenerator}'s {@code $fields} signature parameter,
      *                     the literal {@code "table"})
-     * @param sfName       the caller-scope {@code SelectedField} variable name that is in
-     *                     scope at the site where this body is emitted. Threaded through so
-     *                     the emitter substitutes the caller's depth-specific variable rather
-     *                     than a hardcoded literal — required for {@code NestingField}
-     *                     recursion, where each nesting level declares its own
-     *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
+     * @param sfName       the caller-scope {@code SelectedField} variable name in scope at the
+     *                     emission site. Threaded through rather than hardcoded because
+     *                     {@code NestingField} recursion declares a fresh depth-specific
+     *                     {@code SelectedField} local per nesting level to avoid JLS §14.4.2
+     *                     shadowing.
      * @param entryName    the caller-scope {@code Map.Entry<String, List<SelectedField>>}
      *                     variable name holding the full result-key bucket ({@code sfName} is its
-     *                     canonical first occurrence). The nested {@code $fields} descent takes the
-     *                     whole bucket so the target projects the union of every occurrence's
-     *                     sub-selection; depth-suffixed like {@code sfName}.
+     *                     canonical first occurrence); depth-suffixed like {@code sfName}.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName,
             String entryName, String outputPackage, CompositeDecodeHelperRegistry registry) {
@@ -83,23 +74,19 @@ public final class InlineLookupTableFieldEmitter {
 
         var code = CodeBlock.builder();
 
-        // Occurrence argument guard: a lookup arm always reads runtime state off the canonical
-        // SelectedField — the input-rows helper extracts the @lookupKey argument values from it
-        // (ArgumentValueSource.FromSelectedField), and filters/pagination may add further reads.
-        // When the result-key bucket holds several occurrences (edges.node vs nodes in a
-        // connection) they must agree on getArguments(); otherwise serving the canonical
-        // occurrence's arguments for every path is silent wrong data. Unconditional, unlike
-        // InlineTableFieldEmitter's predicate-gated guard, because the @lookupKey read is
-        // structural to this arm.
+        // Occurrence argument guard: the @lookupKey argument values are read off the canonical
+        // SelectedField, so every occurrence in the result-key bucket must agree on
+        // getArguments(); otherwise serving the canonical occurrence's arguments for every path
+        // is silent wrong data. Unconditional, unlike InlineTableFieldEmitter's predicate-gated
+        // guard, because the @lookupKey read is structural to this arm.
         code.addStatement("$T.requireConsistentArguments($L.getKey(), $L.getValue())",
             TypeClassGenerator.selectionOccurrencesClass(outputPackage), entryName, entryName);
 
         List<String> aliases;
         String terminalAlias;
 
-        // Empty joinPath: no FK chain, no parent correlation. The lookup runs standalone against
-        // the target table. Allowed today by the classifier (no @reference required for
-        // LookupTableField); emits a VALUES+USING query over the target only.
+        // Empty joinPath: no FK chain, no parent correlation; the lookup runs standalone against
+        // the target table (the classifier requires no @reference for LookupTableField).
         if (path.isEmpty()) {
             aliases = List.of();
             terminalAlias = "lk0";
@@ -110,15 +97,13 @@ public final class InlineLookupTableFieldEmitter {
         } else {
             aliases = JoinPathEmitter.generateAliases(path, terminalTable);
             terminalAlias = aliases.get(aliases.size() - 1);
-            // Declare aliased jOOQ tables for each hop (same as G5). Alias strings are prefixed
-            // with the parent alias's runtime name so recursive / self-referential subselects
-            // never shadow each other's aliases.
+            // Alias strings are prefixed with the parent alias's runtime name so recursive /
+            // self-referential subselects never shadow each other's aliases.
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
                 ClassName jooqTableClass = ht.targetTable().tableClass();
-                // Materialization routes through the shared TableExpr switch. Routine
-                // hops never reach the lookup path today (the classifier lands typed Deferred);
-                // the OnLateralArgs / On.Lateral arms below throw if that guard slips.
+                // Routine hops never reach the lookup path (the classifier lands typed
+                // Deferred); the OnLateralArgs / On.Lateral arms below throw if that slips.
                 code.addStatement("$T $L = $L.as($L.getName() + $S)",
                     jooqTableClass, aliases.get(i),
                     JoinPathEmitter.emitTableExpression(path.get(i),
@@ -128,10 +113,9 @@ public final class InlineLookupTableFieldEmitter {
             }
         }
 
-        // Extract VALUES rows via the per-field helper method (emitted by TypeClassGenerator).
-        // Typed Row<M+1> / Record<M+1> for idx + @lookupKey columns — matches the helper's
-        // return type retyped in C1. DSL.values(Row<M+1>...) yields Table<Record<M+1>>, so
-        // input.field(Field<T>) and input.field(int, Class<T>) both remain typed Field<T>.
+        // VALUES rows come from the per-field helper method (emitted by TypeClassGenerator),
+        // typed Row<M+1> for idx + @lookupKey columns to match the helper's return type.
+        // DSL.values(Row<M+1>...) yields Table<Record<M+1>>, so input.field(...) stays typed.
         ColumnMapping cm = (ColumnMapping) lf.lookupMapping();
         List<no.sikt.graphitron.rewrite.model.ColumnRef> lookupCols = cm.slotColumns();
         int lookupArity = lookupCols.size() + 1;
@@ -148,9 +132,8 @@ public final class InlineLookupTableFieldEmitter {
         String inputRowsName = LookupValuesJoinEmitter.inputRowsMethodName(lf);
         code.addStatement("$T[] rows = $L($L, $L)", lookupRowType, inputRowsName, sfName, terminalAlias);
 
-        // Empty input short-circuit: emit a multiset with falseCondition so the parent record still
-        // carries the aliased slot (needed for the DataFetcher). DSL.values([]) itself is rejected
-        // by jOOQ, so the branch happens in Java, not SQL.
+        // Empty input short-circuits in Java, not SQL (jOOQ rejects DSL.values([])): a
+        // falseCondition multiset keeps the aliased slot on the parent record for the DataFetcher.
         code.beginControlFlow("if (rows.length == 0)");
         code.addStatement(
             "fields.add($T.multiset($T.select($T.$$fields($L.getValue(), $L, env)).from($L).where($T.falseCondition())).as($S + $L.getKey()))",
@@ -158,7 +141,7 @@ public final class InlineLookupTableFieldEmitter {
         code.nextControlFlow("else");
 
         // VALUES derived-table alias: "idx" + one column per lookup key. Labels must match the
-        // target column's SQL name (not the Java field name) — Postgres USING is case-sensitive.
+        // target column's SQL name (not the Java field name) so input.field(terminal.COL) resolves.
         var aliasArgs = CodeBlock.builder();
         aliasArgs.add("$S, $S", lf.name() + "Input", "idx");
         for (var col : lookupCols) {
@@ -166,11 +149,8 @@ public final class InlineLookupTableFieldEmitter {
         }
         code.addStatement("$T input = $T.values(rows).as($L)", lookupInputTableType, DSL, aliasArgs.build());
 
-        // Explicit ON clause against the VALUES derived table — USING cannot be used for the
-        // VALUES join because a preceding junction-table JOIN (e.g. film_actor) may already
-        // expose an identically-named column, which Postgres rejects with "common column name ...
-        // appears more than once in left table." ON dereferences the VALUES column by name
-        // (input.field(terminal.COL)) so the predicate is unambiguous regardless of junctions.
+        // Explicit ON clause against the VALUES derived table; see the class javadoc for why
+        // USING cannot be used here.
         var onCondition = CodeBlock.builder();
         for (int i = 0; i < lookupCols.size(); i++) {
             if (i > 0) onCondition.add(".and(");
@@ -181,17 +161,16 @@ public final class InlineLookupTableFieldEmitter {
             if (i > 0) onCondition.add(")");
         }
 
-        // Declare an aliased FK-target table local per join hop for every FK-target @nodeId
-        // override @condition among the user filters, so buildInnerSelect emits each as a correlated
-        // EXISTS rather than mis-passing the lookup's own table. Runtime-prefixed SQL alias (this
-        // arm recurses), matching the hop aliases above.
+        // Aliased FK-target table locals for FK-target @nodeId override @condition filters, so
+        // buildInnerSelect emits each as a correlated EXISTS rather than mis-passing the lookup's
+        // own table. Runtime-prefixed SQL alias (this arm recurses), like the hop aliases above.
         Map<WhereFilter, List<String>> fkTargetAliases =
             FkTargetConditionEmitter.declareAliases(code, lf.filters(), terminalAlias, true);
 
         // Pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
-        // JooqConvert list arm), routed through the field's own SelectedField — same parity fix as
-        // InlineTableFieldEmitter. Declared inside the non-empty (else) branch alongside the aliases,
-        // since only the inner SELECT here references it.
+        // JooqConvert list arm), routed through the field's own SelectedField, matching
+        // InlineTableFieldEmitter. Declared inside the non-empty (else) branch since only the
+        // inner SELECT references it.
         ArgCallEmitter.emitJooqConvertKeyLifts(code, lf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
@@ -205,7 +184,7 @@ public final class InlineLookupTableFieldEmitter {
 
     /**
      * Builds the inner correlated subquery expression with both the FK-path JOIN chain and the
-     * VALUES USING keyset. AND-composed with the parent correlation in the WHERE clause;
+     * VALUES join keyset. AND-composed with the parent correlation in the WHERE clause;
      * ORDER BY {@code input.idx} preserves input-row order.
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
@@ -217,18 +196,16 @@ public final class InlineLookupTableFieldEmitter {
         // The descent hands over the whole result-key bucket so the target projects the union of
         // all occurrences' sub-selections (edges.node vs nodes divergence); each path's readers
         // ignore columns they didn't ask for.
-        // Invariant: `env` threaded onward into the nested $fields call is correct — each
-        // nested level re-derives its own SelectedField and env is only needed there for
-        // request-scoped context reads. Only this arm's own runtime argument reads route through the
-        // SelectedField (ArgumentValueSource.FromSelectedField). Do not "fix" env to the SelectedField.
+        // Invariant: threading `env` into the nested $fields call is correct. Each nested level
+        // re-derives its own SelectedField; env is only needed there for request-scoped context
+        // reads, and only this arm's own runtime argument reads route through the SelectedField.
+        // Do not "fix" env to the SelectedField.
         sel.add("$T.select($T.$$fields($L.getValue(), $L, env))",
             DSL, typeClass, entryName, terminalAlias);
 
-        // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);
 
-        // JOIN chain: terminal back towards step 0 (same as G5). No-op when path is empty.
-        // Dispatches on step type so condition joins land their condition methods on the ON clause.
+        // JOIN chain from the terminal hop back towards step 0; no-op when path is empty.
         for (int i = path.size() - 1; i >= 1; i--) {
             JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
@@ -238,12 +215,11 @@ public final class InlineLookupTableFieldEmitter {
             }
         }
 
-        // JOIN the VALUES derived table on the lookup keyset (explicit ON — see buildArm).
         sel.add("\n        .join(input).on($L)", onCondition);
 
-        // WHERE: step 0's correlation against parent (skipped when path is empty), then whereFilter
-        // methods, then user filters. Start with a DSL.noCondition() anchor when there's no
-        // correlation so the subsequent .and(...) chain still type-checks.
+        // WHERE: step 0's correlation against parent, then hop filters, then user filters. A
+        // DSL.noCondition() anchor stands in when there is no correlation so the subsequent
+        // .and(...) chain still type-checks.
         var where = CodeBlock.builder();
         if (path.isEmpty()) {
             where.add("$T.noCondition()", ClassName.get("org.jooq.impl", "DSL"));
@@ -281,7 +257,6 @@ public final class InlineLookupTableFieldEmitter {
         }
         sel.add("\n        .where($L)", where.build());
 
-        // ORDER BY the VALUES idx column → preserves input ordering.
         sel.add("\n        .orderBy(input.field($S))", "idx");
         return sel.build();
     }
@@ -292,7 +267,7 @@ public final class InlineLookupTableFieldEmitter {
         return idx == 0 ? parentAlias : aliases.get(idx - 1);
     }
 
-    /** The alias of a specific hop — lookup by object identity within the path list. */
+    /** The alias of a specific hop, looked up by object identity within the path list. */
     private static String aliasForStep(List<JoinStep> path, List<String> aliases, JoinStep step) {
         int idx = path.indexOf(step);
         return aliases.get(idx);

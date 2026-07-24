@@ -23,22 +23,19 @@ import java.util.stream.Collectors;
  *
  * <h3>Why shape, not record class (D1)</h3>
  *
- * <p>The earlier dedup keyed on {@code jr.table().recordClass()}, so two {@code @service} fields
- * binding one jOOQ record through two different input types (different {@code @field} column sets)
- * collapsed to the first-seen shape's helper; every call site then routed to that survivor and the
- * second mutation silently dropped the columns unique to its input. A
+ * <p>A dedup keyed on {@code jr.table().recordClass()} alone would collapse two {@code @service}
+ * fields binding one jOOQ record through different input types (different {@code @field} column
+ * sets) onto a single shape's helper, silently dropping the columns unique to the other. A
  * {@link CallSiteExtraction.JooqRecord} is a record whose every component is a value type with
- * structural {@code equals} ({@code TableRef}, {@code ColumnRef}, {@code ClassName}, element-wise
- * {@code List}), so {@code jr1.equals(jr2)} is <em>already</em> exactly "these two carriers emit an
- * identical helper body". The dedup therefore keys on the carrier itself, not a hand-built signature
- * string a later body-affecting component would silently desync from.
+ * structural {@code equals}, so {@code jr1.equals(jr2)} is exactly "these two carriers emit an
+ * identical helper body"; the dedup keys on the carrier itself, not a hand-built signature string
+ * a later body-affecting component would silently desync from.
  *
  * <h3>Naming (D2)</h3>
  *
  * <p>A record class reached by exactly one distinct shape keeps the bare {@code create<Record>} /
- * {@code create<Record>List} name (the overwhelmingly common case, byte-identical to the previous
- * behaviour). A
- * record class reached by more than one distinct shape is <em>contended</em>: its shapes are ordered
+ * {@code create<Record>List} name (the overwhelmingly common case). A record class reached by more
+ * than one distinct shape is <em>contended</em>: its shapes are ordered
  * by {@link #canonicalRender} (a names-only render, stable across runs where the record's own
  * {@code hashCode} is not) and each gets a 1-based ordinal suffix ({@code create<Record>1},
  * {@code create<Record>2}, ...). Each contended helper also carries a one-line javadoc naming the
@@ -50,10 +47,10 @@ import java.util.stream.Collectors;
  * <p>{@link #of} builds a <em>populated</em> resolver from a class's collected carriers;
  * {@link #bare} returns the <em>default</em> resolver of schema-free / unit / out-of-band contexts.
  * A populated resolver throws when asked to name a carrier it never collected rather than silently
- * falling back to the bare name: a silent bare name on an unrouted path would be this exact bug
- * re-buried, while a generation-time failure surfaces the routing hole. The default resolver, which by
- * construction only serves contexts carrying at most one shape per record class, answers bare
- * unconditionally, preserving today's behaviour.
+ * falling back to the bare name: a silent bare name on an unrouted path would re-bury the collision
+ * this resolver exists to prevent, while a generation-time failure surfaces the routing hole. The
+ * default resolver, which by construction only serves contexts carrying at most one shape per
+ * record class, answers bare unconditionally.
  */
 final class JooqRecordHelperNames {
 
@@ -64,8 +61,7 @@ final class JooqRecordHelperNames {
     private final Map<CallSiteExtraction.JooqRecord, String> stems;
     /** Carrier shape → contended-helper legibility javadoc, or {@code null} for an uncontended helper. */
     private final Map<CallSiteExtraction.JooqRecord, String> javadocs;
-    /** Distinct shapes in first-encounter order: the helper-emission work-list. For the common
-     *  uncontended case this is exactly the previous emission order, so no generated output churns. */
+    /** Distinct shapes in first-encounter order: the helper-emission work-list. */
     private final List<CallSiteExtraction.JooqRecord> distinctShapes;
 
     private JooqRecordHelperNames(boolean populated,
@@ -117,8 +113,7 @@ final class JooqRecordHelperNames {
             String baseStem = createStems.getOrDefault(group.getKey(), group.getKey().simpleName());
             var shapes = group.getValue();
             if (shapes.size() == 1) {
-                // Uncontended: bare base stem, no javadoc. Byte-identical to the previous behaviour
-                // whenever the base stem is the plain simple name (the single-schema common case).
+                // Uncontended: bare base stem, no javadoc.
                 stems.put(shapes.get(0), baseStem);
             } else {
                 // Contended: order by canonical render (stable), 1-based ordinal suffix, legibility javadoc.
@@ -147,8 +142,8 @@ final class JooqRecordHelperNames {
 
     /**
      * The one-line legibility javadoc for a contended helper (e.g. {@code "Binds ADDRESS, DISTRICT,
-     * DATO_FRA."}), or {@code null} for an uncontended helper — the byte-identical, javadoc-free
-     * common case. Always {@code null} for the default resolver.
+     * DATO_FRA."}), or {@code null} for an uncontended helper. Always {@code null} for the default
+     * resolver.
      */
     String javadocFor(CallSiteExtraction.JooqRecord jr) {
         return populated ? javadocs.get(jr) : null;
@@ -167,8 +162,9 @@ final class JooqRecordHelperNames {
         String stem = stems.get(jr);
         if (stem == null) {
             // A populated resolver asked to name a carrier it never collected is a routing hole: a
-            // silent bare-name fallback here would re-bury the original bug (a call site routing to a helper that
-            // was never emitted, or to the wrong shape's helper). Fail at generation time instead.
+            // silent bare-name fallback would re-bury the collision this resolver exists to prevent
+            // (a call site routing to a helper that was never emitted, or to the wrong shape's
+            // helper). Fail at generation time instead.
             throw new IllegalStateException(
                 "JooqRecordHelperNames was asked to name a jOOQ-record carrier it never collected: "
                 + jr.table().recordClass() + " [" + canonicalRender(jr) + "]. Every call site must "
@@ -179,8 +175,8 @@ final class JooqRecordHelperNames {
 
     /**
      * A deterministic, names-only render of a carrier's shape, used solely to <em>order</em> a record
-     * class's contended shapes (the record's own {@code hashCode} is not stable across runs). Never the
-     * identity — that is the carrier's structural {@code equals} (D1) — so it need only be injective
+     * class's contended shapes (the record's own {@code hashCode} is not stable across runs). Never
+     * the identity (that is the carrier's structural {@code equals}), so it need only be injective
      * enough to give a stable total order over the body-affecting components: the record class, each
      * column binding's path + resolved column, and each key decode's path + type id + encoder + target
      * columns + nullability.

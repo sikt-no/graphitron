@@ -16,32 +16,15 @@ import java.util.Optional;
  * variant to a source {@code Location}; the declaration-name hover arm projects
  * each to a Javadoc overlay.
  *
- * <p>The point of sharing the resolution is that hover/goto parity becomes
- * <em>structural</em> rather than asserted: a single backing-switch
- * ({@link #resolve}) produces the target, and the two consumers each switch over
- * the <em>same</em> {@code DeclTarget} exhaustively, so they cannot point at
- * different declarations and a new {@link TypeBackingShape} permit breaks both
- * switches at compile time. The per-consumer difference is only the final read:
- * {@code Decl.location()} for goto vs. {@code Decl.javadoc()} (plus the
- * catalog-description precedence the table/column arms honour) for hover.
- *
- * <p>The variants name the resolved declaration, not its location or Javadoc:
- * <ul>
- *   <li>{@link CatalogTable} / {@link CatalogColumn} — a jOOQ table class or a
- *       named column on it, carried as the resolved {@link CompletionData.Table}
- *       / {@link CompletionData.Column} so the two consumers share one lookup.</li>
- *   <li>{@link SourceClass} — a reflection-bound backing class (record / POJO /
- *       standalone jOOQ record), <em>and</em> a standalone-jOOQ field cursor,
- *       which has no column or member key and degrades to its class.</li>
- *   <li>{@link SourceMethod} — a Java method the field binds to: a POJO bean
- *       accessor (arity 0), or the developer method behind a {@code @service} /
- *       {@code @externalField} / {@code @tableMethod} field. Carries the bound
- *       arity so both consumers key the source index on the same overload.</li>
- *   <li>{@link SourceField} — a Java record component (indexed as a field by the
- *       parse-only source walk).</li>
- *   <li>{@link None} — no Java declaration: a {@code NoBacking.*} type, or a
- *       member name that resolves to no column / slot.</li>
- * </ul>
+ * <p>Sharing the resolution makes hover/goto parity <em>structural</em> rather
+ * than asserted: a single backing-switch ({@link #resolve}) produces the target,
+ * and the two consumers each switch over the <em>same</em> {@code DeclTarget}
+ * exhaustively, so they cannot point at different declarations and a new
+ * {@link TypeBackingShape} permit breaks both switches at compile time. The
+ * per-consumer difference is only the final read: {@code Decl.location()} for
+ * goto vs. {@code Decl.javadoc()} (plus the catalog-description precedence the
+ * table/column arms honour) for hover. The variants name the resolved
+ * declaration, not its location or Javadoc.
  */
 public sealed interface DeclTarget {
 
@@ -118,9 +101,7 @@ public sealed interface DeclTarget {
     ) {
         // A method-backed field (@service / @externalField / @tableMethod) is
         // bound to its Java method, not to a column on the parent's table, so the
-        // classification takes precedence over the parent-type backing below. The
-        // classification rides on the already-projected snapshot, mirroring how
-        // the backing arms read built.typeBacking(...); no source-index read here.
+        // classification takes precedence over the parent-type backing below.
         var methodBacked = methodBackedTarget(parentTypeName, memberName, built, catalog);
         if (methodBacked.isPresent()) return methodBacked.get();
         var shapeOpt = built.typeBacking(parentTypeName);
@@ -156,9 +137,7 @@ public sealed interface DeclTarget {
     ) {
         var classOpt = built.fieldClassification(parentTypeName, memberName);
         if (classOpt.isEmpty()) return Optional.empty();
-        // The six method-backed FieldClassification variants (field-level @service,
-        // @externalField, @tableMethod child, root @service query / mutation, and
-        // @tableMethod root query); every other classification binds no developer
+        // Every classification outside these method-backed arms binds no developer
         // method and falls through to the parent-type backing.
         return switch (classOpt.get()) {
             case FieldClassification.ServiceBacked s -> Optional.of(sourceMethod(catalog, s.methodClassName(), s.methodName()));
@@ -201,8 +180,8 @@ public sealed interface DeclTarget {
         var tableOpt = catalog.getTable(tableName);
         if (tableOpt.isEmpty()) return new None();
         var table = tableOpt.get();
-        // Unknown column is "no target", the same non-jump goto's columnTarget
-        // returns; the case-insensitive match yields the canonical column name.
+        // Unknown column resolves to no target; the case-insensitive match yields
+        // the canonical column name.
         return table.columns().stream()
             .filter(c -> c.name().equalsIgnoreCase(memberName))
             .findFirst()

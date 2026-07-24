@@ -19,36 +19,30 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Generates the {@code NodeIdEncoder} utility class — encode + decode helpers for Relay node IDs,
- * emitted once per code-generation run alongside other rewrite output.
+ * Generates the {@code NodeIdEncoder} utility class: encode + decode helpers for Relay node IDs,
+ * emitted once per code-generation run.
  *
- * <p>Wire format (matches the legacy {@code no.sikt.graphql.NodeIdStrategy} encoding so IDs
- * round-trip across the cut-over):
+ * <p>Wire format (matches the legacy {@code no.sikt.graphql.NodeIdStrategy} encoding, so IDs
+ * round-trip between the two generators):
  * <pre>{@code
  * "typeId:v1,v2,..."  ->  base64-url (no padding, UTF-8)
  * }</pre>
  * Commas inside values are escaped as {@code %2C}. The generic {@code encode} returns
- * {@code null} when any value is {@code null} so the GraphQL field resolves to {@code null}
+ * {@code null} when any value is {@code null}, so the GraphQL field resolves to {@code null}
  * rather than emitting a malformed ID.
  *
- * <p>Per-Node helpers. For each {@code @node} type the generator emits two static helpers
- * named after the GraphQL type:
- * <ul>
- *   <li>{@code String encode<TypeName>(T1 v1, ..., TN vN)} — bakes the typeId into the helper
- *       name so call sites pass typed key values directly instead of the wire string.</li>
- *   <li>{@code RecordN<T1, ..., TN> decode<TypeName>(String base64Id)} — returns {@code null}
- *       uniformly on malformed input or typeId mismatch; carrier consumers wrap that null
- *       through the {@code CallSiteExtraction.NodeIdDecodeKeys.*} arms.</li>
- * </ul>
+ * <p>For each {@code @node} type the generator emits static {@code encode<TypeName>} /
+ * {@code decode<TypeName>} helpers; the typeId is baked into the helper name, so call sites pass
+ * typed key values, not the wire string. {@code decode<TypeName>} returns {@code null} uniformly
+ * on malformed input or typeId mismatch; carrier consumers wrap that null through the
+ * {@code CallSiteExtraction.NodeIdDecodeKeys} arms. Call sites resolve the helpers through
+ * {@link HelperRef} references pre-computed on {@link NodeType#encodeMethod()} /
+ * {@link NodeType#decodeMethod()}, so the encoder generator and the call-site emitters cannot
+ * drift on naming.
  *
- * <p>Call sites resolve these helpers through structurally typed {@link HelperRef} references
- * pre-computed on {@link NodeType#encodeMethod()} / {@link NodeType#decodeMethod()}, so the
- * encoder generator and the call-site emitters cannot drift on naming.
- *
- * <p>Generated as a source file rather than shipped as a library dependency. The class is
- * {@code final} with a private constructor and only static methods — consumers cannot extend
- * it to override the encoding. This is deliberate: a single canonical wire format across every
- * generated dispatcher is what makes nodeIds durable across schema evolution.
+ * <p>The generated class is {@code final} with a private constructor and only static methods, so
+ * consumers cannot override the encoding: a single canonical wire format across every generated
+ * dispatcher is what keeps nodeIds durable across schema evolution.
  */
 public class NodeIdEncoderClassGenerator {
 
@@ -63,9 +57,8 @@ public class NodeIdEncoderClassGenerator {
     private static final ClassName OBJECTS     = ClassName.get("java.util", "Objects");
 
     /**
-     * Backwards-compatible no-arg generator: emits the encoder class with no per-Node helpers.
-     * Retained only for callers that have not yet been threaded with the schema; production
-     * generation goes through {@link #generate(GraphitronSchema)}.
+     * No-arg variant: emits the encoder class with no per-Node helpers. Production generation
+     * goes through {@link #generate(GraphitronSchema)}.
      */
     public static List<TypeSpec> generate() {
         return generate(List.of());
@@ -117,9 +110,9 @@ public class NodeIdEncoderClassGenerator {
             .endControlFlow()
             .build();
 
-        // PUBLIC (not package-private): the input-bean record-decode helpers land in the
-        // generated `…fetchers` package and call decodeValues directly to materialise a typed
-        // jOOQ record from the raw key values, so the raw unpack must cross the package boundary.
+        // Public rather than package-private: the generated input-bean record-decode helpers land
+        // in the `…fetchers` package and call decodeValues directly, so the raw unpack must cross
+        // the package boundary.
         var decodeValues = MethodSpec.methodBuilder("decodeValues")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String[].class)
@@ -142,12 +135,11 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return parts")
             .build();
 
-        // The decode helpers route the wire-format String into the column's typed slot via
-        // DataType.convert(Object), which jOOQ deprecated for removal in 3.20.0. The
-        // recommended replacement (Field.getConverter().from) does not accept Object input,
-        // and the only public Object→T coercion path (org.jooq.tools.Convert) is itself
-        // marked for removal. Until jOOQ ships a public successor, suppress here so consumer
-        // builds stay clean; revisit when DataType.convert(Object) is actually removed.
+        // The decode helpers coerce the wire-format String through DataType.convert(Object),
+        // which jOOQ deprecated for removal in 3.20.0. The recommended replacement
+        // (Field.getConverter().from) does not accept Object input, and the only public
+        // Object-to-T coercion path (org.jooq.tools.Convert) is also marked for removal, so
+        // suppress here to keep consumer builds clean until jOOQ ships a public successor.
         var suppressRemoval = AnnotationSpec.builder(SuppressWarnings.class)
             .addMember("value", "{$S, $S}", "deprecation", "removal")
             .build();
@@ -164,9 +156,8 @@ public class NodeIdEncoderClassGenerator {
 
         for (NodeType nt : nodeTypes) {
             classBuilder.addMethod(buildPerTypeEncode(nt));
-            // Each NodeType's per-decode method references its own table's Tables class, so
-            // multi-schema codegen layouts produce schema-segmented references without per-class
-            // derivation.
+            // Each decode method references its own table's Tables class, so multi-schema codegen
+            // layouts get schema-segmented references.
             classBuilder.addMethod(buildPerTypeDecode(nt, nt.table().constantsClass()));
         }
 
@@ -174,22 +165,18 @@ public class NodeIdEncoderClassGenerator {
     }
 
     /**
-     * Emits {@code static void requireColumnAgreement(String conflictLabel, DataType<?> type,
-     * Object a, Object b)} — the shared value-agreement predicate. When more than one
-     * writer ({@code @nodeId} decode or plain {@code @field}) lands on a single row column, this
-     * checks that the present writers agree on the column's value, throwing
-     * {@code GraphqlErrorException} on disagreement.
+     * Emits {@code requireColumnAgreement}, the shared value-agreement predicate: when more than
+     * one writer ({@code @nodeId} decode or plain {@code @field}) lands on a single row column, it
+     * throws {@code GraphqlErrorException} unless the present writers agree on the column's value.
      *
-     * <p>Agreement is defined by the destination column's coercion: each value is run through the
+     * <p>Agreement is defined by the destination column's coercion: each value runs through the
      * column's jOOQ {@code DataType.convert} (the same coercion the real write applies) and the
-     * results compared with {@code Objects.equals}. Coercing both sides collapses format-variant
-     * wire values ({@code "01"}, {@code 1.0}, a {@code BigInteger}) and a decoded {@code "1"} onto
-     * the same key, so they agree, while genuinely different stored values still disagree. The
-     * {@code convert(Object)} call rides the class-level {@code @SuppressWarnings({"deprecation",
-     * "removal"})}, so it adds no new suppression. {@code conflictLabel} names the conflicting
-     * GraphQL input fields (never the SQL column or the {@code @field(name:)} mapping), consistent
-     * with the existing decode-mismatch messages. Call sites with more than two writers emit pairwise
-     * calls against the first present writer ({@code equals} is transitive).
+     * results compare with {@code Objects.equals}, so format-variant wire values ({@code "01"},
+     * {@code 1.0}, a {@code BigInteger}) collapse onto the same key while genuinely different
+     * stored values still disagree. {@code conflictLabel} names the conflicting GraphQL input
+     * fields, never the SQL column or the {@code @field(name:)} mapping. Call sites with more
+     * than two writers emit pairwise calls against the first present writer ({@code equals} is
+     * transitive).
      */
     private static MethodSpec buildRequireColumnAgreement() {
         TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(TypeName.OBJECT));
@@ -241,11 +228,6 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("$T values = decodeValues($S, base64Id)", String[].class, nt.typeId())
             .addStatement("if (values == null || values.length != $L) return null", n);
 
-        // Build an unattached typed record over the keyColumns and populate each slot through
-        // the column's data-type converter (matching the legacy coerceValue path's fall-through).
-        // Construction shape:
-        //   var rec = DSL.using(SQLDialect.DEFAULT).newRecord(Tables.<table>.<col1>, ...);
-        //   rec.set(Tables.<table>.<col1>, Tables.<table>.<col1>.getDataType().convert(values[0]));
         StringBuilder fieldsList = new StringBuilder();
         for (int i = 0; i < n; i++) {
             if (i > 0) fieldsList.append(", ");
@@ -255,9 +237,8 @@ public class NodeIdEncoderClassGenerator {
         Object[] tablesRefs = new Object[n];
         for (int i = 0; i < n; i++) tablesRefs[i] = tablesClass;
 
-        // Build the typed record target. We declare it as the wildcard return type and rely on
-        // the explicit cast at the bottom rather than `var` (generated sources avoid `var` per
-        // the GeneratedSourcesLintTest contract).
+        // Declared with the explicit record type rather than `var`; generated sources avoid `var`
+        // (enforced by GeneratedSourcesLintTest in graphitron-sakila-example).
         b.addStatement("$T rec = $T.using($T.DEFAULT).newRecord(" + fieldsList + ")",
             prepend(tablesRefs, recordType, DSL, SQL_DIALECT));
 

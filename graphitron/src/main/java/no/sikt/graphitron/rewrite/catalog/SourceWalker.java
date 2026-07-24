@@ -99,22 +99,19 @@ public final class SourceWalker {
     /**
      * The merged index over every source root: classes keyed by FQN, methods
      * keyed by {@link MethodKey} (overload-ambiguous keys removed from
-     * {@code methods}, so a positional lookup misses), fields keyed by
-     * {@link FieldKey}, and the post-merge set of method keys that were
-     * dropped <em>because</em> they were overload-ambiguous.
+     * {@code methods}), fields keyed by {@link FieldKey}.
      *
-     * <p>{@code ambiguousMethods} is the certainty the merge already computed
-     * but used to discard: it lets a consumer tell "method genuinely not
+     * <p>{@code ambiguousMethods} lets a consumer tell "method genuinely not
      * indexed" (key absent everywhere) from "method present but the
      * {@code (class, name, arity)} key cannot pick one overload" (key in this
      * set). The set is the union of intra-file and cross-file collisions,
      * matching exactly the keys removed from {@code methods}.
      *
      * <p>{@code methodsByName} is the never-dropped name-level view (keyed by
-     * {@link MethodNameKey}, first declaration wins, overload collisions kept):
-     * the floor {@link #resolveMethod} falls back to when the arity-keyed lookup
-     * misses, so a same-arity overload still lands on a declaration adjacent to
-     * the overload set rather than declining.
+     * {@link MethodNameKey}, first declaration wins): the floor
+     * {@link #resolveMethod} falls back to when the arity-keyed lookup misses,
+     * so a same-arity overload still lands on a declaration adjacent to the
+     * overload set rather than declining.
      */
     public record Index(
         Map<String, Decl> classes,
@@ -126,12 +123,11 @@ public final class SourceWalker {
         public static final Index EMPTY = new Index(Map.of(), Map.of(), Map.of(), Set.of());
 
         /**
-         * Back-compat constructor for fixtures that predate the name-level view:
-         * derives {@code methodsByName} from {@code methods}. The production index
-         * is built by {@link SourceWalker#merge} through the canonical constructor,
-         * which keeps overload-collided names that {@code methods} dropped; a
-         * derived view cannot recover those, which is fine for the (collision-free)
-         * fixtures that use this overload.
+         * Convenience constructor for collision-free fixtures: derives
+         * {@code methodsByName} from {@code methods}. The production index is built
+         * by {@link SourceWalker#merge} through the canonical constructor, which
+         * keeps overload-collided names that {@code methods} dropped; a derived
+         * view cannot recover those.
          */
         public Index(
             Map<String, Decl> classes, Map<MethodKey, Decl> methods,

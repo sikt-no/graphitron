@@ -30,19 +30,9 @@ import java.util.Set;
  * entries name a Java parameter that differs from the GraphQL argument's own name, optionally
  * walking into a nested input field via dot-segments.
  *
- * <p>The single {@link #of} factory is axis-agnostic. It builds identity {@link PathExpr.Head}
- * entries for every name in {@code graphqlArgNames} and then applies {@code overrides} on top
- * — replacing identity entries whose Java target collides with an override key, so a Java
- * parameter named {@code X} stops binding to GraphQL arg {@code X} once an override claims it.
- * The only failure shape on the head axis is {@link Result.UnknownArgRef}: an override whose
- * head-segment value is not in {@code graphqlArgNames}. The parser ({@link #parseArgMapping})
- * enforces unique Java targets, so the {@code overrides} map cannot have duplicate keys; identity
- * entries cannot collide with each other (GraphQL arg names are unique on a field), so
- * {@code of(...)} has no collision shape.
- *
  * <p>The post-reflection typo guard inside {@link ServiceCatalog} only fires for explicit
  * override entries (where the Java target differs from the head-segment name); identity entries
- * fall through to the existing per-parameter mismatch error.
+ * fall through to the per-parameter mismatch error.
  */
 record ArgBindingMap(Map<String, PathExpr> byJavaName) {
 
@@ -51,10 +41,8 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
      *
      * <p>{@link UnknownArgRef} fires when the head segment of an override doesn't name a slot at
      * the directive's scope. {@link PathRejected} fires when a tail segment fails structural
-     * validation against the GraphQL schema (walks through scalar/enum/union/interface, names a
-     * field that doesn't exist on the input-object at that depth). The two arms are distinct so
-     * the caller's switch can render them with the appropriate "head segment" vs. "path tail"
-     * site context.
+     * validation against the GraphQL schema. Distinct arms so the caller's switch renders the
+     * appropriate "head segment" vs. "path tail" site context.
      */
     sealed interface Result {
         record Ok(ArgBindingMap map) implements Result {}
@@ -76,7 +64,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
 
     private static final ArgBindingMap EMPTY = new ArgBindingMap(Map.of());
 
-    /** No bindings — used by path-step {@code @condition} resolution where the method takes no args. */
+    /** No bindings; used by path-step {@code @condition} resolution where the method takes no args. */
     static ArgBindingMap empty() {
         return EMPTY;
     }
@@ -84,19 +72,10 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
     /**
      * Builds a binding map from {@code slotTypes} (the GraphQL slots in scope at the directive
      * site, mapped to their input types) and {@code overrides} (parsed segment chains, keyed by
-     * Java target). Returns:
-     *
-     * <ul>
-     *   <li>{@link Result.UnknownArgRef} when any override's head segment is not a key in
-     *       {@code slotTypes}. The message names the unknown source and the available list. Site
-     *       context (which directive the override sits on) is added by the caller.</li>
-     *   <li>{@link Result.PathRejected} when a tail segment fails structural validation against
-     *       the input-object type at that depth: walking through a scalar/enum/union/interface,
-     *       or a field name that does not exist on the input-object at that depth. The message
-     *       names the offending segment and (when applicable) suggests a close match.</li>
-     *   <li>{@link Result.Ok} with the resolved {@link PathExpr} chain for every override and
-     *       identity {@link PathExpr.Head} entries for every unclaimed slot.</li>
-     * </ul>
+     * Java target): {@link Result.Ok} carries the resolved {@link PathExpr} chain for every
+     * override plus identity {@link PathExpr.Head} entries for every unclaimed slot; the failure
+     * arms are described on {@link Result}. Site context (which directive the override sits on)
+     * is added by the caller.
      *
      * <p>For each {@code Step} in a resolved {@link PathExpr}, {@code liftsList} is set to
      * {@code true} when the GraphQL field's type at that depth is list-shaped (after stripping
@@ -186,11 +165,10 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
     }
 
     /**
-     * True when {@code t} (after stripping a single layer of non-null) is a list. Package-visible
- * so {@link ServiceCatalog#inferBindingsByType} computes a depth-1 step's
-     * {@code liftsList} flag through the identical predicate {@link #of} uses for an explicit
-     * {@code argMapping} step, keeping an inferred {@link PathExpr.Step} byte-identical to the
-     * hand-written one.
+     * True when {@code t} (after stripping non-null wrappers) is a list. Package-visible so
+     * {@link ServiceCatalog#inferBindingsByType} computes a depth-1 step's {@code liftsList}
+     * flag through the identical predicate {@link #of} uses, keeping an inferred
+     * {@link PathExpr.Step} byte-identical to the hand-written one.
      */
     static boolean isListShaped(GraphQLInputType t) {
         GraphQLType current = t;

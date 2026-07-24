@@ -8,64 +8,42 @@ import java.util.List;
  * <p>The path is an ordered sequence of hops navigating from the parent table to the target table.
  * All steps are fully resolved at build time; an unresolvable step causes the containing field to
  * be classified as {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}.
- *
- * <p>{@link Hop} is the sole permit — the two-axis step: a <b>target</b> node materialized
- * by a {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
- * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
- * predicate}). Every {@code @reference}-parsed step is a {@code Hop}, and {@code @reference}
- * parsing is the only {@code JoinStep} producer (the transitional {@code LiftedHop}
- * permit — the pre-keyed lifter / accessor / re-fetch shape — moved to the hop-less
- * {@link ParentCorrelation.OnLiftedSlots} correlation arm; its slots were source-side key
- * provenance, never a join step). How a {@link Hop} joins is a sealed dispatch on
- * {@link Hop#on()}.
- *
- * <p><b>Step contrast:</b>
+ * {@link Hop} is the sole permit and {@code @reference} parsing the sole producer; how a hop
+ * joins is a sealed dispatch on {@link Hop#on()}:
  * <pre>
  *   Hop, On.ColumnPairs:            .join(target).onKey(FK)
  *   Hop, On.ColumnPairs + filter:   .join(target).onKey(FK) ... .where(filter(src, target))
  *   Hop, On.Predicate:              .join(target).on(condition(src, target))
  * </pre>
- * {@link Hop#filter()} is a WHERE clause on the enclosing SELECT — it does not affect the JOIN's
- * ON clause. {@link Hop#on()} is the ON clause.
+ * {@link Hop#filter()} is a WHERE clause on the enclosing SELECT and does not affect the JOIN's
+ * ON clause; {@link Hop#on()} is the ON clause.
  *
  * <h2>Cardinality invariant</h2>
  *
- * <p>A {@code @reference} join path must never change the cardinality of the source row set.
- * Two structural rules enforce this:
+ * <p>A {@code @reference} join path must never change the cardinality of the source row set:
  *
  * <ol>
  *   <li><b>No row elimination.</b> A source row must always produce at least one output row.
- *       This depends on the query structure the generator chooses:
- *       <ul>
- *         <li><em>Correlated subquery</em> (scalar or multiset subselect): the outer row
- *             survives regardless of whether the inner join matches, so INNER JOIN is safe and
- *             preferred inside the subquery. A non-matching inner join simply makes the subquery
- *             return {@code NULL} or an empty array.</li>
- *         <li><em>Flat batch join</em> (DataLoader / split query): all source keys must appear
- *             in the result set so the DataLoader can align results to keys. INNER JOIN would
- *             silently drop source rows where the FK is {@code NULL}. LEFT JOIN is mandatory.</li>
- *       </ul>
- *       The join type is therefore a <em>generation-time decision</em> based on query structure,
- *       not a property of the step itself.</li>
+ *       Inside a correlated subquery the outer row survives a non-matching join (the subquery
+ *       returns {@code NULL} or an empty array), so INNER JOIN is safe. In a flat batch join
+ *       (DataLoader / split query) every source key must appear in the result set so the
+ *       DataLoader can align results to keys; INNER JOIN would silently drop rows with a
+ *       {@code NULL} FK, so LEFT JOIN is mandatory. The join type is a generation-time decision
+ *       based on query structure, not a property of the step.</li>
  *
- *   <li><b>No unintended row multiplication.</b> Fan-out (one source row producing many output
- *       rows) is only valid when the referencing field returns a list or connection — in which case
- *       fan-out is the <em>intended</em> result, collected and grouped by the DataLoader. For a
- *       single-value field, any fan-out is a schema error. The validator is responsible for
- *       detecting mis-directed FK traversal (one-to-many navigation on a single-value field) and
- *       rejecting it.</li>
+ *   <li><b>No unintended row multiplication.</b> Fan-out is only valid when the referencing
+ *       field returns a list or connection, where it is the intended result, collected and
+ *       grouped by the DataLoader. For a single-value field any fan-out is a schema error; the
+ *       validator rejects one-to-many navigation on a single-value field.</li>
  * </ol>
  */
 public sealed interface JoinStep permits JoinStep.Hop {
 
     /**
-     * Capability mixed in by every step that pre-resolves a target table the prelude joins to.
-     * Lets emitters read {@link #targetTable()} and {@link #alias()} uniformly without a sealed
-     * switch — every {@link JoinStep} permit implements this interface.
-     *
-     * <p>Capability interfaces and sealed switches serve different roles: this interface is the
-     * "uniformly true" axis (every step has a target table); how a {@link Hop} joins varies by
-     * identity and is answered by sealed dispatch on {@link Hop#on()}.
+     * Capability mixed in by every {@link JoinStep} permit: a step always pre-resolves a target
+     * table, so emitters read {@link #targetTable()} and {@link #alias()} uniformly without a
+     * sealed switch. How a hop joins varies by identity and stays with sealed dispatch on
+     * {@link Hop#on()}.
      */
     interface HasTargetTable {
         TableRef targetTable();
@@ -73,36 +51,30 @@ public sealed interface JoinStep permits JoinStep.Hop {
     }
 
     /**
- * One join step as two orthogonal facts: a <b>target</b> node materialized by a
+     * One join step as two orthogonal facts: a <b>target</b> node materialized by a
      * {@link TableExpr}, and an <b>{@code on}</b> describing how the step joins to it
-     * ({@link On.ColumnPairs FK-derived column pairs} or an {@link On.Predicate authored
-     * predicate}). Replaced the flat {@code FkJoin} / {@code ConditionJoin} variants, which
- * spliced the two facts into the permit name.
+     * ({@link On.ColumnPairs FK-derived column pairs}, an {@link On.Predicate authored
+     * predicate}, or {@link On.Lateral} for routine targets).
      *
-     * <p>{@code target} is the table node this step joins to; day one always a
-     * {@link TableExpr.Catalog}. {@link #targetTable()} folds it back to the {@link TableRef}
-     * for the uniform {@link HasTargetTable} read.
+     * <p>{@code target} is the table node this step joins to; {@link #targetTable()} folds it
+     * back to the {@link TableRef} for the uniform {@link HasTargetTable} read.
      *
-     * <p>{@code on} is non-null on every hop: the shipped path representation has no start-node
-     * entry (the source supplies the start; {@code path[0]} already joins). See {@link On} for
-     * the forward contract when a start-node variant arrives.
+     * <p>{@code on} is non-null on every hop (constructor-enforced): the path representation has
+     * no start-node entry; the source supplies the start, so {@code path[0]} already joins.
      *
-     * <p>{@code originTable} is the traversal-origin table of this hop — the side the join
+     * <p>{@code originTable} is the traversal-origin table of this hop, the side the join
      * enters <em>from</em>: the parent table for hop 0, the previous hop's target for subsequent
-     * hops. Denormalized (it duplicates the previous step's target / the source table) and kept
-     * mechanically because consumers read it pre-resolved; deleting it in favor of a
-     * path-position derivation is a deferred simplification. {@code null} when the source is not
+     * hops. Denormalized so consumers read it pre-resolved. {@code null} when the source is not
      * table-backed or the jOOQ catalog is unavailable (unit tests).
      *
-     * <p>{@code filter} is an optional per-hop filter appended to the enclosing SELECT's WHERE —
+     * <p>{@code filter} is an optional per-hop filter appended to the enclosing SELECT's WHERE,
      * <em>not</em> the JOIN's ON clause (that is {@code on}); resolved from a {@code condition:}
      * sub-argument accompanying a {@code key:}/{@code table:} path element. {@code null} when
      * the element carried none.
      *
      * <p>{@code alias} is the unique table alias for this step within the enclosing query,
-     * computed at build time as {@code fieldName + "_" + stepIndex} (e.g. {@code "language_0"}
-     * for the first step of a {@code language} field); unique per field × depth, which handles
-     * self-referential join paths where the same table appears multiple times.
+     * computed at build time as {@code fieldName + "_" + stepIndex}; unique per field and depth,
+     * which handles self-referential join paths where the same table appears multiple times.
      */
     record Hop(
         TableExpr target,
@@ -124,12 +96,11 @@ public sealed interface JoinStep permits JoinStep.Hop {
             if (alias == null) {
                 throw new NullPointerException("JoinStep.Hop.alias must not be null");
             }
-            // Lateralness and routine-ness are one fact, pinned on the hop itself. A
-            // routine node carries no key metadata to join on (its correlation rides the call
-            // arguments), and a catalog table never joins laterally — so On.Lateral appears
+            // Lateralness and routine-ness are one fact, pinned on the hop itself: a routine
+            // node carries no key metadata to join on (its correlation rides the call
+            // arguments), and a catalog table never joins laterally, so On.Lateral appears
             // exactly on TableExpr.RoutineCall targets. Enforced here rather than per consumer
-            // leaf so every carrier (TableField's chain, QueryRoutineTableField's hops guard)
-            // inherits the correspondence.
+            // leaf so every carrier inherits the correspondence.
             if ((target instanceof TableExpr.RoutineCall) != (on instanceof On.Lateral)) {
                 throw new IllegalArgumentException(
                     "JoinStep.Hop joins a routine node laterally and a catalog node by key or "

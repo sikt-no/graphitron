@@ -8,22 +8,8 @@ import java.util.List;
  * resolves the SDL author's component name against. Carried alongside
  * {@link DirectiveShape} on {@link LspSchemaSnapshot.Built}.
  *
- * <p>Five permits, one per distinguishable downstream behaviour:
- * <ul>
- *   <li>{@link RecordBacking} — backing class is a Java {@code record}; member
- *       list is the record's components.</li>
- *   <li>{@link PojoBacking} — backing class is a plain Java class; member list
- *       is the bean-accessor projection of its public method set.</li>
- *   <li>{@link JooqRecordBacking} — backing class is a jOOQ {@code Record}
- *       subclass; the column-set lookup goes through the existing
- *       {@link CompletionData#getTable} path keyed by table name.</li>
- *   <li>{@link TableBacking} — any GraphitronType carrying a jOOQ table binding
- *       (including {@code @table} interfaces). Same data path as
- *       {@link JooqRecordBacking}: keyed by table name.</li>
- *   <li>{@link NoBacking} — sealed sub-taxonomy over three observably-different
- *       diagnostic cases. A {@code @field} site under any of them produces no
- *       completions; the diagnostic arm picks its hint from the sub-permit.</li>
- * </ul>
+ * <p>Five permits, one per distinguishable downstream behaviour; each permit's javadoc
+ * describes its member projection and lookup path.
  */
 public sealed interface TypeBackingShape
     permits TypeBackingShape.RecordBacking,
@@ -41,16 +27,13 @@ public sealed interface TypeBackingShape
      * the member resolves to in source.
      *
      * <p>{@code name} and {@code accessorMethodName} coincide for record
-     * components (the component {@code firstName} is its own accessor), but
-     * diverge for POJO bean accessors: a {@code getFirstName()} method projects
-     * to {@code name = "firstName"} (what the author writes) while
-     * {@code accessorMethodName = "getFirstName"} (the Java method goto-definition
-     * keys the source index by). Goto-definition is the only consumer of
-     * {@code accessorMethodName}; completion / hover / diagnostic arms read only
-     * {@code name} / {@code displayType}. The split lives here, at the projection
-     * site that already has both strings, rather than being re-derived by the
-     * LSP from {@code name} (the bean rule has exactly one home, in
-     * {@code CatalogBuilder}).
+     * components but diverge for POJO bean accessors: {@code getFirstName()}
+     * projects to {@code name = "firstName"} with
+     * {@code accessorMethodName = "getFirstName"}. Goto-definition is the only
+     * consumer of {@code accessorMethodName}; completion / hover / diagnostic
+     * arms read only {@code name} / {@code displayType}. The split is projected
+     * here rather than re-derived by the LSP from {@code name}, so the bean rule
+     * has exactly one home ({@link CatalogBuilder}).
      */
     record MemberSlot(String name, String displayType, String accessorMethodName) {}
 
@@ -90,14 +73,14 @@ public sealed interface TypeBackingShape
         String fqClassName();
 
         /**
-         * jOOQ record bound to a specific table — the classifier carried a
-         * {@link no.sikt.graphitron.rewrite.model.TableRef}. {@code tableName}
+         * jOOQ record bound to a specific table (the classifier carried a
+         * {@link no.sikt.graphitron.rewrite.model.TableRef}). {@code tableName}
          * is the jOOQ table name for column lookup.
          */
         record WithTable(String fqClassName, String tableName) implements JooqRecordBacking {}
 
         /**
-         * jOOQ record without a table binding — typically a custom
+         * jOOQ record without a table binding, typically a custom
          * {@code Record<?>} subclass authored by the consumer outside the
          * jOOQ-generated table set. No column candidates available.
          */
@@ -105,9 +88,9 @@ public sealed interface TypeBackingShape
     }
 
     /**
-     * Type bound to a jOOQ table — covers {@code @table}-bearing objects,
-     * {@code @table}-bearing interfaces, {@code @node} types, and table-backed
-     * input objects. {@code tableName} is the jOOQ table name.
+     * Type bound to a jOOQ table: {@code @table}-bearing objects and interfaces,
+     * {@code @node} types, and table-backed input objects. Column lookup goes
+     * through {@link CompletionData#getTable} keyed by {@code tableName}.
      */
     record TableBacking(String tableName) implements TypeBackingShape {}
 
@@ -135,9 +118,8 @@ public sealed interface TypeBackingShape
          * an unclassified type, or an input object whose backing class did not
          * resolve. None carry a component / accessor list a {@code @field(name:)}
          * site could resolve against, so the {@code @field} arm produces no
-         * completions. (Since {@code @record} binding was removed, a plain SDL
-         * object no longer lands here: it either binds by reflection or
-         * classifies as an {@code UnclassifiedType}.)
+         * completions. A plain SDL object does not land here: it either binds
+         * by reflection or classifies as an {@code UnclassifiedType}.
          */
         record UnbackedResult() implements NoBacking {}
 

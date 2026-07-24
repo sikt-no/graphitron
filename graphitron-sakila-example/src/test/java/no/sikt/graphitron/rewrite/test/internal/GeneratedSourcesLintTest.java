@@ -17,20 +17,14 @@ import no.sikt.graphitron.rewrite.test.tier.CompilationTier;
 
 /**
  * Lints emitted source files for generator-hygiene rules that would silently
- * degrade readability or grep-based structural assertions.
- *
- * <p>Currently enforces one rule: generator-emitted code must never declare a
- * variable with {@code var}. Explicit types keep the emitted source searchable
- * by type name and make inference surprises visible at review time. The rule
- * applies to both assignment LHS ({@code var x = ...}) and for-loop variables
- * ({@code for (var x : xs)}); the regex is intentionally loose enough to match
- * both.
+ * degrade readability or grep-based structural assertions. Each test's
+ * assertion message states the rule it enforces.
  */
 @CompilationTier
 class GeneratedSourcesLintTest {
 
     /** Emitted by {@code graphitron-maven-plugin} into this package path. The plugin
-     *  writes under {@code target/generated-sources/graphitron/} — note the
+     *  writes under {@code target/generated-sources/graphitron/}; note the
      *  {@code graphitron/} source-folder segment that precedes the Java package path. */
     private static final Path GENERATED_REWRITE_ROOT = Paths.get(
         "target", "generated-sources", "graphitron",
@@ -45,8 +39,8 @@ class GeneratedSourcesLintTest {
 
     /** The jOOQ tables package for the test fixtures. Full-package qualification of any
      *  class under this prefix inside an emitted fetcher body indicates an importer
-     *  collision (two classes share a simple name) that the local-variable rename in
-     *  {@code §4} is meant to prevent. */
+     *  collision (two classes share a simple name) that the table-local
+     *  {@code <entity>Table} rename is meant to prevent. */
     private static final String JOOQ_TABLES_PACKAGE_PREFIX = "no.sikt.graphitron.rewrite.test.jooq.tables.";
 
     @Test
@@ -147,16 +141,15 @@ class GeneratedSourcesLintTest {
             .isEmpty();
     }
 
-    /** FQNs that must not appear as imports in any emitted source file. Plan
-     *  §Tests — no legacy runtime dependency may reach the emitted output:
+    /** FQNs that must not appear as imports in any emitted source file:
      *  {@code RuntimeWiring} / {@code TypeRuntimeWiring} / {@code SchemaGenerator}
-     *  are the SDL-driven schema path Commit C replaced with a programmatic
-     *  {@code GraphQLSchema.Builder}; {@code SchemaReadingHelper} is the
-     *  {@code graphitron-common} SDL parser the generator no longer needs at
+     *  belong to the SDL-driven schema path that the programmatic
+     *  {@code GraphQLSchema.Builder} supersedes; {@code SchemaReadingHelper} is
+     *  the {@code graphitron-common} SDL parser the generator does not need at
      *  runtime; {@code no.sikt.graphql.GraphitronContext} is the upstream
-     *  interface now replaced by the generated
-     *  {@code <outputPackage>.schema.GraphitronContext}. Match is on
-     *  FQN so the generated context interface is unaffected. */
+     *  interface the generated {@code <outputPackage>.schema.GraphitronContext}
+     *  replaces. Match is on FQN so the generated context interface is
+     *  unaffected. */
     private static final List<String> FORBIDDEN_IMPORTS = List.of(
         "graphql.schema.idl.RuntimeWiring",
         "graphql.schema.idl.TypeRuntimeWiring",
@@ -211,45 +204,31 @@ class GeneratedSourcesLintTest {
 
     /**
      * External tokens we consume but do not own, allowed to appear as emitted identifiers: jOOQ's
-     * reflective NodeId metadata constants. The Apollo-Federation {@code federation__} /
-     * {@code link__} SDL scalar names are not double-underscore-leading and so never match
-     * {@link #DUNDER_IDENTIFIER} in the first place; the GraphQL introspection {@code __typename}
-     * meta-field (and the synthetic {@code __typename} SQL column sharing its spelling) reaches
-     * generated code only as a string literal, so it is masked before the scan and needs no
-     * allowlist entry. The {@code __src_<col>__} full-parent-row aliases are the same case:
-     * string-literal-only ({@code table.COL.as("__src_col__")} / {@code source.get("__src_col__",
-     * …)}), masked before the scan, no allowlist entry needed. See development-principles.adoc,
-     * "Readability rules".
+     * reflective NodeId metadata constants. Nothing else needs an entry: the Apollo-Federation
+     * {@code federation__} / {@code link__} SDL scalar names do not lead with a double underscore
+     * and never match {@link #DUNDER_IDENTIFIER}, and the {@code __typename} meta-field and the
+     * {@code __src_<col>__} full-parent-row aliases reach generated code only as string literals,
+     * masked before the scan. See development-principles.adoc, "Readability rules".
      */
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
     /**
-     * The no-regression guard against lazy dunder names: no emitted Java <em>identifier</em>
-     * (local, parameter, or field) may lead with {@code __}. The generator emits every name in scope, including the
-     * method signature, so a collision is always knowable at generation time; the {@code __}
-     * prefix buys no safety that a readable name plus generation-time awareness does not provide.
-     * Author-derived identifiers (a GraphQL argument or input-component name becoming a local)
-     * namespace with a readable, deterministic prefix ({@code arg_<name>}, {@code c_<name>}),
-     * never a blanket {@code __}.
+     * No emitted Java <em>identifier</em> (local, parameter, or field) may lead with
+     * {@code __}. The generator emits every name in scope, so a collision is always knowable
+     * at generation time; author-derived identifiers namespace with a readable, deterministic
+     * prefix ({@code arg_<name>}, {@code c_<name>}), never a blanket {@code __}.
      *
      * <p>Synthetic SQL column aliases ({@code __sort__}, {@code __idx__}, {@code __rn__},
-     * {@code __typename}, {@code __pkN__}, and the {@code __src_<col>__} full-parent-row
-     * aliases) live in the result-set column namespace alongside consumer-controlled table
-     * columns and wrap in {@code __} precisely to avoid colliding with a real column. They are
-     * deliberate collision-avoidance names that reach generated code only as string literals, so
-     * masking literals (and comments) before the scan leaves them alone; the discriminator is
-     * exactly "Java identifier vs string literal in the emitted output". By convention each alias
-     * is declared as a named constant carrying its collision rationale at the declaration site;
-     * this test does not pin the constant form, only the identifier-vs-literal boundary, so the
-     * constant discipline is a readability convention, not an enforced invariant. A reintroduced
-     * lazy dunder local surfaces as a bare identifier and trips this with file and line.
+     * {@code __typename}, {@code __pkN__}, {@code __src_<col>__}) share the result-set column
+     * namespace with consumer-controlled table columns and wrap in {@code __} precisely to
+     * avoid colliding with a real column. They reach generated code only as string literals,
+     * so masking literals and comments before the scan leaves them alone; the discriminator is
+     * exactly "Java identifier vs string literal in the emitted output". Declaring each alias
+     * as a named constant with its collision rationale is a readability convention this test
+     * does not pin.
      *
-     * <p>Scans the real pipeline output over the Sakila + fixtures schemas, which exercise every
-     * renamed emitter (batch loaders, the validator pre-step, DML decode locals, the multi-table
-     * polymorphic and split-rows pagination machinery, input-record factories). The file-floor
-     * assertion guards against a vacuous pass: were generation skipped or the jOOQ catalog jar
-     * clobbered (the {@code -Plocal-db} footgun), the tree would be empty and a content-only scan
-     * would pass trivially.
+     * <p>Scans the real pipeline output over the Sakila + fixtures schemas; the file-floor
+     * assertion keeps an empty or near-empty tree from passing vacuously.
      */
     @Test
     void emittedSourcesHaveNoDunderIdentifiers() throws IOException {
@@ -297,7 +276,7 @@ class GeneratedSourcesLintTest {
 
     /** Strips a trailing {@code //}-style comment so a mid-line comment can't trip a
      *  regex match (e.g. {@code foo(); // some var bar}). Doesn't attempt to handle
-     *  {@code //} inside a string literal — generator-emitted code doesn't produce
+     *  {@code //} inside a string literal; generator-emitted code doesn't produce
      *  string literals with a {@code //} sequence today. */
     private static String stripInlineComment(String line) {
         int idx = line.indexOf("//");

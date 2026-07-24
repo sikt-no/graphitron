@@ -125,7 +125,7 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     /**
- * An {@code extend schema @link(...)} declaration on the consumer SDL
+     * An {@code extend schema @link(...)} declaration on the consumer SDL
      * must reach the runtime build via {@code .withSchemaAppliedDirectives(...)}.
      * Without this, the runtime {@code _service.sdl} (and any printer output)
      * lacks the {@code schema @link(...)} block, which makes federation
@@ -297,8 +297,8 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_emitsTypeResolver_forTableInterfaceType() {
         // Intentional body-content assertion: the TypeResolver is runtime dispatch infrastructure
-        // — no structural equivalent. A missing typeResolver call means graphql-java cannot route
-        // fetched Records to their concrete GraphQL type, causing all interface queries to fail.
+        // with no structural equivalent. A missing typeResolver call means graphql-java cannot
+        // route fetched Records to their concrete GraphQL type, so all interface queries fail.
         var body = buildBody(INTERFACE_SDL);
         assertThat(body).contains("codeRegistry.typeResolver(\"Content\"");
     }
@@ -315,11 +315,11 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_typeResolver_routesOffSyntheticDiscriminatorAlias() {
         // The TypeResolver routes off the synthetic discriminator alias the interface fetcher
-        // projects (MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN), not the raw discriminator column
-        // name. When the interface exposes the discriminator as a queryable field, the real column is
-        // also projected by the participant $fields, and a bare read of the column name matches both
-        // projections ambiguously. The alias is distinct from any real column, so the routing read is
-        // unambiguous; the raw column name no longer appears in the resolver.
+        // projects (MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN), never the raw column name:
+        // when the interface exposes the discriminator as a queryable field, the real column is
+        // also projected by the participant $fields, and a bare read of the column name matches
+        // both projections ambiguously. The alias is distinct from any real column, so the
+        // routing read is unambiguous.
         var body = buildBody(INTERFACE_SDL);
         assertThat(body).contains("\"__discriminator__\"");
         assertThat(body).doesNotContain("\"content_type\"");
@@ -364,7 +364,7 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(zebraIdx).as("typeResolvers before .query()").isLessThan(queryIdx);
     }
 
-    // ===== plain InterfaceType / UnionType TypeResolver emission (Track B1) =====
+    // ===== plain InterfaceType / UnionType TypeResolver emission =====
 
     private static final String PLAIN_INTERFACE_SDL = """
         type Query { search: [Searchable!]! }
@@ -381,10 +381,9 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_typeResolverForPlainInterface_readsTypenameViaDslField() {
-        // Reads the synthetic __typename column Track B's stage-1 emitter projects on every
+        // Reads the synthetic __typename column the multi-table emitter projects on every
         // branch. DSL.field(DSL.name("__typename")) is the typed read used elsewhere in the
-        // generated code; the bare-string overload would also work but the typed form is what
-        // the plan specifies and what stage 2's typed Records carry forward.
+        // generated code; the typed Records carry it forward.
         var body = buildBody(PLAIN_INTERFACE_SDL);
         assertThat(body).contains("\"__typename\"");
         assertThat(body).contains("env.getSchema().getObjectType(typeName)");
@@ -610,9 +609,8 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void scalarRegistration_specBuiltIns_emitOneAdditionalTypePerReferencedScalar() {
-        // A fixture using all five spec built-ins must produce the same five .additionalType
-        // lines the pre-resolver literal block emitted. Anchors the "no regression for
-        // consumers using only spec built-ins" claim.
+        // A fixture using all five spec built-ins must produce one .additionalType line per
+        // scalar.
         var body = buildBody("""
             type Query {
                 i: Int
@@ -676,10 +674,9 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void scalarRegistration_unreferencedSpecBuiltInIsNotEmitted() {
-        // The pre-resolver literal block hardcoded all five spec built-ins regardless of usage. The
-        // resolver-driven path only emits scalars the schema actually references. Graphql-java's
-        // implicit introspection / directive surface pulls in Int, Boolean, and ID for any
-        // schema, but Float has no implicit reference and is omitted when the SDL doesn't use it.
+        // Only scalars the schema actually references are emitted. Graphql-java's implicit
+        // introspection / directive surface pulls in Int, Boolean, and ID for any schema, but
+        // Float has no implicit reference and is omitted when the SDL doesn't use it.
         var body = buildBody("type Query { x: String }");
         assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLString)");
         assertThat(body).doesNotContain(".additionalType(graphql.Scalars.GraphQLFloat)");

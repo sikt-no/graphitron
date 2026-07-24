@@ -23,46 +23,37 @@ import java.util.Set;
  * classified fields, keyed by {@link FieldCoordinates}. Use {@link #field} for O(1) point
  * lookups and {@link #fieldsOf} for O(1) per-type lookups (pre-grouped at construction time).
  *
- * <p>{@link #warnings} carries non-fatal advisories the builder accumulated during
- * classification, shape-parallel to the errors {@code GraphitronSchemaValidator} produces but
- * never fail the build. Surfaced by the plugin's mojos to the Maven log.
+ * <p>{@link #warnings} carries non-fatal advisories accumulated during classification,
+ * shape-parallel to the errors {@code GraphitronSchemaValidator} produces but never failing
+ * the build. Surfaced by the plugin's mojos to the Maven log.
  *
- * <p>{@link #contextArguments} is the cached output of {@link ContextArgumentClassifier}'s
- * cross-site type-agreement walk, computed once at construction time. Both downstream consumers
- * (the validator's {@code validateContextArgumentTypeAgreement} drain and
- * {@code GraphitronFacadeGenerator}'s factory parameter emission) read this field directly
- * rather than re-classifying, so a "single producer" guarantee holds across the two consumers.
+ * <p>{@link #contextArguments} is the cached output of {@link ContextArgumentClassifier},
+ * computed once at construction time. The validator and the facade generator both read this
+ * field rather than re-classifying, so a single-producer guarantee holds across the consumers.
  *
- * <p>{@link #diagnostics} (generalising the {@code domainReturnTypeConflicts} one-off)
- * carries the build-time validation findings the
- * immutable validate phase accumulated instead of demoting a classified verdict to
- * {@code UnclassifiedType} / {@code UnclassifiedField}: the multi-producer {@code DomainReturnType}
- * disagreements, node-typeId collisions, case-fold collisions, the dangling-reference backstop, and
- * the federation {@code @key} checks. Each is a fully-formed {@link ValidationError} (coordinate,
- * typed {@link no.sikt.graphitron.rewrite.model.Rejection Rejection}, source location); the validator drains them into the same
- * {@link ValidationError} stream it emits today, so which schemas pass or fail is unchanged while a
- * verdict read after the walk equals the verdict classification produced. Empty for every
- * test-constructed schema and every error-free build.
+ * <p>{@link #diagnostics} carries build-time validation findings accumulated instead of
+ * demoting a classified verdict to {@code UnclassifiedType} / {@code UnclassifiedField}. Each
+ * is a fully-formed {@link ValidationError}; the validator drains them into the
+ * {@link ValidationError} stream it emits, so a verdict read after the walk equals the verdict
+ * classification produced. Empty for every test-constructed schema and every error-free build.
  *
  * <p>{@link #arrivals} is the ancestor-product arrival fold, a typename-keyed index computed
- * once over the assembled SDL ({@code ArrivalIndex}). It is the ancestor fact {@link #sourceOf} threads
- * into {@link OutputField#source(Arrival)} to pick the {@code OnlyChild} / {@code Child} arm; arrival is
- * a parent-typename-grain fact, so it lives here rather than as a per-leaf component. Empty for
- * test-constructed schemas, which then fold every nested field to the conservative absorbing
- * {@link Arrival#MANY} ({@code Child}).
+ * once over the assembled SDL ({@code ArrivalIndex}). It is the ancestor fact {@link #sourceOf}
+ * threads into {@link OutputField#source(Arrival)}; arrival is a parent-typename-grain fact, so
+ * it lives here rather than as a per-leaf component. Empty for test-constructed schemas, which
+ * then fold every nested field to the conservative absorbing {@link Arrival#MANY}.
  *
- * <p>{@link #reachableSourceShapes} is the reified per-{@link FieldCoordinates} reachable-source-shape
+ * <p>{@link #reachableSourceShapes} is the per-{@link FieldCoordinates} reachable-source-shape
  * fact ({@code MixedSourceReachIndex}), computed once post-walk. It carries an entry only for a
- * coordinate reached through more than one source shape (a directiveless type reached as both a
- * nesting projection and a producer-backed result); single-reach coordinates are absent and derive
- * their singleton on read. The dispatch emitter and the validator's shape-set rule both read it, so
- * neither re-derives the union. Empty for every single-source schema.
+ * coordinate reached through more than one source shape; single-reach coordinates are absent and
+ * derive their singleton on read. The dispatch emitter and the validator's shape-set rule both
+ * read it, so neither re-derives the union. Empty for every single-source schema.
  *
  * <p>{@link #tenantScopes} is the catalog-wide tenant-scope classification
  * ({@link TenantScopeClassifier}), computed once at catalog load from the configured
  * {@code <tenantColumn>} element. The validator's tenant drain and the tenant-routing emitters
- * both read this field, so a "single producer" guarantee holds across the consumers.
- * {@link TenantScopes.None} for single-tenant builds and every test-constructed schema.
+ * both read this field. {@link TenantScopes.None} for single-tenant builds and every
+ * test-constructed schema.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -124,9 +115,8 @@ public record GraphitronSchema(
     }
 
     /**
-     * Convenience constructor used by {@link GraphitronSchemaBuilder}: same field-grouping as the
-     * two-arg form but preserves the {@code warnings} list, the build-time {@code diagnostics} the
- * immutable validate phase accumulated, and the {@code arrivals} arrival index.
+     * Convenience constructor: same field-grouping as the two-arg form but preserves the
+     * {@code warnings}, {@code diagnostics}, and {@code arrivals} components.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -141,8 +131,7 @@ public record GraphitronSchema(
 
     /**
      * The {@link GraphitronSchemaBuilder} constructor: the seven-arg field-grouping form plus
-     * the catalog-derived {@code tenantScopes} classification and the post-walk
-     * {@code tenantBindings} fold.
+     * {@code tenantScopes} and {@code tenantBindings}.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -159,8 +148,8 @@ public record GraphitronSchema(
     }
 
     /**
-     * Five-arg convenience constructor (the pre-arrival-index shape, retained for tests): no arrival index, so
-     * every nested field folds to the conservative {@link Arrival#MANY} ({@code Child}).
+     * Five-arg convenience constructor for tests: no arrival index, so every nested field folds
+     * to the conservative {@link Arrival#MANY}.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -171,9 +160,8 @@ public record GraphitronSchema(
     }
 
     /**
-     * Seven-arg convenience constructor (the pre-arrival-index canonical shape, retained for tests that supply
-     * a pre-grouped {@code fieldsByType} and an explicit {@link ContextArgumentClassifier.Classification}):
-     * no arrival index.
+     * Seven-arg convenience constructor for tests that supply a pre-grouped {@code fieldsByType}
+     * and an explicit {@link ContextArgumentClassifier.Classification}: no arrival index.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
@@ -209,13 +197,11 @@ public record GraphitronSchema(
     }
 
     /**
- * The field's {@code source} arrival endpoint, folding the parent type's ancestor-product
-     * {@link Arrival} into {@link OutputField#source(Arrival)}. The single seam consumers read the
-     * arrival arm through: a nested field on a {@link Arrival#ONE} parent yields {@link Source.OnlyChild},
-     * else {@link Source.Child}; a root field yields {@link Source.Root} (the empty product ignores the
-     * arrival). A missing arrival entry folds to the absorbing {@link Arrival#MANY}, so an incompletely
-     * indexed schema can never mint a spurious {@code OnlyChild}. Returns {@code null} when the coordinate
-     * is absent or does not classify to an {@link OutputField}.
+     * The field's {@link Source} arm, folding the parent type's ancestor-product {@link Arrival}
+     * into {@link OutputField#source(Arrival)}. The single seam consumers read the arrival arm
+     * through. A missing arrival entry folds to the absorbing {@link Arrival#MANY}, so an
+     * incompletely indexed schema can never mint a spurious {@link Source.OnlyChild}. Returns
+     * {@code null} when the coordinate is absent or does not classify to an {@link OutputField}.
      */
     public Source sourceOf(FieldCoordinates coord) {
         if (!(fields.get(coord) instanceof OutputField out)) {

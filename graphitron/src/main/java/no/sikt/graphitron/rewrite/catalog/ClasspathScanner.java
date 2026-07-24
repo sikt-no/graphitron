@@ -19,32 +19,23 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Walks the consumer's compiled class output directory and enumerates the
+ * Walks the consumer's compiled class output directories and enumerates the
  * public top-level classes plus their public methods so the LSP can offer
  * them as completion / hover / diagnostic targets for {@code @service} /
  * {@code @condition} / {@code @record}. Reads {@code .class} bytes via the
- * JDK 25 stdlib {@link java.lang.classfile} API; no external dependency.
+ * stdlib {@link java.lang.classfile} API; no external dependency.
  *
- * <p>Class filter: public access, top-level (no {@code $} in the simple
- * name), not synthetic, not {@code module-info} / {@code package-info},
- * and not under the jOOQ-generated package (those are referenced through
- * {@code @table} / {@code @reference}, not {@code @service}). The filter
- * is generous on purpose: enums and interfaces stay in, because consumers
- * do reference them as {@code @record} class names and as service-method-
- * bearing interfaces. Picking the wrong one is a one-keystroke fix;
- * missing a valid one in the list is a worse failure.
+ * <p>The class filter is generous on purpose: enums and interfaces stay in,
+ * because consumers do reference them as {@code @record} class names and as
+ * service-method-bearing interfaces. Picking the wrong one is a one-keystroke
+ * fix; missing a valid one in the list is a worse failure. Classes under the
+ * jOOQ-generated package are excluded (referenced through {@code @table} /
+ * {@code @reference}, not {@code @service}).
  *
- * <p>Method filter: public, not synthetic, not a constructor / class
- * initializer ({@code <init>} / {@code <clinit>}). Type information comes
- * off the JVM method descriptor — erased / unparameterised, but enough
- * for hover signatures and unknown-method diagnostics. Parameter names
- * come from the {@code MethodParameters} attribute when {@code -parameters}
- * was set on the consumer's compile; absent that attribute, the
- * {@link CompletionData.Parameter#name()} slot is {@code null} (intentionally
- * not the synthesised {@code arg0}/{@code arg1} reflection emits, since the
- * {@code -parameters}-missing LSP diagnostic uses {@code name == null}
- * as its detection signal — a synthesised name would silently disable that
- * warning).
+ * <p>Method type information comes off the erased JVM descriptor, enough for
+ * hover signatures and unknown-method diagnostics. Parameter names follow the
+ * {@link CompletionData.Parameter#name()} null-when-unavailable contract; see
+ * {@link #readParameterNames}.
  */
 public final class ClasspathScanner {
 
@@ -132,21 +123,16 @@ public final class ClasspathScanner {
     /**
      * Reads {@code public static} fields whose JVM type descriptor is exactly
      * {@code Lgraphql/schema/GraphQLScalarType;} so the LSP can complete
-     * {@code @scalarType(scalar:)} from the {@code GraphQLScalarType} constants
-     * actually present on the consumer's codegen classpath (their own and any
- * library's), rather than a hardcoded convention list.
+     * {@code @scalarType(scalar:)} from the constants actually present on the
+     * consumer's codegen classpath rather than a hardcoded convention list.
      *
-     * <p>Exact descriptor compare, not assignability, mirroring
-     * {@link #JOOQ_CONDITION_DESCRIPTOR}: the parse-only scan resolves no type
-     * hierarchy, and the constant is declared as {@code GraphQLScalarType}
-     * directly, so exact match is both sufficient and all the scanner can do.
-     * {@code final} is intentionally not required: the reflective resolver binds
-     * a non-final constant just as well, so requiring it here would drop a
-     * genuinely resolvable completion candidate. The scan sees the field
-     * <em>type</em>, not its runtime value or {@code Coercing} generics; it
-     * offers a candidate FQN, and the reflective resolver / diagnostics remain
-     * the source of truth that rejects a null-at-codegen or erased constant at
-     * build time (the same best-effort contract method completion lives under).
+     * <p>Exact descriptor compare, not assignability: the parse-only scan
+     * resolves no type hierarchy, and the constant is declared as
+     * {@code GraphQLScalarType} directly. {@code final} is intentionally not
+     * required: the reflective resolver binds a non-final constant just as
+     * well. The scan offers a candidate FQN only; the reflective resolver and
+     * diagnostics remain the source of truth that reject a bad constant at
+     * build time.
      */
     private static List<CompletionData.ScalarConstant> readScalarConstants(ClassModel cm) {
         var constants = new ArrayList<CompletionData.ScalarConstant>();
@@ -190,14 +176,12 @@ public final class ClasspathScanner {
             // `<clinit>` in the constant pool; skip both.
             if (name.startsWith("<")) continue;
             var desc = m.methodTypeSymbol();
-            // Classify the return type against jOOQ's Condition here, at the
-            // parse boundary, from the un-erased descriptor — before displayName()
-            // drops the package below and a simple-name match could no longer
-            // tell org.jooq.Condition from a consumer's own type named Condition
-            //. Exact descriptor compare, not assignability: the parse-only
-            // scan resolves no type hierarchy, and the jOOQ idiom returns
-            // Condition directly, so exact match is both sufficient and all the
-            // scanner can do.
+            // Classify the return type at the parse boundary, from the
+            // un-erased descriptor: once displayName() drops the package, a
+            // simple-name match cannot tell org.jooq.Condition from a
+            // consumer's own type named Condition. Exact descriptor compare,
+            // not assignability: the parse-only scan resolves no type
+            // hierarchy, and the jOOQ idiom returns Condition directly.
             boolean returnsCondition = JOOQ_CONDITION_DESCRIPTOR.equals(desc.returnType().descriptorString());
             String returnType = displayName(desc.returnType());
             var paramNames = readParameterNames(m, desc.parameterList().size());
@@ -220,10 +204,10 @@ public final class ClasspathScanner {
      * Reads parameter names off the {@code MethodParameters} attribute when
      * present (i.e. the class was compiled with {@code -parameters}).
      * Returns a list of {@code null}s otherwise, per the
-     * {@link CompletionData.Parameter#name()} contract: a null name is
-     * the detection signal the LSP diagnostic uses to warn the
-     * schema author that parameter help is unavailable until the class
-     * is recompiled with {@code -parameters}.
+     * {@link CompletionData.Parameter#name()} contract: a null name (never a
+     * synthesised {@code arg0}) is the detection signal the LSP diagnostic
+     * uses to warn the schema author that parameter help is unavailable until
+     * the class is recompiled with {@code -parameters}.
      */
     private static List<String> readParameterNames(MethodModel m, int parameterCount) {
         var attrOpt = m.findAttribute(Attributes.methodParameters());
@@ -247,9 +231,6 @@ public final class ClasspathScanner {
     }
 
     private static String displayName(ClassDesc desc) {
-        // ClassDesc.displayName returns the simple Java type name:
-        // "String" for java/lang/String, "int" for I, "List" for
-        // java/util/List, "int[]" for [I.
         return desc.displayName();
     }
 }

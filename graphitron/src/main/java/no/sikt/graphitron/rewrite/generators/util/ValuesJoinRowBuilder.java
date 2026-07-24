@@ -19,43 +19,16 @@ import java.util.function.Function;
  * {@code Query.node} / {@code Query.nodes} dispatch), and the parent-input
  * {@code VALUES} cells of the DataLoader rows methods
  * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter} and
- * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}'s batched arms),
- * which route through {@link #cellsCode} so every VALUES cell in the generator binds as
- * {@code DSL.val(value, col.getDataType())} through the column's registered Converter.
+ * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}'s batched arms).
+ * All routes go through {@link #cellsCode}, so every VALUES cell in the generator binds as
+ * {@code DSL.val(value, col.getDataType())} through the column's registered Converter and
+ * renders a plain JDBC bind, no SQL {@code CAST}.
  *
  * <p>Each method takes the caller's slot list as {@code List<S>} plus a
- * {@code Function<S, ColumnRef>} projection. The lookup site keeps its rich {@code Slot} record
- * (argName + RootSource + decode bindings) and passes {@code Slot::targetColumn}; the dispatcher
- * uses {@code List<ColumnRef>} directly with {@code c -> c}. No parallel-list bridge is required.
- *
- * <p>What's shared:
- * <ul>
- *   <li>The typed {@code Row<N+1><Integer, c1, …>} type-arg array, with the arity-22 cap and a
- *       per-call-site directive context in the cap-violation message.</li>
- *   <li>The {@code @SuppressWarnings({"unchecked", "rawtypes"})}-annotated typed-row array
- *       declaration. Generic array creation forces the cast; both call sites use it.</li>
- *   <li>Per-cell {@code DSL.val(value, table.COL.getDataType())} construction so jOOQ binds
- *       through the column's registered Converter and renders a plain JDBC bind, no SQL
- *       {@code CAST}.</li>
- *   <li>The {@code DSL.values(rows).as(alias, "idx", "<sqlName1>", …)} alias-args list.</li>
- *   <li>A {@code USING(table.C1, …)} column-list helper, consumed by the lookup root path. The
- *       dispatcher path uses an explicit {@code ON} predicate (see {@link SelectMethodBody}'s
- *       Javadoc); the helper does not enforce a join syntax on its callers.</li>
- * </ul>
- *
- * <p>What stays caller-local:
- * <ul>
- *   <li>The for-loop body that fills {@code rows[i]}: the lookup site does composite-key
- *       extraction and per-row {@code DecodedRecord} NodeId decode; the dispatcher reads
- *       {@code idx = binding[0]} and {@code cols = binding[1]}. Callers keep that machinery and
- *       delegate only the typed cell tuple to {@link #cellsCode}.</li>
- *   <li>The {@code idx} cell expression: lookup uses {@code DSL.inline(i)} (compile-time int);
- *       dispatcher uses {@code DSL.val(idx, Integer.class)} (binding-derived). Both render to a
- *       typed {@code Field<Integer>}; callers pass their own {@code idxCellExpr}.</li>
- *   <li>Any extra projections beyond the join (e.g. the dispatcher's
- *       {@code DSL.inline("<TypeName>").as("__typename")}), the join syntax, and the
- *       {@code .where(condition)} / {@code .orderBy(idxCol)} chain.</li>
- * </ul>
+ * {@code Function<S, ColumnRef>} projection, so callers keep their own slot representation
+ * without a parallel-list bridge. The per-row fill loop, the {@code idx} cell expression, extra
+ * projections, the join syntax, and the {@code .where(…)} / {@code .orderBy(…)} chain stay
+ * caller-local.
  */
 public final class ValuesJoinRowBuilder {
 
@@ -143,11 +116,9 @@ public final class ValuesJoinRowBuilder {
 
     /**
      * Variant of {@link #cellsCode(List, Function, CodeBlock, String, BiFunction)} whose table
-     * reference is an arbitrary {@link CodeBlock} expression rather than a Java-local name —
+     * reference is an arbitrary {@link CodeBlock} expression rather than a Java-local name,
      * typically a constants-class reference like {@code Tables.FILM} for callers that have no
-     * aliased table local in scope (the parent-input rows methods). Cell shape is
-     * identical: {@code DSL.val(<value>, <tableExpr>.<COL>.getDataType())} per slot, binding
-     * through the column's registered Converter.
+     * aliased table local in scope. Cell shape is identical.
      */
     public static <S> CodeBlock cellsCode(List<S> slots, Function<S, ColumnRef> column,
                                           CodeBlock idxCellExpr, CodeBlock tableExpr,

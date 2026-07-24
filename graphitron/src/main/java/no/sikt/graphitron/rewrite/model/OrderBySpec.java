@@ -5,28 +5,10 @@ import java.util.List;
 /**
  * Authoritative ordering specification for a SQL-generating field.
  *
- * <p>Every list/connection field always has a non-null {@link OrderBySpec}. Single-value fields
+ * <p>Every list/connection field carries a non-null {@link OrderBySpec}; single-value fields
  * carry {@link None} (the database does not require an ORDER BY for scalar lookups).
- *
- * <p>Three variants:
- * <ul>
- *   <li>{@link Fixed} — a statically resolved ORDER BY derived from {@code @defaultOrder} or the
- *       table's primary key. The column list and direction are known at build time.</li>
- *   <li>{@link Argument} — a dynamic ordering driven by an {@code @orderBy} GraphQL argument.
- *       Contains metadata about the argument ({@code name}, {@code typeName}, {@code sortFieldName},
- *       {@code directionFieldName}), the statically resolved named-order mappings
- *       ({@link NamedOrder}), and a {@link Fixed} {@code base} used as the tiebreaker / fallback
- *       when no {@code @orderBy} argument is supplied at runtime (may be {@code null} when the
- *       table has no primary key and no {@code @defaultOrder} is present).</li>
- *   <li>{@link None} — no ordering is applicable or resolvable (table has no primary key and no
- *       {@code @defaultOrder} directive). The generator will use a jOOQ no-field ordering
- *       placeholder and should emit a warning at generation time.</li>
- * </ul>
- *
- * <p>{@link ColumnOrderEntry} and {@link NamedOrder} are value types used within {@link Fixed}
- * and {@link Argument} respectively. They were previously nested inside
- * {@link FieldWrapper} (as {@code ColumnOrder}, {@code ColumnOrderEntry}, and {@code NamedOrder})
- * and have been relocated here because ordering is no longer a property of the cardinality wrapper.
+ * {@link ColumnOrderEntry} and {@link NamedOrder} are value types used within {@link Fixed}
+ * and {@link Argument} respectively.
  */
 public sealed interface OrderBySpec
         permits OrderBySpec.Fixed, OrderBySpec.Argument, OrderBySpec.None {
@@ -34,9 +16,8 @@ public sealed interface OrderBySpec
     /**
      * Per-entry sort direction. Decoupled from the SDL {@code SortDirection} enum on purpose:
      * this is the resolved truth the emitter consumes, not the directive-argument value the
-     * resolver reads. This was lifted from a whole-spec {@code String} on {@link Fixed} down
-     * onto each {@link ColumnOrderEntry}, so a single fixed spec can carry heterogeneous
-     * directions (e.g. {@code year DESC, key ASC}).
+     * resolver reads. Direction lives on each {@link ColumnOrderEntry}, so a single fixed spec
+     * can carry heterogeneous directions (e.g. {@code year DESC, key ASC}).
      */
     enum SortDirection {
         ASC, DESC;
@@ -44,9 +25,8 @@ public sealed interface OrderBySpec
         /** jOOQ sort-direction method name: {@code "asc"} or {@code "desc"}. */
         public String jooqMethodName() { return this == ASC ? "asc" : "desc"; }
 
-        /** Sibling direction; the runtime-flip helper for backward pagination operates on
-         *  jOOQ {@code SortField}s, but a flipped-direction algebra lives here for callers
-         *  that need it at build time. */
+        /** Sibling direction, for callers that flip at build time (the runtime
+         *  backward-pagination flip operates on jOOQ {@code SortField}s instead). */
         public SortDirection flipped() { return this == ASC ? DESC : ASC; }
     }
 
@@ -71,17 +51,14 @@ public sealed interface OrderBySpec
     record NamedOrder(String name, Fixed order) {}
 
     /**
-     * A statically resolved ORDER BY clause.
-     *
-     * <p>Used directly as the ordering for fields without a dynamic {@code @orderBy} argument,
-     * and as the tiebreaker / fallback inside {@link Argument}.
+     * A statically resolved ORDER BY clause: the ordering for fields without a dynamic
+     * {@code @orderBy} argument, and the tiebreaker / fallback inside {@link Argument}.
      *
      * <p>{@code uniformAsc} is {@code true} iff every entry carries {@link SortDirection#ASC}.
-     * Computed once at resolution time; consumed by the {@code @orderBy} helper emitter to
-     * decide whether the runtime direction arg flips the whole spec (uniform-ASC case) or is
-     * ignored because the spec is direction-locked (any non-ASC entry). Harmless when this
-     * {@code Fixed} is consumed outside the {@code @orderBy} helper path
-     * ({@code @defaultOrder} standalone, PK fallback).
+     * Computed once at resolution time; the {@code @orderBy} helper emitter
+     * ({@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}) uses it to decide
+     * whether the runtime direction argument flips the whole spec (uniform-ASC) or is ignored
+     * because the spec is direction-locked (any non-ASC entry).
      */
     record Fixed(
         List<ColumnOrderEntry> columns,
@@ -116,7 +93,7 @@ public sealed interface OrderBySpec
      *
      * <p>Occurs when the return type is a single value, or when the table has no primary key and
      * no {@code @defaultOrder} directive is present. The generator uses a jOOQ no-field ordering
-     * placeholder and should log a warning at generation time.
+     * placeholder.
      */
     record None() implements OrderBySpec {}
 }

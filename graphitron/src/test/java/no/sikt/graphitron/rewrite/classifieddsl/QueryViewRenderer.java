@@ -50,64 +50,49 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * The query-as-view renderer (Spec §"Rendering: queries as views over the corpus"). Prose embeds a
- * GraphQL <em>query</em> (or a fragment {@code on Type}) naming the coordinates it wants to show; the
- * renderer resolves that selection against the assembled corpus schema and regenerates minimal SDL for
- * the touched closure. One mechanism does the three jobs the Spec asks for at once:
+ * The query-as-view renderer. Prose embeds a GraphQL <em>query</em> (or a fragment {@code on Type})
+ * naming the coordinates it wants to show; the renderer resolves that selection against the
+ * assembled corpus schema and regenerates minimal SDL for the touched closure. One mechanism does
+ * three jobs at once:
  *
  * <ol>
  *   <li><b>Import what's relevant</b>: the selection set is the projection, reusing GraphQL's own
- *       selection mechanism (a pre-order walk of the parsed selection against the assembled schema)
- *       instead of bespoke include-tags.</li>
+ *       selection mechanism instead of bespoke include-tags.</li>
  *   <li><b>Strip the test directives</b>: regeneration emits only real schema, so {@code @classified}
- *       / {@code @classifiedType} are simply never printed, while real Graphitron directives
- *       ({@code @table}, {@code @field}, {@code @asConnection}, {@code @mutation}, ...) survive.</li>
+ *       / {@code @classifiedType} are never printed, while real Graphitron directives survive.</li>
  *   <li><b>Bound the snippet</b>: each touched field container is pruned to exactly the selected
  *       fields, so a sibling field or type the selection did not name is not dragged in.</li>
  * </ol>
  *
  * <p>The selection-and-prune technique follows {@code no.sikt.fs.app.util.GraphQLSubsetter}
- * (the <em>graphql-scissors</em> library): collect the touched fields per parent, then keep only those
- * fields. Where scissors strips <em>all</em> directives and re-assembles through
- * {@code makeExecutableSchema} + {@code SchemaPrinter}, this renderer prints the pruned <em>AST</em>
- * directly ({@link AstPrinter}). That keeps real directives without forcing the whole
- * directive-definition and enum vocabulary into the pruned subset, and prints the <em>authored</em> SDL
- * from the parsed registry (so {@code @asConnection} renders as written rather than as the generated
- * {@code *Connection} wrapper the schema transform produces).
+ * (the <em>graphql-scissors</em> library), but where scissors strips <em>all</em> directives and
+ * re-assembles through {@code makeExecutableSchema} + {@code SchemaPrinter}, this renderer prints
+ * the pruned <em>AST</em> directly ({@link AstPrinter}). That keeps real directives without forcing
+ * the whole directive-definition and enum vocabulary into the pruned subset, and prints the
+ * <em>authored</em> SDL from the parsed registry (so {@code @asConnection} renders as written
+ * rather than as the generated {@code *Connection} wrapper the schema transform produces).
  *
- * <p><strong>Selection forms.</strong> The walk handles all three GraphQL selection mechanisms against
- * the assembled schema: plain fields, inline fragments ({@code ... on Film}), and named fragment
- * spreads. A document may carry an operation ({@code query}/{@code mutation}) or stand as a bare
- * {@code fragment F on Type { ... }}; the latter is the <em>type-display</em> form the Spec promises,
- * naming an output type directly without routing a query through a field that happens to return it
- * (so {@code ErrorType} and friends, which no query reaches, still render).
+ * <p><strong>Selection forms.</strong> A document may carry an operation ({@code query} /
+ * {@code mutation}) or stand as a bare {@code fragment F on Type { ... }}; the latter is the
+ * <em>type-display</em> form, naming an output type directly without routing a query through a
+ * field that happens to return it (so types no query reaches still render).
  *
  * <p><strong>Closure.</strong> The projection is the selection's reachability, with two expansions
- * beyond the field containers it descends into so the excerpt does not reference types it never shows
- * (the closure-honesty rule, Spec §"Pre-migration hardening" item 3):
- * <ul>
- *   <li><b>Input-object closure</b>: a kept field's argument types (mutation inputs, {@code @lookupKey}
- *       args) are emitted in full, recursing through nested input objects. Input objects are input-field
- *       containers, so a {@code createFilm(in: FilmInput!)} shows {@code FilmInput} rather than dangling.</li>
- *   <li><b>Abstract output types</b>: a union or interface reached by a kept field (or named by a
- *       fragment {@code on}) is emitted, so a polymorphic excerpt shows its {@code union X = A | B} /
- *       {@code interface} declaration. An interface the selection also takes fields off is pruned through
- *       the normal field-container path instead.</li>
- * </ul>
- * Scalars and enums remain unexpanded (they are leaf vocabulary, not containers the selection descends
- * into), as do the generated {@code @asConnection} {@code *Connection} / {@code *Edge} wrappers, the
- * authored field that produces them prints instead. The Spec scopes this to "cheap insurance, not a hard
- * gate."
+ * so the excerpt does not reference types it never shows (the closure-honesty rule): a kept field's
+ * argument types are emitted in full, recursing through nested input objects, and a union or
+ * interface reached by a kept field (or named by a fragment {@code on}) is emitted so a polymorphic
+ * excerpt shows its declaration. Scalars and enums stay unexpanded (leaf vocabulary, not containers
+ * the selection descends into), as do the generated {@code @asConnection} wrappers; the authored
+ * field that produces them prints instead.
  *
  * <p><strong>Descriptions.</strong> The projection query is the per-example place to say <em>why</em>
- * a coordinate exists, which the shared description-free corpus fixture cannot. A {@code # ...} line comment
- * above a selected coordinate renders as that coordinate's SDL {@code Description}: above a field it
- * describes the field, above {@code ... on T} or a top-level {@code fragment f on T} it describes type
- * {@code T}. Multiple comment lines join into a block-string description. Comments are the durable carrier
- * for field prose because {@code Field} is not a {@code DescribedNode} in any graphql-java version;
- * {@link #descriptionOf(Node)} is the single source seam where native executable descriptions fold in once
- * graphql-java is bumped past the pinned 25.0 (Spec §"Future evolution"). A projection with no comments
- * renders exactly as before.
+ * a coordinate exists, which the shared description-free corpus fixture cannot. A {@code # ...}
+ * comment line above a selected coordinate renders as that coordinate's SDL {@code Description}:
+ * above a field it describes the field, above {@code ... on T} or a top-level
+ * {@code fragment f on T} it describes type {@code T}; multiple comment lines join into a
+ * block-string description. Comments carry field prose because {@code Field} is not a
+ * {@code DescribedNode} in any graphql-java version; see {@link #descriptionOf(Node)}. A projection
+ * with no comments renders unchanged.
  */
 public final class QueryViewRenderer {
 
@@ -127,7 +112,7 @@ public final class QueryViewRenderer {
         new Walk(schema, indexFragments(doc), touched).fromDocument(doc);
 
         var sb = new StringBuilder();
-        // 1. Output field containers, pruned to the selected fields (the field/catalog side; preserved verbatim).
+        // 1. Output field containers, pruned to the selected fields.
         for (var entry : touched.fieldsByParent.entrySet()) {
             TypeDefinition<?> def = registry.getTypeOrNull(entry.getKey());
             if (def != null) {
@@ -169,12 +154,11 @@ public final class QueryViewRenderer {
     }
 
     /**
-     * The coordinates a selection touches: pruned field containers, plus the abstract/input closures to
-     * emit whole, plus the description prose authored as comments next to the selected coordinates. A
-     * comment above a selected field lands under {@link #fieldDescriptions} keyed by {@code (parent,
-     * field)}; a comment above an {@code ... on T} inline fragment or a top-level {@code fragment f on T}
-     * lands under {@link #typeDescriptions} keyed by type name. The emit loop reads these back as it
-     * rebuilds each {@code DescribedNode} and stamps them on as SDL descriptions.
+     * The coordinates a selection touches: pruned field containers, the abstract/input closures to
+     * emit whole, and the comment-authored description prose. Field comments land under
+     * {@link #fieldDescriptions} keyed by {@code (parent, field)}; type comments land under
+     * {@link #typeDescriptions} keyed by type name. The emit loop reads these back and stamps them
+     * on as SDL descriptions.
      */
     private static final class Touched {
         final Map<String, Set<String>> fieldsByParent = new LinkedHashMap<>();
@@ -350,11 +334,11 @@ public final class QueryViewRenderer {
     }
 
     /**
-     * The single source seam (Spec §"Future evolution"). Today every description text comes from
-     * {@code # ...} comments on the selection AST; when graphql-java is bumped past 25.0, native
-     * executable {@code getDescription()} reads on {@code FragmentDefinition} / {@code VariableDefinition}
-     * fold in here, and the output side below does not change. {@code Field} prose stays comment-sourced
-     * regardless, since {@code Field} never becomes a {@code DescribedNode}.
+     * The single description-source seam: every description text comes from {@code # ...} comments
+     * on the selection AST. Native executable {@code getDescription()} reads (available in
+     * graphql-java releases past the pinned 25.0) fold in here without the output side changing;
+     * {@code Field} prose stays comment-sourced regardless, since {@code Field} is never a
+     * {@code DescribedNode}.
      */
     private static String descriptionOf(Node<?> node) {
         List<Comment> comments = node.getComments();

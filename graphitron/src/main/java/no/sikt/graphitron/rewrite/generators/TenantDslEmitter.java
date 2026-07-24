@@ -28,18 +28,18 @@ import java.util.Set;
  * {@code TenantConnections} carrier:
  *
  * <ul>
- *   <li>{@link TenantBinding.ArgumentBound} — reads every bound slot's runtime value with the
+ *   <li>{@link TenantBinding.ArgumentBound}: reads every bound slot's runtime value with the
  *       exact build-time-computed read (top-level argument or nested path; never a name search),
  *       folds them through the generated {@code divinedTenant} guard (collections flatten, all
  *       values must agree, absent is a request-level error), and acquires via {@code dslFor(key)}.
  *       The divined key is additionally handed down the subtree as graphql-java
  *       {@code localContext} (see {@link Resolution#handsDownTenant()}), which is what the
  *       {@link TenantBinding.Inherited} arm reads.</li>
- *   <li>{@link TenantBinding.Inherited} — the binding ancestor divined the tenant and handed it
+ *   <li>{@link TenantBinding.Inherited}: the binding ancestor divined the tenant and handed it
  *       down as {@code localContext}; the field re-acquires the same tenant's connection through
  *       {@code dslFor}. Within a tenant-homogeneous execution context this is a value hand-down,
  *       not a per-row re-read.</li>
- *   <li>{@link TenantBinding.Untenanted} — global reference data; acquires the default source
+ *   <li>{@link TenantBinding.Untenanted}: global reference data; acquires the default source
  *       via {@code dslDefault()}, and deliberately never consults {@code localContext} (a global
  *       table under a bound ancestor still lives on the default source).</li>
  * </ul>
@@ -103,16 +103,10 @@ final class TenantDslEmitter {
                     .build(),
                 false);
             case TenantBinding.ArgumentBound bound -> argumentBound(ctx, field, bound, tenantConnections);
-            // A fanned field never declares one DSLContext: its fetcher computes the fan-out
-            // domain and runs the statement per tenant through the carrier's scatter helper, so
-            // this coordinate reaching the generic declaration site is a generation-time failure.
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + field.name() + "' classified as tenant "
                     + "FanOut reached the generic DSL-declaration site; the fanned-fetcher emission "
                     + "owns this coordinate and acquires per tenant through scatter.");
-            // Inherited, and the per-row family reaching a non-dispatch site: read the tenant the
-            // binding ancestor handed down as localContext; absent hands-down fail loudly in the
-            // generated divinedTenant guard rather than routing to a default connection.
             case TenantBinding.Inherited ignored -> inheritedRead(tenantConnections);
             case TenantBinding.NodeIdBound ignored -> inheritedRead(tenantConnections);
             case TenantBinding.EntityRepBound ignored -> inheritedRead(tenantConnections);
@@ -174,9 +168,8 @@ final class TenantDslEmitter {
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
                     + "bound-slot reads; route it through TenantDslEmitter.resolve with the field carrier.");
-            // The expression-only sites are the service-call paths, and service fan-out is
-            // deferred: the classifier rejects @tenantFanOut on @service/@tableMethod fields, so
-            // reaching this arm is a graphitron bug, not an unrouted connection.
+            // Unreachable by design: the classifier rejects @tenantFanOut on @service/@tableMethod
+            // fields, so this arm firing is a graphitron bug, not an unrouted connection.
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "FanOut reached an expression-only DSL site (a service-call path); the "

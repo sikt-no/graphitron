@@ -21,7 +21,7 @@ import java.util.Optional;
  * reflects the user's latest edit or the last successful parse before a
  * regression. Consumers that don't care about freshness switch on the
  * {@link Built} super-permit and read {@link Built#directives()} /
- * {@link Built#typesByName()} uniformly; consumers that care (today: the
+ * {@link Built#typesByName()} uniformly; consumers that care (the
  * unknown-directive validator) switch through to the leaf permits.
  *
  * <p>{@code Workspace} owns the lifecycle and the volatile reference; the
@@ -59,11 +59,10 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         Map<String, TypeBackingShape> typesByName();
 
         /**
- * Per-carrier projection of the payload data field's name. Keyed by the
+         * Per-carrier projection of the payload data field's name. Keyed by the
          * carrier's SDL type name; value is the SDL field name of the carrier's single
-         * data field. Populated only for types whose classifier-side structural DML-payload
-         * scan ({@code BuildContext.scanStructuralDmlPayload}) admits; absent for everything
-         * else.
+         * data field. Populated only for types the classifier-side structural DML-payload
+         * scan admits.
          *
          * <p>Backing data for {@link #siteContext(String, String)}; the LSP arms route through
          * that method rather than evaluating the (typeName, fieldName) predicate themselves.
@@ -71,32 +70,28 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         Map<String, String> payloadDataFieldByType();
 
         /**
- * Per-field LSP classification projection. Keyed by
+         * Per-field LSP classification projection. Keyed by
          * {@code "ParentType.fieldName"}; value is the {@link FieldClassification} variant
          * the LSP's inlay-hint and hover arms render. Absent entries mean the classifier
-         * produced no field for that coordinate (e.g., the buffer is mid-edit and
-         * references a field the schema does not yet declare).
+         * produced no field for that coordinate (e.g. the buffer is mid-edit).
          */
         Map<String, FieldClassification> fieldClassificationsByCoord();
 
         /**
- * Per-type LSP classification projection. Keyed by the SDL type name; value
+         * Per-type LSP classification projection. Keyed by the SDL type name; value
          * is the {@link TypeClassification} variant the LSP's inlay-hint and hover arms
          * render. Absent entries mean the classifier produced no type for that name.
          */
         Map<String, TypeClassification> typeClassificationsByName();
 
         /**
- * Per-named-type declaration location, keyed by the SDL type name; value is
+         * Per-named-type declaration location, keyed by the SDL type name; value is
          * the canonical {@code type}/{@code scalar} declaration's source position
-         * (0-based LSP coordinates, matching every other goto-definition consumer of
-         * {@link CompletionData.SourceLocation}). Lets the LSP's intra-schema
-         * goto-definition resolve a type reference to its declaration even when the
-         * declaring file is not in an open buffer; the open-buffer tree-sitter scan stays
-         * authoritative and this is the workspace-wide fallback. Populated from the
-         * {@code TypeDefinitionRegistry} in {@code CatalogBuilder.buildSnapshot}; absent
-         * entries (built-in scalars, types declared in the bundled directive source) are
-         * not jumpable.
+         * (0-based LSP coordinates, as in {@link CompletionData.SourceLocation}).
+         * The workspace-wide goto-definition fallback for type references whose
+         * declaring file is not in an open buffer; the open-buffer tree-sitter scan
+         * stays authoritative. Absent entries (built-in scalars, types declared in
+         * the bundled directive source) are not jumpable.
          */
         Map<String, CompletionData.SourceLocation> typeDefinitionLocations();
 
@@ -129,7 +124,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         /**
- * Convenience lookup; returns {@link Optional#empty()} when no declaration
+         * Convenience lookup; returns {@link Optional#empty()} when no declaration
          * location is on file for {@code name} (built-in scalar, bundled-directive type,
          * or a name the schema does not declare).
          */
@@ -138,14 +133,13 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         /**
- * Site-context classifier at LSP-time. Returns the
+         * Site-context classifier at LSP-time. Returns the
          * {@link FieldSourceSigil.SiteContext} arm that
          * {@link FieldSourceSigil#sourceSigilDefinedAt} dispatches on for the
-         * {@code (typeName, fieldName)} coordinate. The snapshot is the single source of truth
-         * for which coordinate is the payload-data-field admit site today; LSP consumers route
-         * through this method rather than reimplementing the predicate against the underlying
-         * {@link #payloadDataFieldByType()} map, so a future broadening (a new admit site, a
-         * second sigil) flips the sealed answer in one place.
+         * {@code (typeName, fieldName)} coordinate. The single source of truth for which
+         * coordinate is the payload-data-field admit site; LSP consumers route through this
+         * method rather than reimplementing the predicate against the underlying
+         * {@link #payloadDataFieldByType()} map.
          */
         default FieldSourceSigil.SiteContext siteContext(String typeName, String fieldName) {
             var carrierField = payloadDataFieldByType().get(typeName);
@@ -188,8 +182,7 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
 
             /**
              * Convenience constructor for callers that populate the classification
-             * projections but not the type-definition-location map (the directive /
-             * classification fixtures predate goto-definition fallback).
+             * projections but not the type-definition-location map.
              */
             public Current(
                 List<DirectiveShape> directives,

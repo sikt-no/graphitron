@@ -56,17 +56,12 @@ import java.util.function.Consumer;
  * </ul>
  *
  * <h3>Errors</h3>
- * <p>Validation failures are recorded as {@link UnclassifiedType} demotions on the type map
- * (same channel as {@link no.sikt.graphitron.rewrite.TypeBuilder} uses for unresolvable
- * {@code @table}s). Causes:
- * <ul>
- *   <li>Malformed {@code fields:} string — caught by {@link FederationKeyFieldsParser}</li>
- *   <li>A <em>resolvable</em> {@code @key} on a non-table-bound type, or {@code @key} on
- *       {@link TableInterfaceType}. A type whose {@code @key} directives are all
- *       {@code resolvable: false} is a reference-only entity stub: it is skipped (no entity
- *       entry, no rejection) since this subgraph emits no {@code _entities} handler for it.</li>
- *   <li>{@code @key(fields:)} references a field that is not a column</li>
- * </ul>
+ * <p>Validation failures (malformed {@code fields:} strings, a resolvable {@code @key} on a
+ * non-table-bound type, {@code @key(fields:)} naming a non-column field) are registered as
+ * {@link ValidationError}s on the diagnostic sink; the type keeps its classified verdict. A type
+ * whose {@code @key} directives are all {@code resolvable: false} is a reference-only entity
+ * stub: it is skipped (no entity entry, no rejection) since this subgraph emits no
+ * {@code _entities} handler for it.
  */
 public final class EntityResolutionBuilder {
 
@@ -79,11 +74,10 @@ public final class EntityResolutionBuilder {
 
     /**
      * Walks the classified type map and returns an entity-resolution entry for every type
-     * whose schema element carries at least one {@code @key} directive. A type
-     * whose {@code @key} directives cannot be resolved keeps its classified verdict; the federation
-     * rejection is registered as a build-time {@link ValidationError} on {@code diagnosticSink}
-     * (the validator drains it) rather than demoting the registry entry, so a verdict read after the
-     * walk equals the verdict classification produced.
+     * whose schema element carries at least one {@code @key} directive. A type whose {@code @key}
+     * directives cannot be resolved keeps its classified verdict; the federation rejection is
+     * registered as a build-time {@link ValidationError} on {@code diagnosticSink} (the validator
+     * drains it).
      *
      * @param registry the classifier's type registry (read-only here)
      * @param fields the classifier's field map (read-only)
@@ -101,12 +95,10 @@ public final class EntityResolutionBuilder {
         Consumer<ValidationError> diagnosticSink
     ) {
         var out = new LinkedHashMap<String, EntityResolution>();
-        // A @key object type the type pass left unclassified (a directiveless object — a
-        // federation entity needs a @table) is absent from the registry, so the entity loop below
-        // never sees it. Reject it here with the federation diagnostic rather than letting it slip
-        // through as a generic unclassified field. Registers the rejection on the
-        // diagnostic channel; the type stays absent from the registry (it was never classified) and
-        // the entity loop below still never sees it, so no entity entry is built.
+        // A @key object type the type pass left unclassified (directiveless; a federation entity
+        // needs a @table) is absent from the registry, so the entity loop below never sees it.
+        // Register the federation diagnostic here rather than letting it slip through as a
+        // generic unclassified field; no entity entry is built.
         for (var named : assembled.getAllTypesAsList()) {
             if (named instanceof GraphQLObjectType keyObj
                     && !keyObj.getName().startsWith("__")
@@ -125,14 +117,12 @@ public final class EntityResolutionBuilder {
             GraphQLNamedType assembledType = assembled.getType(typeName) instanceof GraphQLNamedType nt ? nt : null;
             if (!(assembledType instanceof GraphQLObjectType objType)) continue;
             var keys = objType.getAppliedDirectives(KEY_DIRECTIVE);
-            // NodeTypes always get an entity entry: their NODE_ID alternative is the
-            // canonical SELECT path used by Query.node, Query.nodes, and federation
-            // _entities — regardless of whether federation @link is present. Skip only
-            // when neither @key nor @node applies.
+            // NodeTypes always get an entity entry: their NODE_ID alternative is the canonical
+            // SELECT path used by Query.node, Query.nodes, and federation _entities, regardless
+            // of whether federation @link is present.
             boolean isNodeType = gType instanceof NodeType;
             if (keys.isEmpty() && !isNodeType) continue;
 
-            // @key on a TableInterfaceType is rejected.
             if (gType instanceof TableInterfaceType) {
                 diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(
                     "@key on TableInterfaceType is not supported; declare @key on the implementing types instead"),
@@ -146,16 +136,12 @@ public final class EntityResolutionBuilder {
             if (gType instanceof UnclassifiedType) {
                 continue;
             }
-            // Federation entities require a backing table (the dispatcher SELECTs from it) —
-            // but only when a key is resolvable. A type whose @key directives are all
-            // resolvable: false is a reference-only entity stub: it is declared for the
-            // supergraph composer, but this subgraph does not own its resolution, emits no
-            // _entities handler for it, and so needs no backing table. Skip it without an
-            // entity entry (the dispatcher never sees it; the type stays classified as
-            // whatever it is, e.g. a record-backed type). Demote only when at least one key is
-            // resolvable and thus needs a SELECT path. (keys is non-empty here: NodeType is
-            // excluded by the branch condition, and the keys.isEmpty() && !isNodeType case
-            // already continued above.)
+            // Federation entities require a backing table (the dispatcher SELECTs from it), but
+            // only when a key is resolvable. A type whose @key directives are all
+            // resolvable: false is a reference-only entity stub: declared for the supergraph
+            // composer, but this subgraph does not own its resolution and emits no _entities
+            // handler for it, so it needs no backing table. Skip it without an entity entry or
+            // rejection; reject only when at least one key is resolvable and needs a SELECT path.
             if (!(gType instanceof TableType || gType instanceof NodeType)) {
                 boolean anyResolvable = keys.stream().anyMatch(EntityResolutionBuilder::readResolvableArg);
                 if (!anyResolvable) {
@@ -194,13 +180,10 @@ public final class EntityResolutionBuilder {
                 diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(error), gType.location()));
                 continue;
             }
-            // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used
-            // by Query.node, Query.nodes, and federation _entities. Add one synthetically when
-            // no explicit @key(fields: "id") is among the user-declared keys (in the federation
-            // pipeline KeyNodeSynthesiser fills this in at the registry level; tests that
-            // bypass loadAttributedRegistry rely on this synthesis instead). Prepend so the
-            // most-specific selection logic still finds the user's wider keys first when those
-            // are richer than the ["id"] alternative.
+            // Synthesise a NODE_ID alternative when no explicit @key(fields: "id") is among the
+            // user-declared keys (KeyNodeSynthesiser fills this in at the registry level; tests
+            // that bypass loadAttributedRegistry rely on this synthesis instead). Prepend so the
+            // most-specific selection logic still finds the user's wider keys first.
             if (isNodeType && !hasNodeIdAlternative(alternatives)) {
                 NodeType nt = (NodeType) gType;
                 alternatives.add(0, new KeyAlternative.NodeId(
@@ -218,10 +201,8 @@ public final class EntityResolutionBuilder {
     }
 
     /**
-     * Author-facing label for a non-table-bound classification surviving the
-     * pre-checks in {@link #build}. Used inside the rejection message that fires
-     * when {@code @key} is declared on a type the classifier produced as something
-     * other than {@link TableType} or {@link NodeType}.
+     * Author-facing label for a non-table-bound classification, used in the rejection message
+     * for {@code @key} on a type that is neither {@link TableType} nor {@link NodeType}.
      */
     private static String kindLabel(GraphitronType gType) {
         return switch (gType) {
@@ -288,13 +269,12 @@ public final class EntityResolutionBuilder {
                     + typeName + "' references field '" + name
                     + "' which is not a column-backed field on this type's table");
             }
-            // A @key whose referenced field is itself an @nodeId-encoded reference carrier
-            // (a ColumnBackedReferenceField wrapping its column in NodeIdEncodeKeys) cannot resolve
-            // through the DIRECT _entities path: that path binds the rep's field value verbatim, but
-            // the rep carries a base64-encoded global id, so the encoded id is bound undecoded into
-            // the VALUES table — a never-matches predicate or a SQL bind/type error at runtime. Reject
-            // fatally (not the non-fatal compound-id warning below, which covers the distinct
-            // own-column 'id' carrier). Decode-into-rep is a possible follow-on; rejection first.
+            // A @key whose referenced field is an @nodeId-encoded reference carrier cannot
+            // resolve through the DIRECT _entities path: that path binds the rep's field value
+            // verbatim, but the rep carries a base64-encoded global id, so the encoded id is
+            // bound undecoded into the VALUES table (a never-matches predicate or a SQL
+            // bind/type error at runtime). Reject fatally, not with the non-fatal compound-id
+            // warning below, which covers the distinct own-column 'id' carrier.
             if (field instanceof ChildField.ColumnBackedReferenceField cref
                 && cref.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new AltResult.Fatal(ValidationError.forType(typeName, Rejection.invalidSchema(

@@ -5,28 +5,11 @@ import java.util.List;
 /**
  * An implementing or member type of an interface or union.
  *
- * <p>Variants:
- * <ul>
- *   <li>{@link TableBound} — the participant's data lives wholly on one table (the shared
- *       interface/base table for single-table discriminated inheritance, or its own independent
- *       PK-bearing table for multi-table polymorphism). Carries an optional discriminator value
- *       and an optional cross-table-field list.</li>
- *   <li>{@link JoinedTableBound} — a joined-table (class-table) inheritance participant: a
- *       discriminated base shared with its siblings plus the participant's own detail table,
- *       joined to the base by the author-declared child&rarr;parent {@code @reference} (PK=FK).
- *       Carries that resolved hop; field residence is declared by the per-field {@code @reference}
- *       and read off the field variant, not stored here. Only ever appears in a
- * {@link GraphitronType.TableInterfaceType} participant list.</li>
- *   <li>{@link Unbound} — the participant is not table-backed (e.g. {@code @error} types,
- *       structural interfaces, value types). Generator code must skip SQL generation for
- *       unbound participants.</li>
- * </ul>
- *
- * <p>{@link TableBound} and {@link JoinedTableBound} share the {@link TableBacked} capability so
- * sites that only need the participant's type name, table, and discriminator value (TypeResolver
- * routing, discriminator-value collection) read them uniformly without distinguishing single-table
- * from joined-table participants. The emitter switches on the concrete variant where the join shape
- * differs.
+ * <p>{@link TableBound} (single-table) and {@link JoinedTableBound} (joined-table inheritance)
+ * share the {@link TableBacked} capability so sites that only need the participant's type name,
+ * table, and discriminator value (TypeResolver routing, discriminator-value collection) read
+ * them uniformly; the emitter switches on the concrete variant where the join shape differs.
+ * {@link Unbound} covers participants without a backing table.
  */
 public sealed interface ParticipantRef permits ParticipantRef.TableBacked, ParticipantRef.Unbound {
 
@@ -41,7 +24,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * <p>For {@link TableBound} the table is the single table the participant's data lives on; for
      * {@link JoinedTableBound} it is the participant's detail table. {@code discriminatorValue} is
      * the {@code @discriminator(value:)} on the participant type, or {@code null} when absent
-     * (only single-table {@link TableBound} multi-table participants leave it null; a
+     * (only {@link TableBound} participants of multi-table interfaces/unions leave it null; a
      * {@link JoinedTableBound} always carries one).
      */
     sealed interface TableBacked extends ParticipantRef permits TableBound, JoinedTableBound {
@@ -104,7 +87,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
             }
             /** The FK-derived column pairs of the single cross-table hop. */
             public On.ColumnPairs pairs() { return (On.ColumnPairs) hop.on(); }
-            /** The cross table joined to project this field — equivalent to {@code hop().targetTable()}. */
+            /** The cross table joined to project this field; equivalent to {@code hop().targetTable()}. */
             public TableRef targetTable() { return hop.targetTable(); }
 
             /** Java variable name used in the generated interface fetcher to hold the aliased target table. */
@@ -113,7 +96,8 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
     }
 
     /**
- * A joined-table (class-table) inheritance participant.
+     * A joined-table (class-table) inheritance participant. Only ever appears in a
+     * {@link GraphitronType.TableInterfaceType} participant list.
      *
      * <p>The participant shares a discriminated base table with its sibling participants (one PK
      * space, one discriminator column) and declares its own detail table via {@code @table}. Its

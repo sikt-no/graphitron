@@ -27,20 +27,18 @@ import java.util.Set;
  * {@code OnlyChild} / {@code Child} arm.
  *
  * <h3>The fold</h3>
- * Arrival is the lattice {@code One < Many} with {@code Many} absorbing (the wrapper-algebra monoid,
- * {@code Root} the empty product, {@code OnlyChild} the identity, {@code Child} the absorber).
- * For a composite type {@code T}:
+ * Arrival is the lattice {@code One < Many} with {@code Many} absorbing (the
+ * {@link Arrival#tensor(Arrival)} monoid). For a composite type {@code T}:
  * <ul>
  *   <li><b>Many</b> if {@code T} carries a {@code @node} / {@code @key} seed (node and entity lookups
  *       arrive batched), or if more than one field edge reaches {@code T} through the structural
  *       closure (two coordinates can co-materialize {@code T} instances in one request). The
- *       multi-edge rule subsumes recursion — a reachable cycle implies a second reaching edge — so no
+ *       multi-edge rule subsumes recursion (a reachable cycle implies a second reaching edge), so no
  *       fixed point is needed; the {@code One} verdicts form an acyclic tree hanging off the operation
  *       roots.</li>
  *   <li>else, with exactly one reaching field edge {@code (P, f)}: {@code arrival(P)} tensored with
- *       {@code wrapper(f)}, where {@code wrapper(f)} contributes {@code Many} for any list wrapper and
- *       {@code One} otherwise, and the arrival of a root operation type is the empty product
- *       ({@code One}).</li>
+ *       {@code wrapper(f)}, where a list wrapper contributes {@code Many}, anything else {@code One},
+ *       and a root operation type's arrival is the empty product ({@code One}).</li>
  * </ul>
  *
  * <h3>Edges</h3>
@@ -48,19 +46,20 @@ import java.util.Set;
  * promotion) schema so list-ness is the raw SDL fact: {@code @asConnection}'s pre-promotion field is a
  * list ({@code Many}), and a native Relay connection's many-ness arrives through the connection type's
  * {@code edges} list edge rather than the (single) connection field. A field edge is an <em>object</em>
- * type's field reaching a composite type (interface parents emit no edges — their concrete implementors
+ * type's field reaching a composite type (interface parents emit no edges; their concrete implementors
  * carry the real producers); the reach then propagates through the structural closure (interface →
  * implementors, union → members), which names the same instances, not additional ones, so arrival flows
  * through it unchanged while still counting toward the multi-edge test.
  *
  * <p>Pure, no classification duty and no graphql-java types survive into the stored value (parse-boundary
- * containment): built once from the SDL before any consumer reads it. {@link #EMPTY} answers every
- * lookup with the conservative absorbing {@link Arrival#MANY} for test-constructed schemas that carry no
- * index.
+ * containment): built once from the SDL before any consumer reads it.
  */
 record ArrivalIndex(Map<String, Arrival> byName) {
 
-    /** The conservative empty index: every lookup folds to the absorbing {@link Arrival#MANY}. */
+    /**
+     * The conservative empty index for schemas that carry no index (test-constructed): every
+     * lookup folds to the absorbing {@link Arrival#MANY}.
+     */
     static final ArrivalIndex EMPTY = new ArrivalIndex(Map.of());
 
     ArrivalIndex {

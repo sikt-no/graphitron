@@ -26,7 +26,7 @@ import java.util.Set;
  *       unique across the union, not merely within each family. The jOOQ-record arm's shape
  *       contention (one record class reached by several binding shapes, disambiguated with ordinal
  *       suffixes) is layered on top by {@link JooqRecordHelperNames}, whose per-class <em>base
- *       stem</em> now comes from this resolver's {@code create*} stem map. Cross-class
+ *       stem</em> comes from this resolver's {@code create*} stem map. Cross-class
  *       disambiguation ("which class") and within-class shape contention ("which binding shape")
  *       are orthogonal and compose as {@code create<stem><ordinal>}.</li>
  *   <li>the <b>{@code decode*}</b> namespace, whose stem set spans the {@code @nodeId} record-decode
@@ -37,16 +37,12 @@ import java.util.Set;
  * <h3>Stem rule</h3>
  *
  * <p>A class whose simple name is unique within its namespace keeps {@link ClassName#simpleName()}
- * as its stem, so the overwhelmingly common single-schema case is byte-for-byte unchanged. A class
- * whose simple name collides gets a disambiguator <em>prefixed</em> to the simple name, derived from
- * the class's own package (a stable per-class fact, independent of which other classes happen to
- * collide with it): for a jOOQ-layout package ({@code …<schema>.tables.records}) the schema segment,
- * for any other package the last segment, each pascal-cased. Uniqueness is enforced over the
- * <em>emitted method names</em> (singular and plural forms both), catching the
- * {@code create<A>List}-versus-bean-named-{@code AList} overlap. If the disambiguator still yields
- * duplicates (distinct package segments that pascal-case to the same token, or degenerate layouts),
- * the rule extends deterministically with further package segments right-to-left; if that exhausts,
- * a 1-based ordinal ordered by full class name guarantees termination.
+ * as its stem (the overwhelmingly common single-schema case). A class whose simple name collides
+ * gets a disambiguator <em>prefixed</em> to the simple name, derived from the class's own package
+ * (a stable per-class fact, independent of which other classes happen to collide with it); token
+ * choice and escalation live on {@link #disambiguatorTokens} and {@link #disambiguate}. Uniqueness
+ * is enforced over the <em>emitted method names</em> (singular and plural forms both), catching the
+ * {@code create<A>List}-versus-bean-named-{@code AList} overlap.
  *
  * <p>The disambiguator is derived from the already-resolved javapoet {@link ClassName#packageName()}
  * only: it never reaches back into raw jOOQ ({@code Table.getSchema()} stays behind the
@@ -57,7 +53,7 @@ import java.util.Set;
  * <p>{@link #of} builds a <em>populated</em> resolver from a class's collected carriers, beans, and
  * decoders. {@link #bare} returns the <em>default</em> resolver of schema-free / unit / out-of-band
  * contexts, which by construction carry at most one class per simple name and so answer the bare
- * {@code simpleName()}-based names unconditionally, preserving today's behaviour.
+ * {@code simpleName()}-based names unconditionally.
  */
 final class FetchersHelperNames {
 

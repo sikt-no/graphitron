@@ -16,38 +16,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * SDL → classified schema pipeline tests for the record-backed parent multi-table
- * polymorphic ChildField classifier arm. Three permits become reachable through
+ * polymorphic ChildField classifier arm. Three permits are reachable through
  * {@code FieldBuilder.classifyChildFieldOnResultType}'s {@code PolymorphicReturnType} case:
  *
  * <ul>
  *   <li>{@link KeyLift.FkColumns} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType}
  *       parent (hub = parent's mapped table).</li>
  *   <li>{@link KeyLift.Accessor} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType}
- *       parent with a single-cardinality typed accessor
- *       ({@link Arity#ONE}, hub = accessor's element-Record table).</li>
+ *       parent with a single-cardinality typed accessor ({@link Arity#ONE}).</li>
  *   <li>{@link KeyLift.Accessor} on a Pojo parent with a list / set typed accessor
- *       ({@link Arity#MANY}, hub = accessor's element-Record table).</li>
+ *       ({@link Arity#MANY}).</li>
  * </ul>
  *
- * <p>Driven through the full SDL → classifier pipeline so the new arm is exercised, not bypassed
- * (fixture-helper construction of {@code InterfaceField} / {@code UnionField} would skip the arm
- * under test). Loader-dispatch shape is read off
- * {@code field.loaderRegistration().dispatch()} and key arity off
- * {@code field.parentSourceKey().columns().size()}; for the accessor-call permits the hub
- * identity is implicit in the {@code LiftedHop}'s {@code targetTable}.
- *
- * <p>Per the development principles, body-shape assertions on emitted method bodies are not
- * used; the {@code KeyLift.FkColumns} variant pins TypeSpec equivalence with a table-backed parent
- * fixture so any drift across the two producers fails fast.
+ * <p>Driven through the full SDL → classifier pipeline so the arm under test is exercised, not
+ * bypassed (fixture-helper construction of {@code InterfaceField} / {@code UnionField} would skip
+ * it). Body-shape assertions on emitted method bodies are avoided per the development principles;
+ * the {@link KeyLift.FkColumns} variant instead pins TypeSpec equivalence against a table-backed
+ * parent fixture so any drift across the two producers fails fast.
  */
 @PipelineTier
 class RecordParentMultiTablePolymorphicPipelineTest {
 
     /**
-     * Two single-PK participants that both FK to {@code film}. {@code inventory.film_id →
-     * film.film_id}; {@code content.film_id → film.film_id}. Uniform single-column PK arity
+     * Two single-PK participants that both FK to {@code film}. Uniform single-column PK arity
      * keeps {@code validateMultiTableParticipants} clean (composite-PK participants would fail
-     * the arity-uniformity rule under the current validator).
+     * its arity-uniformity rule).
      */
     private static final String UNION_PARTICIPANTS = """
         type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
@@ -71,11 +64,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_rowKeyed() {
-        // JooqTableRecordType-backed parent → hub = parent's mapped table = film →
-        // SourceKey (Wrap.Row) from a KeyLift.FkColumns lift off film's PK (single column, film_id). The
-        // classifier arm produced here is byte-for-byte equivalent to the table-backed branch's
-        // construction when the table-backed parent is the same hub; pin TypeSpec equivalence to
-        // surface any drift across the two producers.
+        // JooqTableRecordType-backed parent: hub = parent's mapped table (film), so the classifier
+        // lifts a SourceKey (Wrap.Row) via KeyLift.FkColumns off film's single-column PK.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type FilmInfo {
               referrers: [FilmReferrer!]!
@@ -96,10 +86,9 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childInterfaceField_recordParent_rowKeyed_typeSpecEqualsTableBacked() {
         // Two SDLs differing only in how Film acquires its film backing: a @service producer
-        // returning FilmRecord (-> JooqTableRecordType) vs. @table(name: "film"). Both classify to
-        // the same RowKeyed permit on the same hub, so the emitted FilmFetchers TypeSpec for the
-        // polymorphic child field should be identical. Drift in either producer fails this
-        // comparison.
+        // returning FilmRecord (JooqTableRecordType) vs. @table(name: "film"). Both classify to
+        // the same permit on the same hub, so the emitted FilmFetchers methods for the polymorphic
+        // child field must be identical; drift in either producer fails this comparison.
         var recordParentSchema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type Film {
               referrers: [FilmReferrer!]!
@@ -135,11 +124,9 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childInterfaceField_recordParent_accessorKeyedSingle() {
         // Pojo parent (AccessorPayloads.SinglePayload) exposes `FilmRecord film()`. The
-        // single-cardinality polymorphic child named `film` resolves to KeyLift.Accessor (Arity.ONE) on
-        // the hub `film`; the scalar per-parent fetcher binds parentRecord to the accessor's
-        // returned hub record (rather than casting env.getSource() to a jOOQ Record) and reads
-        // the hub FK columns off it inline. Was previously deferred because the scalar fetcher
-        // had no record-backed-parent arm.
+        // single-cardinality polymorphic child named `film` resolves to KeyLift.Accessor
+        // (Arity.ONE) on the hub `film`; the scalar per-parent fetcher binds parentRecord to the
+        // accessor's returned hub record rather than casting env.getSource() to a jOOQ Record.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type SinglePayloadType {
               film: FilmReferrer
@@ -162,9 +149,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_accessorKeyedMany() {
-        // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`. The
-        // list-cardinality polymorphic child named `films` resolves to KeyLift.Accessor (Arity.MANY);
-        // dispatch is LOAD_MANY (loader.loadMany returns one Record per element key).
+        // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`; the
+        // list-cardinality polymorphic child named `films` resolves to KeyLift.Accessor (Arity.MANY).
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type ListPayloadType {
               films: [FilmReferrer!]!
@@ -186,11 +172,10 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_accessorKeyedMany_fieldNameRemapsAccessor() {
-        // @field(name:) on a free-form record-backed parent remaps the accessor base name. The
-        // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`; the SDL
-        // field is named `referrers` and uses @field(name: "films") to bridge the divergence.
-        // Without the directive-honored remap, the matcher would search for an accessor named
-        // `referrers` / `getReferrers` / `isReferrers` and fall through to UnclassifiedField.
+        // @field(name:) on a record-backed parent remaps the accessor base name: the SDL field
+        // `referrers` bridges to the Pojo parent's `films()` accessor via @field(name: "films").
+        // Without the remap the matcher would search for an accessor named `referrers` /
+        // `getReferrers` / `isReferrers` and fall through to UnclassifiedField.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type ListPayloadType {
               referrers: [FilmReferrer!]! @field(name: "films")
@@ -273,11 +258,9 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void recordParentPolymorphic_pojoWithoutMatchingAccessor_classifiesAsUnclassifiedField() {
-        // DummyRecord exposes no typed TableRecord-returning accessor. The polymorphic child
-        // field cannot derive a hub, so the classifier produces UnclassifiedField with the
-        // three-option AUTHOR_ERROR (typed accessor / typed JooqTableRecord parent; the
-        // @sourceRow route is currently deferred for polymorphic returns per spec Out of
-        // scope).
+        // DummyRecord exposes no typed TableRecord-returning accessor, so the polymorphic child
+        // field cannot derive a hub and classifies as UnclassifiedField with the three-option
+        // AUTHOR_ERROR.
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
             type DummyRecordType {
               films: [FilmReferrer!]!
@@ -300,15 +283,11 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void unionParticipants_sharedFieldNameBackedByDifferentColumns_classifiesAndGeneratesStage2Helpers() {
-        // Asymmetric-fragment fixture: union participants Inventory and Content both expose
-        // a `filmId` field, backed by their respective `film_id` columns on different tables.
-        // The classifier produces a JooqTableRecordType-backed parent with a single-PK
-        // hub on film; the generator emits Stage-2 per-typename helpers
-        // (selectInventoryForReferrers, selectContentForReferrers) that each thread
-        // env.getSelectionSet() through PolymorphicSelectionSet.restrictTo with their own
-        // typename. The pin in PolymorphicProjectionFilterPinTest counts the source-level
-        // emit; this pipeline-tier test confirms the full SDL → classify → emit path
-        // produces both helpers from an asymmetric-fragment fixture.
+        // Asymmetric-fragment fixture: union participants Inventory and Content both expose a
+        // `filmId` field, backed by `film_id` columns on different tables. The generator emits
+        // Stage-2 per-typename helpers (selectInventoryForReferrers, selectContentForReferrers)
+        // that each thread env.getSelectionSet() through PolymorphicSelectionSet.restrictTo with
+        // their own typename.
         String asymmetricParticipants = """
             type Inventory @table(name: "inventory") {
               inventoryId: Int! @field(name: "inventory_id")
@@ -329,16 +308,13 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             }
             """);
 
-        // Classifier: the asymmetric fixture produces a UnionField with both participants
-        // routed to a single-PK hub on film.
         var field = (ChildField.UnionField) schema.field("Film", "referrers");
         assertThat(field.participantJoinPaths().keySet())
             .containsExactlyInAnyOrder("Inventory", "Content");
 
-        // Emit: each per-typename Stage-2 helper exists. The PolymorphicSelectionSet wrap
-        // is asserted at the source-emitter level by PolymorphicProjectionFilterPinTest; here
-        // we pin that the full classify → generate pipeline yields both helpers for the
-        // asymmetric fixture so the wrap reaches both branches.
+        // The PolymorphicSelectionSet wrap itself is asserted at the source-emitter level by
+        // PolymorphicProjectionFilterPinTest; here we pin that the full classify → generate
+        // pipeline yields both helpers so the wrap reaches both branches.
         var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();

@@ -18,25 +18,23 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * <p>The {@code @service} DataLoader shapes ({@link no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField},
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField}) build their DataLoader
  * key off the parent source record, so the parent SELECT must project the key columns even when
- * the client's selection contains no field mapping to them — otherwise the key extraction reads
+ * the client's selection contains no field mapping to them; otherwise the key extraction reads
  * {@code null} and the child silently resolves to {@code null} (the federation
  * {@code _entities}-fetch shape). Split-{@code @reference} children get the same treatment via
  * the shared {@link no.sikt.graphitron.rewrite.model.BatchKeyField} arm in
- * {@code TypeClassGenerator.collectRequiredProjectionColumns}; their coverage lives in
+ * {@code TypeClassGenerator.collectRequiredProjection}; their coverage lives in
  * {@link NestingFieldPipelineTest} and {@link TableMethodFieldPipelineTest}.
  *
  * <p>Every fixture's service method carries a Sources param ({@code Set<Row1<Integer>>}), so the
- * field classifies with a non-null {@code SourceKey} (the DataLoader-backed shape this item is
- * about; a no-Sources method is a plain per-parent delegation with no key read and no projection
- * need). Every fixture's parent type deliberately carries <em>no</em> other force-projecting
- * child ({@code @splitQuery}/{@code @tableMethod} sibling), so a regression of the
- * {@code BatchKeyField} arm turns these red rather than being masked by an unrelated sibling's
- * projection.
+ * field classifies with a non-null {@code SourceKey} (a no-Sources method is a plain per-parent
+ * delegation with no key read and no projection need). Every fixture's parent type deliberately
+ * carries <em>no</em> other force-projecting child ({@code @splitQuery}/{@code @tableMethod}
+ * sibling), so a regression of the {@code BatchKeyField} arm turns these red rather than being
+ * masked by an unrelated sibling's projection.
  *
- * <p>A further extension of the same walk: when the child's key wrap is
- * {@code SourceKey.Wrap.TableRecord} (typed-record Sources parameter), the projection
- * requirement widens from the key columns to the full parent row — see the typed-record test
- * group below and {@code TypeClassGenerator.RequiredProjection}.
+ * <p>When the child's key wrap is {@code SourceKey.Wrap.TableRecord} (typed-record Sources
+ * parameter), the projection requirement widens from the key columns to the full parent row;
+ * see the typed-record test group below and {@code TypeClassGenerator.RequiredProjection}.
  */
 @PipelineTier
 class ServiceProjectionPipelineTest {
@@ -80,7 +78,7 @@ class ServiceProjectionPipelineTest {
 
     /**
      * A {@code @service} child nested under a plain-object {@code NestingField} shares the outer
-     * table type's {@code $fields}; the recursion in {@code collectRequiredProjectionColumns}
+     * table type's {@code $fields}; the recursion in {@code collectRequiredProjection}
      * must surface its SourceKey column into the outer parent's projection.
      */
     @Test
@@ -104,7 +102,7 @@ class ServiceProjectionPipelineTest {
     //
     // When the @service child's Sources parameter is a typed TableRecord (Set<LanguageRecord>),
     // the key wrap is SourceKey.Wrap.TableRecord and the key extraction is
-    // env.getSource().into(Tables.LANGUAGE) — the service body may read ANY parent column off
+    // env.getSource().into(Tables.LANGUAGE); the service body may read ANY parent column off
     // the record, per the documented contract ("fully-populated parent records"). The parent
     // $fields must therefore project the whole parent row, not just the key columns.
 
@@ -147,7 +145,7 @@ class ServiceProjectionPipelineTest {
 
     /**
      * Contrast: a {@code Record1}-sourced sibling of the same shape keeps the key-columns-only
-     * projection and gets no full-row append — the full-row widening is gated on the key wrap
+     * projection and gets no full-row append; the full-row widening is gated on the key wrap
      * ({@code SourceKey.Wrap.TableRecord}), not on the {@code @service} field variants.
      */
     @Test
@@ -198,9 +196,9 @@ class ServiceProjectionPipelineTest {
     /**
      * Two-axis: a parent with <em>both</em> a {@code TableRecord}-wrap {@code @service} child
      * (flips the {@code reservedFullRow} axis) and a {@code Wrap.Row} {@code @splitQuery} sibling
-     * (adds a base-named key column) must emit both — the reserved-aliased full row and the
-     * base-named force-included column. Previously the sealed {@code FullParentRow} absorbed the
-     * columns axis, so the base-named column would have been dropped; the product record keeps both.
+     * (adds a base-named key column) must emit both the reserved-aliased full row and the
+     * base-named force-included column; the {@code RequiredProjection} product record carries
+     * both axes, so neither absorbs the other.
      */
     @Test
     void tableRecordServiceChild_withSplitRowSibling_projectsReservedFullRowAndBaseKeyColumn() {

@@ -56,9 +56,9 @@ import java.util.Optional;
  * the join outcome through one exhaustive switch on the typed
  * {@link DefinitionTarget}: a {@code Located} jumps, a {@code SourceAbsent}
  * (known reference, source not on a walked root) is a non-jump decided by the
- * type, not a sentinel. A same-arity overload collision is no longer a non-jump:
- * it falls back to the never-dropped name-level view and lands on a declaration
- * adjacent to the overload set.
+ * type, not a sentinel. A same-arity overload collision falls back to the
+ * never-dropped name-level view and lands on a declaration adjacent to the
+ * overload set.
  */
 public final class Definitions {
 
@@ -127,7 +127,7 @@ public final class Definitions {
         if (!DirectivePolicy.bindsLiveClass(location.directiveName())) return Optional.empty();
         String fqn = Nodes.unquote(Nodes.text(location.leafNode(), source));
         if (fqn.isEmpty()) return Optional.empty();
-        // Unknown class name (not a scanned reference) is "not our target" —
+        // Unknown class name (not a scanned reference) is "not our target":
         // empty, distinct from the SourceAbsent arm of a known reference.
         boolean known = catalog.externalReferences().stream()
             .anyMatch(r -> r.className().equals(fqn));
@@ -149,7 +149,7 @@ public final class Definitions {
             .filter(r -> r.className().equals(fqn))
             .findFirst();
         // Unknown class, or a known class with no method of this name, is "not
-        // our target" — empty, distinct from the typed no-jump arms below.
+        // our target": empty, distinct from the typed no-jump arms below.
         if (ref.isEmpty() || ref.get().methods().stream().noneMatch(m -> m.name().equals(methodName))) {
             return Optional.empty();
         }
@@ -170,17 +170,15 @@ public final class Definitions {
     }
 
     /**
-     * Pure join for a method reference: for each catalog method of {@code methodName}
-     * on {@code fqn}, the {@code (fqn, name, arity)} key resolves against the source
-     * index. First {@link DefinitionTarget.Located} wins (so the correct overload, or
-     * a later resolvable one, jumps). When every arity key is absent or was dropped as
-     * a same-arity overload collision, the resolution falls back to the never-dropped
-     * name-level view ({@link SourceWalker.Index#methodByName}): landing on any
-     * declaration of the name gets the developer adjacent to the overload set, which
-     * beats declining. Only when the class carries no declaration of the name at all
-     * is the outcome {@link DefinitionTarget.SourceAbsent}. Caller guards that the
-     * class is known and carries at least one method of this name. Public for
-     * LSP-tier arm tests.
+     * Pure join for a method reference: each catalog method of {@code methodName} on
+     * {@code fqn} resolves its {@code (fqn, name, arity)} key against the source index;
+     * first {@link DefinitionTarget.Located} wins. When every arity key is absent or
+     * was dropped as a same-arity overload collision, resolution falls back to the
+     * never-dropped name-level view ({@link SourceWalker.Index#methodByName}), landing
+     * the developer adjacent to the overload set rather than declining. Only a class
+     * with no declaration of the name at all yields {@link DefinitionTarget.SourceAbsent}.
+     * Caller guards that the class is known and carries at least one method of this
+     * name. Public for LSP-tier arm tests.
      */
     public static DefinitionTarget methodTarget(
         String fqn, String methodName, CompletionData catalog, SourceWalker.Index sourceIndex
@@ -248,10 +246,9 @@ public final class Definitions {
 
     /**
      * Table goto-definition, shared by {@code @table(name:)} and
-     * {@code @reference(path: [{table:}])}, both of which resolve to
-     * {@link Behavior.CatalogTableBinding} on the cursor's coordinate. The
-     * generated table class is a class in the source index, so this reuses the
-     * {@link #classTarget} join on the table's {@code classFqn}.
+     * {@code @reference(path: [{table:}])}. The generated table class is a class
+     * in the source index, so this reuses the {@link #classTarget} join on the
+     * table's {@code classFqn}.
      */
     private static Optional<Location> tableDefinition(
         LspVocabulary.CursorLocation location, CompletionData catalog,
@@ -265,9 +262,7 @@ public final class Definitions {
     }
 
     /**
-     * Column goto-definition for {@code @field(name:)}: resolves the enclosing
-     * type's table, then the named column within it, then joins the
-     * {@code (table classFqn, column name)} field key against the source index.
+     * Column goto-definition for {@code @field(name:)}.
      */
     private static Optional<Location> fieldDefinition(
         Directives.Directive directive, LspVocabulary.CursorLocation location,

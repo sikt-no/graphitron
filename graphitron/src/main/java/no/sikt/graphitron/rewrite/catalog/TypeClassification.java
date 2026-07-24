@@ -4,36 +4,31 @@ import java.util.List;
 
 /**
  * LSP-facing projection of a {@link no.sikt.graphitron.rewrite.model.GraphitronType}'s
- * classified variant. The LSP's inlay-hint and hover arms consume this to render
- * classification information at SDL type declarations and at the {@code @table} directive
- * sites where the canonical {@code name:} argument was inferred. Carried alongside
- * {@link TypeBackingShape} and {@link FieldClassification} on
+ * classified variant, consumed by the LSP's inlay-hint and hover arms at SDL type
+ * declarations and at {@code @table} sites with an inferred {@code name:} argument.
+ * Carried alongside {@link TypeBackingShape} and {@link FieldClassification} on
  * {@link LspSchemaSnapshot.Built}.
  *
  * <p>Same discipline as {@link FieldClassification}: payload-distinct records over the
- * {@code GraphitronType} permits, sized to LSP-renderable strings and primitives. The
- * type-side payload divergence is denser than the field side (record-backed, pojo-backed,
- * jOOQ-table-backed, etc. all carry different load-bearing payload), so most type permits
- * keep their own record; collapse where the hover-payload is genuinely identical.
+ * {@code GraphitronType} permits, sized to LSP-renderable strings and primitives.
+ * Collapse permits only where the hover payload is genuinely identical.
  *
  * <p>The producer-side exhaustive switch in
  * {@link CatalogBuilder#projectTypeClassification} enforces coverage; the label switch in
  * {@code LspClassificationLabels} dispatches over the full generator-side permit set.
  *
- * <p>{@link TypeBackingShape} (which already lives on the snapshot) covers the
- * {@code @field(name:)} dispatch axis for the LSP — i.e. what's resolvable as a member
- * name inside a type. This projection covers the orthogonal classification axis: <em>what
- * kind of type</em> the SDL author declared. Both projections live next to each other on
- * the snapshot so the LSP arms can read either or both without re-running the classifier.
+ * <p>{@link TypeBackingShape} covers what is resolvable as a member name inside a type;
+ * this projection covers the orthogonal axis, what kind of type the SDL author declared.
+ * Both live on the snapshot so the LSP arms can read either without re-running the
+ * classifier.
  *
- * <p><b>Projection-record simple names are also user-visible.</b> {@code
+ * <p><b>Projection-record simple names are user-visible.</b> {@code
  * LspClassificationLabels.projectionTypeLabel} returns each permit's simple name
  * verbatim, {@code DeclarationHovers} prints {@code TypeClassification.<name>} in hover
- * headers, and {@code InlayHints}'s absent-{@code @table} arm anchors its synthetic
- * ghost on the {@code Table} / {@code Node} / {@code TableInterface} / {@code TableInput}
- * projection records. Renaming a permit (say, {@code TableInput} to
- * {@code TableBoundInput}) is therefore <em>also</em> a user-visible-string change
- * touching docs, screenshots, and tutorials, not a purely internal refactor.
+ * headers, and {@code InlayHints} anchors its synthetic ghost on the {@code Table} /
+ * {@code Node} / {@code TableInterface} / {@code TableInput} projection records. Renaming
+ * a permit is a user-visible-string change touching docs, screenshots, and tutorials,
+ * not a purely internal refactor.
  */
 public sealed interface TypeClassification
     permits TypeClassification.Table,

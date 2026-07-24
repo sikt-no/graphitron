@@ -4,8 +4,8 @@ import org.jooq.Condition;
 
 /**
  * Minimal condition-method stub used by {@link GraphitronSchemaBuilderTest} to test that
- * {@code @reference(path: [{condition: {…}}])} is correctly classified as a {@link
- * no.sikt.graphitron.rewrite.model.On.Predicate} hops.
+ * {@code @reference(path: [{condition: {…}}])} is classified as
+ * {@link no.sikt.graphitron.rewrite.model.On.Predicate} hops.
  *
  * <p>Condition methods take two {@code Table<?>} parameters (source and target) and return a
  * {@link Condition}. Both parameters are classified as {@link
@@ -19,7 +19,7 @@ class TestConditionStub {
     }
 
     /**
-     * Field-level {@code @condition} method — receives the target table plus every field argument.
+     * Field-level {@code @condition} method: receives the target table plus every field argument.
      * Parameter names must match GraphQL argument names (requires the {@code -parameters} flag).
      */
     public static Condition fieldCondition(org.jooq.Table<?> table, String cityNames, String countryId) {
@@ -27,7 +27,7 @@ class TestConditionStub {
     }
 
     /**
-     * Arg-level {@code @condition} method — receives the target table plus one argument value.
+     * Arg-level {@code @condition} method: receives the target table plus one argument value.
      * Parameter name must match the GraphQL argument name.
      */
     public static Condition argCondition(org.jooq.Table<?> table, String cityNames) {
@@ -35,7 +35,7 @@ class TestConditionStub {
     }
 
     /**
-     * Arg-level {@code @condition} method with a {@code contextArguments} entry — receives the
+     * Arg-level {@code @condition} method with a {@code contextArguments} entry: receives the
      * target table, the arg value, then context values as trailing parameters.
      */
     public static Condition argConditionWithContext(org.jooq.Table<?> table, String cityNames, String tenantId) {
@@ -52,8 +52,8 @@ class TestConditionStub {
     }
 
     /**
-     * Input-field-level {@code @condition} method — receives the target table plus the SDL input
-     * field value. Used on {@code filmId} input fields in Phase 4 tests.
+     * Input-field-level {@code @condition} method: receives the target table plus the SDL input
+     * field value. Used on {@code filmId} input fields.
      */
     public static Condition inputColumnCondition(org.jooq.Table<?> table, String filmId) {
         throw new UnsupportedOperationException();
@@ -100,7 +100,7 @@ class TestConditionStub {
     }
 
     /**
-     * Field-level {@code @condition} method on a field with no GraphQL arguments — receives the
+     * Field-level {@code @condition} method on a field with no GraphQL arguments: receives the
      * target table only. Used by the {@code @sourceRow} + {@code @condition} interaction
      * test where the carrier field is a record-parent table-bound field with no extra args.
      */
@@ -206,7 +206,7 @@ class TestConditionStub {
      * parameter is a concrete table ({@code Actor}) other than the hop's actual source table
      * ({@code film}). The emitter passes the source alias positionally into parameter 0, so a
      * concretely-mistyped source parameter would compile to {@code aCondition(filmAlias, …)}
-     * feeding a {@code film}-typed alias into an {@code Actor}-typed slot — javac rejects it. The
+     * feeding a {@code film}-typed alias into an {@code Actor}-typed slot; javac rejects it. The
      * target ({@code FilmActor}) is correct so only the source-side mismatch fires.
      */
     public static Condition intermediateWrongSource(

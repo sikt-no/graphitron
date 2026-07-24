@@ -48,9 +48,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  * <p>Three structural projections the emitters depend on:
  *
  * <ul>
- *   <li>Every successful {@code @sourceRow} resolution projects into a record-sourced {@code BatchedTableField}
- *       or {@code BatchedLookupTableField}; the produced {@link KeyLift} is always the authored
- *       {@link KeyLift.Lifter} arm.</li>
+ *   <li>Every successful {@code @sourceRow} resolution projects into a record-sourced
+ *       {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField} or
+ *       {@link no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField};
+ *       the produced {@link KeyLift} is always the authored {@link KeyLift.Lifter} arm.</li>
  *   <li>On the no-{@code @reference} path, the resolution carries an empty {@code joinPath}
  *       plus the hop-less {@link ParentCorrelation.OnLiftedSlots} correlation (the leaf-PK
  *       shape).</li>
@@ -59,18 +60,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  *       columns to the leaf table.</li>
  * </ul>
  *
- * <h2>Rejection messages</h2>
- *
- * <p>The user-facing diagnostic strings emitted on the arity / per-position-type mismatch
- * paths are anchored to the howto's "Rejection messages" subsection so the schema-author
- * guidance and the resolver's emitted strings share one source. The two templates:
- *
- * <ul>
- *   <li><b>{@code @reference} present.</b>
- *       {@code "@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match first-hop source-side column '<col>' of FK '<fk>' (Java type '<expected>')"} (the FK label is the first hop's {@link On.Keying} description)</li>
- *   <li><b>Leaf-PK case.</b>
- *       {@code "@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match primary key column '<col>' of '<leaf>' (Java type '<expected>')"}</li>
- * </ul>
+ * <p>The arity / per-position mismatch diagnostics (built by the {@code Derivation} records
+ * below; the FK label is the first hop's {@link On.Keying} description) are mirrored in the
+ * user manual howto's "Rejection messages" subsection; keep the two in sync.
  */
 final class SourceRowDirectiveResolver {
 
@@ -79,26 +71,17 @@ final class SourceRowDirectiveResolver {
 
     /**
      * Outcome of {@link #resolve}. Two terminal arms; the caller exhausts them with a switch.
-     *
-     * <ul>
-     *   <li>{@link Ok} — successful resolution, carrying the resolved {@link SourceKey} +
-     *       {@link LoaderRegistration} pair, the {@link JoinStep} chain the rows-method
-     *       emitter consumes, and the {@link ReturnTypeRef.TableBoundReturnType} for the
-     *       field. {@code joinPath} is {@code [hop]} on the leaf-PK arm and the resolved
-     *       FK-derived {@link JoinStep.Hop} chain on the {@code @reference} arm.</li>
-     *   <li>{@link Rejected} — every error path: wrong parent shape, missing class, missing
-     *       method, return-type mismatch, arity / column-class mismatch, {@code @reference}
-     *       parse failure.</li>
-     * </ul>
+     * {@link Ok#joinPath()} is empty on the leaf-PK path and the resolved FK-derived
+     * {@link JoinStep.Hop} chain on the {@code @reference} path. {@link Rejected} carries
+     * the {@link Rejection} for every error path.
      */
     sealed interface Resolved {
         /**
          * {@code lift} is always the authored {@link KeyLift.Lifter} arm ({@code @sourceRow}'s
          * whole point is the developer-supplied lifter). {@code lifted} is the hop-less
-         * {@link ParentCorrelation.OnLiftedSlots} correlation for
-         * the leaf-PK shape (no {@code @reference}; formerly a single {@code LiftedHop}
-         * in the joinPath), {@code null} for the {@code @reference}-composed FK chain whose
-         * correlation the caller derives from {@code joinPath}.
+         * {@link ParentCorrelation.OnLiftedSlots} correlation for the leaf-PK shape
+         * (no {@code @reference}), {@code null} for the {@code @reference}-composed FK chain
+         * whose correlation the caller derives from {@code joinPath}.
          */
         record Ok(
             SourceKey sourceKey,
@@ -159,9 +142,8 @@ final class SourceRowDirectiveResolver {
         var tbReturnType = new ReturnTypeRef.TableBoundReturnType(
             elementTypeName, leafTable, fb.buildWrapper(fieldDef));
 
-        // 3. Read the directive payload. Flat (className, method) args, not the
-        //    ExternalCodeReference wrapper used by older directives — @sourceRow is brand-new
-        //    and carries no legacy 'name:' migration.
+        // 3. Read the directive payload: flat (className, method) args, not the
+        //    ExternalCodeReference wrapper other code-reference directives use.
         var dir = fieldDef.getAppliedDirective(DIR_SOURCE_ROW);
         if (dir == null) {
             // Caller pre-checked hasAppliedDirective; reaching here is a classifier bug.
@@ -343,10 +325,8 @@ final class SourceRowDirectiveResolver {
             }
         }
 
-        // 7. Construct the SourceKey + KeyLift + LoaderRegistration triple. The lift is the
-        // authored Lifter arm; the key's wrap is its derivation (always Row — the lifter
-        // contract emits a RowN<...> key). LoaderRegistration is the @sourceRow constant
-        // (POSITIONAL_LIST + LOAD_ONE + valueIsList from wrapper).
+        // 7. Construct the SourceKey + KeyLift + LoaderRegistration triple. The key's wrap
+        // is always Row: the lifter contract emits a RowN<...> key.
         var lift = new KeyLift.Lifter(new LifterRef(ClassName.get(lifterClass), lifterMethodName));
         boolean isList = tbReturnType.wrapper().isList();
         LoaderRegistration loaderRegistration = new LoaderRegistration(

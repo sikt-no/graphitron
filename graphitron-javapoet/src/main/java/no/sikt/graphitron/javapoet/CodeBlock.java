@@ -53,7 +53,7 @@ import static no.sikt.graphitron.javapoet.Util.checkArgument;
  *       that. For example, {@code 6" sandwich} is emitted {@code "6\" sandwich"}.
  *   <li>{@code $T} emits a <em>type</em> reference. Types will be imported if possible. Arguments
  *       for types may be {@linkplain Class classes}, {@linkplain TypeMirror
- * ,*       type mirrors}, and {@linkplain Element elements}.
+ *       type mirrors}, and {@linkplain Element elements}.
  *   <li>{@code $$} emits a dollar sign.
  *   <li>{@code $W} emits a space or a newline, depending on its position on the line. This prefers
  *       to wrap lines before 100 columns.

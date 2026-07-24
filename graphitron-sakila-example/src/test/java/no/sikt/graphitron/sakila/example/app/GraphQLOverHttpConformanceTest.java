@@ -17,8 +17,7 @@ import static org.hamcrest.Matchers.containsString;
 /**
  * Spec-traceable GraphQL-over-HTTP conformance suite for {@code graphitron-jakarta-rest}, run
  * through the reference app's {@link SakilaGraphitronApplication} adapter so the reference app
- * exercises the real library and cannot drift from the spec again (the divergence this library set
- * out to end).
+ * exercises the real library.
  *
  * <p>Every normative requirement in the library's committed scope has a citing case below. Each
  * carries the verbatim spec sentence it verifies as a {@code @DisplayName}, a pointer to the spec
@@ -26,34 +25,6 @@ import static org.hamcrest.Matchers.containsString;
  * exact failing case. The source is the
  * <a href="https://graphql.github.io/graphql-over-http/draft/">GraphQL-over-HTTP specification,
  * Working Draft</a> ({@link #SPEC_REVISION}).
- *
- * <h2>Coverage pointer table (requirement -> spec section -> test)</h2>
- * <pre>
- * | Requirement                                   | Spec section                         | Test                                  |
- * |-----------------------------------------------|--------------------------------------|---------------------------------------|
- * | POST is supported                             | "POST"                               | postIsSupported                       |
- * | GET MAY execute a query                       | "GET"                                | getMayExecuteAQuery                   |
- * | GET resolving to a mutation -> 405            | "GET"                                | getResolvingToMutationIs405           |
- * | Unparseable document -> 400                   | "application/graphql-response+json"  | unparseableDocumentIs400              |
- * | Not well-formed (missing query) -> 422        | "application/graphql-response+json"  | missingQueryIs422                     |
- * | Validation failure -> 422                     | "application/graphql-response+json"  | validationFailureIs422                |
- * | Variable coercion failure -> 422              | "application/graphql-response+json"  | variableCoercionFailureIs422          |
- * | Execution begun (field error) -> 200          | "application/graphql-response+json"  | executionWithFieldErrorIs200          |
- * | Legacy application/json -> always 200          | "application/json"                   | legacyApplicationJsonIsAlways200      |
- * | query is required                             | "Request Parameters"                 | queryParameterIsRequired              |
- * | variables/operationName/extensions handling   | "Request Parameters"                 | variablesOperationNameExtensions      |
- * | Server-side seam fault redacted -> 500        | "application/graphql-response+json"  | serverSideFaultIsRedacted500          |
- * | Server-side seam fault redacted -> 200 legacy | "application/json"                   | serverSideFaultIsRedacted200Legacy    |
- * | WebApplicationException passthrough            | "application/graphql-response+json"  | webApplicationExceptionPassesThrough  |
- * | Redaction shape matches fetcher path           | "application/graphql-response+json"  | redactionShapeMatchesFetcherPath      |
- * </pre>
- *
- * <p>The last four cases drive the reference adapter's {@code X-Graphitron-Fault} seam, which
- * makes {@code newExecutionInput()} throw before execution begins, the one region neither a normal
- * query nor the per-fetcher {@code ErrorRouter} can reach. They pin that a genuine fault is redacted to
- * the same reference-only wire shape the fetcher path emits (proven against {@code Film.durabilityError}
- * in {@link #redactionShapeMatchesFetcherPath()}) and that a {@code WebApplicationException} propagates
- * to the container instead of being swallowed.
  */
 @QuarkusTest
 @QuarkusTestResource(SmokeTestPostgresResource.class)
@@ -242,10 +213,10 @@ class GraphQLOverHttpConformanceTest {
     // ===== server-side execution failure =====
 
     /**
-     * The one hole closed here: {@code newExecutionInput()} runs before execution begins, outside
-     * every request-error branch and beyond the reach of the per-fetcher {@code ErrorRouter}. A fault
-     * there must be caught by the resource, logged server-side under a correlation id, and returned as
-     * a generic spec-compliant 500, never leaked as the container's raw error page.
+     * The fault seam: {@code newExecutionInput()} runs before execution begins, outside every
+     * request-error branch and beyond the reach of the per-fetcher {@code ErrorRouter}. A fault
+     * there must be caught by the resource, logged server-side under a correlation id, and returned
+     * as a generic spec-compliant 500, never leaked as the container's raw error page.
      */
     private static final String FAULT_HEADER = FaultInjectingGraphitronApplication.FAULT_HEADER;
 
@@ -312,14 +283,12 @@ class GraphQLOverHttpConformanceTest {
     @Test
     @DisplayName("Single redaction contract (R421): the input-building-throw shape matches the fetcher-throw shape (Film.durabilityError). -- " + SPEC_REVISION)
     void redactionShapeMatchesFetcherPath() {
-        // The shared, consumer-facing contract is the reference MESSAGE: the correlation id an
-        // operator uses to find the real cause in the logs, byte-identical whether the fault was
-        // thrown while building the input (this resource) or inside a fetcher (generated ErrorRouter).
-        // The two sites are not byte-identical objects: the fetcher path builds its error through
-        // graphql-java's GraphqlErrorBuilder, which serialises a default extensions.classification;
-        // the resource emits a plain {message} with no extensions, consistent with its own 400/422
-        // errors and the spec's "no extensions" requirement for the resource side. What must never
-        // differ is the reference string and the absence of any leaked internal detail.
+        // The shared contract is the reference MESSAGE (the correlation id an operator uses to find
+        // the real cause in the logs), identical whether the fault is thrown while building the
+        // input (this resource) or inside a fetcher (generated ErrorRouter). The error objects
+        // deliberately differ: the fetcher leg carries graphql-java's default
+        // extensions.classification, the resource leg no extensions. What must never differ is the
+        // reference string and the absence of any leaked internal detail.
 
         // Input-building throw (this resource's guard): reference message, no extensions at all.
         given()
@@ -333,10 +302,9 @@ class GraphQLOverHttpConformanceTest {
             .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
             .body("errors[0].extensions", nullValue());
 
-        // Fetcher throw (graphql-java + generated ErrorRouter.redact): the SAME reference message.
-        // Its extensions carry only graphql-java's classification, never the thrown exception's
-        // message, class, or stack, so the redaction contract (reference-only, no leaked internals)
-        // holds on both legs even though the resource carries no extensions and this leg does.
+        // Fetcher throw (graphql-java + generated ErrorRouter.redact): the SAME reference message;
+        // extensions carry only graphql-java's classification, never the thrown exception's
+        // message, class, or stack.
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)
