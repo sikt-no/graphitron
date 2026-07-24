@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R516` | Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection | Spec | 2026-07-23 | [plan](service-table-record-pk-only-contract.md) |
+| `R516` | Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection | Ready | 2026-07-24 <sub>created 2026-07-23</sub> | [plan](service-table-record-pk-only-contract.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -240,7 +240,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R516` [**Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection**](service-table-record-pk-only-contract.md) — Spec, correctness
+- `R516` [**Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection**](service-table-record-pk-only-contract.md) — Ready, correctness
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture

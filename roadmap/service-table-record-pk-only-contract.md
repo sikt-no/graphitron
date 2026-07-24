@@ -1,13 +1,13 @@
 ---
 id: R516
 title: "Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection"
-status: Spec
+status: Ready
 bucket: correctness
 priority: 2
 theme: service
 depends-on: []
 created: 2026-07-23
-last-updated: 2026-07-23
+last-updated: 2026-07-24
 ---
 
 # Narrow SourceKey.Wrap.TableRecord contract to PK-only, revert full-row projection
@@ -188,6 +188,9 @@ latent gap or is confirmed a no-op.
   it reads payload titles through the reserved alias (`r.get("__src_title__", String.class)`) under an
   empty selection set and breaks on the revert. Re-anchor the row-count/order assertion on the PK
   column (force-included under the corrected contract) or on a selected base-named column.
+- Update `ParentProjectionContainmentCheckTest`: it asserts the divergence message names
+  `reservedFullRow` (`hasMessageContaining("reservedFullRow")`), which the revert deletes; re-anchor
+  on the PK-column containment message.
 - Update `ServiceProjectionPipelineTest`'s R426/R511 shape-assertion groups and `TypeSpecAssertions`'s
   `appendsFullParentRow` / `serviceChildKeyExtractionForksOnTypedRecord` helpers to assert the new
   PK-only shape instead (or delete if the assertion no longer has a distinct shape to check once
@@ -198,9 +201,11 @@ latent gap or is confirmed a no-op.
 ## Retired vocabulary
 
 Expected to retire at the Done gate: `reservedFullRow`, `reservedSourceAlias`, the `__src_<col>__`
-alias scheme (including its `GeneratedSourcesLintTest` allowlist entry), the "fully-populated parent
-record" / "every column on the parent table" framing in docs, and the `TableRecord`-arm `instanceof`
-runtime fork.
+alias scheme (javadoc-prose-only in `GeneratedSourcesLintTest` — no allowlist entry exists, per Scope
+item 3), the "fully-populated parent record" / "every column on the parent table" framing in docs,
+and the `TableRecord`-arm `instanceof` runtime fork. Note the SDL description prose in
+`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` (around the smallint-convert
+comment) narrates the reserved-alias projection; the sweep's `__src_` grep catches it.
 
 ## Migration / compatibility
 
