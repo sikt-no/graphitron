@@ -37,6 +37,7 @@ a|
 * xref:service.adoc[`@service`]
 * xref:splitQuery.adoc[`@splitQuery`]
 * xref:table.adoc[`@table`]
+* xref:tenantFanOut.adoc[`@tenantFanOut`]
 
 a|
 == By category
@@ -48,7 +49,7 @@ xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], x
 xref:reference.adoc[`@reference`]
 
 *Querying* +
-xref:asConnection.adoc[`@asConnection`], xref:asFacet.adoc[`@asFacet`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:pivot.adoc[`@pivot`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`]
+xref:asConnection.adoc[`@asConnection`], xref:asFacet.adoc[`@asFacet`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:pivot.adoc[`@pivot`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`], xref:tenantFanOut.adoc[`@tenantFanOut`]
 
 *Mutating* +
 xref:mutation.adoc[`@mutation`], xref:service.adoc[`@service`]

@@ -96,7 +96,7 @@ Generated fetchers retrieve the impl through a private helper emitted once per `
 
 === `getDslContext`
 
-Reads the per-request `DSLContext` from `env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's `defaultDsl` parameter. The default impl is the only impl; this is not an override point. To return a tenant-specific `DSLContext` per request, build the right `DSLContext` at request entry and pass it to `Graphitron.newExecutionInput(dsl, ...)` (reintroduced under R45's tenant-column work).
+Reads the per-request `DSLContext` from `env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's `defaultDsl` parameter. The default impl is the only impl; this is not an override point. On the escape-hatch path, tenant-specific routing means building the right `DSLContext` at request entry and passing it to `Graphitron.newExecutionInput(dsl, ...)`; for generator-owned database-per-tenant routing (divined bindings, fan-out), see xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].
 
 === `getContextArgument`
 
@@ -159,7 +159,7 @@ A single canonical wire format across every generated dispatcher is what makes n
 * xref:directives/index.adoc[Directive reference] is the SDL-driven half of what generated code looks like; this page is the SDL-independent half.
 * xref:../how-to/test-your-schema.adoc[How-to: Test your schema] covers wiring `Graphitron.buildSchema(...)` and a request-scoped `GraphitronContext` into an execution-tier test.
 * xref:../how-to/custom-scalars.adoc[How-to: Custom scalars] covers declaring a `scalar` with `@scalarType(scalar:)` and authoring the `GraphQLScalarType` constant the directive points at.
-* xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers per-request `DSLContext` routing (recipe is being rewritten under R45; the link resolves but the body shows a deferral banner).
+* xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers database-per-tenant wiring: the tenant column, per-tenant DataSources, and fanning a field out across tenants with `@tenantFanOut`.
 * xref:../how-to/global-id.adoc[How-to: Global object IDs] covers `NodeIdEncoder` end-to-end, including the per-Node helpers, `keyColumns` migrations, and `Query.node` / `Query.nodes` dispatch.
 
 xref:index.adoc[← Reference index]

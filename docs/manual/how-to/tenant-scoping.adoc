@@ -1,9 +1,66 @@
 = How-to: Tenant scoping
-:description: Per-tenant DSLContext routing recipe (currently rewritten under R45 alongside the tenant-column work).
+:description: Database-per-tenant routing: configure the tenant column, wire per-tenant DataSources, and fan a field out across every tenant a request may see.
 :!toc:
 
-The per-tenant `DSLContext` routing recipe is being rewritten under R45 alongside the tenant-column work. Until R45 ships, single-tenant apps pass a single `DSLContext` to `Graphitron.newExecutionInput(dsl, ...)`; multi-tenant routing through the generated `byTenant` factory overload, the `@tenantId` argument directive, and per-tenant DataLoader partitioning all land together under R45.
+Graphitron's multi-tenant model is database-per-tenant: every tenant-scoped table carries a tenant column, each tenant's rows live in that tenant's own database, and the generator routes every statement to the right database from what the operation itself says. This page is the wiring recipe; the classification rules (which fields route how, and which schemas are rejected as unroutable) are enforced at build time.
 
-For the single-tenant request-entry shape, see xref:../tutorial/index.adoc[the tutorial] and xref:../reference/runtime-api.adoc[Runtime API reference].
+== 1. Name the tenant column
+
+Point the plugin at the column that scopes your tables:
+
+[source,xml]
+----
+<configuration>
+    <tenantColumn>organization_id</tenantColumn>
+</configuration>
+----
+
+Tables carrying the column are tenant-scoped; tables without it are global reference data served from the default source. The tenant key's Java type is read off the catalog (all tables must agree), and it types every tenant-keyed runtime surface, so wiring a map keyed with the wrong type is a compile error.
+
+== 2. Wire one DataSource per tenant
+
+Construct the generated runtime with the default source plus the per-tenant map:
+
+[source,java]
+----
+Map<Integer, DataSource> byTenant = Map.of(
+    1, tenantOnePool,
+    2, tenantTwoPool);
+var runtime = new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES);
+var graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+----
+
+Per request, pass the opaque claims through the owned-connection factory (`Graphitron.newOwnedExecutionInput(claims, ...)`). Connections are pinned lazily, one per distinct tenant the operation actually touches; sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant.
+
+Routing is divined from the operation: an argument bound to the tenant column routes the statement and hands the tenant down its subtree; node ids and federation representations carry their tenant inside the key and partition per row; global tables read the default source. A tenant-scoped field that nothing routes is a build error, never a silent read of the wrong database.
+
+== 3. Fan a field out across tenants
+
+When no single tenant is named — "all results for this student", wherever they live — mark the field with xref:../reference/directives/tenantFanOut.adoc[`@tenantFanOut`]: the query runs once per tenant the request may see, in parallel, and the results come back as one list.
+
+Derive the tenant collection from your request's claims and any other request-level policy (operational exclusions, residency, product rules; the seam is source-agnostic) and pass it through the generated factory. When your schema contains a `@tenantFanOut` field, the factory signature gains a dedicated parameter typed as a collection of your tenant key type, so a missing or mis-typed value is a compile error, not a runtime lookup:
+
+[source,java]
+----
+Set<Long> tenantRoles = claimsToTenantIds(jwt);  // your derivation, e.g. institusjonsroller
+ExecutionInput input = Graphitron.newOwnedExecutionInput(claims, tenantRoles)
+    .query(query).build();
+----
+
+Which tenants actually run is the intersection of that collection with the configured tenant map: a hosted tenant you did not name is never queried (the authorization pre-filter), and a tenant you named that the deployment has no `DataSource` for fails the request by design, before any SQL runs. If your claims can name tenants this subgraph does not host, narrow the set here; the narrowing is your explicit statement, not a silent runtime drop.
+
+=== Tuning fan-out
+
+Fan-out parallelism is bounded and configurable on the generated runtime: a concurrency cap (default *8* tenants in flight per fanned field) and a per-field deadline (default *10 seconds*), set as plain constructor values. Supply your own `Executor` instead if you want to own threading (for example virtual threads); the deadline still applies.
+
+[source,java]
+----
+// Explicit cap and deadline over the runtime-owned bounded pool:
+new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES, 16, Duration.ofSeconds(5));
+// Or bring your own executor; you own the concurrency bound, the deadline stays enforced:
+new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES, myExecutor, Duration.ofSeconds(5));
+----
+
+A tenant that fails or misses the deadline contributes one `null` element and a path-bearing entry in the response's `errors` array; the field's element nullability chooses whether that stays partial data (`[Thing]`) or nulls the whole field (`[Thing!]`). See the xref:../reference/directives/tenantFanOut.adoc[directive reference].
 
 xref:index.adoc[← How-to index]

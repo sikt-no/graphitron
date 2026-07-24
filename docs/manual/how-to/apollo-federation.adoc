@@ -104,6 +104,6 @@ This is the one place where federation-relevant state lives outside the SDL itse
 == See also
 
 * xref:federation-keys.adoc[How-to: Federation key fields] is the entity-side companion; it covers `@key`, multi-alternative dispatch, compound keys, and the `resolvable: false` flag for entities owned by another subgraph.
-* xref:tenant-scoping.adoc[How-to: Tenant scoping] covers per-request `DSLContext` routing (recipe is being rewritten under R45).
+* xref:tenant-scoping.adoc[How-to: Tenant scoping] covers database-per-tenant wiring and `@tenantFanOut`.
 
 xref:index.adoc[← How-to index]
