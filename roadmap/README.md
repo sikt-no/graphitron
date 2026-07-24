@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Ready | 2026-07-24 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R494` | Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot) | Ready | 2026-07-24 <sub>created 2026-07-16</sub> | [plan](schema-directive-registry-generator-only-sync.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
+| `R494` | Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot) | In Progress | 2026-07-24 <sub>created 2026-07-16</sub> | [plan](schema-directive-registry-generator-only-sync.md) |
 | `R519` | Remove @table from input types; delete TableInputType (Phase 3) | Spec | 2026-07-24 | [plan](remove-table-on-input-directive.md) |
 | `R524` | Trim verbose javadoc and align comments with the terse-and-pinned conventions | In Progress | 2026-07-24 | [plan](javadoc-verbosity-alignment-sweep.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
@@ -321,7 +321,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R521` [**Generated-output readability and hygiene sweep**](generated-output-hygiene-sweep.md) — Backlog, cleanup
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
-- `R494` [**Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot)**](schema-directive-registry-generator-only-sync.md) — Ready, bug
+- `R494` [**Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot)**](schema-directive-registry-generator-only-sync.md) — In Progress, bug
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md) — Backlog, cleanup
 

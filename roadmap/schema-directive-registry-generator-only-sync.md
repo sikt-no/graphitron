@@ -1,7 +1,7 @@
 ---
 id: R494
 title: "Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot)"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 5
 theme: codegen-correctness
