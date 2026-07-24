@@ -96,6 +96,7 @@ class BuildContext {
     static final String DIR_SERVICE             = "service";
     static final String DIR_EXTERNAL_FIELD      = "externalField";
     static final String DIR_LOOKUP_KEY          = "lookupKey";
+    static final String DIR_TENANT_FAN_OUT      = "tenantFanOut";
     static final String DIR_ORDER_BY            = "orderBy";
     static final String DIR_CONDITION           = "condition";
     static final String DIR_MUTATION            = "mutation";

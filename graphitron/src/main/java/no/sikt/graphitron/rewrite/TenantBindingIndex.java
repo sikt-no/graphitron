@@ -82,10 +82,38 @@ public record TenantBindingIndex(
             Map<String, EntityResolution> entitiesByType,
             Map<String, GraphitronType> types,
             TenantScopes scopes) {
-        if (!(scopes instanceof TenantScopes.Configured configured) || sdl == null) {
+        if (sdl == null) {
             return EMPTY;
         }
+        if (!(scopes instanceof TenantScopes.Configured configured)) {
+            // The axis is absent, but a @tenantFanOut marker must not be silently ignored: the
+            // author asked for a per-tenant union in a build with no tenants to fan over.
+            var markerRejections = rejectMarkersWithoutTenancy(sdl);
+            return markerRejections.isEmpty()
+                ? EMPTY
+                : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
+        }
         return new Fold(sdl, fields, entitiesByType, types, configured).run();
+    }
+
+    /** Every {@code @tenantFanOut} application in a single-tenant build is a validate-time error. */
+    private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl) {
+        var rejections = new ArrayList<ValidationError>();
+        for (var type : sdl.getAllTypesAsList()) {
+            if (type.getName().startsWith("__") || !(type instanceof GraphQLObjectType obj)) continue;
+            for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
+                if (!field.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT)) continue;
+                String coordinate = obj.getName() + "." + field.getName();
+                rejections.add(new ValidationError(
+                    coordinate,
+                    Rejection.directiveConflict(List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                        "'" + coordinate + "' declares @tenantFanOut, but this build configures no"
+                            + " <tenantColumn>: there are no tenants to fan out over. Configure"
+                            + " database-per-tenant routing or remove the directive."),
+                    graphql.language.SourceLocation.EMPTY));
+            }
+        }
+        return rejections;
     }
 
     /**
@@ -103,10 +131,13 @@ public record TenantBindingIndex(
         private final TenantScopes.Configured scopes;
 
         private final Set<String> roots = new HashSet<>();
+        private final String mutationRootName;
         /** target typename -> reaching field edges (parent typename + field name). */
         private final Map<String, List<FieldCoordinates>> reachingEdges = new HashMap<>();
         private final Map<String, Boolean> ctxMemo = new HashMap<>();
         private final Set<String> ctxInProgress = new HashSet<>();
+        private final Map<String, Boolean> fannedAncestorMemo = new HashMap<>();
+        private final Set<String> fannedAncestorInProgress = new HashSet<>();
         private final Map<String, Set<String>> closureCache = new HashMap<>();
 
         /** Node dispatch facts, computed once: type name -> decoded tenant position. */
@@ -127,6 +158,7 @@ public record TenantBindingIndex(
             this.entitiesByType = entitiesByType;
             this.types = types;
             this.scopes = scopes;
+            this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
             recordRoot(sdl.getQueryType());
             recordRoot(sdl.getMutationType());
             recordRoot(sdl.getSubscriptionType());
@@ -154,6 +186,12 @@ public record TenantBindingIndex(
         // ===== Per-field arm assignment =====
 
         private TenantBinding armOf(FieldCoordinates coord, OutputField out) {
+            // A @tenantFanOut marker routes through its own ladder ahead of everything below, so a
+            // marked field always gets a fan-out-specific verdict or rejection, never the generic
+            // cross-scope or noTenantBinding message.
+            if (fanMarked(coord)) {
+                return fanOutArmOf(coord, out);
+            }
             // Every table the field's own SQL touches, not just a Record-shaped return target:
             // multi-table polymorphic fields hit their participant tables and pivot fields their
             // attribute table, so a Plain domain return must not read as "touches nothing".
@@ -208,6 +246,150 @@ public record TenantBindingIndex(
                         + " context."),
                 graphql.language.SourceLocation.EMPTY));
             return null;
+        }
+
+        // ===== The @tenantFanOut arm =====
+
+        /** Whether the coordinate's SDL field definition carries the {@code @tenantFanOut} marker. */
+        private boolean fanMarked(FieldCoordinates coord) {
+            GraphQLFieldDefinition def = fieldDefinition(coord);
+            return def != null && def.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT);
+        }
+
+        private GraphQLFieldDefinition fieldDefinition(FieldCoordinates coord) {
+            return sdl.getType(coord.getTypeName()) instanceof graphql.schema.GraphQLFieldsContainer container
+                ? container.getFieldDefinition(coord.getFieldName())
+                : null;
+        }
+
+        /**
+         * The {@code @tenantFanOut} rejection ladder, closed and validate-time: a marked field
+         * either survives every rung and classifies {@link TenantBinding.FanOut}, or rejects with
+         * a fan-out-specific message. The {@code @service}/{@code @tableMethod} rung runs ahead of
+         * the reach-derived rungs because a plain service return's reach is structurally empty and
+         * would misreport as "nothing to fan out over".
+         */
+        private TenantBinding fanOutArmOf(FieldCoordinates coord, OutputField out) {
+            String coordinate = coord.getTypeName() + "." + coord.getFieldName();
+            if (coord.getTypeName().equals(mutationRootName)) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' is a mutation field: @tenantFanOut is a query-side union;"
+                        + " a write fanned across every claimed tenant is not supported.");
+            }
+            GraphQLFieldDefinition fieldDef = fieldDefinition(coord);
+            if (fieldDef.hasAppliedDirective(BuildContext.DIR_SERVICE)) {
+                return rejectFanOut(coordinate,
+                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_SERVICE),
+                    "'" + coordinate + "' combines @tenantFanOut with @service: fan-out generates"
+                        + " the field's SQL itself, and the service fan-out combination is"
+                        + " deferred. Remove one of the directives.");
+            }
+            if (fieldDef.hasAppliedDirective(BuildContext.DIR_TABLE_METHOD)) {
+                return rejectFanOut(coordinate,
+                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_TABLE_METHOD),
+                    "'" + coordinate + "' combines @tenantFanOut with @tableMethod: fan-out"
+                        + " generates the field's SQL itself, and the consumer-SQL fan-out"
+                        + " combination is deferred. Remove one of the directives.");
+            }
+            if (out.operation() instanceof Operation.Lookup) {
+                return rejectFanOut(coordinate,
+                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_LOOKUP_KEY),
+                    "'" + coordinate + "' combines @tenantFanOut with @lookupKey: lookup enforces"
+                        + " one row per input key, and fanning yields up to one row per tenant per"
+                        + " key, silently breaking that invariant.");
+            }
+            if (out.operation() instanceof Operation.Paginate) {
+                return rejectFanOut(coordinate,
+                    List.of(BuildContext.DIR_TENANT_FAN_OUT, BuildContext.DIR_AS_CONNECTION),
+                    "'" + coordinate + "' combines @tenantFanOut with @asConnection: pagination"
+                        + " across a cross-tenant union is deferred; return a plain list.");
+            }
+            var unwrapped = GraphQLTypeUtil.unwrapAll(fieldDef.getType());
+            if (unwrapped instanceof GraphQLInterfaceType || unwrapped instanceof GraphQLUnionType) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' fans out an interface- or union-typed field: the"
+                        + " polymorphic family is rejected in v1 (a cross-tenant union does not"
+                        + " compose with multi-table dispatch staging). Fan out a concrete"
+                        + " tenant-scoped object type.");
+            }
+            if (!(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof graphql.schema.GraphQLList)) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' is not list-shaped: fan-out unions per-tenant results"
+                        + " into one list, so the field must return a list of a tenant-scoped"
+                        + " type.");
+            }
+            List<TableRef> reach = reachedTables(out);
+            boolean anyTenant = reach.stream().anyMatch(this::tenantScoped);
+            boolean anyGlobal = reach.stream().anyMatch(t -> !tenantScoped(t));
+            if (!anyTenant) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
+                        + " so there is nothing to fan out over.");
+            }
+            if (anyGlobal) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' touches tenant-scoped and global tables in one"
+                        + " statement (" + reach.stream().map(TableRef::tableName).distinct()
+                            .collect(java.util.stream.Collectors.joining(", "))
+                        + "); one statement cannot span the per-tenant and default sources, so"
+                        + " it cannot run once per tenant either.");
+            }
+            var slots = directSlots(out.operation());
+            if (slots.isEmpty()) {
+                slots = polymorphicFilterSlots(out);
+            }
+            if (!slots.isEmpty()) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' already binds the tenant column through "
+                        + slots.stream().map(TenantBinding.BoundSlot::slotName).distinct()
+                            .collect(java.util.stream.Collectors.joining(", "))
+                        + ": the tenant is already divined, and fanning would contradict it."
+                        + " Remove the directive or the binding argument.");
+            }
+            if (anyFannedAncestor(coord.getTypeName())) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' sits below another @tenantFanOut field: each unioned row"
+                        + " already carries its tenant, so a nested fan-out would double-fan an"
+                        + " already fanned context.");
+            }
+            if (tenantContextOf(coord.getTypeName())) {
+                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
+                    "'" + coordinate + "' sits under a tenant-bound ancestor: the tenant is"
+                        + " already divined and handed down, and fanning would contradict it.");
+            }
+            return TenantBinding.FanOut.INSTANCE;
+        }
+
+        private TenantBinding rejectFanOut(String coordinate, List<String> directives, String reason) {
+            rejections.add(new ValidationError(
+                coordinate,
+                Rejection.directiveConflict(directives, reason),
+                graphql.language.SourceLocation.EMPTY));
+            return null;
+        }
+
+        /**
+         * True when some reaching path to {@code typeName} crosses a fanned field. The
+         * fanned-ancestor fact behind the nested-{@code @tenantFanOut} rejection; any-path (a
+         * rejection concern), unlike {@link #tenantContextOf}'s every-path fold. The children's
+         * {@link TenantBinding.Inherited} classification reads the same marker through
+         * {@link #edgeEstablishesOrTransmitsContext}, so the two facts derive from one predicate
+         * ({@link #fanMarked}) and cannot drift. Cycles fold to {@code false}.
+         */
+        private boolean anyFannedAncestor(String typeName) {
+            Boolean cached = fannedAncestorMemo.get(typeName);
+            if (cached != null) return cached;
+            if (!fannedAncestorInProgress.add(typeName)) return false;
+            boolean result = false;
+            for (FieldCoordinates edge : reachingEdges.getOrDefault(typeName, List.of())) {
+                if (fanMarked(edge) || anyFannedAncestor(edge.getTypeName())) {
+                    result = true;
+                    break;
+                }
+            }
+            fannedAncestorInProgress.remove(typeName);
+            fannedAncestorMemo.put(typeName, result);
+            return result;
         }
 
         /**
@@ -548,6 +730,13 @@ public record TenantBindingIndex(
         }
 
         private boolean edgeEstablishesOrTransmitsContext(FieldCoordinates edge) {
+            if (fanMarked(edge)) {
+                // A fanned field stamps each unioned row's tenant as per-element localContext, so
+                // its subtree is tenant-homogeneous per element: the edge establishes context and
+                // children below it classify Inherited (a @splitQuery child then partitions per
+                // tenant through the loader-name seam, exactly as under an ArgumentBound root).
+                return true;
+            }
             if (fields.get(edge) instanceof OutputField out) {
                 var slots = directSlots(out.operation());
                 if (!slots.isEmpty()) {

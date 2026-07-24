@@ -253,6 +253,19 @@ PK-or-UK match by the `UpdateRowsWalker`, not from a directive.
 directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
+Runs the field's query once for every tenant the request may see, in parallel, and returns the
+combined results as one list. The field must return a list of a tenant-scoped `@table` type; which
+tenants are queried is a per-request fact (the tenant collection the application supplies to the
+generated factory, intersected with the tenants the deployment hosts), so the directive carries no
+arguments. Multi-tenant builds only (`<tenantColumn>` must be configured). Rejected at build time
+on mutation fields, non-list fields, `@asConnection` / `@lookupKey` / `@service` / `@tableMethod`
+fields, interface- or union-typed fields, fields whose data is not tenant-scoped, and fields whose
+tenant is already determined (a bound argument, or any ancestor that fixed the tenant, including
+another `@tenantFanOut`).
+"""
+directive @tenantFanOut on FIELD_DEFINITION
+
+"""
 Define a graphitron-generated mutation field.
 
 `typeName`: the DML statement kind (INSERT / UPDATE / DELETE / UPSERT).

@@ -103,6 +103,13 @@ final class TenantDslEmitter {
                     .build(),
                 false);
             case TenantBinding.ArgumentBound bound -> argumentBound(ctx, field, bound, tenantConnections);
+            // A fanned field never declares one DSLContext: its fetcher computes the fan-out
+            // domain and runs the statement per tenant through the carrier's scatter helper, so
+            // this coordinate reaching the generic declaration site is a generation-time failure.
+            case TenantBinding.FanOut ignored -> throw new IllegalStateException(
+                "Field '" + ctx.parentTypeName() + "." + field.name() + "' classified as tenant "
+                    + "FanOut reached the generic DSL-declaration site; the fanned-fetcher emission "
+                    + "owns this coordinate and acquires per tenant through scatter.");
             // Inherited, and the per-row family reaching a non-dispatch site: read the tenant the
             // binding ancestor handed down as localContext; absent hands-down fail loudly in the
             // generated divinedTenant guard rather than routing to a default connection.
@@ -167,9 +174,23 @@ final class TenantDslEmitter {
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
                     + "bound-slot reads; route it through TenantDslEmitter.resolve with the field carrier.");
-            default -> CodeBlock.of("$T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
-                tenantConnections, tenantConnections);
+            // The expression-only sites are the service-call paths, and service fan-out is
+            // deferred: the classifier rejects @tenantFanOut on @service/@tableMethod fields, so
+            // reaching this arm is a graphitron bug, not an unrouted connection.
+            case TenantBinding.FanOut ignored -> throw new IllegalStateException(
+                "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
+                    + "FanOut reached an expression-only DSL site (a service-call path); the "
+                    + "service fan-out combination is deferred and rejected at validation.");
+            case TenantBinding.Inherited ignored -> inheritedReadExpression(tenantConnections);
+            case TenantBinding.NodeIdBound ignored -> inheritedReadExpression(tenantConnections);
+            case TenantBinding.EntityRepBound ignored -> inheritedReadExpression(tenantConnections);
         };
+    }
+
+    /** The localContext-divined acquisition expression the inherited family splices in. */
+    private static CodeBlock inheritedReadExpression(ClassName tenantConnections) {
+        return CodeBlock.of("$T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
+            tenantConnections, tenantConnections);
     }
 
     /**
@@ -183,13 +204,26 @@ final class TenantDslEmitter {
         var schema = ctx.graphitronSchema();
         if (schema == null
                 || !(schema.tenantScopes() instanceof TenantScopes.Configured)
-                || ctx.parentTypeName() == null
-                || !(schema.tenantBindingOf(ctx.parentTypeName(), field.name())
-                    instanceof TenantBinding.ArgumentBound bound)) {
+                || ctx.parentTypeName() == null) {
             return new Resolution(CodeBlock.of(""), false);
         }
-        var tenantConnections = tenantConnectionsClass(outputPackage);
-        return new Resolution(divinedKeyDeclaration(ctx, field, bound, tenantConnections), true);
+        TenantBinding binding = schema.tenantBindingOf(ctx.parentTypeName(), field.name());
+        if (binding == null) {
+            return new Resolution(CodeBlock.of(""), false);
+        }
+        var none = new Resolution(CodeBlock.of(""), false);
+        return switch (binding) {
+            case TenantBinding.ArgumentBound bound -> new Resolution(
+                divinedKeyDeclaration(ctx, field, bound, tenantConnectionsClass(outputPackage)), true);
+            // A fanned field hands tenants down per element (each unioned row's DataFetcherResult
+            // carries its own localContext), never as one divined-key local; the fanned-fetcher
+            // emission owns that stamping.
+            case TenantBinding.FanOut ignored -> none;
+            case TenantBinding.Inherited ignored -> none;
+            case TenantBinding.NodeIdBound ignored -> none;
+            case TenantBinding.EntityRepBound ignored -> none;
+            case TenantBinding.Untenanted ignored -> none;
+        };
     }
 
     /**
@@ -215,13 +249,23 @@ final class TenantDslEmitter {
                 .build();
         }
         var tenantConnections = tenantConnectionsClass(outputPackage);
-        return binding instanceof TenantBinding.Inherited
-            ? CodeBlock.builder()
-                .addStatement("$T $L = $T.tenantLoaderName(env)", String.class, localName, tenantConnections)
-                .build()
-            : CodeBlock.builder()
-                .addStatement("$T $L = $T.loaderName(env)", String.class, localName, tenantConnections)
-                .build();
+        var tenantPartitioned = CodeBlock.builder()
+            .addStatement("$T $L = $T.tenantLoaderName(env)", String.class, localName, tenantConnections)
+            .build();
+        var barePath = CodeBlock.builder()
+            .addStatement("$T $L = $T.loaderName(env)", String.class, localName, tenantConnections)
+            .build();
+        return switch (binding) {
+            case TenantBinding.Inherited ignored -> tenantPartitioned;
+            // A fanned field's own loader batches its (untenanted) parents; the fan-out happens
+            // inside the batch load, and children partition per tenant through the per-element
+            // localContext stamping, not through this field's own loader name.
+            case TenantBinding.FanOut ignored -> barePath;
+            case TenantBinding.ArgumentBound ignored -> barePath;
+            case TenantBinding.NodeIdBound ignored -> barePath;
+            case TenantBinding.EntityRepBound ignored -> barePath;
+            case TenantBinding.Untenanted ignored -> barePath;
+        };
     }
 
     /**

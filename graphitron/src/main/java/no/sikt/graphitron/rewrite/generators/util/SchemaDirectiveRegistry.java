@@ -54,6 +54,7 @@ public final class SchemaDirectiveRegistry {
         "service",
         "externalField",
         "lookupKey",
+        "tenantFanOut",
         "orderBy",
         "condition",
         "mutation",
