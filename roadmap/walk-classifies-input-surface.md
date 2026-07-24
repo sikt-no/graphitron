@@ -1,7 +1,7 @@
 ---
 id: R335
 title: "Fold input/scalar/enum classification into the single classify-and-emit walk"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: classification-model
