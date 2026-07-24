@@ -1,12 +1,12 @@
 ---
 id: R46
 title: "Multi-tenant fan-out: run one field across many tenants and union the results"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 6
 theme: runtime-connection
 depends-on: []
-last-updated: 2026-07-23
+last-updated: 2026-07-24
 ---
 
 # Multi-tenant fan-out: run one field across many tenants and union the results

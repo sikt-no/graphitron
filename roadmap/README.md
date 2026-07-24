@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R97` | Deprecate @table on input types; consumer-derived tables + argMapping grouping | Ready | 2026-07-23 | [plan](consumer-derived-input-tables.md) |
-| `R46` | Multi-tenant fan-out: run one field across many tenants and union the results | In Progress | 2026-07-23 | [plan](multi-tenant-fanout.md) · [explainer](concepts/multi-tenant-fanout.html) |
+| `R46` | Multi-tenant fan-out: run one field across many tenants and union the results | In Review | 2026-07-24 | [plan](multi-tenant-fanout.md) · [explainer](concepts/multi-tenant-fanout.html) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -282,7 +282,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
-- `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](multi-tenant-fanout.md) — In Progress, architecture
+- `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](multi-tenant-fanout.md) — In Review, architecture
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture
 - `R517` [**Client narrowing of the fan-out domain: a tenant-column list argument intersects the request set**](tenant-fanout-argument-narrowing.md) — Backlog, architecture, blocked by [multi-tenant-fanout](multi-tenant-fanout.md)
 
