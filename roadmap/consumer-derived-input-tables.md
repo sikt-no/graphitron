@@ -1,12 +1,12 @@
 ---
 id: R97
 title: "Deprecate @table on input types; consumer-derived tables + argMapping grouping"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: classification-model
 depends-on: []
-last-updated: 2026-07-23
+last-updated: 2026-07-24
 ---
 
 # Deprecate `@table` on input types; consumer-derived tables + `argMapping` grouping
