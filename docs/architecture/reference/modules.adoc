@@ -44,6 +44,6 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 
 `graphitron-tree-sitter-natives` sits alongside these as a plain subdirectory (not a reactor module); it packages the `tree_sitter_graphql` grammar and `libtree-sitter` runtime the LSP loads at startup.
 
-Per-module READMEs are deliberately not maintained; this table is the orientation surface, and lives next to the architecture pages so it stays in sync with the pipeline they describe.
+Per-module READMEs are deliberately not maintained, with one exception: `graphitron-sakila-example/README.md` is the consumer-facing "copy this" recipe that the root README and the quick-start send readers to, and its relative links are build-enforced by `ReadmeLinkIntegrityTest` in that module's test suite. For everything else this table is the orientation surface, and lives next to the architecture pages so it stays in sync with the pipeline they describe.
 
 xref:index.adoc[← Reference index]

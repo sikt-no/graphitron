@@ -12,17 +12,15 @@ If you're picking up Graphitron for a new project, this module is the answer to 
 | Wiring a GraphiQL playground onto your `/graphql` endpoint | Nothing to copy: `graphitron-jakarta-rest` serves a self-hosted, version-pinned GraphiQL playground at `GET /graphql` (`Accept: text/html`) out of the box. To customise or bump it, see [`graphitron-jakarta-rest/tools/graphiql-build/`](../graphitron-jakarta-rest/tools/graphiql-build/) |
 | Pinning your schema's behaviour against PostgreSQL | [`src/test/java/.../querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) |
 
-The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-maven-plugin` plugin, jOOQ codegen). Adjust dependencies and packages, drop in your schema, you're done.
+The `pom.xml` shows the shape you need: Quarkus BOM, the rewrite's `graphitron-maven-plugin` plugin, jOOQ codegen, the `graphitron-jakarta-rest` runtime dependency, and Yasson as the JSON-B provider that library requires. Adjust dependencies and packages, drop in your schema, you're done.
 
 ## Runnable reference (the app)
 
-Three files cover the runtime under [`src/main/java/no/sikt/graphitron/sakila/example/app/`](src/main/java/no/sikt/graphitron/sakila/example/app/):
+One hand-written file covers the runtime: [`SakilaGraphitronApplication`](src/main/java/no/sikt/graphitron/sakila/example/app/SakilaGraphitronApplication.java), an implementation of the [`GraphitronApplication`](../graphitron-jakarta-rest/src/main/java/no/sikt/graphitron/jakarta/rest/GraphitronApplication.java) SPI riding the recommended owned-connection runtime path. Everything HTTP-shaped comes from the [`graphitron-jakarta-rest`](../graphitron-jakarta-rest/) dependency: the `/graphql` resource implementing the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/), engine caching, status-code semantics, the `/graphql/schema` SDL endpoint, and the GraphiQL page.
 
-- [`GraphqlEngine`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlEngine.java) (`@ApplicationScoped`): builds the engine once at startup via `Graphitron.newGraphQL().build()`, the default-case convenience that wraps `Graphitron.buildSchema(b -> {})`, and exposes a single `GraphQL` engine. graphql-java engines are immutable and thread-safe; one instance handles every request.
-- [`GraphqlResource`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlResource.java) (`@Path("/graphql")`): a JAX-RS resource implementing the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/). POST accepts `application/json`, GET takes `?query=&operationName=`, both negotiate to `application/graphql-response+json`. A third method, `@GET @Produces(text/html)`, serves the library's self-hosted GraphiQL playground directly, so a browser visiting `http://localhost:8080/graphql` lands on the playground while curl/POST traffic routes to the engine. Each request gets a fresh `DataLoaderRegistry` (graphql-java requires one even when no DataLoader is used) and a per-request `AppContext` stashed on the `ExecutionInput`.
-- [`AppContext`](src/main/java/no/sikt/graphitron/sakila/example/app/AppContext.java) (`implements GraphitronContext`): per-request `DSLContext` derived from the Quarkus-managed `AgroalDataSource`, plus a context-values map fed into `getContextArgument` lookups. Wire JWT-claim extraction or any other request-scoped state through that map.
+The adapter's javadoc narrates its three seams (the schema supplier, `engineBuilder()`, `newExecutionInput()`); read the linked file rather than a paraphrase here. One caveat before copying it: the example hard-codes the claims payload and `userId` in `newExecutionInput()` as placeholders. A real application passes the authenticated request's token or claims instead; see "Producing the claims payload" in [`runtime-extension-points.adoc`](../docs/architecture/reference/runtime-extension-points.adoc).
 
-Why plain JAX-RS rather than `quarkus-smallrye-graphql`: SmallRye GraphQL ships its own engine and would collide with the `Graphitron`-built `GraphQL`. A single `/graphql` resource is the minimal correct shape.
+Why the stack is plain JAX-RS via `graphitron-jakarta-rest` rather than `quarkus-smallrye-graphql`: SmallRye GraphQL ships its own engine and would collide with the `Graphitron`-built `GraphQL`. A single `/graphql` resource is the minimal correct shape.
 
 The runtime boots only the **non-federated** schema. Both `graphitron-maven-plugin` generator executions in `pom.xml` still run (`schema.graphqls` to `no.sikt.graphitron.generated`, `federated-schema.graphqls` to `no.sikt.graphitron.generated.federated`); the federated build stays a test-only artifact, exercised by [`FederationEntitiesDispatchTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationEntitiesDispatchTest.java) and [`FederationBuildSmokeTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java) in-process.
 
@@ -44,7 +42,7 @@ When the GraphiQL or React versions need bumping, [`graphitron-jakarta-rest/tool
 
 ## Recommended test pattern (the tests)
 
-Tests live under [`src/test/java/no/sikt/graphitron/rewrite/test/querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) and stay **in-process**: each builds the engine via `Graphitron.newGraphQL().build()` (or `Graphitron.buildSchema(...)` directly when extra wiring is needed), executes via graphql-java, and asserts against a live Postgres `DSLContext`. They do not go through the Quarkus HTTP stack. Keeping the pattern in-process means you can copy it without bringing Quarkus into your test classpath.
+Tests live under [`src/test/java/no/sikt/graphitron/rewrite/test/querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) and stay **in-process**: each builds the engine via `Graphitron.newGraphQL().build()` (or `Graphitron.buildSchema(...)` directly when extra wiring is needed), executes via graphql-java, and asserts against a live Postgres `DSLContext`. Where the app above runs the owned-connection runtime path, these tests run the escape hatch, `Graphitron.newGraphQL().build()` over a test-owned `DSLContext`; both paths are described in [`runtime-extension-points.adoc`](../docs/architecture/reference/runtime-extension-points.adoc). They do not go through the Quarkus HTTP stack. Keeping the pattern in-process means you can copy it without bringing Quarkus into your test classpath.
 
 Two shapes are worked out for you:
 
@@ -55,7 +53,7 @@ Both worked examples are self-contained: each test class carries its own `@Befor
 
 For richer assertion shapes, [`GraphQLQueryTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java) is the canonical "test your schema" reference: 180+ tests covering selection-set scoping, DataLoader batching counts, pagination, filters, federation entity dispatch, error channels, and so on. Same shape (in-process, real Postgres, AssertJ on the response map), wider surface.
 
-There's also one HTTP-shaped test: [`GraphqlResourceSmokeTest`](src/test/java/no/sikt/graphitron/sakila/example/app/GraphqlResourceSmokeTest.java) (`@QuarkusTest`) boots the Quarkus shell and POSTs a query through the JAX-RS resource. It's the single check that the runtime layer wires up correctly; everything else stays at the schema/engine level so the pattern stays Quarkus-free.
+HTTP-tier coverage lives in `@QuarkusTest` classes under [`src/test/java/.../app/`](src/test/java/no/sikt/graphitron/sakila/example/app/); everything under [`querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) stays in-process and Quarkus-free. The canonical exemplar is [`GraphQLOverHttpConformanceTest`](src/test/java/no/sikt/graphitron/sakila/example/app/GraphQLOverHttpConformanceTest.java), which boots the Quarkus shell and pins the GraphQL-over-HTTP spec's normative requirements through the real JAX-RS stack.
 
 ## What `internal/` is for
 
