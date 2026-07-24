@@ -156,7 +156,7 @@ class DmlBulkMutationsExecutionTest {
     void createKeyedNodes_payloadFollowsInputOrderAgainstKeyOrder() {
         // The discriminating order fixture: keyed_node's PK is client-supplied, so the input
         // can be ordered *against* the key's natural sort order ("zz", "aa", "mm"). The payload
-        // must follow the RETURNING (input) order — a scan-order accident (index or heap order)
+        // must follow the RETURNING (input) order; a scan-order accident (index or heap order)
         // would return the aa/mm/zz sort instead. This is the contract the companion's
         // ORDER BY idx makes deterministic.
         String suffix = "-" + UUID.randomUUID();
@@ -213,8 +213,8 @@ class DmlBulkMutationsExecutionTest {
     // ===== the reentry companion as a directly-assertable seam =====
     //
     // rows<Name> is a public static unit keyed by the write's RETURNING result, so its
-    // row-per-write contract is assertable with a hand-built keys Result — which is the only
-    // way to reach duplicate keys today: the GraphQL surfaces cannot produce them (bulk UPDATE
+    // row-per-write contract is assertable with a hand-built keys Result, the only way to
+    // reach duplicate keys: the GraphQL surfaces cannot produce them (bulk UPDATE
     // rejects duplicate lookup tuples before SQL, INSERT never repeats a PK, and PostgreSQL
     // reports each target row at most once through RETURNING). The synthetic environment
     // carries the two GraphQLContext entries the companion reads (DSLContext + the
@@ -236,8 +236,8 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void rowsUpdateFilms_duplicateKeys_yieldOnePayloadRowPerKeyInKeysOrder() {
         // Row-per-write, not row-per-distinct-key: keys [B, A, A] must produce payload
-        // [B, A, A]. Under the retired keys-IN spelling the duplicate collapsed (IN dedupes)
-        // and the order was the scan's; the VALUES (idx, pk) join makes both deliberate.
+        // [B, A, A]. A keys-IN spelling would collapse the duplicate (IN dedupes) and leave
+        // the order to the scan; the VALUES (idx, pk) join makes both deliberate.
         String tA = randomMarker("R489-DUP-A");
         String tB = randomMarker("R489-DUP-B");
         Integer idA = insertFilm(tA);
@@ -378,8 +378,8 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void createFilms_omittedFieldUsesColumnDefault() {
         // Per-cell containsKey dispatch: omitted rentalDuration binds DSL.defaultValue
-        // (the smallint NOT NULL DEFAULT 3 lands). Previously the emitter wrote typed null
-        // unconditionally and would have surfaced an integrity-constraint violation.
+        // (the smallint NOT NULL DEFAULT 3 lands); an unconditional typed-null write would
+        // surface an integrity-constraint violation instead.
         String m1 = randomMarker("R77F-INS-DEF-A");
         String m2 = randomMarker("R77F-INS-DEF-B");
         try {
@@ -510,9 +510,9 @@ class DmlBulkMutationsExecutionTest {
         // UPDATE branch (existing filmIds). The dynamic doUpdate SET walks firstKeys
         // and binds DSL.excluded(col) only for present keys. rentalDuration is omitted
         // from the input, so it drops out of DO UPDATE SET entirely; existing value (7)
-        // survives. Previously, naive `c = EXCLUDED.c` for every setFields entry would
-        // have overwritten with EXCLUDED.rental_duration which (because the INSERT
-        // branch's value cell is DEFAULT) resolves to 3 — silent data loss.
+        // survives. A naive `c = EXCLUDED.c` for every setFields entry would overwrite
+        // with EXCLUDED.rental_duration, which (because the INSERT branch's value cell
+        // is DEFAULT) resolves to 3: silent data loss.
         String origTitle1 = randomMarker("R77F-UPS-UPD-A");
         String origTitle2 = randomMarker("R77F-UPS-UPD-B");
         Integer id1 = insertFilm(origTitle1, 7);
@@ -542,7 +542,7 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void updateFilms_divergentInputShapes_raisesError() {
         // Uniform-shape guard: row 0 keyset `{filmId, title}` versus row 1 `{filmId,
-        // title, description}` — the guard fires before any SQL dispatch.
+        // title, description}`; the guard fires before any SQL dispatch.
         String origTitle = randomMarker("R77F-UPD-DIV");
         Integer id = insertFilm(origTitle);
         QUERY_COUNT.set(0);
@@ -607,7 +607,7 @@ class DmlBulkMutationsExecutionTest {
     @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_onlyLookupKeyFields_raisesError() {
         // FilmUpsertInput has non-lookup setFields, but the input map carries only
-        // filmId — the dynamic doUpdate SET walks firstKeys and finds none of the
+        // filmId; the dynamic doUpdate SET walks firstKeys and finds none of the
         // setFields present. Same no-set-fields-present guard.
         int id1 = 999_401, id2 = 999_402;
         deleteFilmById(id1); deleteFilmById(id2);
@@ -692,15 +692,14 @@ class DmlBulkMutationsExecutionTest {
 
     // ===== bulk-input single-payload-carrier list-data-field DML mutations =====
     //
-    // createFilmsPayload / updateFilmsPayload return FilmsPayload { films: [Film!] } — a single
+    // createFilmsPayload / updateFilmsPayload return FilmsPayload { films: [Film!] }: a single
     // carrier wrapping a list-shaped @table-element data field. The classifier routes the
     // bulk-input + list-data-field cell to MutationBulkDmlRecordField; the emitter batches
     // per-row DML inside one dsl.transactionResult(...), collects PKs in input order, and lets
     // the data field's BatchedTableField fetcher (Arity.MANY) run the follow-up
     // response SELECT against those PKs outside the transaction. The order-preservation
     // invariant (output.data[i] corresponds to input[i]) is the load-bearing assertion the
-    // non-PK-ordered round-trip pins; any future single-statement emit refinement must preserve
-    // the same assertion.
+    // non-PK-ordered round-trip pins.
 
     @Test
     void bulkInsertWithThreeRowsInNonPkOrderPreservesInputOrderInResponse() {
@@ -791,8 +790,7 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void bulkUpdateWithThreeRowsInNonPkOrderPreservesInputOrderInResponse() {
         // UPDATE variant of the order-preservation test, exercising the per-row UPDATE emit
-        // path. Filter columns are sourced via tableInputArg.fieldBindings() (the
-        // polarity-agnostic surface, read ahead of the polarity flip). Three inputs
+        // path. Filter columns are sourced via tableInputArg.fieldBindings(). Three inputs
         // whose filmIds are deliberately not in ascending order; assert the response list is
         // in input order.
         String mA = randomMarker("R141-UPDATE-A");
@@ -828,14 +826,12 @@ class DmlBulkMutationsExecutionTest {
 
     // ===== composite-PK @nodeId-decoded @lookupKey on DML inputs =====
     //
-    // Headline forcing-function execution proof: composite-PK DELETE keyed by an opaque
-    // NodeId on a @table input field. The single-row path drives
-    // TypeFetcherGenerator.buildLookupWhereSingleRow's DecodedRecordGroup arm (one decode
-    // local lifted to postInGuard with ThrowOnMismatch null handling, N positional
+    // Composite-PK DELETE keyed by an opaque NodeId on a @table input field. The single-row
+    // path drives TypeFetcherGenerator.buildLookupWhereSingleRow's DecodedRecordGroup arm
+    // (one decode local lifted to postInGuard with ThrowOnMismatch null handling, N positional
     // value<i>() reads into a chained .eq predicate). The bulk path drives
     // buildBulkLookupRowIn's block-lambda form (decode call lifted inside the stream
-    // lambda body). These are the load-bearing emitter paths for this shape;
-    // previously the classifier rejected the shape outright.
+    // lambda body). These are the load-bearing emitter paths for this shape.
 
     private void seedFilmActor(int actorId, int filmId) {
         dsl.insertInto(DSL.table("film_actor"))
@@ -860,11 +856,11 @@ class DmlBulkMutationsExecutionTest {
 
     @Test
     void deleteFilmActorByNodeId_singleRow_deletesByDecodedComposite() {
-        // The headline `slettRegelverksamling`-shaped proof: composite-PK DELETE keyed by
-        // a single NodeId-decoded carrier. The generated body decodes id once into a
+        // Composite-PK DELETE keyed by a single NodeId-decoded carrier. The generated
+        // body decodes id once into a
         // Record2<Integer, Integer> in postInGuard, throws on type mismatch, then emits
         // `where(actor_id.eq(__lookupKey0.value1()).and(film_id.eq(__lookupKey0.value2())))`.
-        // Uses pair (1, 4) — not in the init.sql film_actor seed, so cleanup is local.
+        // Uses pair (1, 4), not in the init.sql film_actor seed, so cleanup is local.
         seedFilmActor(1, 4);
         String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 4);
         try {
@@ -887,7 +883,7 @@ class DmlBulkMutationsExecutionTest {
         // `DSL.row(actor_id, film_id).in(in.stream().map(row -> { ... __bulkKey0 = decode(...); ...
         //   return DSL.row(DSL.val(__bulkKey0.value1(), ...), DSL.val(__bulkKey0.value2(), ...));
         // }).toList())`.
-        // Uses pairs (2, 3) and (3, 4) — neither in the init.sql seed.
+        // Uses pairs (2, 3) and (3, 4), neither in the init.sql seed.
         seedFilmActor(2, 3);
         seedFilmActor(3, 4);
         String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 3);
@@ -913,8 +909,7 @@ class DmlBulkMutationsExecutionTest {
         // buildInsertDecodeLocals (one preGuard decode local per NodeId-bearing
         // carrier) plus buildPerCellValueList's NodeIdDecodeKeys arm
         // (`__insertKey_<fi>.value1()` read into the values cell). Classifies as
-        // ColumnField with NodeIdDecodeKeys extraction; previously the
-        // MutationInputResolver rejected this carrier outright.
+        // ColumnField with NodeIdDecodeKeys extraction.
         String rowKey = "R130-INSERT-" + UUID.randomUUID();
         String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", rowKey);
         try {
@@ -964,7 +959,7 @@ class DmlBulkMutationsExecutionTest {
         // different type fails decode (returns null), and the per-row throw in the
         // generated postInGuard surfaces as a GraphqlErrorException via the
         // try/catch wrapper. The seeded row is untouched.
-        // Uses pair (3, 3) — not in the init.sql seed.
+        // Uses pair (3, 3), not in the init.sql seed.
         seedFilmActor(3, 3);
         String wrong = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         try {
@@ -987,7 +982,7 @@ class DmlBulkMutationsExecutionTest {
         // End-to-end proof of the multiRow opt-out. The mutation declares
         // `@mutation(typeName: DELETE, multiRow: true)` and filters on release_year
         // (non-PK). With three pre-inserted rows sharing one release_year, a single
-        // input row deletes all three — |affected rows| > |input rows| is the
+        // input row deletes all three; |affected rows| > |input rows| is the
         // explicit, opted-in semantics.
         Integer releaseYear = 2125;
         // Pre-clean any seed rows on this year so the test owns the row count.
@@ -1035,8 +1030,8 @@ class DmlBulkMutationsExecutionTest {
     // the per-Film NodeId encoder. The fetcher emits `(env) -> { for r in source: __ids.add(
     // encodeFilm(r.get(...))) }`, producing the list of encoded PKs in input order. This is the
     // deletion-safe carrier shape: the PK comes straight off the RETURNING record, no follow-up
-    // read against the gone row. (The @table-element DELETE carrier and its execution proof were
-    // removed: a full @table projection off a deleted row is impossible.)
+    // read against the gone row. (There is no @table-element DELETE carrier: a full @table
+    // projection off a deleted row is impossible.)
 
     @Test
     void deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows() {
@@ -1072,11 +1067,10 @@ class DmlBulkMutationsExecutionTest {
     //
     // storage_bin is the one public-schema table with a UNIQUE constraint (`code`) distinct from
     // its `bin_id` PK. deleteStorageBinByCode covers `code` only, so the DeleteRowsWalker's
-    // PK-or-UK match lands on the UniqueKey arm rather than the PK — the UK-covering single-row
+    // PK-or-UK match lands on the UniqueKey arm rather than the PK: the UK-covering single-row
     // delete every other Sakila DELETE fixture (all PK-keyed) leaves unproven at execution tier.
     // The emitted statement is `DELETE FROM storage_bin WHERE code = ? RETURNING bin_id`, and the
-    // `: ID` return encodes the matched bin_id as a StorageBin NodeId. The UK execution case for
-    // UPDATE is deferred; this is the DELETE-side proof.
+    // `: ID` return encodes the matched bin_id as a StorageBin NodeId.
 
     private int insertStorageBin(String code, String label) {
         return dsl.insertInto(DSL.table("storage_bin"))
@@ -1095,7 +1089,7 @@ class DmlBulkMutationsExecutionTest {
     void deleteStorageBinByCode_singleRow_deletesRowMatchedByUniqueKey() {
         // Two rows differing only by their UNIQUE `code`. The mutation covers `code` (not the
         // bin_id PK), so the row is identified by the UniqueKey arm. The sibling with a different
-        // code must survive — proof the WHERE keys on the UK value, not a blanket delete.
+        // code must survive: proof the WHERE keys on the UK value, not a blanket delete.
         String code = randomMarker("R266-UK");
         String survivorCode = randomMarker("R266-UK-KEEP");
         int targetId = insertStorageBin(code, "target");
@@ -1122,11 +1116,9 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void deleteStorageBinByCodePayload_fieldTableWriteTarget_roundTrips() {
         // The payload-returning sibling of deleteStorageBinByCode. The write target is named on
-        // the field (@mutation(table: "storage_bin")); the input carries no @table. This is the shape
-        // that rejected before the DmlEmitted @mutation(table:) grounding — a field-derived
-        // payload-returning DELETE grounded no producer binding, so the carrier never registered and
-        // the field fell through to the generic "return type not yet supported". It must now
-        // classify, delete the UK-matched row, and echo its bin_id as a StorageBin NodeId inside the
+        // the field (@mutation(table: "storage_bin")); the input carries no @table, so the
+        // DmlEmitted grounding comes from the field's @mutation(table:). The field must classify,
+        // delete the UK-matched row, and echo its bin_id as a StorageBin NodeId inside the
         // payload's deletedId.
         String code = randomMarker("R514-payload");
         String survivorCode = randomMarker("R514-payload-KEEP");

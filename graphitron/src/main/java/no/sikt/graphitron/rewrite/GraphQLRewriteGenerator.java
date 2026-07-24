@@ -98,10 +98,10 @@ public class GraphQLRewriteGenerator {
      * validates, and writes all generated sources to the configured output directory.
      *
      * <p>Returns the run's {@link GenerationResult}: every compilation unit emitted and the subset
-     * whose on-disk content actually changed. The idempotent writer already computes that delta per
-     * file (it writes only on a content mismatch); surfacing it here is what lets the incremental
- * compile engine recompile the changed sub-closure instead of the whole tree. Callers that
-     * only need the write-to-disk side effect may ignore the return value.
+     * whose on-disk content changed. The idempotent writer computes that delta per file (it writes
+     * only on a content mismatch); surfacing it lets the incremental compile engine recompile the
+     * changed sub-closure instead of the whole tree. Callers that only need the write-to-disk side
+     * effect may ignore the return value.
      */
     public GenerationResult generate() {
         return runPipeline(loadAttributedRegistry(), false).result();
@@ -145,9 +145,9 @@ public class GraphQLRewriteGenerator {
      * specs is a transient reference the run discards. The SDL resource is not a compilation unit and
      * appears in neither map.
      *
-     * <p>{@code methodCommands} is the run's committed method-command relation: every named method a
-     * covered emit family claims, one command per method,
-     * populated by the reentry declaration seams. The bidirectional closure oracle joins it against
+     * <p>{@code methodCommands} is the run's committed method-command relation: one command per
+     * named method a covered emit family claims (see {@link MethodCommandRegistry}). The
+     * bidirectional closure oracle ({@code MethodClosureOracleTest}) joins it against
      * {@code emittedUnits}.
      */
     public record GenerationResult(Set<Path> emitted, Set<Path> changed,
@@ -219,10 +219,10 @@ public class GraphQLRewriteGenerator {
     public record BuildOutput(BuildArtifacts artifacts, ValidationReport report) {}
 
     /**
-     * Classification-stage products: the LSP {@link CompletionData} catalog, the directive-projection
- * snapshot, and the {@link CatalogFacts} catalog-discovery projection the MCP
-     * {@code catalog.*} tools read. All three are build-derived in one pass and swapped onto the
-     * live {@code Workspace} together.
+     * Classification-stage products: the LSP {@link CompletionData} catalog, the
+     * directive-projection snapshot, and the {@link CatalogFacts} catalog-discovery projection the
+     * MCP {@code catalog.*} tools read. All three are build-derived in one pass and swapped onto
+     * the live {@code Workspace} together.
      */
     public record BuildArtifacts(
         CompletionData catalog,
@@ -352,9 +352,8 @@ public class GraphQLRewriteGenerator {
             Collections.unmodifiableSet(emittedThisRun.changedUnits),
             methodCommands.committed()
         );
-        // The compile-dependency graph is coarsened from the same classified model, but only the
-        // dev-loop incremental compiler needs it; production generate() skips the build (buildCompileGraph
-        // is false there). See the sourcing seam in CompileDependencyGraph.
+        // Only the dev-loop incremental compiler needs the compile-dependency graph; production
+        // generate() skips the build. See the sourcing seam in CompileDependencyGraph.
         CompileDependencyGraph graph = buildCompileGraph
             ? CompileDependencyGraphBuilder.fromModel(schema, outputPackage)
             : null;
@@ -405,10 +404,11 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Classification advisories ({@code schema.warnings()}) plus the SDL lint engine's findings over
- * the same parsed registry. Lint findings ride the {@link BuildWarning} channel here at the
-     * report-assembly surfaces rather than inside {@link GraphitronSchemaBuilder}, so the per-build
-     * classifier model stays advisory-only and only the user-facing report carries the lint surface.
+     * Classification advisories ({@code schema.warnings()}) plus the SDL lint engine's findings
+     * over the same parsed registry. Lint findings ride the {@link BuildWarning} channel here at
+     * the report-assembly surfaces rather than inside {@link GraphitronSchemaBuilder}, so the
+     * per-build classifier model stays advisory-only and only the user-facing report carries the
+     * lint surface.
      */
     private List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
         LintConfig lintConfig = ctx.lintConfig();
@@ -425,9 +425,9 @@ public class GraphQLRewriteGenerator {
         all.addAll(no.sikt.graphitron.rewrite.session.SessionStateWarnings.forConfig(ctx.sessionStateConfig(), hasService));
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
-        // covers both channels, so a classifier advisory is suppressible by rule id like any other
-        //. excludedTypes, in contrast, is applied inside the engine above and reaches only the
-        // AST walk; a classifier advisory on an excluded type still fires.
+        // covers both channels, so a classifier advisory is suppressible by rule id like any
+        // other. excludedTypes, in contrast, is applied inside the engine above and reaches only
+        // the AST walk; a classifier advisory on an excluded type still fires.
         if (!lintConfig.disabledRuleIds().isEmpty()) {
             all.removeIf(w -> w instanceof BuildWarning.LintFinding lf
                 && lintConfig.disabledRuleIds().contains(lf.rule().id()));

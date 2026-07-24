@@ -31,8 +31,7 @@ import java.util.List;
  * declared), {@link #addFieldEdges} over the {@link GraphitronField} leaves (a new field variant
  * fails to compile until its reference contribution is declared), and {@link #addProjectionChildEdges}
  * over the {@link ChildField} leaves (a new inline-projecting field variant fails to compile until its
- * type-to-type projection edge is declared). A later step re-targets these switches
- * onto the method graph without changing this consumer.
+ * type-to-type projection edge is declared).
  *
  * <p>Edge policy (see {@link CompileDependencyGraph}'s superset contract and {@link UtilSingleton}):
  * per-type structural edges are projected precisely from the leaves; the ABI-frozen runtime
@@ -252,12 +251,12 @@ public final class CompileDependencyGraphBuilder {
      * here they contribute their root conditions and, where they encode a PK, the precise
      * {@code NodeIdEncoder} edge.
      *
-     * <p>Slice-5 closes the slice-2 residual: the DML {@code ProjectedSingle}/{@code ProjectedList}
-     * (and {@code Discriminated*}) arms project the {@code @table} type inline in the mutation fetcher
-     * itself (no payload child field), so their {@code fetcher → typeClass} edge is now sourced from
-     * the {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression} the field carries (see
+     * <p>The DML {@code ProjectedSingle}/{@code ProjectedList} (and {@code Discriminated*}) arms
+     * project the {@code @table} type inline in the mutation fetcher itself (no payload child field),
+     * so their {@code fetcher → typeClass} edge is sourced from the
+     * {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression} the field carries (see
      * {@link #addDmlProjectionEdges}), model-sourced exactly like {@link #addTypeClassEdge}. The
-     * {@link TypeSpecReferenceWalk} oracle is what falsified the omission.
+     * {@link TypeSpecReferenceWalk} oracle pins these edges.
      */
     private void addRootFieldEdges(String fetcher, String parent, MutationField field) {
         switch (field) {
@@ -319,12 +318,6 @@ public final class CompileDependencyGraphBuilder {
      * without re-deriving nesting ancestry, whereas {@code emitSelectionSwitch} emits a nested inline
      * field's projection into the <em>outer</em> table type's class. Attributing here from the top of
      * the type is the only way to match the emitter's actual host.
-     *
-     * <p>The {@link no.sikt.graphitron.rewrite.generators.CompositeDecodeHelperRegistry} shared
-     * "does this child inline-project a type class, and what target" predicate is a capability-lift
-     * candidate ({@code InlineProjectingField} with {@code projectedTypeName()}, implemented by
-     * {@code TableField}/{@code LookupTableField}, read by this walk and {@code emitSelectionSwitch});
-     * named here as the collapse target, not blocking this item.
      */
     private void addTypeProjectionEdges() {
         for (var type : schema.types().values()) {
@@ -410,7 +403,7 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
             case ChildField.ErrorsField ignored -> { }
             // The inline pivot's $fields arm composes DSL aggregates over the attribute table's
-            // typed Tables constants only — no generated projection class is referenced. The
+            // typed Tables constants only; no generated projection class is referenced. The
             // batched leaf is not emitted inline, and slots never appear in a $fields walk.
             case ChildField.PivotField ignored -> { }
             case ChildField.BatchedPivotField ignored -> { }
@@ -508,7 +501,7 @@ public final class CompileDependencyGraphBuilder {
     // ------------------------------------------------------------------------------------------------
 
     /**
- * Registers the {@code <Type>Fetchers} node a fetcher-owning nesting type contributes. A
+     * Registers the {@code <Type>Fetchers} node a fetcher-owning nesting type contributes. A
      * plain-object nesting type that owns a fetcher (any nested field that is not
      * {@link GraphitronField.UnclassifiedField}) emits a {@code <Type>Fetchers} class, and
      * its schema-shape wiring class references it ({@code FilmMetaType → FilmMetaFetchers}). Those
@@ -527,17 +520,14 @@ public final class CompileDependencyGraphBuilder {
      * enforcement class as its {@link #filtersDecodeNodeId} / {@link #hasSqlGeneratingField} mirrors,
      * with the {@link TypeSpecReferenceWalk} oracle as the drift catch for corpus-covered shapes.
      *
-     * <p>Registering the node is the whole fix: {@link #addBlanketAndWiringEdges} runs last and
-     * snapshots the fetcher nodes at that point, so its existing wiring loop then adds
-     * {@code schemaShape → ownFetcher}, {@code schemaClass → fetcher}, and the blanket
-     * frozen-scaffold / {@code GraphitronContext} edges with no new edge code.
+     * <p>Registering the node suffices: {@link #addBlanketAndWiringEdges} runs last and snapshots
+     * the fetcher nodes at that point, so its wiring loop adds {@code schemaShape → ownFetcher},
+     * {@code schemaClass → fetcher}, and the blanket frozen-scaffold / {@code GraphitronContext}
+     * edges with no per-nesting edge code.
      *
-     * <p>Collapse target (named, not blocking): this walk is the third independent re-walk of the
-     * {@code NestingField} tree (this walk, the {@link #addProjectionChildEdges} projection walk, and
-     * the emitter) and the third copy of the fetcher-ownership fact. A future item, in the spirit of
-     * the {@code InlineProjectingField} note on {@link #addTypeProjectionEdges}, should expose nested
-     * fetcher-owning types (and their fields) as a derived view on {@link GraphitronSchema} so
-     * emitter, projection walk, and builder project off one seam.
+     * <p>This is one of three independent walks of the {@code NestingField} tree (with
+     * {@link #addProjectionChildEdges} and the emitter), each carrying the fetcher-ownership fact;
+     * a change to nested-fetcher reachability must land in all three.
      */
     private void addNestedFetcherNodes() {
         var seen = new java.util.LinkedHashSet<String>();
@@ -590,7 +580,7 @@ public final class CompileDependencyGraphBuilder {
      * context. These are correct superset edges whose targets are the hub / frozen scaffolding (the
      * {@code LightFetcher} / {@code GraphitronContext} edges are over-approximated onto every shape and
      * fetcher rather than only the ones that structurally use them), so they never harm pruning: the
-     * targets are ABI-frozen, so slice-3 ABI-gating never fires on them. The {@link TypeSpecReferenceWalk}
+     * targets are ABI-frozen, so ABI gating never fires on them. The {@link TypeSpecReferenceWalk}
      * oracle pins that these cover the real emitted wiring references.
      */
     private void addBlanketAndWiringEdges() {
@@ -641,7 +631,7 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(pinnedConnection, sessionHook);
         // The operation-typed transaction seam. The runtime's newGraphQL(schema) attaches
         // the instrumentation, which binds a DSLContext through the transaction provider over the pinned
-        // connection. Same schema-invariant, ABI-frozen character as the slice-1 substrate.
+        // connection. Same schema-invariant, ABI-frozen character as the connection-lifecycle substrate.
         String transactionProvider = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider");
         String connectionInstrumentation = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation");
         acc.addEdge(graphitronRuntime, connectionInstrumentation);
@@ -653,7 +643,7 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(facade, connectionInstrumentation);
         // The per-operation tenant-keyed connection carrier. Always emitted (generic over the
         // erased tenant key); its edges to the runtime, the pinned connection, and the transaction provider
-        // are the tenant-keyed acquisition + provider-bound DSLContext seam the eventual routed fetchers consume.
+        // are the tenant-keyed acquisition + provider-bound DSLContext seam routed fetchers consume.
         String tenantConnections = units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections");
         acc.addEdge(tenantConnections, graphitronRuntime);
         acc.addEdge(tenantConnections, pinnedConnection);
@@ -661,7 +651,7 @@ public final class CompileDependencyGraphBuilder {
         // When a <sessionState> block is configured the runtime constructor bakes
         // `new GraphitronSessionHook()` in place of SessionHook.NONE, and the impl implements the hook
         // seam. Conditionally emitted; the edges are inert (render-skipped) in schema-driven builds that
-        // configure no session state, and accurate once slice 5 turns the block on.
+        // configure no session state.
         String sessionHookImpl = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook");
         acc.addEdge(graphitronRuntime, sessionHookImpl);
         acc.addEdge(sessionHookImpl, sessionHook);
@@ -722,8 +712,7 @@ public final class CompileDependencyGraphBuilder {
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "TenantConnections"));
         // The concrete session hook the runtime bakes from <sessionState>. Conditionally
         // emitted (only when a <sessionState> block is configured), so it is absent from schema-driven
-        // builds; modelling it unconditionally is superset-safe (the render skips units never emitted) and
-        // pre-covers the sakila migration in slice 5, which turns the block on.
+        // builds; modelling it unconditionally is superset-safe (the render skips units never emitted).
         acc.addNode(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
         // The dev-loop query executor beside the facade. Conditionally emitted (non-federation
         // schemas only); modelling it unconditionally is superset-safe, same as GraphitronSessionHook.

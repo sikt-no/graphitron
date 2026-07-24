@@ -109,10 +109,9 @@ class FetcherPipelineTest {
 
     @Test
     void propertyField_onBackedRecord_wrapsAccessorReadInLightFetcher() {
-        // A standalone untyped @record no longer yields an unbacked PropertyDataFetcher (it
-        // is a NestingType now). A reflection-backed record type reads its scalar field
-        // through the (zero-arg) record accessor, reified as a named source-only method and
-        // registered wrapped in LightFetcher (COLUMN_FETCHER kind), not an inline lambda.
+        // A reflection-backed record type reads its scalar field through the (zero-arg) record
+        // accessor, reified as a named source-only method and registered wrapped in LightFetcher
+        // (COLUMN_FETCHER kind), not an inline lambda.
         var sdl = """
             type Container { value: String }
             type Query {
@@ -238,12 +237,6 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }
 
-    // The legacy "record-backed payload with a developer-owned errors slot read via
-    // PropertyDataFetcher" tests were deleted. That passthrough required a backed payload with no
-    // producer (the removed @record-className idiom); a @service-produced errors payload now rides
-    // the Outcome WrapperArm transport, covered by SAK_DISPATCH_SDL / the OUTCOME_*_SDL tests
-    // below.
-
     // ===== try/catch wrapper: end-to-end SDL exercising the dispatch arm =====
 
     private static final String SAK_DISPATCH_SDL = """
@@ -269,14 +262,13 @@ class FetcherPipelineTest {
     @Test
     void serviceField_withResolvedErrorChannel_emitsOutcomeWrapperReturnType() {
         // End-to-end: a @service field whose payload carries an errors field classifies to
-        // ErrorChannel.Mapped, and buildServiceFetcherCommon lifts the fetcher's return to the
-        // Outcome wrapper (DataFetcherResult<Outcome<X>>). The return type is the structural,
-        // refactor-stable signal that the flip propagated from classifier to emitter; a revert to
-        // the legacy payload-factory path would drop the Outcome parameterisation here (and fail the
-        // ErrorChannel.Mapped assertion in ErrorChannelClassificationTest). The catch-arm body shape
-        // (the Outcome.ErrorList mapping-walk + redact fallthrough) is pinned behaviourally by
-        // ChannelCatchArmEmitterTest (unit) and the GraphQLQueryTest execution-tier round-trip, not
-        // by a code-string assertion on the generated body (banned per development-principles.adoc).
+        // ErrorChannel.Mapped (pinned in ErrorChannelClassificationTest), and
+        // buildServiceFetcherCommon lifts the fetcher's return to the Outcome wrapper
+        // (DataFetcherResult<Outcome<X>>); the return type is the structural signal that the
+        // classification reached the emitter. The catch-arm body shape (the Outcome.ErrorList
+        // mapping-walk + redact fallthrough) is pinned behaviourally by ChannelCatchArmEmitterTest
+        // (unit) and the GraphQLQueryTest execution-tier round-trip, not by a code-string
+        // assertion on the generated body (banned per development-principles.adoc).
         var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
         assertThat(sak.returnType().toString())
             .contains("graphql.execution.DataFetcherResult")
@@ -301,11 +293,10 @@ class FetcherPipelineTest {
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
-    // ===== @table DataLoader data field under a flipped @service Outcome payload =====
+    // ===== @table DataLoader data field under an @service Outcome payload =====
     //
-    // The pairing the original Outcome inventory lacked and the retired arm-switch allow-list wrongly rejected:
-    // a BatchedTableField (DataLoader-resolved @table field) sibling to a WrapperArm errors field
-    // under a root @service payload. The data field still gets its async DataLoader fetcher (which
+    // A BatchedTableField (DataLoader-resolved @table field) sibling to a WrapperArm errors field
+    // under a root @service payload. The data field gets its async DataLoader fetcher (which
     // arm-switches inside that method, narrowing Outcome.Success and reading the key off
     // success.value()), and its registration is a real fetcher reference, never graphql-java's
     // default PropertyDataFetcher.
@@ -330,10 +321,8 @@ class FetcherPipelineTest {
         // BatchedTableField classification under the WrapperArm payload: the @table field gets its
         // async DataLoader fetcher method (the same CompletableFuture<DataFetcherResult<Record>>
         // shape as the non-outcome BatchedTableField), not a stub or a registration fall-through.
-        // Previously this schema failed validation outright (BatchedTableField was off the
-        // arm-switch allow-list); the emission here is the structural proof the false rejection is
-        // gone. The arm-switch prelude (narrow Success / completedFuture(null) on ErrorList) is
-        // pinned behaviourally by the GraphQLQueryTest execution round-trip, not a body-string here.
+        // The arm-switch prelude (narrow Success / completedFuture(null) on ErrorList) is pinned
+        // behaviourally by the GraphQLQueryTest execution round-trip, not a body-string here.
         var fetchers = findSpec("SakPayloadFetchers", OUTCOME_TABLE_FIELD_SDL);
         assertThat(method(fetchers, "language").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
@@ -342,8 +331,7 @@ class FetcherPipelineTest {
     // Column-read arm-switch: an @service Outcome payload backed by a jOOQ TableRecord (the
     // service returns FilmRecord) carries a column-projected data field. Under the wrapper transport
     // its inline read must be the ColumnFetcher get inlined onto success.value(), not the bare
-    // ColumnFetcher (which would read off the Outcome object) and not a generation-time throw. The
-    // spec's "Per-shape mechanism" scopes the column inline-read in alongside the record-backed accessor.
+    // ColumnFetcher (which would read off the Outcome object) and not a generation-time throw.
     private static final String OUTCOME_COLUMN_FIELD_SDL = """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
@@ -362,11 +350,10 @@ class FetcherPipelineTest {
     void outcomePayload_columnDataField_armSwitchesInlineReadOnSuccessValue() {
         // The arm-switch read is reified onto FilmRecordPayloadFetchers as a named source-only
         // method (narrow Success, return the column off success.value(); null on the ErrorList arm)
-        // and registered wrapped in LightFetcher (COLUMN_FETCHER kind) — not a bare column read off
-        // the Outcome object and not an IllegalStateException at generation. Building the spec proves
-        // the throw is gone; COLUMN_FETCHER proves it stays on the light path; the reified method's
-        // presence proves the read is a findable symbol. Body shape is pinned structurally, not by a
-        // code-string assertion (banned).
+        // and registered wrapped in LightFetcher (COLUMN_FETCHER kind), not a bare column read off
+        // the Outcome object. COLUMN_FETCHER proves the read stays on the light path; the reified
+        // method's presence proves it is a findable symbol. Body shape is pinned structurally, not
+        // by a code-string assertion (banned).
         var bodies = fetcherBodies(OUTCOME_COLUMN_FIELD_SDL);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmRecordPayload", "title"))
             .contains(DataFetcherKind.COLUMN_FETCHER);
@@ -379,40 +366,21 @@ class FetcherPipelineTest {
         // Structural-check counterpart: the @table data field resolves through a graphitron-emitted
         // fetcher (a method reference into SakPayloadFetchers), never graphql-java's default
         // PropertyDataFetcher that would read a property off the Outcome source object. This is the
-        // invariant GraphitronSchemaValidator.validateOutcomeChildArmSwitch now enforces structurally
-        // in place of allow-list membership.
+        // invariant GraphitronSchemaValidator.validateOutcomeChildArmSwitch enforces structurally.
         var bodies = fetcherBodies(OUTCOME_TABLE_FIELD_SDL);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "SakPayload", "language"))
             .contains(DataFetcherKind.METHOD_REFERENCE);
     }
 
-    // ===== mutable-bean payload shape admission =====
+    // ===== Bulk DML mutations =====
     //
-    // ServiceMutation_setterShapePayload_emitsSetterFactory,
-    // serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged, and
-    // serviceMutation_bothShapesPresent_prefersCtorFactory deleted. They pinned the catch-arm
-    // payload-factory lambda (ctor / setter construction shapes), which @service fields no longer
-    // emit, they now wrap success in Outcome.Success and the error path in Outcome.ErrorList, with
-    // no developer payload constructed. The Outcome flip is pinned structurally by
-    // serviceField_withResolvedErrorChannel_emitsOutcomeWrapperReturnType above, and behaviourally by
-    // the ChannelCatchArmEmitter unit test plus the execution-tier round-trip; the construction-shape
-    // admission itself stays covered by PayloadConstructionShapeTest and retires in commit 4.
-
-    // The @table-return DELETE path is removed (the row is gone after the statement; RETURNING
-    // carries only the PK, so a full @table projection is impossible). The former
-    // dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts pipeline proof of that path
-    // retires with it; the ID-return DELETE emission is covered by the encoded-arm pipeline/execution
-    // tests, and the @table-return ProjectedSingle emission stays covered by the INSERT/UPDATE roots.
-
-    // ===== Bulk DML mutations (Phase E) =====
-    //
-    // Pipeline-tier coverage of the four bulk-arm structural shapes. Per spec, no code-string
-    // assertions on the generated SQL chain itself; we assert on the structural invariants the
-    // emitter contracts: list-cast + empty-list short-circuit (both centralised in
-    // buildDmlFetcher), verb-specific row-loop shape (valuesOfRows for INSERT/UPSERT, row-tuple
-    // IN for DELETE, VALUES-join for UPDATE), per-cell missing-vs-null dispatch on
-    // INSERT/UPSERT, dynamic SET on UPDATE/UPSERT-with-doUpdate, and the bulk UPDATE guards
-    // (uniform-shape, duplicate-tuple) plus its Postgres dialect guard.
+    // Pipeline-tier coverage of the bulk-arm structural shapes. No code-string assertions on the
+    // generated SQL chain itself (banned per development-principles.adoc); we assert on the
+    // structural invariants the emitter contracts: list-cast + empty-list short-circuit (both
+    // centralised in buildDmlFetcher), verb-specific row-loop shape (valuesOfRows for INSERT,
+    // row-tuple IN for DELETE, VALUES-join for UPDATE), per-cell missing-vs-null dispatch on
+    // INSERT, dynamic SET on UPDATE, and the bulk UPDATE guards (uniform-shape, duplicate-tuple)
+    // plus its Postgres dialect guard.
 
     @Test
     void dmlInsertField_bulkInput_emitsValuesOfRowsWithContainsKeyDispatchAndEmptyListShortCircuit() {
@@ -453,8 +421,7 @@ class FetcherPipelineTest {
 
     @Test
     void dmlUpsertField_bulkInput_rejectedUnderR144() {
-        // UPSERT generation is retired under the mutation-input cardinality-safety regime,
-        // pending its restoration work.
+        // UPSERT generation is retired under the mutation-input cardinality-safety regime.
         // The classifier surfaces a deferred rejection at MutationInputResolver before any
         // fetcher is emitted, so the structural pin lives at the rejection message instead of
         // the SQL chain.
@@ -476,9 +443,11 @@ class FetcherPipelineTest {
 
     @Test
     void dmlDeleteField_bulkInput_emitsRowTupleInWithStreamMap() {
-        // A bulk DELETE returns [ID!]! (the encoded-PK arm); the @table-return ([Film!]!) path
-        // is removed. Film is @node so the encoder resolves. The bulk DELETE SQL chain (row-tuple IN
-        // over the stream-mapped input) is the structural subject here, independent of the terminator.
+        // A bulk DELETE returns [ID!]! (the encoded-PK arm); DELETE has no @table-return arm
+        // (the row is gone after the statement, and RETURNING carries only the PK, so a full
+        // @table projection is impossible). Film is @node so the encoder resolves. The bulk DELETE
+        // SQL chain (row-tuple IN over the stream-mapped input) is the structural subject here,
+        // independent of the terminator.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
             input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -553,9 +522,8 @@ class FetcherPipelineTest {
 
     @Test
     void dmlUpsertField_doNothingMode_rejectedUnderR144() {
-        // UPSERT generation is retired: the doNothing / doUpdate dispatch is no longer
-        // exercised at the fetcher tier. The classifier rejects upstream; no fetcher is
-        // emitted.
+        // UPSERT generation is retired: the classifier rejects upstream, so the doNothing /
+        // doUpdate dispatch never reaches the fetcher tier and no fetcher is emitted.
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmUpsertNoSetInput @table(name: "film") {
@@ -571,10 +539,9 @@ class FetcherPipelineTest {
 
     @Test
     void dmlSingleRowUpdateField_emitsDynamicSetWalkOverInKeySet() {
-        // Phase E also fixes the legacy missing-vs-null bug on single-row UPDATE: omitted
-        // columns drop out of SET (PATCH semantics), explicit nulls bind typed null. Pin the
-        // structural shift from "unconditional walk over setFields()" to
-        // "if (in.containsKey(name)) { sets.put(...) }".
+        // Single-row UPDATE has PATCH missing-vs-null semantics: omitted columns drop out of
+        // SET, explicit nulls bind typed null. The structural pin is the per-column
+        // "if (in.containsKey(name)) { sets.put(...) }" gate.
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmUpdateInput @table(name: "film") {
@@ -645,7 +612,7 @@ class FetcherPipelineTest {
             .contains(".returningResult(")
             .as("the fetcher calls the named reentry rows companion after the write (R314 slice 4)")
             .contains("rowsCreateContent(keys, env)");
-        // The re-projection moved into the named reentry rows companion; the
+        // The re-projection lives in the named reentry rows companion; the
         // discriminator machinery is asserted there.
         var rowsBody = method(mutationFetchers, "rowsCreateContent").code().toString();
         assertThat(rowsBody)
@@ -743,10 +710,10 @@ class FetcherPipelineTest {
             .contains(DataFetcherKind.COLUMN_FETCHER);
     }
 
-    // Dropped "columnField_withFieldDirective_usesRemappedColumn": the specific jOOQ column
-    // referenced by the ColumnFetcher (FILM_ID vs TITLE) is body-content. Compile tier catches a
-    // wrong Tables.FILM.<X> reference; execution tier catches wrong values. The classifier's
-    // @field(name:) handling is covered separately by GraphitronSchemaBuilderTest.
+    // No pipeline test pins the specific jOOQ column a ColumnFetcher references (FILM_ID vs
+    // TITLE): that is body-content. Compile tier catches a wrong Tables.FILM.<X> reference;
+    // execution tier catches wrong values. The classifier's @field(name:) handling is covered
+    // separately by GraphitronSchemaBuilderTest.
 
     // ===== Root query table fields =====
 
@@ -891,13 +858,11 @@ class FetcherPipelineTest {
 
     @Test
     void serviceField_enumLeaf_mapped_rowsMethodReturnsFlatMapNotDoublyNested() {
-        // A non-built-in scalar leaf (enum, or an unregistered custom scalar) used to fall
-        // the per-key element type back to the service method's whole Map<KeyRecord, V>, which
-        // outerRowsReturnType then wrapped once more — emitting Map<Row1<Integer>,
-        // Map<Row1<Integer>, String>> and failing to compile. The enum leaf is the DB text
-        // (String); the per-key V is that String, so the rows method must be the flat
-        // Map<Row1<Integer>, String>. The Int sibling below resolves through the spec-built-in
-        // path and was always flat; the pair confirms the fix touches only the non-built-in leaf.
+        // For a non-built-in scalar leaf (enum, or an unregistered custom scalar) the enum leaf
+        // is the DB text (String) and the per-key V is that String, so the rows method must be
+        // the flat Map<Row1<Integer>, String>, never a doubly-nested Map<Row1<Integer>,
+        // Map<Row1<Integer>, String>> (which would not compile). The Int sibling resolves through
+        // the spec-built-in path; the pair pins both leaf kinds to the flat shape.
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             enum Rating { G PG R }
@@ -919,9 +884,9 @@ class FetcherPipelineTest {
 
     @Test
     void serviceField_enumLeaf_mapped_wrongContainer_rejectedAtClassifyTime() {
-        // The validator no longer skips a non-built-in scalar leaf. A mapped (Set-keyed)
-        // enum field whose method returns a bare List — unpeelable into the expected Map<K, V> —
-        // is rejected at classify time rather than left to miscompile on the generated return line.
+        // The validator checks non-built-in scalar leaves too: a mapped (Set-keyed) enum field
+        // whose method returns a bare List, unpeelable into the expected Map<K, V>, is rejected
+        // at classify time rather than left to miscompile on the generated return line.
         var schema = buildSchema("""
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             enum Rating { G PG R }
@@ -1025,10 +990,10 @@ class FetcherPipelineTest {
 
     @Test
     void inputRecord_validatorPreStep_receivesTypedRecordNotMap() {
-        // Pipeline-tier regression guard: the rewired validator pre-step on a mutation
-        // service field with a ValidationHandler-bearing @error type materialises the
-        // graphitron-emitted class via <InputName>.fromMap(...) and walks the typed local
-        // through validator.validate(...). Drifting the pre-step back to a raw Map walk
+        // Pipeline-tier regression guard: the validator pre-step on a mutation service field
+        // with a ValidationHandler-bearing @error type materialises the graphitron-emitted
+        // class via <InputName>.fromMap(...) and walks the typed local through
+        // validator.validate(...). A pre-step that walks the raw Map instead
         // (validate(env.getArgument(...))) fails the contains assertion. Uses TestInputBean
         // + runSakWithInputBean (the canonical service-input-bean classification path
         // returning the SakPayload directly) so the SDL classifies cleanly; the validator
@@ -1070,14 +1035,14 @@ class FetcherPipelineTest {
             .contains(".fromMap(")
             .contains("validator.validate");
         // Negative half of the regression guard: the typed local feeds validate, not the raw
-        // Map. The pre-step's "Object arg_input = env.getArgument(...)" raw-coerce shape
-        // belongs to the legacy fallback (used only when the assembled schema is missing).
+        // Map. The "Object arg_input = env.getArgument(...)" raw-coerce shape belongs to the
+        // fallback pre-step used only when the assembled schema is missing.
         assertThat(body)
             .doesNotContain("Object arg_input = env.getArgument");
     }
 
     /**
-     * Helper for the four SDL → input-class pipeline cases: produces the {@code TypeSpec}
+     * Helper for the SDL → input-class pipeline cases: produces the {@code TypeSpec}
      * the input-class generator emits for {@code typeName}, asserting the class is present in the
      * emitted set. The model-only build path is enough for the input-class shape; the
      * regression-guard case above uses {@code buildBundle} because the validator pre-step

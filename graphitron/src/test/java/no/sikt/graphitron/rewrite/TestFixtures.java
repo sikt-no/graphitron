@@ -74,9 +74,8 @@ public final class TestFixtures {
     }
 
     /**
-     * Convenience overload mirroring the former default-static {@code MethodRef.Basic} compat
-     * constructor for {@code @service} fixtures: builds a {@link MethodRef.Service} with a
-     * {@link MethodRef.CallShape.Static} arm whose {@code needsDslLocal} is derived from the
+     * Convenience overload for static-{@code @service} fixtures: builds a {@link MethodRef.Service}
+     * with a {@link MethodRef.CallShape.Static} arm whose {@code needsDslLocal} is derived from the
      * params (any param whose source is {@link ParamSource.DslContext} flips it on, matching
      * what {@code ServiceCatalog.reflectServiceMethod} does at classify time).
      */
@@ -106,11 +105,9 @@ public final class TestFixtures {
     }
 
     /**
- * Stub a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the
-     * production walker. Used by tests building the four root sync {@code @service} permits,
-     * which now carry both legacy {@code method} and the new {@code serviceMethodCall} slots
-     * during the additive cutover. When the walker rejects (multi-DSL invariant violation, etc.),
-     * tests should construct the carrier manually instead.
+     * Stubs a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the production
+     * walker, for tests building the root sync {@code @service} permits. When the walker rejects
+     * (multi-DSL invariant violation, etc.), tests should construct the carrier manually instead.
      */
     public static ServiceMethodCall stubServiceCall(MethodRef.Service method) {
         var result = new ServiceMethodCallWalker().walk(null, method);
@@ -195,14 +192,13 @@ public final class TestFixtures {
 
     // ===== SourceKey / LoaderRegistration test fixtures =====
     //
-    // The projections below replace the deleted SourceKeyResolver / LoaderRegistrationResolver
-    // helpers, which were inlined into the field-classifier producers. Test fixtures use
-    // these to compose the same per-axis shapes the producers build.
+    // Test fixtures use these to compose the same per-axis shapes the field-classifier
+    // producers build.
 
     /**
      * Split-query parent-side {@link SourceKey}: {@link SourceKey.Wrap.Row} over the FK columns.
-     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}. (Arity
-     * left the key: the split fetcher's cardinality is the field's wrapper position.)
+     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}. (The key
+     * carries no arity; the split fetcher's cardinality is the field's wrapper position.)
      */
     public static SourceKey splitSourceKey(List<ColumnRef> fkColumns) {
         return new SourceKey(fkColumns, new SourceKey.Wrap.Row());
@@ -259,9 +255,8 @@ public final class TestFixtures {
     /**
      * Service-backed {@link SourceKey}: the {@code (columns, wrap)} pair read off the
      * {@code @service} method's {@code Sources} signature fact. Mirrors
-     * {@code FieldBuilder.buildServiceSourceKey}. (The service reader arms died into the
-     * {@link MethodRef} signature; no lift, since service fields never reach the record-parent key
-     * extraction.)
+     * {@code FieldBuilder.buildServiceSourceKey}. (No lift: service fields never reach the
+     * record-parent key extraction.)
      */
     public static SourceKey serviceSourceKey(SourceKey.Wrap wrap,
                                               List<ColumnRef> parentKeyColumns) {
@@ -269,11 +264,9 @@ public final class TestFixtures {
     }
 
     /**
-     * {@link LoaderRegistration} for a DataLoader-backed field: container is mapped or positional
-     * per {@code mapped}; dispatch is {@code LOAD_MANY} per {@code loadMany} (only the
-     * accessor-many arm sets this to true today); {@code valueIsList} follows
-     * {@code rt.wrapper().isList()} but flips to false for the loadMany arm (loadMany emits one
-     * record per element-PK).
+     * {@link LoaderRegistration} for a DataLoader-backed field. Only the accessor-many arm sets
+     * {@code loadMany}; {@code valueIsList} flips to false for that arm because loadMany emits
+     * one record per element-PK.
      */
     public static LoaderRegistration loaderRegistration(ReturnTypeRef rt, boolean mapped, boolean loadMany) {
         boolean valueIsList = rt.wrapper().isList() && !loadMany;
@@ -378,9 +371,9 @@ public final class TestFixtures {
      * {@code Keys.<TABLE>__<FK>} convention closely enough for fixture purposes); tests that need
      * exact constant names should pass them explicitly via the three-arg overload.
      *
-     * <p>The FK-hop provenance ({@link no.sikt.graphitron.rewrite.model.On.ColumnPairs#fk()}) is a non-null
-     * {@link ForeignKeyRef}. Fixtures that previously passed {@code null} should route through
-     * this factory so the synthetic FK reference is type-correct end to end.
+     * <p>The FK-hop provenance ({@link On.Keying.ForeignKey#fk()}) is a non-null
+     * {@link ForeignKeyRef}; route fixtures through this factory so the synthetic FK reference
+     * is type-correct end to end.
      */
     public static ForeignKeyRef foreignKeyRef(String sqlName) {
         return foreignKeyRef(sqlName, sqlName.toUpperCase(),
@@ -469,14 +462,11 @@ public final class TestFixtures {
     // ===== JoinStep test fixtures =====
 
     /**
-     * Test-only constructor mirroring the earlier {@code FkJoin(fk, originTable, sourceColumns,
-     * targetTable, targetColumns, whereFilter, alias)} shape (the redundant
-     * {@code fkName} component was dropped; the SQL constraint name is carried by {@code fk.sqlName()}),
-     * zipping the two column lists into source-side/target-side slot pairs. Test fixtures
-     * historically wrote source columns first (parent-holds-FK convention), so
-     * {@code sourceColumns[i]} maps to {@code slot.sourceSide()} and {@code targetColumns[i]} to
-     * {@code slot.targetSide()} — exactly the FK-on-source case the spec migration table covers,
-     * kept mechanical for tests that don't care about the orientation specifically.
+     * Builds an FK-keyed {@link JoinStep.Hop}, zipping the two column lists into
+     * source-side/target-side slot pairs: {@code sourceColumns[i]} maps to
+     * {@code slot.sourceSide()} and {@code targetColumns[i]} to {@code slot.targetSide()} (the
+     * FK-on-source, parent-holds-FK orientation). The SQL constraint name is carried by
+     * {@code fk.sqlName()}.
      */
     public static JoinStep.Hop fkJoin(ForeignKeyRef fk, TableRef originTable,
                                        List<ColumnRef> sourceColumns,
@@ -496,7 +486,7 @@ public final class TestFixtures {
     }
 
     /**
- * Builds the resolved single-hop FK correlation carrier
+     * Builds the resolved single-hop FK correlation carrier
      * ({@link no.sikt.graphitron.rewrite.model.ParticipantCorrelation.KeyTupleWhere}) a multi-table
      * polymorphic interface/union child field holds per participant, from parent-side /
      * participant-side column lists ({@code parentColumns[i]} → {@code slot.sourceSide()},
@@ -531,7 +521,7 @@ public final class TestFixtures {
 
     /**
      * Narrows a step to an FK-derived {@link JoinStep.Hop}, failing the test loudly when the
-     * step is not one. Assertion-side counterpart of the old {@code (JoinStep.FkJoin)} cast.
+     * step is not one.
      */
     public static JoinStep.Hop fkHop(JoinStep step) {
         if (!isFkHop(step)) {
@@ -560,7 +550,7 @@ public final class TestFixtures {
 
     /**
      * Narrows a step to a condition-join {@link JoinStep.Hop}, failing the test loudly
-     * otherwise. Assertion-side counterpart of the old {@code (JoinStep.ConditionJoin)} cast.
+     * otherwise.
      */
     public static JoinStep.Hop conditionHop(JoinStep step) {
         if (!isConditionHop(step)) {
@@ -585,8 +575,7 @@ public final class TestFixtures {
     }
 
     /**
-     * The hop-less pre-keyed correlation (the former test-only {@code liftedHop(...)}
-     * fixture): source and target sides are the same column tuple.
+     * The hop-less pre-keyed correlation: source and target sides are the same column tuple.
      */
     public static ParentCorrelation.OnLiftedSlots liftedSlots(TableRef targetTable,
                                                                List<ColumnRef> columns) {
@@ -595,14 +584,10 @@ public final class TestFixtures {
 
     /**
      * Synthesises a {@link ParentCorrelation} mirroring
-     * {@code BuildContext.buildParentCorrelation}: the parent-anchor arm
-     * {@link ParentCorrelation.OnParentJoin} when the first hop joins on a condition method
- * <em>or</em> carries a hop-0 {@code filter()}, {@link ParentCorrelation.OnFkSlots}
-     * for a filter-less FK head, and {@code null} when the joinPath is empty
-     * (standalone-lookup shape; the pre-keyed lifted shape constructs
-     * {@link ParentCorrelation.OnLiftedSlots} directly). Test fixtures use this to satisfy
-     * the ChildField compact-constructor invariant without threading the resolver state through
-     * every test case.
+     * {@code BuildContext.buildParentCorrelation}; the pre-keyed lifted shape constructs
+     * {@link ParentCorrelation.OnLiftedSlots} directly. Test fixtures use this to satisfy the
+     * {@link ChildField} compact-constructor invariant without threading the resolver state
+     * through every test case.
      */
     public static ParentCorrelation pcFor(List<JoinStep> joinPath, TableRef parentTable) {
         if (joinPath.isEmpty()) {

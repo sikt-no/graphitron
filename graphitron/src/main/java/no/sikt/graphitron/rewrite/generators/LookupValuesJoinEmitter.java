@@ -26,36 +26,25 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
  * Emits the VALUES + JOIN lookup select for a {@link LookupField}, driven by its
- * {@link LookupMapping}. Two call sites consume this emitter — the root-lookup path and the
- * inline-child-lookup path — with slightly different plumbing at each.
+ * {@link LookupMapping}. Two call sites consume this emitter: the root-lookup path
+ * ({@link QueryField.QueryLookupTableField}, via {@link #buildInputRowsMethod} and
+ * {@link #buildFetcherBody}) and the inline-child-lookup path
+ * ({@link ChildField.LookupTableField}, via {@link #buildChildInputRowsMethod}).
  *
- * <p><b>Root-lookup path</b> — {@link QueryField.QueryLookupTableField}.
- * {@link #buildInputRowsMethod} emits the input-rows helper into the enclosing {@code *Fetchers}
- * class (args read from {@code DataFetchingEnvironment}). {@link #buildFetcherBody} emits the
- * fetcher body: helper call, empty short-circuit, {@code DSL.values(rows).as(...)} derived
- * table, {@code .join(input).using(table.COL1, table.COL2, …)}, and
- * {@code .orderBy(input.field("idx"))} to preserve input ordering. {@code USING} is safe because
- * the root lookup's {@code FROM} side is the target table only — no FK chain can bring in a
- * duplicate column name.
- *
- * <p><b>Child-lookup path</b> — {@link ChildField.LookupTableField}.
- * {@link #buildChildInputRowsMethod} emits the input-rows helper into the enclosing type class
- * (e.g. {@code Film}); args come from a {@code SelectedField} instead of the outer
- * {@code DataFetchingEnvironment} because the lookup is projected inline by the parent's
- * {@code $fields}. The VALUES derived-table join is emitted by
- * {@link InlineLookupTableFieldEmitter} using an explicit {@code ON} predicate rather than
- * {@code USING} — the child path's FK chain may traverse a junction table whose column name
- * collides with the lookup-key target column (see {@code InlineLookupTableFieldEmitter}'s
- * class-level Javadoc).
+ * <p>The root fetcher joins with {@code USING}, which is safe because the root lookup's
+ * {@code FROM} side is the target table only; no FK chain can bring in a duplicate column name.
+ * The child path's VALUES join is emitted by {@link InlineLookupTableFieldEmitter} with an
+ * explicit {@code ON} predicate instead, because its FK chain may traverse a junction table
+ * whose column name collides with the lookup-key target column (see that class's Javadoc).
  *
  * <p>Row construction is shared between both paths: typed {@code DSL.val(value, col.getDataType())}
  * per cell, so jOOQ applies the target column's Converter internally and renders a plain JDBC
- * bind — no SQL-level {@code CAST}. See {@link #addRowBuildingCore}.
+ * bind, no SQL-level {@code CAST}. See {@link #addRowBuildingCore}.
  *
- * <p>See {@code docs/architecture/reference/argument-resolution.adoc} for the full design rationale across both paths.
- *
- * <p>Emitted {@code <fieldName>InputRows} helpers take the aliased target {@code Table} as a
- * parameter — see "Helper-locality" in {@code docs/architecture/reference/emitter-conventions.adoc}.
+ * <p>See {@code docs/architecture/reference/argument-resolution.adoc} for the design rationale
+ * across both paths. Emitted {@code <fieldName>InputRows} helpers take the aliased target
+ * {@code Table} as a parameter; see "Helper-locality" in
+ * {@code docs/architecture/reference/emitter-conventions.adoc}.
  */
 final class LookupValuesJoinEmitter {
 
@@ -69,11 +58,11 @@ final class LookupValuesJoinEmitter {
      * One slot per {@link ColumnMapping.LookupArg.ScalarLookupArg}; one slot per binding
      * for {@link ColumnMapping.LookupArg.MapInput} and {@link ColumnMapping.LookupArg.DecodedRecord}.
      *
-     * <p>{@code decodeBinding} is non-null only for {@link ColumnMapping.LookupArg.DecodedRecord}
-     * slots; it carries the per-NodeType {@code decode<TypeName>} helper and the binding's
-     * positional index into the returned {@code Record<N>}. The decode runs once per input row
-     * at the arg layer, so {@link #addRowBuildingCore} hoists the decode call to a per-row local
-     * shared across all bindings of the same arg.
+     * <p>{@code decodeBinding} is non-null only for NodeId-decoded slots (see
+     * {@link DecodeBinding}); it carries the per-NodeType {@code decode<TypeName>} helper and the
+     * binding's positional index into the returned {@code Record<N>}. The decode runs once per
+     * input row at the arg layer, so {@link #addRowBuildingCore} hoists the decode call to a
+     * per-row local shared across all bindings of the same arg.
      */
     private record Slot(
             String argName,
@@ -162,19 +151,11 @@ final class LookupValuesJoinEmitter {
 
     /**
      * Generates the {@code <fieldName>InputRows(DataFetchingEnvironment env, <TargetTable> table) -> Row<N+1>[]}
-     * helper method. The helper:
-     * <ol>
-     *   <li>Extracts each {@code @lookupKey} arg from {@code env}.</li>
-     *   <li>Computes row count {@code n} — the length of the first list-typed argument, broadcasting
-     *       scalars across all rows. With no list arg, {@code n = 1}.</li>
-     *   <li>Builds one {@code DSL.row(DSL.inline(i), DSL.val(v, table.COL.getDataType()), …)} per
-     *       index — positional call to the typed {@code Row<N+1>} overload so
-     *       {@code Field<Integer>} / {@code Field<ColType>} types flow into the array element.
-     *       {@code DSL.val} invokes the target column's Converter on the raw value — no
-     *       Java-side {@code .convert()} call and no SQL {@code CAST}.</li>
-     *   <li>Returns a typed {@code Row<N+1><Integer, colType1, …>[]} (length 0 when the list arg
-     *       is null/empty — callers check {@code rows.length == 0}).</li>
-     * </ol>
+     * helper method: one typed {@code DSL.row(DSL.inline(i), DSL.val(v, table.COL.getDataType()), …)}
+     * per input index. Row count is the length of the first list-typed {@code @lookupKey}
+     * argument, broadcasting scalar arguments across all rows ({@code n = 1} with no list arg).
+     * Returns a zero-length array when the list arg is null or empty; callers short-circuit on
+     * {@code rows.length == 0}.
      *
      * @param field the lookup field (source of {@link LookupMapping})
      * @param targetTableClass the JavaPoet reference to the concrete jOOQ table class (e.g. {@code Film})
@@ -191,7 +172,7 @@ final class LookupValuesJoinEmitter {
 
         // Extract each root argument into a local. Lists are List<?> (nullable); scalars and
         // composite-key input types both come in as Object (the Map<String,Object> for a
-        // composite root is downcast per column via columnValueExpr). env.getArgument is
+        // composite root is downcast per column via slotValueExpr). env.getArgument is
         // <T>-inferred so the cast is implicit.
         for (var root : roots.values()) {
             if (root.list()) {
@@ -206,17 +187,11 @@ final class LookupValuesJoinEmitter {
     }
 
     /**
-     * Child-field variant of {@link #buildInputRowsMethod}. Reads {@code @lookupKey} args from a
-     * {@link graphql.schema.SelectedField} instead of a {@code DataFetchingEnvironment}, since
-     * the args live on the child selection when the lookup is projected inline by a parent's
-     * {@code $fields}. Row-construction core is shared with the root variant.
-     *
-     * <p>Signature: {@code <fieldName>InputRows(SelectedField sf, <TargetTable> table) -> Row<N+1>[]}
-     * with the same typed arity as the root variant.
-     *
-     * <p>{@code SelectedField.getArguments()} returns {@code Map<String, Object>}; list args need
-     * an explicit {@code (List<?>)} cast to match the typed-local declaration the shared core
-     * expects.
+     * Child-field variant of {@link #buildInputRowsMethod}, same signature shape and typed arity.
+     * Reads {@code @lookupKey} args from a {@link graphql.schema.SelectedField} instead of a
+     * {@code DataFetchingEnvironment}, since the args live on the child selection when the lookup
+     * is projected inline by a parent's {@code $fields}. Row-construction core is shared with the
+     * root variant.
      */
     static MethodSpec buildChildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<Slot> slots = requireSlots(field);
@@ -230,7 +205,7 @@ final class LookupValuesJoinEmitter {
 
         // Extract each root argument. sf.getArguments() is Map<String,Object>; list roots take
         // an explicit cast. Composite-key roots come through as Object (a Map<String,Object>
-        // downcast per column via columnValueExpr).
+        // downcast per column via slotValueExpr).
         for (var root : roots.values()) {
             if (root.list()) {
                 builder.addStatement("$T<?> $L = ($T<?>) sf.getArguments().get($S)",
@@ -258,8 +233,8 @@ final class LookupValuesJoinEmitter {
 
     /**
      * Shared row-building tail: row-count computation, typed-row-array creation, typed-value
-     * loop, return. Assumes each column's value is already in a local named via
-     * {@link #argLocalName} and that {@code table} refers to the target-table alias.
+     * loop, return. Assumes each root argument is already extracted into a local named via
+     * {@link RootSource#localName()} and that {@code table} refers to the target-table alias.
      *
      * <p>The typed {@code Row<N+1>} / {@code Record<N+1>} parameterisation ({@code Integer} for
      * {@code idx}, then the columns) is computed by {@link ValuesJoinRowBuilder#rowTypeArgs} via
@@ -267,7 +242,6 @@ final class LookupValuesJoinEmitter {
      */
     private static void addRowBuildingCore(MethodSpec.Builder builder,
             List<Slot> slots, Map<String, RootSource> roots) {
-        // Row count N — from the first list root's length, or 1 if every root is scalar.
         var primaryList = roots.values().stream().filter(RootSource::list).findFirst().orElse(null);
         if (primaryList == null) {
             builder.addStatement("int n = 1");
@@ -283,15 +257,13 @@ final class LookupValuesJoinEmitter {
         ValuesJoinRowBuilder.emitRowArrayDecl(arrayCode, slots, Slot::targetColumn, DIRECTIVE_CONTEXT, "rows", "n");
         builder.addCode(arrayCode.build());
 
-        // Per-row decode locals for NodeId-decoded args (DecodedRecord composite-PK paths and
-        // arity-1 ScalarLookupArg paths whose extraction is a NodeIdDecodeKeys arm): one
-        // decode<TypeName> call per arg per row, shared across all positional bindings. The
-        // failure-mode arm decides what happens on a null return:
-        //   - ThrowOnMismatch: synthesised lookup-key paths where a wrong-type id is an
-        //     authored-input contract violation. Emit a GraphqlErrorException.
-        //   - SkipMismatchedElement: same-table @nodeId filter paths where a malformed id
-        //     drops silently to "no row matches". Emit `continue` so the row is dropped from
-        //     the VALUES set.
+        // Per-row decode locals for NodeId-decoded args: one decode<TypeName> call per arg per
+        // row, shared across all positional bindings. The failure-mode arm decides the
+        // null-return behaviour:
+        //   - ThrowOnMismatch: synthesised lookup-key paths, where a wrong-type id is an
+        //     authored-input contract violation.
+        //   - SkipMismatchedElement: same-table @nodeId filter paths, where a malformed id
+        //     drops silently to "no row matches" (the row leaves the VALUES set).
         Map<String, DecodeBinding> decodeArgs = new LinkedHashMap<>();
         for (var slot : slots) {
             if (slot.decodeBinding() != null) {
@@ -359,37 +331,20 @@ final class LookupValuesJoinEmitter {
     }
 
     /**
-     * Generates the VALUES + JOIN derived-table select body for a lookup field's rows method.
+     * Generates the VALUES + JOIN derived-table select body for a lookup field's rows method:
+     * input-rows helper call, {@code dsl} declaration (via {@link TenantDslEmitter}), empty-input
+     * short-circuit, {@code DSL.values(rows)} derived table joined with {@code USING}, and
+     * {@code .orderBy(input.field("idx"))} to preserve input ordering.
      *
-     * <p>Expects two locals already declared in the surrounding method:
-     * <ul>
-     *   <li>{@code table} — the target jOOQ table alias (from {@link GeneratorUtils#declareTableLocal}).</li>
-     *   <li>{@code dsl} — the {@code DSLContext} (declared by the caller after this block's emitted
-     *       rows-array declaration, because the empty-input short-circuit uses it).</li>
-     * </ul>
-     *
-     * <p>Emits:
-     * <pre>{@code
-     * Row<N+1><Integer, colType1, …>[] rows = <fieldName>InputRows(env, table);
-     * var dsl = graphitronContext(env).getDslContext(env);
-     * if (rows.length == 0) return dsl.newResult();
-     * Table<Record<N+1><Integer, colType1, …>> input = DSL.values(rows).as("<fieldName>Input", "idx", "COL1", "COL2", …);
-     * return dsl.select(<typeFieldsCall>)
-     *           .from(table)
-     *           .join(input).using(table.COL1, table.COL2, …)
-     *           .where(condition)
-     *           .orderBy(input.field("idx"))
-     *           .fetch();
-     * }</pre>
-     *
-     * <p>The {@code .where(condition)} clause expects the caller to have declared a
-     * {@code Condition condition} local before this block. Callers typically initialise it with
+     * <p>Expects two locals already declared in the surrounding method: the target-table alias
+     * named by {@code srcAlias} (from {@link GeneratorUtils#declareTableLocal}) and a
+     * {@code Condition condition}. Callers typically initialise {@code condition} with
      * {@code DSL.noCondition()} and AND in any non-key filters (field-level {@code @condition},
-     * per-arg {@code @condition}); when there are no such filters, the {@code .where(noCondition())}
-     * is a no-op that jOOQ optimises away.
+     * per-arg {@code @condition}); with no such filters the {@code .where(noCondition())} is a
+     * no-op that jOOQ optimises away.
      *
-     * @param field                the lookup field
-     * @param typeFieldsCallStatic the JavaPoet expression for {@code <TypeName>.$fields(env.getSelectionSet(), table, env)}.
+     * @param field          the lookup field
+     * @param typeFieldsCall the JavaPoet expression for {@code <TypeName>.$fields(env.getSelectionSet(), table, env)}
      */
     static CodeBlock buildFetcherBody(TypeFetcherEmissionContext ctx, LookupField field, CodeBlock typeFieldsCall,
             String srcAlias, String outputPackage) {
@@ -397,11 +352,10 @@ final class LookupValuesJoinEmitter {
         List<Slot> slots = flattenSlots(cm);
         String alias = inputTableAlias(field);
 
-        // VALUES column labels — "idx", then one per lookup slot. Labels must match the target
+        // VALUES column labels: "idx", then one per lookup slot. Labels must match the target
         // column's SQL name (e.g. "film_id"), not the jOOQ Java field name (e.g. "FILM_ID"), because
         // Postgres treats quoted identifiers case-sensitively and USING compares the rendered names.
         CodeBlock aliasArgs = ValuesJoinRowBuilder.aliasArgs(slots, Slot::targetColumn, alias);
-        // USING column arguments — references to target-table field constants.
         CodeBlock usingArgs = ValuesJoinRowBuilder.usingArgs(slots, Slot::targetColumn, srcAlias);
 
         // Every LookupField permit is an OutputField; the instanceof keeps the seam total if a
@@ -432,13 +386,9 @@ final class LookupValuesJoinEmitter {
 
     /**
      * Describes the top-level argument backing one or more {@link Slot}s. All slots sharing a
-     * root arg share a single extracted local, which is critical for composite-key input types
-     * where several {@code @lookupKey} fields live on one argument.
-     *
-     * <p>{@code argName} is the GraphQL argument name. {@code list} reflects the outer argument's
-     * list cardinality; all slots rooted here inherit this listness. {@code localName} is the
-     * Java local-variable name holding the extracted value: {@code toCamelCase(argName)} with a
-     * {@code Keys} suffix when list-typed.
+     * root arg share a single extracted local ({@code localName}), which is critical for
+     * composite-key input types where several {@code @lookupKey} fields live on one argument.
+     * {@code list} is the outer argument's list cardinality; all slots rooted here inherit it.
      */
     private record RootSource(String argName, boolean list, String localName) {
         static RootSource of(String argName, boolean list) {
@@ -461,23 +411,11 @@ final class LookupValuesJoinEmitter {
 
     /**
      * The value expression that reads one lookup column's raw value inside the row-building loop,
-     * given the root's extracted local. Branches on whether the slot is composite (carries an
-     * {@code inputField} drilldown) and on list cardinality:
-     * <ul>
-     *   <li>Scalar path, scalar root → {@code rootLocal}</li>
-     *   <li>Scalar path, list root   → {@code rootLocal.get(i)}</li>
-     *   <li>Composite path, scalar root → {@code ((Map<?,?>) rootLocal).get("inputField")}</li>
-     *   <li>Composite path, list root   → {@code ((Map<?,?>) rootLocal.get(i)).get("inputField")}</li>
-     * </ul>
-     * jOOQ's {@code DSL.val(value, table.COL.getDataType())} then wraps the value via the target
-     * column's Converter.
+     * given the root's extracted local: NodeId-decoded slots read the per-row decode local
+     * declared by {@link #addRowBuildingCore}, composite slots drill into the root's {@code Map}
+     * by field name, plain slots read the local directly (element {@code i} of a list root).
      */
     private static CodeBlock slotValueExpr(Slot slot, RootSource root) {
-        // NodeId-decoded slots (both DecodedRecord composite-PK and arity-1 ScalarLookupArg
-        // with NodeIdDecodeKeys extraction) read from the per-row decode local declared by
-        // addRowBuildingCore. The shared local means decode<TypeName> runs once per row across
-        // all bindings of the same arg, and the Throw/Skip branch fires once at the hoisted
-        // null check rather than inline per cell.
         if (slot.decodeBinding() != null) {
             String recLocal = decodeRecordLocal(root.localName());
             return CodeBlock.of("$L.value$L()", recLocal, slot.decodeBinding().index() + 1);

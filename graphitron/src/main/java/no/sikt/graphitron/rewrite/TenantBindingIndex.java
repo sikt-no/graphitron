@@ -100,7 +100,8 @@ public record TenantBindingIndex(
      * Every {@code @tenantFanOut} application in a single-tenant build is a validate-time error.
      * Walks every {@link graphql.schema.GraphQLFieldsContainer} (objects <em>and</em> interfaces:
      * the directive is legal on interface field definitions, and graphql-java does not copy
-     * interface-field directives onto implementors), mirroring {@link #sweepUnreachedFanOutMarkers}.
+     * interface-field directives onto implementors), mirroring
+     * {@link Fold#sweepUnreachedFanOutMarkers}.
      */
     private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl) {
         var rejections = new ArrayList<ValidationError>();
@@ -198,9 +199,8 @@ public record TenantBindingIndex(
          * Completeness backstop: every {@code @tenantFanOut} application must end as a
          * {@link TenantBinding.FanOut} verdict or a fan-out rejection. A marked coordinate the
          * classification never modelled as an {@link OutputField} (a nesting type's member, a
-         * projected leaf, an already-unclassified field) would otherwise be silently ignored,
-         * and a silently ignored fan-out ask is incomplete data presented as complete; the sweep
-         * turns it into a validate-time rejection.
+         * projected leaf, an already-unclassified field) would otherwise be silently ignored;
+         * the sweep turns it into a validate-time rejection.
          */
         private void sweepUnreachedFanOutMarkers() {
             // Objects and interfaces both: the directive is legal on interface field definitions,
@@ -368,8 +368,8 @@ public record TenantBindingIndex(
             // The v1 emission surface: root fields, and children of table-backed parents (where
             // the marker forces the same fetcher boundary @splitQuery does). A class-, record-,
             // or nesting-backed parent's children resolve through emission arms the fanned
-            // fetcher does not intercept yet, so the marker there must reject loudly rather than
-            // be silently ignored; relaxing this later is additive.
+            // fetcher does not intercept, so the marker there must reject loudly rather than
+            // be silently ignored.
             GraphitronType parentType = types.get(coord.getTypeName());
             if (!roots.contains(coord.getTypeName())
                     && !(parentType instanceof GraphitronType.TableType)
@@ -664,7 +664,7 @@ public record TenantBindingIndex(
                 }
             }
             // INSERT / UPSERT: fieldBindings is structurally empty (the VALUES emission walks
-            // fields() directly), so the divining slots come from the same envelope — a plain
+            // fields() directly), so the divining slots come from the same envelope: a plain
             // input field whose column mapping lands on the tenant column routes the mutation.
             collectFromInputFields(input.fields(), slots, seenNames);
             return slots;

@@ -28,8 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * param's SDL input type names jOOQ columns through {@code @field(name:)} and carries a {@code @nodeId}
  * identity that decodes into the record's scalar key, so the param binds on the column axis +
  * scalar-key decode (a {@code CallSiteExtraction.JooqRecord}) and a {@code create<Record>} helper is
- * emitted — never bean-ified on the Java-member axis (the misleading "has no fields matching" the bean
- * path produced on {@code main}).
+ * emitted; it is never bean-ified on the Java-member axis.
  *
  * <p>Covers both cardinalities (the consumer's motivating shape is the list), single- and composite-key
  * identity, the regression pin for the original bug, the child-{@code @service} coordinate (the
@@ -148,10 +147,9 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void listRecordParam_doesNotRegressToHasNoFieldsMatching() {
-        // The red-test for the original bug: a List<FilmRecord> param whose input type carries only
-        // @nodeId + @field (no Java-member-name overlap) must classify to JooqRecord, never an
-        // UnclassifiedField "has no fields matching" — the proof the list shape no longer reaches
-        // buildInputBean.
+        // Regression pin: a List<FilmRecord> param whose input type carries only @nodeId + @field
+        // (no Java-member-name overlap) must classify to JooqRecord, never reach buildInputBean's
+        // misleading "has no fields matching" UnclassifiedField.
         var field = TestSchemaHelper.buildSchema(LIST_SDL).field("Query", "modifyFilms");
         assertThat(field)
             .as("the List<Record> param binds, it does not bean-ify and reject")
@@ -179,8 +177,8 @@ class JooqRecordServiceParamPipelineTest {
         // The parity pin for the ArgCallEmitter arm: enrich runs for child @service too, so the
         // FilmRecord arg on a @table-parent child field classifies to JooqRecord exactly as the root
         // param does. The createFilmRecord helper on FilmFetchers is the proof that the child rows-
-        // method's call site went through the ArgCallEmitter real arm (not a throw, not the old "has no
-        // fields matching"). The binding is coordinate-agnostic.
+        // method's call site went through the ArgCallEmitter real arm (not a throw, not a "has no
+        // fields matching" rejection). The binding is coordinate-agnostic.
         var field = TestSchemaHelper.buildSchema(CHILD_SDL).field("Film", "modifiedLanguage");
         assertThat(field)
             .as("the child @service field classifies (the arg binds, it does not reject)")
@@ -204,11 +202,10 @@ class JooqRecordServiceParamPipelineTest {
     @Test
     void foreignTableNodeIdWithNoFk_rejectsWithFkCountMessage() {
         // The param is a FilmRecord, and @nodeId(typeName: "FilmActor") references a different
-        // table (film_actor) → the cross-table FK branch. There is no foreign key whose source is `film`
-        // referencing `film_actor` (the FK runs the other way, film_actor → film), so the deduction
-        // finds zero directional FKs and rejects with the fk-count message. The old "A NodeId
-        // cannot be decoded into a different record type" gate (:325) is gone — a foreign table is now a
-        // legitimate FK-reference shape when an FK connects them, and an honest zero-FK rejection when not.
+        // table (film_actor): the cross-table FK branch. A foreign table is a legitimate
+        // FK-reference shape when an FK connects the tables; here no foreign key runs from `film`
+        // to `film_actor` (the FK runs the other way, film_actor → film), so the deduction finds
+        // zero directional FKs and rejects honestly with the fk-count message.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
@@ -230,11 +227,10 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void twoNodeIdFields_classifyAsTwoKeyDecodes() {
-        // Two @nodeId fields are legal: the former twoNodeIdFields_reject and its single-@nodeId gate
-        // (:266) are gone. Here both reference Film (== the param record's table), so both are
-        // same-table identity decodes resolving to film_id; their overlapping-column value-agreement is
-        // a runtime concern, deliberately not asserted here. The pin is that classification no
-        // longer rejects.
+        // Two @nodeId fields are legal and classify as two key decodes. Here both reference Film
+        // (== the param record's table), so both are same-table identity decodes resolving to
+        // film_id; their overlapping-column value-agreement is a runtime concern, deliberately
+        // not asserted here.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
             input ModifyTwoIdInput {
@@ -257,8 +253,8 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void fieldResolvingToNoColumn_rejectsWithCandidateHint() {
-        // The honest replacement for "has no fields matching": a @field naming a non-existent column
-        // rejects naming the field, the binding key, and the table, with a Levenshtein candidate hint.
+        // A @field naming a non-existent column rejects honestly: the reason names the field, the
+        // binding key, and the table, with a Levenshtein candidate hint.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
             input ModifyBadColInput {
@@ -385,7 +381,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void tablePresentOnServiceRecordParam_rejectsWithDropTableMessage() {
-        // Convergence by rejection (requirement #3): the motivating input WITH @table classifies as a
+        // Convergence by rejection: the motivating input WITH @table classifies as a
         // TableInputType (Graphitron-owns-DML), which contradicts a jOOQ-record @service param. Reject
         // honestly ("drop @table") instead of the bean path's misleading "has no fields matching". The
         // same input WITHOUT @table (PURE_FK_SDL above) classifies to the JooqRecord carrier.
@@ -454,7 +450,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void reorderedFk_targetColumnsReconciledToDecodeOrder() {
-        // Composite / reordered-FK decode-order reconciliation (D3): the FK references
+        // Composite / reordered-FK decode-order reconciliation: the FK references
         // reordered_pk_parent (pk_b, pk_c, pk_a) while the node key is (pk_a, pk_b, pk_c). The decode's
         // targetColumns must align with node-key (decode) order [fk_a, fk_b, fk_c], NOT the FK
         // declaration order [fk_b, fk_c, fk_a] a positional zip would land on.
@@ -467,12 +463,13 @@ class JooqRecordServiceParamPipelineTest {
     @Test
     void selfFkReferenceOnSameTableNodeId_admits_targetsSelfFkChildColumns() {
         // A same-table @nodeId(typeName: "Email") carrying an explicit @reference names the
-        // self-FK email_in_reply_to_fk. The former same-table reject ("self-reference ... out of scope") is
-        // lifted; the case now routes through the same resolveRecordFkTargetColumns the cross-table
-        // branch uses, oriented with selfRefFkOnSource=true. The RecordKeyDecode targets the self-FK's
-        // child columns (mailbox_id, in_reply_to_no) on the record — NOT the record's own composite PK
-        // (mailbox_id, message_no). mailbox_id is the column shared with the cross-table email→mailbox
-        // FK; the runtime value-agreement reconciling a second writer on it is deferred, not asserted here.
+        // self-FK email_in_reply_to_fk. The case routes through the same
+        // resolveRecordFkTargetColumns the cross-table branch uses, oriented with
+        // selfRefFkOnSource=true. The RecordKeyDecode targets the self-FK's child columns
+        // (mailbox_id, in_reply_to_no) on the record, NOT the record's own composite PK
+        // (mailbox_id, message_no). mailbox_id is the column shared with the cross-table
+        // email→mailbox FK; the runtime value-agreement reconciling a second writer on it is
+        // not asserted here.
         var sdl = """
             type Email implements Node @table(name: "email") @node { id: ID! }
             input ReplyEmailInput {
@@ -499,8 +496,8 @@ class JooqRecordServiceParamPipelineTest {
     @Test
     void nodeKeyColumnNotCoveredByFk_rejects() {
         // child_ref → parent_node FK references the parent's alternate unique column (alt_key), while the
-        // ParentNode NodeType's key is pk_id. The named FK therefore does not cover the node key column,
-        // which rejects (the cross-table failure mode that the removed :325 gate's hazard relocates to).
+        // ParentNode NodeType's key is pk_id. The named FK therefore does not cover the node key
+        // column, which rejects.
         var sdl = """
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
             input AssignChildRefInput {
@@ -542,7 +539,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void nodeIdWithoutTypeName_rejects() {
-        // Unchanged: @nodeId on a jOOQ-record param must name its NodeType explicitly (the
+        // @nodeId on a jOOQ-record param must name its NodeType explicitly (the
         // param record type alone does not name the NodeType to decode against).
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
@@ -619,8 +616,8 @@ class JooqRecordServiceParamPipelineTest {
     @Test
     void mixedTopLevelAndNestedColumns_bothBindOnTheirOwnPaths() {
         // A top-level plain @field and a nested-group @field coexist: the top-level carries a
-        // single-element path, the nested one a two-element path. Pins that the flatten does not disturb
-        // the top-level form (depth-1 paths are byte-identical to the pre-flatten form).
+        // single-element path, the nested one a two-element path. Pins that the flatten does not
+        // disturb the top-level form: depth-1 paths keep the plain single-element shape.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }
             input ModifyFilmMixedInput {
@@ -688,7 +685,7 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(jr.columnBindings().get(0).column().sqlName()).isEqualTo("title");
     }
 
-    // ===== Nested-flatten rejections (D3 invariants, honest validate-time UnclassifiedField) =====
+    // ===== Nested-flatten rejections (honest validate-time UnclassifiedField) =====
 
     @Test
     void cyclicNestedInput_rejects() {
@@ -859,11 +856,12 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void contendedSingularShapes_emitTwoDistinctHelpers_andEachFetcherRoutesToItsOwn() {
-        // The correctness-bug regression: two @service fields bind the same FilmRecord through
-        // different input shapes (register carries release_year, deactivate does not). Previously the
-        // dedup keyed by record class emitted ONE createFilmRecord (the first-seen shape) and both
-        // fetchers routed to it, so one mutation silently dropped its unique column. Keying by shape gives
-        // two distinct ordinal-suffixed helpers, and each fetcher routes to the one matching its input.
+        // Regression pin for a correctness bug: two @service fields bind the same FilmRecord
+        // through different input shapes (register carries release_year, deactivate does not). A
+        // dedup keyed by record class alone emits ONE createFilmRecord (the first-seen shape) and
+        // routes both fetchers to it, so one mutation silently drops its unique column. Keying by
+        // shape gives two distinct ordinal-suffixed helpers, each fetcher routing to the one
+        // matching its input.
         var fetchers = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
         assertThat(singularHelperNames(fetchers))
             .as("one create<Record> per distinct binding shape, not one shared by record class")
@@ -978,7 +976,7 @@ class JooqRecordServiceParamPipelineTest {
 
     @Test
     void contendedHelpers_carryColumnNamingJavadoc_uncontendedDoNot() {
-        // D2 legibility: each contended helper's javadoc names the columns it binds, so a reader maps
+        // Legibility: each contended helper's javadoc names the columns it binds, so a reader maps
         // helper → mutation without decoding the ordinal. The uncontended bare helper stays javadoc-free.
         var contended = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
         assertThat(singularHelperBodies(contended)).isNotEmpty();

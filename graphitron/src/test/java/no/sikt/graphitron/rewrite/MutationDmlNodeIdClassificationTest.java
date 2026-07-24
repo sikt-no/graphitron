@@ -82,10 +82,10 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void twoPlainFieldsOnOneColumn_rejected() {
-        // Two plain @field leaves resolving to one column is a pure schema fact with no runtime
-        // input that could reconcile them, and is avoidable: the mutation-path mirror of the @service
-        // reject, moving the failure from a Postgres "column specified more than once" crash to a
-        // validate-time UnclassifiedField. An overlap involving a @nodeId decode is admitted instead.
+        // Two plain @field leaves resolving to one column is a pure schema fact, so it rejects at
+        // validate time (the mutation-path mirror of the @service reject) instead of crashing in
+        // Postgres with "column specified more than once". An overlap involving a @nodeId decode
+        // is admitted instead.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -108,9 +108,9 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void twoPlainFieldsOnOneUpdateSetColumn_rejected() {
-        // On the UPDATE path: two plain @field's on one SET column silently last-write-wins via
-        // the single-row Map.put (and crashes the bulk VALUES-join); the UpdateRowsWalker rejects it, the
-        // UPDATE mirror of the INSERT-path reject. id_1/id_2 cover the PK (the WHERE); name/alias are the
+        // The UPDATE mirror of the INSERT-path reject: two plain @field's on one SET column would
+        // silently last-write-win in the single-row map (and crash the bulk VALUES-join), so the
+        // UpdateRowsWalker rejects. id_1/id_2 cover the PK (the WHERE); name/alias are the
         // colliding SET writers.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
@@ -181,7 +181,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
         // The composite-NodeId key covers the PK exactly, leaving nothing to SET; the walker
-        // rejects with UpdateRowsError.NoSetFields (the @value marker concept is retired).
+        // rejects with UpdateRowsError.NoSetFields.
         assertThat(f.rejection()).isInstanceOf(
             no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class);
         assertThat(f.reason()).contains("nothing to set");
@@ -189,10 +189,8 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void compositePkNodeIdLookupKey_delete_admitted() {
-        // A composite-PK @nodeId-decoded carrier admits a DELETE: the carrier classifies as
-        // InputField.ColumnBackedField, and the DeleteRowsWalker
-        // projects it to two whereColumns (id_1, id_2) sharing the SDL field name "id"; since they
-        // cover the composite PK, the walker yields a DeleteRows.Identified.
+        // A composite-PK @nodeId-decoded carrier admits a DELETE: its projected whereColumns
+        // share the SDL field name "id" and cover the composite PK.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -219,9 +217,8 @@ class MutationDmlNodeIdClassificationTest {
     void ukCoveringDelete_admitsByUniqueKey_andMatchesUpdateKeyChoice() {
         // Shared-matcher parity: a DELETE whose input covers a UNIQUE key (not the PK) admits
         // as a single-row delete identified by that UK, and the DeleteRowsWalker / UpdateRowsWalker
-        // pick the *same* key for the equivalent inputs (both route through MatchedKeys.firstCovered).
-        // parent_node has PK pk_id and a separate UNIQUE on alt_key. This is the UK execution case
-        // deferred for UPDATE, proven here at the classification tier for DELETE.
+        // pick the *same* key for equivalent inputs (both route through MatchedKeys.firstCovered).
+        // parent_node has PK pk_id and a separate UNIQUE on alt_key.
         var deleteSchema = TestSchemaHelper.buildSchema("""
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! @nodeId pkId: String! @field(name: "pk_id") }
             input DeleteParentNodeInput @table(name: "parent_node") { altKey: String! @field(name: "alt_key") }
@@ -268,8 +265,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         // The composite-NodeId key field projects to two KeyColumn entries sharing the SDL
-        // field name "id"; name partitions to SET as a non-key column (PK-or-UK membership; the
-        // @value marker is retired).
+        // field name "id"; name falls outside the matched key and partitions to SET.
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
         assertThat(updateRows.matchedKey()).isInstanceOf(
@@ -285,8 +281,8 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void compositePkNodeId_upsert_rejected_underR144() {
-        // UPSERT is refused outright. The Deferred rejection points at the deferred conflict-target
-        // uniqueness and bulk-cardinality work that must be designed before re-admitting UPSERT.
+        // UPSERT is refused outright: conflict-target uniqueness and bulk cardinality are
+        // undesigned, so the classifier rejects it as Deferred.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -307,8 +303,8 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void compositePkNodeId_insert_rejected() {
-        // A composite @nodeId column carrier on @mutation(typeName: INSERT) is not supported (the same-table
-        // carve-out). The Deferred rejection's summary stands alone.
+        // The same-table carve-out: a composite @nodeId column carrier on
+        // @mutation(typeName: INSERT) is not supported.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -329,9 +325,8 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void singlePkNodeIdLookupKey_delete_admitted_extractionPropagates() {
-        // Extraction-propagation: an arity-1 NodeId-decoded @lookupKey on a same-table
-        // ColumnField produces a MapGroup whose MapBinding's extraction is the resolver-supplied
-        // NodeIdDecodeKeys, not a re-derived generic extraction.
+        // Extraction-propagation: an arity-1 NodeId-decoded @lookupKey carrier keeps the
+        // resolver-supplied NodeIdDecodeKeys extraction, not a re-derived generic one.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -344,15 +339,12 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBaz");
-        // The arity-1 NodeId-decoded carrier projects to one whereColumn on baz.id (the PK),
-        // so the walker yields Identified; keyGroupsOf later regroups it into a MapGroup at emit.
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
         assertThat(deleteRows.whereColumns()).hasSize(1);
         var keyColumn = deleteRows.whereColumns().get(0);
         assertThat(keyColumn.sdlFieldName()).isEqualTo("id");
         assertThat(keyColumn.targetColumn().sqlName()).isEqualTo("id");
-        // The load-bearing fix: the column carries the carrier's NodeIdDecodeKeys extraction, not a
-        // re-derived JooqConvert (which the earlier path produced from the raw column metadata).
+        // The column carries the carrier's NodeIdDecodeKeys extraction, not a re-derived JooqConvert.
         assertThat(keyColumn.extraction())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
     }
@@ -374,14 +366,10 @@ class MutationDmlNodeIdClassificationTest {
 
     // ===== DELETE-payload-carrier admission matrix (cardinality × element) =====
     //
-    // The four admission cells of §Tests L4. The composite-PK cells use Bar
-    // (id_1, id_2), the reproducer fixture the spec named as the motivating shape for
-    // the ID-typed PK-echo carrier shape. The single-PK cells use Baz (id) to round out the
-    // cardinality axis without composite-PK noise. Each cell asserts the parent mutation
-    // classifies as
-    // MutationDmlRecordField / MutationBulkDmlRecordField with kind=DELETE, AND the per-field
-    // carrier on the data field classifies as SingleRecordIdFieldFromReturning carrying the
-    // resolved NodeIdEncodeKeys encoder. Implicit and explicit @nodeId both admit.
+    // Composite-PK cells use Bar (id_1, id_2); single-PK cells use Baz (id). Each cell asserts
+    // the parent mutation classifies as a delete-payload field AND the payload's data field
+    // classifies as SingleRecordIdFieldFromReturning carrying the resolved NodeIdEncodeKeys
+    // encoder. Implicit and explicit @nodeId both admit.
 
     @Test
     void bulkDeleteIdCarrier_compositePk_implicit_admits() {
@@ -427,12 +415,11 @@ class MutationDmlNodeIdClassificationTest {
     @Test
     void bulkDeleteIdCarrier_explicitNodeId_caseMismatchedTable_admits() {
         // The @nodeId(typeName: "Bar") carrier resolves the Bar NodeType by name; Bar's
-        // verbatim @table is the Oracle-style UPPERCASE "BAR" while the carrier (the input @table)
-        // is the lowercase jOOQ name "bar". resolveCarrierIdEncoder must compare the two
-        // case-insensitively: a case-sensitive .equals reads this as an @nodeId pinned to a
-        // different table and rejects the carrier, a latent instance of the casing bug one
-        // explicit @nodeId hop away. Pins the admission verdict (encodeBar wired, no diagnostics),
-        // not the case-insensitivity mechanism.
+        // verbatim @table is the Oracle-style UPPERCASE "BAR" while the carrier's input @table
+        // is the lowercase jOOQ name "bar". resolveCarrierIdEncoder compares the two
+        // case-insensitively; a case-sensitive equals would read this as an @nodeId pinned to a
+        // different table and reject the carrier. Pins the admission verdict (encodeBar wired,
+        // no diagnostics), not the case-insensitivity mechanism.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "BAR") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -514,24 +501,18 @@ class MutationDmlNodeIdClassificationTest {
 
     // ===== FK-target @nodeId input fields on @mutation (INSERT / UPDATE / DELETE) =====
     //
-    // Headline shape (the user's `OpprettCampusInput`):
-    //   input OpprettCampusInput @table(name: "CAMPUS") {
-    //       larestedId: ID! @nodeId(typeName: "Larested")
-    //       ...
-    //   }
-    // is admitted across INSERT, UPDATE, DELETE. UPSERT remains refused outright.
-    // The classifier produces:
-    //   arity-1 NodeType key → InputField.ColumnBackedReferenceField (liftedSourceColumns.size() == 1)
-    //   arity ≥ 2 NodeType key → InputField.ColumnBackedReferenceField (.size() == N)
-    // Validator-side walker (EnumMappingResolver.buildLookupBindings) emits MapGroup / DecodedRecordGroup
-    // over liftedSourceColumns() so PK-coverage counts the reference contribution.
+    // An ID input field carrying @nodeId(typeName:) for an FK-target NodeType is admitted
+    // across INSERT, UPDATE, DELETE; UPSERT is refused outright. The carrier classifies as
+    // InputField.ColumnBackedReferenceField whose liftedSourceColumns are the FK child columns
+    // (arity matches the target NodeType's key arity). EnumMappingResolver.buildLookupBindings
+    // emits MapGroup / DecodedRecordGroup over liftedSourceColumns() so PK-coverage counts the
+    // reference contribution.
 
     @Test
     void fkTargetNodeIdRef_arity1_insert_admitted() {
-        // Arity-1 FK-target @nodeId on an INSERT input. The `bar.id_1` column FKs to baz(id),
-        // and Baz is a single-PK NodeType. Carrier: ColumnReferenceField; lifted source column:
-        // bar.id_1. INSERT does not need a binding (tia.fieldBindings() is empty); the emitter
-        // walks tia.fields() for the column list and per-cell value reads.
+        // Arity-1 FK-target @nodeId on an INSERT input: bar.id_1 FKs to baz(id) and Baz is a
+        // single-PK NodeType, so the carrier lifts bar.id_1. INSERT needs no binding
+        // (tia.fieldBindings() is empty); the emitter walks tia.fields().
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -560,11 +541,10 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_arity1_delete_admitted_pkCoverage() {
-        // DELETE on `bar` with PK (id_1, id_2). The bazRef carrier contributes id_1 via
-        // liftedSourceColumns(); id_2 is contributed directly by an InputField.ColumnBackedField.
-        // Together they cover the PK, so the PK-coverage check passes. This is the load-bearing
-        // assertion: previously, the validator dropped reference contributions on the floor and
-        // this exact shape would have hit a false "missing PK column id_1" rejection.
+        // DELETE on `bar` with PK (id_1, id_2): bazRef contributes id_1 via liftedSourceColumns()
+        // and id2 contributes id_2 directly, so together they cover the PK. Guards that the
+        // validator counts reference contributions; dropping them fires a false
+        // "missing PK column id_1" rejection on this exact shape.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -581,9 +561,6 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
-        // Every admitted column is a WHERE filter. bazRef lifts id_1 and id2 contributes id_2;
-        // together they cover the PK (id_1, id_2) → Identified. (Previously the validator dropped the
-        // reference contribution and this exact shape hit a false "missing PK column id_1".)
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName())
             .containsExactlyInAnyOrder("id_1", "id_2");
@@ -600,9 +577,8 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_arity1_update_admitted() {
-        // UPDATE on `bar`: bazRef is a filter; id2 is also a filter; name is the non-key SET column.
-        // The UpdateRowsWalker covers the PK because id_1 (from bazRef.liftedSourceColumns) + id_2
-        // cover (id_1, id_2); name falls outside the matched key, so it partitions to SET.
+        // UPDATE on `bar`: bazRef (lifts id_1) and id2 cover the PK (id_1, id_2) as filters;
+        // name falls outside the matched key and partitions to SET.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -620,8 +596,6 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
-        // BazRef (FK-target NodeId ref, lifts id_1) and id2 both partition to the matched PK
-        // (id_1, id_2); name partitions to SET (PK-or-UK membership; @value is retired).
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
         assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
@@ -633,10 +607,9 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_compositeKey_delete_admitted() {
-        // Composite-key FK-target arm: reordered_fk_child FKs into reordered_pk_parent which is
-        // a 3-column-PK NodeType. Carrier: composite InputField.ColumnBackedReferenceField with
-        // liftedSourceColumns = (fk_a, fk_b, fk_c) permuted into __NODE_KEY_COLUMNS order. The
-        // resolver builds one DecodedRecordGroup with 3 RecordBinding slots.
+        // Composite-key FK-target arm: reordered_fk_child FKs into reordered_pk_parent, a
+        // 3-column-PK NodeType. The carrier lifts (fk_a, fk_b, fk_c) permuted into
+        // __NODE_KEY_COLUMNS order.
         var schema = TestSchemaHelper.buildSchema("""
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
             type ReorderedChild implements Node @table(name: "reordered_fk_child") @node {
@@ -654,10 +627,9 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteReorderedChild");
-        // Every admitted input column is a WHERE filter (DELETE has no SET partition). childId
-        // covers the single-column PK (child_id) → Identified; parentRef (composite FK-target NodeId
-        // ref) contributes its 3 lifted source columns fk_a/fk_b/fk_c as extra ANDed predicates,
-        // sharing the SDL field name "parentRef".
+        // DELETE has no SET partition: childId covers the single-column PK (child_id), and
+        // parentRef contributes its 3 lifted columns as extra ANDed predicates sharing the SDL
+        // field name "parentRef".
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("child_id");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
@@ -670,10 +642,8 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_compositeKey_insert_admitted() {
-        // Composite-key INSERT through a composite ColumnBackedReferenceField. INSERT does not need PK
-        // coverage (the carve-out spans both same-table and FK-target composite arms); fields
-        // flow into the column list / values walk on tia.fields(), not fieldBindings. Verify
-        // the carrier classifies and INSERT admits.
+        // Composite-key INSERT through a composite ColumnBackedReferenceField: INSERT needs no
+        // PK coverage; fields flow through tia.fields(), not fieldBindings.
         var schema = TestSchemaHelper.buildSchema("""
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
             type ReorderedChild @table(name: "reordered_fk_child") {
@@ -700,12 +670,10 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_pkCoverage_underCount_negativeRejectionFixture() {
-        // Load-bearing under-counting guard: bar's PK is (id_1, id_2). bazRef contributes id_1
-        // (via liftedSourceColumns) and id2 contributes id_2 directly. The schema is valid; the
-        // resolver must NOT produce a "missing PK column" rejection. Without the validator
-        // widening, the reference carrier's contribution would be silently dropped
-        // and this exact shape would fire a false "missing: id_1" rejection. The check is on
-        // the classified field (no UnclassifiedField).
+        // Under-counting guard: bar's PK is (id_1, id_2); bazRef contributes id_1 via
+        // liftedSourceColumns and id2 contributes id_2 directly. The schema is valid, so the
+        // resolver must NOT fire a "missing PK column" rejection, which would surface as
+        // UnclassifiedField.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -722,8 +690,6 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = schema.field("Mutation", "deleteBarPkCov");
-        // The classifier admits the shape. A false "missing PK column" rejection would surface
-        // as UnclassifiedField; assert it does not.
         assertThat(f)
             .as("FK-target nodeId reference must contribute liftedSourceColumns toward PK coverage")
             .isInstanceOf(MutationField.MutationDeleteTableField.class);
@@ -731,10 +697,9 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void fkTargetNodeIdRef_pkCoverage_genuinelyMissing_rejected() {
-        // Contrast fixture: bazRef contributes id_1 but no field contributes id_2. PK coverage
-        // legitimately fails; the DeleteRowsWalker produces the NoUniqueKeyCoverage rejection.
-        // Pairs with the under-count fixture above to bracket the load-bearing widening: with
-        // the widening, the under-count case admits and this case still rejects.
+        // Contrast fixture bracketing the under-count guard above: bazRef contributes id_1 but
+        // nothing contributes id_2, so PK coverage legitimately fails and the DeleteRowsWalker
+        // rejects with NoUniqueKeyCoverage.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -789,16 +754,14 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void selfFkNodeIdReference_insert_admitsAsCompositeColumnReference_surfacingSharedColumn() {
-        // The neutral CAMPUS shape on a Graphitron-owned INSERT. `email` has composite PK
-        // (mailbox_id, message_no). `inReplyTo` is a same-table @nodeId(typeName: "Email") @reference
-        // naming the self-FK email_in_reply_to_fk, admitted as a composite ColumnBackedReferenceField
-        // whose liftedSourceColumns are the self-FK's child columns (mailbox_id, in_reply_to_no), NOT
-        // the row's own PK. `mailboxRef` is the cross-table FK to mailbox (an arity-1
-        // ColumnBackedReferenceField over mailbox_id). The two reference carriers BOTH write
-        // mailbox_id; the shared-column overlap is deduped and agreement-checked at runtime (not a
-        // classify-time reject, because both writers carry a @nodeId decode). INSERT admits the
-        // composite reference carrier (the carve-out gates only the composite non-reference
-        // ColumnBackedField, never the reference carriers).
+        // Self-FK on an INSERT: `email` has composite PK (mailbox_id, message_no). `inReplyTo`
+        // is a same-table @nodeId @reference naming the self-FK email_in_reply_to_fk, admitted
+        // as a composite ColumnBackedReferenceField whose liftedSourceColumns are the self-FK's
+        // child columns (mailbox_id, in_reply_to_no), NOT the row's own PK. `mailboxRef`
+        // (cross-table FK to mailbox) also writes mailbox_id; the shared-column overlap is
+        // deduped and agreement-checked at runtime, not rejected at classify time, because both
+        // writers carry a @nodeId decode. The composite-carrier INSERT carve-out gates only the
+        // non-reference ColumnBackedField, never reference carriers.
         var schema = TestSchemaHelper.buildSchema("""
             type Mailbox implements Node @table(name: "mailbox") @node { id: ID! @nodeId }
             type Email implements Node @table(name: "email") @node { id: ID! @nodeId }
@@ -839,12 +802,11 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void selfFkNodeIdReference_update_routesSelfFkToSet_sharedColumnInBothPartitions() {
-        // The UPDATE sibling of the INSERT self-FK case. `id` (own @nodeId, own-PK
-        // short-circuit) identifies the row → WHERE (mailbox_id, message_no). `inReplyTo` is the
-        // self-FK @nodeId @reference; its lifted child columns (mailbox_id, in_reply_to_no) route
-        // WHOLLY to SET — a self-FK is a write of "who this row points at", never identity, so the
-        // shared mailbox_id is a SET write (not reclassified to WHERE). mailbox_id thus appears in
-        // BOTH keyColumns (from id) and setColumns (from inReplyTo); the emit-side cross-partition
+        // The UPDATE sibling of the INSERT self-FK case: `id` (own @nodeId) identifies the row,
+        // giving WHERE (mailbox_id, message_no). `inReplyTo`'s lifted child columns (mailbox_id,
+        // in_reply_to_no) route wholly to SET: a self-FK writes "who this row points at", never
+        // identity, so the shared mailbox_id stays a SET write. mailbox_id thus appears in BOTH
+        // keyColumns (from id) and setColumns (from inReplyTo); emit-side cross-partition
         // agreement reconciles it.
         var schema = TestSchemaHelper.buildSchema("""
             type Mailbox implements Node @table(name: "mailbox") @node { id: ID! @nodeId }
@@ -883,9 +845,9 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void deleteIdCarrier_inputTableNotNodeBacked_rejects() {
-        // Implicit Id recognition needs the input @table to be @node-backed. Qux has no
-        // @node SDL declaration in this fixture, so the encoder lookup fails and the carrier
-        // rejects with the same diagnostic family as today's bare-ID DELETE return path.
+        // Implicit Id recognition needs the input @table to be @node-backed. Qux carries no
+        // @node SDL declaration, so the encoder lookup fails and the carrier rejects with the
+        // same diagnostic family as the bare-ID DELETE return path.
         var schema = TestSchemaHelper.buildSchema("""
             type Qux @table(name: "qux") { name: String }
             input DeleteQuxInput @table(name: "qux") { name: String! }

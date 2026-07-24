@@ -24,8 +24,8 @@ import java.util.Optional;
  *
  * <p>The exception is {@link InputTypeArg.TableInputArg}, which is carried verbatim on
  * {@link no.sikt.graphitron.rewrite.model.MutationField.DmlTableField} so the mutation emitters
- * can read its {@code inputTable}, {@code fieldBindings}, and {@code fields} directly. This is
- * the only argument-classification type that crosses the model/generator boundary today.
+ * can read its {@code inputTable}, {@code fieldBindings}, and {@code fields} directly. It is
+ * the only argument-classification type that crosses the model/generator boundary.
  *
  * <p>See {@code docs/architecture/reference/argument-resolution.adoc} for the design and projection semantics.
  *
@@ -77,7 +77,7 @@ public sealed interface ArgumentRef {
          * multi-column instance (the constructor invariant below; the only arms producing a
          * multi-column tuple), and any single-scalar arm at arity 1.
          *
- * <p>{@code joinPath} is empty for the common local-column case (today's behavior).
+         * <p>{@code joinPath} is empty for the common local-column case.
          * When the arg carries {@code @reference(path:)} reaching a column on a <em>joined</em>
          * table, it holds the resolved FK join path from the field's own table to the terminal
          * table that holds the column; {@code projectFilters} then wraps the predicate in a
@@ -137,11 +137,8 @@ public sealed interface ArgumentRef {
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.Eq} (scalar) or
          * {@link no.sikt.graphitron.rewrite.model.BodyParam.In} (list) against the FK source
          * columns when those columns positionally match the target's NodeType key columns
-         * (the simple direct-FK case); pathological cases where they differ are rejected at
-         * classify time with a deferred-emission hint. Full joinPath-aware emission for the case
-         * where the FK-target columns differ from the resolved NodeType key columns (translating
-         * decoded parent-key values into a predicate against the FK-target columns via a JOIN or
-         * EXISTS subquery) is not yet implemented.
+         * (the simple direct-FK case); cases where they differ are rejected at
+         * classify time with a deferred-emission hint.
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys} at every
          * arity: input filters are not contract-violation surfaces, so the failure mode is
@@ -182,8 +179,8 @@ public sealed interface ArgumentRef {
         }
 
         /**
-         * Scalar arg whose column could not be resolved on the target table.
-         * Step 10 turns this into a validation error (with a candidate hint).
+         * Scalar arg whose column could not be resolved on the target table;
+         * surfaced as a validation error with a candidate hint.
          */
         record UnboundArg(
             String name,
@@ -203,11 +200,10 @@ public sealed interface ArgumentRef {
          * Used by composite-key lookups and by mutations.
          *
          * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}.
-         * Now that UPDATE and DELETE are routed through their walker carriers, the only
-         * verbs constructing a {@code TableInputArg} are INSERT and the query-side composite-key
-         * lookup; for both, {@code setFields} is empty and every admissible input field flows into
-         * {@code lookupKeyFields} (the {@code @value} marker that was UPDATE's old SET partition
-         * source has been retired). Both lists are sealed on {@link InputField.LookupKeyField} /
+         * The only verbs constructing a {@code TableInputArg} are INSERT and the query-side
+         * composite-key lookup (UPDATE and DELETE ride their walker carriers); for both,
+         * {@code setFields} is empty and every admissible input field flows into
+         * {@code lookupKeyFields}. Both lists are sealed on {@link InputField.LookupKeyField} /
          * {@link InputField.SetField} respectively (admitted carrier: {@code ColumnBackedField});
          * reference carriers stay outside the permits set. Construct
          * via {@link #of} so the partition has a single derivation path.
@@ -241,13 +237,12 @@ public sealed interface ArgumentRef {
 
             /**
              * Factory: every top-level admissible carrier goes to {@code lookupKeyFields}, with an
-             * empty {@code setFields}. Since UPDATE and DELETE are intercepted upstream onto their
-             * walker carriers, the only callers are INSERT and the query-side composite-key lookup;
-             * neither has a SET partition. INSERT walks {@code fields()} directly for VALUES emit,
-             * so an empty {@code setFields} is correct. The {@code @value} marker (the old
-             * UPDATE-only SET partition source) has been retired, so there is no per-verb branch left.
+             * empty {@code setFields}. The only callers are INSERT and the query-side composite-key
+             * lookup (UPDATE and DELETE ride their walker carriers); neither has a SET partition,
+             * and INSERT walks {@code fields()} directly for VALUES emit, so an empty
+             * {@code setFields} is correct.
              *
- * <p>A nested non-{@code @table} grouping input ({@link InputField.NestingField})
+             * <p>A nested non-{@code @table} grouping input ({@link InputField.NestingField})
              * is admitted by flattening onto the outer table, but {@code lookupKeyFields} is left as
              * the top-level carrier filter (a {@code NestingField} is not a {@code LookupKeyField}, so
              * it does not appear here). The flat leaf partition that carries the nested wire access
@@ -340,7 +335,7 @@ public sealed interface ArgumentRef {
         boolean list,
         Rejection rejection
     ) implements ArgumentRef {
-        /** Backwards-compatible prose accessor; renders the typed {@link #rejection}. */
+        /** Prose accessor: renders the typed {@link #rejection}. */
         public String reason() { return rejection.message(); }
     }
 }

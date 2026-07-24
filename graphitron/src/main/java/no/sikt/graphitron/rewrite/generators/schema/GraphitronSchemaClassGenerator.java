@@ -77,15 +77,14 @@ public final class GraphitronSchemaClassGenerator {
     private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
 
     /**
-     * Synthetic result-set column carrying the participant typename, read off the jOOQ {@code Record}
-     * inside the emitted polymorphic {@code typeResolver}. The {@code __}-wrapping is a deliberate
-     * collision-avoidance device (the alias shares the column namespace with consumer-controlled
-     * table columns), not the lazy dunder convention banned for Java locals; it reaches generated
-     * code as a string literal. The spelling deliberately mirrors the GraphQL introspection
-     * {@code __typename} meta-field the column ultimately feeds, but the two live in different
-     * namespaces: this constant is the SQL column projected by {@code MultiTablePolymorphicEmitter},
-     * whereas the federation {@code _entities} resolver below reads the GraphQL {@code __typename}
-     * straight off the gateway's representation map (see that site's note).
+     * Synthetic result-set column carrying the participant typename, read off the jOOQ
+     * {@code Record} inside the emitted polymorphic {@code typeResolver}. The {@code __}-wrapping
+     * avoids collisions with consumer-controlled table columns, which share the column namespace.
+     * The spelling mirrors the GraphQL introspection {@code __typename} meta-field the column
+     * feeds, but the two live in different namespaces: this constant is the SQL column projected
+     * by {@link MultiTablePolymorphicEmitter}, whereas the federation {@code _entities} resolver
+     * below reads the GraphQL {@code __typename} straight off the gateway's representation map
+     * (see that site's note).
      */
     private static final String TYPENAME_COLUMN = "__typename";
 
@@ -215,10 +214,10 @@ public final class GraphitronSchemaClassGenerator {
         for (String name : plan.additionalTypeNames) {
             body.addStatement("schemaBuilder.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
-        // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
-        // path in SchemaGenerator used to add them for us. The classifier resolves every SDL
-        // scalar through ScalarTypeResolver, and the resulting ScalarType variants drive the
-        // registration here. Resolved scalars (spec built-ins and @scalarType-declared) surface
+        // Built-in GraphQL scalars aren't auto-registered on a programmatic schema. The
+        // classifier resolves every SDL scalar through ScalarTypeResolver, and the resulting
+        // ScalarType variants drive the registration here.
+        // Resolved scalars (spec built-ins and @scalarType-declared) surface
         // as (owner, fieldName) pointing at a public-static-final GraphQLScalarType constant;
         // Synthesised scalars (federation-namespace names whose renamed forms have no constant
         // exposed on the federation-jvm public API) reach the builder through a per-scalar
@@ -298,7 +297,7 @@ public final class GraphitronSchemaClassGenerator {
             // ServiceSDLPrinter.generateServiceSDLV2, which strips the spec-built-in @oneOf
             // definition. When the schema uses @oneOf, route the returned schema through the
             // generated OneOfDirectiveSdl helper to reinstate the definition on the served SDL;
-            // otherwise emit the plain return verbatim (byte-identical to before).
+            // otherwise emit the plain return verbatim.
             if (OneOfDirectiveSdl.usesOneOf(assembled)) {
                 var ONE_OF_SDL = ClassName.get(outputPackage + ".util",
                     no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator.CLASS_NAME);
@@ -477,7 +476,7 @@ public final class GraphitronSchemaClassGenerator {
      *       paths recorded by {@code ConstraintViolations.toGraphQLError} survive intact.</li>
      * </ul>
      *
- * <p>The read bodies are reified onto {@code <ErrorType>Fetchers} by
+     * <p>The read bodies are reified onto {@code <ErrorType>Fetchers} by
      * {@link no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator}; this site
      * only wires the {@code <ErrorType>Fetchers::path} / {@code ::message} references.
      */
@@ -522,15 +521,14 @@ public final class GraphitronSchemaClassGenerator {
      * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
      *
      * <p>Source of truth is {@link GraphitronSchema#types()}, which contains every
-     * emittable type — objects, interfaces, unions, inputs, enums, SDL-declared and synthesised
-     * alike. The assembled schema is no longer consulted here.
+     * emittable type: objects, interfaces, unions, inputs, enums, SDL-declared and synthesised
+     * alike.
      *
      * <p>Scalars classified as {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType}
      * are split out of {@code additionalTypeNames} into {@code scalarRegistrations}: the regular
      * loop emits {@code <Name>Type.type()} for object / enum / input types, while the scalar
      * loop emits {@code <Owner>.<FieldName>} pointing at the resolved {@code GraphQLScalarType}
-     * constant. Replaces the literal {@code .additionalType(Scalars.GraphQLInt)} ... block that
-     * lived here before scalar registration was routed through the scalar-type resolver.
+     * constant.
      */
     static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
         var additional = new java.util.LinkedHashSet<String>();

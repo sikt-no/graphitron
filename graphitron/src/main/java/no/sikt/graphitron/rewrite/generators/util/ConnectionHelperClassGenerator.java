@@ -15,19 +15,10 @@ import java.util.List;
 /**
  * Generates the {@code ConnectionHelper} utility class, emitted once per code-generation run.
  *
- * <p>Contains static methods used by connection-type wiring registrations:
- * <ul>
- *   <li>{@code edges(env)} — trims result to page size, wraps each Record into an Edge</li>
- *   <li>{@code nodes(env)} — trims result to page size, returns Records directly</li>
- *   <li>{@code pageInfo(env)} — computes hasNextPage, hasPreviousPage, startCursor, endCursor</li>
- *   <li>{@code totalCount(env)} — issues {@code SELECT count(*)} against the field's
- *       {@code (table, condition)} carried on {@code ConnectionResult}; returns {@code null}
- *       when those are absent (only the polymorphic empty-participants defensive path)</li>
- *   <li>{@code edgeNode(env)} — returns the Record from an Edge</li>
- *   <li>{@code edgeCursor(env)} — returns the cursor string from an Edge</li>
- * </ul>
- *
- * <p>Also contains a nested {@code Edge} record class carrying a {@code Record} and cursor string.
+ * <p>Contains the static methods that connection-type wiring registrations call ({@code edges},
+ * {@code nodes}, {@code pageInfo}, the lazy {@code totalCount} and {@code facets},
+ * {@code edgeNode}, {@code edgeCursor}) plus a nested {@code Edge} class carrying a
+ * {@code Record} and its cursor string.
  *
  * <p>Cursor encoding: column values are joined with {@code \u0000} (NUL) as separator;
  * SQL {@code NULL} is encoded as {@code \u0001} (SOH). The joined string is Base64-encoded.
@@ -35,16 +26,13 @@ import java.util.List;
  * {@code \u0000} and uses {@code field.getDataType().convert(token)} for type-safe
  * round-tripping. Returns {@code Field<?>[]} so jOOQ's {@code .seek(Field<?>...)} receives
  * correctly-typed bind values. When no cursor is present, {@code DSL.noField(field)} is
- * returned per column — making {@code .seek()} a no-op.
+ * returned per column, making {@code .seek()} a no-op.
  *
- * <p>A present cursor must split back into exactly one token per order-by column: encoding always
- * emits N NUL-joined tokens, so strict arity in both directions (too few and too many) rejects
- * any cursor this generator did not emit. Every malformed-input failure of decode (bad Base64,
- * wrong arity, a token not coercible to its column type) is caught and rethrown as a
- * {@code GraphitronClientException} carrying {@code cursor is not valid (was: "<echo>")}, so the
- * opaque token reads back to the client as a client error rather than a redacted 500; the echo is
- * capped at 100 characters. Any other unchecked throw from decode is treated as a server fault and
- * left to propagate.
+ * <p>Every malformed-input failure of decode (bad Base64, wrong token arity, a token not
+ * coercible to its column type) is rethrown as a {@code GraphitronClientException} carrying
+ * {@code cursor is not valid (was: "<echo>")}, echo capped at 100 characters; any other
+ * unchecked throw from decode is a server fault and propagates. The {@code decodeCursor}
+ * emission below carries the full blame contract.
  *
  * <p>Generated as a source file so consuming projects have no runtime dependency on Graphitron.
  */
@@ -68,12 +56,10 @@ public class ConnectionHelperClassGenerator {
     }
 
     /**
-     * Canonical form carrying the tenancy bit. In a multi-tenant build ({@code multiTenant}) the
-     * two lazy SQL resolvers ({@code totalCount}, {@code facets}) read the routed
-     * {@code DSLContext} off the {@code ConnectionResult} carrier, where the owning fetcher bound
-     * the context it resolved per its classified tenant binding; the aggregates therefore run
-     * against the same source the page rows came from, by construction rather than by any
-     * runtime re-divination.
+     * Canonical form carrying the tenancy bit. In a multi-tenant build the two lazy SQL
+     * resolvers ({@code totalCount}, {@code facets}) read the routed {@code DSLContext} off the
+     * {@code ConnectionResult} carrier, bound there by the owning fetcher per its classified
+     * tenant binding, so the aggregates run against the same source the page rows came from.
      */
     public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
         var connectionResultClass = ClassName.get(
@@ -117,18 +103,17 @@ public class ConnectionHelperClassGenerator {
         // --- PageRequest nested class ---
         // Carries the resolved pagination state from pageRequest(...) back to the fetcher body
         // and onward to ConnectionResult. Two field lists deliberately coexist:
-        //   - selectFields: selection ∪ extraFields, name-deduped — drives .select(...)
-        //   - extraFields:  the pure extra-ordering columns — drives cursor encoding in
+        //   - selectFields: selection ∪ extraFields, name-deduped; drives .select(...)
+        //   - extraFields:  the pure extra-ordering columns; drives cursor encoding in
         //     ConnectionResult (which must hash only the ordering columns, not the whole selection)
         // Emitted as a class with accessors (not a Java record) because the project's JavaPoet
-        // fork does not yet expose recordBuilder.
+        // fork does not expose recordBuilder.
         var pageRequestClass = buildPageRequestClass(listOfField, listOfSortField, fieldArray);
 
         // --- reverseOrderBy(List<SortField<?>>) → List<SortField<?>> ---
-        // Private helper used only by pageRequest(...) for backward pagination. Uses jOOQ's
-        // $field() and $sortOrder() model-API accessors (stable since 3.17) — the only way to
-        // flip a SortField's direction without losing its expression. Moved here from per-
-        // fetcher-class emission so every connection fetcher shares one implementation.
+        // Private helper used only by pageRequest(...) for backward pagination; shared by every
+        // connection fetcher. Uses jOOQ's $field() and $sortOrder() model-API accessors, the
+        // only way to flip a SortField's direction without losing its expression.
         var sortOrderClass = ClassName.get("org.jooq", "SortOrder");
         var reverseOrderBy = MethodSpec.methodBuilder("reverseOrderBy")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -143,19 +128,15 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return reversed")
             .build();
 
-        // --- pageRequest(Integer first, Integer last, String after, String before,
-        //                 int defaultPageSize, List<SortField<?>> orderBy,
-        //                 List<Field<?>> extraFields, List<Field<?>> selection) → PageRequest ---
-        // Collapses every line of pagination boilerplate the fetcher used to inline:
-        //   - client-mistake guards: first/last mutual exclusion, negative first/last, and the
-        //     derived-limit overflow — all thrown as GraphitronClientException so the real
-        // message reaches the client instead of a redacted correlation-id 500
-        //   - backward/pageSize/cursor derivation
-        //   - column-driven cursor decode (delegates to decodeCursor)
-        //   - reverse ordering for backward pagination (delegates to reverseOrderBy)
-        //   - name-based merge of extraFields into the selection (avoids Field.equals identity
-        //     dependence — a name-matching column is treated as already selected).
-        // Takes no DataFetchingEnvironment (four env-arg extractions stay on the fetcher side),
+        // --- pageRequest(...) → PageRequest ---
+        // The shared pagination entry point for every connection fetcher:
+        //   - client-mistake guards (first/last mutual exclusion, negative first/last,
+        //     derived-limit overflow) throw GraphitronClientException so the real message
+        //     reaches the client instead of a redacted correlation-id 500
+        //   - backward/pageSize/cursor derivation, cursor decode (decodeCursor) and reverse
+        //     ordering for backward pagination (reverseOrderBy)
+        //   - name-based merge of extraFields into the selection (rationale at the merge loop)
+        // Takes no DataFetchingEnvironment (env-arg extraction stays on the fetcher side),
         // matching the purity contract on the entity-scoped *Conditions classes.
         var integer = ClassName.get(Integer.class);
         var pageRequestRef = ClassName.get("", "PageRequest");
@@ -190,10 +171,9 @@ public class ConnectionHelperClassGenerator {
             .addStatement("String cursor = backward ? before : after")
             .addStatement("$T seekFields = decodeCursor(cursor, extraFields)", fieldArray)
             .addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", listOfSortField)
-            // Name-based merge: copy selection, then append every extra-ordering column not
-            // already present. Matching on name avoids Field.equals identity mismatches when
-            // the same column arrives through different jOOQ Field instances (e.g. $fields vs.
-            // the ordering path).
+            // Matching on name (not Field.equals) avoids identity mismatches when the same
+            // column arrives through different jOOQ Field instances (e.g. $fields vs. the
+            // ordering path).
             .addStatement("$T<$T> selectFields = new $T<>(selection)", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
             .addStatement("$T<String> selectedNames = new $T<>()",
                 ClassName.get("java.util", "HashSet"), ClassName.get("java.util", "HashSet"))
@@ -327,16 +307,14 @@ public class ConnectionHelperClassGenerator {
         // --- totalCount(DataFetchingEnvironment) → Integer ---
         // Lazy on selection: graphql-java only invokes the registered resolver when the client
         // selects totalCount, so the count SQL is skipped on every query that does not ask for
-        // it. Returns null when (table, condition) are absent — the only remaining producer of
-        // such a carrier is the validator-unreachable empty-participants defensive path in
-        // MultiTablePolymorphicEmitter.buildRootConnectionFetcher (new ConnectionResult(List.of(),
-        // page, null, null)); every reachable path binds a real pair.
+        // it. Returns null when (table, condition) are absent; the only producer of such a
+        // carrier is the validator-unreachable empty-participants defensive path in
+        // MultiTablePolymorphicEmitter.buildRootConnectionFetcher. Every reachable path binds a
+        // real pair.
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
-        // The routed acquisition for the two lazy resolvers: the carrier holds the DSLContext
-        // the owning fetcher resolved per its classified tenant binding, so the count and facet
-        // aggregates run against the same source the page rows came from. Reading it off the
-        // carrier is the build-time decision; no runtime re-divination here.
+        // Multi-tenant: read the DSLContext the owning fetcher bound on the carrier (see the
+        // two-arg generate javadoc); otherwise resolve per-request via GraphitronContext.
         CodeBlock lazyDslDeclaration = multiTenant
             ? CodeBlock.builder().addStatement("$T dsl = cr.dsl()", dslContextClass).build()
             : CodeBlock.builder()
@@ -366,7 +344,7 @@ public class ConnectionHelperClassGenerator {
         // could only sort lexicographically ("117" < "48"). The decode loop re-types every value,
         // the per-facet lists are one-entry-per-distinct-value small, and sorting there gives the
         // native order (count DESC, then Comparable value ASC, NULL bucket last; enums sort in
-        // declaration order). The statement itself needs no ORDER BY at all — rows demultiplex by
+        // declaration order). The statement itself needs no ORDER BY at all; rows demultiplex by
         // the facet label column.
         var facetSpecClass = connectionResultClass.nestedClass("FacetSpec");
         var listOfEntryMap = ParameterizedTypeName.get(LIST_CLASS, mapStringObject);
@@ -443,7 +421,7 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // Per-facet result order: count DESC, then the decoded value's natural order. Comparing
-        // decoded (typed) values is the point of sorting here rather than in SQL — see the facets
+        // decoded (typed) values is the point of sorting here rather than in SQL; see the facets
         // method comment.
         var compareFacetEntries = MethodSpec.methodBuilder("compareFacetEntries")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)

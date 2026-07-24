@@ -23,48 +23,21 @@ import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
  * {@link LookupMappingResolver}, {@link PaginationResolver}, {@link ConditionResolver},
  * {@link InputFieldResolver}, and {@link MutationInputResolver}.
  *
- * <p>Four methods cluster here, all touching the same axis: how a GraphQL value (especially an
- * enum value) is converted before reaching jOOQ.
- *
- * <ul>
- *   <li>{@link #buildTextEnumMapping} reads a classified {@link GraphitronType.EnumType} and
- *       produces a value-name to runtime-string mapping; the runtime string is the pre-resolved
- *       {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} lifted at classify
- *       time from {@code @field(name:)} (or the SDL name when the directive is absent).
- *       Returns {@code null} when the GraphQL type is not a classified enum.</li>
- *   <li>{@link #validateEnumFilter} matches a GraphQL enum against a jOOQ-generated Java enum
- *       column class. Returns a sealed {@link EnumValidation} the caller switches on:
- *       {@link EnumValidation.NotEnum} when the column is not a jOOQ enum,
- *       {@link EnumValidation.Valid} carrying the matched Java enum's fully qualified class name,
- *       or {@link EnumValidation.Mismatch} carrying a single composed rejection message.</li>
- *   <li>{@link #deriveExtraction} picks the {@link CallSiteExtraction} strategy for a scalar
- *       column-bound value, given the GraphQL type, the target column, and the validated enum
- *       class name (when applicable). Total projection: never fails.</li>
- *   <li>{@link #buildLookupBindings} walks a {@link GraphitronType.TableInputType}'s fields
- *       and emits one {@link InputColumnBinding.MapBinding} per {@code @lookupKey}-bearing
- *       scalar column field, deriving each binding's extraction via {@link #deriveExtraction}.</li>
- * </ul>
- *
- * <p>{@code enrichArgExtractions} was retired along with the
- * {@code CallSiteExtraction.TextMapLookup} permit it produced: graphql-java's
- * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)} runtime
- * form, so the wire-form → runtime-form translation happens at graphql-java's boundary and the
- * Java-side conversion step is no longer needed.
+ * <p>Every method here touches the same axis: how a GraphQL value (especially an enum value) is
+ * converted before reaching jOOQ.
  */
 final class EnumMappingResolver {
 
     /**
-     * Outcome of {@link #validateEnumFilter}. Three terminal arms; the caller exhausts them with
-     * a switch.
+     * Outcome of {@link #validateEnumFilter}, exhausted by switch.
      *
      * <ul>
-     *   <li>{@link NotEnum} — the jOOQ column class is not a Java enum. The GraphQL type may
+     *   <li>{@link NotEnum}: the jOOQ column class is not a Java enum. The GraphQL type may
      *       still be an enum (text-mapped); the caller treats this as "no enum coercion bound".</li>
-     *   <li>{@link Valid} — the column is a jOOQ enum and every GraphQL enum value maps to a
-     *       Java enum constant. Carries the Java enum's fully qualified class name.</li>
-     *   <li>{@link Mismatch} — the column is a jOOQ enum but the GraphQL side either isn't an
-     *       enum or has values that don't line up with the Java constants. Carries the composed
-     *       rejection message; the caller appends to its errors list.</li>
+     *   <li>{@link Valid}: every GraphQL enum value maps to a Java enum constant; carries the
+     *       Java enum's fully qualified class name.</li>
+     *   <li>{@link Mismatch}: the column is a jOOQ enum but the GraphQL side does not line up;
+     *       carries a composed rejection message for the caller's errors list.</li>
      * </ul>
      */
     sealed interface EnumValidation {
@@ -77,20 +50,20 @@ final class EnumMappingResolver {
 
     /**
      * Column-agnostic result of {@link #checkEnumConstants}: does every value of a GraphQL enum
-     * type map to a constant on a given Java enum class? This is the single parity home:
+     * type map to a constant on a given Java enum class? Single parity home:
      * {@link #validateEnumFilter} (the column path) delegates its value-name comparison here, and
-     * the {@code @service} enum producers (site E, in {@code InputBeanResolver} / {@code ServiceCatalog})
-     * call it directly, so the SDL-value vs Java-constant diff is not re-implemented at each producer.
+     * the {@code @service} enum producers ({@link InputBeanResolver} / {@link ServiceCatalog})
+     * call it directly, so the SDL-value vs Java-constant diff is not re-implemented per producer.
      *
      * <ul>
-     *   <li>{@link Valid} — every GraphQL enum value's runtime name is a Java constant.</li>
-     *   <li>{@link GraphqlNotEnum} — the GraphQL type name does not resolve to a classified enum
+     *   <li>{@link Valid}: every GraphQL enum value's runtime name is a Java constant.</li>
+     *   <li>{@link GraphqlNotEnum}: the GraphQL type name does not resolve to a classified enum
      *       (mid-build, or a genuine "this isn't an enum" mistake). The two callers treat this
      *       differently: the column path (where the Java side is definitely a jOOQ enum) surfaces a
      *       mismatch; the {@code @service} enum path falls back to an unchecked {@code EnumValueOf}
      *       so it does not over-reject when the type registry is empty.</li>
-     *   <li>{@link Divergence} — the GraphQL side is a classified enum but one or more values have
-     *       no matching Java constant. Carries the per-value diff so each caller can shape its own
+     *   <li>{@link Divergence}: the GraphQL side is a classified enum but one or more values have
+     *       no matching Java constant; carries the per-value diff so each caller shapes its own
      *       result (a column-flavoured {@link Mismatch} message, or a typed
      *       {@link no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence}).</li>
      * </ul>
@@ -113,14 +86,10 @@ final class EnumMappingResolver {
     }
 
     /**
-     * Column-agnostic enum-constant parity: compares every value of the GraphQL enum named
-     * {@code graphqlTypeName} (resolved through {@code ctx.types}) against the constant names of
-     * {@code javaEnumClass}. Returns {@link EnumConstantParity.GraphqlNotEnum} when the GraphQL type
-     * is not a classified {@link GraphitronType.EnumType}; otherwise {@link EnumConstantParity.Valid}
-     * or {@link EnumConstantParity.Divergence} carrying the per-value diff. The comparison is on the
-     * pre-resolved {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} (the same
-     * form {@code EnumClass.valueOf(...)} receives at runtime), identical to what
-     * {@link #validateEnumFilter} did inline before it was lifted here.
+     * Compares every value of the GraphQL enum named {@code graphqlTypeName} (resolved through
+     * {@code ctx.types}) against the constant names of {@code javaEnumClass}. The comparison is
+     * on the pre-resolved {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue},
+     * the same form {@code EnumClass.valueOf(...)} receives at runtime.
      */
     EnumConstantParity checkEnumConstants(String graphqlTypeName, Class<?> javaEnumClass) {
         var modelType = ctx.types == null ? null : ctx.types.get(graphqlTypeName);
@@ -155,9 +124,8 @@ final class EnumMappingResolver {
      * Builds a mapping from GraphQL enum value names to database string values when
      * {@code graphqlTypeName} resolves to a classified {@link GraphitronType.EnumType}; returns
      * {@code null} otherwise. Each value's DB string is the pre-resolved
-     * {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} on the model — lifted
-     * once at classify time from {@code @field(name:)}, falling back to the value's own name
-     * when the directive is absent.
+     * {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue}, lifted at classify
+     * time from {@code @field(name:)} (the value's own name when the directive is absent).
      */
     Map<String, String> buildTextEnumMapping(String graphqlTypeName) {
         var modelType = ctx.types.get(graphqlTypeName);
@@ -210,10 +178,10 @@ final class EnumMappingResolver {
      * {@link EnumValidation.NotEnum} arm) so the {@code JooqConvert} / {@code Direct} fallbacks
      * can take over.
      *
-     * <p>The text-mapped-enum branch was retired. Graphql-java's
-     * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)}
-     * runtime form (see {@link no.sikt.graphitron.rewrite.model.EnumValueSpec}), so a text-mapped
-     * enum input arrives at the resolver already in its DB-string form and routes through
+     * <p>A text-mapped enum needs no branch here: graphql-java's
+     * {@code GraphQLEnumValueDefinition.value(...)} carries the {@code @field(name:)} runtime
+     * form (see {@link no.sikt.graphitron.rewrite.model.EnumValueSpec}), so a text-mapped enum
+     * input arrives at the resolver already in its DB-string form and routes through
      * {@link CallSiteExtraction.Direct}.
      */
     CallSiteExtraction deriveExtraction(String typeName, ColumnRef columnRef, String enumClassName) {
@@ -228,45 +196,18 @@ final class EnumMappingResolver {
 
     /**
      * Builds one {@link InputColumnBindingGroup} per admissible field in an already-resolved
-     * input-field list, for a query-side {@code @lookupKey} argument. {@code @lookupKey} on
-     * {@code INPUT_FIELD_DEFINITION} was retired; the directive gates this walk from the
-     * {@code ARGUMENT_DEFINITION} at the call site. UPDATE and DELETE build their WHERE columns
-     * directly on their walker carriers, and INSERT builds no binding set at all (it walks
-     * {@code fields()} directly for VALUES emit and carries an empty binding list), so the sole
-     * caller is query-side, reached by two routes that produce the same fact (input fields resolved
-     * against a table, plus a lookup binding set):
-     *
-     * <ul>
-     *   <li>the deprecated {@code @table}-input bridge ({@code tit.inputFields()}), and</li>
-     *   <li>the consumer-derived plain-input path, which re-derives the fields against the
-     *       consuming field's return table via {@code TypeBuilder.resolveInputFields}.</li>
-     * </ul>
+     * input-field list, for a query-side {@code @lookupKey} argument; the directive gates this
+     * walk from the {@code ARGUMENT_DEFINITION} at the call site. UPDATE and DELETE build their
+     * WHERE columns directly on their walker carriers and INSERT builds no binding set, so the
+     * sole caller is query-side, reached by two routes that produce the same fact (input fields
+     * resolved against a table, plus a lookup binding set): the deprecated {@code @table}-input
+     * bridge, and the consumer-derived plain-input path, which re-derives the fields against the
+     * consuming field's return table via {@code TypeBuilder.resolveInputFields}.
      *
      * <p>The caller reaches this method only with a fully-resolved field list ({@code
-     * resolveInputFields} rejects the whole input on any unresolvable field), so this walk consumes
-     * the resolved {@link InputField}s directly rather than re-walking SDL declarations; a
-     * declared-but-unresolved field cannot occur here. Reference, nesting, and unbound carriers are
-     * silently skipped; the caller surfaces them through its own structural rejection path.
-     *
-     * Each admitted carrier produces one group:
-     *
-     * <ul>
-     *   <li>{@link InputField.ColumnBackedField} (whether {@link CallSiteExtraction.Direct} or
-     *       arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys}) — one
-     *       {@link InputColumnBindingGroup.MapGroup} carrying one
-     *       {@link InputColumnBinding.MapBinding}. The binding's extraction honors the carrier's
-     *       {@code cf.extraction()} when non-{@code Direct}; otherwise it is re-derived via
-     *       {@link #deriveExtraction} from the column's raw metadata (enum / map / JooqConvert
-     *       fallback).</li>
-     *   <li>{@link InputField.ColumnBackedField} (arity &ge; 2 NodeId-decoded, own table) —
-     *       one {@link InputColumnBindingGroup.DecodedRecordGroup} carrying the per-NodeType
-     *       decode helper once on {@code extraction} and N
-     *       {@link InputColumnBinding.RecordBinding} slots indexed {@code 0..N-1} into the
-     *       decoded {@code Record<N>}.</li>
-     * </ul>
-     *
-     * <p>List-typed admissible carriers are rejected: list cardinality must live on the outer
-     * argument, not on an individual input-type field.
+     * resolveInputFields} rejects the whole input on any unresolvable field), so a
+     * declared-but-unresolved field cannot occur here. Reference, nesting, and unbound carriers
+     * are silently skipped; the caller surfaces them through its own structural rejection path.
      */
     List<InputColumnBindingGroup> buildLookupBindings(List<InputField> inputFields, List<String> errors) {
         var groups = new ArrayList<InputColumnBindingGroup>();

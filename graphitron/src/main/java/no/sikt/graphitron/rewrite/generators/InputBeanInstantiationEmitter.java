@@ -20,7 +20,7 @@ import java.util.Map;
  *
  * <p>One emission per unique {@code beanClass} (the bean-helper queue in
  * {@link TypeFetcherGenerator} performs that dedup). The plural helper is emitted alongside the
- * singular helper unconditionally — it is cheap, and the call-site emitter chooses between them
+ * singular helper unconditionally; it is cheap, and the call-site emitter chooses between them
  * based on the param's Java list-shape.
  *
  * <p>Helper signatures:
@@ -91,7 +91,7 @@ final class InputBeanInstantiationEmitter {
      * Emits {@code private static List<Bean> createBeanList(Object raw)}: null in → null out,
      * otherwise downcast the {@code Object} to {@code List<Map<String, Object>>}, reject null
      * elements (a non-null SDL element type forbids them), and map each element through the
-     * singular helper. The {@code List} suffix is used unconditionally — appending a literal
+     * singular helper. The {@code List} suffix is used unconditionally; appending a literal
      * {@code "s"} produces ugly names ({@code createDetailss}) for types already ending in
      * {@code s}, and consumers commonly use such names.
      */
@@ -167,7 +167,7 @@ final class InputBeanInstantiationEmitter {
 
     /**
      * Routes a jOOQ-record member through its per-record-type {@code decode<RecordType>} helper
-     * (emitted by {@link #buildRecordDecodeHelper}), or — when the member is list-valued — through
+     * (emitted by {@link #buildRecordDecodeHelper}), or, when the member is list-valued, through
      * the {@code decode<RecordType>List} variant ({@link #buildRecordDecodeHelperList}). Keeps the
      * bean-field assignment a one-liner; the decode-and-materialize logic lives in the readable
      * statement-form helper.
@@ -305,12 +305,13 @@ final class InputBeanInstantiationEmitter {
      * </pre>
      *
      * <p>{@code fromArray} maps the positional key values onto the key columns, coercing each through
-     * the column's {@code DataType} / registered {@code Converter} (the {@link Configuration}'s
-     * {@code converterProvider} path). One call regardless of key arity, so a composite key just names
-     * N fields. This deliberately does <em>not</em> use {@code col.getDataType().convert(Object)}:
-     * that overload is deprecated for removal in jOOQ 3.20 (it bypasses the {@code converterProvider}
-     * and is buggy for user-defined types), and suppressing the resulting warning on a helper that
-     * lands in the consumer's {@code *Fetchers} package would just hide a future hard compile break.
+     * the column's {@code DataType} / registered {@code Converter} (the
+     * {@link org.jooq.Configuration}'s {@code converterProvider} path). One call regardless of key
+     * arity, so a composite key just names N fields. This deliberately does <em>not</em> use
+     * {@code col.getDataType().convert(Object)}: that overload is deprecated for removal in jOOQ
+     * 3.20 (it bypasses the {@code converterProvider} and is buggy for user-defined types), and
+     * suppressing the resulting warning on a helper that lands in the consumer's {@code *Fetchers}
+     * package would hide the eventual hard compile break.
      * {@code fromArray} is the supported, non-deprecated coercion path and keeps the real compile-tier
      * check (the {@code Tables.<T>.<col>} field references must exist on the record). The local is
      * named {@code decoded}, not {@code record}, since {@code record} is a context-sensitive keyword.
@@ -346,7 +347,7 @@ final class InputBeanInstantiationEmitter {
             .endControlFlow()
             .addStatement("$T decoded = new $T()", recordType, recordType);
         // decoded.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...): positional load that
-        // coerces each value through the column's DataType/Converter — no deprecated convert(Object).
+        // coerces each value through the column's DataType/Converter; no deprecated convert(Object).
         CodeBlock.Builder fields = CodeBlock.builder();
         for (int i = 0; i < arity; i++) {
             fields.add(", $T.$L.$L", tablesClass, tableField, rec.keyColumns().get(i).javaName());
@@ -360,7 +361,7 @@ final class InputBeanInstantiationEmitter {
      * {@code List} of base64 NodeIds, materialise one record per element through the singular
      * {@link #buildRecordDecodeHelper} helper, and collect. A present-but-wrong-type element throws
      * (the singular helper already throws on mismatch), because an input-bean member is materialized
-     * input, not a query predicate — there is no silent-drop {@code SkipMismatchedElement} path here.
+     * input, not a query predicate; there is no silent-drop {@code SkipMismatchedElement} path here.
      *
      * <pre>
      *   private static List<SakRecord> decodeSakRecordList(Object wire) {

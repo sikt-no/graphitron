@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
  *
  * <p>{@link #message()} renders the variant's data as a single human-readable
  * sentence, for the build-time log surface that
- * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} writes today. Each
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} writes. Each
  * leaf record overrides it; the interface itself only declares the contract.
  */
 public sealed interface Rejection permits Rejection.AuthorError, Rejection.InvalidSchema, Rejection.Deferred {
@@ -23,17 +23,16 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * Returns a new {@link Rejection} of the same variant with {@code prefix} prepended to the
      * leaf's user-facing prose ({@code summary} for {@link AuthorError.UnknownName} and
      * {@link Deferred}, {@code reason} otherwise). Used at wrap sites that thread caller-specific
-     * context onto a producer's typed rejection ({@code "service method could not be resolved — "},
-     * etc.) without collapsing typed components like {@link AuthorError.UnknownName#candidates} back
-     * into prose. Each leaf arm switches on its variant.
+     * context onto a producer's typed rejection without collapsing typed components like
+     * {@link AuthorError.UnknownName#candidates} back into prose.
      */
     Rejection prefixedWith(String prefix);
 
     /**
-     * Author-correctable. Two sub-arms because the data shapes diverge: most
-     * AUTHOR_ERROR sites today are structural rule violations carrying just prose;
-     * a minority resolve a name against a closed set and carry the lookup attempt
-     * + candidates. Each sub-arm's accessors apply uniformly to that arm.
+     * Author-correctable. Sub-arms split by data shape: most sites are structural
+     * rule violations carrying just prose ({@link Structural}); the remaining arms
+     * carry typed structural data (a name-lookup attempt with candidates, conflict
+     * sites, ...) so downstream tooling reads it off the arm.
      */
     sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError {
 
@@ -102,10 +101,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * when the same SDL type accumulates more than one distinct class in its collection
          * set, this rejection surfaces with every disagreeing site listed.
          *
-         * <p>Carries the SDL type name plus the typed {@link ProducerBinding} list; downstream
-         * tooling switches on the arm rather than parsing prose. The producer-side rejection
-         * fires from {@link no.sikt.graphitron.rewrite.RecordBindingResolver}'s per-SDL-type fold when the collection set
-         * holds more than one distinct backing class.
+         * <p>Carries the SDL type name plus the typed {@link ProducerBinding} list. Fires from
+         * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}'s per-SDL-type fold when the
+         * collection set holds more than one distinct backing class.
          */
         record RecordBindingMultiProducer(String sdlTypeName, List<ProducerBinding> bindings)
                 implements AuthorError {
@@ -140,11 +138,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * list, and the call-site emitter pastes it as the {@code $T.class} literal at the
          * {@code getContextArgument} call: any disagreement would mis-type the generated cast.
          *
-         * <p>Carries the contextArgument name plus the typed {@link ConflictSite} list (typed
-         * structured data, not prose) so downstream tooling switches on the arm rather than
-         * parsing prose. The producer-side rejection fires from
-         * {@link no.sikt.graphitron.rewrite.ContextArgumentClassifier} when the per-name fold finds disagreeing
-         * {@code TypeName}s across sites.
+         * <p>Carries the contextArgument name plus the typed {@link ConflictSite} list. Fires from
+         * {@link no.sikt.graphitron.rewrite.ContextArgumentClassifier} when the per-name fold finds
+         * disagreeing {@code TypeName}s across sites.
          */
         record TypeConflict(String contextArgumentName, List<ConflictSite> sites)
                 implements AuthorError {
@@ -171,7 +167,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         }
 
         /**
- * Two or more {@link OutputField} producers reach the same SDL return type with
+         * Two or more {@link OutputField} producers reach the same SDL return type with
          * disagreeing {@link DomainReturnType} arms. Each producer's emitted resolver puts a
          * different Java value at {@code env.getSource()} for that SDL type's child datafetchers;
          * the generator commits to one Java type per child-field coord at emit time, so whichever
@@ -179,10 +175,8 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * record shape (returning silently wrong data or NPEing on a column the fetcher expects).
          *
          * <p>Carries the SDL return type name plus a typed list of {@link Participant} entries
-         * (one per producer in the conflict group); downstream tooling switches on the arm
-         * rather than parsing prose. The producer-side rejection fires from
-         * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} when two producers reach the same SDL return type
-         * with disagreeing {@link DomainReturnType} arms.
+         * (one per producer in the conflict group). Fires from
+         * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder}.
          *
          * <p>The same rejection is attached to every demoted producer in the group, so each
          * surfaces independently in the validator's per-{@link GraphitronField.UnclassifiedField}
@@ -227,18 +221,16 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         }
 
         /**
- * A sort enum bound to an {@code @orderBy} argument carries one or more values that
+         * A sort enum bound to an {@code @orderBy} argument carries one or more values that
          * declare neither {@code @order} nor {@code @index}. Each such value would be silently
          * skipped by {@link no.sikt.graphitron.rewrite.OrderByResolver}, producing no
          * {@link OrderBySpec.NamedOrder}; a request selecting only unannotated values then generates
          * an empty ORDER BY, which on a paginated connection makes keyset pagination slice a
-         * nondeterministic set (rows duplicate or vanish across pages). The docs already promise a
-         * per-value build failure here, so this arm aligns code with that promise.
+         * nondeterministic set (rows duplicate or vanish across pages).
          *
          * <p>Carries the sort enum's type name plus the typed list of unannotated value names (all
-         * of them, accumulated in enum-declaration order, not fail-fast); downstream tooling (LSP
-         * fix-its) reads the missing-value list off the arm rather than parsing prose. The
-         * rejection fires from {@code OrderByResolver.resolveOrderByArgSpec} at the parse boundary,
+         * of them, accumulated in enum-declaration order, not fail-fast). Fires from
+         * {@code OrderByResolver.resolveOrderByArgSpec} at the parse boundary,
          * making the empty-ORDER-BY state unrepresentable in the model ({@code namedOrders} is
          * complete by construction). A <em>fully</em> unannotated enum never reaches the resolver:
          * {@code FieldBuilder.classifyOrderByArg}'s {@code anyMatch} detection fails and the
@@ -276,8 +268,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * to bind through.
          *
          * <p>Carries the configured column name plus a typed {@link TableSite} list (one per
-         * table carrying the column, in the catalog's stable schema-then-table order);
-         * downstream tooling switches on the arm rather than parsing prose. The rejection fires
+         * table carrying the column, in the catalog's stable schema-then-table order). Fires
          * from the tenant-scope classification at catalog load.
          */
         record TenantColumnTypeDisagreement(String columnName, List<TableSite> tables)
@@ -346,12 +337,11 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
     /**
      * Structural rule violations the author can't fix without dropping or
-     * replacing a directive: "this combination cannot work, period". Two sub-arms
-     * by the same logic as {@link AuthorError}: a minority of sites are
-     * directive-conflict ("@X conflicts with @Y", "@asConnection on inline
-     * (non-@splitQuery) TableField"), the majority are structural rules without a
-     * clean directive enumeration ("lookup fields must not return a connection",
-     * "result type does not match input cardinality").
+     * replacing a directive: "this combination cannot work, period". Sub-arms split
+     * by data shape, as in {@link AuthorError}: a minority of sites are
+     * directive-conflict ("@X conflicts with @Y") or case-fold collisions; the
+     * majority are structural rules without a clean directive enumeration
+     * ("lookup fields must not return a connection").
      */
     sealed interface InvalidSchema extends Rejection permits InvalidSchema.DirectiveConflict, InvalidSchema.CaseFoldCollision, InvalidSchema.Structural {
 
@@ -391,9 +381,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * accumulates wrap-site prose threaded through {@link #prefixedWith(String)} (the
          * validator prepends {@code "Type 'X': "} on every diagnostic). {@link #message()} renders
          * {@code prefix} ahead of the origin-specialised fix hint; the typed {@code group} and
-         * {@code origin} survive every {@code prefixedWith} pass so downstream consumers (LSP
-         * fix-its, watch-mode formatter) can read the collision group structurally on the
-         * validator-projected rejection without re-parsing prose.
+         * {@code origin} survive every {@code prefixedWith} pass.
          *
          * <p>Producer: {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} case-fold
          * uniqueness pass.
@@ -480,13 +468,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     }
 
     /**
-     * Stable identifier for a deferred-stub site. One arm: a variant-class key
-     * (the {@code TypeFetcherGenerator.STUBBED_VARIANTS} key form, used when the generator stubs
-     * an entire variant class, or a feature-shape inline-defer with no leaf anchor, signalled by
-     * a null {@link VariantClass#fieldClass}). It feeds the validator's deferred gate via the
-     * shared {@link Deferred#message()} renderer. {@link VariantClass#fieldClass} is nullable:
-     * validator and emitter consumers treat a null {@code fieldClass} the same way they treat a
-     * {@code VariantClass} entry for log output.
+     * Stable identifier for a deferred-stub site. One arm: a variant-class key (the
+     * {@code TypeFetcherGenerator.STUBBED_VARIANTS} key form). It feeds the validator's deferred
+     * gate via the shared {@link Deferred#message()} renderer.
      */
     sealed interface StubKey permits StubKey.VariantClass {
         /**
@@ -505,52 +489,28 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         return new AuthorError.Structural(reason);
     }
 
-    /**
-     * {@link AuthorError.AccessorMismatch} factory. Produced by
-     * {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} when a class-backed
-     * parent's class doesn't expose an accessor matching the SDL field's name, parameter shape,
-     * and return type. {@code reason} is the resolver's enumeration of candidates tried; the
-     * {@code @field(name:)} override hint is appended automatically by {@link #message()}.
-     */
+    /** {@link AuthorError.AccessorMismatch} factory. */
     static Rejection accessorMismatch(String reason) {
         return new AuthorError.AccessorMismatch(reason);
     }
 
-    /**
-     * {@link AuthorError.TypeConflict} factory. Produced by the cross-site
-     * {@code contextArgument} type-agreement classifier when two or more directive sites
-     * reference the same name with mutually-incompatible Java types.
-     */
+    /** {@link AuthorError.TypeConflict} factory. */
     static Rejection contextArgumentTypeConflict(String name, List<ConflictSite> sites) {
         return new AuthorError.TypeConflict(name, sites);
     }
 
-    /**
-     * {@link AuthorError.SortEnumMissingOrder} factory. Produced by
-     * {@link no.sikt.graphitron.rewrite.OrderByResolver} when a sort enum bound to {@code @orderBy}
-     * carries one or more values declaring neither {@code @order} nor {@code @index}.
-     * {@code missingValues} accumulates every unannotated value in enum-declaration order.
-     */
+    /** {@link AuthorError.SortEnumMissingOrder} factory. */
     static Rejection sortEnumMissingOrder(String enumTypeName, List<String> missingValues) {
         return new AuthorError.SortEnumMissingOrder(enumTypeName, missingValues);
     }
 
-    /**
-     * {@link AuthorError.TenantColumnTypeDisagreement} factory. Produced by the tenant-scope
-     * classification at catalog load when the configured {@code <tenantColumn>} resolves to
-     * disagreeing Java types across the tables that carry it. {@code tables} lists every
-     * carrying table in the catalog's stable schema-then-table order.
-     */
+    /** {@link AuthorError.TenantColumnTypeDisagreement} factory. */
     static Rejection tenantColumnTypeDisagreement(
             String columnName, List<AuthorError.TenantColumnTypeDisagreement.TableSite> tables) {
         return new AuthorError.TenantColumnTypeDisagreement(columnName, tables);
     }
 
-    /**
-     * {@link AuthorError.NoTenantBinding} factory. Produced by the tenant-binding
-     * classification when a field or dispatch surface reaches a tenant-scoped table and
-     * neither the field, its decoded batch key, nor any ancestor supplies a tenant binding.
-     */
+    /** {@link AuthorError.NoTenantBinding} factory. */
     static Rejection noTenantBinding(String coordinate, String tableName, String detail) {
         return new AuthorError.NoTenantBinding(coordinate, tableName, detail);
     }
@@ -560,19 +520,12 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         return new InvalidSchema.Structural(reason);
     }
 
-    /**
-     * {@link InvalidSchema.DirectiveConflict} factory carrying the conflicting
-     * directive names; {@code directives} are bare names (no leading {@code @}).
-     */
+    /** {@link InvalidSchema.DirectiveConflict} factory. */
     static Rejection directiveConflict(List<String> directives, String reason) {
         return new InvalidSchema.DirectiveConflict(directives, reason);
     }
 
-    /**
-     * {@link InvalidSchema.CaseFoldCollision} factory. Carries the full case-equivalent collision
-     * group and the demoted member's classifier-arm origin so the message renderer can specialise
-     * the actionable fix hint.
-     */
+    /** {@link InvalidSchema.CaseFoldCollision} factory; starts with an empty {@code prefix}. */
     static Rejection caseFoldCollision(List<String> group, InvalidSchema.CaseFoldCollision.Origin origin) {
         return new InvalidSchema.CaseFoldCollision(group, origin, "");
     }

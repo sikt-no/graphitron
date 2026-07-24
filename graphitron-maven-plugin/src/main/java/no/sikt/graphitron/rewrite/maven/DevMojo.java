@@ -97,10 +97,9 @@ public class DevMojo extends AbstractRewriteMojo {
     @Parameter(property = "graphitron.dev.port", defaultValue = "8487")
     int port;
 
-    // The MCP server's loopback port. Deliberately NOT a @Parameter: it stays non-overridable for
-    // users in the skeleton (a configurable port is deferred), while remaining settable
-    // from DevMojoTest so the bind-failure case can inject a taken ephemeral port instead of the
-    // well-known 8488. Mirrors DEFAULT_PORT/port.
+    // The MCP server's loopback port. Deliberately NOT a @Parameter: not user-overridable, while
+    // remaining settable from DevMojoTest so the bind-failure case can inject a taken ephemeral
+    // port instead of the well-known 8488. Mirrors DEFAULT_PORT/port.
     int mcpPort = DEFAULT_MCP_PORT;
 
     @Parameter(property = "graphitron.dev.debounceMs", defaultValue = "300")
@@ -113,7 +112,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * Whether {@code graphitron:dev} compiles the generated sources into
      * {@code target/graphitron-classes} (in-process, incrementally). On by default: the compiled tree is
      * what the in-process MCP query tools execute against. Set {@code -Dgraphitron.dev.compile=false} to
-     * fall back to today's generate-only behaviour (giving up the in-process query tools too). No
+     * fall back to generate-only behaviour (giving up the in-process query tools too). No
      * fail-fast: because the output dir is graphitron-exclusive, a mis-set-up consumer degrades to
      * generate-only rather than corrupting bytecode, so there is nothing to fail on.
      */
@@ -298,10 +297,9 @@ public class DevMojo extends AbstractRewriteMojo {
         // graphitron-mcp because the logger names are facts about the quarantined RAG dependency set.
         RagLogQuieting.quietRagWarmLogs(getLog()::info);
         // Start the RAG warms before binding the MCP server so they warm during startup; both run on
-        // their own daemon threads and never block the bind. The shared embedder warm
-        // is stood up here so slice 10 can later reuse the same handle rather than loading a second
-        // bge copy. Both come from the injectable factories (see the field comment), so the heavy ONNX
-        // load stays out of the fast test suite; a factory returning null runs structured-only.
+        // their own daemon threads and never block the bind. Both come from the injectable factories
+        // (see the field comment), so the heavy ONNX load stays out of the fast test suite; a
+        // factory returning null runs structured-only.
         this.embedderWarm = embedderWarmFactory.get();
         this.docsWarm = docsWarmFactory.get();
         if (this.embedderWarm != null) {
@@ -566,8 +564,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     // A consumer .class changed: a generated unit that compiles against it may now be
                     // stale. The compile graph carries only generated→generated edges (no
                     // generated→consumer edge to walk), so invalidate conservatively by recompiling the
-                    // whole cached generated tree. Precise generated→consumer invalidation is deferred,
-                    // and belongs with the planned method graph.
+                    // whole cached generated tree.
                     if (incrementalCompiler != null && lastGeneration != null) {
                         var outcome = incrementalCompiler.compileAll(lastGeneration.result().emittedUnits());
                         reportCompile(workspace, outcome, "recompile (consumer classpath change)");
@@ -694,7 +691,7 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Surfaces one compile round through the two channels the spec names: the console (a labelled
+     * Surfaces one compile round through two channels: the console (a labelled
      * generated-code block on failure via {@link CompileErrorFormatter}, a one-line summary on success)
      * and the MCP {@code diagnostics} tool (via {@code Workspace.setCompileDiagnostics}, tagged
      * {@code source:"compile"}). The round's full diagnostic list is published even on success so a prior

@@ -31,17 +31,17 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * type backing the containing table):
  *
  * <ul>
- *   <li><b>Same-table</b> — {@code T.table()} equals the containing table <em>and no
+ *   <li><b>Same-table</b>: {@code T.table()} equals the containing table <em>and no
  *       {@code @reference} is present</em>. The argument supplies encoded ids of the containing
  *       table's own rows. This is a <em>lookup by definition</em>: cardinality is bounded by the
  *       input list, ordering reflects input membership, and there is no result set to seek
  *       through.</li>
- *   <li><b>FK-target</b> — {@code T.table()} is reachable from the containing table via a single
+ *   <li><b>FK-target</b>: {@code T.table()} is reachable from the containing table via a single
  *       foreign key (auto-discovered or pinned with {@code @reference(path:)}). The argument
  *       supplies encoded ids of a related table; the predicate is "row's FK column ∈ decoded
- *       keys". This is a <em>filter</em>. A <em>self-FK</em> — {@code T.table()} equals the
- *       containing table but an explicit {@code @reference} names a same-table foreign key — is a
- * FK-target too: the decoded keys land on the self-FK's child columns, never the
+ *       keys". This is a <em>filter</em>. A <em>self-FK</em> ({@code T.table()} equals the
+ *       containing table but an explicit {@code @reference} names a same-table foreign key) is a
+ *       FK-target too: the decoded keys land on the self-FK's child columns, never the
  *       row's own identity. The {@code @reference} is what disambiguates own-identity from
  *       self-reference; absent it, the same-table case is own-PK identity above.</li>
  * </ul>
@@ -63,8 +63,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  *
  * <p>Failure mode is fixed at {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}:
  * malformed ids drop silently to "no match". The implicit scalar-{@code ID} arm in
- * {@code FieldBuilder.classifyArgument} (no {@code @nodeId} declared) keeps its existing
- * {@code ThrowOnMismatch} extraction; that arm covers synthesised lookup-key paths where a
+ * {@code FieldBuilder.classifyArgument} (no {@code @nodeId} declared) uses
+ * {@code ThrowOnMismatch}; that arm covers synthesised lookup-key paths where a
  * wrong-type id is a contract violation rather than a filter miss.
  *
  * <p>Condition resolution is intentionally not owned by this resolver: caller-shape state
@@ -98,9 +98,9 @@ final class NodeIdLeafResolver {
          * <p>The {@code decodeMethod} is exposed directly rather than wrapped in an extraction
          * arm because the failure-mode choice (Skip vs Throw) is caller-specific: input-field
          * filter leaves want {@code SkipMismatchedElement} ("malformed id → no match"),
-         * argument-level lookup leaves want {@code ThrowOnMismatch} (the existing
-         * {@code @lookupKey} contract; lookup-key dispatch on a wrong-type id is a contract
-         * violation rather than a silent miss).
+         * argument-level lookup leaves want {@code ThrowOnMismatch} (the {@code @lookupKey}
+         * contract; lookup-key dispatch on a wrong-type id is a contract violation rather than
+         * a silent miss).
          *
          * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
          * @param decodeMethod {@code decode<TypeName>} helper resolved on the target NodeType
@@ -122,13 +122,14 @@ final class NodeIdLeafResolver {
          * target-side columns and {@code T}'s {@code keyColumns}:
          *
          * <ul>
-         *   <li>{@link DirectFk} — FK target-side columns positionally match {@code T}'s key
+         *   <li>{@link DirectFk}: FK target-side columns positionally match {@code T}'s key
          *       columns. Emission binds decoded keys directly against
          *       {@code joinPath[0].sourceSideColumns()} on the field's own table; no JOIN, no
-         *       translation. This is the only shape any projection arm emits today.</li>
-         *   <li>{@link TranslatedFk} — FK target-side columns differ from {@code T}'s key columns
+         *       translation. This is the only shape the projection arms emit.</li>
+         *   <li>{@link TranslatedFk}: FK target-side columns differ from {@code T}'s key columns
          *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
-         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation; deferred.</li>
+         *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation, which no
+         *       emitter supports; see the arm's routing.</li>
          * </ul>
          */
         sealed interface FkTarget extends Resolved {
@@ -145,20 +146,19 @@ final class NodeIdLeafResolver {
              * containing table that aligns positionally with {@code keyColumns}.
              *
              * <p>For single-hop paths, {@code liftedSourceColumns ==
-             * joinPath.get(0).sourceSideColumns()}; the slot is backward-compatible.
+             * joinPath.get(0).sourceSideColumns()}.
              *
              * <p>For multi-hop paths (length &ge; 2), each intermediate hop satisfies the lift
              * predicate (its source-side columns are a positional sub-tuple of the previous hop's
              * target-side columns by SQL name), so the terminal hop's source-side tuple lifts
              * back through the chain to a sub-tuple of the first hop's source-side columns. The
              * lifted tuple lives on the parent's own table and the emitter binds against it
-             * exactly the way single-hop direct-FK does. Predicate stays "row's column tuple ∈
+             * exactly the way single-hop direct-FK does. The predicate stays "row's column tuple ∈
              * decoded keys"; chain length is a classifier-time concept only.
              *
-             * <p>The legacy {@code fkSourceColumns} slot is retained for source compatibility with
-             * existing call-sites; new code should read {@code liftedSourceColumns}. For length-1
-             * paths the two are equal by construction; for length &ge; 2 the legacy slot still
-             * carries the first hop's full source-side tuple (whose sub-tuple is the lifted form).
+             * <p>{@code fkSourceColumns} always carries the first hop's full source-side tuple;
+             * readers should prefer {@code liftedSourceColumns}. For length-1 paths the two are
+             * equal by construction.
              *
              * @param refTypeName          the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable          resolved {@link TableRef} for {@code T.table()}
@@ -170,13 +170,12 @@ final class NodeIdLeafResolver {
              * @param joinPath             FK path from the containing table to {@code T.table()};
              *                             length-1 single-hop or length-&ge;2 identity-carrying chain
              * @param selfReference        {@code true} when {@code T.table()} equals the containing
- * table — a self-FK: the {@code @reference} names a
-             *                             foreign key back to the row's own table, so the lifted
-             *                             columns point at a sibling row, never the row's own
-             *                             identity. Such a carrier is routed wholly to the UPDATE
-             *                             SET partition; a cross-table FK ({@code false}) partitions
-             *                             by key membership. The fact is decided here, the single
-             *                             site that already discriminates same-table from cross-table.
+             *                             table (a self-FK): the lifted columns point at a sibling
+             *                             row, never the row's own identity, so the carrier is
+             *                             routed wholly to the UPDATE SET partition. A cross-table
+             *                             FK ({@code false}) partitions by key membership. Decided
+             *                             here, the single site that discriminates same-table from
+             *                             cross-table.
              */
             record DirectFk(
                     String refTypeName,
@@ -191,9 +190,9 @@ final class NodeIdLeafResolver {
 
             /**
              * Translated-FK arm: FK target columns differ from {@code T}'s key columns.
-             * Emission requires JOIN-with-translation; carriers route to {@code UnclassifiedArg}
-             * (argument side) / {@code InputFieldResolution.Unresolved} (input-field side) with
-             * a deferred-emission hint until the sibling follow-on lands.
+             * Emission requires JOIN-with-translation, which no emitter supports; carriers route
+             * to {@code UnclassifiedArg} (argument side) / {@code InputFieldResolution.Unresolved}
+             * (input-field side) with a deferred-emission hint.
              *
              * @param refTypeName  the resolved (or inferred) GraphQL type name of {@code T}
              * @param targetTable  resolved {@link TableRef} for {@code T.table()}
@@ -257,8 +256,9 @@ final class NodeIdLeafResolver {
         // jOOQ's typed Record/Row tops out at arity 22 (Record22 / Row22). A NodeType with more
         // than 22 key columns cannot be expressed as a typed Record<N>, so the decode helper's
         // return type and any composite-key consumer (BodyParam.RowEq / RowIn) would not compile.
-        // Reject at classification time, mirroring validateChildConnectionParentPk's > 21 cap on
-        // parent-PK + idx (this case has no idx widen, so the threshold is > 22).
+        // Reject at classification time, mirroring GraphitronSchemaValidator's
+        // validateChildMultiTableParentPk > 21 cap on parent-PK + idx (this case has no idx
+        // widen, so the threshold is > 22).
         if (keys.keyColumns().size() > 22) {
             return new Resolved.Rejected(Rejection.structural(
                 "@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
@@ -276,13 +276,12 @@ final class NodeIdLeafResolver {
 
         // Same-table short-circuit (own-PK identity) only when @reference is absent. An explicit
         // @reference on a same-table @nodeId names a self-FK: "this field points at a *different*
-        // row of the same table". Falling through to resolveFkJoinPath resolves that self-FK
-        // — parsePath orients it with selfRefFkOnSource=true, so liftedSourceColumns become the
-        // self-FK's child columns on the row's own table, the same DirectFk data shape a cross-table
-        // FK carries. This single gate is shared by every resolve() caller (the write-side
-        // input-field classifier, the read-side input-field filter arm, and the top-level @nodeId
-        // argument arm), so a same-table @nodeId @reference is admitted as a self-FK filter on the
-        // read side too (WHERE child_cols IN (decoded keys), no self-join) — by design.
+        // row of the same table". Falling through to resolveFkJoinPath resolves that self-FK;
+        // parsePath orients it with selfRefFkOnSource=true, so liftedSourceColumns become the
+        // self-FK's child columns on the row's own table, the same DirectFk data shape a
+        // cross-table FK carries. This single gate is shared by every resolve() caller, so a
+        // same-table @nodeId @reference is deliberately admitted as a self-FK filter on the read
+        // side too (WHERE child_cols IN (decoded keys), no self-join).
         if (containingTable.sameTable(targetTableName)
                 && !leaf.hasAppliedDirective(DIR_REFERENCE)) {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
@@ -290,10 +289,8 @@ final class NodeIdLeafResolver {
 
         // Resolve the target TableRef before resolveFkJoinPath so its parsePath call can pass
         // ref and name together, letting the terminal-target verdict compare jOOQ table-class
-        // identity rather than the schema-qualified @table echo. In reachable inputs the return
-        // @table already resolved to a TableRef upstream (an unresolvable one is UnclassifiedType and
-        // never reaches this leaf), so hoisting the findTable ahead of the join resolution does not
-        // change which rejection surfaces in practice.
+        // identity rather than the schema-qualified @table echo. An unresolvable @table is
+        // UnclassifiedType upstream and never reaches this leaf.
         var targetTableResolution = ctx.catalog.findTable(targetTableName);
         if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
@@ -306,13 +303,12 @@ final class NodeIdLeafResolver {
         var firstHop = pairs(joinPath.path().get(0));
         var terminalHop = pairs(joinPath.path().getLast());
         // DirectFk discriminator: the terminal hop's target-side columns must equal the NodeType's
-        // key columns *as a set* (by SQL name). When equal positionally (identity permutation),
-        // the lifted tuple already aligns with the decoded NodeType keys position-by-position.
-        // When equal as a set but in different order — typical of FKs declared in a different
-        // column order from the NodeType's @node(keyColumns:) — we permute the lifted tuple to
-        // sit in @node.keyColumns order so the emitter's positional binding between decoded keys
-        // and liftedSourceColumns stays semantically correct. The genuinely-different case (FK
-        // target columns are not @node.keyColumns) still falls through to TranslatedFk.
+        // key columns *as a set* (by SQL name). When equal as a set but in different order
+        // (typical of FKs declared in a different column order from @node(keyColumns:)), the
+        // lifted tuple is permuted into @node.keyColumns order so the emitter's positional
+        // binding between decoded keys and liftedSourceColumns stays semantically correct. The
+        // genuinely-different case (FK target columns are not @node.keyColumns) falls through to
+        // TranslatedFk.
         int[] permutation = permutationToKeyColumns(terminalHop.targetSideColumns(), keys.keyColumns());
         if (permutation != null) {
             List<ColumnRef> liftedAligned = permute(joinPath.liftedSourceColumns(), permutation);
@@ -338,10 +334,6 @@ final class NodeIdLeafResolver {
      * {@code keyColumns.get(j).sqlName()} (case-insensitive). The caller uses this to align any
      * tuple paired with {@code targetSideColumns} positionally (e.g. the lifted source-column
      * tuple) into {@code keyColumns} order: {@code aligned[j] = original[result[j]]}.
-     *
-     * <p>When {@code result[j] == j} for every {@code j} the permutation is identity — equivalent
-     * to the strict positional match the resolver used before the discriminator was relaxed to
-     * admit reorderings.
      */
     private static int[] permutationToKeyColumns(List<ColumnRef> targetSideColumns,
                                                  List<ColumnRef> keyColumns) {
@@ -408,7 +400,7 @@ final class NodeIdLeafResolver {
     /**
      * Resolves the FK join path from {@code containingTable} to {@code targetTableName}.
      * {@code targetTable} is the already-resolved {@link TableRef} for {@code targetTableName},
- * threaded into the explicit-{@code @reference} {@link BuildContext#parsePath} call so its
+     * threaded into the explicit-{@code @reference} {@link BuildContext#parsePath} call so its
      * terminal-target verdict compares jOOQ table-class identity rather than the {@code @table} echo.
      *
      * <p>Two intake shapes:
@@ -423,10 +415,10 @@ final class NodeIdLeafResolver {
      *       does not search past one hop.</li>
      * </ul>
      *
-     * <p>On success the result carries the resolved path and the lifted source-column tuple — the
+     * <p>On success the result carries the resolved path and the lifted source-column tuple: the
      * column tuple on the parent's own table that is positionally aligned with the decoded
      * NodeType keys. For length-1 paths the lifted tuple equals the first hop's source-side
-     * columns (backward-compatible).
+     * columns.
      */
     private JoinPathResult resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
                                              TableRef containingTable, String targetTableName,
@@ -465,9 +457,9 @@ final class NodeIdLeafResolver {
                 "no unique FK from '" + containingTable.tableName() + "' to '" + targetTableName
                 + "'; declare @reference(path: [{key: ...}]) to disambiguate");
         }
-        // FindUniqueFkToTable resolved endpoints by class and returns the FK object itself;
+        // findUniqueFkToTable resolved endpoints by class and returns the FK object itself;
         // hand it straight to synthesizeFkJoin rather than round-tripping through a bare-name
-        // re-lookup that would reintroduce cross-schema constraint-name collision.
+        // re-lookup that risks cross-schema constraint-name collision.
         // NodeId leafs are single-cardinality decoded keys against the parent's own table; the
         // shim's invariant places the FK on the parent (source) side, so selfRefFkOnSource=true.
         var fkStepResolution = ctx.synthesizeFkJoin(
@@ -486,7 +478,7 @@ final class NodeIdLeafResolver {
 
     /**
      * Narrows a path step to its FK-derived column pairs. Every step on a @nodeId path is a
-     * {@link JoinStep.Hop} joining on {@link On.ColumnPairs} — enforced by the condition-step
+     * {@link JoinStep.Hop} joining on {@link On.ColumnPairs}, enforced by the condition-step
      * gate in {@code resolveFkJoinPath} before any caller reads pairs.
      */
     private static On.ColumnPairs pairs(JoinStep step) {

@@ -298,10 +298,10 @@ class DiagnosticsTest {
     @Test
     void schemaQualifiedReferenceKeyProducesNoError() {
         // A valid key: may carry a leading schema qualifier ("multischema_a.note_event_fk").
-        // The mirror strips the qualifier before the bare-name match (re-sourcing the split from the
-        // shared JooqCatalog.parseQualifiedForeignKeyName), so a qualified key naming a real FK is not
-        // red-squiggled — the regression the strip fix removes. The bogus-schema arm (a real name
-        // under a wrong schema) is deferred: the snapshot carries no per-FK schema to test against.
+        // The mirror strips the qualifier before the bare-name match (the split comes from the
+        // shared JooqCatalog.parseQualifiedForeignKeyName), so a qualified key naming a real FK
+        // is not red-squiggled. The bogus-schema arm (a real name under a wrong schema) is
+        // untested: the snapshot carries no per-FK schema to test against.
         var file = file("""
             type Foo @table(name: "note") {
                 bar: Int @reference(path: [{key: "multischema_a.note_event_fk"}])
@@ -315,8 +315,8 @@ class DiagnosticsTest {
 
     @Test
     void schemaQualifiedReferenceKeyWithUnknownBareNameStillProducesError() {
-        // The strip fix must not swallow a genuinely unknown key: stripping the qualifier leaves a
-        // bare name absent from the catalog, which is still flagged (echoing the full author value).
+        // Qualifier stripping must not swallow a genuinely unknown key: the leftover bare name is
+        // absent from the catalog and is still flagged (echoing the full author value).
         var file = file("""
             type Foo @table(name: "note") {
                 bar: Int @reference(path: [{key: "multischema_a.NOPE"}])
@@ -347,10 +347,9 @@ class DiagnosticsTest {
 
     @Test
     void inputTableWithReferencePathValidatesAgainstTerminalTable() {
-        // The enclosing @table is "film"; the @reference path navigates to "language";
-        // the column "NAME" exists on "language" but not on "film". Previously the LSP
-        // checked the enclosing type's @table and emitted a false-positive
-        // "Unknown column 'NAME' on table 'film'."
+        // The enclosing @table is "film"; the @reference path navigates to "language"; the
+        // column "NAME" exists on "language" but not on "film". Validation targets the path's
+        // terminal table, so no false-positive "Unknown column 'NAME' on table 'film'."
         var file = file("""
             input FilmInput @table(name: "film") {
                 languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
@@ -428,9 +427,9 @@ class DiagnosticsTest {
         // Single-table-interface participant: the enclosing @table is "film" but the field
         // reaches a column on "language" through a single-hop @reference. The field classifies
         // as ParticipantCrossTable, whose targetTableName is the terminal table. "NAME"
-        // exists on "language" but not on "film"; previously the ParticipantCrossTable arm fell
-        // through to the enclosing @table and emitted a false-positive
-        // "Unknown column 'NAME' on table 'film'." on a schema that builds clean.
+        // exists on "language" but not on "film"; validation targets the terminal table, so a
+        // schema that builds clean raises no false-positive
+        // "Unknown column 'NAME' on table 'film'."
         var file = file("""
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
                 languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
@@ -752,9 +751,7 @@ class DiagnosticsTest {
     void unknownSourceRowClassProducesError() {
         // @sourceRow has flat className/method directive args; the canonical
         // overlay binds @sourceRow(className:) → ClassNameBinding so the
-        // same validator that fires inside ExternalCodeReference fires here
-        // too. Closes the gap that the old hand-coded
-        // DirectiveDefinitions.ENTRIES list left silent.
+        // same validator that fires inside ExternalCodeReference fires here too.
         var file = file("""
             type Foo {
                 bar: Int @sourceRow(className: "com.example.Missing", method: "foo")
@@ -828,8 +825,7 @@ class DiagnosticsTest {
     // The LSP mirrors that lookup: when `name:` resolves, no diagnostic
     // (the build-tier WARN is the migration-tracking signal); when it
     // doesn't, an error mirroring FieldBuilder.parseExternalRef's
-    // lookupError arm. Coverage extends to all eight ExternalCodeReference
-    // bindings (one fixture per site).
+    // lookupError arm. One fixture per ExternalCodeReference binding site.
 
     @Test
     void legacyName_resolves_emitsNoDiagnostic() {
@@ -893,9 +889,8 @@ class DiagnosticsTest {
         assertThat(diags.get(0).getMessage()).contains("'Ghost'");
     }
 
-    // legacyName_unresolved_tableMethod removed: the @tableMethod directive is now flat
-    // (className: + method: directly on the directive) and does not carry the deprecated
-    // `name:` alias.
+    // No legacy-name fixture for @tableMethod: the directive is flat (className: + method:
+    // directly on the directive) and carries no deprecated `name:` alias.
 
     @Test
     void legacyName_record_carveOut_producesNoError() {
@@ -1433,7 +1428,7 @@ class DiagnosticsTest {
     }
 
     private static CompletionData catalogWithKnownClass(String fqn) {
-        // The class diagnostic now also validates the sibling `method:` slot
+        // The class diagnostic also validates the sibling `method:` slot
         // when the class resolves; include the method names referenced by
         // the per-test happy paths so unrelated diagnostics don't fire.
         var foo = new CompletionData.Method("foo", "String", "", List.of());
@@ -1493,12 +1488,6 @@ class DiagnosticsTest {
         return new CompletionData(List.of(film, language), List.of(), List.of());
     }
 
-    /**
-     * Variant of {@link #filmCatalog()} where {@code language} carries the
-     * {@code NAME} column. Lets the regression tests demonstrate the @reference path
-     * retarget: {@code NAME} exists on {@code language} (the path's terminal) but not
-     * on {@code film} (the enclosing type's @table).
-     */
     // A minimal catalog with a `note` table carrying a bare-SQL-name FK (`note_event_fk`), mirroring
     // the multi-schema fixture's colliding constraint name so the schema-qualified-key diagnostics can
     // strip the qualifier and match on the bare name.
@@ -1517,6 +1506,12 @@ class DiagnosticsTest {
         return new CompletionData(List.of(note, event), List.of(), List.of());
     }
 
+    /**
+     * Variant of {@link #filmCatalog()} where {@code language} carries the
+     * {@code NAME} column. Lets the regression tests demonstrate the @reference path
+     * retarget: {@code NAME} exists on {@code language} (the path's terminal) but not
+     * on {@code film} (the enclosing type's @table).
+     */
     private static CompletionData filmAndLanguageCatalogWithLanguageName() {
         var film = new CompletionData.Table(
             "film", "", null,

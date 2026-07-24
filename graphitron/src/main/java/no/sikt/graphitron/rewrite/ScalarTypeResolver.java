@@ -21,7 +21,7 @@ import java.util.Set;
  * {@link ScalarResolution.Resolved} (with the JavaPoet {@link TypeName}, owner class, and field
  * name) or a typed {@link ScalarResolution.Rejected} arm naming the misconfiguration.
  *
- * <p>Phase 1 surfaces two entry points:
+ * <p>Two entry points:
  *
  * <ul>
  *   <li>{@link #resolveBuiltIn(String)} for the five GraphQL spec built-ins
@@ -34,13 +34,12 @@ import java.util.Set;
  *       Coercing<Object, Object>}: routing {@code ID} through the same Coercing-reflection
  *       path consumer scalars use would mis-classify the built-in as erased.</li>
  *   <li>{@link #resolveFromConstantFqn(String, String, ClassLoader)} for the consumer-named
- *       constant path. Full reflection: looks up the {@code public static final
- *       GraphQLScalarType} on the named class via the supplied classloader, validates the
- *       field, and reflects on the {@code Coercing<I, O>} type parameters to recover the
- *       input Java type. Rejection arms (class missing, field missing, accessibility,
- *       null-at-codegen, wrong type, Coercing erased) drive per-arm LSP fix-its in a later
- *       phase. Phase 2 wires this entry point to the {@code @scalarType(scalar: "...")}
- *       directive, the single explicit binding path for non-spec, non-federation scalars.</li>
+ *       constant path, serving the {@code @scalarType(scalar: "...")} directive, the single
+ *       explicit binding path for non-spec, non-federation scalars. Full reflection: looks
+ *       up the {@code public static final GraphQLScalarType} on the named class via the
+ *       supplied classloader, validates the field, and reflects on the
+ *       {@code Coercing<I, O>} type parameters to recover the input Java type. The typed
+ *       rejection arms let each misconfiguration surface its own validation message.</li>
  * </ul>
  *
  * <p>Two narrowing invariants on {@link ScalarResolution.Resolved#javaType}:
@@ -99,14 +98,12 @@ public final class ScalarTypeResolver {
      * references.
      *
      * <p>The set tracks federation-jvm's {@code FederationDirectives.loadFederationSpecDefinitions}
-     * output; bump the federation spec version in {@code FederationSpec.URL} when new namespaced
-     * scalars land and extend this set in the same commit.
+     * output; when new namespaced scalars land, bump the spec version in
+     * {@link no.sikt.graphitron.rewrite.schema.federation.FederationSpec#URL} and extend this
+     * set in the same commit.
      */
     private static final Set<String> FEDERATION_NAMESPACE_SCALARS = Set.of(
-        // Federation v2.x scalars (renamed to federation__X / link__X by the link-import pass).
-        // The list tracks federation-jvm v6's definitions_fed2_12.graphqls; bump the federation
-        // spec version pinned in CLAUDE.md when new scalars land and extend this set in the same
-        // commit.
+        // Federation v2.x scalars, renamed to federation__X / link__X by the link-import pass.
         "federation__FieldSet",
         "federation__Scope",
         "federation__Policy",
@@ -142,7 +139,7 @@ public final class ScalarTypeResolver {
     /**
      * Looks up a {@code public static final GraphQLScalarType} on {@code classFqn} via
      * {@code loader}, validates the field, and reflects on the {@code Coercing<I, O>} type
-     * parameters to recover the input Java type. Used by Phase 2's {@code @scalarType}
+     * parameters to recover the input Java type. Used by the {@code @scalarType}
      * directive-read path.
      *
      * <p>Alias-agnostic overload: the scalar is registered under the constant's own
@@ -321,7 +318,7 @@ public final class ScalarTypeResolver {
     /**
      * Verifies (without invoking the resolver) that a SDL name is one of the five GraphQL spec
      * built-ins. Used by callers wanting to short-circuit before constructing a rejection
-     * payload (e.g., the Phase 2 directive-read path that rejects {@code @scalarType} on a
+     * payload (e.g., the directive-read path that rejects {@code @scalarType} on a
      * spec built-in name as a {@code Rejection.InvalidSchema.DirectiveConflict}).
      */
     public static boolean isSpecBuiltIn(String scalarName) {
@@ -398,9 +395,9 @@ public final class ScalarTypeResolver {
      * components, or surfaces a {@link ParsedDirectiveValue.Malformed} arm naming the original
      * value when the shape is wrong (no dot, leading dot, trailing dot).
      *
-     * <p>Factored out so the LSP can validate the shape without constructing a classloader. Both
-     * the LSP diagnostic and {@link #resolveFromDirectiveValue} switch on the same sealed result;
-     * tightening the shape rule (e.g. rejecting consecutive dots later) lives in one place.
+     * <p>Lets the LSP validate the shape without constructing a classloader. Both the LSP
+     * diagnostic and {@link #resolveFromDirectiveValue} switch on the same sealed result, so the
+     * shape rule lives in one place.
      */
     public static ParsedDirectiveValue parseDirectiveValue(String scalarFqn) {
         int dot = scalarFqn.lastIndexOf('.');
@@ -425,12 +422,8 @@ public final class ScalarTypeResolver {
      * The Java type recovered for a spec built-in, or {@code null} for non-built-ins. A
      * convenience for callers that have already validated the SDL name is built-in and want
      * the {@link TypeName} directly without pattern-matching on
-     * {@link ScalarResolution.Resolved}.
-     *
-     * <p>Phase 1 callers that don't yet need the {@code GraphQLScalarType} constant (the
-     * lone consumer is {@code RowsMethodShape.standardScalarJavaType}) use this entry point;
-     * Phase 2's {@code additionalType} registration switches to {@link #resolveBuiltIn(String)}
-     * to recover the owner / field-name pair.
+     * {@link ScalarResolution.Resolved}. Callers that also need the owner / field-name pair
+     * (the {@code additionalType} registration) use {@link #resolveBuiltIn(String)}.
      */
     public static TypeName builtInJavaType(String scalarName) {
         BuiltIn entry = SPEC_BUILT_INS.get(scalarName);
@@ -453,29 +446,21 @@ public final class ScalarTypeResolver {
 
     /**
      * Forward mapping SDL scalar name → the Java {@link TypeName} graphql-java's argument-coercion
-     * path produces for that scalar. The missing half of the existing bidirectional pair (of which
-     * {@link #builtInJavaType} / {@link #isClassifiedScalarJavaType} are the other directions): where
-     * those ask "is this Java type any classified scalar's resolution", this answers "what Java type
-     * does <em>this named</em> scalar coerce to". Consulted by the wire-coercion predicate to
-     * confirm a {@code Direct} raw-cast leaf is genuinely wire-pass-through.
+     * path produces for that scalar. Complements {@link #builtInJavaType} /
+     * {@link #isClassifiedScalarJavaType}: those ask "is this Java type any classified scalar's
+     * resolution", this answers "what Java type does <em>this named</em> scalar coerce to".
+     * Consulted by the wire-coercion predicate to confirm a {@code Direct} raw-cast leaf is
+     * genuinely wire-pass-through.
      *
-     * <p>Total over the recognised scalar space:
-     * <ul>
-     *   <li>The five spec built-ins from the closed {@link #SPEC_BUILT_INS} table
-     *       ({@code Int}→{@code Integer}, {@code Float}→{@code Double}, {@code String}/{@code ID}→{@code String},
-     *       {@code Boolean}→{@code Boolean}).</li>
-     *   <li>Federation-namespace scalars → {@code String} (they deserialise to strings on the wire).</li>
-     *   <li>Consumer-declared scalars carried in {@code classifiedTypes} as a
-     *       {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType}: the resolved
-     *       {@link ScalarResolution.Successful#javaType()}.</li>
-     * </ul>
-     *
-     * <p>Returns {@code null} for a name that resolves to none of these (an enum, an input object,
-     * or a consumer scalar not present in {@code classifiedTypes}); the predicate treats a
-     * {@code null} as "cannot judge, do not over-reject" and leaves the leaf on its existing arm.
-     * The enum→{@code String} and input-object→{@code Map} coercion facts are deliberately not
-     * added here: they are already carried structurally by {@code EnumValueOf} / {@code InputBean},
-     * so the classifier reads them from the existing fork, not from this mapping.
+     * <p>Total over the recognised scalar space: the spec built-ins, the federation-namespace
+     * scalars (which deserialise to {@code String} on the wire), and consumer scalars carried in
+     * {@code classifiedTypes} as a {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType}.
+     * Returns {@code null} for any other name (an enum, an input object, or a consumer scalar not
+     * present in {@code classifiedTypes}); the predicate treats {@code null} as "cannot judge, do
+     * not over-reject" and leaves the leaf on its existing arm. The enum→{@code String} and
+     * input-object→{@code Map} coercion facts are deliberately not added here: they are carried
+     * structurally by {@code EnumValueOf} / {@code InputBean}, so the classifier reads them from
+     * the existing fork, not from this mapping.
      */
     public static TypeName coercionOutputType(String scalarName,
             Iterable<no.sikt.graphitron.rewrite.model.GraphitronType> classifiedTypes) {
@@ -508,7 +493,7 @@ public final class ScalarTypeResolver {
      * then falls back to {@link #isSpecBuiltInJavaType} for callers in contexts where the
      * type registry is empty. Sibling to {@link #builtInJavaType}: the resolver owns both
      * directions of the scalar-name ↔ scalar-Java-FQN mapping so reflection code, validator
-     * surfaces, and LSP quickfixes share a single source of truth.
+     * surfaces, and the LSP share a single source of truth.
      */
     public static boolean isClassifiedScalarJavaType(String javaTypeFqn,
             Iterable<no.sikt.graphitron.rewrite.model.GraphitronType> classifiedTypes) {

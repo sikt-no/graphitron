@@ -38,15 +38,14 @@ import java.util.Optional;
  * directive, every arg, every input type and field, plus their description
  * strings. The overlay declares semantics ("complete this as a class name",
  * "validate this against the catalog's table set") only for the subset the
- * LSP knows how to act on today. Filing semantics for a new directive
- * becomes an additive overlay entry; the parse already exposes the
- * coordinate.
+ * LSP knows how to act on. Filing semantics for a new directive is an
+ * additive overlay entry; the parse already exposes the coordinate.
  *
  * <p><b>Structural invariant.</b> Every coordinate in the overlay must
  * resolve against the parsed registry. The constructor enforces this and
- * throws {@link LspStartupException} on any unresolved coordinate; the
- * directive drift that motivated this invariant becomes a loud startup
- * failure before any IDE session ever runs.
+ * throws {@link LspStartupException} on any unresolved coordinate;
+ * directive drift becomes a loud startup failure before any IDE session
+ * ever runs.
  *
  * <p>The vocabulary is read once at LSP startup and never invalidated.
  * The bundled SDL ships with the LSP jar; it is shape, not state.
@@ -104,10 +103,6 @@ public record LspVocabulary(
      * (a leaf's value node, used by the diagnostics document walk).
      * Both delegate to the same containment-based walk; the byte-range
      * vs. point-range distinction is the only thing that varies.
-     *
-     * <p>Replaces the per-consumer {@code readSiblingValue} +
-     * {@code readSiblingObjectField} helpers that lived in
-     * {@code MethodCompletions}, {@code Hovers}, and {@code Diagnostics}.
      */
     public Optional<String> siblingStringAt(
         Directives.Directive directive, Point pos,
@@ -212,16 +207,13 @@ public record LspVocabulary(
     /**
      * Walks every coordinate-bearing leaf inside {@code directive} and
      * returns each as a {@link Leaf} pair (coordinate plus its tree-sitter
-     * value node). Used by document-wide consumers (today: {@code Diagnostics})
+     * value node). Used by document-wide consumers ({@code Diagnostics})
      * that need to dispatch validators at every coordinate the document
      * carries, not just one cursor position.
      *
-     * <p>Single walk replaces the per-consumer
-     * {@code DirectiveDefinitions.argsByInputType} + nested-object-field
-     * collection idiom. The traversal mirrors {@link #coordinateAt}
-     * structurally — same registry-driven type chain, same input-type
-     * field tree — but emits every leaf rather than the one under the
-     * cursor.
+     * <p>The traversal mirrors {@link #coordinateAt} structurally (same
+     * registry-driven type chain, same input-type field tree) but emits
+     * every leaf rather than the one under the cursor.
      */
     public List<Leaf> leafCoordinates(Directives.Directive directive, byte[] source) {
         String directiveName = Nodes.text(directive.nameNode(), source);
@@ -271,13 +263,11 @@ public record LspVocabulary(
     }
 
     /**
-     * Emits one {@link Leaf} for {@code valueNode} under {@code coord}.
-     * For a {@code list_value} wrapper the leaf is fanned out into one per
-     * element, all keyed on the same outer coordinate. The contract this
-     * pins: {@link Leaf#valueNode()} is the scalar value node, never an
-     * enclosing {@code list_value}. Consumers ({@code Diagnostics},
-     * {@code Hovers}) treat the leaf's value as a single scalar, so a
-     * list-shaped value must decompose at emit time or the consumers
+     * Emits one {@link Leaf} for {@code valueNode} under {@code coord},
+     * fanning a {@code list_value} wrapper out into one leaf per element,
+     * all keyed on the same outer coordinate (the scalar-value contract
+     * on {@link Leaf#valueNode()}). Consumers treat a leaf's value as a
+     * single scalar, so a list-shaped value must decompose here or they
      * would read the whole list as one mangled token.
      */
     private static void emitLeaf(SchemaCoordinate coord, Node valueNode, List<Leaf> out) {
@@ -292,8 +282,7 @@ public record LspVocabulary(
             String type = child.getType();
             // Skip syntactic tokens ('[', ']', ',') and stray newlines.
             if ("[".equals(type) || "]".equals(type) || ",".equals(type) || "comma".equals(type)) continue;
-            // Nested lists are transparently fanned out so any future
-            // list-of-list directive arg falls in for free.
+            // Nested lists fan out recursively.
             emitLeaf(coord, child, out);
         }
     }
@@ -558,7 +547,7 @@ public record LspVocabulary(
      * plus its fields for native deprecations. Used by
      * {@code SdlActionDriftTest} to assert that {@link
      * no.sikt.graphitron.lsp.code_action.SdlActions} stays in sync with
-     * the SDL — every action targets a real marker, every marker is
+     * the SDL: every action targets a real marker, every marker is
      * covered by an action or the manual-migration allow-list.
      */
     public java.util.Set<SchemaCoordinate> deprecatedCoordinates() {
@@ -665,8 +654,8 @@ public record LspVocabulary(
     }
 
     /**
-     * The canonical overlay shipped with the LSP. The full set of
-     * coordinates the LSP knows how to act on today.
+     * The canonical overlay shipped with the LSP: the full set of
+     * coordinates the LSP knows how to act on.
      */
     public static final class CanonicalOverlay {
         private CanonicalOverlay() {}

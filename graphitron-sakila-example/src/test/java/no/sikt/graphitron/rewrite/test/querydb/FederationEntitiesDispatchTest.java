@@ -178,13 +178,11 @@ class FederationEntitiesDispatchTest {
 
     /**
      * A well-formed NodeId whose decoded key has too few parts for a composite-key
-     * {@code @node} type ({@code FilmActor}, PK actor_id + film_id) must yield a null slot,
-     * not a 500. Pre-fix the batch NODE_ID decode sized {@code cols} by {@code decoded.length}
-     * and {@code selectFilmActorAlt<N>} indexed {@code cols[1]} → {@code ArrayIndexOutOfBounds},
-     * whose raw message ({@code Index 1 out of bounds for length 1}) leaked unredacted through the
-     * federation error surface machine-to-machine. Since the {@link #execute} helper asserts the
-     * errors list is empty, a null slot with no error is exactly the contract. This is the
-     * federation reproduction of the opptak {@code _entities} crash.
+     * {@code @node} type ({@code FilmActor}, PK actor_id + film_id) yields a null slot,
+     * not a 500: the dispatcher's arity guard skips the rep instead of indexing past the
+     * decoded array, whose out-of-bounds message would leak unredacted through the federation
+     * error surface. Since the {@link #execute} helper asserts the errors list is empty, a
+     * null slot with no error is exactly the contract.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -201,10 +199,10 @@ class FederationEntitiesDispatchTest {
 
     /**
      * Over-arity companion: a NodeId with too many key parts whose valid 2-part prefix
-     * ({@code actor_id=1, film_id=1}) IS an existing row. Pre-fix the extra decoded part was
-     * silently dropped and the rep resolved the {@code (1,1)} row, a wrong-row return arguably
-     * worse than the crash. The {@code != N} guard rejects it: the rep is skipped and its slot
-     * stays null, so a client cannot address a row by a longer id than the type's key admits.
+     * ({@code actor_id=1, film_id=1}) IS an existing row. The {@code != N} arity guard rejects
+     * it rather than dropping the extra part and resolving the prefix row: the rep is skipped
+     * and its slot stays null, so a client cannot address a row by a longer id than the type's
+     * key admits.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -282,7 +280,7 @@ class FederationEntitiesDispatchTest {
             .doesNotContain("first_name").doesNotContain("last_name");
     }
 
-    // The per-tenant partition proof lives with the multi-tenant fixture now: the dispatcher's
+    // The per-tenant partition proof lives with the multi-tenant fixture: the dispatcher's
     // grouping widens per decoded tenant, so one batch spanning tenants issues one SELECT per
     // tenant-homogeneous group, proven with inferred bindings (no getTenantId override) in
     // TenantDivinedRoutingExecutionTest.nodes_batchSpanningTenants_partitionsPerDecodedTenant
@@ -441,8 +439,8 @@ class FederationEntitiesDispatchTest {
      * dispatcher entirely: the subsequent {@code _entities} call hits the consumer's fetcher,
      * never the generated one, so no entity SELECT fires. Locks the documented customizer
      * order ("federation customizer runs after Graphitron's defaults attach"), not just "the
-     * customizer was invoked". Lives here, not in the seam-0 smoke test, because we need a
-     * real {@link DSLContext} to detect that the dispatcher's SELECT path was bypassed.
+     * customizer was invoked". Lives in this tier because detecting that the dispatcher's
+     * SELECT path was bypassed needs a real {@link DSLContext}.
      */
     @Test
     void entities_customizerReplacesDefaultFetchEntities_noSelectFires() {
@@ -466,14 +464,12 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
-     * Regression: a federated {@code _entities} query that selects both {@code id}
-     * (the NodeId-encoded primary key) and a sibling SDL field whose {@code @field(name:)}
-     * resolves to the same underlying column. Pre-fix the two switch arms in
-     * {@code Customer.$fields} both appended {@code table.CUSTOMER_ID} to an {@code ArrayList}
-     * accumulator, so the generated SELECT projected the column twice and jOOQ's
-     * {@code FieldsImpl.indexOf} logged an INFO "Ambiguous match" on every fetched row. The
-     * {@link java.util.LinkedHashSet} accumulator dedupes by jOOQ {@code Field} identity;
-     * the column now appears exactly once in the projection.
+     * A federated {@code _entities} query that selects both {@code id} (the NodeId-encoded
+     * primary key) and a sibling SDL field whose {@code @field(name:)} resolves to the same
+     * underlying column. {@code Customer.$fields} accumulates projected columns in a
+     * {@link java.util.LinkedHashSet}, deduping by jOOQ {@code Field} identity, so the column
+     * appears exactly once in the SELECT; a duplicate projection makes jOOQ's
+     * {@code FieldsImpl.indexOf} log an INFO "Ambiguous match" on every fetched row.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -508,14 +504,14 @@ class FederationEntitiesDispatchTest {
 
     /**
      * A representations-driven {@code _entities} fetch that selects <em>only</em> a
-     * {@code @service} child — the key arrives via the representation ({@code cityId}) and is
-     * deliberately not re-selected in the sub-selection. This is the exact Apollo Router shape
-     * from the opptak reproducer: the router selects just the fields it needs and supplies key
-     * columns through the representation. The entity dispatch SELECT goes through
-     * {@code City.$fields}, which must force-project {@code CITY_ID} (the service child's
-     * SourceKey column) so the DataLoader key extraction ({@code .into(Tables.CITY)}) reads a
-     * non-null key; pre-fix the child silently resolved to {@code null}. City is the unmasked
-     * fixture — no other child of City force-projects the key column.
+     * {@code @service} child: the key arrives via the representation ({@code cityId}) and is
+     * deliberately not re-selected in the sub-selection (the Apollo Router shape: the router
+     * selects just the fields it needs and supplies key columns through the representation).
+     * The entity dispatch SELECT goes through {@code City.$fields}, which must force-project
+     * {@code CITY_ID} (the service child's SourceKey column) so the DataLoader key extraction
+     * ({@code .into(Tables.CITY)}) reads a non-null key; otherwise the child silently resolves
+     * to {@code null}. City is the unmasked fixture: no other child of City force-projects the
+     * key column.
      */
     @Test
     @SuppressWarnings("unchecked")
@@ -538,12 +534,11 @@ class FederationEntitiesDispatchTest {
      * typed-{@code TableRecord}-sourced {@code @service} child whose body reads a
      * <em>non-key</em> column ({@code title}) off the source record. The sibling test
      * ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}) pins the key-column
-     * half of the silent-null family; this pins the residual surface — the router selects just
-     * the service child, the key arrives via the representation, and nothing in the selection
+     * half of the silent-null family; this pins the residual surface: nothing in the selection
      * projects {@code title}. The entity dispatch SELECT goes through {@code Film.$fields},
      * which must project the full parent row for the TableRecord-sourced child so
-     * {@code .into(Tables.FILM)} hands the service a fully-populated record; pre-fix
-     * {@code getTitle()} was {@code null} and the child resolved to a titlecased {@code null}.
+     * {@code .into(Tables.FILM)} hands the service a fully-populated record; otherwise
+     * {@code getTitle()} is {@code null} and the child resolves to a titlecased {@code null}.
      */
     @Test
     @SuppressWarnings("unchecked")

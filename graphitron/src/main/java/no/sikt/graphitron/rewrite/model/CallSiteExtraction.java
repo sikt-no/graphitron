@@ -11,20 +11,9 @@ import java.util.List;
  * argument passed to a condition or ordering method. The generator switches on this type once and
  * emits the corresponding expression, no other decisions are made at generation time.
  *
- * <ul>
- *   <li>{@link Direct} — {@code env.getArgument("name")}</li>
- *   <li>{@link EnumValueOf} — {@code EnumClass.valueOf(env.<String>getArgument("name"))},
- *       null-guarded when the argument is nullable.</li>
- *   <li>{@link ContextArg} — {@code graphitronContext(env).getContextArgument(env, "name")}</li>
- *   <li>{@link NestedInputField} — traverse a nested input-object graph starting from a
- *       top-level argument Map and descending through {@code path} keys, null-safe at every
- *       level; used for {@code @condition} on {@code INPUT_FIELD_DEFINITION}.</li>
- * </ul>
- *
- * <p>The {@code TextMapLookup} permit was retired: graphql-java's
- * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)} runtime
- * form, so graphql-java does the wire-form → runtime-form translation at the boundary and the
- * Java-side map became an identity lookup. Text-mapped enum args route through {@link Direct}.
+ * <p>Text-mapped enum args route through {@link Direct}: graphql-java carries the
+ * {@code @field(name:)} runtime form on {@code GraphQLEnumValueDefinition.value(...)}, so the
+ * wire-form to runtime-form translation happens at the graphql-java boundary.
  */
 public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
@@ -38,7 +27,8 @@ public sealed interface CallSiteExtraction
 
     /**
      * Convert a GraphQL String argument to a jOOQ enum:
-     * {@code EnumClass.valueOf(env.<String>getArgument("name"))}.
+     * {@code EnumClass.valueOf(env.<String>getArgument("name"))}, null-guarded when the argument
+     * is nullable.
      *
      * <p>{@code enumClassName} is the fully qualified Java enum class name
      * (e.g. {@code "no.example.jooq.enums.MpaaRating"}).
@@ -53,8 +43,8 @@ public sealed interface CallSiteExtraction
     /**
      * Coerce a GraphQL {@code ID} scalar (delivered as {@code String} by GraphQL-Java) to the
      * column Java type by binding it through the column's {@code DataType} (and any registered
-     * {@code Converter}) via {@code DSL.val(Object, DataType<T>).getValue()} — the non-deprecated
-     * replacement for {@code DataType.convert(Object)} (forRemoval in jOOQ 3.20).
+     * {@code Converter}) via {@code DSL.val(Object, DataType<T>).getValue()}
+     * ({@code DataType.convert(Object)} is deprecated for removal in jOOQ 3.20).
      *
      * <p>{@code columnJavaName} is the jOOQ field constant name (e.g. {@code "FILM_ID"}) used to
      * reach the target {@code DataType} from the table alias:
@@ -84,8 +74,7 @@ public sealed interface CallSiteExtraction
      * is. {@link NodeIdDecodeKeys} arms are used for {@code [ID!] @nodeId(typeName: T)} input
      * fields whose wire-format {@code List<String>} of base64 ids is decoded element-by-element
      * via the {@code decode<TypeName>} helper into typed key values before the predicate body
-     * fires. Other leaves are reserved for future arms; the validator should enforce that a leaf
-     * is not itself a {@code NestedInputField} (no recursion).
+     * fires.
      *
      * <p>Traversal is null-safe: if any intermediate step is not a {@code Map} or is
      * {@code null}, the result is {@code null}. The condition method is still invoked; if it
@@ -97,9 +86,6 @@ public sealed interface CallSiteExtraction
      *       direct {@code ColumnField.filmId} condition on a top-level input arg.</li>
      *   <li>{@code outerArgName="filter"}, {@code path=["where", "filmId"]}, {@code leaf=Direct}
      *       for a {@code ColumnField.filmId} inside a {@code NestingField.where}.</li>
-     *   <li>{@code outerArgName="filter"}, {@code path=["filmIds"]},
-     *       {@code leaf=NodeIdDecodeKeys.SkipMismatchedElement} for a
-     *       {@code [ID!] @nodeId(typeName: "Film")} input filter.</li>
      * </ul>
      */
     record NestedInputField(String outerArgName, List<String> path, CallSiteExtraction leaf)
@@ -126,16 +112,15 @@ public sealed interface CallSiteExtraction
      * {@link HelperRef.Decode decode<TypeName>} (malformed input or typeId mismatch) surfaces:
      *
      * <ul>
-     *   <li>{@link SkipMismatchedElement} — a {@code null} return short-circuits the bad element to
-     *       "no row matches"; never throws. This arm is now produced <em>only</em> by the
-     *       legacy {@code __NODE_*} synthesis shims (on the {@code retire-synthesis-shims} track);
-     *       authored {@code @nodeId} filters no longer use it.</li>
-     *   <li>{@link ThrowOnMismatch} — every authored {@code @nodeId} argument or input-object-field
+     *   <li>{@link SkipMismatchedElement}: a {@code null} return short-circuits the bad element to
+     *       "no row matches"; never throws. Produced only by the legacy {@code __NODE_*} synthesis
+     *       shims; authored {@code @nodeId} filters classify to {@link ThrowOnMismatch}.</li>
+     *   <li>{@link ThrowOnMismatch}: every authored {@code @nodeId} argument or input-object-field
      *       filter ({@code [ID!] @nodeId(typeName: T)} and the scalar analogue), plus {@code @nodeId}
      *       lookup / mutation keys. A {@code null} return is a client mistake and surfaces as a
      *       {@code GraphitronClientException} (a {@code GraphQLError}), not a silent drop; the decode
      *       helper's message distinguishes a structurally-malformed id from a well-formed wrong-type
- * id. For filters this gives up the Relay heterogeneous-id-source pattern by design:
+     *       id. For filters this gives up the Relay heterogeneous-id-source pattern by design:
      *       one bad element fails the whole field rather than narrowing the set.</li>
      * </ul>
      *
@@ -154,16 +139,16 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * Skip the bad element on a {@code null} decode return. This arm is produced only by
-     * the legacy {@code __NODE_*} synthesis shims ({@code retire-synthesis-shims} track); authored
-     * {@code @nodeId} filters classify to {@link ThrowOnMismatch} instead.
+     * Skip the bad element on a {@code null} decode return. Produced only by the legacy
+     * {@code __NODE_*} synthesis shims; authored {@code @nodeId} filters classify to
+     * {@link ThrowOnMismatch} instead.
      */
     record SkipMismatchedElement(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
 
     /**
      * Throw the generated {@code GraphitronClientException} (a {@code GraphQLError}) on a
      * {@code null} decode return, with a message distinguishing malformed input from a well-formed
- * wrong-type id. Used by every authored {@code @nodeId} filter (argument or
+     * wrong-type id. Used by every authored {@code @nodeId} filter (argument or
      * input-object-field) and by {@code @nodeId} lookup / mutation keys.
      */
     record ThrowOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
@@ -172,25 +157,21 @@ public sealed interface CallSiteExtraction
      * Decode a base64 NodeId into a jOOQ {@code TableRecord} for a {@code @service} input-bean
      * member field typed as a generated {@code *Record}. Sibling to {@link NodeIdDecodeKeys}: same
      * NodeId wire decode at the root, opposite downstream projection. Where {@link NodeIdDecodeKeys}
-     * <em>decomposes</em> the decoded key tuple into scalar column values for a predicate / SET
-     * body (and so needs the typed {@code RecordN} projection of {@link HelperRef.Decode}), this arm
-     * <em>materialises a {@link org.jooq.TableRecord}</em>: it calls
+     * decomposes the decoded key tuple into scalar column values for a predicate / SET body, this
+     * arm materialises a {@link org.jooq.TableRecord}: it calls
      * {@code encoderClass.decodeValues(typeId, nodeId)} for the raw {@code String[]} and loads those
      * values positionally onto the target record's key columns with a single
-     * {@code record.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...)} call. No throwaway
-     * {@code RecordN}, no {@code fromMap(intoMap())} name round-trip, and no deprecated-for-removal
-     * {@code DataType.convert(Object)}: {@code fromArray} coerces each value through the column's
-     * {@code DataType} / registered {@code Converter} and keeps the real compile-tier check (the
-     * {@code Tables.<T>.<col>} field references must exist on the record, which the
-     * {@code graphitron-sakila-example} compile tier verifies).
+     * {@code record.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...)} call.
+     * {@code fromArray} coerces each value through the column's {@code DataType} / registered
+     * {@code Converter}, and the {@code Tables.<T>.<col>} field references must exist on the record
+     * (the {@code graphitron-sakila-example} compile tier verifies this).
      *
-     * <p>The leaf therefore carries no {@code decode<Type>} method name (it never calls
-     * {@code decode<Type>}): {@code encoderClass} reaches {@code decodeValues}, {@code typeId} is its
-     * first argument, {@code keyColumns} names the {@code Tables.<T>.<col>} fields passed to
-     * {@code fromArray}, and {@code table} supplies the record class ({@code new <T>Record()}) and the
-     * {@code Tables} constants class. {@code keyColumns} is kept
-     * separate from {@code table.primaryKeyColumns()} because an {@code @node(keyColumns:)} key may
-     * differ from the PK.
+     * <p>The leaf carries no {@code decode<Type>} method name: {@code encoderClass} reaches
+     * {@code decodeValues}, {@code typeId} is its first argument, {@code keyColumns} names the
+     * {@code Tables.<T>.<col>} fields passed to {@code fromArray}, and {@code table} supplies the
+     * record class ({@code new <T>Record()}) and the {@code Tables} constants class.
+     * {@code keyColumns} is kept separate from {@code table.primaryKeyColumns()} because an
+     * {@code @node(keyColumns:)} key may differ from the PK.
      *
      * <p>Produced only by {@code InputBeanResolver} when an input-bean field's loaded Java type is
      * assignable to {@code org.jooq.Record} and the SDL field carries {@code @nodeId(typeName:)};
@@ -238,7 +219,7 @@ public sealed interface CallSiteExtraction
      * parameter and {@code create<TypeName>s(env.getArgument("name"))} for a {@code List<Bean>}
      * parameter. The emitted helper(s) live on the enclosing {@code *Fetchers} class; helpers are
      * deduplicated per bean class. The helper itself walks the Map field-by-field, populating a
-     * fresh instance — either via the record canonical constructor (when {@code target} is
+     * fresh instance, either via the record canonical constructor (when {@code target} is
      * {@link Target#RECORD}) or no-arg constructor + JavaBean setters
      * (when {@code target} is {@link Target#JAVA_BEAN}).
      *
@@ -247,7 +228,7 @@ public sealed interface CallSiteExtraction
      * record's component order. For JavaBean targets the order is irrelevant (each binding is
      * applied via its named setter independently).
      *
- * <p>Cycle-prevention invariant: the helper references only JDK types and service-layer
+     * <p>Cycle-prevention invariant: the helper references only JDK types and service-layer
      * types. {@code beanClass} is a consumer-authored type, never a graphitron-emitted record.
      */
     record InputBean(ClassName beanClass, Target target, List<FieldBinding> fields)
@@ -267,7 +248,7 @@ public sealed interface CallSiteExtraction
 
         /** Constructor shape the helper uses to instantiate the bean. */
         public enum Target {
-            /** Java record — populate positionally via the canonical constructor. */
+            /** Java record: populate positionally via the canonical constructor. */
             RECORD,
             /** Plain class with a public no-arg constructor and JavaBean setters. */
             JAVA_BEAN
@@ -283,8 +264,8 @@ public sealed interface CallSiteExtraction
      *
      * <p>{@code leaf} is the per-field transform. {@link Direct} populates from the raw Map value
      * (typed via Java cast). {@link EnumValueOf} routes through the corresponding enum's
-     * {@code valueOf}. {@link InputBean} recurses into a nested bean instantiation. Other arms are
-     * not yet supported on the leaf — the validator rejects them at classify time.
+     * {@code valueOf}. {@link InputBean} recurses into a nested bean instantiation. The validator
+     * rejects other arms on the leaf at classify time.
      *
      * <p>{@code list} indicates whether the field is list-shaped (Java type {@code List<X>} on the
      * bean). When {@code true} with a non-{@link Direct} leaf, the helper streams the inner list
@@ -293,7 +274,7 @@ public sealed interface CallSiteExtraction
      * <p>{@code javaElementTypeName} is the fully qualified name of the leaf scalar/enum Java type
      * (or the bean class name for nested {@link InputBean} leaves), used to emit casts. For lists
      * it is the element type, not the wrapping {@code List}. Invariant: always a real class name,
-     * never a Java primitive literal — primitives are boxed to their wrapper FQN at the resolver
+     * never a Java primitive literal: primitives are boxed to their wrapper FQN at the resolver
      * boundary so that the {@link no.sikt.graphitron.javapoet.ClassName#bestGuess(String)} consumers
      * in {@code InputBeanInstantiationEmitter} can rely on the string being a class name.
      */
@@ -318,43 +299,41 @@ public sealed interface CallSiteExtraction
 
     /**
      * Construct a generated jOOQ {@link org.jooq.TableRecord} from a GraphQL input-object {@code Map}
- * at a {@code @service} parameter position. Sibling to {@link InputBean}: same "instantiate
+     * at a {@code @service} parameter position. Sibling to {@link InputBean}: same "instantiate
      * the consumer's typed parameter at the fetcher boundary so the service body never sees a
      * {@code Map}" goal, opposite binding axis. Where {@link InputBean} binds SDL fields on the
      * Java-<em>member</em> axis ({@link FieldBinding#javaFieldName()}), a {@code JooqRecord} binds them
      * on the <em>column</em> axis: each plain field names a jOOQ column through {@code @field(name:)}
      * (carried as a resolved {@link ColumnBinding}), and each {@code @nodeId} field decodes a node
      * identity into resolved target columns on this record (carried as a {@link RecordKeyDecode}). A
- * record may carry several {@code @nodeId} fields: a same-table identity decode loads the
- * record's own key columns, a cross-table FK-reference decode loads the foreign key's child
-     * columns on this record (the common "status / history / junction row" shape).
+     * record may carry several {@code @nodeId} fields: a same-table identity decode loads the
+     * record's own key columns, a cross-table FK-reference decode loads the foreign key's child
+     * columns on this record.
      *
      * <p>A field whose SDL type is itself a directiveless nested grouping input flattens transparently
- * onto this one table: the resolver recurses into the nested type's fields and keeps producing
+     * onto this one table: the resolver recurses into the nested type's fields and keeps producing
      * {@link ColumnBinding} / {@link RecordKeyDecode} carriers, each carrying the full access
-     * {@code path} from the record's own {@code Map} down to the leaf. The binding lists are therefore a
-     * flat projection of an arbitrarily-nested input onto the table's columns, with depth recorded only on
-     * the per-binding path; there is no nested-record sub-structure here.
+     * {@code path} from the record's own {@code Map} down to the leaf. The binding lists are a flat
+     * projection of an arbitrarily-nested input onto the table's columns; there is no nested-record
+     * sub-structure here.
      *
-     * <p>{@code table} is read straight off the param's classified
+     * <p>{@code table} is read off the param's classified
      * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code table.recordClass()}
-     * (the two name the same class by construction, so no separate component is carried, mirroring
-     * {@link NodeIdDecodeRecord} which derives its record class from {@code table} too). The two binding
-     * axes are orthogonal — {@code columnBindings} is the SET payload, {@code keyDecodes} are the
-     * {@code @nodeId}-decoded identities / FK references — and either may be empty (a record built from
-     * only identities/references, or only plain columns), but not both.
+     * (the two name the same class by construction, so no separate component is carried).
+     * {@code columnBindings} is the SET payload, {@code keyDecodes} are the {@code @nodeId}-decoded
+     * identities / FK references; either may be empty, but not both.
      *
-     * <p>Produced only by {@code InputBeanResolver} (the SDL-aware post-processor that already holds the
-     * classified type), every {@code JooqRecord} is fully resolved: a non-null {@code table}, resolved
-     * {@code ColumnRef}s on every binding, and a fully-resolved (possibly empty) {@code keyDecodes} list.
-     * Consumed by {@code JooqRecordInstantiationEmitter} (the {@code create<Record>} /
-     * {@code create<Record>List} helper pair, reached from either the root-coordinate
-     * {@code ServiceMethodCallEmitter} via {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}
-     * or the child-coordinate {@code ArgCallEmitter} directly), and registered into the helper queue by
-     * {@code TypeFetcherGenerator}'s dual walk. It is a top-level {@code param.extraction()}, like
-     * {@link InputBean} and unlike {@link NodeIdDecodeRecord}; it is never an {@link InputBean} field
-     * leaf, so the bean-field-leaf switch ({@code InputBeanInstantiationEmitter.perFieldValueExpr})
-     * treats it as unreachable-by-construction.
+     * <p>Produced only by {@code InputBeanResolver}, which fully resolves every {@code JooqRecord}:
+     * a non-null {@code table}, resolved {@code ColumnRef}s on every binding, and a fully-resolved
+     * (possibly empty) {@code keyDecodes} list. Consumed by {@code JooqRecordInstantiationEmitter}
+     * (the {@code create<Record>} / {@code create<Record>List} helper pair, reached from either the
+     * root-coordinate {@code ServiceMethodCallEmitter} via
+     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput} or the child-coordinate
+     * {@code ArgCallEmitter} directly), and registered into the helper queue by
+     * {@code TypeFetcherGenerator}'s dual walk. It is a top-level {@code param.extraction()}, never an
+     * {@link InputBean} field leaf, so the bean-field-leaf switch
+     * ({@code InputBeanInstantiationEmitter.perFieldValueExpr}) treats it as
+     * unreachable-by-construction.
      */
     record JooqRecord(TableRef table,
                       List<ColumnBinding> columnBindings,
@@ -383,18 +362,18 @@ public sealed interface CallSiteExtraction
      * One plain ({@code @field}) input field bound on the column axis. {@code path} is the ordered,
      * non-empty access path from the record's own input {@code Map} down to the leaf field: the last
      * element is the leaf SDL field name (the {@code Map} key the {@code create<Record>} helper reads the
-     * wire value from), and any earlier elements are the enclosing nested-grouping-input field names a
- * flatten descends through. A top-level binding carries a single-element path; the nested
-     * {@code details.title} carries {@code ["details", "title"]}. This adopts the access-path
- * representation {@link NestedInputField} settled, scoped to the keys from the record's own
-     * {@code Map} down to the leaf (the outer argument name stays on the enclosing
+     * wire value from), and any earlier elements are the enclosing nested-grouping-input field names
+     * a flatten descends through. A top-level binding carries a single-element path; the nested
+     * {@code details.title} carries {@code ["details", "title"]}. Same access-path representation as
+     * {@link NestedInputField}, scoped to the keys from the record's own {@code Map} down to the leaf
+     * (the outer argument name stays on the enclosing
      * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}, not duplicated here).
      *
-     * <p>{@code column} is the <em>resolved</em> {@link ColumnRef} (not a raw {@code @field(name:)} string)
-     * on the enclosing {@link JooqRecord#table()}, so the emitter reaches the typed {@code Tables.<T>.<col>}
-     * field with no re-parsing. Column-axis sibling to the member-axis {@link FieldBinding}; a genuinely
-     * different axis, hence a separate record. No list flag: a scalar column cannot take a list value, and
-     * the absence documents that.
+     * <p>{@code column} is the <em>resolved</em> {@link ColumnRef} (not a raw {@code @field(name:)}
+     * string) on the enclosing {@link JooqRecord#table()}, so the emitter reaches the typed
+     * {@code Tables.<T>.<col>} field with no re-parsing. Column-axis sibling to the member-axis
+     * {@link FieldBinding}. No list flag: a scalar column cannot take a list value, and the absence
+     * documents that.
      */
     record ColumnBinding(List<String> path, ColumnRef column) {
         public ColumnBinding {
@@ -424,30 +403,28 @@ public sealed interface CallSiteExtraction
      * {@code targetColumns} on the enclosing {@link JooqRecord#table()}. Only the projection target
      * differs from {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
      *
-     * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits its
-     * {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} sits directly
-     * on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own {@code path} —
-     * the ordered, non-empty access path from the record's own {@code Map} down to the {@code @nodeId}
-     * field. The last element is the leaf field name (the {@code Map} key the helper decodes
-     * {@code parentMap.get("<idField>")} from); earlier elements are enclosing nested-grouping-input field
- * names a flatten descends through. A top-level decode carries a single-element path; the same
-     * representation {@link ColumnBinding} uses, and the {@code @table}-input precedent {@link NestedInputField}
- * settled.
+     * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits
+     * its {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} sits
+     * directly on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own
+     * {@code path}: the ordered, non-empty access path from the record's own {@code Map} down to the
+     * {@code @nodeId} field, in the same representation {@link ColumnBinding} uses. The last element
+     * is the leaf field name (the {@code Map} key the helper decodes from); earlier elements are
+     * enclosing nested-grouping-input field names a flatten descends through.
      *
      * <p>{@code targetColumns} is the resolved list of columns <em>on this record</em> the decoded
      * values load into, in node-key (decode) order (one entry for a single-key NodeType, N for a
- * composite key). For a same-table identity decode these are the record's own key columns;
- * for a cross-table FK-reference decode they are the FK's child columns on this record,
-     * resolved by FK-constraint pairing in {@code BuildContext}. That identity-vs-FK distinction lives
-     * <em>only in the resolver</em>; the carrier holds the resolved target either way (there is no
-     * {@code KeyProjection} sub-axis, because both arms load the columns identically).
+     * composite key). For a same-table identity decode these are the record's own key columns;
+     * for a cross-table FK-reference decode they are the FK's child columns on this record,
+     * resolved by FK-constraint pairing in {@code BuildContext}. The identity-vs-FK distinction
+     * lives <em>only in the resolver</em>; the carrier holds the resolved target either way (both
+     * arms load the columns identically, so there is no sub-axis).
      *
      * <p>{@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}) and drives
      * the emitter's null semantics, applied identically to identity and FK-reference decodes:
- * a {@code nonNull} ({@code ID!}) decode always loads, throwing on a null / type-mismatched id;
-     * a nullable ({@code ID}) decode is conditional on the wire key being present (omitted → columns left
-     * unwritten / {@code changed=false}, present-{@code null} → columns set to {@code NULL},
-     * present-value → decoded-and-loaded, a wrong-type decode still throwing). The {@code @service}
+     * a {@code nonNull} ({@code ID!}) decode always loads, throwing on a null / type-mismatched id;
+     * a nullable ({@code ID}) decode is conditional on the wire key being present (omitted: columns
+     * left unwritten / {@code changed=false}; present-{@code null}: columns set to {@code NULL};
+     * present-value: decoded and loaded, a wrong-type decode still throwing). The {@code @service}
      * method owns the insert/update, so the framework does not force even a same-table identity to be
      * non-null; a nullable identity is a legitimate service-side upsert input.
      */

@@ -108,10 +108,7 @@ public final class Diagnostics {
             // Freshness-aware silence policy: only Built.Current warns.
             // Unavailable (pre-build) and Built.Previous (stale after parse
             // failure) silence the warn arms to avoid punishing the user
-            // for what we cannot reliably see. The two warn arms split on
-            // the snapshot's view of the directive name: Unknown -> the
-            // unknown-directive arm, User -> arg validation
-            // against the snapshot's directive shape.
+            // for what we cannot reliably see.
             switch (snapshot) {
                 case LspSchemaSnapshot.Unavailable ignored -> { /* pre-build silence */ }
                 case LspSchemaSnapshot.Built.Previous ignored -> { /* stale-snapshot silence */ }
@@ -142,19 +139,10 @@ public final class Diagnostics {
      * red squiggle the developer cannot fix by rewriting their schema is the noise we are trying
      * to avoid. Short-circuits when the open file has no entries in {@link ValidationReport#sourceUris}.
      *
-     * <p>{@code ValidationError} with a null or {@code (0, 0)} location is dropped silently in
-     * v1: every error in the current rule set carries a usable location, and a console / watch
-     * formatter already covers any future no-location producer. Warnings without location are
-     * dropped for the same reason.
-     *
-     * <p>The hook for a schema-wide surface lives here: when the first real producer of a
-     * no-location error lands, it ships in the same commit as an LSP
-     * {@code window/showMessage} notification of {@link org.eclipse.lsp4j.MessageType#Error}
-     * (or {@code Warning} for {@link BuildWarning}), rate-limited to at most one per recalculate
-     * cycle so a burst of schema-wide errors does not flood the client. The notification carries
-     * the error message verbatim and no file URI; the contract is "show this to the developer
-     * somewhere visible" rather than "highlight this position". Until that producer lands the
-     * console / watch-mode formatter path is the sole surface for schema-wide errors.
+     * <p>{@code ValidationError} with a null or {@code (0, 0)} location is dropped silently:
+     * every error in the current rule set carries a usable location, and the console / watch
+     * formatter is the surface for no-location (schema-wide) errors. Warnings without location
+     * are dropped for the same reason.
      */
     private static List<Diagnostic> validatorDiagnostics(
         String uri, FileSnapshot file, LspSchemaSnapshot snapshot, ValidationReport report
@@ -238,7 +226,7 @@ public final class Diagnostics {
         // of arm); the editor must surface the same finality so the developer
         // sees one consistent signal across the LSP and `mvn graphitron:dev`.
         // Deferred is Error rather than Warning: the actionable hint is the
-        // roadmap slug carried by the rejection, not the severity.
+        // rejection's message, not the severity.
         return switch (rejection) {
             case Rejection.AuthorError ignored -> DiagnosticSeverity.Error;
             case Rejection.InvalidSchema ignored -> DiagnosticSeverity.Error;
@@ -249,10 +237,9 @@ public final class Diagnostics {
     /**
      * Builds an LSP diagnostic for a validator error or warning. {@code SourceLocation.getLine()}
      * and {@code getColumn()} are 1-based; LSP {@code Position} is 0-based. End column is
-     * {@link Integer#MAX_VALUE} — gcc/AsciiDoctor convention, clamped by the LSP client to the
-     * actual line end. A zero-width range at column 1 (the common case for type-level errors that
-     * point at the type's declaration) is too subtle to find in editors; column-to-EOL hits the
-     * right balance.
+     * {@link Integer#MAX_VALUE} (gcc/AsciiDoctor convention, clamped by the LSP client to the
+     * actual line end): a zero-width range at column 1 (the common case for type-level errors that
+     * point at the type's declaration) is too subtle to find in editors.
      */
     private static Diagnostic validatorDiagnostic(
         FileSnapshot file, SourceLocation loc, DiagnosticSeverity severity, String message, String code
@@ -417,7 +404,7 @@ public final class Diagnostics {
      * every top-level arg the user wrote on a user-declared directive and
      * warns on any name not declared in the snapshot's projection of that
      * directive. Nested validation (`@foo(x: {misspelled: ...})`) is out
-     * of scope until the snapshot carries input-object shapes.
+     * of scope: the snapshot carries no input-object shapes.
      */
     private static void validateUnknownArgsAgainstSnapshot(
         Directives.Directive directive, DirectiveShape shape,
@@ -688,15 +675,15 @@ public final class Diagnostics {
         // before the bare-name match, re-sourcing the split from JooqCatalog.parseQualifiedForeignKeyName
         // (the shared parse boundary the generator uses) rather than re-implementing the grammar. A
         // valid qualified key equals no bare FK name, so without this it would red-squiggle a name the
-        // generator accepts. The bogus-schema arm (flagging a real name under a wrong schema) is
-        // deferred: the LSP snapshot carries no per-FK schema to test against.
+        // generator accepts. A real name under a wrong schema is not flagged: the LSP snapshot
+        // carries no per-FK schema to test against.
         String fkName = JooqCatalog.parseQualifiedForeignKeyName(rawFk)
             .map(JooqCatalog.QualifiedForeignKeyName::name)
             .orElse(rawFk);
         // Match case-insensitively to mirror JooqCatalog.findForeignKey(name, source),
         // which the runtime resolver uses; the LSP must not flag names the
         // generator would accept. Path-step refinement (which step's table we
-        // are on) is deferred along with path-aware completion.
+        // are on) is not validated.
         if (collectAllFkNames(catalog).stream().noneMatch(known -> known.equalsIgnoreCase(fkName))) {
             out.add(diagnostic(file, valueNode,
                 "Unknown foreign key '" + rawFk + "'. Not present in the jOOQ catalog."));

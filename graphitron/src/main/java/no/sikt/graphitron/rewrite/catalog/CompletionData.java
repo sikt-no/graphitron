@@ -219,13 +219,13 @@ public record CompletionData(
      * outcome there, not a silent no-jump (see the LSP {@code DefinitionTarget}).
      *
      * <p>{@code returnsCondition} is the parse-boundary classification of
-     * whether this method's return type is jOOQ's {@code org.jooq.Condition}
- *. {@link ClasspathScanner} computes it from the <em>un-erased</em>
+     * whether this method's return type is jOOQ's {@code org.jooq.Condition}.
+     * {@link ClasspathScanner} computes it from the <em>un-erased</em>
      * return descriptor before {@code returnType} loses its package, so the
      * fact is exact (a consumer's own type named {@code Condition} does not
-     * match). The MCP {@code conditions} tool and any future LSP
-     * {@code @condition} arm read this pre-classified value rather than
-     * re-deriving a fragile simple-name predicate from {@code returnType}.
+     * match). The MCP {@code conditions} tool reads this pre-classified
+     * value rather than re-deriving a fragile simple-name predicate from
+     * {@code returnType}.
      */
     public record Method(
         String name,

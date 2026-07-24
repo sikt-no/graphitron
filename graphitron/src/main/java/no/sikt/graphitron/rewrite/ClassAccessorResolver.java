@@ -16,29 +16,29 @@ import java.util.Set;
 /**
  * Resolves an SDL field's accessor against its parent's backing Java class. The single home for the
  * SDL-field-to-Java-accessor name rules, the {@code is}-prefix gate, the member filter, and the
- * per-kind parameter-shape rules: every call site that used to re-implement
- * these now shares the {@link #enumerate} candidate model, so a fix to a rule lands once.
+ * per-kind parameter-shape rules: every consumer shares the {@link #enumerate} candidate model, so
+ * a fix to a rule lands once.
  *
  * <p>Mirrors graphql-java's {@code PropertyDataFetcher} candidate-name lookup so a consumer
- * migrating from {@code PropertyDataFetcher} to graphitron's class-backed fetcher gets
- * matching name resolution. Candidate order: {@code get<Camel>} (POJO bean getter), {@code
- * is<Camel>} (only when the candidate member's own return type is {@code boolean} / {@code
- * Boolean}), bare {@code <camel>} (Java record component / fluent accessor), and finally a public
- * field read on {@code <camel>}.
+ * migrating to graphitron's class-backed fetcher gets matching name resolution. Candidate order:
+ * {@code get<Camel>} (POJO bean getter), {@code is<Camel>} (only when the candidate member's own
+ * return type is {@code boolean} / {@code Boolean}), bare {@code <camel>} (Java record component /
+ * fluent accessor), and finally a public field read on {@code <camel>}.
  *
  * <p>Two reductions consume one candidate model:
  * <ul>
- *   <li>{@link #resolve} — the property-read reduction: given an expected return type and argument
+ *   <li>{@link #resolve}: the property-read reduction; given an expected return type and argument
  *       shape, the first name+shape+return match wins.</li>
- *   <li>{@link #probe} — the discovery-direction reduction: no expected return, the first
+ *   <li>{@link #probe}: the discovery-direction reduction; no expected return, the first
  *       name+shape match grounds a backing class. Used by the binding walk.</li>
  * </ul>
- * The record-source reduction ({@code FieldBuilder.collectAccessorMatches}) consumes the same
+ * The record-source reduction ({@code FieldBuilder.collectAccessorMatches}) consumes
  * {@link #enumerate} directly, requesting zero-arg methods only.
  *
- * <p>Joins the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
- * payload-errors path, {@code SourceRowDirectiveResolver}) — see
- * {@code docs/architecture/explanation/development-principles.adoc} ("The parse boundary is a containment invariant") for the boundary rule.
+ * <p>Part of the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
+ * payload-errors path, {@code SourceRowDirectiveResolver}); see
+ * {@code docs/architecture/explanation/development-principles.adoc} ("The parse boundary is a
+ * containment invariant") for the boundary rule.
  */
 public final class ClassAccessorResolver {
 
@@ -55,25 +55,25 @@ public final class ClassAccessorResolver {
 
     /**
      * Candidate-list ordering. {@code POJO_FIRST} tries {@code get<Camel>} / {@code is<Camel>}
-     * before bare-name, matching graphql-java's POJO-bean conventions.
-     * {@code RECORD_FIRST} tries bare-name first (the canonical Java record component
-     * accessor), then {@code get<Camel>} / {@code is<Camel>} as fallback for hand-rolled
-     * methods on the record body. The classifier picks the order from the parent's
-     * {@code ResultType} variant; the resolver does not introspect {@code backingClass.isRecord()}
-     * itself, so the type variant remains the single source of truth for the candidate-order fork.
-     * The binding walk, which runs before any {@code ResultType} exists, derives the order from
-     * {@link #forBackingClass} instead; a meta-test pins the two derivations equal.
+     * before bare-name, matching graphql-java's POJO-bean conventions; {@code RECORD_FIRST} tries
+     * bare-name first (the canonical Java record component accessor), with the bean forms as
+     * fallback for hand-rolled methods on the record body. The classifier picks the order from the
+     * parent's {@code ResultType} variant; the resolver does not introspect
+     * {@code backingClass.isRecord()} itself, so the type variant remains the single source of
+     * truth for the candidate-order fork. The binding walk, which runs before any
+     * {@code ResultType} exists, derives the order from {@link #forBackingClass} instead;
+     * {@code ClassAccessorResolverTest.forBackingClass_equalsRecordFirst_exactlyForJavaRecordVariant}
+     * pins the two derivations equal.
      */
     public enum CandidateOrder { POJO_FIRST, RECORD_FIRST }
 
     /**
-     * The single place the class-shape-to-candidate-order rule lives, for the phase (the binding
-     * walk) that has a backing {@link Class} but no {@code ResultType} variant to read the order
-     * from. A Java record gets {@code RECORD_FIRST} (bare component accessor first); anything else
-     * gets {@code POJO_FIRST} (bean getter first). {@code TypeBuilder.buildResultTypeFromClass}
-     * produces a {@code JavaRecordType} exactly when {@code cls.isRecord()}, so this equals the
-     * emission-side order derived from the variant; the equivalence is pinned by a meta-test rather
-     * than left to coincidence of predicates.
+     * The single place the class-shape-to-candidate-order rule lives for the binding walk, which
+     * has a backing {@link Class} but no {@code ResultType} variant to read the order from.
+     * {@code TypeBuilder.buildResultTypeFromClass} produces a {@code JavaRecordType} exactly when
+     * {@code cls.isRecord()}, so this equals the emission-side order derived from the variant;
+     * {@code ClassAccessorResolverTest.forBackingClass_equalsRecordFirst_exactlyForJavaRecordVariant}
+     * pins the equivalence.
      */
     public static CandidateOrder forBackingClass(Class<?> cls) {
         return cls.isRecord() ? CandidateOrder.RECORD_FIRST : CandidateOrder.POJO_FIRST;
@@ -84,7 +84,7 @@ public final class ClassAccessorResolver {
      * this set so each reduction sees only the arms it can consume: the property-read reduction and
      * the probe accept all three, while the record-source reduction accepts
      * {@link #PER_ARGUMENT_METHOD} only (a field, env-taking, or per-argument candidate is
-     * unrepresentable in its view — {@code KeyLift.Accessor} emits {@code parent.method()}
+     * unrepresentable in its view: {@code KeyLift.Accessor} emits {@code parent.method()}
      * with no environment or arguments), so a candidate it structurally cannot emit is never produced
      * rather than filtered out by a local rule that could drift.
      */
@@ -329,8 +329,8 @@ public final class ClassAccessorResolver {
     /**
      * Public, non-static, non-bridge, non-synthetic, not declared by {@code Object}. {@code
      * getMethods()} already restricts to public members, so this adds the remaining exclusions;
-     * skipping bridge/synthetic members closes a latent bug where a covariant-return bridge method's
-     * erased return type could win the name match.
+     * skipping bridge/synthetic members keeps a covariant-return bridge method's erased return
+     * type from winning the name match.
      */
     private static boolean passesMemberFilter(Method m) {
         if (Modifier.isStatic(m.getModifiers())) return false;

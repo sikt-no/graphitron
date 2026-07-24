@@ -49,8 +49,8 @@ class ServiceCatalogTest {
      * Minimal {@link RewriteContext} for unit-tier classifier tests that don't need real schema
      * inputs or output paths. The 6-arg overload defaults {@code classpathRoots} to the empty
      * list and {@code codegenLoader} to the current thread's context classloader; in a JUnit
-     * JVM that's the system classloader, which is exactly what bare two-arg
-     * {@code Class.forName(name)} used to resolve through.
+     * JVM that's the system classloader, the same loader bare {@code Class.forName(name)}
+     * resolves through.
      */
     private static RewriteContext stubRewriteContext() {
         return new RewriteContext(
@@ -133,8 +133,8 @@ class ServiceCatalogTest {
         // (List<Row1<Integer>>) and whose second parameter is a clearly non-SOURCES-adjacent
         // type (LocalDate) whose name does not match any GraphQL argument. The arg-mismatch
         // diagnostic is the one the user can act on (rename the Java parameter or bind via
-        // argMapping); the legacy "unrecognized sources type" message described a feature the
-        // user never asked for.
+        // argMapping); an "unrecognized sources type" message would describe a feature the user
+        // never asked for.
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getFilmsWithLocalDate", bindings(Map.of("dato", "dato")), Set.of(), filmPk, null);
@@ -551,9 +551,9 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_mismatchedClass_failsWithBothNamesInMessage() {
-        // Method returns Film (the table class) but the field expects Language. The pre-existing
-        // Table<?>-returning `get` covers the wider-return-type case; this case pins that the
-        // strict check rejects mismatched specific-class returns symmetrically.
+        // Method returns Film (the table class) but the field expects Language. The
+        // Table<?>-returning `get` case covers the wider-return-type shape; this case pins that
+        // the strict check rejects mismatched specific-class returns symmetrically.
         var result = newCatalog().reflectTableMethod(
             TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), LANGUAGE_TABLE_CLASS,
             ServiceCatalog.TableSlotPolicy.FORBIDDEN);
@@ -567,9 +567,8 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_widerReturnType_failsAgainstSpecificExpected() {
-        // The legacy Table<?>-returning `get` method violates Invariants §3 when the field
-        // expects a specific table class. Pins the rejection path the user is most likely to
-        // trip into.
+        // A method returning the wider Table<?> is rejected when the field expects a specific
+        // table class. Pins the rejection path the user is most likely to trip into.
         var result = newCatalog().reflectTableMethod(
             TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS,
             ServiceCatalog.TableSlotPolicy.FORBIDDEN);
@@ -584,8 +583,8 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_argByJavaName_override_bindsJavaNameToArgName() {
-        // Plan §44: the GraphQL arg "input" overrides to bind the Java parameter "inputs".
-        // The Java method takes (List<TestDtoStub> inputs, Boolean dryRun). Map the override
+        // The GraphQL arg "input" overrides to bind the Java parameter "inputs". The Java
+        // method takes (List<TestDtoStub> inputs, Boolean dryRun). Map the override
         // explicitly: "inputs" → "input"; identity for "dryRun".
         var argByJavaName = new java.util.LinkedHashMap<String, String>();
         argByJavaName.put("inputs", "input");
@@ -621,8 +620,8 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_overrideTargetsNonExistentJavaParam_typoGuardFails() {
         // The override map says GraphQL arg "input" binds to Java parameter "missing", but the
-        // Java method's parameters are (inputs, dryRun) — "missing" is absent. Plan §54: typo
-        // guard rejects with a message naming the directive site, the override target, and the
+        // Java method's parameters are (inputs, dryRun); "missing" is absent. The typo guard
+        // rejects with a message naming the directive site, the override target, and the
         // available parameter names.
         var argByJavaName = bindings(Map.of("missing", "input", "dryRun", "dryRun"));
         var result = newCatalog().reflectServiceMethod(
@@ -658,10 +657,8 @@ class ServiceCatalogTest {
     void reflectTableMethod_tableParamRejected_underForbiddenPolicy() {
         // Under FORBIDDEN policy a Table<?> parameter on a @tableMethod method is rejected
         // outright; graphitron derives the target table from the return type and parent-table
-        // filtering is @reference's job. The legacy `get(Table<?>)` method exercises this — but
-        // the project's TestTableMethodStub no longer declares Table parameters, so
-        // we exercise the rejection via TestConditionStub (which still declares Table-leading
-        // methods).
+        // filtering is @reference's job. TestTableMethodStub declares no Table parameters, so
+        // the rejection is exercised via TestConditionStub's Table-leading methods.
         var result = newCatalog().reflectTableMethod(
             "no.sikt.graphitron.rewrite.TestConditionStub", "lifterFieldCondition",
             bindings(Map.of()), Set.of(), null,
@@ -694,8 +691,8 @@ class ServiceCatalogTest {
         // whose type is a named input object (no canonical Java scalar mapping). The Java
         // method declares one non-Table / non-DSLContext / non-Context parameter whose name
         // does not match. With exactly one unbound parameter and exactly one unclaimed slot,
-        // the arity-unique branch binds them positionally — the long-form "rename or
-        // argMapping" diagnostic no longer fires for this shape.
+        // the arity-unique branch binds them positionally rather than firing the long-form
+        // "rename or argMapping" diagnostic.
         var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("RunInput")
             .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
@@ -787,13 +784,12 @@ class ServiceCatalogTest {
 
     @Test
     void reflectServiceMethod_typeUniqueTopLevelPlusNameMatchedNested_R355BindsNestedByName() {
-        // Type-unique inference sets this case up to YIELD ("the user's rule says fall back to
-        // name-based matching") so a later name-based rule can resolve it; the depth-1 name search
-        // is that rule. The param `filmId` matches the top-level slot `id` by type only (name
-        // mismatch), but matches the nested `input.filmId` by BOTH name and type. The type-unique
-        // branch yields (a reachable nested match exists), then the depth-1 name search binds
-        // `filmId` to `input.filmId` — exactly the `argMapping: "filmId: input.filmId"` the earlier
-        // rejection used only to suggest.
+        // Type-unique inference YIELDs here so the depth-1 name search can resolve the binding.
+        // The param `filmId` matches the top-level slot `id` by type only (name mismatch), but
+        // matches the nested `input.filmId` by BOTH name and type. The type-unique branch yields
+        // (a reachable nested match exists), then the depth-1 name search binds `filmId` to
+        // `input.filmId`, the same binding the rejection diagnostic proposes as
+        // `argMapping: "filmId: input.filmId"` when inference cannot fire.
         var filmInput = graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("FilmInput")
             .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()

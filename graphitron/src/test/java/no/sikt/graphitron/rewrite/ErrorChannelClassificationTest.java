@@ -83,11 +83,6 @@ class ErrorChannelClassificationTest {
             .containsExactly("ValidationErr", "DbErr");
     }
 
-    // PayloadConstructor_recordsErrorsSlotAndDefaultLiterals deleted. The ctor errors-slot /
-    // defaulted-slot resolution it pinned is PayloadClass-construction internals, which @service
-    // fields no longer use (they classify to ErrorChannel.Mapped). The construction-shape machinery
-    // is exercised directly by PayloadConstructionShapeTest and retires in slice-1 commit 4.
-
     @Test
     void payloadWithoutErrorsField_producesNoChannel() {
         var schema = build("""
@@ -100,13 +95,6 @@ class ErrorChannelClassificationTest {
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "plain");
         assertThat(f.errorChannel()).isEmpty();
     }
-
-    // UnTypedRecordPayload_producesChannelFromReflectedProducer and
-    // payloadHasErrorsFieldButPayloadClassMissing_rejectsCarrier deleted. Both pinned behaviour of
-    // the @record directive's className (bare @record still grounds via the producer; a missing
-    // @record className rejects). @record is deprecated and ignored — it never drives binding — so
-    // there is no @record-className behaviour left to test: SakPayload grounds via its @service
-    // producer's reflected return, which the surviving errors-channel cases above already exercise.
 
     @Test
     void rule7_multipleValidationHandlersInSameChannel_rejectsCarrier() {
@@ -174,11 +162,11 @@ class ErrorChannelClassificationTest {
 
     @Test
     void validationCoexistsWithBroadExceptionHandler_isAccepted() {
-        // §5 retire of rule 9: VALIDATION runs as a wrapper pre-execution step and never
-        // reaches the dispatcher, so a coexisting broad ExceptionHandler is no longer a
-        // shadowing risk. The runtime arms each have their own source path: validation
-        // violations come back from Validator.validate ahead of the body call, and any
-        // post-body throw flows through the dispatch arm matched by the GENERIC handler.
+        // VALIDATION runs as a wrapper pre-execution step and never reaches the dispatcher,
+        // so a coexisting broad ExceptionHandler is not a shadowing risk. Each runtime arm has
+        // its own source path: validation violations come back from Validator.validate ahead
+        // of the body call; any post-body throw flows through the dispatch arm matched by the
+        // GENERIC handler.
         var schema = build("""
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -233,9 +221,8 @@ class ErrorChannelClassificationTest {
 
     @Test
     void rule8_duplicateExceptionHandlersAcrossTypes_rejectsCarrier() {
-        // Two @error types in the same channel each declare {handler: GENERIC, className:
-        // "java.lang.RuntimeException"} with no matches. Identical (variant, criteria) tuples;
-        // the second is unreachable at dispatch.
+        // Identical (variant, criteria) ExceptionHandler tuples across two @error types in the
+        // same channel; the second is unreachable at dispatch.
         var schema = build("""
             type RuntimeA @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
                 path: [String!]!
@@ -295,8 +282,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void rule8_duplicateSqlStateHandlers_rejectsCarrier() {
-        // Two @error types each declare {handler: DATABASE, sqlState: "23503"} → identical
-        // SqlStateHandler tuples. The second is unreachable.
+        // Identical SqlStateHandler tuples across two @error types; the second is unreachable.
         var schema = build("""
             type FkA @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
                 path: [String!]!
@@ -326,8 +312,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void rule8_duplicateVendorCodeHandlers_rejectsCarrier() {
-        // Two @error types each declare {handler: DATABASE, code: "1"} → identical
-        // VendorCodeHandler tuples.
+        // Identical VendorCodeHandler tuples across two @error types; the second is unreachable.
         var schema = build("""
             type OraA @error(handlers: [{handler: DATABASE, code: "1"}]) {
                 path: [String!]!
@@ -419,10 +404,10 @@ class ErrorChannelClassificationTest {
 
     @Test
     void mutationDmlField_tableReturn_carriesEmptyChannel() {
-        // DML mutations return @table or ID. @table-returning fetchers don't yet build an
-        // ErrorChannel (the carrier helper is gated on ResultReturnType pending a payload-factory
-        // shape for jOOQ Record returns). Verifies the WithErrorChannel slot is wired and the
-        // INSERT variant produces an empty channel rather than null.
+        // DML mutations return @table or ID. @table-returning fetchers build no ErrorChannel:
+        // the carrier helper is gated on ResultReturnType, and a jOOQ Record return has no
+        // payload-factory shape to construct into. Verifies the WithErrorChannel slot is wired
+        // and the INSERT variant produces an empty channel rather than null.
         var schema = build("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -434,14 +419,9 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel()).isEqualTo(Optional.<ErrorChannel>empty());
     }
 
-    // PayloadWithMultipleConstructors_canonicalCtorIsSelectedByArity deleted. Canonical-ctor
-    // selection by arity is PayloadClass-construction internals that @service fields no longer reach
-    // (they classify to ErrorChannel.Mapped). Covered directly by PayloadConstructionShapeTest;
-    // retires in slice-1 commit 4.
-
     @Test
     void extraField_missingAccessorOnGenericSourceClass_rejectsCarrier() {
-        // An @error type with a field beyond path/message classifies cleanly (rule 6 relaxed),
+        // An @error type with a field beyond path/message classifies cleanly,
         // but the carrier's per-(channel, @error type, handler) accessor check rejects when the
         // handler's source class can't populate the field. IllegalArgumentException has no
         // getSeverity() / severity() / public field, so the carrier surfaces UnclassifiedField.
@@ -609,15 +589,15 @@ class ErrorChannelClassificationTest {
         assertThat(reason).contains("errors-shaped carrier field 'errors'", "more than one", "VALIDATION");
     }
 
-    // The two @service-path in-hand bestGuess swaps (resolveErrorChannel and
-    // computeMutationServiceRecordReturnType) are pinned end-to-end by a nested-payload compilation
-    // fixture in graphitron-sakila-example. This unit-tier case additionally pins resolveErrorChannel's
-    // boundary directly: @service outcome fields classify to ErrorChannel.Mapped (no payload class is
-    // constructed), so the PayloadClass arm resolveErrorChannel builds is reached by a *child* @service
-    // field. With a nested payload backing class, the resolved PayloadClass.payloadClass() must be the
-    // JLS-legal Outer.Nested, not the $-qualified binary Outer$Nested that bestGuess would carry as a
-    // single simple name. This is the belt-and-suspenders object-equality assertion on the resolved
-    // TypeName (no code-string match, no database) that guards the swap against reintroduction.
+    // resolveErrorChannel must resolve the payload class structurally (ClassName.get over the
+    // reflected class), never by bestGuess over the binary name. @service outcome fields classify
+    // to ErrorChannel.Mapped (no payload class is constructed), so the PayloadClass arm is reached
+    // by a *child* @service field. With a nested payload backing class the resolved
+    // PayloadClass.payloadClass() must be the JLS-legal Outer.Nested, not the $-qualified binary
+    // Outer$Nested a bestGuess would carry as a single simple name. Object-equality on the
+    // resolved TypeName (no code-string match, no database) guards against reintroduction; a
+    // nested-payload compilation fixture in graphitron-sakila-example pins the same fact
+    // end-to-end.
     @Test
     void childServiceRecordField_nestedPayloadBacking_payloadClassIsStructurallyResolved() {
         var schema = build("""
@@ -698,7 +678,7 @@ class ErrorChannelClassificationTest {
     // Each fixture backs a child @service field's payload with a dummy class from
     // AccessorPayloads (bean / record) or a JDK type (name-less POJO), reaching
     // FieldBuilder.resolveErrorChannel's PayloadClass arm. The construction-shape resolution
-    // (ctor vs. bean) must honor @field(name:); the read side already did.
+    // (ctor vs. bean) must honor @field(name:), matching the read side.
 
     private static final String R201_SIMPLE_ERR = """
             type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
@@ -748,7 +728,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void beanArm_dataFieldDirectiveParticipatesInExistence_rejectsWhenSetterMissing() {
-        // Contract rule 1's behavior change pinned as an invariant: the payload has setData /
+        // The @field directive participates in setter existence: the payload has setData /
         // setErrors, but @field(name: "info") on the data field remaps the lookup to setInfo,
         // which does not exist. The reject names the SDL field, the directive value, and the
         // parenthetical.
@@ -843,8 +823,8 @@ class ErrorChannelClassificationTest {
 
     @Test
     void anyArm_blankFieldValue_rejectsChannel() {
-        // A present-but-blank @field(name: "") on any payload field rejects the channel
-        // (contract rule 3, matching the input-bean and error-type extra-field precedent).
+        // A present-but-blank @field(name: "") on any payload field rejects the channel,
+        // matching the input-bean and error-type extra-field precedent.
         var schema = build(r201Schema("""
             type BlankPayload {
                 data: String
@@ -861,9 +841,8 @@ class ErrorChannelClassificationTest {
 
     @Test
     void regressionFloor_divergentNamesWithoutDirective_rejectsAsToday() {
-        // DivergentBeanErrorsPayload exposes setInfo / setFailures. Without a @field directive the
-        // bean arm still looks up setData / setErrors and rejects, exactly as it did before
-        // @field(name:) was honored in construction-shape resolution.
+        // DivergentBeanErrorsPayload exposes setInfo / setFailures. Without a @field directive
+        // the bean arm looks up setData / setErrors and rejects.
         var schema = build(r201Schema("""
             type RegressionPayload {
                 data: String

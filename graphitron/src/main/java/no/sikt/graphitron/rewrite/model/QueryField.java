@@ -45,7 +45,7 @@ public sealed interface QueryField extends RootField
             case QueryTableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             // Table-method / polymorphic roots carry no field-level filter surface.
             case QueryTableMethodTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
-            // Routine reads are Fetch over the routine-result table; no field-level filter surface day-one.
+            // Routine reads are Fetch over the routine-result table; no field-level filter surface.
             case QueryRoutineTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case QueryInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case QueryUnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
@@ -70,7 +70,7 @@ public sealed interface QueryField extends RootField
             case QueryServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             // Polymorphic roots are catalog-bound (every participant is a @table/NodeType): the shape is
-            // Interface / Union (its payload modeled-but-unpopulated this slice); mapping() derives Table.
+            // Interface / Union; mapping() derives Table.
             case QueryInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryUnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
             // Service-polymorphic returns are interface-only (union/table-interface rejected at
@@ -151,8 +151,8 @@ public sealed interface QueryField extends RootField
     /**
      * A root query field whose table chain starts with a jOOQ database routine ({@code @routine}).
      * jOOQ generates a table-valued read function as a catalog {@code Table<R>}, so the return
-     * type is always a {@link ReturnTypeRef.TableBoundReturnType} and the existing
-     * selection-narrowing projection applies unchanged.
+     * type is always a {@link ReturnTypeRef.TableBoundReturnType} and the selection-narrowing
+     * projection applies.
      *
      * <p>This leaf's table chain is carried by the shared {@link RoutineChain}: {@code start} is
      * the routine node (the {@code FROM} source — the schema's global {@code Routines} convenience
@@ -166,9 +166,6 @@ public sealed interface QueryField extends RootField
      * in {@link RoutineChain}'s compact constructor, one enforcer spanning this leaf and
      * {@link MutationField.MutationRoutineWriteField}; only the terminus rule stays here (it
      * reads this leaf's return type).
-     *
-     * <p>{@code target()} projects a bare {@link TargetShape.Table}, exactly as
-     * {@link QueryTableMethodTableField} does.
      */
     record QueryRoutineTableField(
         String parentTypeName,
@@ -310,7 +307,7 @@ public sealed interface QueryField extends RootField
         Optional<ErrorChannel> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         /**
- * See {@link ChildField.ServiceTableField#domainReturnType()} — the typed
+         * See {@link ChildField.ServiceTableField#domainReturnType()}: the typed
          * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping,
          * and the @table-bound SDL type's child datafetchers read columns by name through
          * the generic {@code Record} interface.
@@ -381,7 +378,7 @@ public sealed interface QueryField extends RootField
     }
 
     /**
- * A root {@code @service} field returning a single-table discriminated interface
+     * A root {@code @service} field returning a single-table discriminated interface
      * ({@code @table @discriminate}, implementers pinned by {@code @discriminator(value:)}, all
      * sharing one jOOQ table). The single-table sibling of {@link QueryServicePolymorphicField}
      * (route (a)): both carry a service binding and dispatch a service-returned record set to

@@ -26,15 +26,14 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Phase 1: pipeline-tier coverage for single-record DML payloads — plain SDL Object
- * payload types whose single {@code @table}-element data field admits without an authored
- * Java carrier.
+ * Pipeline-tier coverage for single-record DML payloads: plain SDL Object payload types whose
+ * single {@code @table}-element data field admits without an authored Java carrier.
  *
  * <p>Per-{@link DmlKind} admission cases run parameterised over INSERT / UPDATE / UPSERT so
  * per-kind divergence shows up immediately. DELETE-with-carrier is rejected at classify time
  * (the row is gone before the response SELECT can read it). Rejection paths share one
  * fixture per case. Cross-path cases verify the trigger is consumer-agnostic and that the
- * data-table-equals-input-table rejection (now backed structurally by
+ * data-table-equals-input-table rejection (backed structurally by
  * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted}'s compact constructor)
  * fires on mismatches.
  */
@@ -43,20 +42,20 @@ class SingleRecordPayloadPipelineTest {
 
     // ===== Trigger admission, parameterised over DmlKind (INSERT / UPDATE / UPSERT) =====
 
-    // The single-input + list-data-field admission is no longer a Phase 1 case: the
-    // cardinality dispatch in validateReturnType now routes that cell to Invariant #16 and the
-    // bulk-input + list-data-field cell to the new MutationBulkDmlRecordField leaf. The
-    // GraphitronSchemaBuilderTest truth-table holds the admitted-arm coverage for the new leaf;
-    // this fixture file keeps single-data-field admission for MutationDmlRecordField only.
+    // Single-input + list-data-field admission is not covered here: the cardinality dispatch in
+    // validateReturnType routes that cell to Invariant #16 and the bulk-input + list-data-field
+    // cell to the MutationBulkDmlRecordField leaf. The GraphitronSchemaBuilderTest truth-table
+    // holds the admitted-arm coverage for that leaf; this fixture file keeps single-data-field
+    // admission for MutationDmlRecordField only.
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_bulkInput_listDataField_classifiesAsBulkLeaf(DmlKind kind) {
-        // UPSERT is deferred (UPSERT is not yet supported under the cardinality-safety regime);
-        // the classifier surfaces a deferred rejection rather than constructing the leaf, so the
-        // parameterised case excludes UPSERT. The UPDATE arm is split off: the payload-returning
-        // bulk UPDATE routes onto MutationBulkUpdatePayloadField (walker carrier), while INSERT
-        // stays on the record-carrier MutationBulkDmlRecordField.
+        // UPSERT is excluded: it is not supported under the cardinality-safety regime, and the
+        // classifier surfaces a deferred rejection rather than constructing the leaf. The UPDATE
+        // arm diverges: the payload-returning bulk UPDATE routes onto
+        // MutationBulkUpdatePayloadField (walker carrier), while INSERT stays on the
+        // record-carrier MutationBulkDmlRecordField.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
@@ -128,10 +127,9 @@ class SingleRecordPayloadPipelineTest {
             pr -> assertThat(pr.arity()).isEqualTo(Arity.ONE));
     }
 
-    // Payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
-    // a bare @record on a single-record DML payload does not change classification; @record is
-    // deprecated and ignored, so this is the same fixture as the no-@record single-payload case
-    // above, which already pins the cardinality-ONE BatchedTableField leaf.
+    // No case for a bare @record on a single-record DML payload: @record is deprecated and
+    // ignored, so it is the same fixture as the no-@record single-payload case above, which
+    // already pins the cardinality-ONE BatchedTableField leaf.
 
     // ===== DELETE-with-carrier admission =====
 
@@ -240,10 +238,9 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void payload_dataFieldCarriesAtField_admitsUnderR178() {
-        // The carrier walk no longer applies a forbidden-directives HardReject on @field(name:) on
-        // non-$source carrier data fields (the SettKvotesporsmal bug's mechanism). With and
-        // without the directive, the payload classifies identically; see
-        // SettKvotesporsmalShapeRegressionTest for the contract pin.
+        // The carrier walk applies no forbidden-directives HardReject on @field(name:) on
+        // non-$source carrier data fields. With and without the directive, the payload classifies
+        // identically; see SettKvotesporsmalShapeRegressionTest for the contract pin.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -395,16 +392,16 @@ class SingleRecordPayloadPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void directReturn_dmlFetcher_emitsTwoStepShape(DmlKind kind) {
-        // Direct-@table-return DML mutations migrate to the two-step shape uniformly with the
+        // Direct-@table-return DML mutations emit the two-step shape uniformly with the
         // carrier path: PK-only RETURNING inside dsl.transactionResult(...), follow-up SELECT
         // outside the transaction lambda. Without this pin, a regression to single-statement
         // RETURNING $fields(...) would compile clean and pass the round-trip tests but defeat
-        // the durability invariant the reshape exists to establish.
+        // the durability invariant the shape exists to establish.
         //
         // JavaPoet's CodeBlock does not expose formatParts() publicly, so a true AST walk isn't
         // available from a test in this package. The pin operates on the rendered body as the
         // call-site fingerprint: count of `transactionResult(` invocations and presence /
-        // ordering of `.select(`. These markers are jOOQ DSL method names — a refactor that
+        // ordering of `.select(`. These markers are jOOQ DSL method names; a refactor that
         // renames `transactionResult` or `.select` is a real semantic change, not a cosmetic
         // one. Whitespace, identifier renames, and parameter reorderings do not flip the
         // assertion, so the "body-string-compared" ban from the principles doc (no exact
@@ -456,7 +453,7 @@ class SingleRecordPayloadPipelineTest {
 
     private static String directReturnInputBody(DmlKind kind) {
         // Filter-by-default. UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker
-        // (PK-or-UK), not @value (which was retired); filmId covers the PK → WHERE, title → SET.
+        // (PK-or-UK); filmId covers the PK → WHERE, title → SET.
         return switch (kind) {
             case INSERT -> "title: String";
             case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";
@@ -469,10 +466,10 @@ class SingleRecordPayloadPipelineTest {
 
     @Test
     void fetcherEmitter_revertedTwoArms() throws Exception {
-        // Source-level structural assertion: FetcherEmitter.dataFetcherValue has reverted the
-        // IdentityPassthrough capability arm; NestingField dispatches on its own permit.
-        // (ConstructorField was dissolved; the record-sourced payload carrier is a BatchedTableField,
-        // which dispatches through the DataLoader path in TypeFetcherGenerator, not a bind arm here.)
+        // Source-level structural assertion: FetcherEmitter.dataFetcherValue has no
+        // IdentityPassthrough capability arm; NestingField dispatches on its own permit. There is
+        // no ConstructorField arm either: the record-sourced payload carrier is a BatchedTableField,
+        // which dispatches through the DataLoader path in TypeFetcherGenerator, not a bind arm here.
         var src = Files.readString(Path.of(
             "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
         long identityArms = countMatches(src, Pattern.compile(
@@ -493,13 +490,13 @@ class SingleRecordPayloadPipelineTest {
             .isGreaterThanOrEqualTo(1);
     }
 
-    // ===== Phase 2: record-element data fields =====
+    // ===== Record-element data fields =====
 
     @Test
     void payload_recordElement_orphanDataFieldStaysUnregistered() {
         // Orphan record-element carriers (no producer mutation consuming the payload) leave the
         // data field unregistered. graphql-java's never-traverse-unproduced-fields guarantee makes
-        // the missing registration structurally safe. Record-element identity passthrough is now
+        // the missing registration structurally safe. Record-element identity passthrough is
         // handled by the unified per-field classifier on producer-bound parents.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
@@ -525,9 +522,9 @@ class SingleRecordPayloadPipelineTest {
     void payload_recordElement_dmlMutationRejectsAtClassifier(DmlKind kind) {
         // @mutation (DML) is restricted to @table-element data. A record-element carrier on a
         // DML mutation would require a "DML row → domain record" conversion step at the
-        // emitter, which the spec tracks separately. The mutation classifier rejects at
-        // classify time with a per-mismatch message naming the carrier, the data field, and
-        // pointing to @service as the right path.
+        // emitter, which does not exist. The mutation classifier rejects at classify time with
+        // a per-mismatch message naming the carrier, the data field, and pointing to @service
+        // as the right path.
         String sdl = """
             type Film @table(name: "film") { title: String }
             type FilmDto { title: String }
@@ -662,7 +659,7 @@ class SingleRecordPayloadPipelineTest {
             .contains("SQLDialect.DEFAULT")
             .contains("newRecord");
 
-        // The payload's ErrorsField with Transport.LocalContext is now reified onto
+        // The payload's ErrorsField with Transport.LocalContext is reified onto
         // FilmPayloadFetchers as an env-dependent method (return env.getLocalContext()); the
         // schema-level wiring registers a method reference into it rather than an inline lambda.
         var wirings = no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter.emit(
@@ -693,8 +690,8 @@ class SingleRecordPayloadPipelineTest {
 
     private static String inputBody(DmlKind kind) {
         // UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker (PK-or-UK
-        // matched-key membership) — filmId (PK) into WHERE, title into SET — not from @value, which
-        // was retired entirely. UPSERT is refused upstream before any partition runs.
+        // matched-key membership): filmId (PK) into WHERE, title into SET. UPSERT is refused
+        // upstream before any partition runs.
         return switch (kind) {
             case INSERT -> "title: String";
             case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";

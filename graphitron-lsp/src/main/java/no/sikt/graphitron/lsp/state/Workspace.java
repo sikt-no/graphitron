@@ -288,8 +288,8 @@ public final class Workspace {
      * request; swapped atomically by {@link #setInlayHintConfig} when the document service
      * receives a {@code workspace/didChangeConfiguration} notification (or pulls fresh
      * settings via {@code workspace/configuration}). Stays at {@link InlayHintConfig#defaults()}
-     * (all off) until the client opts in, which is the no-behaviour-change-for-existing-users
-     * contract the spec requires.
+     * (all off) until the client opts in, so a client that never configures the toggles sees no
+     * behaviour change.
      */
     public InlayHintConfig inlayHintConfig() {
         return inlayHintConfig;
@@ -376,10 +376,8 @@ public final class Workspace {
      * the real publish callback from
      * {@link no.sikt.graphitron.lsp.server.GraphitronTextDocumentService#setClient}.
      *
-     * <p>One slot, not a list: today there is exactly one consumer (the
-     * document service drains the queue and ships diagnostics). Lift to a
-     * multi-consumer fan-out when a second consumer surfaces with a
-     * forcing function.
+     * <p>One slot, not a list: there is exactly one consumer (the document
+     * service drains the queue and ships diagnostics).
      */
     public void setRecalculateListener(Runnable listener) {
         this.recalculateListener = listener;

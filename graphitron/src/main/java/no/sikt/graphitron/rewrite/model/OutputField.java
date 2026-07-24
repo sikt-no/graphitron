@@ -21,9 +21,7 @@ import java.util.List;
  * return type; disagreement on the {@link DomainReturnType} sealed arm is recorded on the
  * {@link no.sikt.graphitron.rewrite.GraphitronSchema} as a
  * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement}, which
- * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} surfaces as a build error
- * (slice 4 retired the post-pass that previously demoted the producers to
- * {@link GraphitronField.UnclassifiedField}).
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} surfaces as a build error.
  */
 public sealed interface OutputField extends GraphitronField permits RootField, ChildField {
 
@@ -37,7 +35,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     DomainReturnType domainReturnType();
 
     /**
- * The {@code source} dimension: the field's <em>arrival endpoint</em>, a wrapper around a
+     * The {@code source} dimension: the field's <em>arrival endpoint</em>, a wrapper around a
      * {@link SourceShape} whose arm is the arrival cardinality. A <em>storage-free, derived</em> view of
      * the field's identity plus the {@code parentArrival} the caller supplies ({@link QueryField} →
      * {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, both ignoring the
@@ -48,7 +46,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * The arm is the emit-strategy dispatch ({@link Source.Child} → DataLoader,
      * {@link Source.Root} / {@link Source.OnlyChild} → direct).
      *
- * <p>Arrival is a parent-typename-grain fact: every field on one parent folds the same arm,
+     * <p>Arrival is a parent-typename-grain fact: every field on one parent folds the same arm,
      * so it is passed in rather than stored per-leaf (a parent-grain fact copied to child grain is the
      * derived-fact drift smell). Consumers read the fold through {@link no.sikt.graphitron.rewrite.GraphitronSchema#sourceOf sourceOf}, which
      * threads the pre-computed {@code ArrivalIndex}; a leaf holding no ancestor fact cannot compute its
@@ -57,10 +55,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     Source source(Arrival parentArrival);
 
     /**
- * The {@code operation} dimension: the verb this field <em>performs</em>, a sealed
-     * {@link Operation} arm carrying its own payload. Built by the leaf producers from the slots they
-     * already carry ({@code QueryField} / {@code MutationField} / {@code ChildField} switch on leaf
-     * identity); the verb-axis primitive (the leaf-to-{@code intent} verdict has been retired).
+     * The {@code operation} dimension: the verb this field <em>performs</em>, a sealed
+     * {@link Operation} arm carrying its own payload. Built by the leaf producers from the slots
+     * they already carry; the verb-axis primitive.
      */
     Operation operation();
 
@@ -69,7 +66,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@link Operation.Paginate} (carrying the pagination window) when the wrapper is a Relay
      * connection, else {@link Operation.Fetch}. The "paginated" verb thus lives on the operation axis
      * (this {@code Paginate} vs {@code Fetch} split) while the connection <em>shape</em> lives on the
-     * target axis, the decomposition of the fused {@code TableConnection} mapping.
+     * target axis.
      */
     static Operation readOperation(ReturnTypeRef returnType, List<WhereFilter> filters,
                                    OrderBySpec orderBy, PaginationSpec pagination) {
@@ -98,16 +95,15 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
- * The {@code target} dimension: the field's <em>projection endpoint</em>, a
+     * The {@code target} dimension: the field's <em>projection endpoint</em>, a
      * {@link Target} wrapper ({@link Target.Single} / {@link Target.List}) around the
-     * {@link TargetShape} it projects. Built by the leaf producers from the return wrapper plus the
-     * leaf's shape slot; the projection-axis primitive (the leaf-to-{@code mapping} verdict has been
-     * retired).
+     * {@link TargetShape} it projects. Built by the leaf producers from the return wrapper plus
+     * the leaf's shape slot; the projection-axis primitive.
      */
     Target target();
 
     /**
-     * Re-fetch (the appendix's {@code RF}): the target {@code @table} must be re-projected from keys
+     * Re-fetch: the target {@code @table} must be re-projected from keys
      * held at the source, because the field holds a domain record rather than the projected columns.
      * <strong>Derived</strong> from a bare catalog {@link TargetShape.Table} target combined with
      * <em>holds-records</em>, not switched on leaf identity. "Holds records" is two cases on the
@@ -118,17 +114,16 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx, key...)} join
      * with {@code ORDER BY idx}).
      *
- * <p>Re-fetch is orthogonal to the {@link #operation()} verb: a field that re-fetches keeps
-     * its own operation. A record-sourced {@code BatchedTableField} carrier
-     * keys off a producer record while its operation stays
-     * {@link Operation.Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher
- * arms used to each re-decide from their own leaf type. {@code GraphitronSchemaValidator}
-     * mirrors it against the generator's actual re-fetch dispatch so the derivation and the emitter
-     * cannot drift.
+     * <p>Re-fetch is orthogonal to the {@link #operation()} verb: a field that re-fetches keeps
+     * its own operation. A record-sourced {@code BatchedTableField} carrier keys off a producer
+     * record while its operation stays {@link Operation.Fetch}. The predicate is single-homed
+     * here so the service/DML fetcher arms do not each re-derive it from their own leaf type;
+     * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} mirrors it against the
+     * generator's actual re-fetch dispatch so the derivation and the emitter cannot drift.
      *
      * <p>The guard is the bare {@link TargetShape.Table} shape, not the {@link TargetShape.Connection}
      * container that wraps it when paginated: a connection-shaped table field paginates rather than
-     * re-projecting in this derivation's sense (the decomposed {@code TableConnection} mapping). A
+     * re-projecting in this derivation's sense. A
      * catalog {@link Operation.Fetch} off a {@link SourceShape#Table} source reads the table directly
      * (no producer round-trip); producers whose target is a {@link TargetShape.Record} /
      * {@link TargetShape.Field} / {@link TargetShape.Column} hand back the consumed shape directly.
@@ -138,10 +133,10 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         if (!(target().shape() instanceof TargetShape.Table)) {
             return false;
         }
-        // Read the received-record fact off the leaf's own source shape rather than off
-        // source(): arrival (OnlyChild vs Child) is arrival-agnostic here (the retired switch treated
-        // both nested arms identically), so requiresReFetch does not need the ancestor arrival the
-        // arm now depends on. A RootField has no source shape and never received a record.
+        // Read the received-record fact off the leaf's own source shape rather than off source():
+        // the OnlyChild vs Child arrival split is irrelevant here, so requiresReFetch does not
+        // need the ancestor arrival that source() depends on. A RootField has no source shape and
+        // never received a record.
         boolean receivedRecord = this instanceof ChildField cf && cf.sourceShape() == SourceShape.Record;
         boolean producedRecord = switch (operation()) {
             case Operation.ServiceCall ignored -> true;
@@ -155,7 +150,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
-     * Site-level reentry: this coordinate's own emit includes the keyed re-query — the
+     * Site-level reentry: this coordinate's own emit includes the keyed re-query, the
      * {@code VALUES(idx, key...)} join re-projecting the target {@code @table} from keys held at
      * the source, with PK self-identity as the degenerate correlation. Distinct from
      * {@link #requiresReFetch()}, which is <em>value-level</em> ("this field's value is
@@ -165,9 +160,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * re-query is emitted at the root site. The child {@code @service} arm, the record-sourced
      * batched arms, and the projected DML arms all emit the re-query at their own site.
      *
-     * <p>Every site-level consumer — the reentry emit dispatch, the
+     * <p>Every site-level consumer (the reentry emit dispatch, the
      * {@link no.sikt.graphitron.rewrite.methodgraph.MethodCommandRegistry}'s covered-family
-     * boundary, the validate-time reentry guard — reads this predicate rather than recomputing
+     * boundary, the validate-time reentry guard) reads this predicate rather than recomputing
      * {@code requiresReFetch() && !rootServicePassthrough} per site (two consumers evaluating
      * the same compound predicate over model fields is the drift {@code requiresReFetch}'s own
      * single-homing exists to prevent).
@@ -200,8 +195,8 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     /**
      * A {@link Target.Single} of {@code shape}: the default wrapper for a leaf that carries no return
      * wrapper (a scalar column / property projection). The leaf does not model its own output
-     * cardinality, so {@code Single} is the faithful read; the wrapper-fold invariant test (slice 5)
-     * is where any list-shaped scalar leaf would surface.
+     * cardinality, so {@code Single} is the faithful read; {@code WrapperAlgebraTest} is where
+     * any list-shaped scalar leaf would surface.
      */
     static Target single(TargetShape shape) {
         return new Target.Single(shape);

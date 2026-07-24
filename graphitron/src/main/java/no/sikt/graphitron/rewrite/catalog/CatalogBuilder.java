@@ -55,16 +55,15 @@ import java.util.Optional;
  * on every classpath-watcher trigger; this class is the workhorse behind
  * that call.
  *
- * <p>The catalog carries the generated jOOQ table class FQN
- * ({@code <jooqPackage>.tables.<ClassName>}) on each {@link CompletionData.Table}
- * and the {@code Keys} class FQN ({@code <jooqPackage>.Keys}) on each
+ * <p>The catalog carries the generated jOOQ table class FQN on each
+ * {@link CompletionData.Table} and the {@code Keys} class FQN on each
  * {@link CompletionData.Reference}, but no source positions: the LSP joins those
  * FQNs against its own {@link SourceWalker.Index} at request time, so jOOQ
  * goto-definition / hover ride the {@code .java} source cadence rather than the
- * generator build cadence (mirroring the service half).
- * This builder does not walk sources at all: the {@code description} slots carry
- * the build-derivable fallback only (the table's SQL comment; empty for columns
- * and services), and the LSP overlays the source Javadoc when its index has it.
+ * generator build cadence. This builder does not walk sources: the
+ * {@code description} slots carry the build-derivable fallback only (the table's
+ * SQL comment; empty for columns and services), and the LSP overlays the source
+ * Javadoc when its index has it.
  */
 public final class CatalogBuilder {
 
@@ -127,7 +126,7 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects each user-authored named type's declaration position so the LSP can
+     * Projects each user-authored named type's declaration position so the LSP can
      * resolve intra-schema goto-definition to a type whose declaring file is not in an open
      * buffer. Keyed by the SDL type name. Covers the canonical definitions in
      * {@link TypeDefinitionRegistry#types()} (objects, interfaces, unions, enums, inputs;
@@ -167,12 +166,10 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects the carrier-data-field coordinates onto the LSP snapshot. Walks
-     * {@link GraphitronSchema#fields()} for fields classified as a
-     * {@code ChildField.BatchedTableField} payload carrier (a {@code KeyLift.ProducedRecords}
-     * lift), {@code SingleRecordIdField}, or
-     * {@code SingleRecordIdFieldFromReturning}; each marks its parent type as a single-record
-     * carrier whose data field name is the field's own name.
+     * Projects the carrier-data-field coordinates onto the LSP snapshot. A field classified as
+     * a {@code ChildField.BatchedTableField} with a {@code KeyLift.ProducedRecords} lift,
+     * {@code SingleRecordIdField}, or {@code SingleRecordIdFieldFromReturning} marks its parent
+     * type as a single-record carrier whose data field name is the field's own name.
      */
     private static Map<String, String> projectPayloadDataFields(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, String>();
@@ -191,16 +188,12 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects every classified field onto its {@link FieldClassification} variant.
-     * Keyed by {@code "ParentType.fieldName"}. Exhaustive on the {@link GraphitronField}
-     * sealed permit set; a new permit fails this switch to compile until the LSP-side
-     * mapping lands in the same commit.
-     *
-     * <p>Walks both the output field index ({@link GraphitronSchema#fields()}) and the
-     * input fields nested on table-input types. Input types other than
-     * {@link GraphitronType.TableInputType} carry no classified {@link InputField} list
-     * (the input-field machinery is gated on the table-input pathway), so they contribute
-     * no entries here.
+     * Projects every classified field onto its {@link FieldClassification} variant, keyed by
+     * {@code "ParentType.fieldName"}. Walks both the output field index
+     * ({@link GraphitronSchema#fields()}) and the input fields nested on table-input types.
+     * Input types other than {@link GraphitronType.TableInputType} carry no classified
+     * {@link InputField} list (the input-field machinery is gated on the table-input pathway),
+     * so they contribute no entries here.
      */
     private static Map<String, FieldClassification> projectFieldClassifications(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, FieldClassification>();
@@ -220,11 +213,10 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects a single classified field onto its {@link FieldClassification}
+     * Projects a single classified field onto its {@link FieldClassification}
      * variant. The exhaustive switch over the {@code GraphitronField} sealed permits is
-     * the load-bearing coverage contract: adding a new permit to {@code ChildField} /
-     * {@code QueryField} / {@code MutationField} / {@code InputField} fails this switch
-     * to compile until the LSP-side projection lands.
+     * the load-bearing coverage contract: adding a new permit fails this switch to
+     * compile until the LSP-side projection lands.
      */
     static FieldClassification projectFieldClassification(GraphitronField field, GraphitronSchema schema) {
         return switch (field) {
@@ -255,9 +247,6 @@ public final class CatalogBuilder {
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, false);
-            // The merged batched leaf projects onto the same two classifications the
-            // pre-merge leaves produced, gated on the stored sourceShape — the LSP/MCP surface
-            // and the @classified corpus observe no verdict change from the merge.
             case ChildField.BatchedTableField f -> {
                 // The @tableMethod-terminal shape keeps its TableMethod catalog surface:
                 // the projection reads the hop's TableExpr.MethodCall fact, not a leaf identity.
@@ -335,8 +324,7 @@ public final class CatalogBuilder {
                     accessorName(f.accessor()));
             // The @service record-composite carrier's data field is a record-backed
             // source passthrough (no column, no accessor): project it onto the record-backed
-            // RecordOrProperty label (FallThrough LSP arm, no column resolution). A dedicated
-            // LSP label/hover variant is a follow-up; the projection is not user-facing-incorrect.
+            // RecordOrProperty label (FallThrough LSP arm, no column resolution).
             case ChildField.RecordCompositeField f ->
                 new FieldClassification.RecordOrProperty(f.name(), null);
             case ChildField.PropertyField f ->
@@ -363,8 +351,7 @@ public final class CatalogBuilder {
                     f.method() != null ? f.method().methodName() : null);
             // A @routine read is a root table sourced from a generated Routines-class
             // method call, so it projects onto the method-backed QueryTableMethod classification
-            // (className = the generated Routines class). A dedicated QueryRoutine classification is a
-            // follow-up once the LSP label/hover surface is wired.
+            // (className = the generated Routines class).
             case QueryField.QueryRoutineTableField f ->
                 new FieldClassification.QueryTableMethod(
                     targetTableName(f.returnType()),
@@ -398,9 +385,9 @@ public final class CatalogBuilder {
                     null,
                     errorChannelName(f.errorChannel()));
             case QueryField.QueryServicePolymorphicField f ->
-                // Route (a): a @service field returning a multitable interface/union. The
-                // @service nature is the salient hover fact; tableBound=false / tableName=null
-                // mirrors the record variant (the return is a polymorphic type, not a single @table).
+                // A @service field returning a multitable interface/union. The @service nature
+                // is the salient hover fact; tableBound=false / tableName=null mirrors the
+                // record variant (the return is a polymorphic type, not a single @table).
                 new FieldClassification.QueryService(
                     f.serviceMethodCall().fqClassName(),
                     f.serviceMethodCall().methodName(),
@@ -408,9 +395,8 @@ public final class CatalogBuilder {
                     null,
                     errorChannelName(f.errorChannel()));
             case QueryField.QueryServiceTableInterfaceField f ->
-                // A @service field returning a single-table discriminated interface. Like route
-                // (a), the @service nature is the salient hover fact; the shared @table is reported as
-                // the target so hover names the backing table.
+                // A @service field returning a single-table discriminated interface; the shared
+                // @table is reported as the target so hover names the backing table.
                 new FieldClassification.QueryService(
                     f.serviceMethodCall().fqClassName(),
                     f.serviceMethodCall().methodName(),
@@ -422,8 +408,7 @@ public final class CatalogBuilder {
             // Like the routine read above, the routine write is a root table sourced
             // from a generated Routines-class method call, so it projects onto the method-backed
             // QueryTableMethod classification (className = the generated Routines class; hover and
-            // jump-to-source route to the routine's call surface). A dedicated routine
-            // classification is a follow-up once the LSP label/hover surface is wired.
+            // jump-to-source route to the routine's call surface).
             case MutationField.MutationRoutineWriteField f ->
                 new FieldClassification.QueryTableMethod(
                     targetTableName(f.returnType()),
@@ -463,7 +448,7 @@ public final class CatalogBuilder {
                     null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationServicePolymorphicField f ->
-                // Route (a): mutation analogue of QueryServicePolymorphicField.
+                // Mutation analogue of QueryServicePolymorphicField.
                 new FieldClassification.MutationService(
                     f.serviceMethodCall().fqClassName(),
                     f.serviceMethodCall().methodName(),
@@ -620,7 +605,7 @@ public final class CatalogBuilder {
     /**
      * The LSP-facing projection surfaces an FK constraint name where the pairs derive from a
      * catalog FK, and {@code null} for the name-matched-key derivation (which has no
-     * constraint of its own) — the same shape as a condition or lateral step.
+     * constraint of its own), the same shape as a condition or lateral step.
      */
     private static String fkSqlNameOrNull(no.sikt.graphitron.rewrite.model.On.ColumnPairs cp) {
         return switch (cp.keying()) {
@@ -665,7 +650,7 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects every classified type onto its {@link TypeClassification} variant.
+     * Projects every classified type onto its {@link TypeClassification} variant.
      * Exhaustive on the {@link GraphitronType} sealed permits.
      */
     private static Map<String, TypeClassification> projectTypeClassifications(
@@ -751,7 +736,7 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects a single classified type onto its {@link TypeClassification} variant.
+     * Projects a single classified type onto its {@link TypeClassification} variant.
      * Exhaustive on the {@code GraphitronType} sealed permits.
      */
     static TypeClassification projectTypeClassification(GraphitronType type) {
@@ -817,9 +802,8 @@ public final class CatalogBuilder {
                         ? t.resolution().javaType().toString() : null);
             case GraphitronType.NestingType ignored ->
                 new TypeClassification.PlainObject();
-            // Synthesised facet container / value types. Projected as plain objects for now;
-            // a facet-specific classification leaf is deferred to when the connection unit
-            // lowers onto the fact model.
+            // Synthesised facet container / value types project as plain objects; no
+            // facet-specific classification leaf exists.
             case GraphitronType.FacetsType ignored ->
                 new TypeClassification.PlainObject();
             case GraphitronType.FacetValueType ignored ->
@@ -944,12 +928,10 @@ public final class CatalogBuilder {
     }
 
     /**
- * Projects a directive's applicable locations onto renderable strings (the
+     * Projects a directive's applicable locations onto renderable strings (the
      * graphql-java {@code DirectiveLocation} names, e.g. {@code "OBJECT"},
-     * {@code "FIELD_DEFINITION"}) for the {@code directives} MCP resource. The
-     * {@code DirectiveDefinition} is in hand at the single snapshot-construction site, so the
-     * locations the user-declared half would otherwise lose at projection time ride
-     * {@link DirectiveShape} from here.
+     * {@code "FIELD_DEFINITION"}) for the {@code directives} MCP resource; they ride
+     * {@link DirectiveShape} from this single snapshot-construction site.
      */
     private static List<String> projectDirectiveLocations(graphql.language.DirectiveDefinition def) {
         var out = new ArrayList<String>();
@@ -1015,7 +997,7 @@ public final class CatalogBuilder {
     }
 
     /**
- * Builds the frozen {@link CatalogFacts} projection the {@code catalog.tables} /
+     * Builds the frozen {@link CatalogFacts} projection the {@code catalog.tables} /
      * {@code catalog.describe} MCP tools read. Runs in the same build pass as {@link #build}, while
      * the codegen loader is open, and reduces every live jOOQ handle to resolved-immutable values
      * (see {@link CatalogFacts}'s load-bearing invariant). Independent of the assembled GraphQL
@@ -1162,13 +1144,12 @@ public final class CatalogBuilder {
      * straight off the classfile (parameter names included when the
      * consumer compiled with {@code -parameters}).
      *
-     * <p>Reads from {@link RewriteContext#classpathRoots()} — every reactor
+     * <p>Reads from {@link RewriteContext#classpathRoots()}: every reactor
      * project's compile-output directory, populated by the mojo from
      * {@code MavenSession.getAllProjects()}. Falls back to {@code
      * <basedir>/target/classes} as a single-root default when the context
      * carries no classpathRoots, so unit-tier callers built off
-     * {@link RewriteContext}'s six-arg overload still get the same scope
-     * pre-multi-module support shipped.
+     * {@link RewriteContext}'s six-arg overload get the single-root scope.
      */
     private static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
         var roots = ctx.classpathRoots().isEmpty()

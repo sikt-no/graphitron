@@ -26,12 +26,12 @@ public sealed interface InputField extends GraphitronField
      * to {@link SetField}: both permit the value-bearing scalar carrier
      * ({@link ColumnBackedField}) and the FK-target reference carrier
      * ({@link ColumnBackedReferenceField}) whose {@code liftedSourceColumns} live on the input's
-     * own table. The admissible-carrier shape is "no JOIN context at the emit site" — the value
+     * own table. The admissible-carrier shape is "no JOIN context at the emit site": the value
      * carrier sources its column(s) from {@link ColumnBackedField#columns()}, the reference
      * carrier from {@link ColumnBackedReferenceField#liftedSourceColumns()}.
      *
      * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
- * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate, each
+     * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate, each
      * leaf rewrapped with a {@link CallSiteExtraction.NestedInputField} access path; a nested
      * {@code @table} input that introduces a second DML target remains compound-entity-mutation
      * territory.
@@ -123,9 +123,9 @@ public sealed interface InputField extends GraphitronField
      *     column-equality path) implies arity 1 by the constructor invariant;
      *     {@link CallSiteExtraction.NodeIdDecodeKeys} (input-side {@code @nodeId(typeName: T)}
      *     reference) is required at arity &ge; 2.
-     * @param selfReference {@code true} when this carrier is a <em>self-FK</em> reference — a
+     * @param selfReference {@code true} when this carrier is a <em>self-FK</em> reference: a
      *     same-table {@code @nodeId @reference} whose {@code @reference} names a foreign key back to
- * the carrier's own table. The decoded keys land on the self-FK's child columns, a
+     *     the carrier's own table. The decoded keys land on the self-FK's child columns, a
      *     pointer to a sibling row, never the row's own identity. {@link UpdateRows} reads this to route a self-FK's
      *     lifted columns wholly to the UPDATE SET partition (a self-FK is a write of "who this row
      *     points at", never identity), in contrast to a cross-table FK reference whose lifted column
@@ -196,21 +196,20 @@ public sealed interface InputField extends GraphitronField
 
     /**
      * Input field that does not bind to a SQL column. The defining property is the absence of a
- * column binding, regardless of whether an explicit {@code @condition} is present.
+     * column binding, regardless of whether an explicit {@code @condition} is present.
      *
-     * <p>{@code condition} folds two cases the classifier used to distinguish:
+     * <p>{@code condition} distinguishes three cases:
      * <ul>
-     *   <li>{@code condition.isPresent() && condition.get().override()} — the field carries an
+     *   <li>{@code condition.isPresent() && condition.get().override()}: the field carries an
      *       explicit {@code @condition(override: true)} (with or without a matching column on the
      *       resolving table). The condition method owns the WHERE predicate entirely; no implicit
-     *       column predicate is emitted by construction. This folds together the former
-     *       condition-only field and the {@code ColumnField + override:true} case.</li>
-     *   <li>{@code condition.isPresent() && !condition.get().override()} — the field carries
+     *       column predicate is emitted by construction.</li>
+     *   <li>{@code condition.isPresent() && !condition.get().override()}: the field carries
      *       {@code @condition(override: false)} but has no matching column. Validator-side
      *       rejection (the classifier admits to keep call-site cascade resolution honest, but
      *       this shape is a schema author bug and {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator GraphitronSchemaValidator} catches it
      *       at the directive's location).</li>
-     *   <li>{@code condition.isEmpty()} — the field has no {@code @condition} of its own and no
+     *   <li>{@code condition.isEmpty()}: the field has no {@code @condition} of its own and no
      *       column resolves on the {@code @table} input's table. Admitted at consumption when the
      *       enclosing arg- or field-level {@code @condition(override: true)} cascade resolves it;
      *       rejected at the field's source location otherwise.</li>

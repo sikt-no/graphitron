@@ -34,10 +34,9 @@ import java.util.List;
  * <p><b>Projection-record simple names are also user-visible.</b> {@code
  * LspClassificationLabels.projectionLabel} returns each permit's simple name verbatim,
  * and {@code DeclarationHovers} prints {@code FieldClassification.<name>} in hover
- * headers. Renaming a permit (say, {@code TableTarget} to {@code JoinedColumnTarget})
- * is therefore <em>also</em> a user-visible-string change touching docs, screenshots,
- * and tutorials, not a purely internal refactor. That coupling is accepted as the
- * mechanism that lets the LSP teach the model.
+ * headers. Renaming a permit is therefore <em>also</em> a user-visible-string change
+ * touching docs and tutorials, not a purely internal refactor; the coupling is accepted
+ * as the mechanism that lets the LSP teach the model.
  */
 public sealed interface FieldClassification
     permits FieldClassification.Column,
@@ -85,23 +84,20 @@ public sealed interface FieldClassification
      * {@link #lspColumnDispatch()}.
      *
      * <p>{@link Resolve} carries the table whose columns to use for completion / hover /
-     * validation: the {@code @reference} terminal table for the four column-bearing
- * permits, and the navigated child/element table for {@code TableTarget} /
+     * validation: the {@code @reference} terminal table for the column-bearing permits,
+     * and the navigated child/element table for {@code TableTarget} /
      * {@code RecordTableTarget}, where {@code @defaultOrder(fields: [{name: ...}])} names a
-     * column on that element table rather than the enclosing type's {@code @table}. {@link
-     * Silent} signals "the LSP should not surface a candidate or
-     * diagnostic" (a duplicate diagnostic with the wrong table would be noise for
-     * {@code InputUnbound}; an unclassified field has nothing useful to render). {@link
-     * FallThrough} means the LSP arm falls back to its existing backing-driven dispatch
-     * ({@code typesByName().get(...)}), which is how non-column-bearing permits like
-     * {@code Nesting}, {@code ServiceBacked}, {@code DmlMutation}, etc. resolve today.
+     * column on that element table rather than the enclosing type's {@code @table}.
+     * {@link Silent} signals "the LSP should not surface a candidate or diagnostic"
+     * (a duplicate diagnostic with the wrong table would be noise for
+     * {@code InputUnbound}; an unclassified field has nothing useful to render).
+     * {@link FallThrough} means the consumer falls back to its existing backing-driven
+     * dispatch ({@code typesByName().get(...)}).
      *
      * <p>The name commits to the LSP audience because the {@link Silent} semantics
-     * ({@code InputUnbound} = "no diagnostic", not "no value") are LSP-shaped. The
-     * {@link Resolve} / {@link FallThrough} axis itself is just "column-bearing or
-     * not" and would be reusable, but a future non-LSP consumer should add its own
-     * audience-specific projection on top rather than route through this one and
-     * inherit the LSP-shaped silence policy.
+     * ({@code InputUnbound} = "no diagnostic", not "no value") are LSP-shaped; a
+     * non-LSP consumer adds its own audience-specific projection rather than inherit
+     * the LSP-shaped silence policy through this one.
      */
     sealed interface LspColumnDispatch
         permits LspColumnDispatch.Resolve, LspColumnDispatch.Silent, LspColumnDispatch.FallThrough {
@@ -131,10 +127,7 @@ public sealed interface FieldClassification
             case CompositeColumn c              -> new LspColumnDispatch.Resolve(c.tableName());
             case CompositeColumnReference c     -> new LspColumnDispatch.Resolve(c.tableName());
             case ParticipantCrossTable c        -> new LspColumnDispatch.Resolve(c.targetTableName());
-            // A list/connection field navigating to a child table carries that child
-            // (element) table in its tableName. @defaultOrder(fields: [{name: ...}]) at such a
-            // field names a column on the element table, not the enclosing type's @table, so
-            // these resolve their own target table the same way the @reference permits above do.
+            // tableName is the navigated child/element table; see LspColumnDispatch.
             case TableTarget c                  -> new LspColumnDispatch.Resolve(c.tableName());
             case RecordTableTarget c            -> new LspColumnDispatch.Resolve(c.tableName());
             case InputUnbound _                 -> new LspColumnDispatch.Silent();
@@ -187,9 +180,9 @@ public sealed interface FieldClassification
     /**
      * A multi-column projection on a {@code @table}-backed parent. Covers the composite
      * (multi-column) {@code ChildField.ColumnBackedField} and
-     * {@code InputField.ColumnBackedField}. A kept denormalized view: the merged output
-     * leaf carries arity as a column count, and the projection re-derives this variant from
-     * its {@code isComposite()} accessor so the wire surface does not churn.
+     * {@code InputField.ColumnBackedField}. Denormalized view: the merged output leaf
+     * carries arity as a column count, and the projection derives this variant from its
+     * {@code isComposite()} accessor, keeping the wire surface stable.
      */
     record CompositeColumn(String tableName, List<String> columnNames)
         implements FieldClassification {
@@ -202,8 +195,8 @@ public sealed interface FieldClassification
     /**
      * A multi-column projection reached through a {@code @reference} join path. Covers the
      * composite (multi-column) {@code ChildField.ColumnBackedReferenceField} and
-     * {@code InputField.ColumnBackedReferenceField}. A kept denormalized view derived from
-     * the merged output leaf's {@code isComposite()} accessor, like {@link CompositeColumn}.
+     * {@code InputField.ColumnBackedReferenceField}. Denormalized view derived from the
+     * merged output leaf's {@code isComposite()} accessor, like {@link CompositeColumn}.
      */
     record CompositeColumnReference(
         String tableName, List<String> columnNames, List<FkStep> joinPath
@@ -336,14 +329,14 @@ public sealed interface FieldClassification
     record RecordOrProperty(String columnName, String accessorName) implements FieldClassification {}
 
     /**
-     * A child field using {@code @externalField} — a developer-supplied static method
+     * A child field using {@code @externalField}: a developer-supplied static method
      * returning a jOOQ {@code Field<X>} inlined into the parent's projection at emit
      * time. Covers {@code ChildField.ComputedField}.
      */
     record Computed(String methodClassName, String methodName) implements FieldClassification {}
 
     /**
- * An input field that does not bind to a SQL column. Covers {@code InputField.UnboundField}.
+     * An input field that does not bind to a SQL column. Covers {@code InputField.UnboundField}.
      * {@code methodClassName} / {@code methodName} are populated when the carrier has an explicit
      * {@code @condition}; {@code override} reflects the directive flag. All three are {@code null}/
      * {@code false} when the carrier has no condition at all (the cascade-admitted bare-field case).

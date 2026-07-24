@@ -27,11 +27,10 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RESERVED_RK_A
  * cardinality adds {@code .limit(1)} inside the subquery and is unwrapped on the read side by a
  * lambda {@code DataFetcher} registered in wiring.
  *
- * <p>Uniform multiset is a deliberate deviation from the G5 plan's two-shape fork — jOOQ 3.20's
- * {@code DSL.row(Collection)} flattens nested aliased fields at render time, breaking depth-2
- * self-referential projections.
+ * <p>Uniform multiset is deliberate: jOOQ 3.20's {@code DSL.row(Collection)} flattens nested
+ * aliased fields at render time, breaking depth-2 self-referential projections.
  *
- * <p>Relies on the C1 invariant {@code TableField.returnType().wrapper() != Connection}.
+ * <p>Relies on the invariant {@code TableField.returnType().wrapper() != Connection}.
  *
  * <p>Handles {@link On.ColumnPairs keyed}, {@link On.Predicate condition-join} and
  * {@link On.Lateral lateral routine} hops uniformly:
@@ -112,11 +111,10 @@ public final class InlineTableFieldEmitter {
             // alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
             // self-referential subselects never shadow each other's aliases. For the base (outermost)
             // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
-            // giving globally unique aliases at every depth. Every Hop (and the
-            // steps) exposes targetTable() through HasTargetTable.
+            // giving globally unique aliases at every depth.
             // Invariant: the terminal hop's targetTable equals the field return type's
             // @table, and every condition method's concretely-typed parameters match the aliases
-            // passed here — both asserted at build time in BuildContext.parsePath (Check 1 / 2),
+            // passed here; both asserted at build time in BuildContext.parsePath (Check 1 / 2),
             // so terminalAlias feeds a $fields overload typed for the right table and
             // emitTwoArgMethodCall never hands a mistyped alias to a concrete parameter.
             for (int i = 0; i < path.size(); i++) {
@@ -277,8 +275,8 @@ public final class InlineTableFieldEmitter {
             sel.add("\n        .limit(1)");
         } else if (tf.pagination() != null && tf.pagination().first() != null) {
             // Read `first` off the inline field's own SelectedField, not the ancestor env
-            // (which has no such argument, so the old env.getArgument read silently dropped the
-            // pagination limit). The (Integer) cast is checked — no unchecked warning.
+            // (which has no such argument; an env.getArgument read silently drops the
+            // pagination limit). The (Integer) cast is checked; no unchecked warning.
             sel.add("\n        .limit($L.getArguments().get($S) == null ? $T.MAX_VALUE : ($T) $L.getArguments().get($S))",
                 sfName, "first",
                 Integer.class, Integer.class, sfName, "first");

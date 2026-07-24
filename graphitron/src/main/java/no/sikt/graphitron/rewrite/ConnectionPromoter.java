@@ -56,10 +56,9 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
  * carriers), records any carrier rewrite, and notes which synthesised names are absent from the
  * assembled schema. {@link #rebuildAssembledForConnections} then consumes the resolved
  * synthesised-type set and the rewrite list to produce a {@link GraphQLSchema} whose carriers point
- * at the synthesised types and whose {@code first} / {@code after} arguments are present. There is no
- * standalone all-types promotion pass and no second {@code ctx.types} scan, so the rebuilt assembled
- * schema cannot drift from the registry (rejection of malformed {@code @asConnection} usage lives
- * upstream in {@link FieldBuilder#classifyField}).
+ * at the synthesised types and whose {@code first} / {@code after} arguments are present. The
+ * rebuild consumes only the walk's outputs, so it cannot drift from the registry; rejection of
+ * malformed {@code @asConnection} usage lives upstream in {@link FieldBuilder#classifyField}.
  *
  * <p>Stateless utility class. Per-build state lives in {@link BuildContext}.
  */
@@ -69,12 +68,11 @@ final class ConnectionPromoter {
     }
 
     // Canonical graphql-relay-js descriptions for the synthesised Connection/Edge/PageInfo
-    // boilerplate. Generic (not parameterised by element type): the wording is true for every
-    // synthesised type, and weaving in the element name would make the generator responsible for
-    // phrasing that stays sensible across every name and pluralisation. These apply only on the
-    // synthesis path below; an SDL author who wants different wording declares the
-    // Connection/Edge/PageInfo types structurally, which routes through promotionFor's structural
-    // branch instead and never reaches these builders.
+    // boilerplate. Deliberately generic (not parameterised by element type): weaving in the
+    // element name would make the generator responsible for phrasing that stays sensible across
+    // every name and pluralisation. Synthesis-path only: an SDL author who wants different
+    // wording declares the types structurally, which routes through promotionFor's structural
+    // branch and never reaches these builders.
     private static final String DESC_CONNECTION = "A connection to a list of items.";
     private static final String DESC_EDGES = "A list of edges.";
     private static final String DESC_NODES = "A list of nodes.";
@@ -112,8 +110,8 @@ final class ConnectionPromoter {
      * {@code @asConnection} on a bare list, or a structural Connection-shaped return type), to a
      * first-class {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entry in
      * {@code ctx.types}. A no-op for every other field, so the walk calls it unconditionally per
-     * field. This is the field-first replacement for the former all-types promotion pass:
-     * synthesis happens as a byproduct of visiting the carrier, never by scanning siblings.
+     * field. Synthesis happens as a byproduct of visiting the carrier, never by scanning
+     * siblings.
      *
      * <p>For directive-driven carriers the {@link GraphQLObjectType} schema form is built
      * programmatically (the synthesised types are not in the assembled schema). For structural
@@ -142,10 +140,9 @@ final class ConnectionPromoter {
             List<CarrierRewrite> rewrites, Set<String> synthesisedNames) {
         ConnectionPromotion promotion = promotionFor(ctx, parent, fieldDef);
         if (promotion == null) return;
-        // Record a carrier rewrite only when the graphql-java return type actually needs to change —
-        // i.e. the current base-type name differs from the connection name. Directive-driven bare-list
-        // carriers need rewriting; structural carriers (where the SDL return type already names the
-        // Connection) do not, even when they carry @asConnection alongside.
+        // Record a carrier rewrite only when the graphql-java return type actually needs to
+        // change: directive-driven bare-list carriers do; structural carriers (the SDL return
+        // type already names the Connection) do not, even when they carry @asConnection alongside.
         String currentBaseName = baseTypeName(fieldDef.getType());
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
                 && !promotion.connectionName().equals(currentBaseName)) {
@@ -168,11 +165,10 @@ final class ConnectionPromoter {
 
     /**
      * Registers the facet container ({@code <ConnName>Facets}) and each distinct
- * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier. A no-op when
-     * the promotion carries no facets. {@code FacetValue} types are reusable across the whole
-     * schema (one per (scalar, nullability) pair, named by {@link FacetNaming}); repeat
-     * registration from another carrier reconciles in {@code TypeRegistry.register} like every
-     * other synthesised arm.
+     * {@code <Scalar>FacetValue} entry for a faceted directive-driven carrier.
+     * {@code FacetValue} types are reusable across the whole schema (one per (scalar,
+     * nullability) pair, named by {@link FacetNaming}); repeat registration from another carrier
+     * reconciles in {@code TypeRegistry.register} like every other synthesised arm.
      */
     private static void registerFacetTypes(
             BuildContext ctx, ConnectionPromotion promotion,
@@ -227,10 +223,9 @@ final class ConnectionPromoter {
      * Connection / Edge / PageInfo entry absent from the original assembled schema) via
      * {@code additionalType(...)}.
      *
-     * <p>{@code synthesisedTypes} is the set the walk synthesised via
-     * {@link #synthesiseForField} (resolved to final forms by the builder after the walk), so this
-     * method no longer re-derives it from a second {@code ctx.types} scan and the rebuilt assembled
-     * schema cannot drift from the registry.
+     * <p>{@code synthesisedTypes} is the set the walk produced via {@link #synthesiseForField}
+     * (resolved to final forms by the builder after the walk), so the rebuilt assembled schema
+     * cannot drift from the registry.
      *
      * <p>Returns the rebuilt schema; untouched types pass through by reference via
      * {@link SchemaTransformer}, preserving applied directives and field order on everything
@@ -302,7 +297,7 @@ final class ConnectionPromoter {
      * Resolves the concrete element type a directive-driven carrier returns in the {@code original}
      * (pre-rewrite) schema: the named base type of {@code <parentTypeName>.<fieldName>}'s bare list.
      * Returns {@code null} when the carrier's parent type or field cannot be found, or the base type
-     * is not a named type still present in the original schema — the rebuild then simply pins nothing
+     * is not a named type still present in the original schema; the rebuild then pins nothing
      * extra for that carrier rather than failing.
      */
     private static GraphQLNamedType carrierElementType(GraphQLSchema original, CarrierRewrite rewrite) {
@@ -439,14 +434,14 @@ final class ConnectionPromoter {
 
     /**
      * Derives one {@link FacetSpec} per well-formed {@code @asFacet}-marked field on the carrier's
- * input-object arguments. The value scalar and its nullability mirror the input field's
+     * input-object arguments. The value scalar and its nullability mirror the input field's
      * list-element type exactly, so a client can feed {@code facetValue.value} straight back into
      * the filter; the column comes from {@code @field(name:)}.
      *
      * <p>Malformed applications are <em>skipped</em> here, not rejected: inclusion is gated on
-     * the shared definition-keyed predicate ({@code FacetFieldValidation.definitionKeyedRejection},
+     * the shared definition-keyed predicate {@link FacetFieldValidation#definitionKeyedRejection},
      * the single home both this walk and {@code GraphitronSchemaBuilder}'s facet-misuse reduction
-     * read), so a skipped field is by construction one the reduction rejects with a named
+     * read, so a skipped field is by construction one the reduction rejects with a named
      * diagnostic, and this walk stays a pure projection of the valid facets.
      */
     private static List<FacetSpec> facetSpecsFor(GraphQLFieldDefinition fieldDef) {
@@ -553,7 +548,7 @@ final class ConnectionPromoter {
             .description(DESC_PAGE_INFO_FIELD)
             .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("PageInfo")))
             .build();
-        // Nullable matches legacy and survives the count-skipped path on Split-Connection naturally.
+        // Nullable so the count-skipped path on a split connection degrades to null totalCount.
         var totalCountField = GraphQLFieldDefinition.newFieldDefinition()
             .name("totalCount")
             .description(DESC_TOTAL_COUNT)

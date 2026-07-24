@@ -26,52 +26,34 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
 /**
  * Resolves {@code @service} on a field into a sealed {@link Resolved} the caller switches on,
- * absorbing every cross-arm concern that was previously inlined at all four classify sites
- * ({@code classifyQueryField}, {@code classifyMutationField}, {@code classifyChildFieldOnResultType},
- * {@code classifyChildFieldOnTableType}):
+ * absorbing the concerns shared by all classify sites (query, mutation, result-parent,
+ * table-parent):
  *
  * <ul>
  *   <li>Method lookup, arg-binding parse, return-type classification.</li>
  *   <li>Strict return-type validation against {@link MethodRef} reflection (root only).</li>
  *   <li>Root invariants (Connection wrapper rejection, {@code Sources} parameter rejection).</li>
- *   <li>Errors-channel lift on a polymorphic-of-{@code @error} return type, with a
- *       {@link Resolved.Polymorphic} resolution (route (a)) as the non-errors fallback.</li>
+ *   <li>Errors-channel lift on a polymorphic-of-{@code @error} return type, with
+ *       {@link Resolved.Polymorphic} as the non-errors fallback.</li>
  * </ul>
  *
- * <p>Each classify arm projects {@link Resolved.Success} into its specific {@code GraphitronField}
- * variant (the variant identity differs across parent contexts: query/mutation/result-parent/
- * table-parent) and handles parent-context-only concerns (e.g. join-path parse for child sites,
- * the class-backed-parent DEFERRED rejection for result-parent's Result/Scalar arms).
+ * <p>Each classify arm projects {@link Resolved.Success} into its parent-context-specific
+ * {@code GraphitronField} variant and handles parent-context-only concerns (join-path parse for
+ * child sites, the class-backed-parent DEFERRED rejection for result-parent's Result/Scalar arms).
  *
- * <p>Root vs child is signalled by {@code parentPkColumns}: empty for root (Query / Mutation),
- * non-empty for child @service on a {@code TableType} parent. Child @service on a class-backed
- * parent passes empty (the batch key derives elsewhere).
+ * <p>Root vs child is signalled by {@code parentPkColumns}; see {@link #resolve}.
  *
- * <p>Implementation note: the helpers this resolver calls back into ({@code parseExternalRef},
- * {@code fieldArgumentNames}, {@code parseContextArguments}, {@code buildWrapper},
- * {@code liftToErrorsField}) live as package-private members on {@link FieldBuilder}, shared
- * with the other directive resolvers ({@code @tableMethod}, {@code @externalField},
- * {@code @lookupKey}).
+ * <p>The helpers this resolver calls back into ({@code parseExternalRef},
+ * {@code parseContextArguments}, {@code buildWrapper}, {@code liftToErrorsField}) are
+ * package-private members on {@link FieldBuilder}, shared with the other directive resolvers.
  */
 final class ServiceDirectiveResolver {
 
     /**
-     * Outcome of {@link #resolve}. Five terminal arms; the caller exhausts them with a switch.
-     *
-     * <ul>
-     *   <li>{@link Success} — sealed sub-interface with one arm per resolved return-type shape
-     *       ({@link TableBound}, {@link Result}, {@link Scalar}). Each carries the resolved
-     *       {@link MethodRef} and the typed {@link ReturnTypeRef}.</li>
-     *   <li>{@link ErrorsLifted} — the polymorphic return type lifted into an
-     *       {@code ErrorsField} (or a structural rejection of the lift). The carried
-     *       {@link GraphitronField} is the caller's terminal value for this arm.</li>
-     *   <li>{@link Polymorphic} — a multitable interface/union return resolved to route (a)'s
- * record-class-dispatch fetcher. Carries the {@link MethodRef} and the typed
-     *       {@link ReturnTypeRef.PolymorphicReturnType}; the classify site attaches participants.</li>
-     *   <li>{@link Rejected} — every error path: directive-parse failure, method-reflection
-     *       failure, root-invariants failure. Carries the
-     *       {@link RejectionKind} and message the caller surfaces verbatim.</li>
-     * </ul>
+     * Outcome of {@link #resolve}; the caller exhausts the arms with a switch.
+     * {@link Success} arms differ by resolved return-type shape and carry the resolved
+     * {@link MethodRef}; {@link ErrorsLifted} and {@link Rejected} are terminal values the
+     * caller surfaces directly.
      */
     sealed interface Resolved {
         /** Successful resolution; arms differ by return-type shape. */
@@ -82,11 +64,11 @@ final class ServiceDirectiveResolver {
         record Result(ReturnTypeRef.ResultReturnType returnType, MethodRef method) implements Success {}
         record Scalar(ReturnTypeRef.ScalarReturnType returnType, MethodRef method) implements Success {}
         /**
-         * A multitable polymorphic return (route (a)). The service hands back a PK-populated
+         * A multitable polymorphic return. The service hands back a PK-populated
          * {@code TableRecord} per branch; the fetcher dispatches on each returned record's runtime
          * class to pick the participant, then auto-fetches the selected columns by PK. The classify
          * site narrows this to a distinct-table multitable <em>interface</em>: a union return is
-         * rejected (permanently unsupported) and a single-table discriminated interface is deferred.
+         * rejected and a single-table discriminated interface is deferred.
          */
         record Polymorphic(ReturnTypeRef.PolymorphicReturnType returnType, MethodRef method) implements Success {}
         /** Polymorphic return type lifted to an {@code ErrorsField} (or rejected by lift rules). */
@@ -150,11 +132,11 @@ final class ServiceDirectiveResolver {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
 
-        // Strict return-type validation applies to root @service fields only. Child @service uses
-        // DataLoader-batched semantics where the method takes Sources keys and returns a flat or
-        // keyed shape that doesn't directly match the field's return type — that shape is the
-        // child-service plan's concern. Root fields hand the value straight to graphql-java, so
-        // the framework needs to know its specific shape.
+        // Strict return-type validation applies to root @service fields only: root fields hand the
+        // value straight to graphql-java, so the framework must know its exact shape. Child
+        // @service uses DataLoader-batched semantics where the method takes Sources keys and
+        // returns a flat or keyed shape that doesn't directly match the field's return type;
+        // validateChildServiceReturnType owns that shape.
         TypeName expectedReturnType = isRoot ? computeExpectedServiceReturnType(returnType) : null;
 
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
@@ -194,13 +176,12 @@ final class ServiceDirectiveResolver {
 
     /**
      * Parent-table consistency check for the typed-{@code TableRecord} source-shape arm
-     * ({@link SourceKey.Wrap.TableRecord}). When the developer declares {@code Set<X>} or
-     * {@code List<X>} where {@code X extends TableRecord}, {@code X} must be the parent type's
-     * expected record class — otherwise the emitted
+     * ({@link SourceKey.Wrap.TableRecord}): the declared {@code Set<X>} / {@code List<X>} element
+     * {@code X} must be the parent type's backing record class, otherwise the emitted
      * {@code ((Record) env.getSource()).into(Tables.X)} extraction would silently project the
-     * parent's runtime record into a wrong-typed {@code TableRecord}. The other source-shape
-     * arms ({@link SourceKey.Wrap.Row} / {@link SourceKey.Wrap.Record}) are unaffected: their
-     * key shapes don't carry a typed record class to mismatch.
+     * parent's runtime record into a wrong-typed {@code TableRecord}. The
+     * {@link SourceKey.Wrap.Row} / {@link SourceKey.Wrap.Record} arms carry no typed record
+     * class to mismatch.
      */
     private String validateTableRecordSourceParentTable(String parentTypeName, MethodRef method) {
         var sourced = method.params().stream()
@@ -230,9 +211,6 @@ final class ServiceDirectiveResolver {
             case ReturnTypeRef.ScalarReturnType s -> new Resolved.Scalar(s, method);
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 GraphitronField lifted = fb.liftToErrorsField(fieldDef, parentTypeName, p);
-                // The all-@error nullable-list "errors channel" still lifts as before; route (a)
-                // widens the non-errors arm so a multitable interface/union return resolves
-                // to a polymorphic-return arm instead of the old "not yet supported" rejection.
                 yield lifted != null
                     ? new Resolved.ErrorsLifted(lifted)
                     : new Resolved.Polymorphic(p, method);
@@ -241,22 +219,13 @@ final class ServiceDirectiveResolver {
     }
 
     /**
-     * Shared invariant check for root {@code @service} fields (both Query and Mutation arms).
-     * Returns a non-null reason when the resolved return-type/method violates an invariant,
-     * {@code null} otherwise.
+     * Invariant check shared by the Query and Mutation root {@code @service} arms; returns the
+     * rejection reason, or {@code null}.
      *
-     * <ul>
-     *   <li>§1: Connection return type — root has no pagination context.</li>
-     *   <li>§2: {@link ParamSource.Sources} parameter — root has no parent context to batch
-     *       against.</li>
-     * </ul>
-     *
-     * <p>The structural "return type doesn't match the field" check for the
-     * {@code TableBoundReturnType} + List arm lives separately in
+     * <p>The structural return-type check for the List-cardinality TableBound arm lives in
      * {@link #validateRootListTableBoundReturnPair} so its rejection wears the same
-     * {@code "service method could not be resolved — "} prefix as the catalog's strict
-     * Single-arm rejection, and so the annotation contract can name it as a distinct
-     * producer site.
+     * {@code "service method could not be resolved"} prefix as the catalog's strict Single-arm
+     * rejection.
      */
     private static String validateRootInvariants(ReturnTypeRef returnType, MethodRef method) {
         if (returnType.wrapper() instanceof FieldWrapper.Connection) {
@@ -270,18 +239,12 @@ final class ServiceDirectiveResolver {
 
     /**
      * Structural-return check for root {@code @service} fields whose resolved return type is a
-     * {@link ReturnTypeRef.TableBoundReturnType} with List cardinality. The developer's method
-     * may declare either {@code org.jooq.Result<XRecord>} or {@code java.util.List<XRecord>};
-     * graphql-java treats both identically (Result extends List), and the emitter reads
-     * {@link MethodRef#returnType()} to declare whichever shape the developer chose. Single
-     * cardinality is validated strictly inside {@link ServiceCatalog#reflectServiceMethod} via
-     * its {@code expectedReturnType} parameter.
-     *
-     * <p>Returns {@code null} when the resolved return type isn't List-cardinality TableBound
-     * (the looser pair only applies there) or when the method matches one of the two acceptable
-     * shapes; otherwise returns the rejection reason (caller prefixes with
-     * {@code "service method could not be resolved — "} so the wording matches the Single-arm
-     * catalog rejection a developer would see for the same field on the Single side).
+     * List-cardinality {@link ReturnTypeRef.TableBoundReturnType}; returns the rejection reason,
+     * or {@code null}. The method may declare either {@code org.jooq.Result<XRecord>} or
+     * {@code java.util.List<XRecord>}: graphql-java treats both identically (Result extends
+     * List), and the emitter reads {@link MethodRef#returnType()} to declare whichever shape the
+     * developer chose. Single cardinality is validated strictly inside
+     * {@link ServiceCatalog#reflectServiceMethod} via its {@code expectedReturnType} parameter.
      */
     private static String validateRootListTableBoundReturnPair(ReturnTypeRef returnType, MethodRef method) {
         if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
@@ -298,30 +261,17 @@ final class ServiceDirectiveResolver {
     }
 
     /**
-     * Computes the expected return type that a root {@code @service} method must declare, as a
-     * structured javapoet {@link TypeName}. Returns {@code null} when no strict validation is
-     * applicable (the caller treats the actual reflection-captured return type as truth).
-     *
-     * <ul>
-     *   <li>{@code TableBoundReturnType} + Single → {@code <schemaPackage>.tables.records.<TableName>Record}</li>
-     *   <li>{@code TableBoundReturnType} + List → null (either {@code Result<XRecord>} or
-     *       {@code List<XRecord>} is acceptable; the choice is validated post-reflection in
-     *       {@link #validateRootListTableBoundReturnPair} so the emitter can declare whichever
-     *       shape the developer chose).</li>
-     *   <li>{@code ResultReturnType} (with non-null fqClassName) + Single → {@code <fqClassName>}</li>
-     *   <li>{@code ResultReturnType} (with non-null fqClassName) + List → {@code java.util.List<<fqClassName>>}</li>
-     *   <li>{@code ResultReturnType} (null fqClassName) → null</li>
-     *   <li>{@code ScalarReturnType} → null (graphql-java's scalar coercion handles type matching)</li>
-     *   <li>{@code PolymorphicReturnType} → null (rejected separately)</li>
-     * </ul>
-     *
-     * <p>Connection-cardinality cases are unreachable here because {@code @service} +
-     * {@code Connection} is rejected at root invariants §1 downstream.
+     * The expected return type a root {@code @service} method must declare, as a structured
+     * javapoet {@link TypeName}, or {@code null} when no strict validation applies (the caller
+     * then treats the reflection-captured return type as truth): List-cardinality TableBound
+     * defers to {@link #validateRootListTableBoundReturnPair}, class-backed Result shapes defer
+     * to the payload-class check in {@code FieldBuilder.buildServiceField}, and scalar coercion
+     * is graphql-java's concern.
      */
     private TypeName computeExpectedServiceReturnType(ReturnTypeRef returnType) {
-        // Connection-cardinality is rejected by root invariants §1 downstream of this helper;
-        // skip the return-type check here so the §1 message fires (rather than masking it with a
-        // less-specific return-type mismatch).
+        // Connection cardinality is rejected by validateRootInvariants downstream of this helper;
+        // skip the return-type check so that more specific message fires rather than a
+        // return-type mismatch masking it.
         if (returnType.wrapper() instanceof FieldWrapper.Connection) return null;
         boolean isList = returnType.wrapper().isList();
         return switch (returnType) {
@@ -330,12 +280,9 @@ final class ServiceDirectiveResolver {
                 yield isList ? null : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // ResultReturnType with a backing class is the class-backed payload shape. The service
-                // method must return the SDL payload class directly (universal passthrough); the
-                // strict TypeName-equals check happens inside FieldBuilder.buildServiceField,
-                // which produces a payload-class-citing diagnostic on mismatch. Return null here
-                // so the strict check is skipped at the resolver layer, and let the classifier
-                // emit the precise reject.
+                // Class-backed payloads must return the SDL payload class directly; the strict
+                // TypeName-equals check lives in FieldBuilder.buildServiceField, which names the
+                // payload class in its diagnostic. Skip here so that precise reject fires.
                 yield null;
             }
             case ReturnTypeRef.ScalarReturnType ignored -> null;
@@ -350,22 +297,12 @@ final class ServiceDirectiveResolver {
      * {@code List<V>} or {@code List<List<V>>} for positional variants. The developer's method
      * return type must equal that expected outer type exactly (per {@link TypeName#equals}); a
      * mismatch is rejected at classify time rather than left to surface as a {@code javac} error
-     * on the generated {@code return ServiceClass.method(...)} line.
+     * on the generated {@code return ServiceClass.method(...)} line. The construction defers to
+     * {@link RowsMethodShape}; the emitter calls the same helper for {@code .returns(...)}, so
+     * the two cannot drift.
      *
-     * <p>The construction defers to {@link RowsMethodShape}; the emitter calls the same helper
-     * for {@code .returns(...)}, so the two cannot drift. For a schema-named leaf (the five spec
-     * built-ins, a table-bound or class-backed return) the {@link TypeName#equals} check is a true
-     * strict-equality check on the whole shape. For a non-built-in scalar leaf (an enum, or an
-     * unregistered custom scalar) the schema cannot name {@code V}, so the leaf is peeled from the
-     * developer's declared outer type ({@link RowsMethodShape#perKeyFromOuter}) and fed straight
-     * back into the reconstruction (the same resolution the emitter's {@code elementType()}
-     * uses). Because the leaf round-trips through the same return type it is then compared against,
-     * the {@code equals} check for that branch is effectively a key-type check; the container raw
-     * type and list-nesting are gated by {@code perKeyFromOuter} returning non-null, and the leaf
-     * itself is accepted as whatever the method yields (the typed-context-value registry, tracked
-     * under {@code emit-text-mapped-enum-fields-as-enum-type}, will tighten the leaf later). A
-     * shape too malformed to peel is rejected rather than left to miscompile. Returns {@code null}
-     * (skip) when the schema carries no derivable shape at all ({@link ReturnTypeRef.ResultReturnType} with no backing class,
+     * <p>Returns {@code null} (skip) when the schema carries no derivable shape
+     * ({@link ReturnTypeRef.ResultReturnType} with no backing class,
      * {@link ReturnTypeRef.PolymorphicReturnType} which is rejected separately), or when no
      * {@link MethodRef.Param.Sourced} parameter is present (validator surfaces that absence).
      */
@@ -383,15 +320,15 @@ final class ServiceDirectiveResolver {
         TypeName perKey = RowsMethodShape.strictPerKeyType(returnType);
         if (perKey == null) {
             // Only a non-built-in scalar leaf (an enum, or an unregistered custom scalar) is
-            // recoverable: the schema can't name V, but the developer's method declares the outer
-            // Map<K, V> / List<V>, so recover V by peeling and re-derive the expected outer type
-            // from it (the same leaf resolution the emitter's elementType() uses). This still
-            // rejects a wrong key type or a missing list-nesting level; the leaf itself is accepted
-            // as whatever the method yields (the typed-context-value registry will tighten it
-            // later). A shape too malformed to peel (a List where a Map is required, a raw type) is
-            // rejected here rather than left to miscompile on the generated return line. Other
-            // null-perKey returns (a backing-less ResultReturnType, a polymorphic type) carry no
-            // derivable shape and stay skipped.
+            // recoverable: the schema cannot name V, so recover it by peeling the developer's
+            // declared outer type (RowsMethodShape.perKeyFromOuter, the same leaf resolution the
+            // emitter's elementType() uses) and re-derive the expected outer type from it. This
+            // still rejects a wrong key type or a missing list-nesting level; the leaf itself is
+            // accepted as whatever the method yields, so the equals check below is effectively a
+            // key-type check for this branch. A shape too malformed to peel (a List where a Map is
+            // required, a raw type) is rejected here rather than left to miscompile on the
+            // generated return line. Other null-perKey returns carry no derivable shape and stay
+            // skipped.
             if (!(returnType instanceof ReturnTypeRef.ScalarReturnType)) return null;
             perKey = RowsMethodShape.perKeyFromOuter(method.returnType(), returnType, isMapped);
             if (perKey == null) {

@@ -34,49 +34,26 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
 /**
  * Resolves the DML {@code @mutation} concern's shared, phase-portable facts: the
- * {@code @mutation(typeName:)} discriminator, the return-type constraints (Invariant #14), the
- * write-target precedence (return-derived, {@code @mutation(table:)}, input {@code @table}), and the
- * per-input-field admission rules. An all-static utility; the classify-phase entry points live on
- * {@link FieldBuilder} (the four walker-driven UPDATE / DELETE classifiers and the INSERT
- * classifiers {@code classifyInsertTableField} / {@code classifyInsertPayloadField}), and the
- * binding grounder on {@code RecordBindingResolver}. Sibling to {@link OrderByResolver},
- * {@link LookupMappingResolver}, {@link PaginationResolver}, {@link ConditionResolver}, and
- * {@link InputFieldResolver}.
- *
- * <p>The responsibilities that cluster here, all centred on {@code @mutation} field classification:
- *
- * <ul>
- *   <li>{@link #parseDmlKind} — reads the {@code typeName} argument off the {@code @mutation}
- *       directive and lifts it into a sealed {@link DmlKindResult}. Used by the
- *       mutation-classification arm to dispatch to the four DML statement variants
- *       ({@link DmlKind#INSERT} / {@link DmlKind#UPDATE} / {@link DmlKind#DELETE} /
- *       {@link DmlKind#UPSERT}).</li>
- *   <li>{@link #validateReturnType} — validates Invariant #14 (mutation return must be
- *       {@code ID}, {@code [ID]}, {@code T}, or {@code [T]} where {@code T} is a {@code @table}
- *       type) and Invariant #15 (bulk-input + single-cardinality return is rejected on the
- *       Scalar/TableBound arms). Returns a non-null rejection reason on violation,
- *       {@code null} on success.</li>
- *   <li>{@link #resolveDmlWriteTableRef} — the single producer of a DML field's write-target table
- *       by the shared precedence, called from both the classify walk and the binding grounder so a
- *       grounded {@code DmlEmitted} and the classified write target cannot diverge.</li>
- *   <li>{@link #admitMutationInputFields} / {@link #rejectPlainColumnCollision} /
- *       {@link #rejectInputFieldDirectives} — the INSERT per-input-field admission set, run by
- *       {@code FieldBuilder.resolveInsertWriteTarget} over the resolved {@link InputField} list
- *       regardless of whether the write target came from the input {@code @table} or the field.</li>
- * </ul>
+ * {@code @mutation(typeName:)} discriminator ({@link #parseDmlKind}), the return-type constraints
+ * ({@link #validateReturnType}, Invariants #14 / #15), the write-target precedence
+ * ({@link #resolveDmlWriteTableRef}), and the per-input-field admission rules
+ * ({@link #admitMutationInputFields} / {@link #rejectPlainColumnCollision} /
+ * {@link #rejectInputFieldDirectives}). An all-static utility; the classify-phase entry points
+ * live on {@link FieldBuilder}, the binding grounder on {@code RecordBindingResolver}. Sibling to
+ * {@link OrderByResolver}, {@link LookupMappingResolver}, {@link PaginationResolver},
+ * {@link ConditionResolver}, and {@link InputFieldResolver}.
  */
 final class MutationInputResolver {
 
     /**
-     * Outcome of {@link #parseDmlKind}. Three terminal arms.
+     * Outcome of {@link #parseDmlKind}. Three terminal arms:
      *
      * <ul>
-     *   <li>{@link Absent} — {@code @mutation} or its {@code typeName:} argument is unset on the
-     *       field. Pre-existing behaviour treats this as "not a DML field"; the caller falls
-     *       through to its surrounding "directive missing" rejection.</li>
-     *   <li>{@link Kind} — the argument resolves to one of the four well-formed values.</li>
-     *   <li>{@link Unknown} — the argument is set but doesn't match any {@link DmlKind}; the
-     *       caller surfaces an {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}
+     *   <li>{@link Absent}: {@code @mutation} or its {@code typeName:} argument is unset; the
+     *       caller falls through to its surrounding "directive missing" rejection.</li>
+     *   <li>{@link Kind}: the argument resolves to a {@link DmlKind}.</li>
+     *   <li>{@link Unknown}: the argument is set but matches no {@link DmlKind}; the caller
+     *       surfaces an {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}
      *       carrying the raw value.</li>
      * </ul>
      */
@@ -92,11 +69,8 @@ final class MutationInputResolver {
     }
 
     /**
-     * Reads the {@code typeName} argument off the {@code @mutation} directive on
-     * {@code fieldDef} and lifts the raw String into a sealed {@link DmlKindResult} the caller
-     * switches on. {@link DmlKindResult.Absent} signals the directive is absent or the argument
-     * is unset; {@link DmlKindResult.Kind} carries the resolved {@link DmlKind};
-     * {@link DmlKindResult.Unknown} carries the raw value when it doesn't match any kind.
+     * Lifts the {@code @mutation(typeName:)} argument on {@code fieldDef} into a
+     * {@link DmlKindResult}; see its arm docs.
      */
     static DmlKindResult parseDmlKind(GraphQLFieldDefinition fieldDef) {
         var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
@@ -129,10 +103,9 @@ final class MutationInputResolver {
     }
 
     /**
- * Reads {@code @mutation(table:)} off the field's directive application. Returns the SQL
-     * table name the consuming field names as its write target, or empty when the argument is absent
-     * or set to {@code null}. The write-target-relevant verb (DELETE) resolves this against the jOOQ
-     * catalog; other verbs reject its presence (see {@code FieldBuilder}'s unsupported-verb guard).
+     * Reads {@code @mutation(table:)} off the field's directive application. Returns the SQL
+     * table name the field names as its write target, or empty when the argument is absent or
+     * blank. Verb gating lives on {@link #TABLE_ARG_SUPPORTED_VERBS}.
      */
     static Optional<String> parseMutationTableArg(GraphQLFieldDefinition fieldDef) {
         var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
@@ -145,26 +118,20 @@ final class MutationInputResolver {
 
     /**
      * The {@code @mutation} verbs whose {@code @mutation(table:)} argument names a field-relative
-     * write target: DELETE (which cannot carry its table on the return, per Invariant #14), INSERT
-     * (the encoded-ID / scalar-return shape, whose return names no table), and UPDATE (the same
-     * encoded-ID / scalar-return shape). Single-sourced here so every consumer agrees on the supported
-     * set: the classifier's unsupported-verb guard (which rejects the arg on any other verb, now
-     * narrowed to {@code {UPSERT}}), the write-target precedence helper's verb gate
-     * ({@link #resolveDmlWriteTableRef}), and {@code mvn graphitron:validate} (which runs the
-     * classifier). Generalising to another verb is a single edit here, and it flows to the binding
-     * grounder automatically through the helper.
+     * write target: DELETE (which cannot carry its table on the return, per Invariant #14), plus
+     * the encoded-ID / scalar-return INSERT and UPDATE shapes (whose return names no table).
+     * Single-sourced so every consumer agrees on the set: the classifier's unsupported-verb guard
+     * (which rejects the arg on any other verb) and {@link #resolveDmlWriteTableRef}'s verb gate.
      */
     static final Set<DmlKind> TABLE_ARG_SUPPORTED_VERBS = Set.of(DmlKind.DELETE, DmlKind.INSERT, DmlKind.UPDATE);
 
     /**
-     * The {@code @mutation} verbs whose write target is derived from the return type (a direct
-     * {@code @table} return, or a carrier payload's single {@code @table}-element data field): INSERT
-     * and UPDATE (an UPDATE returns the updated row's {@code @table} type or a payload carrier wrapping
-     * it, as naturally as an INSERT does). UPSERT inherits it when it un-defers. DELETE is deliberately
-     * absent: a DELETE cannot return the deleted row's {@code @table} type (Invariant #14), so no DELETE
-     * return names a table, and gating the rung here keeps DELETE's write-target resolution
-     * byte-identical. The rung is the preferred one for the verbs it covers, ahead of
-     * {@code @mutation(table:)} and the input {@code @table} bridge (see {@link #resolveDmlWriteTableRef}).
+     * The {@code @mutation} verbs whose write target derives from the return type (a direct
+     * {@code @table} return, or a carrier payload's single {@code @table}-element data field):
+     * INSERT and UPDATE. DELETE is deliberately absent: a DELETE cannot return the deleted row's
+     * {@code @table} type (Invariant #14), so no DELETE return names a table. This rung is
+     * preferred over {@code @mutation(table:)} and the input {@code @table} bridge (see
+     * {@link #resolveDmlWriteTableRef}).
      */
     static final Set<DmlKind> RETURN_DERIVED_TABLE_VERBS = Set.of(DmlKind.INSERT, DmlKind.UPDATE);
 
@@ -193,45 +160,40 @@ final class MutationInputResolver {
      *
      * <ol>
      *   <li><b>Rung 1 (preferred): the return's own {@code @table}</b>, for verbs in
-     *       {@link #RETURN_DERIVED_TABLE_VERBS} (INSERT, UPDATE). A direct {@code @table} return names
-     *       its table on the return type; a carrier payload names it on the single {@code @table}-element
-     *       data field. This is the derivation the {@code @table}-on-input deprecation warning
-     *       promises for INSERT and UPDATE.</li>
-     *   <li><b>Rung 2: {@code @mutation(table:)}</b>, for verbs in {@link #TABLE_ARG_SUPPORTED_VERBS}
-     *       (DELETE, and the encoded-ID / scalar-return INSERT / UPDATE whose return names no table).</li>
-     *   <li><b>Rung 3: the single {@code @table} input argument's table</b> (the deprecated migration
-     *       bridge; the only rung for UPSERT, which is refused upstream before classification).</li>
+     *       {@link #RETURN_DERIVED_TABLE_VERBS}; see {@link #resolveReturnDerivedTable}. This is
+     *       the derivation the {@code @table}-on-input deprecation warning promises for INSERT
+     *       and UPDATE.</li>
+     *   <li><b>Rung 2: {@code @mutation(table:)}</b>, for verbs in
+     *       {@link #TABLE_ARG_SUPPORTED_VERBS}.</li>
+     *   <li><b>Rung 3: the single {@code @table} input argument's table</b> (the deprecated
+     *       migration bridge; the only rung for UPSERT, which is refused upstream before
+     *       classification).</li>
      * </ol>
      *
-     * This is the one producer of the precedence fact, called from both the binding walk
-     * ({@code RecordBindingResolver.groundDmlMutationField}, which grounds the payload's
-     * {@code DmlEmitted} observation) and the classify walk ({@code FieldBuilder.resolveDeleteWriteTarget}
-     * and {@code FieldBuilder.resolveInsertWriteTarget}). Two independent precedence copies would be the
-     * "two producers of one fact" drift the design forbids: a grounder that read a lower rung first would
-     * ground a {@code DmlEmitted} on the wrong table whenever the rungs disagree, and the classified and
-     * grounded write targets would diverge. The must-agree cross-checks (where a present higher rung and
-     * a present lower rung disagree) live in the classify-phase resolvers, not here; this helper returns
-     * the highest present rung and never rejects on disagreement.
+     * The one producer of the precedence fact, called from both the binding walk
+     * ({@code RecordBindingResolver.groundDmlMutationField}) and the classify walk
+     * ({@code FieldBuilder.resolveDeleteWriteTarget} / {@code FieldBuilder.resolveInsertWriteTarget}),
+     * so the grounded {@code DmlEmitted} and the classified write target cannot diverge. The
+     * must-agree cross-checks (a present higher rung disagreeing with a present lower rung) live in
+     * the classify-phase resolvers, not here; this helper returns the highest present rung and
+     * never rejects on disagreement.
      *
-     * <p>Phase-portable by construction: it reads only SDL directives ({@code @mutation(table:)}, the
-     * return type's / data field element's {@code @table}, the input's {@code @table}), the catalog
-     * through {@link ServiceCatalog#resolveTable}, and the registry-free structural payload scan
-     * ({@link BuildContext#scanStructuralDmlPayload}, itself built on registry-free look-aheads), all
-     * available before the classification walk.
-     *
-     * <p>Both verb gates live here rather than at the call sites, so a future verb gaining a rung flows
-     * to every caller (classifier, grounder, {@code mvn graphitron:validate}) through the sets.
+     * <p>Phase-portable: reads only SDL directives, the catalog through
+     * {@link ServiceCatalog#resolveTable}, and the registry-free
+     * {@link BuildContext#scanStructuralDmlPayload}, all available before the classification walk.
+     * The verb gates live here rather than at the call sites so a verb gaining a rung flows to
+     * every caller through the sets.
      */
     static WriteTableRef resolveDmlWriteTableRef(
             GraphQLFieldDefinition fieldDef, DmlKind kind, ServiceCatalog svc, BuildContext ctx) {
-        // Rung 1: the return's own @table (INSERT, UPDATE). Preferred; the natural home of the table.
+        // Rung 1: the return's own @table.
         if (RETURN_DERIVED_TABLE_VERBS.contains(kind)) {
             var returnTable = resolveReturnDerivedTable(fieldDef, svc, ctx);
             if (returnTable.isPresent()) {
                 return new WriteTableRef.Resolved(returnTable.get());
             }
         }
-        // Rung 2: @mutation(table:) (DELETE, encoded-return INSERT / UPDATE).
+        // Rung 2: @mutation(table:).
         if (TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
             var named = parseMutationTableArg(fieldDef);
             if (named.isPresent()) {
@@ -240,7 +202,7 @@ final class MutationInputResolver {
                     .orElseGet(() -> new WriteTableRef.UnknownTable(named.get()));
             }
         }
-        // Rung 3: input @table (the deprecated bridge; the only rung for UPSERT, refused upstream).
+        // Rung 3: input @table.
         GraphQLInputObjectType tableInput = singleTableInputType(fieldDef);
         if (tableInput == null) return new WriteTableRef.None();
         String tableSqlName = argString(tableInput, DIR_TABLE, ARG_NAME).orElse(tableInput.getName().toLowerCase());
@@ -251,20 +213,12 @@ final class MutationInputResolver {
 
     /**
      * The return-derived write-target rung (rung 1 of {@link #resolveDmlWriteTableRef}): the table
-     * named by a DML {@code @mutation} field's return type. Two shapes resolve here, both from SDL +
-     * catalog only:
-     *
-     * <ul>
-     *   <li>a direct {@code @table} return ({@code create(...): Film!}, {@code Film} carrying
-     *       {@code @table}) resolves the return object's {@code @table} name against the catalog;</li>
-     *   <li>a carrier payload return ({@code create(...): FilmPayload!}) resolves through the
-     *       registry-free {@link BuildContext#scanStructuralDmlPayload}: when the payload admits a single
-     *       {@code @table}-element data field, its already-resolved {@link TableRef} is the write
-     *       target.</li>
-     * </ul>
-     *
-     * Returns empty for an ID / scalar return, a payload whose data field is ID- or record-element, or a
-     * return that resolves to no live table; the caller then falls to rung 2 / rung 3.
+     * named by a DML {@code @mutation} field's return type, from SDL + catalog only. A direct
+     * {@code @table} return resolves the return object's {@code @table} name against the catalog;
+     * a carrier payload return resolves through {@link BuildContext#scanStructuralDmlPayload} to
+     * its single {@code @table}-element data field's {@link TableRef}. Returns empty for an
+     * ID / scalar return, a payload whose data field is ID- or record-element, or a return that
+     * resolves to no live table; the caller then falls to rung 2 / rung 3.
      */
     static Optional<TableRef> resolveReturnDerivedTable(
             GraphQLFieldDefinition fieldDef, ServiceCatalog svc, BuildContext ctx) {
@@ -301,17 +255,16 @@ final class MutationInputResolver {
     }
 
     /**
-     * Validates Invariant #14 — DML {@code @mutation} return type must be {@code ID},
-     * {@code [ID]}, {@code T}, {@code [T]}, or a single class-backed payload (where
-     * {@code T} is a {@code @table} type) — and Invariant #15 — when the {@code @table}
-     * input is list-shaped ({@code in: [FilmInput!]!}), the return type must also be
-     * list-shaped. The cardinality check is sealed-root-uniform across all three admitted
-     * return-type arms ({@link ReturnTypeRef.ScalarReturnType ID},
+     * Validates Invariant #14 (DML {@code @mutation} return type must be {@code ID},
+     * {@code [ID]}, {@code T}, {@code [T]}, or a single class-backed payload, where
+     * {@code T} is a {@code @table} type) and Invariant #15 (a list-shaped {@code @table}
+     * input requires a list-shaped return). The cardinality check is uniform across all three
+     * admitted return-type arms ({@link ReturnTypeRef.ScalarReturnType ID},
      * {@link ReturnTypeRef.TableBoundReturnType T}, and
-     * {@link ReturnTypeRef.ResultReturnType Payload}): for every arm the DML emit path
-     * ends in {@code valuesOfRows(...).returningResult(...).fetchOne()}, whose jOOQ
-     * contract throws {@code TooManyRowsException} on any input with &gt;1 row. Rejecting
-     * at classify time keeps that footgun from reaching authors.
+     * {@link ReturnTypeRef.ResultReturnType Payload}): every arm's DML emit path ends in
+     * {@code valuesOfRows(...).returningResult(...).fetchOne()}, whose jOOQ contract throws
+     * {@code TooManyRowsException} on any input with &gt;1 row; rejecting at classify time keeps
+     * that footgun from reaching authors.
      *
      * <p>Returns a non-null rejection reason on violation; {@code null} when the return type
      * is acceptable.
@@ -322,10 +275,8 @@ final class MutationInputResolver {
                 if ("ID".equals(s.returnTypeName())) {
                     yield null;
                 }
-                // Candidate types whose carrier-shape is structurally invalid
-                // surface a per-condition diagnostic through scanStructuralDmlPayload: if the
-                // SDL Object's fields don't classify into recognized DML element kinds, the
-                // scan's Reject arm names the offending field.
+                // A structurally invalid carrier shape surfaces the scan's Reject diagnostic,
+                // which names the offending field.
                 if (ctx != null) {
                     var scan = ctx.scanStructuralDmlPayload(s.returnTypeName());
                     if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
@@ -334,10 +285,9 @@ final class MutationInputResolver {
                             + "; or back the carrier with a producing @service return type or a @table type";
                     }
                     // A payload that would classify as a DML carrier but for a forbidden
-                    // directive on its data field surfaces a targeted message naming the offending
-                    // field and directive, instead of the generic "use ID or a @table type"
-                    // misdirection, which points at the return type (which is fine) rather than the
-                    // one-token edit on the data field that actually disqualified it.
+                    // directive on its data field gets a message naming that field and directive;
+                    // the generic "use ID or a @table type" text would misdirect at the return
+                    // type rather than the one-token edit that disqualified it.
                     var forbidden = ctx.diagnoseForbiddenCarrierDirective(s.returnTypeName());
                     if (forbidden.isPresent()) {
                         var fc = forbidden.get();
@@ -373,11 +323,10 @@ final class MutationInputResolver {
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // DML accepts a class-backed carrier return; the validator screens only
-                // for the wrapper shape (single, not list/connection). Payload-shape rejections
-                // surface from the unified path's per-child classification (the legacy-equality
-                // check inside FieldBuilder.buildServiceField on @service mutations; the
-                // @mutation classifier's inline record-backed element / table-equality checks on DML).
+                // DML accepts a class-backed carrier return; this validator screens only the
+                // wrapper shape. Payload-shape rejections surface from per-child classification
+                // (FieldBuilder.buildServiceField on @service mutations; the @mutation
+                // classifier's element / table-equality checks on DML).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of record-backed payloads) is not yet supported; "
@@ -392,17 +341,11 @@ final class MutationInputResolver {
         if (perArm != null) {
             return perArm;
         }
-        // Cardinality dispatch on the carrier's data-channel wrapper. A single-record carrier
-        // (Payload type, not list-wrapped) whose data field is list-shaped pairs with bulk input
-        // (admitted as MutationBulkDmlRecordField) and rejects single input (new Invariant #16).
-        // The singleton-data-field case (data field is single-shaped) still rejects bulk input via
-        // the lifted Invariant #15 below. UPSERT under the cardinality-safety regime is
-        // refused upstream at resolveInput; if we ever reach this check with kind == UPSERT and
-        // bulk input, the refusal there will fire before this point.
-        // Payload-shaped (ResultReturnType) returns dispatch cardinality coherence
-        // on the structural single-data-field's wrapper; non-payload returns dispatch on the
-        // return's own wrapper. The structural walk via singleDataField produces the
-        // admit/reject decision for the carrier-with-single-data-field case.
+        // Cardinality coherence: payload-shaped (ResultReturnType) returns dispatch on the
+        // structural single-data-field's wrapper; non-payload returns dispatch on the return's
+        // own wrapper. A list-shaped data field pairs with bulk input (Invariant #16) and rejects
+        // single input; a single-shaped data field rejects bulk input (Invariant #15). UPSERT is
+        // refused upstream at resolveInput before this check can see it.
         if (returnType instanceof ReturnTypeRef.ResultReturnType r && ctx != null) {
             var dataField = singleDataField(r.returnTypeName(), ctx);
             if (dataField != null) {
@@ -425,9 +368,8 @@ final class MutationInputResolver {
                         + "(Invariant #15)";
                 }
             }
-            // Carrier with zero or multiple recognized data fields: the @mutation classifier's
-            // structural scan (BuildContext.scanStructuralDmlPayload) owns the rejection
-            // diagnostics; return null and let the classifier surface them.
+            // Carrier with zero or multiple recognized data fields: the classifier's
+            // BuildContext.scanStructuralDmlPayload owns the rejection diagnostics.
             return null;
         }
         if (listInput && !returnType.wrapper().isList()) {
@@ -461,13 +403,11 @@ final class MutationInputResolver {
     }
 
     /**
-     * Reject {@code @lookupKey} (retired) and non-override {@code @condition}
-     * (filter-shape that competes with the verb's WHERE) on any mutation input field, recursing into
-     * nested non-{@code @table} grouping inputs so a buried leaf is held to the same rule as a
-     * top-level field. The {@code @condition(override: true)} case is left to the per-field admission
-     * walk ({@link #admitMutationInputFields}), which routes it through the classifier's
-     * {@code UnboundField} collapse. Returns the first rejection, or {@code null} when every field
-     * (at every nesting depth) carries an admissible directive set. Called from
+     * Rejects {@code @lookupKey} and non-override {@code @condition} (a filter shape that
+     * competes with the verb's WHERE) on any mutation input field, recursing into nested
+     * non-{@code @table} grouping inputs so a buried leaf is held to the same rule. The
+     * {@code @condition(override: true)} case is left to {@link #admitMutationInputFields}.
+     * Returns the first rejection, or {@code null}. Called from
      * {@code FieldBuilder.resolveInsertWriteTarget}.
      */
     static Rejection rejectInputFieldDirectives(
@@ -490,9 +430,7 @@ final class MutationInputResolver {
                         + "(mutations write values; only @condition(override: true) is admitted)");
                 }
             }
-            // Recurse into nested non-@table grouping inputs so a nested-leaf @lookupKey /
-            // @condition is rejected with the same diagnostic as a top-level field. A nested @table
-            // input is compound-mutation territory and is not descended here.
+            // A nested @table input is compound-mutation territory and is not descended here.
             var base = GraphQLTypeUtil.unwrapAll(sdlField.getType());
             if (base instanceof graphql.schema.GraphQLInputObjectType nested
                     && !nested.hasAppliedDirective(DIR_TABLE)) {
@@ -508,7 +446,7 @@ final class MutationInputResolver {
     /**
      * Per-field admission for the INSERT path (UPDATE / DELETE are intercepted upstream by their
      * walkers; UPSERT is refused at the {@code @mutation} classifier dispatch). Recurses into
- * {@link InputField.NestingField} grouping inputs: a nested leaf is admitted under the
+     * {@link InputField.NestingField} grouping inputs: a nested leaf is admitted under the
      * same rules as a root leaf, so a buried composite {@link InputField.ColumnBackedField} still
      * trips the INSERT carve-out. A list-typed nesting or a nested group carrying
      * {@code @condition} rejects. Returns the first inadmissible field's rejection, or {@code null}.
@@ -516,13 +454,11 @@ final class MutationInputResolver {
      */
     static Rejection admitMutationInputFields(List<InputField> fields, String typeName, DmlKind kind) {
         for (var f : fields) {
-            // ColumnBackedField admission rule:
-            //   Direct extraction  → always admitted (canonical mutation-input shape).
-            //   NodeIdDecodeKeys   → admitted: NodeId-decoded column write.
-            // The INSERT carve-out is arity-gated on the carrier's own isComposite() (the
-            // composite-PK INSERT shape is architecturally rare; lifting waits for a
-            // forcing-function schema) and fires for a nested leaf too, since the recursion
-            // reaches it. Composite carriers admit on every other non-UPSERT verb.
+            // ColumnBackedField admits with Direct extraction (canonical mutation-input shape)
+            // and with NodeIdDecodeKeys (NodeId-decoded column write). The INSERT carve-out is
+            // arity-gated on the carrier's isComposite() (the composite-PK INSERT shape is
+            // architecturally rare) and fires for nested leaves too, since the recursion reaches
+            // them. Composite carriers admit on every other non-UPSERT verb.
             if (f instanceof InputField.ColumnBackedField cbf) {
                 if (cbf.isComposite() && kind == DmlKind.INSERT) {
                     return Rejection.deferred(
@@ -534,13 +470,12 @@ final class MutationInputResolver {
                 }
                 continue;
             }
-            // FK-target reference carriers ({@code @nodeId(typeName: T)} pointing at
-            // another @table's NodeType, classified to DirectFk) admit on INSERT, UPDATE and
-            // DELETE at every arity. The carrier's liftedSourceColumns live on the input's own
-            // table — no JOIN at the emit site — and the extraction is narrowed to
-            // NodeIdDecodeKeys, so the emitters bind decoded keys against liftedSourceColumns
-            // positionally, the same shape the same-table NodeId carriers (ColumnBackedField
-            // with NodeIdDecodeKeys) already drive.
+            // FK-target reference carriers (@nodeId(typeName: T) pointing at another @table's
+            // NodeType, classified to DirectFk) admit on INSERT, UPDATE and DELETE at every
+            // arity. The carrier's liftedSourceColumns live on the input's own table (no JOIN at
+            // the emit site) and the extraction is narrowed to NodeIdDecodeKeys, so the emitters
+            // bind decoded keys against liftedSourceColumns positionally, the same shape the
+            // same-table NodeId carriers drive.
             if (f instanceof InputField.ColumnBackedReferenceField) {
                 continue;
             }
@@ -548,7 +483,7 @@ final class MutationInputResolver {
             // developer takes over the WHERE half via the explicit condition method. INSERT has
             // no WHERE clause for the override to bind into, so the carrier rejects there.
             // UnboundField with condition.isEmpty() or @condition(override:false) is never a
-            // valid mutation input shape — the field has nothing to write and no filter slot.
+            // valid mutation input shape: the field has nothing to write and no filter slot.
             if (f instanceof InputField.UnboundField uf) {
                 if (uf.condition().isPresent() && uf.condition().get().override()) {
                     if (kind == DmlKind.INSERT) {
@@ -596,13 +531,12 @@ final class MutationInputResolver {
 
     /**
      * Rejects a column written by two or more plain {@code @field} writers (no {@code @nodeId}
-     * decode among them), recursing into nested grouping inputs so a buried leaf is held to the same rule.
-     * Such an overlap is a pure schema fact (both names resolve to one column with no runtime input) and is
-     * avoidable, so it is an author error caught at build time, the mutation-path mirror of the {@code @service}
-     * reject. An overlap involving at least one decode is left to the runtime value-agreement check
-     * (FK topology can legitimately force a column to be written by two references), so it is admitted here.
-     * Returns the first offending column's rejection, or {@code null}. Called from
-     * {@code FieldBuilder.resolveInsertWriteTarget}.
+     * decode among them), recursing into nested grouping inputs. Such an overlap is a pure schema
+     * fact, so it is an author error caught at build time, the mutation-path mirror of the
+     * {@code @service} reject. An overlap involving at least one decode is admitted here and left
+     * to the runtime value-agreement check (FK topology can legitimately force a column to be
+     * written by two references). Returns the first offending column's rejection, or {@code null}.
+     * Called from {@code FieldBuilder.resolveInsertWriteTarget}.
      */
     static Rejection rejectPlainColumnCollision(List<InputField> fields, String typeName) {
         var writers = new ArrayList<ColumnOverlap.ColumnWriter>();
@@ -619,18 +553,21 @@ final class MutationInputResolver {
         return null;
     }
 
-    /** One SET-side carrier as a {@link ColumnOverlap.ColumnWriter}; the dotted access path is the
- * reject-message label. The same shared grouping the emitters trigger value-agreement on
-     *  yields the all-plain collision the validator rejects on, so reject and agreement read one fold. */
+    /**
+     * One SET-side carrier as a {@link ColumnOverlap.ColumnWriter}; the dotted access path is the
+     * reject-message label. The same grouping the emitters trigger value-agreement on yields the
+     * all-plain collision the validator rejects on, so reject and agreement read one fold.
+     */
     private record InputFieldWriter(List<ColumnRef> targetColumns, boolean decode, String label)
             implements ColumnOverlap.ColumnWriter {}
 
     /**
-     * Accumulates the SET-side carriers writing the input's own columns as {@link ColumnOverlap.ColumnWriter}s,
- * recursing into {@link InputField.NestingField} grouping inputs and threading the access-path
-     * prefix. Value carriers source columns from {@code column() / columns()}, FK-reference carriers from
-     * {@code liftedSourceColumns()}; composite and reference carriers carry a decode by construction, a
-     * {@link InputField.ColumnBackedField} only when its extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.
+     * Accumulates the SET-side carriers writing the input's own columns as
+     * {@link ColumnOverlap.ColumnWriter}s, recursing into {@link InputField.NestingField} grouping
+     * inputs and threading the access-path prefix. Value carriers source columns from
+     * {@code columns()}, FK-reference carriers from {@code liftedSourceColumns()}; a
+     * {@link InputField.ColumnBackedField} carries a decode only when its extraction is a
+     * {@link CallSiteExtraction.NodeIdDecodeKeys}.
      */
     private static void collectSetColumns(List<InputField> fields, List<String> prefix,
             List<ColumnOverlap.ColumnWriter> writers) {

@@ -26,17 +26,14 @@ import java.util.List;
  *
  * <p>Sealed permits map each variant to its producer set and emit shape:
  * <ul>
- *   <li>{@link Service} — {@code @service} methods. The only variant whose call shape can vary;
- *       {@link Service#callShape()} decides emit form on the {@code serviceCallTarget} path.
- *       Producer: {@code ServiceCatalog.reflectServiceMethod}.</li>
- *   <li>{@link StaticOnly} — static-by-construction method references. Rides the bare-class
- *       static call-target on the {@code @tableMethod} / {@code @externalField} paths. Producers:
- *       {@code ServiceCatalog.reflectTableMethod}, {@code reflectExternalField}, and
- *       {@link no.sikt.graphitron.rewrite.EnumMappingResolver} when wrapping a {@link StaticOnly}
- *       upstream.</li>
- *   <li>{@link ConditionFilter} — {@code @condition} expressions. Rides the {@code @condition}
- *       evaluator path; never reads as static-or-instance because the variant has no Java method
- *       to be classified that way.</li>
+ *   <li>{@link Service}: {@code @service} methods, the only variant whose call shape can vary
+ *       ({@link Service#callShape()}). Producer: {@code ServiceCatalog.reflectServiceMethod}.</li>
+ *   <li>{@link StaticOnly}: static-by-construction method references on the {@code @tableMethod} /
+ *       {@code @externalField} paths. Producers: {@code ServiceCatalog.reflectTableMethod},
+ *       {@code reflectExternalField}, and {@link no.sikt.graphitron.rewrite.EnumMappingResolver}
+ *       when wrapping a {@link StaticOnly} upstream.</li>
+ *   <li>{@link ConditionFilter}: {@code @condition} expressions; carries no Java method, so it is
+ *       never classified static-or-instance.</li>
  * </ul>
  */
 public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilter {
@@ -73,7 +70,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     }
 
     /**
-     * Extracted parameters only — {@link ParamSource.Arg} and {@link ParamSource.Context} —
+     * Extracted parameters only ({@link ParamSource.Arg} and {@link ParamSource.Context}),
      * in declaration order. Skips implicit structural parameters ({@link ParamSource.Table},
      * {@link ParamSource.SourceTable}, {@link ParamSource.DslContext},
      * {@link ParamSource.Sources}).
@@ -164,7 +161,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     /**
      * Static-by-construction method references: {@code @tableMethod}, {@code @externalField},
      * and enum-mapping wrappers around either. The variant identity IS the static-call-shape
-     * guarantee — no {@code callShape()} accessor exists, so any consumer reading a
+     * guarantee: no {@code callShape()} accessor exists, so any consumer reading a
      * {@link StaticOnly} can emit {@code ClassName.method(...)} unconditionally.
      */
     record StaticOnly(
@@ -207,21 +204,17 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
          * Instance method on a holder class constructed per call. {@code ctorParams} are the
          * holder constructor's parameters in declaration order, each sourced from
          * {@link ParamSource.DslContext} or {@link ParamSource.Context}; the call site emits
-         * {@code new ClassName(<ctorArgs>).method(...)}. The legacy {@code (DSLContext)}-only
+         * {@code new ClassName(<ctorArgs>).method(...)}. The plain {@code (DSLContext)}-only
          * holder is the single-{@link ParamSource.DslContext}-param case; the arm also carries
          * richer constructors (e.g. {@code (DSLContext, ctxArg)}).
-         *
-         * <p>The no-arg convenience constructor preserves the legacy {@code (DSLContext)} shape for
-         * test fixtures and any caller that has not been updated to thread the resolved ctor
-         * parameters; it defaults to a single {@link ParamSource.DslContext} parameter named
-         * {@code "dsl"}.
          */
         record InstanceWithDslHolder(List<Param> ctorParams) implements CallShape {
             public InstanceWithDslHolder {
                 ctorParams = List.copyOf(ctorParams);
             }
 
-            /** Legacy {@code (DSLContext)}-holder shape: a single DSLContext ctor parameter. */
+            /** The plain {@code (DSLContext)}-holder shape: a single {@link ParamSource.DslContext}
+             *  ctor parameter named {@code "dsl"}. Used by test fixtures. */
             public InstanceWithDslHolder() {
                 this(List.of(new Param.Typed("dsl", "org.jooq.DSLContext",
                     no.sikt.graphitron.javapoet.ClassName.get("org.jooq", "DSLContext"),
@@ -264,8 +257,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
          * <p>{@code javaType} is the structured JavaPoet {@link TypeName} captured from
          * {@link java.lang.reflect.Parameter#getParameterizedType()}. Stored alongside the
          * string-form {@code typeName} so emitters that need a JavaPoet AST (factory parameter
-         * lists, {@code $T.class} cast literals) do not have to re-parse the rendered string.
-         * Mirrors the precedent set by {@link MethodRef#returnType()}.
+         * lists, {@code $T.class} cast literals) do not have to re-parse the rendered string,
+         * as {@link MethodRef#returnType()} does.
          */
         record Typed(String name, String typeName, TypeName javaType, ParamSource source) implements Param {
 

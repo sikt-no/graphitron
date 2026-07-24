@@ -15,9 +15,9 @@ import java.util.List;
 
 /**
  * Emitter that turns a {@link ServiceMethodCall} carrier into the ordered statement list for
- * a service fetcher's lambda body. The caller (today's
- * {@code buildServiceFetcherCommon}, post-cutover) appends the returned statements verbatim and
- * wraps them in the existing try/catch + ErrorRouter discipline.
+ * a service fetcher's lambda body. The caller ({@code TypeFetcherGenerator.buildServiceFetcherCommon})
+ * appends the returned statements verbatim and wraps them in the try/catch + ErrorRouter
+ * discipline.
  *
  * <h3>Returned statements</h3>
  *
@@ -44,9 +44,8 @@ public final class ServiceMethodCallEmitter {
 
     /**
      * Emit the body statements for a {@link ServiceMethodCall}. The {@code result} local is
-     * declared with the carrier's {@link ServiceMethodCall#javaReturnType()}. The
-     * {@code outputPackage} parameter is reserved for resolving package-qualified references in
-     * future extensions; the current emitter only generates unqualified same-class calls into
+     * declared with the carrier's {@link ServiceMethodCall#javaReturnType()}.
+     * {@code outputPackage} is unused: the emitter generates unqualified same-class calls into
      * the {@code graphitronContext(env)} private static helper that
      * {@code TypeFetcherGenerator.buildGraphitronContextHelper} emits on every {@code *Fetchers}
      * class. The caller is responsible for registering
@@ -87,8 +86,7 @@ public final class ServiceMethodCallEmitter {
      * Canonical form carrying the {@code dsl} local's source expression, resolved per the
      * field's tenant binding by {@code TenantDslEmitter.dslExpression} (which yields the
      * {@code graphitronContext(env).getDslContext(env)} form in single-tenant builds, the shape
-     * every other overload defaults to). {@code outputPackage} disappeared with the hardcoded
-     * expression: the tenant-aware caller resolves package-qualified references itself.
+     * every other overload defaults to).
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, TypeName resultLocalType,
             FetchersHelperNames helperNames, CodeBlock dslExpression) {
@@ -168,11 +166,9 @@ public final class ServiceMethodCallEmitter {
      * {@link ValueShape.JavaBeanInput}, {@link ValueShape.ListOf}) delegate to the
      * {@code create<Bean>} / {@code create<Bean>List} helpers emitted on the enclosing
      * {@code *Fetchers} class by {@link InputBeanInstantiationEmitter}. The helper names follow
-     * the {@code createBean}/{@code createBeanList} convention; the helper queue in {@link TypeFetcherGenerator} is driven from the
-     * call sites that produce {@link CallSiteExtraction.InputBean} arms (today the four service
-     * permits implement both {@code ServiceField} and {@code MethodBackedField} during the
-     * additive cutover, so the queue still sees them via the legacy {@code method().callParams()}
-     * walk).
+     * the {@code createBean}/{@code createBeanList} convention; the helper queue in
+     * {@link TypeFetcherGenerator} is driven from the call sites that produce
+     * {@link CallSiteExtraction.InputBean} arms.
      */
     static CodeBlock valueShapeExpression(ValueShape shape, FetchersHelperNames helperNames) {
         return switch (shape) {
@@ -185,7 +181,7 @@ public final class ServiceMethodCallEmitter {
     }
 
     /**
- * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param. A
+     * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param. A
      * {@link ValueShape.JooqRecordInput} carries its own {@code sdlPath}, so it reads the arg name
      * directly rather than recovering it from a {@code fields} list (the reason it does not reuse
      * {@link #compositeHelperCall}). The helper name resolves through the class-level
@@ -252,9 +248,8 @@ public final class ServiceMethodCallEmitter {
      * segment, including the leaf segment if it lifts. The emitter strips that many wraps to
      * find the innermost element type, then applies the leaf transform's cast against either
      * the stripped element type (non-list leaf) or its single-{@code List<>} re-wrap (list-typed
-     * leaf). Mirrors {@code ArgCallEmitter#buildListAwarePathExtraction}; the older site stays
-     * live for the callsites not yet on the {@link ServiceMethodCall} carrier (condition,
-     * tableMethod, externalField) until those slices migrate.
+     * leaf). Mirrors {@code ArgCallEmitter#buildListAwarePathExtraction}, the sibling site
+     * serving the condition / tableMethod / externalField call sites.
      */
     private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path) {
         int liftCount = 0;
@@ -398,9 +393,9 @@ public final class ServiceMethodCallEmitter {
             case ValueShape.ListOf l -> l.sdlPath().outerArgName();
             case ValueShape.RecordInput r -> outerArgOf(r.fields());
             case ValueShape.JavaBeanInput b -> outerArgOf(b.fields());
-            // Forced by the sealed addition but unreachable by construction — a JooqRecordInput is
-            // only ever a top-level param shape or a ListOf element, never an InputBean field shape, so
-            // outerArgOf is never called with one. Defensive read off its own path.
+            // Unreachable by construction: a JooqRecordInput is only ever a top-level param shape
+            // or a ListOf element, never an InputBean field shape, so outerArgOf is never called
+            // with one. Defensive read off its own path.
             case ValueShape.JooqRecordInput jr -> jr.sdlPath().outerArgName();
         };
     }
