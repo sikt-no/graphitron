@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 7
 theme: runtime-connection
-depends-on: [multi-tenant-fanout]
+depends-on: []
 created: 2026-07-23
 last-updated: 2026-07-23
 ---
@@ -14,7 +14,7 @@ last-updated: 2026-07-23
 
 ## Motivation
 
-R46's fan-out domain ([`multi-tenant-fanout.md`](multi-tenant-fanout.md)) is a request-level fact: the factory-supplied tenant set intersected with the hosted map, applied uniformly to every fanned field in the operation. It cannot express narrowing driven by the query itself, such as a client selecting two of their ten authorized institutions for one field. Today that shape is approximated with an ordinary filter argument: the per-tenant WHERE clause makes unwanted tenants return empty, but every domain tenant is still queried, so the client pays connection, session, and query cost for databases it asked nothing from.
+R46's fan-out domain (shipped, recorded in [`changelog.md`](changelog.md)) is a request-level fact: the factory-supplied tenant set intersected with the hosted map, applied uniformly to every fanned field in the operation. It cannot express narrowing driven by the query itself, such as a client selecting two of their ten authorized institutions for one field. Today that shape is approximated with an ordinary filter argument: the per-tenant WHERE clause makes unwanted tenants return empty, but every domain tenant is still queried, so the client pays connection, session, and query cost for databases it asked nothing from.
 
 ## Direction (to be developed at Spec)
 
@@ -31,5 +31,5 @@ This is the fan-out cousin of R45's `ArgumentBound` (where a scalar tenant-colum
 
 ## Siblings
 
-- **Depends on R46** ([`multi-tenant-fanout.md`](multi-tenant-fanout.md)): the fan-out arm, domain rule, and marker this item narrows; R46's spec records this door next to its optional-directive-argument note.
+- **R46** (Done, recorded in [`changelog.md`](changelog.md)): the fan-out arm, domain rule, and marker this item narrows; the shipped rejection of the list-valued tenant-column argument + marker combination is the placeholder this item relaxes.
 - **R505** ([`tenant-index-parent-row-routing.md`](tenant-index-parent-row-routing.md)): the orthogonal narrowing axis, data-driven (which tenants hold rows) where this item is client-driven (which tenants the caller wants).

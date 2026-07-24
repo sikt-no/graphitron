@@ -42,4 +42,4 @@ query {
 ## Siblings
 
 - **R45** (Done, recorded in [`changelog.md`](changelog.md)): the tenant-column declaration, the two-way classification this item widens, the `TenantBinding` axis this item's arm joins, and the loader-name partition mechanism.
-- **R46** ([`multi-tenant-fanout.md`](multi-tenant-fanout.md)): the no-index fallback, fan out across every tenant and union. An index narrows the fan-out to the tenants that hold data; schemas without one keep using R46's shape.
+- **R46** (Done, recorded in [`changelog.md`](changelog.md)): the no-index fallback, fan out across every tenant and union. An index narrows the fan-out to the tenants that hold data; schemas without one keep using R46's shape.
