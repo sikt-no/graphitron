@@ -1,7 +1,7 @@
 ---
 id: R97
-title: "Deprecate @table on input types; consumer-derived tables + argMapping grouping"
-status: In Progress
+title: "Consumer-derived input tables: arg-level @lookupKey + UPDATE write target"
+status: In Review
 bucket: architecture
 priority: 6
 theme: classification-model
@@ -9,7 +9,25 @@ depends-on: []
 last-updated: 2026-07-24
 ---
 
-# Deprecate `@table` on input types; consumer-derived tables + `argMapping` grouping
+# Consumer-derived input tables: arg-level `@lookupKey` + UPDATE write target
+
+> **Scope narrowed 2026-07-24.** This item began as the whole `@table`-on-input
+> deprecation across four phases. Like the mutation write-target axis before it
+> (R457/R514/R515), the phases were split into shippable slices. This item is now
+> the **consumer-derived-resolution** slice that has shipped: **Phase 2**
+> (arg-level `@lookupKey` consumer-derived; retire the global aggregate + routing
+> gate) and **Phase 2b** (UPDATE field-relative write target). The remaining
+> phases moved to their own items:
+>
+> - **Phase 1** (`argMapping` grouping) → **R518** (`argmapping-grouping-fanout`)
+> - **Phase 3** (remove the `@table` directive from inputs; delete
+>   `TableInputType`) → **R519** (`remove-table-on-input-directive`) — the new
+>   home for the general `@table`-on-input removal.
+> - **Phase 4** (housekeeping) → **R520** (`table-on-input-removal-housekeeping`)
+>
+> The rationale sections below (fact-model framing, redundancy argument, "what
+> `@table` on input still drives") remain the shared background for the whole axis
+> and are referenced by R519.
 
 The `@table` directive on input types declares "this input maps to columns
 of table X". The classifier consumes it to produce
@@ -330,38 +348,17 @@ already available through introspection or `argMapping`.
 
 ## Phasing
 
-Ordered so each phase is independently shippable. Phase 1 (`argMapping`
-grouping) is orthogonal to the rest and can be scheduled freely; Phases 2 and
-2b can land in either order; Phase 3 requires both plus R515.
+This item's delivered scope is **Phase 2** and **Phase 2b** below (both shipped).
+The other phases moved to their own items:
 
-Phase 1 shares no code path, dependency, or gate with the directive-retirement
-axis; its only tie is the "convention + `argMapping` escape valve" rationale.
-When it is picked up, split it into its own item (as R457/R514/R515 were split
-off the mutation axis) and let R97 be purely the `@table`-on-input retirement;
-until then this body is its home so the rationale stays in one place.
+- **Phase 1** (`argMapping` grouping) → **R518** (`argmapping-grouping-fanout`).
+  Orthogonal; schedule freely.
+- **Phase 3** (remove the `@table` directive from inputs; delete
+  `TableInputType`) → **R519** (`remove-table-on-input-directive`). Gated on this
+  item (Phase 2 + 2b) and R515, all now landed.
+- **Phase 4** (housekeeping) → **R520** (`table-on-input-removal-housekeeping`).
 
-### Phase 1: extend `argMapping` with grouping syntax
-
-- Parser change in the `argMapping` value parser (`PathExpr`, the R84
-  path-expression parser, is the existing precedent).
-- Resolver change in the `argMapping` consumers
-  (`ServiceDirectiveResolver` / `ArgBindingMap`; the old
-  `EnumMappingResolver.enrichArgExtractions` home is retired).
-- Sealed-result extension to `ArgBinding` to carry grouping
-  outcomes.
-- Compact-constructor-enforced grouping invariants on the new
-  carrier (every input field belongs to exactly one grouping entry;
-  each group entry's RHS matches the target type's constructor params).
-- Pipeline-tier coverage: SDL with a multi-target service method →
-  emitted fetcher constructs each target from the grouped input
-  fields.
-- Execution-tier coverage: a sakila mutation that fans out across
-  two jOOQ records.
-
-Acceptance: `argMapping` grouping works end-to-end for at least one
-sakila fixture; existing single-source `argMapping` is unchanged.
-
-### Phase 2: retire the global input-classification machinery
+### Phase 2: retire the global input-classification machinery — SHIPPED (`85d8be0`)
 
 The original Phase 2 asked for consumer-derived column resolution at the call
 site; that shipped (R205/R215/R330, see "What has already shipped"). What
@@ -463,7 +460,7 @@ above: its rejection row (plain input, `@lookupKey`, unresolvable against the
 consumer's table) must land in the validator-mirror set with a pipeline-tier
 test.
 
-### Phase 2b: UPDATE write-target migration (the last verb)
+### Phase 2b: UPDATE write-target migration (the last verb) — SHIPPED (`30fde4b`)
 
 The mutation half of this item has been landing verb-by-verb: DELETE (R457),
 the grounding substrate (R514), INSERT (R515). UPDATE is the residual: both
@@ -496,50 +493,20 @@ never code-string assertions on emitted bodies) and round-trips at the
 execution tier with `@table` dropped; `rawArgUpdateRejection` is gone; the
 R332 warning's replacement wording covers UPDATE-consumed inputs.
 
-### Phase 3: remove the directive declaration
+### Phase 3: remove the directive declaration → moved to R519
 
-- Narrow `directives.graphqls`'s `@table` directive scope from
-  `OBJECT | INTERFACE | INPUT_OBJECT` to `OBJECT | INTERFACE`.
-- Remove the `@table`-driven arm in `TypeBuilder.buildInputType` (the only
-  arm left after Phase 2), collapsing every input to the plain-input path;
-  `buildTableInputType`, `TableInputType`, and
-  `GraphitronSchemaValidator.validateTableInputType` retire with it (their
-  remaining consumers all moved to field-relative resolution in Phase 2/2b).
-- Remove the input half of the "Shadowed by `@table`" directive-ignored
-  warning (the residue of the old `@table + @record` shadow rule; R96 took
-  the `@record` half).
-- Retire the R332 deprecation warning itself
-  (`emitTableOnInputDeprecationWarnings`): once the scope narrows, an
-  `@table`-on-input is a parse error, not a warning.
-- Migrate all fixtures: remove `@table(name: "...")` from every `input`
-  declaration; `schema.graphqls` carries roughly forty at the time of this
-  respec (grep `^input .+@table`), plus inline SDL in `graphitron/src/test/`
-  and any LSP fixtures.
-- Update `code-generation-triggers.adoc` and any other doc references.
+Narrow `@table` off `INPUT_OBJECT`, delete `TableInputType` and its bridge,
+retire the deprecation/shadow warnings, migrate the ~40 `@table`-on-input
+fixtures, and make the affirmative LSP-projection decision. Full spec (including
+the two build-green-cannot-catch seams recorded from Phase 2 — the
+`InputBeanResolver` semantic signal and the input-field `FieldClassification`
+coordinates) lives in **R519** (`remove-table-on-input-directive`), the new home
+for the general `@table`-on-input removal.
 
-- Decide the LSP projection story *affirmatively*, not by deletion: the
-  `CatalogBuilder` seams (see the "still drives" table) lose their data
-  source when `TableInputType` goes. Either the per-consumer resolution
-  feeds the input-type hover / input-field `FieldClassification`
-  coordinates Phase 2 promises, or this phase states that the input-field
-  LSP coordinates are dropped and R337 owns their re-surfacing. "Build
-  green" cannot catch this regression (the exhaustive switches force code
-  edits, but deleting the arms compiles fine), so it is an acceptance
-  clause, not an implementation detail.
+### Phase 4: housekeeping → moved to R520
 
-Acceptance: directive declaration accepts only `OBJECT | INTERFACE`;
-all fixture SDL is migrated; the LSP projection replacement (or its
-deliberate drop + R337 handoff) is named in the shipped plan body; build
-green.
-
-### Phase 4: housekeeping
-
-- Add a migration note in `changelog.md` naming the SHA where
-  `@table`-on-input ships zero scope.
-- LSP completion + diagnostics drop `@table` from the
-  `INPUT_OBJECT`-applicable directive list.
-- `docs/README.adoc` and any other documentation references update
-  to remove `@table` as a directive consumers reach for on inputs.
+Changelog migration note, LSP directive-list drop, and doc references. See
+**R520** (`table-on-input-removal-housekeeping`).
 
 ## Out of scope
 
