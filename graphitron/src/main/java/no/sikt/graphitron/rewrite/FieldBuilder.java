@@ -4833,8 +4833,8 @@ class FieldBuilder {
             }
             if (kind != null) {
                 // @mutation(table:) is wired only for the verbs in
-                // MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS ({DELETE, INSERT} today). On any
-                // other verb (UPDATE / UPSERT) it is an unimplemented classification; silently ignoring
+                // MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS ({DELETE, INSERT, UPDATE} today). On
+                // any other verb (UPSERT) it is an unimplemented classification; silently ignoring
                 // an author-written directive argument is the green-build-wrong-intent failure mode the
                 // axioms forbid, so reject loudly with a typed, sealed rejection (stable LSP code). The
                 // classifier, the binding grounder, and `mvn graphitron:validate` read the same set, so
@@ -4922,11 +4922,11 @@ class FieldBuilder {
 
     /**
  * Classifies a direct-@table/ID-return {@code @mutation(typeName: UPDATE)} field into a
-     * {@link MutationField.MutationUpdateTableField}. Runs the whole-arg pre-checks the walker is
-     * not the right layer to diagnose (multiRow rejection, the single {@code @table} arg resolution,
-     * the {@code @argCondition}-on-arg rejection), builds the slim {@link InputArgRef} arg surface
-     * directly from the resolved {@code @table} input type, then runs {@code UpdateRowsWalker} for
-     * the PK-or-UK identification and SET/WHERE partition. A pre-check failure or a walker
+     * {@link MutationField.MutationUpdateTableField}. Resolves the write target and input fields through
+     * the shared return-capable lattice ({@link #resolveUpdateWriteTarget}: return-derived table, then
+     * {@code @mutation(table:)}, then the deprecated input {@code @table} bridge), builds the slim
+     * {@link InputArgRef} arg surface from the resolved write target, then runs {@code UpdateRowsWalker}
+     * for the PK-or-UK identification and SET/WHERE partition. A pre-check failure or a walker
      * {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed rejection (the field
      * is excluded from the classified set); the walker's typed {@code UpdateRowsError} arms are
      * preserved verbatim so the LSP projector can read their {@code lspCode()}.
@@ -4934,15 +4934,13 @@ class FieldBuilder {
     private GraphitronField classifyUpdateTableField(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef returnType) {
-        GraphitronType.TableInputType foundTit;
+        TableRef writeTarget;
+        List<InputField> inputFields;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
-        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
-            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
-            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
-            // UPDATE has no field-relative write-target path; a non-@table input rejects
-            // exactly as it did before the RawArg arm existed.
-            case DmlWalkerInputArgResolution.RawArg raw -> {
-                return rawArgUpdateRejection(parentTypeName, name, location, fieldDef, raw);
+        switch (resolveUpdateWriteTarget(fieldDef, parentTypeName, name, location, returnType)) {
+            case UpdateWriteTarget.Rejected r -> { return r.field(); }
+            case UpdateWriteTarget.Resolved ok -> {
+                writeTarget = ok.writeTarget(); inputFields = ok.inputFields(); inputArg = ok.inputArg();
             }
         }
         boolean list = inputArg.list();
@@ -4956,7 +4954,7 @@ class FieldBuilder {
         // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
-            String tableSqlName = foundTit.table().tableName();
+            String tableSqlName = writeTarget.tableName();
             // The one-to-many by-table node index in place of the registry scan;
             // the implicit ID encoder is well-defined only for a single-node table.
             var nodesOnTable = ctx.nodes.forTable(tableSqlName);
@@ -4976,7 +4974,7 @@ class FieldBuilder {
         // input fields (the translator concession; see UpdateRowsWalker). Cardinality-independent
         //: the bulk vs single-row split is the emitter's, driven by inputArg.list() below.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, inputArg.name());
         var enc = encodeReturn;
         // The bulk arm emits UPDATE... FROM (VALUES...), a Postgres extension jOOQ silently
         // emulates with semantics drift on other dialects, so it requires the Postgres family;
@@ -5004,10 +5002,11 @@ class FieldBuilder {
      * raw (non-{@code @table}) input arg surface, or a typed rejection.
      *
  * <p>{@code RawArg} makes "the single input arg is not a {@code TableInputType}" a normal
-     * outcome rather than an immediate structural reject. UPDATE callers translate it to today's
-     * rejection verbatim (byte-identical behaviour); the DELETE classifiers own the fallback that
-     * resolves the write target from {@code @mutation(table:)} and re-derives the input fields against
-     * it. Carries only the slim arg facts plus the {@link GraphitronType.InputType} verdict (whose
+     * outcome rather than an immediate structural reject. Every walker-driven verb now owns a
+     * field-relative fallback that resolves the write target off the field (DELETE from
+     * {@code @mutation(table:)}; INSERT / UPDATE additionally from the return-derived rung) and
+     * re-derives the input fields against it. Carries only the slim arg facts plus the
+     * {@link GraphitronType.InputType} verdict (whose
      * {@code schemaType()} yields the raw {@link graphql.schema.GraphQLInputObjectField}s), never a
      * synthesized {@code TableInputType}.
      */
@@ -5034,12 +5033,13 @@ class FieldBuilder {
      *
  * <p>This method stays verb-agnostic. "The single input arg is not a
      * {@code TableInputType}" is now a <em>normal</em> outcome ({@link DmlWalkerInputArgResolution.RawArg})
-     * rather than an immediate structural reject, because a DELETE can carry its write target on
-     * {@code @mutation(table:)} instead of on the input's {@code @table}. The verb-divergent handling
-     * of that arm lives in the callers: UPDATE translates it back to today's rejection verbatim, the
-     * DELETE classifiers own the field-relative fallback. A genuinely non-input-object argument (a
+     * rather than an immediate structural reject, because a walker-driven mutation can carry its write
+     * target on the field ({@code @mutation(table:)}, or the return-derived rung for INSERT / UPDATE)
+     * instead of on the input's {@code @table}. The field-relative fallback for that arm lives in the
+     * per-verb write-target resolvers ({@link #resolveDeleteWriteTarget},
+     * {@link #resolveReturnCapableWriteTarget}). A genuinely non-input-object argument (a
      * scalar/enum), more-than-one input argument, and {@code @condition}-on-arg remain structural
-     * rejections here for both verbs.
+     * rejections here for every verb.
      */
     private DmlWalkerInputArgResolution resolveDmlWalkerInputArg(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name, SourceLocation location) {
@@ -5092,20 +5092,6 @@ class FieldBuilder {
     }
 
     /**
- * The "@mutation fields only accept @table input arguments" rejection an UPDATE classifier
-     * produces when it meets a {@link DmlWalkerInputArgResolution.RawArg} (a non-{@code @table} input
-     * object). Byte-identical to the message {@link #resolveDmlWalkerInputArg} emitted for the same
-     * shape before the arm became a normal outcome, so UPDATE behaviour is unchanged.
-     */
-    private GraphitronField rawArgUpdateRejection(
-            String parentTypeName, String name, SourceLocation location, GraphQLFieldDefinition fieldDef,
-            DmlWalkerInputArgResolution.RawArg raw) {
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-            "@mutation fields only accept @table input arguments; found '" + raw.argName()
-            + "' of type '" + raw.argTypeName() + "'"));
-    }
-
-    /**
  * Classifies a payload-returning {@code @mutation(typeName: UPDATE)} field into a
      * {@link MutationField.MutationUpdatePayloadField} (single) or
      * {@link MutationField.MutationBulkUpdatePayloadField} (bulk). Combines the structural-DML-
@@ -5121,15 +5107,13 @@ class FieldBuilder {
     private GraphitronField classifyUpdatePayloadField(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef.ResultReturnType returnType) {
-        GraphitronType.TableInputType foundTit;
+        TableRef writeTarget;
+        List<InputField> inputFields;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
-        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
-            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
-            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
-            // UPDATE has no field-relative write-target path; a non-@table input rejects
-            // exactly as it did before the RawArg arm existed.
-            case DmlWalkerInputArgResolution.RawArg raw -> {
-                return rawArgUpdateRejection(parentTypeName, name, location, fieldDef, raw);
+        switch (resolveUpdateWriteTarget(fieldDef, parentTypeName, name, location, returnType)) {
+            case UpdateWriteTarget.Rejected r -> { return r.field(); }
+            case UpdateWriteTarget.Resolved ok -> {
+                writeTarget = ok.writeTarget(); inputFields = ok.inputFields(); inputArg = ok.inputArg();
             }
         }
 
@@ -5167,12 +5151,9 @@ class FieldBuilder {
                 + DmlKind.UPDATE + ") the post-image is richer; use a @table-element data field "
                 + "or a record-backed element data field instead."));
         }
-        var tbl = (BuildContext.DmlElementKind.Table) element;
-        String tableMismatch = requireDmlDataTableMatchesInputTable(
-            inputArg.table(), tbl, DmlKind.UPDATE, name, returnType.returnTypeName());
-        if (tableMismatch != null) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
-        }
+        // The @table-element data field: the rung-1-vs-rung-3 table match (the payload's @table-element
+        // table vs the input's deprecated @table) is owned by resolveUpdateWriteTarget, and the resolved
+        // write target is that same payload table, so no separate table-match check is needed here.
         var dmlChannelResult = detectStructuralDmlErrorChannel(returnType.returnTypeName());
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
@@ -5184,7 +5165,7 @@ class FieldBuilder {
         // input fields. On Err, preserve the typed UpdateRowsError arm verbatim. Cardinality-independent
         //: the bulk vs single-row split is the emitter's, driven by inputArg.list() below.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, inputArg.name());
         var channel = dmlChannel;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok -> {
@@ -5482,6 +5463,199 @@ class FieldBuilder {
     }
 
     /**
+     * Outcome of {@link #resolveReturnCapableWriteTarget}: the resolved write target and input fields
+     * for a return-capable DML verb (INSERT / UPDATE), plus the slim arg facts each verb's carrier is
+     * built from, or a typed rejection.
+     */
+    private sealed interface ReturnCapableWriteTarget {
+        record Resolved(TableRef writeTarget, List<InputField> inputFields,
+                        String argName, String argTypeName, boolean list,
+                        GraphQLInputObjectType schemaInput) implements ReturnCapableWriteTarget {}
+        record Rejected(GraphitronField field) implements ReturnCapableWriteTarget {}
+    }
+
+    /**
+     * Resolves the write target and input fields for a return-capable DML {@code @mutation} verb
+     * (INSERT and UPDATE, the members of {@link MutationInputResolver#RETURN_DERIVED_TABLE_VERBS}) by
+     * the shared precedence lattice:
+     *
+     * <ol>
+     *   <li><b>Rung 1 (preferred): the return's own {@code @table}</b> — a direct {@code @table}
+     *       return's table, or a carrier payload's single {@code @table}-element data field's table.</li>
+     *   <li><b>Rung 2: {@code @mutation(table:)}</b> on the field (the encoded-ID / scalar-return
+     *       shape, whose return names no table).</li>
+     *   <li><b>Rung 3 (deprecated bridge): the input type's {@code @table}</b>.</li>
+     * </ol>
+     *
+     * The winning table is the single-producer helper's
+     * ({@link MutationInputResolver#resolveDmlWriteTableRef}), so the classified write target and the
+     * binding grounder's {@code DmlEmitted} cannot diverge. The must-agree cross-checks live here: where
+     * rung 1 is present, a present rung 2 or rung 3 must agree with it (rejection on disagreement); a
+     * rung-1 vs rung-3 disagreement on a payload return reuses the pre-existing
+     * {@link #requireDmlDataTableMatchesInputTable} wording verbatim. Rung 2 silently outranks rung 3
+     * (the deprecated bridge), byte-matching {@link #resolveDeleteWriteTarget}. Every diagnostic carries
+     * the verb name from {@code kind}, so INSERT and UPDATE share this code while reading verb-correct
+     * messages.
+     *
+     * <p>On the field-derived path (write target not from the input's own {@code @table}), the input
+     * fields are re-resolved through {@link TypeBuilder#resolveInputFields} and the
+     * {@code validateTableInputType} input-field rejections are mirrored via
+     * {@link GraphitronSchemaValidator#collectInputFieldRejections} (the validator-mirror obligation).
+     * The per-verb admission set (INSERT's field-directive / plain-column checks; UPDATE's
+     * {@code UpdateRowsWalker}) runs in the caller, over the resolved field list this returns.
+     */
+    private ReturnCapableWriteTarget resolveReturnCapableWriteTarget(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef returnType, DmlKind kind) {
+        // 1. Arg surface. A @table input arrives as Resolved (tit); a non-@table input as RawArg.
+        GraphitronType.TableInputType tit = null;
+        GraphitronType.InputType rawInput = null;
+        String argName;
+        String argTypeName;
+        boolean list;
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return new ReturnCapableWriteTarget.Rejected(r.field()); }
+            case DmlWalkerInputArgResolution.Resolved ok -> {
+                tit = ok.tit();
+                argName = ok.inputArg().name();
+                argTypeName = ok.inputArg().inputTypeName();
+                list = ok.inputArg().list();
+            }
+            case DmlWalkerInputArgResolution.RawArg raw -> {
+                rawInput = raw.inputType();
+                argName = raw.argName();
+                argTypeName = raw.argTypeName();
+                list = raw.list();
+            }
+        }
+
+        // 2. Winning write target from the single-producer helper (rung 1 > rung 2 > rung 3).
+        TableRef writeTarget;
+        switch (MutationInputResolver.resolveDmlWriteTableRef(fieldDef, kind, svc, ctx)) {
+            case MutationInputResolver.WriteTableRef.Resolved r -> writeTarget = r.table();
+            case MutationInputResolver.WriteTableRef.UnknownTable u -> {
+                return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    ctx.unknownTableRejection(u.namedTable())));
+            }
+            case MutationInputResolver.WriteTableRef.None ignored -> {
+                // No live source resolved. Lead the message with the preferred (return-derived) fix.
+                return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation(typeName: " + kind + ") field '" + name + "' has no write target: return the "
+                    + "row's @table type or a carrier payload whose data field is that @table "
+                    + "type (preferred), name the table with @mutation(table: \"<table>\") on this field, "
+                    + "or annotate the input type '" + argTypeName + "' with @table (the deprecated bridge).")));
+            }
+        }
+
+        // 3. The three rung tables, for the must-agree cross-checks. Rung 1 is read off the resolved
+        // return type (authoritative, and equal to the helper's return-derived rung); the payload arm
+        // also keeps the DmlElementKind.Table so the rung-1-vs-rung-3 message is byte-identical to the
+        // pre-existing payload path.
+        Optional<TableRef> rung1;
+        BuildContext.DmlElementKind.Table payloadTbl = null;
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            rung1 = Optional.of(tb.table());
+        } else if (returnType instanceof ReturnTypeRef.ResultReturnType rrt
+                && ctx.scanStructuralDmlPayload(rrt.returnTypeName()) instanceof BuildContext.DmlPayloadScan.Admit admit
+                && admit.element() instanceof BuildContext.DmlElementKind.Table tbl) {
+            payloadTbl = tbl;
+            rung1 = Optional.of(tbl.table());
+        } else {
+            rung1 = Optional.empty();
+        }
+        // A @mutation(table:) naming an unresolvable table rejects even when a higher rung already
+        // resolved the write target: the single-producer helper short-circuits at rung 1 and never
+        // validates rung 2's name, so this call site is the only place that unknown name is caught when
+        // rung 1 is present (when rung 1 is absent it already rejected as UnknownTable in step 2). This
+        // mirrors the helper's unknown-table rejection rather than silently ignoring an author-written
+        // directive argument.
+        Optional<String> rung2Named = MutationInputResolver.parseMutationTableArg(fieldDef);
+        Optional<TableRef> rung2 = rung2Named.flatMap(svc::resolveTable);
+        if (rung2Named.isPresent() && rung2.isEmpty()) {
+            return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                ctx.unknownTableRejection(rung2Named.get())));
+        }
+        Optional<TableRef> rung3 = tit != null ? Optional.of(tit.table()) : Optional.empty();
+
+        // Rung 1 vs rung 2: the RETURNING projection reads from the write target, so a @mutation(table:)
+        // naming a different table than the return cannot emit a coherent statement.
+        if (rung1.isPresent() && rung2.isPresent() && !rung1.get().equals(rung2.get())) {
+            return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@mutation(typeName: " + kind + ") field '" + name + "' derives write target '"
+                + rung1.get().tableName() + "' from its return type, but @mutation(table:) names a "
+                + "different table '" + rung2.get().tableName() + "'; the RETURNING projection reads from "
+                + "the write target, so the two cannot emit a coherent statement. Remove @mutation(table:) "
+                + "(the return names the table) or align them.")));
+        }
+        // Rung 1 vs rung 3: the return table and the input's deprecated @table bridge must agree.
+        if (rung1.isPresent() && rung3.isPresent() && !rung1.get().equals(rung3.get())) {
+            String message = payloadTbl != null
+                ? requireDmlDataTableMatchesInputTable(rung3.get(), payloadTbl, kind, name, returnType.returnTypeName())
+                : "@mutation(typeName: " + kind + ") field '" + name + "' returns @table type '"
+                    + returnType.returnTypeName() + "' bound to table '" + rung1.get().tableName()
+                    + "', which does not match @table input table '" + rung3.get().tableName()
+                    + "'; the input's @table (the deprecated bridge) must name the same table as the "
+                    + "return. Remove @table from the input (the return names the write target).";
+            return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(message)));
+        }
+
+        // 4. Input fields against the write target. Reuse the input's already-resolved fields when the
+        // write target is its own @table (the registry TableInputType walk covers the validator
+        // rejections); otherwise re-derive against the field-named table and mirror the validator's
+        // input-field rejections here (a field-derived input never lands in validateTableInputType).
+        var schemaInput = tit != null ? tit.schemaType() : rawInput.schemaType();
+        List<InputField> inputFields;
+        if (tit != null && writeTarget.equals(tit.table())) {
+            inputFields = tit.inputFields();
+        } else {
+            var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
+            if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
+                return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural(failed.reason())));
+            }
+            inputFields = ((TypeBuilder.InputFieldsResolution.Resolved) fieldsResolution).fields();
+            var mirrored = GraphitronSchemaValidator.collectInputFieldRejections(inputFields);
+            if (!mirrored.isEmpty()) {
+                return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    mirrored.getFirst().rejection()));
+            }
+        }
+        return new ReturnCapableWriteTarget.Resolved(writeTarget, inputFields, argName, argTypeName, list, schemaInput);
+    }
+
+    /**
+     * Outcome of {@link #resolveUpdateWriteTarget}: the resolved UPDATE write target, the input fields
+     * resolved against it, and the slim {@link InputArgRef} the walker-driven UPDATE leaves carry, or a
+     * typed rejection. The UPDATE analogue of {@link DeleteWriteTarget}, but resolved through the
+     * return-capable lattice ({@link #resolveReturnCapableWriteTarget}) UPDATE shares with INSERT.
+     */
+    private sealed interface UpdateWriteTarget {
+        record Resolved(TableRef writeTarget, List<InputField> inputFields,
+                        no.sikt.graphitron.rewrite.model.InputArgRef inputArg) implements UpdateWriteTarget {}
+        record Rejected(GraphitronField field) implements UpdateWriteTarget {}
+    }
+
+    /**
+     * Resolves a {@code @mutation(typeName: UPDATE)} field's write target and input fields through the
+     * shared return-capable lattice ({@link #resolveReturnCapableWriteTarget}: return-derived table,
+     * then {@code @mutation(table:)}, then the deprecated input {@code @table} bridge), packaging the
+     * result as the slim {@link no.sikt.graphitron.rewrite.model.InputArgRef} the {@code UpdateRowsWalker}
+     * reads. UPDATE gains the return-derived rung as naturally as INSERT (it returns the updated row's
+     * {@code @table} type or a payload carrier wrapping it), so no UPDATE input hard-requires
+     * {@code @table} anymore.
+     */
+    private UpdateWriteTarget resolveUpdateWriteTarget(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef returnType) {
+        return switch (resolveReturnCapableWriteTarget(fieldDef, parentTypeName, name, location, returnType, DmlKind.UPDATE)) {
+            case ReturnCapableWriteTarget.Rejected r -> new UpdateWriteTarget.Rejected(r.field());
+            case ReturnCapableWriteTarget.Resolved ok -> new UpdateWriteTarget.Resolved(
+                ok.writeTarget(), ok.inputFields(),
+                new no.sikt.graphitron.rewrite.model.InputArgRef(ok.argName(), ok.argTypeName(), ok.writeTarget(), ok.list()));
+        };
+    }
+
+    /**
      * Outcome of {@link #resolveInsertWriteTarget}: the resolved INSERT write target (the jOOQ table,
      * the input fields resolved and admitted against it, and the byte-identical
      * {@link ArgumentRef.InputTypeArg.TableInputArg} the INSERT leaves carry) or a typed rejection.
@@ -5526,117 +5700,23 @@ class FieldBuilder {
     private InsertWriteTarget resolveInsertWriteTarget(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef returnType) {
-        // 1. Arg surface. A @table input arrives as Resolved (tit); a non-@table input as RawArg.
-        GraphitronType.TableInputType tit = null;
-        GraphitronType.InputType rawInput = null;
+        // 1-4. Arg surface, write target (rung 1 > rung 2 > rung 3), cross-checks, and input fields:
+        // the shared return-capable lattice, which INSERT and UPDATE both drive.
+        TableRef writeTarget;
+        List<InputField> inputFields;
         String argName;
         String argTypeName;
         boolean list;
-        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
-            case DmlWalkerInputArgResolution.Rejected r -> { return new InsertWriteTarget.Rejected(r.field()); }
-            case DmlWalkerInputArgResolution.Resolved ok -> {
-                tit = ok.tit();
-                argName = ok.inputArg().name();
-                argTypeName = ok.inputArg().inputTypeName();
-                list = ok.inputArg().list();
-            }
-            case DmlWalkerInputArgResolution.RawArg raw -> {
-                rawInput = raw.inputType();
-                argName = raw.argName();
-                argTypeName = raw.argTypeName();
-                list = raw.list();
-            }
-        }
-
-        // 2. Winning write target from the single-producer helper (rung 1 > rung 2 > rung 3).
-        TableRef writeTarget;
-        switch (MutationInputResolver.resolveDmlWriteTableRef(fieldDef, DmlKind.INSERT, svc, ctx)) {
-            case MutationInputResolver.WriteTableRef.Resolved r -> writeTarget = r.table();
-            case MutationInputResolver.WriteTableRef.UnknownTable u -> {
-                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    ctx.unknownTableRejection(u.namedTable())));
-            }
-            case MutationInputResolver.WriteTableRef.None ignored -> {
-                // No live source resolved. Lead the message with the preferred (return-derived) fix.
-                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                    "@mutation(typeName: INSERT) field '" + name + "' has no write target: return the "
-                    + "inserted row's @table type or a carrier payload whose data field is that @table "
-                    + "type (preferred), name the table with @mutation(table: \"<table>\") on this field, "
-                    + "or annotate the input type '" + argTypeName + "' with @table (the deprecated bridge).")));
-            }
-        }
-
-        // 3. The three rung tables, for the must-agree cross-checks. Rung 1 is read off the resolved
-        // return type (authoritative, and equal to the helper's return-derived rung); the payload arm
-        // also keeps the DmlElementKind.Table so the rung-1-vs-rung-3 message is byte-identical to the
-        // pre-existing payload path.
-        Optional<TableRef> rung1;
-        BuildContext.DmlElementKind.Table payloadTbl = null;
-        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
-            rung1 = Optional.of(tb.table());
-        } else if (returnType instanceof ReturnTypeRef.ResultReturnType rrt
-                && ctx.scanStructuralDmlPayload(rrt.returnTypeName()) instanceof BuildContext.DmlPayloadScan.Admit admit
-                && admit.element() instanceof BuildContext.DmlElementKind.Table tbl) {
-            payloadTbl = tbl;
-            rung1 = Optional.of(tbl.table());
-        } else {
-            rung1 = Optional.empty();
-        }
-        // A @mutation(table:) naming an unresolvable table rejects even when a higher rung already
-        // resolved the write target: the single-producer helper short-circuits at rung 1 and never
-        // validates rung 2's name, so this call site is the only place that unknown name is caught when
-        // rung 1 is present (when rung 1 is absent it already rejected as UnknownTable in step 2). This
-        // mirrors the helper's unknown-table rejection rather than silently ignoring an author-written
-        // directive argument.
-        Optional<String> rung2Named = MutationInputResolver.parseMutationTableArg(fieldDef);
-        Optional<TableRef> rung2 = rung2Named.flatMap(svc::resolveTable);
-        if (rung2Named.isPresent() && rung2.isEmpty()) {
-            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                ctx.unknownTableRejection(rung2Named.get())));
-        }
-        Optional<TableRef> rung3 = tit != null ? Optional.of(tit.table()) : Optional.empty();
-
-        // Rung 1 vs rung 2: the RETURNING projection reads from the write target, so a @mutation(table:)
-        // naming a different table than the return cannot emit a coherent statement.
-        if (rung1.isPresent() && rung2.isPresent() && !rung1.get().equals(rung2.get())) {
-            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                "@mutation(typeName: INSERT) field '" + name + "' derives write target '"
-                + rung1.get().tableName() + "' from its return type, but @mutation(table:) names a "
-                + "different table '" + rung2.get().tableName() + "'; the RETURNING projection reads from "
-                + "the write target, so the two cannot emit a coherent statement. Remove @mutation(table:) "
-                + "(the return names the table) or align them.")));
-        }
-        // Rung 1 vs rung 3: the return table and the input's deprecated @table bridge must agree.
-        if (rung1.isPresent() && rung3.isPresent() && !rung1.get().equals(rung3.get())) {
-            String message = payloadTbl != null
-                ? requireDmlDataTableMatchesInputTable(rung3.get(), payloadTbl, DmlKind.INSERT, name, returnType.returnTypeName())
-                : "@mutation(typeName: INSERT) field '" + name + "' returns @table type '"
-                    + returnType.returnTypeName() + "' bound to table '" + rung1.get().tableName()
-                    + "', which does not match @table input table '" + rung3.get().tableName()
-                    + "'; the input's @table (the deprecated bridge) must name the same table as the "
-                    + "return. Remove @table from the input (the return names the write target).";
-            return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(message)));
-        }
-
-        // 4. Input fields against the write target. Reuse the input's already-resolved fields when the
-        // write target is its own @table (the registry TableInputType walk covers the validator
-        // rejections); otherwise re-derive against the field-named table and mirror the validator's
-        // input-field rejections here (a field-derived input never lands in validateTableInputType).
-        var schemaInput = tit != null ? tit.schemaType() : rawInput.schemaType();
-        List<InputField> inputFields;
-        if (tit != null && writeTarget.equals(tit.table())) {
-            inputFields = tit.inputFields();
-        } else {
-            var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
-            if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
-                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    Rejection.structural(failed.reason())));
-            }
-            inputFields = ((TypeBuilder.InputFieldsResolution.Resolved) fieldsResolution).fields();
-            var mirrored = GraphitronSchemaValidator.collectInputFieldRejections(inputFields);
-            if (!mirrored.isEmpty()) {
-                return new InsertWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    mirrored.getFirst().rejection()));
+        GraphQLInputObjectType schemaInput;
+        switch (resolveReturnCapableWriteTarget(fieldDef, parentTypeName, name, location, returnType, DmlKind.INSERT)) {
+            case ReturnCapableWriteTarget.Rejected r -> { return new InsertWriteTarget.Rejected(r.field()); }
+            case ReturnCapableWriteTarget.Resolved ok -> {
+                writeTarget = ok.writeTarget();
+                inputFields = ok.inputFields();
+                argName = ok.argName();
+                argTypeName = ok.argTypeName();
+                list = ok.list();
+                schemaInput = ok.schemaInput();
             }
         }
 

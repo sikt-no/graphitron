@@ -5658,6 +5658,44 @@ class GraphQLQueryTest {
         }
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilmReturnDerived_withNoTableOnInput_roundTrips() {
+        // Field-relative UPDATE write target: FilmUpdateReturnDerivedInput carries no @table, so the
+        // write target is derived from the Film return type. Proves an UPDATE round-trips end-to-end
+        // with @table dropped from the input (the deprecated bridge is not needed).
+        String originalMarker = "R97-UPDATE-RETURN-DERIVED-" + java.util.UUID.randomUUID();
+        String updatedMarker  = "R97-UPDATE-RETURN-DERIVED-UPDATED-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        Integer filmId = dsl.insertInto(filmTable)
+            .set(org.jooq.impl.DSL.field("title"), originalMarker)
+            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
+            .returningResult(filmIdCol)
+            .fetchOne()
+            .value1();
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    updateFilmReturnDerived(in: { filmId: %d, title: "%s" }) {
+                        title
+                        languageId
+                    }
+                }
+                """.formatted(filmId, updatedMarker));
+
+            Map<String, Object> updated = (Map<String, Object>) data.get("updateFilmReturnDerived");
+            assertThat(updated).containsEntry("title", updatedMarker);
+            assertThat(updated).containsEntry("languageId", 1);
+
+            String dbTitle = dsl.select(org.jooq.impl.DSL.field("title", String.class))
+                .from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbTitle).isEqualTo(updatedMarker);
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
+
     // ===== Phase 5: UPSERT emitter (DML mutation, TableBoundReturnType) =====
 
     @Test

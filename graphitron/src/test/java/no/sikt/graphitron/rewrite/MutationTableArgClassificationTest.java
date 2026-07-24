@@ -8,6 +8,9 @@ import no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField;
+import no.sikt.graphitron.rewrite.model.MutationField.MutationBulkUpdatePayloadField;
+import no.sikt.graphitron.rewrite.model.MutationField.MutationUpdatePayloadField;
+import no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField;
 import no.sikt.graphitron.rewrite.model.MutationTableArgError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -22,10 +25,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The field-relative DML write-target precedence. For DELETE it pins the override rung
  * ({@code @mutation(table:)}) and the migration bridge (input {@code @table}); a DELETE has no
- * return-derived rung (it cannot return the deleted row's {@code @table} type). For INSERT it pins the
- * full lattice: the return-derived rung (preferred), then {@code @mutation(table:)} (the encoded-ID /
- * scalar-return shape), then the deprecated input {@code @table} bridge, with the must-agree
- * cross-checks between rungs.
+ * return-derived rung (it cannot return the deleted row's {@code @table} type). For INSERT and UPDATE it
+ * pins the full lattice: the return-derived rung (preferred), then {@code @mutation(table:)} (the
+ * encoded-ID / scalar-return shape), then the deprecated input {@code @table} bridge, with the must-agree
+ * cross-checks between rungs. INSERT and UPDATE share one resolver, so the cross-check semantics are
+ * identical across the two verbs.
  */
 @PipelineTier
 class MutationTableArgClassificationTest {
@@ -142,14 +146,32 @@ class MutationTableArgClassificationTest {
     }
 
     @Test
-    void mutationTableArg_onUpdate_rejectsUnsupportedVerb() {
+    void mutationTableArg_onUpdate_classifiesViaRung2() {
+        // UPDATE joined TABLE_ARG_SUPPORTED_VERBS: @mutation(table:) is the rung-2 write target for the
+        // encoded-ID / scalar-return shape whose return names no table. No @table on the input.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") title: String }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): ID @mutation(typeName: UPDATE, table: "film") }
+            """);
+        assertThat(schema.field("Mutation", "updateFilm"))
+            .as("@mutation(table:) on UPDATE names the rung-2 write target and classifies")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField.class);
+        assertThat(schema.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void mutationTableArg_onUpsert_rejectsUnsupportedVerb() {
+        // The unsupported-verb guard narrowed to {UPSERT}: @mutation(table:) on the one remaining
+        // unwired verb still rejects loudly rather than being silently ignored.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput { filmId: Int! @field(name: "film_id") title: String }
             type Query { x: String }
-            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE, table: "film") }
+            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT, table: "film") }
             """);
-        var field = schema.field("Mutation", "updateFilm");
+        var field = schema.field("Mutation", "upsertFilm");
         assertThat(field)
             .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
         assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field).rejection())
@@ -591,5 +613,158 @@ class MutationTableArgClassificationTest {
             .extracting(ValidationError::message)
             .as("return-derived path mirrors the identical composite-@nodeId rejection")
             .anyMatch(m -> m.contains("composite-key") && m.contains("@mutation(typeName: INSERT)"));
+    }
+
+    // ===== UPDATE write target derived from the return type =====
+    //
+    // The UPDATE lattice is the INSERT lattice (they share resolveReturnCapableWriteTarget): rung 1 (the
+    // return's own @table, preferred), rung 2 (@mutation(table:)), rung 3 (the deprecated input @table
+    // bridge), with must-agree cross-checks. An UPDATE whose return names the write target (a @table
+    // return, or a carrier payload's @table-element data field) needs no @table on the input; dropping it
+    // must land a byte-identical carrier. Equivalence is asserted on the classified-model carriers
+    // (InputArgRef, UpdateRows), never a string diff of emitted bodies.
+
+    @Test
+    void updateDirectTableReturn_returnDerived_classifiesLikeTableOnInput() {
+        // A direct @table return (updateFilm(...): Film) names the write target on the return type;
+        // dropping @table from the input lands the same MutationUpdateTableField carrier. The input
+        // covers the film PK (film_id) so the walker's PK-or-UK identification succeeds.
+        String common = """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            type Query { x: String }
+            """;
+        var tableOnInput = TestSchemaHelper.buildSchema(common + """
+            input FilmUpdateInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
+            """);
+        var returnDerived = TestSchemaHelper.buildSchema(common + """
+            input FilmUpdateInput {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
+            """);
+
+        var a = (MutationUpdateTableField) tableOnInput.field("Mutation", "updateFilm");
+        var b = (MutationUpdateTableField) returnDerived.field("Mutation", "updateFilm");
+        assertThat(b.inputArg())
+            .as("the return-derived direct-@table-return UPDATE resolves the same InputArgRef")
+            .isEqualTo(a.inputArg());
+        assertThat(b.updateRows())
+            .as("and the same UpdateRows SET/WHERE carrier")
+            .isEqualTo(a.updateRows());
+        assertThat(b.returnExpression())
+            .as("and the same projected return expression")
+            .isEqualTo(a.returnExpression());
+        assertThat(b.dialectRequirement()).isEqualTo(a.dialectRequirement());
+        assertThat(returnDerived.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void updatePayload_single_returnDerived_classifiesLikeTableOnInput() {
+        String common = """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            type FilmPayload { film: Film }
+            type Query { x: String }
+            """;
+        var tableOnInput = TestSchemaHelper.buildSchema(common + """
+            input FilmUpdateInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            type Mutation { updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE) }
+            """);
+        var returnDerived = TestSchemaHelper.buildSchema(common + """
+            input FilmUpdateInput {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            type Mutation { updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE) }
+            """);
+
+        var a = (MutationUpdatePayloadField) tableOnInput.field("Mutation", "updateFilmPayload");
+        var b = (MutationUpdatePayloadField) returnDerived.field("Mutation", "updateFilmPayload");
+        assertThat(b.inputArg())
+            .as("the return-derived single-payload UPDATE resolves the same InputArgRef")
+            .isEqualTo(a.inputArg());
+        assertThat(b.updateRows())
+            .as("and the same UpdateRows SET/WHERE carrier")
+            .isEqualTo(a.updateRows());
+        assertThat(b.errorChannel()).isEqualTo(a.errorChannel());
+        assertThat(returnDerived.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void updatePayload_bulk_returnDerived_classifiesLikeTableOnInput() {
+        // A bulk payload-returning UPDATE (list input, list @table-element data field). The
+        // @table-on-input form and the return-derived form must land byte-identical
+        // MutationBulkUpdatePayloadField carriers.
+        String common = """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            type FilmsPayload { films: [Film!] }
+            type Query { x: String }
+            """;
+        var tableOnInput = TestSchemaHelper.buildSchema(common + """
+            input FilmUpdateInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            type Mutation { updateFilms(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE) }
+            """);
+        var returnDerived = TestSchemaHelper.buildSchema(common + """
+            input FilmUpdateInput {
+              filmId: Int! @field(name: "film_id")
+              title: String @field(name: "title")
+            }
+            type Mutation { updateFilms(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE) }
+            """);
+
+        var a = (MutationBulkUpdatePayloadField) tableOnInput.field("Mutation", "updateFilms");
+        var b = (MutationBulkUpdatePayloadField) returnDerived.field("Mutation", "updateFilms");
+        assertThat(b.inputArg())
+            .as("the return-derived bulk-payload UPDATE resolves the same bulk InputArgRef")
+            .isEqualTo(a.inputArg());
+        assertThat(b.updateRows())
+            .as("and the same bulk UpdateRows SET/WHERE carrier")
+            .isEqualTo(a.updateRows());
+        assertThat(returnDerived.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void updateReturnTableVsInputTableMismatch_rejectsWithTableMatchWording() {
+        // Rung 1 vs rung 3: the payload data field's @table (film) disagrees with the input's @table
+        // (actor). The pre-existing requireDmlDataTableMatchesInputTable wording is verb-parameterised
+        // and identical to INSERT's.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            type FilmPayload { film: Film }
+            input FilmUpdateInput @table(name: "actor") { firstName: String @field(name: "first_name") }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE) }
+            """);
+        assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(UnclassifiedField.class);
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("does not match @table input table 'actor'"));
+    }
+
+    @Test
+    void updateNoWriteTarget_rejectionLeadsWithReturnDerivedFix() {
+        // No rung resolves (a bare ID return, a plain input, no @mutation(table:)): the rejection leads
+        // with the preferred return-derived fix, then @mutation(table:), then the deprecated @table.
+        var schema = TestSchemaHelper.buildSchema("""
+            input FilmInput { title: String }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): ID @mutation(typeName: UPDATE) }
+            """);
+        assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(UnclassifiedField.class);
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("has no write target")
+                        && m.indexOf("return the row's @table type") < m.indexOf("@mutation(table:")
+                        && m.indexOf("@mutation(table:") < m.indexOf("@table (the deprecated bridge)"));
     }
 }

@@ -874,11 +874,13 @@ public class GraphitronSchemaBuilder {
      * {@link EntityResolutionBuilder}.
      */
     private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
-        // Both DELETE and INSERT have field-relative write-target paths, so no input is carved out of
-        // the warning; instead it names the field-relative replacement per verb. The encoded-ID INSERT
-        // carve-out retired once the INSERT write target became field-relative, so those inputs warn too.
+        // DELETE, INSERT, and UPDATE all have field-relative write-target paths, so no input is carved
+        // out of the warning; instead it names the field-relative replacement per verb. The encoded-ID
+        // INSERT carve-out retired once the INSERT write target became field-relative, so those inputs
+        // warn too.
         Set<String> deleteConsumed = deleteConsumedInputTypes(ctx);
         Set<String> insertConsumed = insertConsumedInputTypes(ctx);
+        Set<String> updateConsumed = updateConsumedInputTypes(ctx);
         for (var type : ctx.schema.getAllTypesAsList()) {
             if (!(type instanceof GraphQLInputObjectType input)) continue;
             if (!input.hasAppliedDirective(DIR_TABLE)) continue;
@@ -889,6 +891,11 @@ public class GraphitronSchemaBuilder {
                     + "input type.";
             } else if (insertConsumed.contains(input.getName())) {
                 replacement = " For the consuming `@mutation(typeName: INSERT)` field, the write target "
+                    + "is derived from the field's return type (a `@table` return, or a payload's "
+                    + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
+                    + "`@mutation(table: \"…\")` on the field.";
+            } else if (updateConsumed.contains(input.getName())) {
+                replacement = " For the consuming `@mutation(typeName: UPDATE)` field, the write target "
                     + "is derived from the field's return type (a `@table` return, or a payload's "
                     + "`@table`-element data field); for an encoded-ID / scalar return, name it with "
                     + "`@mutation(table: \"…\")` on the field.";
@@ -956,6 +963,29 @@ public class GraphitronSchemaBuilder {
             }
         }
         return carveOut;
+    }
+
+    /**
+ * The SDL input-type names consumed by a {@code @mutation(typeName: UPDATE)} field. Drives the
+     * UPDATE-specific replacement clause on the {@code @table}-on-input deprecation warning (the write
+     * target is derived from the return type, or named with {@code @mutation(table:)} for an encoded /
+     * scalar return). The three UPDATE walker-carrier leaves
+     * ({@link MutationField.MutationUpdateTableField}, {@link MutationField.MutationUpdatePayloadField},
+     * {@link MutationField.MutationBulkUpdatePayloadField}) each carry an
+     * {@link no.sikt.graphitron.rewrite.model.InputArgRef} whose accessor is {@code inputTypeName()},
+     * mirroring the DELETE leaves.
+     */
+    private static Set<String> updateConsumedInputTypes(BuildContext ctx) {
+        Set<String> consumed = new LinkedHashSet<>();
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            switch (field) {
+                case MutationField.MutationUpdateTableField f -> consumed.add(f.inputArg().inputTypeName());
+                case MutationField.MutationUpdatePayloadField f -> consumed.add(f.inputArg().inputTypeName());
+                case MutationField.MutationBulkUpdatePayloadField f -> consumed.add(f.inputArg().inputTypeName());
+                default -> { /* only the three UPDATE leaves carry an InputArgRef write target */ }
+            }
+        }
+        return consumed;
     }
 
     /**

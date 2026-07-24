@@ -2578,6 +2578,15 @@ input FilmUpdateInput @table(name: "film") {
     description: String  @field(name: "description")
 }
 
+# Field-relative UPDATE write target: this input carries no `@table`, so the write
+# target is derived from the consuming field's return type (the deprecated `@table`-on-input
+# bridge is not needed). Consumed by `updateFilmReturnDerived`, whose `Film` return names the
+# table. Execution-tier proof that an UPDATE round-trips with `@table` dropped from the input.
+input FilmUpdateReturnDerivedInput {
+    filmId: Int!    @field(name: "film_id")
+    title:  String! @field(name: "title")
+}
+
 # R77 Phase F fixture: minimal DELETE input. `filmId` is a WHERE filter by default
 # (R144's filter-by-default rule covers the single-column PK). The bulk-DELETE arm
 # emits `DSL.row(film_id).in(in.stream().map(row -> DSL.row(...)).toList())`, locking
@@ -2934,6 +2943,10 @@ type Mutation {
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$fields>).fetchOne(r -> r)`.
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+    # Field-relative UPDATE write target: the input carries no `@table`, so the write target
+    # is derived from the `Film` return type. Same emitted UPDATE as `updateFilm`, exercised at
+    # the execution tier to prove an UPDATE round-trips with `@table` dropped from the input.
+    updateFilmReturnDerived(in: FilmUpdateReturnDerivedInput!): Film @mutation(typeName: UPDATE)
     # R22 Phase 5 (UPSERT) retired under R144's cardinality-safety regime; tracked in R145
     # (mutation-cardinality-safety-upsert), which designs the conflict-target uniqueness
     # and bulk-cardinality story before re-admitting UPSERT.

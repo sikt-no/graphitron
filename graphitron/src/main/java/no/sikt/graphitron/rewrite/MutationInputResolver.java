@@ -145,26 +145,28 @@ final class MutationInputResolver {
 
     /**
      * The {@code @mutation} verbs whose {@code @mutation(table:)} argument names a field-relative
-     * write target: DELETE (which cannot carry its table on the return, per Invariant #14) and INSERT
-     * (the encoded-ID / scalar-return shape, whose return names no table). Single-sourced here so every
-     * consumer agrees on the supported set: the classifier's unsupported-verb guard (which rejects the
-     * arg on any other verb, now narrowed to {@code {UPDATE, UPSERT}}), the write-target precedence
-     * helper's verb gate ({@link #resolveDmlWriteTableRef}), and {@code mvn graphitron:validate} (which
-     * runs the classifier). Generalising to another verb is a single edit here, and it flows to the
-     * binding grounder automatically through the helper.
+     * write target: DELETE (which cannot carry its table on the return, per Invariant #14), INSERT
+     * (the encoded-ID / scalar-return shape, whose return names no table), and UPDATE (the same
+     * encoded-ID / scalar-return shape). Single-sourced here so every consumer agrees on the supported
+     * set: the classifier's unsupported-verb guard (which rejects the arg on any other verb, now
+     * narrowed to {@code {UPSERT}}), the write-target precedence helper's verb gate
+     * ({@link #resolveDmlWriteTableRef}), and {@code mvn graphitron:validate} (which runs the
+     * classifier). Generalising to another verb is a single edit here, and it flows to the binding
+     * grounder automatically through the helper.
      */
-    static final Set<DmlKind> TABLE_ARG_SUPPORTED_VERBS = Set.of(DmlKind.DELETE, DmlKind.INSERT);
+    static final Set<DmlKind> TABLE_ARG_SUPPORTED_VERBS = Set.of(DmlKind.DELETE, DmlKind.INSERT, DmlKind.UPDATE);
 
     /**
      * The {@code @mutation} verbs whose write target is derived from the return type (a direct
-     * {@code @table} return, or a carrier payload's single {@code @table}-element data field). INSERT
-     * today; UPSERT inherits it when it un-defers. DELETE is deliberately absent: a DELETE cannot
-     * return the deleted row's {@code @table} type (Invariant #14), so no DELETE return names a table,
-     * and gating the rung here keeps DELETE's write-target resolution byte-identical. The rung is the
-     * preferred one for the verbs it covers, ahead of {@code @mutation(table:)} and the input
-     * {@code @table} bridge (see {@link #resolveDmlWriteTableRef}).
+     * {@code @table} return, or a carrier payload's single {@code @table}-element data field): INSERT
+     * and UPDATE (an UPDATE returns the updated row's {@code @table} type or a payload carrier wrapping
+     * it, as naturally as an INSERT does). UPSERT inherits it when it un-defers. DELETE is deliberately
+     * absent: a DELETE cannot return the deleted row's {@code @table} type (Invariant #14), so no DELETE
+     * return names a table, and gating the rung here keeps DELETE's write-target resolution
+     * byte-identical. The rung is the preferred one for the verbs it covers, ahead of
+     * {@code @mutation(table:)} and the input {@code @table} bridge (see {@link #resolveDmlWriteTableRef}).
      */
-    static final Set<DmlKind> RETURN_DERIVED_TABLE_VERBS = Set.of(DmlKind.INSERT);
+    static final Set<DmlKind> RETURN_DERIVED_TABLE_VERBS = Set.of(DmlKind.INSERT, DmlKind.UPDATE);
 
     /**
      * Outcome of {@link #resolveDmlWriteTableRef}: the resolved write-target table, an
@@ -191,14 +193,14 @@ final class MutationInputResolver {
      *
      * <ol>
      *   <li><b>Rung 1 (preferred): the return's own {@code @table}</b>, for verbs in
-     *       {@link #RETURN_DERIVED_TABLE_VERBS} (INSERT). A direct {@code @table} return names its
-     *       table on the return type; a carrier payload names it on the single {@code @table}-element
+     *       {@link #RETURN_DERIVED_TABLE_VERBS} (INSERT, UPDATE). A direct {@code @table} return names
+     *       its table on the return type; a carrier payload names it on the single {@code @table}-element
      *       data field. This is the derivation the {@code @table}-on-input deprecation warning
-     *       promises for INSERT.</li>
+     *       promises for INSERT and UPDATE.</li>
      *   <li><b>Rung 2: {@code @mutation(table:)}</b>, for verbs in {@link #TABLE_ARG_SUPPORTED_VERBS}
-     *       (DELETE, and the encoded-ID / scalar-return INSERT whose return names no table).</li>
+     *       (DELETE, and the encoded-ID / scalar-return INSERT / UPDATE whose return names no table).</li>
      *   <li><b>Rung 3: the single {@code @table} input argument's table</b> (the deprecated migration
-     *       bridge; the only rung for UPDATE / UPSERT).</li>
+     *       bridge; the only rung for UPSERT, which is refused upstream before classification).</li>
      * </ol>
      *
      * This is the one producer of the precedence fact, called from both the binding walk
@@ -222,14 +224,14 @@ final class MutationInputResolver {
      */
     static WriteTableRef resolveDmlWriteTableRef(
             GraphQLFieldDefinition fieldDef, DmlKind kind, ServiceCatalog svc, BuildContext ctx) {
-        // Rung 1: the return's own @table (INSERT). Preferred; the natural home of an INSERT's table.
+        // Rung 1: the return's own @table (INSERT, UPDATE). Preferred; the natural home of the table.
         if (RETURN_DERIVED_TABLE_VERBS.contains(kind)) {
             var returnTable = resolveReturnDerivedTable(fieldDef, svc, ctx);
             if (returnTable.isPresent()) {
                 return new WriteTableRef.Resolved(returnTable.get());
             }
         }
-        // Rung 2: @mutation(table:) (DELETE, encoded-return INSERT).
+        // Rung 2: @mutation(table:) (DELETE, encoded-return INSERT / UPDATE).
         if (TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
             var named = parseMutationTableArg(fieldDef);
             if (named.isPresent()) {
@@ -238,7 +240,7 @@ final class MutationInputResolver {
                     .orElseGet(() -> new WriteTableRef.UnknownTable(named.get()));
             }
         }
-        // Rung 3: input @table (the deprecated bridge; the only rung for UPDATE / UPSERT).
+        // Rung 3: input @table (the deprecated bridge; the only rung for UPSERT, refused upstream).
         GraphQLInputObjectType tableInput = singleTableInputType(fieldDef);
         if (tableInput == null) return new WriteTableRef.None();
         String tableSqlName = argString(tableInput, DIR_TABLE, ARG_NAME).orElse(tableInput.getName().toLowerCase());
