@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R494` | Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot) | Ready | 2026-07-24 <sub>created 2026-07-16</sub> | [plan](schema-directive-registry-generator-only-sync.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R519` | Remove @table from input types; delete TableInputType (Phase 3) | Spec | 2026-07-24 | [plan](remove-table-on-input-directive.md) |
-| `R524` | Trim verbose javadoc and align comments with the terse-and-pinned conventions | Ready | 2026-07-24 | [plan](javadoc-verbosity-alignment-sweep.md) |
+| `R524` | Trim verbose javadoc and align comments with the terse-and-pinned conventions | In Progress | 2026-07-24 | [plan](javadoc-verbosity-alignment-sweep.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -344,7 +344,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R498` [**Restore or repoint the missing getting-started quieting-warnings doc referenced by the RAG dev-warm hint**](rag-log-quieting-getting-started-doc.md) — Backlog, docs
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup
-- `R524` [**Trim verbose javadoc and align comments with the terse-and-pinned conventions**](javadoc-verbosity-alignment-sweep.md) — Ready, cleanup
+- `R524` [**Trim verbose javadoc and align comments with the terse-and-pinned conventions**](javadoc-verbosity-alignment-sweep.md) — In Progress, cleanup
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md) — Backlog, architecture

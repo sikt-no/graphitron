@@ -1,7 +1,7 @@
 ---
 id: R524
 title: "Trim verbose javadoc and align comments with the terse-and-pinned conventions"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 7
 theme: docs
