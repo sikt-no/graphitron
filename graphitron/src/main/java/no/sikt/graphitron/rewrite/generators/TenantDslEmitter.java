@@ -269,6 +269,18 @@ final class TenantDslEmitter {
     }
 
     /**
+     * Whether {@code fieldName}'s coordinate classified {@link TenantBinding.FanOut}: the one
+     * predicate the fetcher dispatch consults to route a coordinate to the fanned emission
+     * instead of the generic builders (whose {@code FanOut} arms throw by design).
+     */
+    static boolean isFanOut(TypeFetcherEmissionContext ctx, String fieldName) {
+        var schema = ctx.graphitronSchema();
+        return schema != null
+            && ctx.parentTypeName() != null
+            && schema.tenantBindingOf(ctx.parentTypeName(), fieldName) instanceof TenantBinding.FanOut;
+    }
+
+    /**
      * Whether this emission context is a multi-tenant build (configured tenant scopes on a
      * classified schema). Sites whose emitted shape forks on tenancy beyond the DSL declaration
      * (the connection carrier's routed-context slot, its scatter helper) read this one predicate.

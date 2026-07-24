@@ -544,7 +544,12 @@ public class TypeFetcherGenerator {
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
-                    if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
+                    if (TenantDslEmitter.isFanOut(ctx, qtf.name())) {
+                        // The fanned-fetcher emission owns FanOut coordinates; the generic
+                        // builders' FanOut arms throw by design. Classification guarantees the
+                        // list shape (non-list and @asConnection markers are rejected).
+                        builder.addMethod(buildFannedQueryTableFetcher(ctx, qtf, outputPackage));
+                    } else if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection) {
                         builder.addMethod(buildQueryConnectionFetcher(ctx, qtf, outputPackage));
                     } else {
                         builder.addMethod(buildQueryTableFetcher(ctx, qtf, outputPackage));
@@ -1000,6 +1005,67 @@ public class TypeFetcherGenerator {
                 .build());
         }
         builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.localContextTail()));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(noChannelCatchArm(outputPackage));
+        builder.endControlFlow();
+
+        return builder.build();
+    }
+
+    /**
+     * The fanned sibling of {@link #buildQueryTableFetcher} for a root field classified
+     * {@code TenantBinding.FanOut}: the field's ordinary statement (condition, order, nested
+     * multisets via {@code $fields}) runs once per tenant in the request's fan-out domain through
+     * the carrier's bounded scatter helper, and the outcomes union in domain order. Each row comes
+     * back wrapped as a per-element {@code DataFetcherResult} carrying its tenant as
+     * {@code localContext} (children below the fanned field then classify Inherited and route with
+     * no further machinery), and each failed or timed-out tenant contributes one appended null
+     * element plus a path-bearing redacted error, so SDL element nullability composes the author's
+     * partial-failure strictness. Within a tenant the field's ORDER BY applies as usual; the union
+     * is not re-sorted across tenants.
+     *
+     * <p>Generated code:
+     * <pre>{@code
+     * public static DataFetcherResult<List<Object>> films(DataFetchingEnvironment env) {
+     *     try {
+     *         FilmTable table = Tables.FILM;
+     *         Condition condition = ...;
+     *         List<SortField<?>> orderBy = ...;
+     *         return TenantConnections.collapseFanOut(env, TenantConnections.fanOutRows(env, dsl -> dsl
+     *             .select(Film.$fields(env.getSelectionSet(), table, env))
+     *             .from(table).where(condition).orderBy(orderBy).fetch()));
+     *     } catch (Exception e) { ... }
+     * }
+     * }</pre>
+     */
+    private static MethodSpec buildFannedQueryTableFetcher(TypeFetcherEmissionContext ctx,
+            QueryField.QueryTableField qtf, String outputPackage) {
+        var tableRef = qtf.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
+        var tenantConnections = TenantDslEmitter.tenantConnectionsClass(outputPackage);
+        var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+
+        var builder = MethodSpec.methodBuilder(qtf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(listOfObject))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+        String tableLocal = names.tableLocalName();
+        builder.addCode(buildConditionCall(qtf, tableLocal, outputPackage));
+        builder.addCode(buildOrderByCode(qtf.orderBy(), qtf.name(), tableLocal));
+        builder.addCode(CodeBlock.builder()
+            .add("return $T.collapseFanOut(env, $T.fanOutRows(env, dsl -> dsl\n",
+                tenantConnections, tenantConnections)
+            .indent()
+            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+            .add(".from($L)\n", tableLocal)
+            .add(".where(condition)\n")
+            .add(".orderBy(orderBy)\n")
+            .add(".fetch()));\n")
+            .unindent()
+            .build());
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -6869,15 +6935,24 @@ public class TypeFetcherGenerator {
 
         boolean isList = returnType.wrapper().isList();
         boolean isConnection = returnType.wrapper() instanceof FieldWrapper.Connection;
+        // A fanned batched field's loader values are the merged marker-bearing element lists the
+        // fanned rows method produces; the wrap tail collapses them per field invocation, where
+        // each parent's own env yields the right per-element error paths.
+        boolean fanned = TenantDslEmitter.isFanOut(ctx, field.name());
 
         TypeName connectionResult = ClassName.get(
             outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
-        TypeName valueType = isConnection
-            ? connectionResult
-            : field.emitsSingleRecordPerKey() ? RECORD : ParameterizedTypeName.get(LIST, RECORD);
-        TypeName resultValueType = isConnection
-            ? connectionResult
-            : isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
+        TypeName listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+        TypeName valueType = fanned
+            ? listOfObject
+            : isConnection
+                ? connectionResult
+                : field.emitsSingleRecordPerKey() ? RECORD : ParameterizedTypeName.get(LIST, RECORD);
+        TypeName resultValueType = fanned
+            ? listOfObject
+            : isConnection
+                ? connectionResult
+                : isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = sourceKey.keyElementType();
         LoaderRegistration registration = field.loaderRegistration();
@@ -6922,9 +6997,25 @@ public class TypeFetcherGenerator {
             RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
             prelude,
             keyExtraction,
-            asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
+            fanned
+                ? fannedAsyncWrapTail(outputPackage)
+                : asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
             dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
             TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+    }
+
+    /**
+     * The fanned batched fetcher's wrap tail: each parent's loaded value is a marker-bearing
+     * element list from the fanned rows method, collapsed here per field invocation so the
+     * per-element error paths are built against each parent's own {@code env}. The
+     * {@code exceptionally} arm keeps the shared no-channel disposition.
+     */
+    private static CodeBlock fannedAsyncWrapTail(String outputPackage) {
+        return CodeBlock.builder()
+            .add(".thenApply(payload -> $T.collapseFanOut(env, payload))\n",
+                TenantDslEmitter.tenantConnectionsClass(outputPackage))
+            .add(".exceptionally(t -> ").add(asyncRouterCall(outputPackage, Optional.empty(), "t")).add(")")
+            .build();
     }
 
     /**

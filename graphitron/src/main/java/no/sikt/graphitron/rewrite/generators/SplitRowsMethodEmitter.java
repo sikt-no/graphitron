@@ -848,8 +848,30 @@ public final class SplitRowsMethodEmitter {
             buildWhereCondition(body, ctx, path, aliases, terminalAlias, parentCorrelation, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
-        body.add(sel.build());
 
+        if (TenantDslEmitter.isFanOut(ctx, fieldName)) {
+            // The fanned batched form: the same batch statement, one execution per domain tenant
+            // through the scatter helper (the lambda parameter is the `dsl` the statement already
+            // names; no per-method DSL declaration exists). The per-key groups merge across
+            // tenants with per-element tenant stamping; markers ride to the fetcher's collapse.
+            var tenantConnections = TenantDslEmitter.tenantConnectionsClass(outputPackage);
+            body.add("return $T.fanOutBatchRows(env, keys.size(), dsl -> {\n", tenantConnections);
+            body.indent();
+            body.add(sel.build());
+            body.add("return scatterByIdx(flat, keys.size());\n");
+            body.unindent();
+            body.add("});\n");
+            TypeName listOfListOfObject = ParameterizedTypeName.get(LIST,
+                ParameterizedTypeName.get(LIST, ClassName.get(Object.class)));
+            return RowsMethodSkeleton.build(
+                rowsMethodName,
+                listOfListOfObject,
+                keysListType,
+                CodeBlock.of(""),
+                permitFactory.apply(body.build()));
+        }
+
+        body.add(sel.build());
         body.addStatement("return scatterByIdx(flat, keys.size())");
 
         return RowsMethodSkeleton.build(

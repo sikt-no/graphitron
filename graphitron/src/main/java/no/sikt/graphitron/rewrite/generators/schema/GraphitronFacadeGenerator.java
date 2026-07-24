@@ -86,13 +86,29 @@ public final class GraphitronFacadeGenerator {
         String claimsKeyField =
             no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator.CLAIMS_KEY_FIELD;
 
+        // When at least one field classifies FanOut, both factory forms gain a dedicated
+        // Collection<tenantKey> parameter for the request's fan-out tenant set: a first-class
+        // typed slot (a compile error when missing, never a runtime lookup), stashed under the
+        // carrier's graphitron-owned key, outside the contextArgument namespace.
+        no.sikt.graphitron.javapoet.TypeName fanOutTenantKey = null;
+        if (schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configured
+                && schema.tenantBindings().byCoordinate().values().stream()
+                    .anyMatch(b -> b instanceof no.sikt.graphitron.rewrite.model.TenantBinding.FanOut)) {
+            fanOutTenantKey = configured.tenantType().isPrimitive()
+                ? configured.tenantType().box()
+                : configured.tenantType();
+        }
+        var tenantConnections = ClassName.get(schemaPackage,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+
         // The escape-hatch factory: the caller brings a DSLContext and owns transactions and
         // identity. Additive-by-construction keeps its name and shape frozen.
         var newExecutionInput = buildExecutionInputFactory(
             "newExecutionInput", dslContext, "defaultDsl",
             CodeBlock.of("b.put($T.class, defaultDsl);", dslContext),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, escapeHatchJavadoc(contextArgs));
+            dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
+            escapeHatchJavadoc(contextArgs, fanOutTenantKey != null));
 
         // The owned-connection factory: the caller brings only the opaque claims; the execution
         // instrumentation pins the connection, mounts identity, and produces the DSLContext. Distinct
@@ -103,7 +119,8 @@ public final class GraphitronFacadeGenerator {
             "newOwnedExecutionInput", ClassName.get(String.class), "claims",
             CodeBlock.of("b.put($T.$L, claims);", instrumentation, claimsKeyField),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, ownedExecutionInputJavadoc(contextArgs));
+            dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
+            ownedExecutionInputJavadoc(contextArgs, fanOutTenantKey != null));
 
         // The escape-hatch engine attaches no connection-lifecycle instrumentation, so on
         // this path the caller owns transaction demarcation and session identity and graphitron's
@@ -204,15 +221,24 @@ public final class GraphitronFacadeGenerator {
             String methodName, ClassName firstParamType, String firstParamName, CodeBlock firstPut,
             ClassName graphitronContext, ClassName graphitronContextImpl,
             ClassName executionInput, ClassName executionInputBuilder,
-            ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs, String javadoc) {
+            ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs,
+            no.sikt.graphitron.javapoet.TypeName fanOutTenantKey, ClassName tenantConnections,
+            String javadoc) {
         var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(executionInputBuilder)
             .addParameter(firstParamType, firstParamName);
+        if (fanOutTenantKey != null) {
+            method.addParameter(ParameterizedTypeName.get(
+                ClassName.get("java.util", "Collection"), fanOutTenantKey), "fanOutTenants");
+        }
         for (ResolvedContextArg arg : contextArgs) {
             method.addParameter(arg.javaType(), arg.name());
         }
         method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
+        if (fanOutTenantKey != null) {
+            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, "fanOutTenants", "fanOutTenants");
+        }
         for (ResolvedContextArg arg : contextArgs) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, arg.name(), arg.name());
         }
@@ -225,6 +251,12 @@ public final class GraphitronFacadeGenerator {
         method.addCode("return $T.newExecutionInput()\n", executionInput);
         method.addCode("    .graphQLContext(b -> {\n");
         method.addCode("        $L\n", firstPut);
+        if (fanOutTenantKey != null) {
+            // The carrier's own key constant, so the write here and the fanOutDomain read cannot
+            // drift, and no contextArgument name can collide with it.
+            method.addCode("        b.put($T.$L, fanOutTenants);\n", tenantConnections,
+                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FAN_OUT_TENANTS_KEY_FIELD);
+        }
         for (ResolvedContextArg arg : contextArgs) {
             method.addCode("        b.put($S, $L);\n", arg.name(), arg.name());
         }
@@ -286,7 +318,17 @@ public final class GraphitronFacadeGenerator {
             + "surface over schema construction and per-request input shaping.\n";
     }
 
-    private static String escapeHatchJavadoc(List<ResolvedContextArg> contextArgs) {
+    private static void appendFanOutTenantsParam(StringBuilder sb, boolean fanOut) {
+        if (fanOut) {
+            sb.append("@param fanOutTenants the tenants this request may fan @tenantFanOut fields out\n");
+            sb.append("over, derived from the request's claims and narrowed by any request-level policy;\n");
+            sb.append("intersected with the configured tenant map at execution (a hosted tenant absent\n");
+            sb.append("here is never queried; a named tenant the deployment does not host fails the\n");
+            sb.append("request before any SQL). Must not be {@code null}; may be empty\n");
+        }
+    }
+
+    private static String escapeHatchJavadoc(List<ResolvedContextArg> contextArgs, boolean fanOut) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the low-opinion escape-hatch path,\n");
         sb.append("pre-wired with a caller-supplied jOOQ {@code DSLContext} and any declared\n");
@@ -313,12 +355,13 @@ public final class GraphitronFacadeGenerator {
         sb.append("the factory's empty registry if you need to supply a pre-populated one.\n");
         sb.append("@param defaultDsl the {@code DSLContext} every fetch in this request should use;\n");
         sb.append("must not be {@code null}\n");
+        appendFanOutTenantsParam(sb, fanOut);
         appendContextArgParams(sb, contextArgs);
         sb.append("@return a builder ready for {@code .query(...).build()}\n");
         return sb.toString();
     }
 
-    private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs) {
+    private static String ownedExecutionInputJavadoc(List<ResolvedContextArg> contextArgs, boolean fanOut) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
         sb.append("pass only the opaque {@code claims} payload (typically the JWT) and any declared\n");
@@ -335,6 +378,7 @@ public final class GraphitronFacadeGenerator {
         sb.append("read back the same way as on the escape-hatch path.\n");
         sb.append("@param claims the opaque per-request claims payload (typically the JWT); must not be\n");
         sb.append("{@code null}\n");
+        appendFanOutTenantsParam(sb, fanOut);
         appendContextArgParams(sb, contextArgs);
         sb.append("@return a builder ready for {@code .query(...).build()}\n");
         return sb.toString();

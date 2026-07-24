@@ -13,6 +13,9 @@ type Film @table(name: "film") {
     # the tenant-partitioned loader name and the rows method re-acquires from the handed-down
     # tenant, so each batch stays tenant-homogeneous.
     inventories: [Inventory!]! @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+    # Inline nested projection: under a fanned root this multiset rides inside each tenant's own
+    # statement, so the subtree inherits the tenant by construction.
+    actors: [FilmActor!] @reference(path: [{key: "film_actor_film_id_fkey"}])
 }
 
 type Inventory @table(name: "inventory") {
@@ -22,6 +25,10 @@ type Inventory @table(name: "inventory") {
 # Untenanted arm: global reference data on the default source.
 type Language @table(name: "language") {
     name: String
+    # FanOut batched form: a fanned child of an untenanted parent. The marker itself forces the
+    # fetcher boundary (no @splitQuery needed), and the rows method runs one batch statement per
+    # tenant per parent batch through the scatter helper.
+    films: [Film] @reference(path: [{key: "film_language_id_fkey"}]) @tenantFanOut
 }
 
 # NodeIdBound arm: the node id key embeds the tenant column (position 1), so a nodes(ids:) batch
@@ -41,6 +48,14 @@ input InventoryCreateInput @table(name: "inventory") {
 type Query {
     # ArgumentBound root: filter argument mapping to the tenant column routes the subtree.
     films(filmId: Int! @field(name: "film_id")): [Film!]!
+    # FanOut arm: the query runs once per tenant in the request's fan-out domain (the factory's
+    # tenant collection intersected with the tenant map) and the results union in domain order;
+    # each row carries its tenant as per-element localContext, so children (the @splitQuery
+    # inventories child included) inherit and route with no extra machinery. Nullable elements:
+    # a failed tenant contributes one null element plus a path-bearing error (partial success).
+    filmsEverywhere: [Film] @tenantFanOut
+    # The strict-elements variant: any tenant failure nulls the whole field via null-bubbling.
+    filmsEverywhereStrict: [Film!] @tenantFanOut
     # Untenanted root: acquires dslDefault(), never consults the divined context.
     languages: [Language!]!
     node(id: ID!): Node

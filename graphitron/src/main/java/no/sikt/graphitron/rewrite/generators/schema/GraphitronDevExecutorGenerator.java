@@ -76,6 +76,10 @@ public final class GraphitronDevExecutorGenerator {
             ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
+        // Mirrors the facade's fanned-factory predicate: when any field classifies FanOut the
+        // factories carry the dedicated tenant-collection slot, and this call must fill it.
+        boolean fanOut = schema.tenantBindings().byCoordinate().values().stream()
+            .anyMatch(b -> b instanceof no.sikt.graphitron.rewrite.model.TenantBinding.FanOut);
 
         // A fourth SessionStateConfig form must decide the fail-loud question here explicitly
         // (compile error, not a silent default), same drift guard as the runtime generator's
@@ -132,7 +136,7 @@ public final class GraphitronDevExecutorGenerator {
                     + "    .query(query)\n"
                     + "    .variables(variables == null ? $T.of() : variables)\n"
                     + "    .build()",
-                executionInput, facade, "newOwnedExecutionInput", ownedFactoryArgs(contextArgs),
+                executionInput, facade, "newOwnedExecutionInput", ownedFactoryArgs(contextArgs, fanOut),
                 ClassName.get(Map.class))
             .addStatement("$T result = engine.execute(input)", executionResult)
             .addStatement("return $T.toJSONString(result.toSpecification())", jsonValue);
@@ -155,8 +159,14 @@ public final class GraphitronDevExecutorGenerator {
      * same {@code resolved()} order the facade's factory parameters use, so the two cannot
      * disagree on position).
      */
-    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs) {
+    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs, boolean fanOut) {
         var args = CodeBlock.builder().add("(claimsPayload");
+        if (fanOut) {
+            // The dev executor runs single-connection with no tenant map, so the fan-out domain
+            // is structurally empty: an empty collection satisfies the factory slot, and a fanned
+            // field resolves to an empty union rather than a missing-parameter failure.
+            args.add(", java.util.List.of()");
+        }
         for (ResolvedContextArg arg : contextArgs) {
             args.add(",\n        ($T) $N(contextArgs, $S, $T.class)",
                 arg.javaType(), CONTEXT_ARG_HELPER, arg.name(), rawType(arg.javaType()));

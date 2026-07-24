@@ -63,9 +63,11 @@ class UnifiedEmissionPinsTest {
     @Test
     void rowsMethodEmitter_unifiedSkeleton() throws IOException {
         // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (6): SplitRowsMethodEmitter's three internal
+        // RowsMethodSkeleton.build. Current sites (7): SplitRowsMethodEmitter's three internal
         // builders (buildListMethod, buildSingleMethod, buildConnectionMethod — the dissolved
-        // record-table-method shape routes through the first two), its @pivot sibling
+        // record-table-method shape routes through the first two; buildListMethod carries two
+        // call sites since the tenant fan-out fork assembles the same batch statement into a
+        // per-tenant scatter lambda instead of a single-DSL body), its @pivot sibling
         // buildForBatchedPivot (the key-preserving left-join aggregate shape, the
         // SqlBatchedPivot permit), plus
         // TypeFetcherGenerator.buildServiceRowsMethod (ServiceRecordField verbatim return) plus
@@ -80,7 +82,7 @@ class UnifiedEmissionPinsTest {
             .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
                 + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
                 + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(6);
+            .isEqualTo(7);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

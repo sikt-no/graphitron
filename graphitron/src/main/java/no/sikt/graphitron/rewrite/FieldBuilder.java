@@ -141,6 +141,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_TENANT_FAN_OUT;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
@@ -922,7 +923,12 @@ class FieldBuilder {
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
-            boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
+            // @tenantFanOut forces the fetcher boundary the same way @splitQuery does: a fanned
+            // child cannot project into its parent's statement (the parent runs on one source,
+            // the fanned statement runs once per tenant), so the marker classifies the field
+            // batched and the fanned rows method scatters per parent batch.
+            boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)
+                || fieldDef.hasAppliedDirective(DIR_TENANT_FAN_OUT);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
             // Synthesise the step-0 parent correlation once per carrier — both inline and

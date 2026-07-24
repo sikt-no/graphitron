@@ -181,6 +181,17 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
+    private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
+    private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
+    private static final ClassName GRAPHQL_ERROR_BUILDER = ClassName.get("graphql", "GraphqlErrorBuilder");
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+    private static final ClassName UUID_CLASS = ClassName.get("java.util", "UUID");
+
+    /** The graphQLContext key the request's fan-out tenant collection is published under. */
+    public static final String FAN_OUT_TENANTS_KEY_FIELD = "FAN_OUT_TENANTS_KEY";
+    /** The literal value of the emitted {@code FAN_OUT_TENANTS_KEY} constant (also written by the factory). */
+    public static final String FAN_OUT_TENANTS_KEY_VALUE = "no.sikt.graphitron.request.fanOutTenants";
 
     private ConnectionRuntimeClassGenerator() {}
 
@@ -790,6 +801,14 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return fanOutTimeout")
             .addJavadoc("The per-scatter deadline, enforced by the scatter join.\n")
             .build();
+        var tenantKeysAccessor = MethodSpec.methodBuilder("tenantKeys")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(SET, tenantKey))
+            .addStatement("return dataSourcesByTenant.keySet()")
+            .addJavadoc("The configured tenant keys in the map's configured order (the constructor copies\n"
+                + "into a {@code LinkedHashMap}), so the fan-out domain's concatenation order is\n"
+                + "deployment-stable. Read-only view.\n")
+            .build();
 
         var dialectAccessor = MethodSpec.methodBuilder("dialect")
             .addModifiers(Modifier.PUBLIC)
@@ -889,6 +908,7 @@ public final class ConnectionRuntimeClassGenerator {
         if (multiTenant) {
             builder.addMethod(fanOutExecutorAccessor)
                 .addMethod(fanOutTimeoutAccessor)
+                .addMethod(tenantKeysAccessor)
                 .addMethod(boundedFanOutPool);
         }
         return builder.build();
@@ -1171,8 +1191,25 @@ public final class ConnectionRuntimeClassGenerator {
         }
         carrier.addMethod(releaseAll);
         if (multiTenant) {
+            carrier.addField(FieldSpec.builder(String.class, FAN_OUT_TENANTS_KEY_FIELD,
+                    Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$S", FAN_OUT_TENANTS_KEY_VALUE)
+                .addJavadoc("The {@code graphQLContext} key the request's fan-out tenant collection is\n"
+                    + "published under. Written by the generated factory's dedicated tenant-collection\n"
+                    + "parameter; read here by {@link #fanOutDomain}. One constant so the two sites cannot\n"
+                    + "drift, and a graphitron-owned name no contextArgument can collide with.\n")
+                .build());
+            carrier.addField(FieldSpec.builder(SLF4J_LOGGER, "LOGGER",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, self)
+                .build());
             carrier.addMethod(scatterMethod(self, tenantKey))
                 .addMethod(scatterWorkerMethod(self, tenantKey))
+                .addMethod(fanOutDomain(self, tenantKey))
+                .addMethod(fanOutRows(self, tenantKey))
+                .addMethod(fanOutBatchRows(self, tenantKey))
+                .addMethod(collapseFanOut(self))
+                .addMethod(logFanOutFailure(self))
                 .addMethod(ofEnvironment(self))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(staticDslDefault(self))
@@ -1181,9 +1218,257 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName())
-                .addType(outcomeType(self, tenantKey));
+                .addType(outcomeType(self, tenantKey))
+                .addType(fanOutFailureType());
         }
         return carrier.build();
+    }
+
+    /**
+     * {@code static List<K> fanOutDomain(DataFetchingEnvironment env)}: the request's fan-out
+     * domain, the intersection of the configured tenant map's keys and the factory-supplied
+     * tenant collection, with the two directions of the difference treated differently: a hosted
+     * tenant the request did not name is silently never queried (the authorization pre-filter),
+     * while a named tenant the deployment does not host is a request-level error before any SQL
+     * runs (the derived tenant set is the statement that data could exist there; skipping would
+     * return incomplete results presented as complete). Iteration order is the tenant map's
+     * configured key order filtered by the request set, so the union's concatenation order is
+     * deployment-stable and the request collection's own iteration order is never load-bearing.
+     */
+    private static MethodSpec fanOutDomain(ClassName self, TypeName tenantKey) {
+        return MethodSpec.methodBuilder("fanOutDomain")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(LIST, tenantKey))
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("$T<$T> requested = env.getGraphQlContext().get($L)",
+                COLLECTION, tenantKey, FAN_OUT_TENANTS_KEY_FIELD)
+            .beginControlFlow("if (requested == null)")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "No fan-out tenant collection in the GraphQL context: a schema with @tenantFanOut"
+                    + " fields adds a dedicated tenant-collection parameter to the generated"
+                    + " factories (newExecutionInput / newOwnedExecutionInput); build the request"
+                    + " through one of them.")
+            .endControlFlow()
+            .addStatement("$T<$T> hosted = of(env).runtime.tenantKeys()", SET, tenantKey)
+            .beginControlFlow("for ($T claimed : requested)", tenantKey)
+            .beginControlFlow("if (!hosted.contains(claimed))")
+            .addStatement("throw new $T($S + claimed + $S)", NO_SUCH_ELEMENT,
+                "The request's tenant set names tenant '",
+                "', but this deployment hosts no DataSource for it; skipping it would return"
+                    + " incomplete results presented as complete. Narrow the set at the factory"
+                    + " when claims legitimately span more tenants than this subgraph hosts.")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("$T<$T> domain = new $T<>()", LIST, tenantKey, ARRAY_LIST)
+            .beginControlFlow("for ($T hostedKey : hosted)", tenantKey)
+            .beginControlFlow("if (requested.contains(hostedKey))")
+            .addStatement("domain.add(hostedKey)")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return domain")
+            .addJavadoc("The request's fan-out domain: the configured tenant map's keys, in configured\n"
+                + "order, filtered by the factory-supplied tenant collection. A hosted tenant the\n"
+                + "request did not name is never queried; a named tenant the deployment does not host\n"
+                + "is a request-level error before any SQL runs.\n"
+                + "@param env the fanned field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
+     * {@code static <R> List<Object> fanOutRows(env, perTenant)}: the root-field fan-out union.
+     * Scatters the per-tenant statement over the domain, flattens each {@code Success} outcome's
+     * rows into per-element {@code DataFetcherResult}s carrying that row's tenant as
+     * {@code localContext} (graphql-java unwraps list elements individually, so children below the
+     * fanned field read the right tenant with no further machinery), and appends one
+     * {@code FanOutFailure} marker per failed or timed-out tenant after the successful rows.
+     * {@code collapseFanOut} turns the markers into null elements plus path-bearing errors.
+     */
+    private static MethodSpec fanOutRows(ClassName self, TypeName tenantKey) {
+        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var outcome = self.nestedClass("Outcome");
+        var listOfR = ParameterizedTypeName.get(LIST, r);
+        return MethodSpec.methodBuilder("fanOutRows")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(r)
+            .returns(ParameterizedTypeName.get(LIST, ClassName.get(Object.class)))
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, listOfR), "perTenant")
+            .addStatement("$T<$T<$T>> outcomes = of(env).scatter(fanOutDomain(env), perTenant)",
+                LIST, outcome, listOfR)
+            .addStatement("$T<Object> elements = new $T<>()", LIST, ARRAY_LIST)
+            .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfR)
+            .beginControlFlow("if (outcome instanceof Outcome.Success<$T> success)", listOfR)
+            .beginControlFlow("for ($T row : success.value())", r)
+            .addStatement("elements.add($T.newResult().data(row).localContext(success.key()).build())",
+                DATA_FETCHER_RESULT)
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .addComment("Failed and timed-out tenants append after the successful rows (we cannot know how")
+            .addComment("many rows they would have returned), one marker each.")
+            .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfR)
+            .beginControlFlow("if (!(outcome instanceof Outcome.Success))")
+            .addStatement("elements.add(logFanOutFailure(outcome))")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return elements")
+            .addJavadoc("Runs the fanned field's statement once per domain tenant and unions the outcomes\n"
+                + "in domain order: each row wrapped as a per-element {@code DataFetcherResult} whose\n"
+                + "{@code localContext} carries the row's tenant, each failed or timed-out tenant as one\n"
+                + "{@code FanOutFailure} marker appended after the successful rows. Feed the result to\n"
+                + "{@link #collapseFanOut}.\n")
+            .build();
+    }
+
+    /**
+     * {@code static <R> List<List<Object>> fanOutBatchRows(env, keyCount, perTenant)}: the batched
+     * sibling of {@link #fanOutRows} for a fanned field under an untenanted parent. One scatter
+     * per parent batch; {@code perTenant} runs the batch statement (per-key grouped) once per
+     * tenant, and the per-key groups merge across tenants in domain order, each row stamped with
+     * its tenant. A failed or timed-out tenant contributes one shared marker to <em>every</em>
+     * parent's list (the failure hides that tenant's rows for every parent in the batch); each
+     * parent's fetcher collapses its own list against its own path.
+     */
+    private static MethodSpec fanOutBatchRows(ClassName self, TypeName tenantKey) {
+        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var outcome = self.nestedClass("Outcome");
+        var listOfListOfR = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, r));
+        var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+        return MethodSpec.methodBuilder("fanOutBatchRows")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(r)
+            .returns(ParameterizedTypeName.get(LIST, listOfObject))
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(int.class, "keyCount")
+            .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, listOfListOfR), "perTenant")
+            .addStatement("$T<$T<$T>> outcomes = of(env).scatter(fanOutDomain(env), perTenant)",
+                LIST, outcome, listOfListOfR)
+            .addStatement("$T<$T> merged = new $T<>(keyCount)", LIST, listOfObject, ARRAY_LIST)
+            .beginControlFlow("for (int i = 0; i < keyCount; i++)")
+            .addStatement("merged.add(new $T<>())", ARRAY_LIST)
+            .endControlFlow()
+            .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfListOfR)
+            .beginControlFlow("if (outcome instanceof Outcome.Success<$T> success)", listOfListOfR)
+            .beginControlFlow("for (int i = 0; i < keyCount; i++)")
+            .beginControlFlow("for ($T row : success.value().get(i))", r)
+            .addStatement("merged.get(i).add($T.newResult().data(row).localContext(success.key()).build())",
+                DATA_FETCHER_RESULT)
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfListOfR)
+            .beginControlFlow("if (!(outcome instanceof Outcome.Success))")
+            .addStatement("$T failure = logFanOutFailure(outcome)", self.nestedClass("FanOutFailure"))
+            .beginControlFlow("for (int i = 0; i < keyCount; i++)")
+            .addStatement("merged.get(i).add(failure)")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return merged")
+            .addJavadoc("The batched form of {@link #fanOutRows}: one scatter per parent batch, one\n"
+                + "statement per tenant per batch, per-key groups merged across tenants in domain order\n"
+                + "with per-element tenant stamping. A failed tenant contributes one shared marker to\n"
+                + "every parent's list; each parent's fetcher collapses against its own path.\n"
+                + "@param keyCount the parent batch size; {@code perTenant} must return one group per key\n")
+            .build();
+    }
+
+    /**
+     * {@code static DataFetcherResult<List<Object>> collapseFanOut(env, items)}: turns a
+     * marker-bearing element list into the fanned field's result. Every {@code FanOutFailure}
+     * marker becomes one {@code null} element plus one error whose {@code path} points at that
+     * element's index; SDL element nullability then composes the author's strictness for free
+     * ({@code [Thing]} keeps partial data, {@code [Thing!]} lets graphql-java's null-bubbling
+     * turn any tenant failure into a null field). The message carries only a correlation-id
+     * reference (details are in the server log); a machine-readable classification rides in
+     * {@code extensions}.
+     */
+    private static MethodSpec collapseFanOut(ClassName self) {
+        var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+        return MethodSpec.methodBuilder("collapseFanOut")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(DATA_FETCHER_RESULT, listOfObject))
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(listOfObject, "items")
+            .addStatement("$T<Object> elements = new $T<>(items.size())", LIST, ARRAY_LIST)
+            .addStatement("$T<$T> errors = new $T<>()", LIST, GRAPHQL_ERROR, ARRAY_LIST)
+            .beginControlFlow("for (Object item : items)")
+            .beginControlFlow("if (item instanceof FanOutFailure failure)")
+            .addCode("errors.add($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
+            .addCode("    .message($S + failure.correlationId() + $S)\n",
+                "A tenant's data did not arrive. Reference: ", ".")
+            .addCode("    .path(env.getExecutionStepInfo().getPath().segment(elements.size()))\n")
+            .addCode("    .extensions($T.<String, Object>of($S, failure.classification()))\n", MAP, "classification")
+            .addCode("    .build());\n")
+            .addStatement("elements.add(null)")
+            .nextControlFlow("else")
+            .addStatement("elements.add(item)")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return $T.<$T>newResult().data(elements).errors(errors).build()",
+                DATA_FETCHER_RESULT, listOfObject)
+            .addJavadoc("Collapses a {@link #fanOutRows} / {@link #fanOutBatchRows} element list into the\n"
+                + "fanned field's {@code DataFetcherResult}: markers become null elements plus\n"
+                + "path-bearing redacted errors (correlation-id reference in the message, classification\n"
+                + "in {@code extensions}); everything else passes through as the per-element\n"
+                + "tenant-stamped results.\n")
+            .build();
+    }
+
+    /** Logs one failure with a fresh correlation id and returns its in-band marker. */
+    private static MethodSpec logFanOutFailure(ClassName self) {
+        var outcome = self.nestedClass("Outcome");
+        var failureType = self.nestedClass("FanOutFailure");
+        return MethodSpec.methodBuilder("logFanOutFailure")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(failureType)
+            .addParameter(ParameterizedTypeName.get(outcome, WildcardTypeName.subtypeOf(Object.class)), "outcome")
+            .addStatement("$T correlationId = $T.randomUUID()", UUID_CLASS, UUID_CLASS)
+            .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)")
+            .addStatement("LOGGER.error($S, failed.key(), correlationId, failed.cause())",
+                "Tenant fan-out failed for tenant {}; correlation id = {}")
+            .addStatement("return new FanOutFailure(correlationId.toString(), $S)", "TenantFanOutFailed")
+            .endControlFlow()
+            .addStatement("LOGGER.error($S, outcome.key(), correlationId)",
+                "Tenant fan-out timed out for tenant {}; correlation id = {}")
+            .addStatement("return new FanOutFailure(correlationId.toString(), $S)", "TenantFanOutTimedOut")
+            .addJavadoc("Redaction seam for per-tenant failures: the cause and tenant go to the server log\n"
+                + "under a fresh correlation id; only the id and a machine-readable classification\n"
+                + "travel to the client, on the marker.\n")
+            .build();
+    }
+
+    /** The in-band per-tenant failure marker {@code collapseFanOut} turns into a null element + error. */
+    private static TypeSpec fanOutFailureType() {
+        return TypeSpec.classBuilder("FanOutFailure")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("One failed or timed-out tenant in a fan-out union, travelling in-band through the\n"
+                + "element lists until {@link #collapseFanOut} turns it into a null element plus a\n"
+                + "path-bearing error. Carries only the redacted facts (correlation id, classification);\n"
+                + "the cause and the tenant key stay in the server log.\n")
+            .addField(FieldSpec.builder(String.class, "correlationId", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(String.class, "classification", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(String.class, "correlationId")
+                .addParameter(String.class, "classification")
+                .addStatement("this.correlationId = correlationId")
+                .addStatement("this.classification = classification")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("correlationId")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(String.class)
+                .addStatement("return correlationId")
+                .addJavadoc("The reference logged with the failure's cause in the server log.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("classification")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(String.class)
+                .addStatement("return classification")
+                .addJavadoc("Machine-readable failure kind for the error's {@code extensions}.\n")
+                .build())
+            .build();
     }
 
     /**

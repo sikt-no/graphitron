@@ -137,6 +137,35 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
+    void multiTenantCarrierShipsTheFanOutHelpers() {
+        var units = ConnectionRuntimeClassGenerator.generate(
+            "fake.code.generated", SessionStateConfig.none(), ClassName.get(Integer.class));
+
+        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        assertThat(carrier)
+            // The graphitron-owned request key the factory writes and fanOutDomain reads.
+            .contains("String FAN_OUT_TENANTS_KEY = \"no.sikt.graphitron.request.fanOutTenants\"")
+            // Domain: map-order intersection; named-but-unhosted is a pre-SQL request error.
+            .contains("static java.util.List<java.lang.Integer> fanOutDomain(")
+            .contains("hosted.contains(claimed)")
+            // Union with per-element tenant stamping, failures appended after successful rows.
+            .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
+            .contains(".localContext(success.key())")
+            // The batched sibling: per-key merge across tenants, one scatter per parent batch.
+            .contains("fanOutBatchRows(")
+            // The collapse: null element + path-bearing redacted error with typed classification.
+            .contains("static graphql.execution.DataFetcherResult<java.util.List<java.lang.Object>> collapseFanOut(")
+            .contains(".path(env.getExecutionStepInfo().getPath().segment(elements.size()))")
+            .contains("\"classification\", failure.classification()")
+            .contains("class FanOutFailure");
+
+        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        assertThat(runtime)
+            .as("the domain reads the configured keys in map order off the runtime")
+            .contains("java.util.Set<java.lang.Integer> tenantKeys()");
+    }
+
+    @Test
     void singleTenantOmitsTheFanOutSubstrate() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionStateConfig.none());
@@ -145,6 +174,7 @@ class TenantRuntimeKeyTypeTest {
         assertThat(runtime)
             .doesNotContain("fanOut")
             .doesNotContain("FAN_OUT")
+            .doesNotContain("tenantKeys")
             .doesNotContain("java.time.Duration");
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
