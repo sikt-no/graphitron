@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R97` | Deprecate @table on input types; consumer-derived tables + argMapping grouping | In Progress | 2026-07-24 | [plan](consumer-derived-input-tables.md) |
+| `R97` | Deprecate @table on input types; consumer-derived tables + argMapping grouping | In Progress | 2026-07-24 | [plan](consumer-derived-input-tables.md) · [explainer](concepts/consumer-derived-input-tables.html) |
 | `R46` | Multi-tenant fan-out: run one field across many tenants and union the results | In Review | 2026-07-24 | [plan](multi-tenant-fanout.md) · [explainer](concepts/multi-tenant-fanout.html) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -374,6 +374,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 _Intuition-first background pages for dense or recurring roadmap concepts, rendered as interactive HTML. Authored with the `explainer` skill; this listing derives from `concepts/*.html`, never by hand._
 
+- [Consumer-derived input tables](concepts/consumer-derived-input-tables.html) (backs [R97](consumer-derived-input-tables.md))
 - [Flattened selection sets and shared result keys](concepts/flattened-selection-result-keys.html) (backs R499, R500)
 - [Multi-tenant fan-out](concepts/multi-tenant-fanout.html) (backs [R46](multi-tenant-fanout.md))
 - [Operation-divined tenant routing](concepts/operation-divined-tenant-routing.html) (backs R45)

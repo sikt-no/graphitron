@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consumer-derived input tables: explainer</title>
+<link rel="stylesheet" href="concepts.css">
+</head>
+<body>
+<main>
+
+  <p class="crumb"><a href="../README.md">← Roadmap</a></p>
+  <p class="kicker">Concept explainer · R97 · theme: classification-model</p>
+  <h1 data-concept-title="Consumer-derived input tables"
+      data-concept-items="R97">Consumer-derived input tables</h1>
+  <p class="lede">An input type never has to declare which database table it maps to. The consuming field's return type already answers that, so <code>@table</code> on an input is a copy of a fact graphitron can read for free. This page is the intuition for why the directive is redundant, and the deeper reason the input has nothing to classify at all.</p>
+
+  <div class="note">
+    Background page for the <a href="../consumer-derived-input-tables.md">R97 plan</a> (deprecate <code>@table</code> on input types). It leans on the fact-based classification model from <a href="../coordinate-lowers-to-datafetcher-queryparts.md">R333</a>; you do not need R333 first, this page rebuilds the piece it uses.
+  </div>
+
+  <div class="tldr">
+    <span class="kicker">The one-sentence version</span>
+    Every input field resolves its column against a table, and that table is always the one the <em>consuming field</em> returns, so <code>@table</code> on the input restates what the field's signature already fixes; the honest model is that an input supplies data to a field's facts and is not itself a thing that gets classified.
+  </div>
+
+  <h2>The problem, concretely</h2>
+  <p>Take a Sakila filter query. The field returns <code>Film</code>, and <code>Film</code> is bound to the <code>film</code> table:</p>
+<pre><code>type Query {
+    films(filter: FilmConditionInput!): [Film!]!
+}
+
+type Film @table(name: "film") { ... }
+
+input FilmConditionInput @table(name: "film") {
+    title: String
+    releaseYear: Int
+}</code></pre>
+  <p>The input carries <code>@table(name: "film")</code> so graphitron knows <code>title</code> resolves to <code>film.title</code> and <code>releaseYear</code> to <code>film.release_year</code>. But look at where that name comes from: the field <code>films</code> returns <code>[Film!]!</code>, and <code>Film</code> is <code>@table(name: "film")</code>. The input's directive and the return type's directive say the identical word, <code>film</code>. One of them is redundant, and it is the one on the input.</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">Declared on the input (today)</div>
+      <div class="body">
+        <p>The input announces its own table. Graphitron classifies <code>FilmConditionInput</code> as a <code>TableInputType</code> bound to <code>film</code>, in isolation, before it knows who consumes it.</p>
+<pre><code>input FilmConditionInput
+    @table(name: "film")   // says "film"</code></pre>
+      </div>
+    </div>
+    <div class="pane good">
+      <div class="head">Derived from the consumer (R97)</div>
+      <div class="body">
+        <p>The input declares only field names. The table comes from <code>films</code>' return type, resolved at the call site against <code>Film</code>'s <code>@table</code>.</p>
+<pre><code>input FilmConditionInput {  // no @table
+    title: String
+}
+// films(): [Film] already says "film"</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <p>This holds for every fixture pattern in Sakila: INSERT/UPDATE/DELETE mutations whose field returns a <code>@table</code> type, filter and condition inputs, lookup-key inputs like <code>FilmActorKey</code>. In each the input's <code>@table</code> names a table the consuming field already fixes. R97 removes the directive and reads the table off the consumer instead.</p>
+
+  <div class="quiz" id="q1">
+    <p class="q"><span class="tag">Quiz</span> If you delete <code>@table(name: "film")</code> from <code>FilmConditionInput</code>, how does graphitron know <code>title</code> means <code>film.title</code>?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">It falls back to matching the field name against every table in the catalog.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">It resolves the input's fields against the consuming field's return-type table (<code>films(): [Film]</code> → <code>film</code>).</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">It cannot; the input must always name its own table.</button>
+    <div class="explain">The consuming field's return type already resolves to a table (<code>Film</code> is <code>@table(name: "film")</code>), and that resolution happens registry-free at the edge. The input's fields resolve against <em>that</em> table. A catalog-wide name match would be ambiguous the moment two tables share a column name; consumer-derivation is exact because there is exactly one consuming field per call site.</div>
+  </div>
+
+  <h2>The deeper reason: the input is not an entity</h2>
+  <p>The redundancy argument is the easy half. The load-bearing half comes from the fact-based model (<a href="../coordinate-lowers-to-datafetcher-queryparts.md">R333</a>): a schema coordinate lowers to a graph of output-field <em>facts</em>, a condition, a write target, a projection. The input does not appear in that graph as a node. It only supplies the data those facts consume.</p>
+  <p>So the question "what table is this input bound to?" is asking the wrong thing to answer it. The input does not answer that; the consuming field's fact does. The condition fact binds the input's values to columns. The mutation's write-target fact derives the table. "Bound table" is a property of the fact, read <em>through</em> the input, not a property stored <em>on</em> the input.</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">Input-as-entity (the wrong altitude)</div>
+      <div class="body">
+        <p>Classify <code>FilmConditionInput</code> on its own, with no consumer in view. Produce a global verdict: <code>TableInputType</code> or <code>PojoInputType</code>.</p>
+        <p>A query-only input that is neither a table nor a backing class falls out as <code>PojoInputType</code> with <code>fqClassName=null</code>: a contextless artifact. That null verdict is the tell that this altitude is wrong.</p>
+      </div>
+    </div>
+    <div class="pane good">
+      <div class="head">Input-as-data (the fact model)</div>
+      <div class="body">
+        <p>There is no global verdict to reach. Per consuming field, the input's fields resolve against that field's target. A declared input is always reachable from some consuming field, directly or nested inside another input, so the null-class case cannot arise.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q2">
+    <p class="q"><span class="tag">Quiz</span> If the input has nothing to classify, why did graphitron ever produce a <code>TableInputType</code> verdict with a table on it?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Because inputs genuinely own their table; the fact model is an approximation.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Because it classified the input as an entity with no consumer in view, so it needed the input itself to carry the table it otherwise could not see.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Because jOOQ requires every input to be a <code>TableRecord</code>.</button>
+    <div class="explain">The global verdict exists precisely <em>because</em> the old model classified the input in isolation. With no consuming field in scope, the only way to know the table was for the input to declare it. Once you resolve per call site, the consumer is in scope and the declaration is redundant; the verdict has nothing left to decide and retires.</div>
+  </div>
+
+  <h2>The boundary: when the input <em>does</em> become an entity</h2>
+  <p>"The input is only data" is true for exactly the era this item covers. There is one use case where modelling the input as a first-class entity is warranted, and it is already filed: Jakarta validation (<a href="../catalog-check-constraint-validation.md">R92</a>, <a href="../multi-source-input-validation.md">R98</a>).</p>
+  <p>The distinction is clean. A constraint, a DB <code>CHECK</code> lifted to <code>@Pattern</code>/<code>@Min</code>, an SDL-declared rule, a Jakarta annotation, is a fact <em>about the input itself</em>: it is true no matter which field consumes the input. That cannot be reduced to an output-field fact, so the input earns its own node in the model. Until then, the input is data for output facts, and consumer-derived resolution is the whole story.</p>
+
+  <div class="note">
+    This is why R97 must not pre-empt R92/R98 by inventing an input relation early. A withdrawn attempt (R327) that modelled the input as an entity passed every execution, compile, and pipeline test yet produced the meaningless null-class verdict and broke <code>@lookupKey</code> lookup. Green tests did not save it; the altitude was wrong for the general case.
+  </div>
+
+  <h2>Reuse across consumers: the case that exposes the difference</h2>
+  <p>What happens when one input is used by two fields? Say <code>FilmConditionInput</code> filters both <code>Query.films</code> and <code>Query.filmsByGenre</code>, both returning <code>[Film]</code>. Both consumer-derived resolutions land on <code>film</code>, so nothing differs. The interesting case is when they <em>disagree</em>.</p>
+
+  <div class="sxs">
+    <div class="pane bad">
+      <div class="head">Global aggregate (today)</div>
+      <div class="body">
+        <p><code>findReturnTablesForInput</code> collects every consuming field's table. On more than one distinct table it bails to non-table (the <code>&gt; 1</code> demotion). So an input reused across two tables silently classifies non-table <em>everywhere</em>, and a genuine cross-table misconfiguration miscompiles quietly.</p>
+      </div>
+    </div>
+    <div class="pane good">
+      <div class="head">Per-consumer resolution (R97)</div>
+      <div class="body">
+        <p>Each call site resolves the input against its own consumer's table. Two consumers on two tables just get two resolutions. A field whose table lacks a column the input names fails at classify time, naming the actual consumer's table, and surfaces as <code>UnclassifiedField</code>. The silent demotion becomes a precise error.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="quiz" id="q3">
+    <p class="q"><span class="tag">Quiz</span> An input is reused by a query returning <code>film</code> and another returning <code>actor</code>. Under the old global aggregate, what does the developer see?</p>
+    <button class="choice" data-correct="true" onclick="choose(this)">Nothing at build time; the input silently demotes to non-table and any misconfiguration slips through.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">A classify-time error naming both tables.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Two separate <code>TableInputType</code> verdicts, one per consumer.</button>
+    <div class="explain">The <code>&gt; 1</code> bail means "more than one table, so give up and call it non-table" everywhere the input is used. No error is raised. Consumer-derived resolution flips this: each call site is resolved independently, so a real mismatch (a column the consumer's table does not have) is a named rejection instead of a quiet demotion.</div>
+  </div>
+
+  <h2>When convention cannot tie-break: <code>argMapping</code> grouping</h2>
+  <p>Consumer-derivation is convention: the return-type table plus by-name column matching. Convention runs out when an input fans out, its fields scatter across multiple service-method parameters, or multiple jOOQ records. Rather than a new directive, R97 extends the existing <a href="../../docs/manual/reference/directives/service.adoc"><code>argMapping</code></a> escape valve with a <strong>grouping form</strong>.</p>
+
+  <div class="sxs">
+    <div class="pane">
+      <div class="head">Single-source <code>argMapping</code> (today)</div>
+      <div class="body">
+<pre><code>@service(service: {
+  method: "filmsByPath",
+  argMapping: "filmIds: input.ids"
+})</code></pre>
+        <p>RHS is a path into the input; LHS is one service-method param. One source, one target.</p>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="head">Grouping form (R97)</div>
+      <div class="body">
+<pre><code>argMapping: """
+  order: { orderNumber: input.orderNumber,
+           customerId: input.customerId },
+  shipTo: { street: input.street,
+            city: input.city }
+"""</code></pre>
+        <p>Two groups fill two service params (<code>OrderRecord order</code>, <code>AddressRecord shipTo</code>) from one input. Multi-source to one target each.</p>
+      </div>
+    </div>
+  </div>
+
+  <p>This subsumes the <code>@param</code> directive proposed in JIRA GG-376: the group's left-hand side is GG-376's <code>name</code>, the target type is derived from the service method's parameter type (not declared), and the group entries are GG-376's <code>fields</code>. No new directive; the fan-out is expressed on the directive that already carries mappings.</p>
+
+  <div class="quiz" id="q4">
+    <p class="q"><span class="tag">Quiz</span> Why extend <code>argMapping</code> with grouping instead of adding the <code>@param</code> directive GG-376 proposed?</p>
+    <button class="choice" data-correct="false" onclick="choose(this)">Because <code>@param</code> could not express fan-out.</button>
+    <button class="choice" data-correct="true" onclick="choose(this)">Because the whole item's principle is that explicit type-binding directives are redundant; a new directive would contradict the case for removing <code>@table</code>.</button>
+    <button class="choice" data-correct="false" onclick="choose(this)">Because GraphQL forbids adding directives to input types.</button>
+    <div class="explain">R97 removes three "explicit type binding" directives (<code>@table</code> on input, alongside R94/R96's <code>@record</code> work) on the grounds that their information is available through introspection or <code>argMapping</code>. Introducing <code>@param</code> to solve fan-out would reintroduce exactly the kind of directive the item argues against. Extending <code>argMapping</code> keeps the "convention, then one escape valve" shape intact.</div>
+  </div>
+
+  <h2>What still leans on <code>@table</code>, and how each unwinds</h2>
+  <p>The directive is not gone yet; several consumers still read it, and R97 is phased so each is made consumer-derived before the declaration is removed. The mutation write-target verbs have been landing one at a time.</p>
+  <ul>
+    <li><strong>Arg-level <code>@lookupKey</code></strong> (composite lookup like <code>FilmActorKey</code>) runs only on the <code>TableInputType</code> arm today. R97 re-derives it: resolve the plain input's fields against the consumer's table and build the same lookup carrier.</li>
+    <li><strong>UPDATE write target</strong> is the last mutation verb hard-requiring <code>@table</code> on its input; DELETE (R457) and INSERT (R515) already went field-relative. UPDATE inherits the same precedence ladder: return-derived table, then <code>@mutation(table:)</code>, then the <code>@table</code> bridge.</li>
+    <li><strong>The global machinery</strong>, <code>findReturnTablesForInput</code> and the <code>isUsedWithOverrideCondition</code> routing gate, retires once nothing needs the auto-promotion.</li>
+    <li><strong>The LSP/catalog seams</strong> lose their data source when every input goes plain; the final phase decides <em>affirmatively</em> whether per-consumer resolution feeds the input-type hover, or the input-field coordinates are dropped and <a href="../input-nesting-projection-classification.md">R337</a> owns re-surfacing them.</li>
+  </ul>
+  <p>The <code>@table</code>-on-input deprecation is already announced (R332 shipped the warning). Depth on how arguments resolve against a table lives in the <a href="../../docs/architecture/reference/argument-resolution.adoc">argument-resolution reference</a>; the classifier's mental model is in the <a href="../../docs/manual/explanation/classifier-mental-model.adoc">classifier mental model</a>; the discipline of turning an unbuildable shape into a named rejection is <a href="../../docs/architecture/explanation/typed-rejection.adoc">typed rejection</a>.</p>
+
+  <!-- derived:status -->
+  <h2>Where it stands <span style="font-weight:400;font-size:.8em;color:var(--muted)">(as of 2026-07-24)</span></h2>
+  <ul class="status">
+    <li><span class="pill done">landed</span>Substrate this item builds on: query-side plain-input resolution is field-relative (<a href="../changelog.md">R205</a>, <a href="../changelog.md">R215</a>, <a href="../changelog.md">R330</a>); the mutation write-target verbs went field-relative one at a time, DELETE (<a href="../changelog.md">R457</a>), the grounding substrate (<a href="../changelog.md">R514</a>), INSERT (<a href="../changelog.md">R515</a>); the sibling directive retirements shipped, <code>@record</code> reflection-driven binding (<a href="../changelog.md">R96</a>), the input-records carrier (<a href="../changelog.md">R94</a>), and the <code>@table</code>-on-input deprecation warning (<a href="../changelog.md">R332</a>).</li>
+    <li><span class="pill pending">in progress</span><a href="../consumer-derived-input-tables.md">R97</a>: the residual. Route arg-level <code>@lookupKey</code> through the consumer-derived table; retire <code>findReturnTablesForInput</code> and the <code>isUsedWithOverrideCondition</code> gate; migrate UPDATE's write target off the input's <code>@table</code> (Phase 2b, carved out like the other verbs when picked up); narrow the <code>@table</code> directive scope to <code>OBJECT | INTERFACE</code> and decide the LSP projection story affirmatively. The <code>argMapping</code> grouping (Phase 1) is orthogonal and splits into its own item when scheduled.</li>
+    <li><span class="pill pending">boundary</span><a href="../catalog-check-constraint-validation.md">R92</a> (Spec) and <a href="../multi-source-input-validation.md">R98</a> (Backlog): where the deferral ends and the input earns a first-class entity again, on the strength of constraints that are facts about the input itself. R97 covers the input-as-data era up to this point.</li>
+    <li><span class="pill pending">follow-on</span><a href="../input-nesting-projection-classification.md">R337</a> (Backlog): the nested-grouping projection surfacing residual, revived narrowly if R97 lands but leaves the input-field LSP coordinates on the <code>PojoInput(null)</code> label.</li>
+  </ul>
+  <!-- /derived:status -->
+
+  <footer>
+    <strong>See also.</strong>
+    <a href="../consumer-derived-input-tables.md">R97 plan</a> ·
+    <a href="../coordinate-lowers-to-datafetcher-queryparts.md">R333 (fact-based model)</a> ·
+    <a href="../../docs/manual/reference/directives/table.adoc"><code>@table</code></a> ·
+    <a href="../../docs/manual/reference/directives/service.adoc"><code>@service</code> / <code>argMapping</code></a> ·
+    <a href="../../docs/manual/reference/directives/lookupKey.adoc"><code>@lookupKey</code></a> ·
+    <a href="../../docs/manual/explanation/classifier-mental-model.adoc">Classifier mental model</a> ·
+    <a href="../../docs/architecture/reference/argument-resolution.adoc">Argument resolution reference</a> ·
+    <a href="../../docs/architecture/explanation/typed-rejection.adoc">Typed rejection</a> ·
+    <a href="../../docs/architecture/reference/code-generation-triggers.adoc">Code generation triggers</a>
+    <!-- derived:backlinks -->
+    <p style="margin-top:1em"><strong>Referenced by.</strong> No roadmap items link this page yet.</p>
+    <!-- /derived:backlinks -->
+  </footer>
+
+</main>
+<script src="concepts.js"></script>
+</body>
+</html>
