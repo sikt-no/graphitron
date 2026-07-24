@@ -1,7 +1,7 @@
 ---
 id: R417
 title: "Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 7
 theme: docs
