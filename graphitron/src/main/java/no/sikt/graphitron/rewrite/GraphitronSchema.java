@@ -101,6 +101,17 @@ public record GraphitronSchema(
     }
 
     /**
+     * Whether any coordinate classified {@link no.sikt.graphitron.rewrite.model.TenantBinding.FanOut}:
+     * the one predicate the factory generators fork the {@code ExecutionInput} signatures on (the
+     * dedicated fan-out tenant-collection parameter exists exactly when this is true), so the
+     * emitters cannot drift on what "the schema has a fanned field" means.
+     */
+    public boolean hasFanOutBinding() {
+        return tenantBindings.byCoordinate().values().stream()
+            .anyMatch(b -> b instanceof no.sikt.graphitron.rewrite.model.TenantBinding.FanOut);
+    }
+
+    /**
      * Two-arg convenience constructor: groups fields by {@code parentTypeName} automatically,
      * preserving insertion order (declaration order when the fields map is a {@link LinkedHashMap}).
      * No entity resolutions, no warnings, empty arrival index (every nested field folds to

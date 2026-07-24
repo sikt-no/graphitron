@@ -654,7 +654,8 @@ public final class ConnectionRuntimeClassGenerator {
         var defaultFanOutConcurrencyField = FieldSpec.builder(int.class, "DEFAULT_FAN_OUT_CONCURRENCY",
                 Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .initializer("8")
-            .addJavadoc("Default scatter concurrency cap: tenants in flight per fanned field.\n")
+            .addJavadoc("Default scatter concurrency cap: workers in flight on the runtime\u0027s one bounded\n"
+                + "pool, shared by all requests.\n")
             .build();
         var defaultFanOutTimeoutField = FieldSpec.builder(DURATION, "DEFAULT_FAN_OUT_TIMEOUT",
                 Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -812,10 +813,12 @@ public final class ConnectionRuntimeClassGenerator {
         var tenantKeysAccessor = MethodSpec.methodBuilder("tenantKeys")
             .addModifiers(Modifier.PUBLIC)
             .returns(ParameterizedTypeName.get(SET, tenantKey))
-            .addStatement("return dataSourcesByTenant.keySet()")
+            .addStatement("return $T.unmodifiableSet(dataSourcesByTenant.keySet())",
+                ClassName.get("java.util", "Collections"))
             .addJavadoc("The configured tenant keys in the map's configured order (the constructor copies\n"
                 + "into a {@code LinkedHashMap}), so the fan-out domain's concatenation order is\n"
-                + "deployment-stable. Read-only view.\n")
+                + "deployment-stable. Read-only view: a live {@code keySet()} would let a caller\n"
+                + "remove tenants from the routing map through it.\n")
             .build();
 
         var dialectAccessor = MethodSpec.methodBuilder("dialect")
@@ -1526,9 +1529,23 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("$T<$T> order = new $T<>(new $T<>(keys))", LIST, tenantKey, ARRAY_LIST, LINKED_HASH_SET)
             .addStatement("$T<$T<$T>> futures = new $T<>(order.size())",
                 LIST, COMPLETABLE_FUTURE, outcomeOfR, ARRAY_LIST)
-            .beginControlFlow("for ($T key : order)", tenantKey)
+            .addStatement("int submitted = 0")
+            .beginControlFlow("try")
+            .beginControlFlow("while (submitted < order.size())")
+            .addStatement("$T key = order.get(submitted)", tenantKey)
             .addStatement("futures.add($T.supplyAsync(() -> scatterWorker(key, perTenant), runtime.fanOutExecutor()))",
                 COMPLETABLE_FUTURE)
+            .addStatement("submitted++")
+            .endControlFlow()
+            .nextControlFlow("catch ($T e)", ClassName.get("java.util.concurrent", "RejectedExecutionException"))
+            .addComment("A consumer-supplied executor rejected mid-submit (the runtime's own bounded pool")
+            .addComment("never rejects); already-submitted workers may be running. Quarantine their keys so")
+            .addComment("dslFor never reuses them and releaseAll aborts rather than closes, then propagate:")
+            .addComment("the fanned field fails as one unit.")
+            .beginControlFlow("for (int i = 0; i < submitted; i++)")
+            .addStatement("timedOutTenants.add(order.get(i))")
+            .endControlFlow()
+            .addStatement("throw e")
             .endControlFlow()
             .addStatement("long deadline = $T.nanoTime() + runtime.fanOutTimeout().toNanos()", System.class)
             .addStatement("$T<$T> outcomes = new $T<>(order.size())", LIST, outcomeOfR, ARRAY_LIST)
@@ -1546,7 +1563,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("Defensive: the worker catches Throwable itself; only an executor-level failure lands here.")
             .addStatement("outcomes.add(new Outcome.Failed<>(key, e.getCause()))")
             .nextControlFlow("catch ($T e)", InterruptedException.class)
+            .addComment("The join stopped waiting (and the re-set interrupt makes every following get throw")
+            .addComment("immediately), but no worker is stopped: quarantine the key exactly like a timeout, so")
+            .addComment("its possibly-still-executing connection is never reused and releaseAll aborts rather")
+            .addComment("than closes. Failed-vs-TimedOut on the outcome is caller policy; the quarantine is")
+            .addComment("the load-bearing part.")
             .addStatement("$T.currentThread().interrupt()", Thread.class)
+            .addStatement("timedOutTenants.add(key)")
             .addStatement("outcomes.add(new Outcome.Failed<>(key, e))")
             .endControlFlow()
             .endControlFlow()

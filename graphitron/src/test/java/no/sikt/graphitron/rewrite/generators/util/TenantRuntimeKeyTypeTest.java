@@ -157,6 +157,9 @@ class TenantRuntimeKeyTypeTest {
             .contains("static graphql.execution.DataFetcherResult<java.util.List<java.lang.Object>> collapseFanOut(")
             .contains(".path(env.getExecutionStepInfo().getPath().segment(elements.size()))")
             .contains("\"classification\", failure.classification()")
+            // The wire vocabulary is single-sourced as named constants on the marker.
+            .contains("String FAILED = \"TenantFanOutFailed\"")
+            .contains("String TIMED_OUT = \"TenantFanOutTimedOut\"")
             .contains("class FanOutFailure");
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);

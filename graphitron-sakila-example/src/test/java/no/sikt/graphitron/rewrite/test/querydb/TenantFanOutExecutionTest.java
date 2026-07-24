@@ -192,9 +192,10 @@ class TenantFanOutExecutionTest {
         var result = execute("{ filmsEverywhere { title } }", List.of(1, 99));
 
         assertThat(result.getErrors())
-            .as("the request's tenant set names an unhosted tenant: a request-level error"
-                + " (redacted per the standard discipline; the tenant key is in the server log)")
-            .isNotEmpty();
+            .as("the request's tenant set names an unhosted tenant: a request-level error,"
+                + " redacted on the wire (correlation-id reference; the tenant key stays in the"
+                + " server log)")
+            .anyMatch(e -> e.getMessage().contains("Reference: ") && !e.getMessage().contains("99"));
         Map<String, Object> data = result.getData();
         assertThat(data == null || data.get("filmsEverywhere") == null).isTrue();
         assertThat(TENANT_1_OPENED.get())
@@ -239,6 +240,30 @@ class TenantFanOutExecutionTest {
             .doesNotContain("tenant 2 is down");
         assertThat(error.getExtensions())
             .containsEntry("classification", "TenantFanOutFailed");
+    }
+
+    @Test
+    void downedTenant_byTimeout_classifiesTenantFanOutTimedOut() {
+        // A dedicated engine with a short scatter deadline; tenant 2's acquisition hangs past
+        // it, so the join stops waiting and the wire carries the timeout classification.
+        Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
+        byTenant.put(1, tenantDataSource("fanout_t1", null, null));
+        byTenant.put(2, hangingDataSource("fanout_t2", 5_000));
+        var slowRuntime = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES,
+            4, java.time.Duration.ofMillis(500));
+        var slowEngine = slowRuntime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+
+        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput("{}", List.of(1, 2))
+            .query("{ filmsEverywhere { title } }")
+            .build());
+
+        Map<String, Object> data = result.getData();
+        var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
+        assertThat(films).hasSize(3);
+        assertThat(films.get(2)).as("the timed-out tenant's appended null element").isNull();
+        assertThat(result.getErrors())
+            .anyMatch(e -> e.getExtensions() != null
+                && "TenantFanOutTimedOut".equals(e.getExtensions().get("classification")));
     }
 
     @Test
@@ -291,6 +316,26 @@ class TenantFanOutExecutionTest {
 
     private static DataSource tenantDataSource(String db, AtomicInteger opened, AtomicBoolean down) {
         return dataSource(tenantUrl(db), opened, down);
+    }
+
+    /** A DataSource whose acquisition hangs past the scatter deadline, then connects normally. */
+    private static DataSource hangingDataSource(String db, long hangMillis) {
+        String url = tenantUrl(db);
+        return (DataSource) Proxy.newProxyInstance(
+            TenantFanOutExecutionTest.class.getClassLoader(),
+            new Class<?>[]{DataSource.class},
+            (proxy, method, args) -> {
+                if (method.getName().equals("getConnection")) {
+                    Thread.sleep(hangMillis);
+                    return DriverManager.getConnection(url, jdbcUser, jdbcPassword);
+                }
+                return switch (method.getName()) {
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    case "toString" -> "hangingDataSource:" + db;
+                    default -> throw new UnsupportedOperationException(method.getName());
+                };
+            });
     }
 
     private static DataSource dataSource(String url, AtomicInteger opened, AtomicBoolean down) {

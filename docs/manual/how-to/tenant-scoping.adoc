@@ -51,7 +51,7 @@ Which tenants actually run is the intersection of that collection with the confi
 
 === Tuning fan-out
 
-Fan-out parallelism is bounded and configurable on the generated runtime: a concurrency cap (default *8* tenants in flight per fanned field) and a per-field deadline (default *10 seconds*), set as plain constructor values. Supply your own `Executor` instead if you want to own threading (for example virtual threads); the deadline still applies.
+Fan-out parallelism is bounded and configurable on the generated runtime: a concurrency cap (default *8* scatter workers in flight, one bounded pool shared by all of the runtime's requests) and a per-field deadline (default *10 seconds*), set as plain constructor values. Supply your own `Executor` instead if you want to own threading (for example virtual threads); the deadline still applies.
 
 [source,java]
 ----

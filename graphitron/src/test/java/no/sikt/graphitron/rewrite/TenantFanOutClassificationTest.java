@@ -344,6 +344,80 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
+    void markerOnAnInterfaceFieldRejects_theSweepWalksInterfaces() {
+        // @tenantFanOut is legal on interface field definitions, graphql-java does not copy
+        // interface-field directives onto implementors, and field classification models only
+        // object coordinates: without the sweep walking interfaces the marker here was silently
+        // ignored. The implementor's copy is deliberately unmarked, so the rejection can only
+        // come from the interface coordinate.
+        var schema = build("""
+            interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
+                subjectId: Int! @field(name: "jti_subject_id")
+                subjectKind: String! @field(name: "subject_kind")
+                films: [Film] @tenantFanOut
+            }
+            type AppAccount implements Subject @table(name: "jti_subject") @discriminator(value: "APP") {
+                subjectId: Int! @field(name: "jti_subject_id")
+                subjectKind: String! @field(name: "subject_kind")
+                films: [Film]
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { subjects: [Subject!]! }
+            """);
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.directives().contains("tenantFanOut")
+                && conflict.message().contains("'Subject.films'"));
+    }
+
+    @Test
+    void markerOnAnInterfaceFieldInASingleTenantBuildRejects() {
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
+                subjectId: Int! @field(name: "jti_subject_id")
+                subjectKind: String! @field(name: "subject_kind")
+                films: [Film] @tenantFanOut
+            }
+            type AppAccount implements Subject @table(name: "jti_subject") @discriminator(value: "APP") {
+                subjectId: Int! @field(name: "jti_subject_id")
+                subjectKind: String! @field(name: "subject_kind")
+                films: [Film]
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { subjects: [Subject!]! }
+            """);
+
+        assertThat(schema.tenantBindings().rejections())
+            .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
+                && conflict.directives().contains("tenantFanOut")
+                && conflict.message().contains("'Subject.films'")
+                && conflict.message().contains("no <tenantColumn>"));
+    }
+
+    @Test
+    void markerUnderAPartiallyBoundAncestorRejects_anyPathPosture() {
+        // Film is reached through a bound path (films) and an unbound one (allFilms, itself a
+        // noTenantBinding rejection). The bound-ancestor rung is any-path, matching the
+        // nested-marker rung: fanning contradicts a divined tenant on any reaching path, so the
+        // marked child's verdict never depends on which path the runtime happens to take.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @tenantFanOut
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query {
+                films(filmId: Int @field(name: "film_id")): [Film!]!
+                allFilms: [Film!]!
+            }
+            """);
+
+        assertFanOutRejection(schema, "Film.inventories",
+            "tenant-bound ancestor", "tenantFanOut");
+    }
+
+    @Test
     void markerInASingleTenantBuildRejects() {
         // No <tenantColumn>: the axis is absent, but the marker must not be silently ignored.
         var schema = TestSchemaHelper.buildSchema("""

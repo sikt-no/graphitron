@@ -96,14 +96,20 @@ public record TenantBindingIndex(
         return new Fold(sdl, fields, entitiesByType, types, configured).run();
     }
 
-    /** Every {@code @tenantFanOut} application in a single-tenant build is a validate-time error. */
+    /**
+     * Every {@code @tenantFanOut} application in a single-tenant build is a validate-time error.
+     * Walks every {@link graphql.schema.GraphQLFieldsContainer} (objects <em>and</em> interfaces:
+     * the directive is legal on interface field definitions, and graphql-java does not copy
+     * interface-field directives onto implementors), mirroring {@link #sweepUnreachedFanOutMarkers}.
+     */
     private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl) {
         var rejections = new ArrayList<ValidationError>();
         for (var type : sdl.getAllTypesAsList()) {
-            if (type.getName().startsWith("__") || !(type instanceof GraphQLObjectType obj)) continue;
-            for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
+            if (type.getName().startsWith("__")
+                    || !(type instanceof graphql.schema.GraphQLFieldsContainer container)) continue;
+            for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
                 if (!field.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT)) continue;
-                String coordinate = obj.getName() + "." + field.getName();
+                String coordinate = container.getName() + "." + field.getName();
                 rejections.add(new ValidationError(
                     coordinate,
                     Rejection.directiveConflict(List.of(BuildContext.DIR_TENANT_FAN_OUT),
@@ -138,6 +144,8 @@ public record TenantBindingIndex(
         private final Set<String> ctxInProgress = new HashSet<>();
         private final Map<String, Boolean> fannedAncestorMemo = new HashMap<>();
         private final Set<String> fannedAncestorInProgress = new HashSet<>();
+        private final Map<String, Boolean> boundAncestorMemo = new HashMap<>();
+        private final Set<String> boundAncestorInProgress = new HashSet<>();
         private final Map<String, Set<String>> closureCache = new HashMap<>();
 
         /** Node dispatch facts, computed once: type name -> decoded tenant position. */
@@ -195,12 +203,17 @@ public record TenantBindingIndex(
          * turns it into a validate-time rejection.
          */
         private void sweepUnreachedFanOutMarkers() {
+            // Objects and interfaces both: the directive is legal on interface field definitions,
+            // graphql-java does not copy interface-field directives onto implementors, and field
+            // classification only models object coordinates, so an interface marker reaches a
+            // verdict through no other route.
             for (var type : sdl.getAllTypesAsList()) {
-                if (type.getName().startsWith("__") || !(type instanceof GraphQLObjectType obj)) continue;
-                for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
+                if (type.getName().startsWith("__")
+                        || !(type instanceof graphql.schema.GraphQLFieldsContainer container)) continue;
+                for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
                     if (!field.hasAppliedDirective(BuildContext.DIR_TENANT_FAN_OUT)) continue;
-                    String coordinate = obj.getName() + "." + field.getName();
-                    if (byCoordinate.get(FieldCoordinates.coordinates(obj.getName(), field.getName()))
+                    String coordinate = container.getName() + "." + field.getName();
+                    if (byCoordinate.get(FieldCoordinates.coordinates(container.getName(), field.getName()))
                             instanceof TenantBinding.FanOut
                         || fanOutRejected.contains(coordinate)) {
                         continue;
@@ -373,21 +386,16 @@ public record TenantBindingIndex(
                         + " into one list, so the field must return a list of a tenant-scoped"
                         + " type.");
             }
+            // Reach here is single-table by construction: the polymorphic rung above rejected
+            // every participant-set shape and the non-list/pivot rungs the attribute shapes, so
+            // a surviving field's reach is its Record return target alone and the generic
+            // cross-scope (tenant-and-global-in-one-statement) case cannot arise.
             List<TableRef> reach = reachedTables(out);
             boolean anyTenant = reach.stream().anyMatch(this::tenantScoped);
-            boolean anyGlobal = reach.stream().anyMatch(t -> !tenantScoped(t));
             if (!anyTenant) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
                     "'" + coordinate + "' reaches no tenant-scoped table: its data is global,"
                         + " so there is nothing to fan out over.");
-            }
-            if (anyGlobal) {
-                return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
-                    "'" + coordinate + "' touches tenant-scoped and global tables in one"
-                        + " statement (" + reach.stream().map(TableRef::tableName).distinct()
-                            .collect(java.util.stream.Collectors.joining(", "))
-                        + "); one statement cannot span the per-tenant and default sources, so"
-                        + " it cannot run once per tenant either.");
             }
             var slots = directSlots(out.operation());
             if (slots.isEmpty()) {
@@ -407,12 +415,54 @@ public record TenantBindingIndex(
                         + " already carries its tenant, so a nested fan-out would double-fan an"
                         + " already fanned context.");
             }
-            if (tenantContextOf(coord.getTypeName())) {
+            if (anyBoundAncestor(coord.getTypeName())) {
                 return rejectFanOut(coordinate, List.of(BuildContext.DIR_TENANT_FAN_OUT),
                     "'" + coordinate + "' sits under a tenant-bound ancestor: the tenant is"
-                        + " already divined and handed down, and fanning would contradict it.");
+                        + " already divined and handed down on at least one reaching path, and"
+                        + " fanning would contradict it.");
             }
             return TenantBinding.FanOut.INSTANCE;
+        }
+
+        /**
+         * True when some reaching path to {@code typeName} crosses a tenant-divining edge (a
+         * direct binding, or routable node dispatch). The any-path mirror of
+         * {@link #tenantContextOf}'s every-path fold, matching the nested-marker rung's posture:
+         * a marked field rejects if fanning would contradict a divined tenant on <em>any</em>
+         * path (rejections are conservative), while the {@link TenantBinding.Inherited} verdict
+         * keeps demanding every-path certainty. Cycles fold to {@code false}.
+         */
+        private boolean anyBoundAncestor(String typeName) {
+            Boolean cached = boundAncestorMemo.get(typeName);
+            if (cached != null) return cached;
+            if (!boundAncestorInProgress.add(typeName)) return false;
+            boolean result = false;
+            for (FieldCoordinates edge : reachingEdges.getOrDefault(typeName, List.of())) {
+                if (edgeDivinesTenant(edge) || anyBoundAncestor(edge.getTypeName())) {
+                    result = true;
+                    break;
+                }
+            }
+            boundAncestorInProgress.remove(typeName);
+            boundAncestorMemo.put(typeName, result);
+            return result;
+        }
+
+        /**
+         * Whether the edge's own field divines a tenant: the direct-binding and routable
+         * node-dispatch facts {@link #edgeEstablishesOrTransmitsContext} reads, without the
+         * transitive fold (the caller walks paths itself).
+         */
+        private boolean edgeDivinesTenant(FieldCoordinates edge) {
+            if (fields.get(edge) instanceof OutputField out) {
+                if (!directSlots(out.operation()).isEmpty()) {
+                    return true;
+                }
+                if (out.operation() instanceof Operation.NodeResolve) {
+                    return nodeDispatchRoutable && !nodePositions.isEmpty();
+                }
+            }
+            return false;
         }
 
         private TenantBinding rejectFanOut(String coordinate, List<String> directives, String reason) {

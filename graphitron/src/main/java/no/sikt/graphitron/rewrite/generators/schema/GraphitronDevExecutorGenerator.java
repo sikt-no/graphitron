@@ -76,10 +76,9 @@ public final class GraphitronDevExecutorGenerator {
             ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
-        // Mirrors the facade's fanned-factory predicate: when any field classifies FanOut the
-        // factories carry the dedicated tenant-collection slot, and this call must fill it.
-        boolean fanOut = schema.tenantBindings().byCoordinate().values().stream()
-            .anyMatch(b -> b instanceof no.sikt.graphitron.rewrite.model.TenantBinding.FanOut);
+        // The facade's factory signatures fork on the same predicate; reading the one schema
+        // seam keeps this call and the emitted parameter list from drifting.
+        boolean fanOut = schema.hasFanOutBinding();
 
         // A fourth SessionStateConfig form must decide the fail-loud question here explicitly
         // (compile error, not a silent default), same drift guard as the runtime generator's

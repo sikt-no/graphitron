@@ -288,6 +288,107 @@ class TenantScatterSubstrateTest {
         assertThat(events).as("no new pin, no release-path activity from the late completion").isEmpty();
     }
 
+    @Test
+    void interruptedJoin_quarantinesKeysLikeATimeout_soReleaseAbortsNotCloses() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        var hold = new CountDownLatch(1);
+        var outcomes = new java.util.concurrent.atomic.AtomicReference<List<?>>();
+        var scatterFailure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+
+        Thread dispatch = new Thread(() -> {
+            try {
+                // Both workers hold, so neither future is complete when the interrupt lands:
+                // the first get throws on the interrupt, and the re-set flag makes the second
+                // get throw immediately too (a completed future would return its value instead).
+                outcomes.set(scatter(tc, List.of("A", "B"), dsl -> awaitThen(hold, "late")));
+            } catch (Throwable t) {
+                scatterFailure.set(t);
+            }
+        });
+        dispatch.start();
+        // Interrupt only once both workers have pinned, so the interrupt lands in the join (the
+        // workers themselves are never interrupted; nothing stops a JDBC call safely).
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!(events.contains("connect:A") && events.contains("connect:B"))
+                && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        dispatch.interrupt();
+        dispatch.join(5_000);
+
+        assertThat(dispatch.isAlive()).isFalse();
+        assertThat(scatterFailure.get()).as("the join reports outcomes, it does not throw").isNull();
+        assertThat(outcomes.get()).hasSize(2);
+        assertThat(outcomes.get()).allSatisfy(o -> assertThat(o).isInstanceOf(failedClass));
+
+        // Both keys are quarantined: neither is ever reused, and release aborts rather than
+        // closes under a possibly-live worker.
+        assertThatThrownBy(() -> dslFor(tc, "A"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("never reused");
+        events.clear();
+        releaseAll(tc);
+        assertThat(events)
+            .contains("abort:A", "abort:B")
+            .doesNotContain("disconnect:A", "close:A", "disconnect:B", "close:B");
+        hold.countDown();
+    }
+
+    @Test
+    void rejectedExecutionMidSubmit_quarantinesAlreadySubmittedKeys_andPropagates() throws Throwable {
+        // A consumer-supplied executor that accepts the first worker and rejects the second: the
+        // first worker may already be running, so its key must be quarantined before the
+        // rejection propagates; the never-submitted key has no worker and stays usable.
+        var delegate = java.util.concurrent.Executors.newFixedThreadPool(2, task -> {
+            Thread thread = new Thread(task, "test-fanout");
+            thread.setDaemon(true);
+            return thread;
+        });
+        var submits = new AtomicInteger();
+        Executor rejecting = task -> {
+            if (submits.incrementAndGet() > 1) {
+                // Hold the rejection until the first worker has pinned, so the quarantine-vs-pin
+                // race cannot flake the release assertion below.
+                long dl = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (!events.contains("connect:A") && System.nanoTime() < dl) {
+                    try {
+                        Thread.sleep(5);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(e);
+                    }
+                }
+                throw new java.util.concurrent.RejectedExecutionException("saturated");
+            }
+            delegate.execute(task);
+        };
+        Object runtime = runtimeClass
+            .getConstructor(DataSource.class, Map.class, SQLDialect.class, Executor.class, Duration.class)
+            .newInstance(fakeDataSource("default", false), new LinkedHashMap<>(sources("A", "B")),
+                SQLDialect.POSTGRES, rejecting, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        var hold = new CountDownLatch(1);
+
+        assertThatThrownBy(() -> scatter(tc, List.of("A", "B"), dsl -> awaitThen(hold, "late")))
+            .as("the fanned field fails as one unit; the rejection is not swallowed")
+            .isInstanceOf(java.util.concurrent.RejectedExecutionException.class);
+
+        assertThatThrownBy(() -> dslFor(tc, "A"))
+            .as("the submitted key's worker may be running: quarantined")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("never reused");
+        dslFor(tc, "B"); // never submitted, no worker: stays usable
+
+        events.clear();
+        releaseAll(tc);
+        assertThat(events)
+            .as("the submitted key aborts (worker possibly live); the pinned-but-unsubmitted key releases")
+            .contains("abort:A", "disconnect:B", "close:B")
+            .doesNotContain("disconnect:A", "close:A");
+        hold.countDown();
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
 
     private Map<String, DataSource> sources(String... labels) {

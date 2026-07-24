@@ -92,8 +92,7 @@ public final class GraphitronFacadeGenerator {
         // carrier's graphitron-owned key, outside the contextArgument namespace.
         no.sikt.graphitron.javapoet.TypeName fanOutTenantKey = null;
         if (schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configured
-                && schema.tenantBindings().byCoordinate().values().stream()
-                    .anyMatch(b -> b instanceof no.sikt.graphitron.rewrite.model.TenantBinding.FanOut)) {
+                && schema.hasFanOutBinding()) {
             fanOutTenantKey = configured.tenantType().isPrimitive()
                 ? configured.tenantType().box()
                 : configured.tenantType();
