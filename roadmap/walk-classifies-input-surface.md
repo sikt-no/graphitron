@@ -1,13 +1,13 @@
 ---
 id: R335
 title: "Fold input/scalar/enum classification into the single classify-and-emit walk"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: classification-model
 depends-on: []
 created: 2026-06-19
-last-updated: 2026-07-14
+last-updated: 2026-07-24
 ---
 
 # Fold input/scalar/enum classification into the single classify-and-emit walk

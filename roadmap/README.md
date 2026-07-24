@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-20 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R333` | The Graphitron data model | Ready | 2026-07-20 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-07-14 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
+| `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Ready | 2026-07-24 <sub>created 2026-06-19</sub> | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R494` | Reconcile SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES with BuildContext DIR_* (routine, asFacet, pivot) | Ready | 2026-07-24 <sub>created 2026-07-16</sub> | [plan](schema-directive-registry-generator-only-sync.md) |
@@ -186,7 +186,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
-- `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Spec, architecture
+- `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Ready, architecture
 - `R337` [**Input-side nesting-projection classification (NestingType mirror)**](input-nesting-projection-classification.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
