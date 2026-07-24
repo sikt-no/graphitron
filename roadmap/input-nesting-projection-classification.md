@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: classification-model
-depends-on: [consumer-derived-input-tables]
+depends-on: []
 created: 2026-06-19
 last-updated: 2026-06-22
 ---
