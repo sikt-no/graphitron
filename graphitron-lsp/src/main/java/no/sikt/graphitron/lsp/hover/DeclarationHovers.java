@@ -329,8 +329,15 @@ public final class DeclarationHovers {
                   .append("\n\nTable: `").append(nullSafe(t.tableName())).append("`");
             case TypeClassification.PojoResult t ->
                 sb.append("\n\nBacking class: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.PojoInput p ->
-                sb.append("\n\nBacking class: `").append(nullSafe(p.fqClassName())).append("`");
+            case TypeClassification.PojoInput p -> {
+                if (p.fqClassName() != null) {
+                    sb.append("\n\nBacking class: `").append(p.fqClassName()).append("`");
+                }
+                if (!p.resolvedTables().isEmpty()) {
+                    sb.append("\n\nResolved table").append(p.resolvedTables().size() == 1 ? "" : "s")
+                      .append(": `").append(String.join("`, `", p.resolvedTables())).append("`");
+                }
+            }
             case TypeClassification.TableInput ti ->
                 sb.append("\n\nTable: `").append(nullSafe(ti.tableName())).append("`");
             case TypeClassification.Root r ->

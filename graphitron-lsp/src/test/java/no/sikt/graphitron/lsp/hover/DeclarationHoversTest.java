@@ -43,6 +43,50 @@ class DeclarationHoversTest {
     }
 
     @Test
+    void cursorOnPlainInputTypeShowsResolvedTable() {
+        // A plain (non-@table) input carries no table of its own; hover surfaces the table(s) its
+        // consuming fields resolve it against, per-consumer.
+        var file = file("""
+            input FilmFilter {
+                title: String
+            }
+            """);
+        // Cursor on 'FilmFilter' on line 0.
+        var pos = pointAt(file, 0, "input Film".length());
+
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("FilmFilter", new TypeClassification.PojoInput(null, List.of("film"))));
+        var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md)
+            .contains("**TypeClassification.PojoInput**")
+            .contains("Resolved table: `film`");
+    }
+
+    @Test
+    void cursorOnPlainInputTypeReusedAcrossTablesShowsEachConsumerTable() {
+        // Reused across two consumers returning different tables: hover lists both, per-consumer.
+        var file = file("""
+            input SharedFilter {
+                id: Int
+            }
+            """);
+        var pos = pointAt(file, 0, "input Shared".length());
+
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("SharedFilter", new TypeClassification.PojoInput(null, List.of("film", "inventory"))));
+        var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md)
+            .contains("**TypeClassification.PojoInput**")
+            .contains("Resolved tables: `film`, `inventory`");
+    }
+
+    @Test
     void cursorOnFieldNameProducesFieldClassificationHover() {
         var file = file("""
             type Film @table(name: "film") {

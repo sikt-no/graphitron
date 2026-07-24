@@ -37,6 +37,7 @@ import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -117,7 +118,7 @@ public final class CatalogBuilder {
             : projectFieldClassifications(schema);
         var typeClassifications = (schema == null)
             ? Map.<String, TypeClassification>of()
-            : projectTypeClassifications(schema);
+            : projectTypeClassifications(schema, registry, fieldClassifications);
         return new LspSchemaSnapshot.Built.Current(
             directives, typesByName, payloadDataFieldByType,
             fieldClassifications, typeClassifications,
@@ -667,12 +668,86 @@ public final class CatalogBuilder {
  * Projects every classified type onto its {@link TypeClassification} variant.
      * Exhaustive on the {@link GraphitronType} sealed permits.
      */
-    private static Map<String, TypeClassification> projectTypeClassifications(GraphitronSchema schema) {
+    private static Map<String, TypeClassification> projectTypeClassifications(
+        GraphitronSchema schema, TypeDefinitionRegistry registry,
+        Map<String, FieldClassification> fieldClassifications
+    ) {
+        var consumerTables = inputConsumerTables(registry, fieldClassifications);
         var out = new LinkedHashMap<String, TypeClassification>();
         for (var entry : schema.types().entrySet()) {
-            out.put(entry.getKey(), projectTypeClassification(entry.getValue()));
+            var projected = projectTypeClassification(entry.getValue());
+            // Consumer-derived pass: a plain input carries the tables its consuming fields resolve
+            // it against. A plain input is not a modeled relation, so its table is a per-consumer
+            // fact surfaced on this LSP view rather than decided once at classification time; every
+            // consumer's table is kept (never collapsed when there is more than one), so the hover
+            // shows per-consumer resolution.
+            if (projected instanceof TypeClassification.PojoInput pojo) {
+                projected = new TypeClassification.PojoInput(
+                    pojo.fqClassName(), consumerTables.getOrDefault(entry.getKey(), List.of()));
+            }
+            out.put(entry.getKey(), projected);
         }
         return Map.copyOf(out);
+    }
+
+    /**
+     * For each input type consumed as a field argument, the distinct tables its fields resolve
+     * against, one per consuming field that resolves to a table. The arg&rarr;field edge is read
+     * from SDL shape (which field declares an argument of the input type); the table is read from
+     * the consuming field's already-classified target ({@link #resolvedArgTableName}), never from a
+     * re-read {@code @table} directive, so the surfaced table matches the call-site resolution and
+     * cannot drift from it. {@code @orderBy} arguments are excluded: their input type is a sort
+     * wrapper, not a column-resolving filter.
+     */
+    private static Map<String, List<String>> inputConsumerTables(
+        TypeDefinitionRegistry registry, Map<String, FieldClassification> fieldClassifications
+    ) {
+        var byInput = new LinkedHashMap<String, LinkedHashSet<String>>();
+        for (var obj : registry.getTypes(graphql.language.ObjectTypeDefinition.class)) {
+            for (var fieldDef : obj.getFieldDefinitions()) {
+                var fc = fieldClassifications.get(obj.getName() + "." + fieldDef.getName());
+                if (fc == null) continue;
+                var table = resolvedArgTableName(fc);
+                if (table.isEmpty()) continue;
+                for (var arg : fieldDef.getInputValueDefinitions()) {
+                    boolean orderBy = arg.getDirectives().stream().anyMatch(d -> "orderBy".equals(d.getName()));
+                    if (orderBy) continue;
+                    String argType = baseTypeName(arg.getType());
+                    if (argType == null) continue;
+                    byInput.computeIfAbsent(argType, k -> new LinkedHashSet<>()).add(table.get());
+                }
+            }
+        }
+        var out = new LinkedHashMap<String, List<String>>();
+        byInput.forEach((k, v) -> out.put(k, List.copyOf(v)));
+        return out;
+    }
+
+    /**
+     * The table a consuming field resolves its arguments against, read off the field's classified
+     * target. Empty for a field that resolves to no table (a {@code @service} record return, a
+     * scalar/computed field, a polymorphic dispatch), whose arguments do not resolve against a
+     * single table. A best-effort projection over the table-bearing {@link FieldClassification}
+     * arms; the {@code default} covers the tableless arms.
+     */
+    private static Optional<String> resolvedArgTableName(FieldClassification fc) {
+        return switch (fc) {
+            case FieldClassification.QueryTable q -> Optional.ofNullable(q.tableName());
+            case FieldClassification.QueryTableInterface q -> Optional.ofNullable(q.tableName());
+            case FieldClassification.QueryTableMethod q -> Optional.ofNullable(q.tableName());
+            case FieldClassification.TableTarget t -> Optional.ofNullable(t.tableName());
+            case FieldClassification.RecordTableTarget t -> Optional.ofNullable(t.tableName());
+            case FieldClassification.TableInterface t -> Optional.ofNullable(t.tableName());
+            case FieldClassification.TableMethod t -> Optional.ofNullable(t.tableName());
+            default -> Optional.empty();
+        };
+    }
+
+    private static String baseTypeName(Type<?> type) {
+        if (type instanceof NonNullType nn) return baseTypeName(nn.getType());
+        if (type instanceof ListType lt) return baseTypeName(lt.getType());
+        if (type instanceof TypeName tn) return tn.getName();
+        return null;
     }
 
     /**
@@ -717,7 +792,9 @@ public final class CatalogBuilder {
             case GraphitronType.PojoResultType.Backed t ->
                 new TypeClassification.PojoResult(t.fqClassName());
             case GraphitronType.PojoInputType t ->
-                new TypeClassification.PojoInput(t.fqClassName());
+                // resolvedTables is filled by the consumer-derived pass in projectTypeClassifications,
+                // which has the schema-wide arg→consumer edges this per-type projection cannot see.
+                new TypeClassification.PojoInput(t.fqClassName(), List.of());
             case GraphitronType.TableInputType t ->
                 new TypeClassification.TableInput(t.table() != null ? t.table().tableName() : null);
             case GraphitronType.RootType t ->

@@ -425,6 +425,28 @@ Acceptance: every sakila fixture compiles unchanged; a plain-input arg-level
 `findReturnTablesForInput` and `isUsedWithOverrideCondition` are gone; LSP
 hover shows the resolved table.
 
+#### Phase 2 landing notes (two seams for Phase 3)
+
+Two consequences of retiring the aggregate surfaced during implementation and
+are recorded here so Phase 3's affirmative LSP decision does not rediscover them:
+
+- **Per-input-field `FieldClassification` coordinates drop for the auto-promoted
+  subset now, not at Phase 3.** The `<inputType>.<field>` field-level projection
+  entries only ever existed for `TableInputType` inputs
+  (`CatalogBuilder.projectFieldClassifications` walks `tit.inputFields()`); an
+  input that used to auto-promote is now plain and stores no fields on the type,
+  so those coordinates are gone. Phase 2 restores the *type-level* input hover
+  (the resolved table, read off each consuming field's classified target and
+  attached to `TypeClassification.PojoInput.resolvedTables`), not the field-level
+  coordinates. Phase 3 owns whether the input-field coordinates come back (or
+  hand off to R337).
+- **`InputBeanResolver`'s `TableInputType` check is a semantic signal, not a
+  routing artifact.** It reads the whole-type verdict to mean "graphitron owns
+  the DML" (the D2 rule rejecting a jOOQ-`TableRecord` `@service` param). It
+  survives Phase 2 because it is explicit-`@table`-gated (auto-promotion never
+  reached `@service` fields), but Phase 3 (which deletes `TableInputType`) must
+  re-source that signal from the consuming field, not the input entity.
+
 #### Validator-mirror status (mostly discharged)
 
 The original Phase 2 carried a 2x2 `override` x `column-resolves` obligation.

@@ -162,8 +162,19 @@ public sealed interface TypeClassification
      * A reflection-bound input type backed by a plain Java class (POJO; the method parameter
      * it flows into is such a class). Covers {@code GraphitronType.PojoInputType};
      * {@code fqClassName} is null when no backing class could be resolved.
+     *
+     * <p>{@code resolvedTables} names the distinct tables the input's fields resolve against,
+     * one per consuming field that resolves to a table (the input is not itself a modeled
+     * relation; its table is a property of each consuming field's fact). Empty when no consuming
+     * field resolves to a table (e.g. a {@code @service}-param input). Read off the consuming
+     * fields' classified targets, never a re-read {@code @table} directive, so the hover shows
+     * what graphitron inferred and cannot drift from the call-site resolution.
      */
-    record PojoInput(String fqClassName) implements TypeClassification {}
+    record PojoInput(String fqClassName, List<String> resolvedTables) implements TypeClassification {
+        public PojoInput {
+            resolvedTables = List.copyOf(resolvedTables);
+        }
+    }
 
     /**
      * A {@code @table}-annotated input type. Covers {@code GraphitronType.TableInputType}.

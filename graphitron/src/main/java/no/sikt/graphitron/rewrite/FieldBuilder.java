@@ -1420,7 +1420,7 @@ class FieldBuilder {
             // When it doesn't, no bindings are produced (filter-only flow handled via
             // walkInputFieldConditions).
             List<InputColumnBindingGroup> bindings = arg.hasAppliedDirective(DIR_LOOKUP_KEY)
-                ? enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors)
+                ? enumMappingResolver.buildLookupBindings(tit.inputFields(), errors)
                 : List.of();
             return ArgumentRef.InputTypeArg.TableInputArg.of(
                 name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
@@ -1454,6 +1454,14 @@ class FieldBuilder {
                         + "partition is derived from the catalog by the walker). On Query-side "
                         + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
                         + "instead."));
+                }
+                // Arg-level @lookupKey on a plain (non-@table) input: re-derive the input's fields
+                // against the consuming field's return table and build the lookup binding set from
+                // them, producing the same TableInputArg the @table bridge does. The composite-key
+                // lookup shape (e.g. FilmActorKey) no longer requires @table on the input; the table
+                // is the consuming field's fact, not the input's.
+                if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
+                    return classifyPlainLookupKeyArg(iot, name, typeName, nonNull, list, rt, argCondition, errors);
                 }
             }
             // Thread the call site's cascade override flag into the classifier. The
@@ -1660,6 +1668,52 @@ class FieldBuilder {
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnBackedArg(
             name, typeName, nonNull, list, List.of(columnRef), extraction, argCondition, fieldOverride, isLookupKey, List.of());
+    }
+
+    /**
+     * Classifies an arg-level {@code @lookupKey} on a plain (non-{@code @table}) input into the
+     * same {@link ArgumentRef.InputTypeArg.TableInputArg} the {@code @table} bridge produces. The
+     * input's fields are re-derived against the consuming field's return table {@code rt} through
+     * {@link TypeBuilder#resolveInputFields} (the factoring shared with the {@code @table}-input
+     * path, so both routes classify identical schema defects identically), and the lookup binding
+     * set is built from the resolved fields.
+     *
+     * <p>Unlike the plain filter path, a {@code @lookupKey} column that does not resolve on
+     * {@code rt} is a hard defect, not a deferred-to-consumption {@link InputField.UnboundField}:
+     * the lookup shape is a VALUES-join over exactly these columns, so an unbound carrier has no
+     * binding to emit. Both the non-column-miss failure ({@code resolveInputFields} returning
+     * {@code Failed}) and the column-miss case (a resolved {@code UnboundField}, or any
+     * non-{@link InputField.LookupKeyField} carrier) reject as {@link ArgumentRef.UnclassifiedArg}
+     * naming the consumer's table.
+     */
+    private ArgumentRef classifyPlainLookupKeyArg(
+        GraphQLInputObjectType iot, String name, String typeName, boolean nonNull, boolean list,
+        TableRef rt, Optional<ArgConditionRef> argCondition, List<String> errors
+    ) {
+        if (rt == null) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                Rejection.structural("@lookupKey argument '" + name + "': the consuming field does not "
+                + "resolve to a table, so the lookup input's fields cannot be bound to columns"));
+        }
+        var resolution = typeBuilder.resolveInputFields(typeName, iot.getFieldDefinitions(), rt);
+        if (resolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                Rejection.structural("@lookupKey argument '" + name + "': " + failed.reason()));
+        }
+        var resolvedFields = ((TypeBuilder.InputFieldsResolution.Resolved) resolution).fields();
+        var unbound = resolvedFields.stream()
+            .filter(f -> !(f instanceof InputField.LookupKeyField))
+            .map(InputField::name)
+            .toList();
+        if (!unbound.isEmpty()) {
+            return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                Rejection.structural("@lookupKey argument '" + name + "': input field(s) '"
+                + String.join("', '", unbound) + "' do not resolve to a lookup column on table '"
+                + rt.tableName() + "'"));
+        }
+        var bindings = enumMappingResolver.buildLookupBindings(resolvedFields, errors);
+        return ArgumentRef.InputTypeArg.TableInputArg.of(
+            name, typeName, nonNull, list, rt, bindings, argCondition, resolvedFields);
     }
 
     /**

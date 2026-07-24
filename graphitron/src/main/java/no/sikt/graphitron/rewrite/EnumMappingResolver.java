@@ -1,8 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import graphql.schema.GraphQLArgument;
-import graphql.schema.GraphQLFieldDefinition;
-import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -230,18 +227,26 @@ final class EnumMappingResolver {
     }
 
     /**
-     * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBindingGroup} per admissible input field. {@code @lookupKey} on
-     * {@code INPUT_FIELD_DEFINITION} was retired; the directive no longer gates this walk. UPDATE and
-     * DELETE build their WHERE columns directly on their walker carriers, and INSERT builds no binding
-     * set at all (it walks {@code fields()} directly for VALUES emit and carries an empty binding
-     * list), so the sole remaining caller is query-side:
+     * Builds one {@link InputColumnBindingGroup} per admissible field in an already-resolved
+     * input-field list, for a query-side {@code @lookupKey} argument. {@code @lookupKey} on
+     * {@code INPUT_FIELD_DEFINITION} was retired; the directive gates this walk from the
+     * {@code ARGUMENT_DEFINITION} at the call site. UPDATE and DELETE build their WHERE columns
+     * directly on their walker carriers, and INSERT builds no binding set at all (it walks
+     * {@code fields()} directly for VALUES emit and carries an empty binding list), so the sole
+     * caller is query-side, reached by two routes that produce the same fact (input fields resolved
+     * against a table, plus a lookup binding set):
      *
      * <ul>
-     *   <li>Query-side ({@code @lookupKey} on {@code ARGUMENT_DEFINITION}, with a {@code @table}
-     *       input arg): every admissible input field of the input type is a lookup-key binding.
-     *       The Query-side derivation reads the binding set as the VALUES-join column list.</li>
+     *   <li>the deprecated {@code @table}-input bridge ({@code tit.inputFields()}), and</li>
+     *   <li>the consumer-derived plain-input path, which re-derives the fields against the
+     *       consuming field's return table via {@code TypeBuilder.resolveInputFields}.</li>
      * </ul>
+     *
+     * <p>The caller reaches this method only with a fully-resolved field list ({@code
+     * resolveInputFields} rejects the whole input on any unresolvable field), so this walk consumes
+     * the resolved {@link InputField}s directly rather than re-walking SDL declarations; a
+     * declared-but-unresolved field cannot occur here. Reference, nesting, and unbound carriers are
+     * silently skipped; the caller surfaces them through its own structural rejection path.
      *
      * Each admitted carrier produces one group:
      *
@@ -261,26 +266,15 @@ final class EnumMappingResolver {
      * </ul>
      *
      * <p>List-typed admissible carriers are rejected: list cardinality must live on the outer
-     * argument, not on an individual input-type field. Reference, nesting, and unresolved
-     * carriers are silently skipped here; the caller surfaces them through its own structural
-     * rejection path (query-side: not currently a binding shape).
+     * argument, not on an individual input-type field.
      */
-    List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
-            GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName,
-            List<String> errors) {
-        var sdlType = ctx.schema.getType(tit.name());
-        if (!(sdlType instanceof GraphQLInputObjectType iot)) {
-            return List.of();
-        }
-        var byName = tit.inputFields().stream()
-            .collect(Collectors.toMap(InputField::name, f -> f));
+    List<InputColumnBindingGroup> buildLookupBindings(List<InputField> inputFields, List<String> errors) {
         var groups = new ArrayList<InputColumnBindingGroup>();
-        for (var sdlField : iot.getFieldDefinitions()) {
-            var resolved = byName.get(sdlField.getName());
+        for (var resolved : inputFields) {
             switch (resolved) {
                 case InputField.ColumnBackedField cf -> {
                     if (cf.list()) {
-                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                        errors.add("input type '" + cf.parentTypeName() + "' field '" + cf.name()
                             + "': list-typed input field is not supported in this binding position; "
                             + "move list cardinality to the outer argument");
                         continue;
@@ -296,7 +290,7 @@ final class EnumMappingResolver {
                             recordBindings.add(new InputColumnBinding.RecordBinding(i, cf.columns().get(i)));
                         }
                         groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
-                            sdlField.getName(), (CallSiteExtraction.NodeIdDecodeKeys) cf.extraction(), recordBindings));
+                            cf.name(), (CallSiteExtraction.NodeIdDecodeKeys) cf.extraction(), recordBindings));
                         continue;
                     }
                     var cfColumn = cf.columns().get(0);
@@ -316,7 +310,7 @@ final class EnumMappingResolver {
                         extraction = cf.extraction();
                     }
                     groups.add(new InputColumnBindingGroup.MapGroup(List.of(
-                        new InputColumnBinding.MapBinding(sdlField.getName(), cfColumn, extraction))));
+                        new InputColumnBinding.MapBinding(cf.name(), cfColumn, extraction))));
                 }
                 case InputField.ColumnBackedReferenceField crf -> {
                     // FK-target @nodeId reference carrier. The target columns are the lifted
@@ -328,7 +322,7 @@ final class EnumMappingResolver {
                     // decoded record's value<i+1>() accessors, same DecodedRecordGroup as the
                     // same-table composite arm.
                     if (crf.list()) {
-                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                        errors.add("input type '" + crf.parentTypeName() + "' field '" + crf.name()
                             + "': list-typed input field is not supported in this binding position; "
                             + "move list cardinality to the outer argument");
                         continue;
@@ -340,11 +334,11 @@ final class EnumMappingResolver {
                                 crf.liftedSourceColumns().get(i)));
                         }
                         groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
-                            sdlField.getName(), (CallSiteExtraction.NodeIdDecodeKeys) crf.extraction(), recordBindings));
+                            crf.name(), (CallSiteExtraction.NodeIdDecodeKeys) crf.extraction(), recordBindings));
                         continue;
                     }
                     groups.add(new InputColumnBindingGroup.MapGroup(List.of(
-                        new InputColumnBinding.MapBinding(sdlField.getName(),
+                        new InputColumnBinding.MapBinding(crf.name(),
                             crf.liftedSourceColumns().get(0), crf.extraction()))));
                 }
                 case InputField.NestingField ignored -> {
@@ -353,10 +347,6 @@ final class EnumMappingResolver {
                 }
                 case InputField.UnboundField ignored -> {
                     // Unbound carrier has no column binding; not enum-mappable.
-                }
-                case null -> {
-                    // SDL field declared but the input type didn't classify it (Unresolved
-                    // upstream); structural walk surfaces it as a rejection.
                 }
             }
         }

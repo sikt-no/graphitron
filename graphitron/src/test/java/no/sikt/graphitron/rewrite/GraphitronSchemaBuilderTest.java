@@ -275,10 +275,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "actorId")).isInstanceOf(UnclassifiedField.class)),
 
-        TABLE_PATH_ON_IMPLICIT_INPUT(
-            "@reference with {table:} on a field of an input type implicitly bound to a return table",
+        TABLE_PATH_ON_TABLE_INPUT(
+            "@reference with {table:} on a field of a @table-bound input type resolves its FK join "
+                + "path (the input-field mechanics; a plain input resolves identically at the call "
+                + "site through the same classifyInputField primitive, but stores no fields on the "
+                + "type, so the @table bridge is used to expose the inputFields surface here)",
             """
-            input Input { district: String! @reference(path: [{table: "address"}]) }
+            input Input @table(name: "customer") { district: String! @reference(path: [{table: "address"}]) }
             type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
             type Query { query(in: Input!): Customer }
             """,
@@ -4635,9 +4638,12 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor(PojoInputType.class)
     void plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam() {
-        // Two call sites against different return tables force PlainFilter to classify as
-        // PojoInputType (not auto-promoted to TableInputType). film_id exists on both film
-        // and inventory, so the resolved-column path runs at both call sites.
+        // One plain input reused by two fields returning different tables. Every non-@table input
+        // is plain (PojoInputType), and each call site resolves the input's fields against its own
+        // consumer's table — per-consumer resolution, not a whole-type verdict. film_id exists on
+        // both film and inventory, so both call sites resolve it (the "reuse across consumers, both
+        // agree" row: before this phase the >1-distinct-tables aggregate demoted the input to a
+        // non-table global verdict; now resolution is per-consumer and no demotion occurs).
         var schema = build("""
             input PlainFilter { filmId: Int! @field(name: "film_id") }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -4649,8 +4655,7 @@ class GraphitronSchemaBuilderTest {
             """);
         assertThat(schema.type("PlainFilter")).isInstanceOf(PojoInputType.class);
         // The films call site emits a single GeneratedConditionFilter carrying one
-        // BodyParam.Eq on film.film_id with a NestedInputField extraction. Path B fixes
-        // the bug where this BodyParam was silently dropped on the PlainInputArg path.
+        // BodyParam.Eq on film.film_id with a NestedInputField extraction.
         var f = (QueryField.QueryTableField) schema.field("Query", "films");
         assertThat(f.filters()).hasSize(1);
         var gcf = (GeneratedConditionFilter) f.filters().get(0);
@@ -4661,14 +4666,23 @@ class GraphitronSchemaBuilderTest {
         var nif = (CallSiteExtraction.NestedInputField) bp.extraction();
         assertThat(nif.outerArgName()).isEqualTo("filter");
         assertThat(nif.path()).containsExactly("filmId");
+        // Per-consumer resolution: the inventory call site independently resolves the same input
+        // field against the inventory table, emitting its own implicit predicate on film_id there.
+        var inv = (QueryField.QueryTableField) schema.field("Query", "inventory");
+        assertThat(inv.filters()).hasSize(1);
+        var invGcf = (GeneratedConditionFilter) inv.filters().get(0);
+        assertThat(invGcf.bodyParams()).hasSize(1);
+        var invBp = (BodyParam.Eq) invGcf.bodyParams().get(0);
+        assertThat(invBp.name()).isEqualTo("filmId");
+        assertThat(invBp.column().sqlName()).isEqualTo("film_id");
     }
 
     /** Acceptance test #2 — explicit-method-plus-implicit composition on a plain input. */
     @Test
     void plainInput_explicitMethodAndBareSibling_emitsBothFilters() {
-        // Two call sites force PlainFilter to remain a PojoInputType rather than auto-promote
-        // to TableInputType. film_id exists on both film and inventory; title only on film,
-        // so we use the films call site for the composition assertion.
+        // Every non-@table input is plain (PojoInputType); each call site resolves it against its
+        // own consumer's table. film_id exists on both film and inventory; release_year only on
+        // film, so the composition assertion uses the films call site (where both fields resolve).
         var schema = build("""
             input PlainFilter {
               filmId: Int! @field(name: "film_id")
@@ -4719,6 +4733,56 @@ class GraphitronSchemaBuilderTest {
             .map(ConditionFilter.class::cast)
             .findFirst().orElseThrow();
         assertThat(explicit.methodName()).isEqualTo("inputColumnCondition");
+    }
+
+    /**
+     * Consumer-derived arg-level {@code @lookupKey} on a plain (non-{@code @table}) input: the
+     * composite-PK lookup shape (a {@code FilmActorKey}-style {@code id: ID! @nodeId} input) no
+     * longer needs {@code @table} on the input. The input's fields resolve against the consuming
+     * field's return table ({@code film_actor}), and the lookup binding set is built from them,
+     * producing the identical {@code QueryLookupTableField} + {@code LookupMapping.DecodedRecord}
+     * the {@code @table}-annotated sibling produces.
+     */
+    @Test
+    void plainInput_argLevelLookupKey_resolvesViaConsumerTable() {
+        var schema = build("""
+            type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+            input PlainFilmActorKey { id: ID! @nodeId }
+            type Query {
+                filmActorByKey(key: PlainFilmActorKey @lookupKey): [FilmActor!]!
+            }
+            """);
+        // No @table on PlainFilmActorKey: it is a plain input, resolved per-consumer.
+        assertThat(schema.type("PlainFilmActorKey")).isInstanceOf(PojoInputType.class);
+        var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+            schema.field("Query", "filmActorByKey");
+        var mapping = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+        assertThat(mapping.args()).hasSize(1);
+        var dr = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
+            mapping.args().get(0);
+        assertThat(dr.bindings()).hasSize(2);
+        assertThat(dr.bindings().get(0).index()).isZero();
+        assertThat(dr.bindings().get(1).index()).isOne();
+    }
+
+    /**
+     * The validator-mirror obligation for the consumer-derived {@code @lookupKey} path: a plain
+     * input whose {@code @lookupKey} field does not resolve to a column on the consuming field's
+     * table is a classify-time rejection naming that table, never a silent no-op (the lookup is a
+     * VALUES-join over exactly these columns, so an unbound carrier has no binding to emit).
+     */
+    @Test
+    void plainInput_argLevelLookupKey_unresolvableAgainstConsumerTable_rejectsNamingTable() {
+        var schema = build("""
+            input PlainKey { code: String @field(name: "no_such_column") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { filmByKey(key: PlainKey @lookupKey): [Film!]! }
+            """);
+        var uf = (UnclassifiedField) schema.field("Query", "filmByKey");
+        assertThat(uf.reason())
+            .contains("@lookupKey argument 'key'")
+            .contains("'code'")
+            .contains("table 'film'");
     }
 
     /**
@@ -5280,21 +5344,16 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.type("NoSuchInput"))
                 .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
 
-        IMPLICIT_TABLE_FROM_LOOKUP_FIELD(
-            "input type without @table used on a QueryLookupTableField → promoted to TableInputType",
+        PLAIN_INPUT_ON_LOOKUP_FIELD_STAYS_PLAIN(
+            "input type without @table used on a lookup field → stays a plain PojoInputType; the "
+                + "arg-level @lookupKey resolves the input's fields against the consumer's table "
+                + "(customer) at the call site rather than promoting the type",
             """
             input CustomerInput { customerId: Int! @field(name: "customer_id") }
             type Customer @table(name: "customer") { customerId: Int! @field(name: "customer_id") }
             type Query { customer(input: CustomerInput! @lookupKey): Customer }
             """,
-            schema -> {
-                assertThat(schema.type("CustomerInput"))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
-                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
-                assertThat(it.table().tableName()).isEqualTo("customer");
-                assertThat(it.inputFields().get(0))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField.class);
-            }),
+            schema -> assertThat(schema.type("CustomerInput")).isInstanceOf(PojoInputType.class)),
 
         IMPLICIT_TABLE_CONFLICT(
             "input type used on fields with different return tables → PojoInputType (unbound)",
@@ -5419,7 +5478,9 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class)),
 
         CONDITION_WITHOUT_OVERRIDE(
-            "@condition without override on the argument → override branch does not fire; implicit-table path still runs",
+            "@condition without override on the argument → the input stays a plain PojoInputType; "
+                + "there is no whole-type routing gate, and column resolution runs per call site "
+                + "against the consumer's table",
             """
             input FilterInput { filmId: Int! @field(name: "film_id") }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -5427,8 +5488,7 @@ class GraphitronSchemaBuilderTest {
               films(filter: FilterInput @condition(condition: {className: "C", method: "m"})): [Film]
             }
             """,
-            schema -> assertThat(schema.type("FilterInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class)),
+            schema -> assertThat(schema.type("FilterInput")).isInstanceOf(PojoInputType.class)),
 
         // ===== Phase 4: @condition on INPUT_FIELD_DEFINITION =====
 
@@ -6667,8 +6727,8 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
         },
 
-        LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD(
-            "R144: lookup field whose plain input type (promoted to TableInputType) with admissible carriers and arg-level @lookupKey → QueryLookupTableField; the promoted type remains in the types map",
+        LOOKUP_FIELD_PLAIN_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD(
+            "lookup field whose plain input type (no @table) has admissible carriers and arg-level @lookupKey → QueryLookupTableField; the input stays a plain PojoInputType and the lookup binding set is derived from the consumer's table",
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
@@ -6678,8 +6738,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
                 var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
                 assertThat(cm.args()).hasSize(1);
-                assertThat(schema.type("FilmKey"))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
+                assertThat(schema.type("FilmKey")).isInstanceOf(PojoInputType.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
         },

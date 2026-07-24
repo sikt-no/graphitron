@@ -29,9 +29,13 @@ override-propagation semantics that tie them together.
   via `LookupValuesJoinEmitter`.
 - `LookupField` capability with non-`Optional` `LookupMapping lookupMapping()`
   pairs with `@lookupKey`.
-- `TypeBuilder.isUsedWithOverrideCondition` skips table-column validation on
-  inputs whose outer field / argument / own fields declare
-  `@condition(override: true)`.
+- `TypeBuilder.buildInputType` is directive-driven: an explicit `@table` on the
+  input produces the deprecated `TableInputType` bridge, and every other input is
+  plain. A plain input carries no table of its own; its fields resolve against the
+  consuming field's target table at the call site (`InputFieldResolver` on the
+  filter path, `TypeBuilder.resolveInputFields` on the arg-level `@lookupKey`
+  path). The `override` axis is threaded field-relative there too, as
+  `classifyArgument`'s `enclosingOverride`.
 
 == Scope
 
@@ -315,16 +319,16 @@ descendants. No new emitter shape.
 
 === Validator
 
-1. *`TypeBuilder.isUsedWithOverrideCondition`.* Returns true when any
-   consuming field or argument declares `@condition(override: true)`
-   against the input type, *or* when the input type itself has any
-   field with `@condition(override: true)`. This preserves the
-   "skip table-column validation when overridden" escape hatch across
-   outer-level and per-field overrides. Plain inputs do not pass through
-   `isUsedWithOverrideCondition` (it gates table-column validation for
-   `@table` inputs); the per-call-site classifier handles plain-input
-   column resolution directly against the outer field's table with the
-   existing `catalog.findColumn` + `@field(name:)` path.
+1. *Override is threaded field-relative, not gated whole-type.* There is no
+   whole-type routing gate: `override` is a per-field validation modifier
+   ("the consumer owns this predicate, skip column-coverage on it"), threaded
+   to the call site as `classifyArgument`'s `enclosingOverride` (the enclosing
+   field- or argument-level `@condition(override: true)`, ORed with the
+   consuming argument's own). Every classified input field carries its own
+   `@condition` override flag. The per-call-site classifier handles plain-input
+   column resolution directly against the outer field's table with the existing
+   `catalog.findColumn` + `@field(name:)` path; a column-miss under an active
+   override is admitted as an `InputField.UnboundField` rather than rejected.
 
 2. *`GraphitronSchemaValidator`.* No new structural validation:
    graphql-java enforces `on INPUT_FIELD_DEFINITION` placement at

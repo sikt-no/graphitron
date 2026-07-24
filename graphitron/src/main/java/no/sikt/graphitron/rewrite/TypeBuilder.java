@@ -59,7 +59,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DESCRIPTION;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CODE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLLATE;
@@ -83,12 +82,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SCALAR_TYPE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
-import static no.sikt.graphitron.rewrite.BuildContext.argBoolean;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
@@ -1639,17 +1633,16 @@ class TypeBuilder {
             }
             return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get(), inputType);
         }
-        if (isUsedWithOverrideCondition(name)) {
-            return buildNonTableInputType(inputType, name, location);
-        }
-        var tables = findReturnTablesForInput(name);
-        if (tables.isEmpty()) {
-            return buildNonTableInputType(inputType, name, location);
-        }
-        if (tables.size() > 1) {
-            return buildNonTableInputType(inputType, name, location);
-        }
-        return buildTableInputType(name, location, inputType.getFieldDefinitions(), tables.values().iterator().next(), inputType);
+        // Directive-driven only: an explicit @table produces the deprecated TableInputType bridge
+        // above; every other input is plain. The input is not itself a modeled relation, so it has
+        // no table to decide here. Its fields resolve against the consuming field's return table at
+        // the call site (FieldBuilder.classifyArgument's plain-input path via InputFieldResolver, or
+        // the arg-level @lookupKey path re-deriving through resolveInputFields). A prior global
+        // aggregate over the input's consumers auto-promoted a single-table filter input to
+        // TableInputType; it bailed to non-table on more than one distinct table, silently demoting
+        // an input reused across tables. Consumer-derived resolution supersedes it: each call site
+        // resolves against its own target, so reuse across tables is per-consumer, not a demotion.
+        return buildNonTableInputType(inputType, name, location);
     }
 
     /**
@@ -1860,73 +1853,6 @@ class TypeBuilder {
             return ClassName.get(Object.class);
         }
         return null;
-    }
-
-    /**
-     * Walks all field definitions in the schema to find which tables are referenced by fields
-     * that accept a given input type (excluding @service, @tableMethod, @mutation fields).
-     */
-    private Map<String, TableRef> findReturnTablesForInput(String inputTypeName) {
-        var tables = new LinkedHashMap<String, TableRef>();
-        for (var namedType : ctx.schema.getAllTypesAsList()) {
-            if (!(namedType instanceof GraphQLObjectType objType)) continue;
-            if (namedType.getName().startsWith("__")) continue;
-            for (var fieldDef : objType.getFieldDefinitions()) {
-                if (fieldDef.hasAppliedDirective(DIR_SERVICE)
-                        || fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)
-                        || fieldDef.hasAppliedDirective(DIR_MUTATION)) continue;
-                boolean usesInput = fieldDef.getArguments().stream()
-                    .filter(arg -> !arg.hasAppliedDirective(DIR_ORDER_BY))
-                    .anyMatch(arg -> inputTypeName.equals(
-                        ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName()));
-                if (!usesInput) continue;
-                var returnBase = GraphQLTypeUtil.unwrapAll(fieldDef.getType());
-                if (!(returnBase instanceof GraphQLObjectType returnObj)) continue;
-                if (!returnObj.hasAppliedDirective(DIR_TABLE)) continue;
-                String tableName = argString(returnObj, DIR_TABLE, ARG_NAME)
-                    .orElse(returnObj.getName().toLowerCase());
-                if (!tables.containsKey(tableName.toLowerCase())) {
-                    svc.resolveTable(tableName).ifPresent(tr -> tables.put(tableName.toLowerCase(), tr));
-                }
-            }
-        }
-        return tables;
-    }
-
-    /**
-     * Returns true if {@code inputTypeName} is used as the type of any field argument where
-     * either the field or the argument carries {@code @condition(override: true)}. When override
-     * is set, the consumer supplies custom condition code, so the input's fields should not be
-     * validated against table columns.
-     *
-     * <p>Only argument-level and field-level {@code @condition} are inspected here;
-     * {@code INPUT_FIELD_DEFINITION} override is also checked: if any field in the input type
-     * itself carries {@code @condition(override: true)}, the whole type bypasses column validation.
-     */
-    private boolean isUsedWithOverrideCondition(String inputTypeName) {
-        var typeFromSchema = ctx.schema.getType(inputTypeName);
-        if (typeFromSchema instanceof GraphQLInputObjectType iot) {
-            for (var fieldDef : iot.getFieldDefinitions()) {
-                if (fieldDef.hasAppliedDirective(DIR_CONDITION)
-                        && argBoolean(fieldDef, DIR_CONDITION, ARG_OVERRIDE, false)) return true;
-            }
-        }
-        for (var namedType : ctx.schema.getAllTypesAsList()) {
-            if (!(namedType instanceof GraphQLObjectType objType)) continue;
-            if (namedType.getName().startsWith("__")) continue;
-            for (var fieldDef : objType.getFieldDefinitions()) {
-                boolean fieldOverride = fieldDef.hasAppliedDirective(DIR_CONDITION)
-                    && argBoolean(fieldDef, DIR_CONDITION, ARG_OVERRIDE, false);
-                for (var arg : fieldDef.getArguments()) {
-                    String argTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(arg.getType())).getName();
-                    if (!inputTypeName.equals(argTypeName)) continue;
-                    if (fieldOverride) return true;
-                    if (arg.hasAppliedDirective(DIR_CONDITION)
-                            && argBoolean(arg, DIR_CONDITION, ARG_OVERRIDE, false)) return true;
-                }
-            }
-        }
-        return false;
     }
 
     /**
