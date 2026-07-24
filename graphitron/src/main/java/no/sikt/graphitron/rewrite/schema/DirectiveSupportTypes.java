@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite.schema;
 
-import graphql.schema.idl.SchemaParser;
-
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -13,7 +11,8 @@ import java.util.Set;
  * <p>The set is <em>derived</em> from {@link RewriteSchemaLoader#directivesSdl()}, not
  * hand-maintained: a type belongs here iff it is declared in {@code directives.graphqls}.
  * Editing that file changes the set; {@code DirectiveSupportTypesTest} pins the expected
- * membership so the change is made consciously.
+ * membership so the change is made consciously. Sibling of {@link DeclaredDirectives}, which
+ * derives the directive-<em>name</em> set from the same parse.
  *
  * <p>Within the set there are two tiers:
  * <ul>
@@ -67,7 +66,7 @@ public final class DirectiveSupportTypes {
     }
 
     private static Set<String> derive() {
-        var registry = new SchemaParser().parse(RewriteSchemaLoader.directivesSdl());
+        var registry = DeclaredDirectives.PARSED_SDL;
         var names = new LinkedHashSet<>(registry.types().keySet());
         registry.scalars().values().stream()
             .filter(def -> def.getSourceLocation() != null)  // drop graphql-java's built-in scalars

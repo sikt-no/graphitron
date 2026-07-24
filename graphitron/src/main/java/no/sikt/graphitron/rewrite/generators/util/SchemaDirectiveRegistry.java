@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
+
 import java.util.Set;
 
 /**
@@ -7,10 +9,12 @@ import java.util.Set;
  * directive application on a schema element should reach the programmatic {@code GraphQLSchema}
  * ("survivor") or be consumed by the generator and dropped ("generator-only").
  *
- * <p>Generator-only directives are the Graphitron build-time directives enumerated in
- * {@link no.sikt.graphitron.rewrite.BuildContext} constants. A survivor is any directive name
- * that is not in the generator-only set: this covers Apollo Federation directives and any
- * user-declared custom directive (including the built-in {@code @deprecated}).
+ * <p>A directive is generator-only iff it is declared in Graphitron's own
+ * {@code directives.graphqls}: the set is derived from that resource via
+ * {@link DeclaredDirectives}, never hand-maintained, following the
+ * {@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes} precedent. A survivor is any
+ * directive name that is not in the generator-only set: this covers Apollo Federation directives
+ * and any user-declared custom directive (including the built-in {@code @deprecated}).
  *
  * <p>The registry does not reason about <em>definitions</em>; it only classifies names. The
  * {@code GraphitronSchema} assembler is responsible for collecting survivor directive
@@ -24,47 +28,13 @@ public final class SchemaDirectiveRegistry {
     private SchemaDirectiveRegistry() {}
 
     /**
-     * Graphitron's own directives. Every name here is defined in
-     * {@code graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls} and read by the
-     * rewrite classifier; none of them has runtime meaning in the emitted schema.
-     *
-     * <p>Kept in sync with the {@code DIR_*} constants in
-     * {@link no.sikt.graphitron.rewrite.BuildContext} plus the SDL-declared directives that
-     * the classifier reads opportunistically ({@code @enum}, {@code @index}, {@code @order},
-     * {@code @experimental_constructType}). Adding a new generator-only directive means
-     * adding both a {@code DIR_*} constant and an entry here.
+     * Graphitron's own directive names, derived via {@link DeclaredDirectives#names()} from the
+     * bundled {@code directives.graphqls}. Every name here is read by the rewrite classifier at
+     * build time; none of them has runtime meaning in the emitted schema. Adding a new
+     * generator-only directive means declaring it in {@code directives.graphqls}, which the
+     * classifier requires anyway; membership here follows automatically.
      */
-    public static final Set<String> GENERATOR_ONLY_DIRECTIVES = Set.of(
-        "table",
-        "scalarType",
-        "record",
-        "discriminate",
-        "discriminator",
-        "node",
-        "notGenerated",
-        "multitableReference",
-        "nodeId",
-        "field",
-        "reference",
-        "referenceFor",
-        "error",
-        "tableMethod",
-        "defaultOrder",
-        "splitQuery",
-        "service",
-        "externalField",
-        "lookupKey",
-        "tenantFanOut",
-        "orderBy",
-        "condition",
-        "mutation",
-        "asConnection",
-        "sourceRow",
-        "enum",
-        "index",
-        "order",
-        "experimental_constructType"
-    );
+    public static final Set<String> GENERATOR_ONLY_DIRECTIVES = DeclaredDirectives.names();
 
     /**
      * Returns {@code true} when an application of {@code directiveName} should reach the

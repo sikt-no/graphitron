@@ -100,7 +100,9 @@ class SchemaSdlEmissionTest {
         for (String outputPackage : List.of(
                 "no.sikt.graphitron.generated",
                 "no.sikt.graphitron.generated.federated",
-                "no.sikt.graphitron.generated.multischema")) {
+                "no.sikt.graphitron.generated.multitenant",
+                "no.sikt.graphitron.generated.multischema",
+                "no.sikt.graphitron.generated.multischemamutation")) {
             var registry = new SchemaParser().parse(
                 Files.readString(sdlFor(outputPackage), StandardCharsets.UTF_8));
 

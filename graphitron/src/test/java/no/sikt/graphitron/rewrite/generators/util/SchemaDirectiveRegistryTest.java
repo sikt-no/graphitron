@@ -8,14 +8,23 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class SchemaDirectiveRegistryTest {
 
+    /**
+     * Pins the generator-only set derived from {@code directives.graphqls}. The set is derived,
+     * not hand-maintained; this test exists so an edit to {@code directives.graphqls} that adds
+     * or removes a directive changes the survivor filter consciously rather than silently. It
+     * would also catch graphql-java starting to inject built-in directive definitions
+     * ({@code @deprecated}, {@code @skip}, ...) into the parsed registry, which must never
+     * enter this set.
+     */
     @Test
-    void generatorOnlySet_containsAllGraphitronDirectiveNames() {
-        assertThat(SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES).contains(
-            "table", "record", "discriminate", "discriminator", "node",
-            "notGenerated", "multitableReference", "nodeId", "field", "reference",
-            "error", "tableMethod", "defaultOrder", "splitQuery", "service",
-            "externalField", "lookupKey", "orderBy", "condition", "mutation",
-            "asConnection", "enum", "index", "order", "experimental_constructType"
+    void generatorOnlySet_pinsTheDeclaredDirectiveNames() {
+        assertThat(SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES).containsExactlyInAnyOrder(
+            "asConnection", "asFacet", "condition", "defaultOrder", "discriminate",
+            "discriminator", "enum", "error", "experimental_constructType", "externalField",
+            "field", "index", "lookupKey", "multitableReference", "mutation", "node",
+            "nodeId", "notGenerated", "order", "orderBy", "pivot", "record", "reference",
+            "referenceFor", "routine", "scalarType", "service", "sourceRow", "splitQuery",
+            "table", "tableMethod", "tenantFanOut"
         );
     }
 
