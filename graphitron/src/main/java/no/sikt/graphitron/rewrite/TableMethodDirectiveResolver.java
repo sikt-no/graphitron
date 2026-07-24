@@ -19,49 +19,30 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
 /**
- * Resolves {@code @tableMethod} on a field into a sealed {@link Resolved} the caller switches on,
- * absorbing the duplication previously inlined at the two classify sites
- * ({@code classifyQueryField}, {@code classifyChildFieldOnTableType}):
+ * Resolves {@code @tableMethod} on a field into a sealed {@link Resolved} the caller switches
+ * on. Shared by the two classify sites ({@code classifyQueryField},
+ * {@code classifyChildFieldOnTableType}): argMapping parse, arg-bindings validation,
+ * {@link ServiceCatalog#reflectTableMethod} reflection with the strict expected-return-class
+ * invariant, and the return-shape rejections.
  *
- * <ul>
- *   <li>External-reference parse, argMapping parse, arg-bindings validation.</li>
- *   <li>{@link ServiceCatalog#reflectTableMethod} reflection with the strict
- *       expected-return-class invariant (Invariants §3).</li>
- *   <li>Shape invariants: the return type must be {@code @table}-annotated (a
- *       {@link ReturnTypeRef.TableBoundReturnType}); at root the additional Connection-wrapper
- *       rejection fires (Invariants §1).</li>
- * </ul>
- *
- * <p>Each classify arm projects {@link Resolved.TableBound} into its specific variant
+ * <p>Each classify arm projects {@link Resolved.TableBound} into its site-specific variant
  * ({@code QueryTableMethodTableField} at root, {@code TableMethodField} at child sites carrying
- * the resolved join path) and handles parent-context-only concerns (the child-site join-path
- * parse runs before this resolver, since a path-parse error must surface ahead of any reflection
- * failure).
+ * the resolved join path) and handles parent-context-only concerns; the child-site join-path
+ * parse runs before this resolver, since a path-parse error must surface ahead of any
+ * reflection failure.
  *
- * <p>Root vs child is signalled by {@code isRoot}: root sites pass {@code true} so the
- * Connection-wrapper rejection fires. The non-table-bound return rejection fires at both sites
- * since {@code @tableMethod} returning a scalar / enum is never a valid shape: the
- * directive exists precisely to bind a developer-authored jOOQ table method, which by
- * construction returns a generated jOOQ table class.
- *
- * <p>Implementation note: like {@link ServiceDirectiveResolver}, the helpers this resolver
- * calls back into ({@code parseExternalRef}, {@code fieldArgumentNames},
- * {@code parseContextArguments}, {@code buildWrapper}) are package-private members of
+ * <p>Like {@link ServiceDirectiveResolver}, the helpers this resolver calls back into
+ * ({@code parseContextArguments}, {@code buildWrapper}) are package-private members of
  * {@link FieldBuilder}, shared with the other directive resolvers.
  */
 final class TableMethodDirectiveResolver {
 
     /**
-     * Outcome of {@link #resolve}. Two terminal arms; the caller exhausts them with a switch.
-     *
-     * <ul>
-     *   <li>{@link TableBound} — successful resolution to a {@code @table}-annotated return type.
-     *       Carries the typed {@link ReturnTypeRef.TableBoundReturnType} and the resolved
-     *       {@link MethodRef}. The only success shape: {@code @tableMethod} returning a
- * non-table type is rejected here.</li>
-     *   <li>{@link Rejected} — every error path: directive-parse failure, method-reflection
-     *       failure, return-type rejection (non-table-bound or Connection at root).</li>
-     * </ul>
+     * Outcome of {@link #resolve}; the caller exhausts the two arms with a switch.
+     * {@link TableBound} is the only success shape, carrying the typed
+     * {@link ReturnTypeRef.TableBoundReturnType} and the resolved {@link MethodRef};
+     * {@link Rejected} carries every error path (directive-parse failure, reflection
+     * failure, return-type rejection).
      */
     sealed interface Resolved {
         record TableBound(ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) implements Resolved {}
@@ -82,12 +63,11 @@ final class TableMethodDirectiveResolver {
     }
 
     /**
-     * Resolves {@code @tableMethod} on {@code fieldDef}. Pass {@code isRoot=true} at root sites
-     * (Query) so the Connection invariant fires; pass {@code false} at child sites on a
+     * Resolves {@code @tableMethod} on {@code fieldDef}. Pass {@code isRoot=true} at root
+     * (Query) sites so the Connection rejection fires; pass {@code false} at child sites on a
      * {@code @table}-typed parent. The non-table-bound return rejection fires at both sites:
-     * {@code @tableMethod} is, by construction, a binding to a developer-authored jOOQ table
-     * method, and those return generated jOOQ table classes. A schema declaring a scalar / enum
- * return on {@code @tableMethod} is malformed.
+     * {@code @tableMethod} binds a developer-authored jOOQ table method, which by construction
+     * returns a generated jOOQ table class, so a scalar or enum return is malformed.
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot) {
         String rawTypeName = baseTypeName(fieldDef);
@@ -100,7 +80,6 @@ final class TableMethodDirectiveResolver {
             return new Resolved.Rejected(Rejection.structural("@tableMethod requires a @table-annotated return type"));
         }
         if (isRoot && returnType.wrapper() instanceof FieldWrapper.Connection) {
-            // Invariants §1: Connection wrapper not supported on @tableMethod at root.
             return new Resolved.Rejected(Rejection.invalidSchema("@tableMethod at the root does not support Connection return types — use [T] or T instead"));
         }
 
@@ -133,9 +112,8 @@ final class TableMethodDirectiveResolver {
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_TABLE_METHOD);
 
-        // Invariants §3 (return-type strictness): the developer's @tableMethod must return the
-        // generated jOOQ table class exactly, not a wider Table<R>. The instanceof gate above
-        // guarantees a TableBoundReturnType at both root and child sites.
+        // The developer's @tableMethod must return the generated jOOQ table class exactly,
+        // not a wider Table<R>.
         ClassName expectedReturnClass = tableBoundReturnType.table().tableClass();
 
         var result = svc.reflectTableMethod(

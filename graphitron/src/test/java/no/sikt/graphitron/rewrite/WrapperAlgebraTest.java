@@ -52,9 +52,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       rather than the SDL-list mirror.</li>
  *   <li><b>Source half</b> ({@link #sourceWrapperIsTheFoldOfAncestorTargetWrappers()}): {@code source.wrapper}
  *       is the fold of the ancestors' target wrappers ({@link Source.Root} the empty product,
- *       {@link Source.OnlyChild} the {@code One} identity, {@link Source.Child} the {@code Many} absorber).
- *       The fold is real (the ancestor-product arrival index, read through
- *       {@code GraphitronSchema.sourceOf}), so this half no longer asserts a hard-coded conservative arm.
+ *       {@link Source.OnlyChild} the {@code One} identity, {@link Source.Child} the {@code Many} absorber),
+ *       computed as the ancestor-product arrival index read through {@code GraphitronSchema.sourceOf}.
  *       Reimplementing the fold test-side would be a drifting second copy, and a simplified one would be
  *       vacuous, so instead it pins the laws that stay independently checkable: the <em>Root law</em> (a
  *       field on an SDL root operation type folds the empty product, {@code Root}), the <em>grain law</em>
@@ -71,9 +70,9 @@ class WrapperAlgebraTest {
      * {@link OutputField#single} and therefore <em>does not model output cardinality</em>: the column
      * family, the record-property passthrough, and the errors-list field. graphql-java's
      * {@code PropertyDataFetcher} reads the value (list or not) straight off the source, so {@code Single}
-     * is the faithful read regardless of the GraphQL wrapper, exactly as {@code OutputField.single}'s
-     * javadoc anticipates this test surfacing (a list-shaped scalar such as {@code MyError.path:
-     * [String!]!}). These are excluded from the SDL-list mirror and instead pinned as always-{@code Single}.
+     * is the faithful read regardless of the GraphQL wrapper, even for a list-shaped scalar such as
+     * {@code MyError.path: [String!]!} (see {@link OutputField#single}). These are excluded from the
+     * SDL-list mirror and instead pinned as always-{@code Single}.
      */
     private static final Set<Class<?>> CARDINALITY_NOT_MODELED = Set.of(
         no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField.class,
@@ -90,10 +89,8 @@ class WrapperAlgebraTest {
             var schema = ClassifiedHarness.classify(example.sdl()).schema();
             schema.fields().forEach((coord, field) -> {
                 if (!(field instanceof OutputField out)) return;
-                // Connection targets are the one principled asymmetry: a native Relay connection
-                // (SDL FooConnection, non-list) and an @asConnection-promoted field (SDL [Foo], list)
-                // both collapse to Single(Connection(...)), so neither obeys the SDL-list mirror. They
-                // are governed by the decomposition law in connectionTargetIsAlwaysSingleWrapped instead.
+                // Connections do not obey the SDL-list mirror; they are governed by the decomposition
+                // law in connectionTargetIsAlwaysSingleWrapped instead (see class javadoc).
                 if (out.target().shape() instanceof TargetShape.Connection) return;
                 var declaredList = graphqlReturnsList(registry, coord);
                 if (declaredList.isEmpty()) return; // synthesised coordinate with no SDL field (e.g. Relay edges)
@@ -163,19 +160,14 @@ class WrapperAlgebraTest {
                 observedSources.add(source.getClass());
                 boolean onRoot = roots.contains(coord.getTypeName());
                 if (onRoot) {
-                    // Root law — empty product: a root field has no ancestor, so the fold yields Root.
                     assertThat(source)
                         .as("%s: a field on a root operation type folds the empty product -> Source.Root", coord)
                         .isInstanceOf(Source.Root.class);
                 } else {
-                    // A nested field's arrival is OnlyChild (One) or Child (Many); never Root.
                     assertThat(source)
                         .as("%s: a nested field's arrival is OnlyChild or Child, never Root", coord)
                         .isInstanceOfAny(Source.OnlyChild.class, Source.Child.class);
                 }
-                // Grain law: arrival is a function of the parent typename alone, so every field on one
-                // parent carries the same arrival arm. A parent that produced two different arms means
-                // the fold leaked below parent grain.
                 var prior = armByParent.putIfAbsent(coord.getTypeName(), source.getClass());
                 if (prior != null) {
                     assertThat(source.getClass())
@@ -185,8 +177,6 @@ class WrapperAlgebraTest {
                 }
             });
         }
-        // Coverage floor: the corpus must exercise all three arms of the fold for the laws to be
-        // meaningful. OnlyChild is reachable, so it is no longer a documented gap.
         assertThat(observedSources)
             .as("the corpus must exercise the Root (empty product), OnlyChild (One identity), and Child "
                 + "(Many absorber) arms of the arrival fold")

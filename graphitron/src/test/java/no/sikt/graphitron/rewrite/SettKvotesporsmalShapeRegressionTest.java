@@ -8,36 +8,15 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Regression pin for the SettKvotesporsmal bug. The bug surfaced as classification divergence between two
- * semantically identical schemas: a record-backed payload (bound by reflection on the
- * {@code @service} producer's return type) with one {@code @table}-typed data field, classified
- * differently depending on whether the data field carried an explicit {@code @field(name:)} directive.
+ * Regression pin (the SettKvotesporsmal shape): a record-backed {@code @service} mutation
+ * payload (bound by reflection on the producer's return type) with one {@code @table}-typed
+ * data field classifies identically whether or not the data field carries a redundant
+ * {@code @field(name: "<sdlFieldName>")} directive.
  *
- * <p>Before the carrier walk's role in {@code @service}-mutation classification was retired,
- * removing the redundant {@code @field(name: "<sdlFieldName>")} flipped
- * classification: the carrier walk's forbidden-directives loop at
- * {@code BuildContext.classifyCarrierField} hard-rejected the with-{@code @field} form
- * into the standard record-backed-parent path (which worked), while the
- * without-{@code @field} form was admitted into the carrier walk and rejected by the
- * legacy {@code FieldBuilder.registerServiceCarrierDataField}'s strict-return demand
- * citing the inner table's record class. Now both forms classify identically
- * through the unified path; the carrier-walk consultation from the {@code @service}
- * mutation classifier is gone.
- *
- * <p>Two pins:
- * <ol>
- *   <li>Identical-classification pin: both forms produce a {@link ChildField.BatchedTableField}
- *       at {@code <Payload>.film} reading via the {@code SinglePayload.film()} accessor on
- *       the record-backed parent. The mutation classifies admit
- *       ({@link MutationField.MutationServiceRecordField}). No
- *       {@link ChildField.BatchedTableField} (the carrier-walk-shape permit) is produced.</li>
- *   <li>Diagnostic-wording pin: when the {@code @service} method's reflected return type
- *       doesn't match the payload class, the diagnostic cites the payload class (not the
- *       inner table's record class). The diagnostic family migrates from the carrier walk's
- *       {@code "must return <InnerRecord>"} wording to the legacy-equality check in
- *       {@code FieldBuilder.buildServiceField}'s {@code "must return <PayloadClass>"}
- *       wording.</li>
- * </ol>
+ * <p>Both forms produce a {@link ChildField.BatchedTableField} at {@code Payload.film}
+ * reading via the payload record's {@code film()} accessor, the mutation classifies as
+ * {@link MutationField.MutationServiceRecordField}, and neither form's lift is the
+ * source=target {@code ProducedRecords} carrier lift.
  */
 @PipelineTier
 class SettKvotesporsmalShapeRegressionTest {
@@ -47,12 +26,8 @@ class SettKvotesporsmalShapeRegressionTest {
         """;
 
     /**
-     * Pin 1a: the with-{@code @field(name: "film")} form classifies the data field through the
-     * standard record-backed-parent path (accessor lookup via {@code film()}). Previously
-     * this form worked only because the carrier walk's forbidden-directives loop hard-
-     * rejected {@code @field} on a non-{@code $source} carrier data field, falling through to
-     * the standard path; now the same outcome holds because no carrier walk is
-     * consulted at all.
+     * The with-{@code @field(name: "film")} form classifies the data field through the
+     * standard record-backed-parent path (accessor lookup via {@code film()}).
      */
     @Test
     void withExplicitFieldDirective_classifiesThroughStandardRecordParentPath() {
@@ -72,17 +47,15 @@ class SettKvotesporsmalShapeRegressionTest {
 
         var df = schema.field("Payload", "film");
         assertThat(df).isInstanceOf(ChildField.BatchedTableField.class);
-        // The standard record-parent path (not the carrier re-fetch); its lift is
-        // the catalog-FK/accessor read, not the source=target ProducedRecords carrier lift.
+        // Standard record-parent path: the lift is the catalog-FK/accessor read,
+        // not the source=target ProducedRecords carrier lift.
         assertThat(((ChildField.BatchedTableField) df).lift())
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
 
     /**
-     * Pin 1b: the no-{@code @field}-directive form classifies the data field identically.
-     * Previously this form was rejected (the carrier walk admitted it and demanded
-     * the inner table's record class as the method's return type); now it classifies
-     * identically to the with-{@code @field} form.
+     * The no-{@code @field}-directive form classifies the data field identically to the
+     * with-{@code @field} form.
      */
     @Test
     void withoutFieldDirective_classifiesIdenticallyToExplicitForm() {
@@ -105,10 +78,4 @@ class SettKvotesporsmalShapeRegressionTest {
         assertThat(((ChildField.BatchedTableField) df).lift())
             .isNotInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
     }
-
-    // ClassBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord was deleted. It
-    // pinned the diagnostic for a mismatch between a @record(className)-declared backing and the
-    // @service method's reflected return type. Under reflection-only binding the payload's backing
-    // *is* the method's reflected return, so that mismatch is structurally impossible and the test
-    // has no scenario left to exercise.
 }

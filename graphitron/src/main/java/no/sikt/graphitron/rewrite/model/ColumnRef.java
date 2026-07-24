@@ -23,9 +23,9 @@ import no.sikt.graphitron.javapoet.TypeName;
  * derive from the same live {@code Class}), carried because that {@code Class} is only available at
  * the boundary.
  *
- * <p>Used wherever a column reference is needed — both for output field columns
+ * <p>Used wherever a column reference is needed: output field columns
  * ({@link no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField},
- * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField}) and for
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField}) and
  * {@code @node} key columns ({@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType}).
  *
  * <p>When a column cannot be resolved the containing field or type is classified as
@@ -36,13 +36,11 @@ public record ColumnRef(String sqlName, String javaName, String columnClass, Typ
     /**
      * Convenience for hand-built refs that only have the source-form {@code columnClass} string and
      * no live {@code Class} to decode (test fixtures, and any non-boundary construction): derives
-     * the denormalised {@code columnType} from {@code columnClass} via {@code ClassName.bestGuess}.
+     * {@code columnType} via {@link #bestGuessScalarTypeOrNull}.
      *
-     * <p>Scalar columns only. The catalog boundary ({@code JooqCatalog}) is the sole array-safe
-     * producer: it supplies {@code TypeName.get(col.getType())}, which decodes array descriptors
-     * natively. Passing an array descriptor here would hit the very {@code bestGuess} rejection the
-     * boundary type-lift exists to avoid, which is intentional: array columns must not be
-     * hand-constructed.
+     * <p>Scalar columns only. {@code ClassName.bestGuess} rejects array descriptors, intentionally:
+     * array columns must not be hand-constructed. The catalog boundary ({@code JooqCatalog}) is the
+     * sole array-safe producer, supplying {@code TypeName.get(col.getType())}.
      */
     public ColumnRef(String sqlName, String javaName, String columnClass) {
         this(sqlName, javaName, columnClass, bestGuessScalarTypeOrNull(columnClass));
@@ -55,8 +53,7 @@ public record ColumnRef(String sqlName, String javaName, String columnClass, Typ
      * pass for {@code columnClass} (an empty string, a key name, a {@code related_n} tag) are not
      * class names and yield a {@code null} {@code columnType}. Such refs exist only for their
      * {@code sqlName}/{@code javaName} and are never emitted, so their type is never read. Array
-     * columns never reach here (see the constructor javadoc); the array-safe producer is the catalog
-     * reflection boundary, which supplies {@code TypeName.get(col.getType())}.
+     * columns never reach here (see the constructor javadoc).
      */
     public static TypeName bestGuessScalarTypeOrNull(String columnClass) {
         if (columnClass == null || columnClass.isBlank()) return null;

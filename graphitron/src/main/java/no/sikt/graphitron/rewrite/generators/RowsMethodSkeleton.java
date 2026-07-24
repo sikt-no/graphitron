@@ -11,33 +11,14 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 
 /**
- * Single entry point for emitting a DataLoader rows-method's {@link MethodSpec}. Consumed by
- * the five rows-method emitter sites (today: {@code SplitRowsMethodEmitter}'s
- * four entry points + {@code TypeFetcherGenerator.buildServiceRowsMethod}); each construction
- * site projects from the field's {@code (variant, LoaderRegistration.container())}
- * pair to the matching {@link RowsMethodBody} permit and hands it here.
- *
- * <p>Owns the per-method declaration scaffolding:
- * <ul>
- *   <li>{@code public static} modifiers</li>
- *   <li>parameters {@code (keys, env)} — keys-container type ({@code List<K>} for positional,
- *       {@code Set<K>} for mapped) supplied by the caller from the field's
- *       {@code LoaderRegistration.container()}</li>
- *   <li>declared return type — the rows method's outer wrapper, built upstream via
- *       {@link no.sikt.graphitron.rewrite.model.RowsMethodShape#outerRowsReturnType}</li>
- *   <li>empty-input short-circuit (SQL permits only — the service-path gate is out of
- *       scope)</li>
- *   <li>the caller-resolved {@code DSLContext dsl = ...;} declaration — always for SQL permits;
- *       conditional on {@link RowsMethodBody.Service#needsDsl()} for the service permit. The
- *       declaration comes from {@code TenantDslEmitter}, so a routed build acquires per the
- *       field's tenant binding while single-tenant builds keep the
- *       {@code graphitronContext(env).getDslContext(env)} form</li>
- * </ul>
+ * Single entry point for emitting a DataLoader rows-method's {@link MethodSpec}: the
+ * declaration scaffolding around a {@link RowsMethodBody} permit. Each construction site
+ * ({@link SplitRowsMethodEmitter} and {@code TypeFetcherGenerator}'s service rows method)
+ * projects from the field's variant and {@code LoaderRegistration.container()} to the
+ * matching permit and hands it here.
  *
  * <p>Body content is opaque to the skeleton: each permit carries its own
  * {@link RowsMethodBody#content()} {@code CodeBlock}, pasted unchanged after the framing.
- * Phase 2 wires the existing body builders into the construction sites that produce these
- * permits; Phase 1 ships only this seam.
  */
 public final class RowsMethodSkeleton {
 
@@ -46,19 +27,16 @@ public final class RowsMethodSkeleton {
     /**
      * Builds a rows-method {@link MethodSpec} for the given body permit.
      *
-     * @param methodName        the rows-method name (today produced by
-     *                          {@link no.sikt.graphitron.rewrite.model.BatchKeyField#rowsMethodName()};
-     *                          service-backed leaves override to {@code load<X>}).
-     * @param outerReturnType   the rows-method's outer return type (e.g.
-     *                          {@code List<List<Record>>}, {@code Map<K, V>}); produced via
+     * @param methodName        the rows-method name, per
+     *                          {@link no.sikt.graphitron.rewrite.model.BatchKeyField#rowsMethodName()}
+     *                          (service-backed leaves override to {@code load<X>}).
+     * @param outerReturnType   the rows-method's outer return type, produced via
      *                          {@link no.sikt.graphitron.rewrite.model.RowsMethodShape#outerRowsReturnType}.
      * @param keysContainerType {@code List<K>} for positional-list registrations,
      *                          {@code Set<K>} for mapped-set registrations.
      * @param dslDeclaration    the full {@code DSLContext dsl = ...;} declaration statement(s),
      *                          resolved per the field's tenant binding by
-     *                          {@code TenantDslEmitter.resolve(...).declaration()} (which yields
-     *                          the {@code graphitronContext(env).getDslContext(env)} form in
-     *                          single-tenant builds and records the helper dependency).
+     *                          {@link TenantDslEmitter}.
      * @param body              the per-shape body permit; carries the SELECT / scatter /
      *                          service-call content the skeleton pastes after the framing.
      */
@@ -85,9 +63,8 @@ public final class RowsMethodSkeleton {
     }
 
     /**
-     * SQL framing: empty-input short-circuit (returning {@code List.of()}) followed by the
-     * DSL local resolution, then the permit's body content. The body content references both
-     * {@code keys} and {@code dsl}.
+     * SQL framing. The permit's body content references both {@code keys} and the {@code dsl}
+     * local declared here.
      */
     private static void emitSqlBody(MethodSpec.Builder b, CodeBlock content, CodeBlock dslDeclaration) {
         b.beginControlFlow("if (keys.isEmpty())")
@@ -98,10 +75,9 @@ public final class RowsMethodSkeleton {
     }
 
     /**
-     * Service framing: optional DSL local resolution (driven by {@code needsDsl}, which
-     * mirrors the developer's {@code @service} method {@link no.sikt.graphitron.rewrite.model.MethodRef.CallShape}),
-     * then the permit's body content. The empty-input gate is intentionally omitted: adding the
-     * gate to service rows methods is a behaviour change tracked as a separate Backlog item.
+     * Service framing. {@code needsDsl} mirrors the developer's {@code @service} method
+     * {@link no.sikt.graphitron.rewrite.model.MethodRef.CallShape}. The empty-input gate is
+     * deliberately absent: adding it to service rows methods would change behaviour.
      */
     private static void emitServiceBody(MethodSpec.Builder b, RowsMethodBody.Service service, CodeBlock dslDeclaration) {
         if (service.needsDsl()) {

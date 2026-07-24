@@ -32,16 +32,16 @@ import java.util.Map;
  * {@code public static <GraphQLObjectType|Interface|Union> type()} method that rebuilds the
  * type as a programmatic graphql-java value at runtime.
  *
- * <p>Third of the Commit B leaf-type emitters (after
- * {@link EnumTypeGenerator} and {@link InputTypeGenerator}). Root operation types (Query /
- * Mutation / Subscription) are included in the output; the assembler routes them to the
- * corresponding {@code schemaBuilder.query(...)} / {@code .mutation(...)} /
- * {@code .subscription(...)} entry points rather than {@code additionalType(...)}.
+ * <p>Sibling of the other leaf-type emitters, {@link EnumTypeGenerator} and
+ * {@link InputTypeGenerator}. Root operation types (Query / Mutation / Subscription) are
+ * included in the output; the assembler routes them to the corresponding
+ * {@code schemaBuilder.query(...)} / {@code .mutation(...)} / {@code .subscription(...)}
+ * entry points rather than {@code additionalType(...)}.
  *
  * <p>Cross-type references use {@code GraphQLTypeReference.typeRef(name)} so emission order
- * is irrelevant. Field argument types are rendered by {@link #buildInputTypeRef} which mirrors
- * {@link InputTypeGenerator#buildInputTypeRef} structurally; keeping them separate so a later
- * directive-translation pass can diverge the two without cross-contamination.
+ * is irrelevant. Field argument types are rendered by {@link #buildInputTypeRef}, deliberately
+ * kept separate from the structurally identical {@link InputTypeGenerator#buildInputTypeRef}
+ * so the two can diverge without cross-contamination.
  *
  * <p>For every type whose name is a key in the {@code fetcherBodies} map, the emitted class also
  * exposes {@code public static void registerFetchers(GraphQLCodeRegistry.Builder codeRegistry)}.
@@ -57,7 +57,7 @@ import java.util.Map;
  * depth scales with type-element count.
  *
  * <p>Introspection types (names starting with {@code __}) and federation-injected types
- * (names starting with {@code _}) are skipped — neither is part of the user surface.
+ * (names starting with {@code _}) are skipped; neither is part of the user surface.
  */
 public final class ObjectTypeGenerator {
 
@@ -78,12 +78,6 @@ public final class ObjectTypeGenerator {
      * body of its {@code registerFetchers(GraphQLCodeRegistry.Builder)} method; types not present
      * in the map do not get the method. {@link FetcherRegistrationsEmitter} produces the map from
      * the classifier model.
-     *
-     * <p>Directive-driven {@code @asConnection} fields (bare-list return type with no pre-existing
-     * Connection type in the schema) are rewritten at classifier time in the assembled schema
-     * on the carrier field. For these fields the emitted return type reference is substituted with
-     * the synthesised Connection name and the standard {@code first} / {@code after} pagination
-     * arguments are appended.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           Map<String, CodeBlock> fetcherBodies) {
@@ -113,9 +107,9 @@ public final class ObjectTypeGenerator {
     }
 
     /**
-     * Resolves the graphql-java type form for a classified {@link GraphitronType} entry.
-     * Synthesised and plain variants carry their form directly; variants classified by domain
-     * (TableType, NodeType, …) look up via the assembled schema.
+     * Resolves the graphql-java type form for a classified {@link GraphitronType} entry:
+     * synthesised variants carry their form directly, domain-classified variants look up
+     * via the assembled schema.
      */
     private static GraphQLNamedType graphqlTypeFor(GraphitronType variant, String name, GraphQLSchema assembled) {
         if (variant instanceof ConnectionType ct) return ct.schemaType();
@@ -234,10 +228,10 @@ public final class ObjectTypeGenerator {
     static MethodSpec buildFieldDefinitionMethod(String methodName, String parentTypeName,
                                                   graphql.schema.GraphQLFieldDefinition field,
                                                   GraphitronSchema schema, HelperMethodSink sink) {
-        // Carrier-field rewriting for directive-driven @asConnection has already happened in the
-        // classifier (ConnectionPromoter.rebuildAssembledForConnections): the field arrives
-        // with its return type pointing at the Connection and `first` / `after` arguments
-        // appended. Emission reads the field as-is — no probe, no directive inspection.
+        // Directive-driven @asConnection carrier fields arrive already rewritten by the classifier
+        // (ConnectionPromoter.rebuildAssembledForConnections): return type pointing at the
+        // Connection, `first` / `after` arguments appended. Emission reads the field as-is,
+        // with no probe and no directive inspection.
         var body = CodeBlock.builder();
         body.addStatement("$T.Builder b = $T.newFieldDefinition()", FIELD_DEF, FIELD_DEF);
         body.addStatement("b.name($S)", field.getName());

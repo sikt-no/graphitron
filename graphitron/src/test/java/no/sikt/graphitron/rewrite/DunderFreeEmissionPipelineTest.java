@@ -17,34 +17,20 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Dunder-free-emission no-regression guard, in-process variant. Generates {@code TypeSpec}s over schemas that
- * exercise the emitters the rename touched, and asserts that no emitted Java <em>identifier</em>
- * (local, parameter, field) leads with {@code __}. Synthetic SQL column aliases ({@code __sort__},
- * {@code __idx__}, {@code __typename}, {@code __rn__}, {@code __pkN__}, and the
- * {@code __src_<col>__} full-parent-row aliases) are deliberate collision-avoidance names that
- * reach generated code only as string literals; masking literals (and comments) before the scan
- * leaves them alone. The discriminator is exactly "Java identifier vs string literal in the
+ * Dunder-free-emission guard, in-process variant. Generates {@code TypeSpec}s over three schema
+ * groups (each SDL field's javadoc names the emitter paths it drives) and asserts that no emitted
+ * Java <em>identifier</em> (local, parameter, field) leads with {@code __}. Synthetic SQL column
+ * aliases ({@code __sort__}, {@code __idx__}, {@code __typename}, {@code __rn__}, {@code __pkN__},
+ * and the {@code __src_<col>__} full-parent-row aliases) are deliberate collision-avoidance names
+ * that reach generated code only as string literals; masking literals (and comments) before the
+ * scan leaves them alone. The discriminator is exactly "Java identifier vs string literal in the
  * emitted output".
  *
  * <p>This pipeline-tier scan generates in-process, so it cannot pass over an empty tree the way a
  * generated-sources walk could when the jOOQ catalog jar is clobbered (the {@code -Plocal-db}
- * footgun). It covers the renamed-identifier paths directly:
- * <ul>
- *   <li>the {@code FetcherEmitter} batch-loader and record-copy locals ({@code row}, {@code byPk},
- *       {@code fetched}, {@code ordered}, {@code sourceRow}) and the {@code GeneratorUtils}
- *       accessor-key locals, via the {@code @reference} group;</li>
- *   <li>the {@code TypeFetcherGenerator} validator pre-step ({@code validator}, {@code violations},
- *       {@code violation}, and the de-dundered author-derived {@code arg_<name>} local) and the
- *       {@code InputRecordGenerator.fromMap} locals ({@code c_<name>}, the {@code element} stream
- *       parameter), via the validator + input group;</li>
- *   <li>the {@code MultiTablePolymorphicEmitter} synthetic-column machinery, via the polymorphic
- *       interface group.</li>
- * </ul>
- *
- * <p>{@code GeneratedSourcesLintTest#emittedSourcesHaveNoDunderIdentifiers} runs the complementary
- * compile-tier walk over the <em>full</em> Sakila pipeline output (every generator, with a
- * file-floor), which is the breadth guard for any emitter not reached by the schemas here. The two
- * together pin the invariant in a live test rather than a comment.
+ * footgun). {@code GeneratedSourcesLintTest#emittedSourcesHaveNoDunderIdentifiers} runs the
+ * complementary compile-tier walk over the <em>full</em> Sakila pipeline output (every generator,
+ * with a file-floor), the breadth guard for any emitter not reached by the schemas here.
  *
  * <p>This is a blanket structural lint over all rendered output, not a per-body string assertion:
  * it asserts a single property (no {@code __}-led identifier), never the content of a specific
@@ -157,10 +143,8 @@ class DunderFreeEmissionPipelineTest {
      * genuine code remains, so the identifier scan cannot be fooled by a dunder living in a comment
      * or a synthetic-column string literal.
      *
-     * <p>Assumes JavaPoet does not emit Java text blocks ({@code triple-quote} strings): it renders
-     * multi-line content as concatenated {@code "..."} literals, so the scanner does not track a
-     * text-block mode. If that ever changes, a text block containing {@code //} or a {@code __foo}
-     * token could be mis-masked and would need a fifth lexical mode here.
+     * <p>Assumes JavaPoet does not emit Java text blocks: it renders multi-line content as
+     * concatenated {@code "..."} literals, so the scanner does not track a text-block mode.
      */
     static String maskCommentsAndLiterals(String src) {
         StringBuilder out = new StringBuilder(src.length());

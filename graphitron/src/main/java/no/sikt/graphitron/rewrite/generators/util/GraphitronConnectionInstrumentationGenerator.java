@@ -18,26 +18,26 @@ import java.util.List;
  * <p>Emitted (not shipped as a graphitron artifact); bodies depend only on graphql-java, jOOQ, and
  * the JDK. Valid Java 17.
  *
- * <h2>The seam this closes</h2>
+ * <h2>The {@code DSLContext} key seam</h2>
  * On the escape-hatch path {@code Graphitron.newExecutionInput(dsl, ...)} publishes the per-request
  * {@code DSLContext} under the {@code DSLContext.class} {@code graphQLContext} key at factory time. On
- * the owned-connection path the <em>producer of that key moves here</em>: at operation start this
- * instrumentation pins a connection, mounts identity, binds a {@code DSLContext} to it, and publishes
- * it under the very same key. Every consumer of the key ({@code getDslContext(env)}, every generated
- * fetcher) is untouched.
+ * the owned-connection path <em>this instrumentation is the producer of that key</em>: at operation
+ * start it pins a connection, mounts identity, binds a {@code DSLContext} to it, and publishes it
+ * under the very same key. Every consumer of the key ({@code getDslContext(env)}, every generated
+ * fetcher) is identical across the two paths.
  *
  * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
  *   <li>Read the opaque claims payload from the {@code graphQLContext} under {@code CLAIMS_KEY} (the
- *       one key slice 5's {@code Graphitron.newOwnedExecutionInput(claims, ...)} factory writes; shared as a
+ *       key the {@code Graphitron.newOwnedExecutionInput(claims, ...)} factory writes; shared as a
  *       named constant so read and write cannot drift).</li>
  *   <li>{@code runtime.acquire(claims)} pins one connection and runs the connect hook; a throwing
  *       connect fails closed here, before any SQL, surfaced as a request error.</li>
  *   <li>Bind a {@code DSLContext} to the pinned connection through
  *       {@link GraphitronTransactionProviderGenerator the custom TransactionProvider} and publish it
  *       under {@code DSLContext.class}.</li>
- *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit (blanket
- *       read-only enforcement is dropped; a targeted successor is planned). <b>Mutation operations</b> let each
+ *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit, with no
+ *       read-only enforcement. <b>Mutation operations</b> let each
  *       field's shipped {@code dsl.transactionResult(...)} be the per-field writable boundary through
  *       the provider: under {@code COMMIT} each field's transaction commits or rolls back
  *       independently; under {@code ROLLBACK_ONLY} (the dev-execution mode) the provider's deferred
@@ -47,17 +47,17 @@ import java.util.List;
  *       then return-or-evict). Release is idempotent.</li>
  * </ol>
  *
- * <h2>@defer stays off (spec V0 stance)</h2>
+ * <h2>Incremental delivery is rejected</h2>
  * Connection-per-operation release closes the pinned connection at completion; a deferred fetcher
- * running afterwards would use a closed connection. So this rejects incremental delivery outright
- * rather than let it corrupt the lifetime: {@code hasIncrementalSupport()} is a build-off invariant,
- * and enabling {@code @defer} under owned connections is a named follow-on.
+ * running afterwards would use a closed connection. The emitted class therefore rejects
+ * {@code @defer}/{@code @stream} outright ({@code hasIncrementalSupport()} fails fast) rather than
+ * let incremental delivery corrupt the connection lifetime.
  */
 public final class GraphitronConnectionInstrumentationGenerator {
 
     public static final String CLASS_NAME = "GraphitronConnectionInstrumentation";
     public static final String CLAIMS_KEY_FIELD = "CLAIMS_KEY";
-    /** The literal value of the emitted {@code CLAIMS_KEY} constant (also referenced by slice 5's factory). */
+    /** The literal value of the emitted {@code CLAIMS_KEY} constant. */
     public static final String CLAIMS_KEY_VALUE = "no.sikt.graphitron.request.claims";
 
     private static final ClassName INSTRUMENTATION = ClassName.get("graphql.execution.instrumentation", "Instrumentation");
@@ -91,7 +91,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
      * (published under its own class key; fetchers route through {@code dslFor} /
      * {@code dslDefault}) and acquisition turns lazy, since the tenant is divined per field
      * and an operation touching no tenant-scoped table should pin nothing. Single-tenant
-     * output is unchanged: one eager pinned connection whose {@code DSLContext} is published
+     * output: one eager pinned connection whose {@code DSLContext} is published
      * under {@code DSLContext.class}.
      */
     public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {

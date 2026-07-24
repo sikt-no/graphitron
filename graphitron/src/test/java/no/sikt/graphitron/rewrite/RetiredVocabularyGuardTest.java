@@ -41,14 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The registry is also reverse-enforced by {@link #noRegisteredTokenIsALiveMainSourceName}:
  * a registered token must not appear as an identifier token in any main-source code region, so
- * a stale registry entry or a revived name fails the build. Legitimately reviving a name means
- * dropping its registry entry in the same commit; token reuse makes old prose ambiguous by
- * construction, and the dropped entry is the reviewed record of that decision.
- *
- * <p>When the prose scan fires, prefer deleting the mention over rewriting it (the changelog
- * already carries the lineage); rewrite to the live successor named in the failure message only
- * when the sentence carries a load-bearing claim, and add an allowlist entry only for a mention
- * that is itself documentation of the retirement.
+ * a stale registry entry or a revived name fails the build. The failure messages carry the
+ * remediation guidance for both directions.
  */
 @UnitTier
 class RetiredVocabularyGuardTest {
@@ -57,8 +51,7 @@ class RetiredVocabularyGuardTest {
     private record Retired(String token, String successor) {}
 
     /**
-     * The registry. Entry bar is demonstrated recurrence: the seed families re-drifted across
-     * consecutive staleness-audit windows after their scrubs. Tokens too generic to be
+     * The registry. Entry bar is demonstrated recurrence. Tokens too generic to be
      * unambiguous are omitted even when retired (their successors are prose-distinguishable
      * only semantically).
      */
@@ -83,9 +76,8 @@ class RetiredVocabularyGuardTest {
     private record Allowed(String file, String token) {}
 
     /**
-     * Reviewed lineage mentions kept on purpose. Empty at seeding: the first green run visited
-     * every kept mention and deleted or rewrote each one, the changelog being the surviving
-     * home. An entry added here is a deliberate decision recorded in review, not a suppression.
+     * Reviewed lineage mentions kept on purpose. An entry added here is a deliberate decision
+     * recorded in review, not a suppression.
      */
     private static final Set<Allowed> ALLOWED = Set.of();
 

@@ -17,9 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Pipeline-tier coverage for the codegen loader: the Mojo's codegen scope builds a {@link ClassLoader}
  * that resolves classes from the project's compile classpath (declared {@code <dependency>}
  * entries plus the consumer's own {@code target/classes}), not just from the plugin's own
- * realm. Previously the generator's reflection path went through the plugin loader, which
- * forced consumers to mirror service / catalog jars under {@code <plugin><dependencies>};
- * the new loader makes that block unnecessary.
+ * realm, so consumers do not need to mirror service / catalog jars under
+ * {@code <plugin><dependencies>}.
  *
  * <p>The test stages a service class as a real {@code .class} file under a fake
  * {@code target/classes} directory, hands its path to a {@link MavenProject} via
@@ -28,23 +27,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <ol>
  *   <li>Inside {@link AbstractRewriteMojo#withCodegenScope}, the {@link ClassLoader}
  *       resolves the staged class.</li>
- *   <li>Outside the scope, the plugin's own loader does not see it — the staging directory
+ *   <li>Outside the scope, the plugin's own loader does not see it; the staging directory
  *       is genuinely off the test JVM's classpath.</li>
  *   <li>After the scope returns, the thread's context classloader is restored.</li>
  * </ol>
  *
- * <p>The 22 in-process {@code Class.forName(name, false, ctx.codegenLoader())} sites all
- * resolve through this same loader; per-site coverage is the IT's job (basic-generate
- * locks the contract for the reflection path the schema exercises) and
- * graphitron-sakila-example's compile/execute tiers.
+ * <p>The in-process {@code Class.forName(name, false, ctx.codegenLoader())} sites all
+ * resolve through this same loader; per-site coverage is the job of the basic-generate IT
+ * and graphitron-sakila-example's compile/execute tiers.
  */
 class CodegenLoaderTest {
 
     /**
-     * Tiny synthetic class file: {@code public class no.example.service.MarkerService {}}.
-     * Encoded as a Java 17 class (major version 61). Generated once at build time via
-     * {@code javac} and frozen as a byte array so the test does not need a compiler on its
-     * own classpath.
+     * Binary name of the synthetic marker class staged by {@link #writeMarkerClass}:
+     * {@code public class no.example.service.MarkerService {}}, hand-rolled as class-file
+     * bytes so the test does not need a compiler on its own classpath.
      */
     private static final String MARKER_CLASS_NAME = "no.example.service.MarkerService";
 

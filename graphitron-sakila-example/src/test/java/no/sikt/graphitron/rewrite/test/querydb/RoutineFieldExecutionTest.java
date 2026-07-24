@@ -18,33 +18,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Execution-tier proof for {@code @routine}: a real {@code RETURNS TABLE} function in the DB
- * backs a root list field, invoked end-to-end with its IN parameters bound from GraphQL arguments.
- * This is the proof that the generated {@code Routines.<method>(<bound args>)} call and the
- * FROM-attach actually run and return rows, and that selection narrowing projects only the columns
+ * backs GraphQL fields end-to-end. {@code Query.tilganger} proves the generated
+ * {@code Routines.<method>(<bound args>)} call and the FROM-attach run and return rows, with IN
+ * parameters bound from GraphQL arguments, and that selection narrowing projects only the columns
  * the query selected.
  *
- * <p>The child-positioned {@code @routine} (the correlated single-node chain) extends the proof:
- * {@code Actor.films} rides the inline correlated multiset whose FROM source is
- * {@code Routines.filmsForActor(parent.ACTOR_ID, DSL.val(minLength))}, asserting per-parent
- * correlation and the mixed column/argument binding.
- *
- * <p>The routine-then-hops chain is proven by {@code Query.recentFilmsForActor}: the routine
- * result is the FROM source and the {@code @reference} hop lands the terminus on the {@code film}
- * catalog table, joined on the name-matched target PK ({@code source.FILM_ID = film.FILM_ID},
- * as a routine result carries no FK). Projecting film-table-only columns proves the hop keyed
- * correctly.
- *
- * <p>The child multi-node chains are proven per shape: {@code Actor.recentFilms}
- * (routine-then-hops at a child position: lateral head, name-matched hop out),
- * {@code Film.castFilms} (hops-then-routine: {@code columnMapping} binds against the previous
- * node, {@code film_actor.actor_id}, not the implicit head), and {@code Film.castRecentFilms}
- * (the sandwich: hops in, CROSS JOIN LATERAL, name-matched hop back out to {@code film}).
- *
- * <p>The batched keyed re-query form ({@code @splitQuery}) is proven by
- * {@code Actor.filmsSplit} / {@code Actor.recentFilmsSplit}: the batch key is the routine's
- * column-bound input (design B — the {@code parentInput} VALUES table carries {@code actor_id}
- * and the lateral call reads it off {@code parentInput} directly), with per-parent scatter by
- * {@code __idx__} reproducing the inline form's rows exactly.
+ * <p>The remaining chain shapes are proven per field; each test's comment states what its
+ * assertions pin down. A routine result carries no FK, so hops out of one join on the
+ * name-matched target PK.
+ * <ul>
+ *   <li>{@code Actor.films}: correlated single-node child (inline multiset, mixed column/argument binding)</li>
+ *   <li>{@code Query.recentFilmsForActor}: root routine-then-hops</li>
+ *   <li>{@code Actor.recentFilms}: child routine-then-hops (lateral head, name-matched hop out)</li>
+ *   <li>{@code Film.castFilms}: hops-then-routine ({@code columnMapping} binds against the previous node)</li>
+ *   <li>{@code Film.castRecentFilms}: the sandwich (hops in, CROSS JOIN LATERAL, name-matched hop back out)</li>
+ *   <li>{@code Actor.filmsSplit} / {@code Actor.recentFilmsSplit}: batched keyed re-query ({@code @splitQuery})</li>
+ * </ul>
  */
 @ExecutionTier
 class RoutineFieldExecutionTest {

@@ -37,10 +37,8 @@ import java.util.function.Consumer;
  * They are distinct names, not overloads, so a caller cannot silently opt out of the owned-path
  * guarantees by passing a {@code DSLContext}; the escape-hatch name is frozen by additive-by-construction.
  *
- * <p>The legacy two-overload shape ({@code (GraphitronContext)} +
- * {@code (DSLContext)}) was collapsed into the typed escape-hatch entry point. The sealed
- * {@code GraphitronContext} now permits only the generated {@code GraphitronContextImpl}
- * singleton; the factories ARE the per-request wiring point.
+ * <p>The sealed {@code GraphitronContext} permits only the generated
+ * {@code GraphitronContextImpl} singleton; the factories are the per-request wiring point.
  */
 public final class GraphitronFacadeGenerator {
 
@@ -110,10 +108,9 @@ public final class GraphitronFacadeGenerator {
             escapeHatchJavadoc(contextArgs, fanOutTenantKey != null));
 
         // The owned-connection factory: the caller brings only the opaque claims; the execution
-        // instrumentation pins the connection, mounts identity, and produces the DSLContext. Distinct
-        // name (not an overload of newExecutionInput) so a caller cannot silently opt out of graphitron's
-        // guarantees by passing a DSLContext to what they think is the owned path. Writes the claims under
-        // the instrumentation's own CLAIMS_KEY constant so the write and read sites cannot drift.
+        // instrumentation pins the connection, mounts identity, and produces the DSLContext.
+        // Writes the claims under the instrumentation's own CLAIMS_KEY constant so the write and
+        // read sites cannot drift.
         var newOwnedExecutionInput = buildExecutionInputFactory(
             "newOwnedExecutionInput", ClassName.get(String.class), "claims",
             CodeBlock.of("b.put($T.$L, claims);", instrumentation, claimsKeyField),
@@ -121,10 +118,7 @@ public final class GraphitronFacadeGenerator {
             dataLoaderRegistry, contextArgs, fanOutTenantKey, tenantConnections,
             ownedExecutionInputJavadoc(contextArgs, fanOutTenantKey != null));
 
-        // The escape-hatch engine attaches no connection-lifecycle instrumentation, so on
-        // this path the caller owns transaction demarcation and session identity and graphitron's
-        // owned-connection guarantees do not apply. Emit that notice once at wiring time (guarded so it
-        // fires once per process even if the engine is rebuilt).
+        // Emit the caller-owns-everything notice once per process, even if the engine is rebuilt.
         var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphQLBuilder)
@@ -242,11 +236,9 @@ public final class GraphitronFacadeGenerator {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, arg.name(), arg.name());
         }
 
-        // Build the graphQLContext lambda body: the factory-specific first entry (a DSLContext for the
-        // escape hatch, the claims payload for the owned path), then each contextArgument under its string
-        // name, then the singleton GraphitronContextImpl under GraphitronContext.class. The downstream
-        // `graphitronContext(env)` helper retrieves the singleton by typed key; per-request values flow
-        // through env.getGraphQlContext() reads inside the singleton's default methods.
+        // The downstream `graphitronContext(env)` helper retrieves the GraphitronContextImpl
+        // singleton by its typed key; per-request values flow through env.getGraphQlContext()
+        // reads inside the singleton's default methods.
         method.addCode("return $T.newExecutionInput()\n", executionInput);
         method.addCode("    .graphQLContext(b -> {\n");
         method.addCode("        $L\n", firstPut);

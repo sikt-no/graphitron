@@ -41,9 +41,8 @@ import java.util.Objects;
  *
  * <p>Emission is gated to non-federation schemas: a federation subgraph builds through the
  * two-arg {@code buildSchema(schemaCustomizer, federationCustomizer)} and needs an entity
- * fetcher, so its executor is a follow-on variant. The
- * compile-dependency graph models the unit unconditionally, which is superset-safe: the render
- * skips units never emitted.
+ * fetcher this executor does not supply. The compile-dependency graph models the unit
+ * unconditionally, which is superset-safe: the render skips units never emitted.
  */
 public final class GraphitronDevExecutorGenerator {
 

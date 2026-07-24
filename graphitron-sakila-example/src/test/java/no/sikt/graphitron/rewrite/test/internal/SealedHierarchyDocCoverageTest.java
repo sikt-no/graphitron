@@ -125,8 +125,7 @@ class SealedHierarchyDocCoverageTest {
     /**
      * Walks {@link Rejection#getPermittedSubclasses()} transitively and yields the simple name
      * of every intermediate sealed parent (a permit class that itself has further permits)
-     * encountered below {@code Rejection}. The reverse-direction regex alternation uses these
-     * names so a new top-level sealed branch on {@code Rejection} extends coverage automatically.
+     * below {@code Rejection}. These feed the reverse-direction regex alternation.
      */
     private static Set<String> collectIntermediateSealedParents() {
         Set<String> parents = new TreeSet<>();
@@ -176,8 +175,8 @@ class SealedHierarchyDocCoverageTest {
 
     /**
      * Walks up from the test working directory until it finds
-     * {@code docs/architecture/explanation/typed-rejection.adoc}. Surefire runs from the
-     * module directory; the file lives two parents up under the rewrite-docs subtree.
+     * {@code docs/architecture/explanation/typed-rejection.adoc}; Surefire runs from the
+     * module directory, not the repo root.
      */
     private static Path locateDoc() {
         Path cwd = Path.of("").toAbsolutePath();

@@ -156,9 +156,8 @@ class BuildContext {
      * after it) populates it via
      * {@link TypeRegistry#classify}, {@link TypeRegistry#enrich}, {@link TypeRegistry#demote},
      * and {@link TypeRegistry#synthesize}; downstream code reads
-     * via {@link TypeRegistry#get} / {@link TypeRegistry#entries}. Replaces the previously bare
-     * {@code Map<String, GraphitronType> types} field; the backing map is private so any new
-     * write site has to go through one of the four named operations (visible in code review).
+     * via {@link TypeRegistry#get} / {@link TypeRegistry#entries}. The backing map is private,
+     * so every write site goes through one of the four named operations.
      */
     final TypeRegistry typeRegistry = new TypeRegistry();
     /**
@@ -181,10 +180,8 @@ class BuildContext {
      * Fixed-point reverse index over the schema's {@code @node} types
      * ({@link NodeIndex}), keyed by backing table and by type name. Populated once by
      * {@link TypeBuilder#buildClassificationIndices}. Field classification resolves every node-id
-     * encoder through this index instead of scanning or keying into the type registry (retires
-     * {@code FieldBuilder}'s four {@code types.values()} NodeType scans and the keyed
-     * {@code ctx.types.get} at the {@code @nodeId(typeName:)} path), which is part of the precondition
-     * for collapsing classification into a single walk. {@link NodeIndex#EMPTY} for
+     * encoder through this index, never the type registry, keeping the single classification
+     * walk registry-free. {@link NodeIndex#EMPTY} for
      * tests that build a registry without running the classification walk.
      */
     NodeIndex nodes = NodeIndex.EMPTY;
@@ -192,19 +189,16 @@ class BuildContext {
      * Pure, typename-keyed fixed-point index over the schema's table-backed types
      * ({@link TableIndex}). Populated once by {@link TypeBuilder#buildClassificationIndices}. Field
      * classification resolves the table-backed fact at its return/element/data-field edges through
-     * this index instead of keying into the type registry (retires the {@code TableBackedType}
-     * {@code ctx.types.get} reads, including the deep payload-data-field reads two hops below the
-     * field being classified), which is part of the precondition for collapsing classification into a
-     * single walk. {@link TableIndex#EMPTY} for tests that build a registry without
+     * this index, never the type registry, keeping the single classification walk registry-free.
+     * {@link TableIndex#EMPTY} for tests that build a registry without
      * running the classification walk.
      */
     TableIndex tables = TableIndex.EMPTY;
     /**
      * Pure, typename-keyed fixed-point index over the schema's {@code @error} types
      * ({@link ErrorIndex}). Populated once by {@link TypeBuilder#buildClassificationIndices}. The
-     * error-channel union-member scan resolves the error-member fact through this index instead of
-     * keying into the type registry (retires the {@code ErrorType} {@code ctx.types.get} read two
-     * hops below the field being classified). {@link ErrorIndex#EMPTY} for tests that build a
+     * error-channel union-member scan resolves the error-member fact through this index, never
+     * the type registry. {@link ErrorIndex#EMPTY} for tests that build a
      * registry without running the classification walk.
      */
     ErrorIndex errors = ErrorIndex.EMPTY;
@@ -212,8 +206,8 @@ class BuildContext {
      * Fixed-point index, participant type name &rarr; (field name &rarr; the
      * participant's {@link ParticipantRef.TableBound.CrossTableField}). Populated once by
      * {@link TypeBuilder#buildClassificationIndices} from the {@code @table}+{@code @discriminate}
-     * interface scan and the participants' {@code @reference} SDL. Retires
-     * {@code FieldBuilder.lookupParticipantCrossTableField}'s nested registry scan.
+     * interface scan and the participants' {@code @reference} SDL.
+     * {@code FieldBuilder.lookupParticipantCrossTableField} is the read path.
      */
     Map<String, Map<String, ParticipantRef.TableBound.CrossTableField>> crossTableFieldsByParticipant = Map.of();
     /**
@@ -261,8 +255,7 @@ class BuildContext {
      * {@code DomainReturnType} agreement) register a {@link ValidationError} here rather than
      * overwriting the registry, so a verdict read after the walk equals the verdict classification
      * produced. {@code GraphitronSchemaBuilder} hands the list to {@link GraphitronSchema}; the
-     * validator drains it into the same {@link ValidationError} stream it emits today, so which
-     * schemas pass or fail is unchanged.
+     * validator drains it into its {@link ValidationError} stream.
      */
     private final List<ValidationError> diagnostics = new ArrayList<>();
     private final Map<String, List<String>> typeNamesByTableKey;
@@ -517,9 +510,8 @@ class BuildContext {
     ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
         // Resolve the target's verdict registry-free (look-ahead), not types.get: under
         // the single classify-and-emit walk a field's output target is a not-yet-visited child, so a
-        // registry read would miss it. lookAheadVerdict reproduces the verdict types.get returned in the
-        // two-pass world (classifyType + producer-bound carrier), and a NestingType / ConnectionType /
-        // carrier (none of the four arms below) falls through to ScalarReturnType under both, identically.
+        // registry read would miss it. A NestingType / ConnectionType / carrier (none of the four
+        // arms below) falls through to ScalarReturnType.
         GraphitronType target = typeBuilder.lookAheadVerdict(targetTypeName);
         if (target instanceof TableBackedType tbt)
             return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
@@ -595,27 +587,23 @@ class BuildContext {
     }
 
     /**
- * The single classify-time verdict over an {@code @service} carrier's shape triple:
+     * The single classify-time verdict over an {@code @service} carrier's shape triple:
      * (carrier field wrapper, {@code @service} producer return shape, payload data-field wrapper).
      * In the style of {@link DmlPayloadScan}, but its {@link Reject} arm carries a typed
      * {@link no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError} (with the disagreeing arrival
-     * axes and a stable LSP code) rather than a composed reason string — {@code DmlPayloadScan.Reject(String)}
-     * is the debt this deliberately does not replicate.
+     * axes and a stable LSP code) rather than a composed reason string.
      *
      * <p>Computed at the {@code @service} payload seat by {@code FieldBuilder.scanServiceCarrierShape},
      * which folds the carrier arrival (read once from the carrier field's SDL wrapper), the producer
      * arrival (the typed fact decided at the reflection boundary,
      * {@link TypeBuilder#serviceCarrierProducerArrival}), and the data-field arrival (the canonical
-     * {@link #scanStructuralServiceCarrierPayload} shape). The verdict replaces the uncoordinated
-     * wrapper reads that used to decide list-carrier admission (the {@code RecordBindingResolver}
-     * {@code NoBind}-silent-drop, the {@code checkServiceReturnMatchesPayload} carrier-wrapper read,
-     * the data-field wrapper key) as the single authority.
+     * {@link #scanStructuralServiceCarrierPayload} shape). The verdict is the single authority on
+     * list-carrier admission.
      *
      * <ul>
      *   <li>{@link Coherent}: a single carrier ({@code Payload}), or a list carrier
      *       ({@code [Payload]}) whose producer returns a collection and whose {@code @table}-element
-     *       data field is single. The shape keeps its exact current classification and emit; no
-     *       downstream consumer changes. It carries {@link Coherent#producerArrival() producerArrival},
+     *       data field is single. It carries {@link Coherent#producerArrival() producerArrival},
      *       the cardinality the SDL shape requires the {@code @service} producer to return, so the
      *       downstream return-type match ({@code FieldBuilder.checkServiceReturnMatchesPayload}) reads
      *       that one fact instead of re-deriving it from the carrier / data-field wrappers.</li>
@@ -640,10 +628,10 @@ class BuildContext {
     }
 
     /**
- * The answer to "would this payload classify as a DML carrier were it not for a
+     * The answer to "would this payload classify as a DML carrier were it not for a
      * forbidden directive on its data field". Returned by {@link #diagnoseForbiddenCarrierDirective}
      * so the {@code @mutation} return-type diagnostic can name the offending field and directive
-     * (the {@code @}-prefixed directive name) instead of the misdirected "use ID or a @table type".
+     * (the {@code @}-prefixed directive name).
      */
     public record ForbiddenCarrierDirective(String dataFieldName, String directiveName) {}
 
@@ -664,18 +652,17 @@ class BuildContext {
 
     // The @service-carrier scan tolerates @splitQuery on the data field. The carrier's
     // data-field emit already resolves through a PK-keyed follow-up SELECT off the producer's
-    // record (FetcherEmitter's Wrap.TableRecord arm), so @splitQuery adds nothing there; the
-    // opptak schemas carry it on their `sak`/`saker` data fields, and dropping the whole carrier
-    // over a redundant directive produced an invalid assembled schema (dangling payload typeRef).
-    // The classifier fires a redundancy advisory instead (FieldBuilder's
-    // warnIfSplitQueryOnRecordParent family). DML carriers keep the strict set.
+    // record (FetcherEmitter's Wrap.TableRecord arm), so @splitQuery adds nothing there, and
+    // dropping the whole carrier over a redundant directive would leave an invalid assembled
+    // schema (dangling payload typeRef). The classifier fires a redundancy advisory instead
+    // (FieldBuilder's warnIfSplitQueryOnRecordParent family). DML carriers keep the strict set.
     private static final java.util.Set<String> FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES =
         FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES.stream()
             .filter(d -> !d.equals(DIR_SPLIT_QUERY))
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     /**
- * The carrier family the structural scan is run for. A named axis (not a flag set)
+     * The carrier family the structural scan is run for. A named axis (not a flag set)
      * because the families differ on two coupled policies: the forbidden-directive set on the
      * data field and the ID-element wrapper admission. DML (DELETE) carriers reject the
      * list-of-nullable {@code [ID]} and Connection wrappers (every element of a successful
@@ -696,10 +683,9 @@ class BuildContext {
     }
 
     /**
- * Whether {@link #scanStructuralPayload} consults the family's forbidden-directive set on
-     * the data field. {@code ENFORCE} is the only policy the public scan methods use, so their
-     * behaviour (and every speculative caller's: {@code TypeBuilder.carrierTableBinding}, the existing
-     * {@code validateReturnType} Reject probe) is byte-for-byte unchanged. {@code IGNORE} is consulted
+     * Whether {@link #scanStructuralPayload} consults the family's forbidden-directive set on
+     * the data field. {@code ENFORCE} is the only policy the public scan methods use.
+     * {@code IGNORE} is consulted
      * solely by {@link #diagnoseForbiddenCarrierDirective}, to answer "would this admit as a DML
      * carrier were it not for the forbidden directive". This is an orthogonal, private gate on whether
      * the family's forbidden set is consulted, not a third {@link CarrierFamily}: the family stays
@@ -713,7 +699,7 @@ class BuildContext {
     }
 
     /**
- * The {@code @service}-carrier variant of {@link #scanStructuralDmlPayload}. Identical
+     * The {@code @service}-carrier variant of {@link #scanStructuralDmlPayload}. Identical
      * structural walk, but {@code @splitQuery} on the data field does not route the type away from
      * the carrier mold (on a producer-backed carrier the data field's fetcher already runs a
      * PK-keyed follow-up SELECT off the producer's record, so the directive is redundant rather
@@ -754,8 +740,7 @@ class BuildContext {
     }
 
     /**
- * The would-admit-but-for-the-directive probe. Answers exactly the question the
-     * misdirected "use ID or a @table type" diagnostic fails to: would {@code payloadSdlName} classify
+     * The would-admit-but-for-the-directive probe: would {@code payloadSdlName} classify
      * as a DML carrier were it not for a forbidden directive on its data field, and if so, which
      * directive (on which field) blocked it?
      *
@@ -764,7 +749,7 @@ class BuildContext {
      * structurally valid DML carrier in every respect except the forbidden directive; the offending
      * directive is read off the admitted data field (the first
      * {@link #FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES} entry the field carries) and returned,
-     * {@code @}-prefixed. Reading it off the admitted field is a single-field lookup, not a re-walk.
+     * {@code @}-prefixed.
      * If the {@code IGNORE} pass {@code Reject}s or is {@code NotApplicable}, the directive is not the
      * sole blocker (the type has a different or additional problem) and the result is empty, so the
      * caller falls through to its generic diagnostic. The family stays {@code DML}, so the question is
@@ -824,9 +809,8 @@ class BuildContext {
             }
             // Forbidden-directives check. The listed directives signal a different fetcher
             // contract than a payload carrier's data-field path, so their presence routes the
-            // type away from the DML-payload mold. Note: @field is intentionally NOT on this
-            // list (the @field-on-non-$source HardReject was retired, the SettKvotesporsmal
-            // bug fix). Pure-metadata directives (@deprecated, custom directives without
+            // type away from the DML-payload mold. @field is intentionally NOT on this list.
+            // Pure-metadata directives (@deprecated, custom directives without
             // execution semantics) pass through. Skipped under IGNORE so
             // diagnoseForbiddenCarrierDirective can establish would-admit-but-for-the-directive.
             if (policy == ForbiddenDirectivePolicy.ENFORCE) {
@@ -839,9 +823,9 @@ class BuildContext {
             String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
             // Registry-free look-ahead at the payload data field's element type, not
             // types.get: this scan runs during field classification (and via carrierTableBinding), when
-            // the element composite may not be registered yet. lookAheadVerdict reproduces the verdict;
-            // the element is a @table or record-bound type (classifyType non-null), so the look-ahead
-            // resolves without recursing back through carrierTableBinding.
+            // the element composite may not be registered yet. A recognized element is a @table or
+            // record-bound type (classifyType non-null), so the look-ahead resolves without recursing
+            // back through carrierTableBinding.
             var elementType = typeBuilder.lookAheadVerdict(elementTypeName);
             DmlElementKind kind;
             if (elementType instanceof GraphitronType.TableBackedType tbt) {
@@ -849,11 +833,8 @@ class BuildContext {
             } else if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
                 kind = new DmlElementKind.RecordElement(f.getName());
             } else if ("ID".equals(elementTypeName)) {
-                // ID-element wrapper-shape rules, per carrier family (see CarrierFamily). DML
-                //: list-of-nullable ([ID]) and Connection wrappers reject on
-                // payload-returning DELETE; test fixtures pin these diagnostic wordings.
-                // SERVICE: [ID] admits (the opptak fjernSakTagger shape); Connection
-                // still rejects.
+                // ID-element wrapper-shape rules, per carrier family (see CarrierFamily);
+                // test fixtures pin these diagnostic wordings.
                 var wrapper = buildWrapper(f);
                 if (family == CarrierFamily.DML
                         && wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list
@@ -1037,7 +1018,7 @@ class BuildContext {
      *
      * <p>{@code terminalTargetVerdict} is the typed outcome of Check 1 (does the path's terminal
      * hop land on the field return type's {@code @table}?), exposed as a small sealed projection
- * so the LSP layer can render the verdict without re-parsing
+     * so the LSP layer can render the verdict without re-parsing
      * {@link #errorMessage()}. It is {@link TerminalTargetVerdict.Mismatch} when the terminal hop
      * lands on the wrong table, {@link TerminalTargetVerdict.Match} when it lands correctly, and
      * {@link TerminalTargetVerdict.NotApplicable} when the check did not run (no table-backed
@@ -1192,9 +1173,8 @@ class BuildContext {
      * candidate hint mirrors whichever the author used (detected by the {@code __} separator in
      * {@code fkName}); a suggestion never reads as a different namespace than the one they typed.
      * This matches {@link #fkCandidateNames} on the path-element hint surface. The candidate set
-     * here is still the whole catalog rather than scoped to the structurally relevant FKs; scoping
-     * this sibling needs a source table threaded through its call sites and is tracked as a
-     * follow-up (see {@code fk-key-hint-sibling-scope}).
+     * here is the whole catalog, not scoped to the structurally relevant FKs (no source table is
+     * threaded through these call sites).
      */
     Rejection unknownForeignKeyRejection(String fkName) {
         boolean constantNamespace = fkName.contains("__");
@@ -1206,7 +1186,7 @@ class BuildContext {
 
     /**
      * Builds the {@link Rejection} for a {@code @reference(key:)} name that matches an FK constraint
- * name present in more than one schema. Symmetric to {@link #unknownTableRejection}'s
+     * name present in more than one schema. Symmetric to {@link #unknownTableRejection}'s
      * ambiguity arm: an {@link Rejection.AuthorError.Structural} rule violation, not a "did you
      * mean" candidate lookup (the author spelled a real name; what they need is to scope it, not a
      * typo fix). Names the colliding schemas and the schema-qualified forms so the fix is actionable.
@@ -1229,11 +1209,11 @@ class BuildContext {
 
     /**
      * The connection invariant both author-facing {@code @reference(key:)} sites share: a resolved
-     * FK must have an endpoint on the table the author is standing on. Now that a {@code key:} value
+     * FK must have an endpoint on the table the author is standing on. A {@code key:} value
      * can schema-qualify to an FK in a <em>different</em> schema than the source (see
-     * {@link JooqCatalog#findForeignKey(String, String, String)}), "the FK resolves but does not
+     * {@link JooqCatalog#findForeignKey(String, String, String)}), so "the FK resolves but does not
      * touch this table" is reachable at both the {@code {key:}} path element and the explicit
-     * record-FK site, so the check lives here as the single enforcer rather than as two half-copies.
+     * record-FK site; the check lives here as the single enforcer.
      *
      * <p>Returns the "does not connect" rejection message when {@code fk} misses
      * {@code sourceSqlName}; empty when it connects, or when {@code sourceSqlName} is {@code null}
@@ -1287,7 +1267,7 @@ class BuildContext {
      * verdict is always {@link TerminalTargetVerdict.NotApplicable}. It is for sites that either
      * pass a null target (no terminal-target invariant to check) or do not carry the resolved
      * return {@link TableRef}; sites that hold the ref call the {@code returnTableRef}-carrying
- * overloads so {@link #computeTerminalTargetVerdict} can compare identity.
+     * overloads so {@link #computeTerminalTargetVerdict} can compare identity.
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName) {
@@ -1296,7 +1276,7 @@ class BuildContext {
 
     /**
      * Variant of {@link #parsePath} that carries the resolved return-type {@link TableRef} for the
- * terminal-target verdict, without the list-cardinality signal. The {@code returnTableRef}
+     * terminal-target verdict, without the list-cardinality signal. The {@code returnTableRef}
      * is name/identity's second orthogonal projection of the return table: {@code targetSqlTableName}
      * stays the input to the name-based plumbing (empty-path FK inference, condition-join terminal
      * build), while the ref is consumed only by {@link #computeTerminalTargetVerdict}, which compares
@@ -1402,7 +1382,7 @@ class BuildContext {
      * shape as {@link #parsePath} — resolved {@link JoinStep}s, an error message, and the
      * terminal-target verdict against {@code returnTableRef}.
      *
- * <p>This is the {@code @referenceFor} entry point: unlike {@link #parsePath} it does
+     * <p>This is the {@code @referenceFor} entry point: unlike {@link #parsePath} it does
      * <em>not</em> read {@code @reference} applications off a container (the caller supplies the
      * element list from one {@code @referenceFor} application's {@code path:} argument), and it does
      * <em>not</em> apply empty-path FK auto-discovery — a {@code @referenceFor} application states a
@@ -1478,7 +1458,7 @@ class BuildContext {
     }
 
     /**
- * Parses one {@code @reference} application inside a routine chain into its resolved
+     * Parses one {@code @reference} application inside a routine chain into its resolved
      * hops. The chain walker in {@code FieldBuilder} ({@code walkRoutineChain}, shared by the
      * root and child chain classifiers) calls this per application with the running source
      * table and a running {@code stepIndexBase} (chain-wide {@code fieldName + "_" + N}
@@ -1543,7 +1523,7 @@ class BuildContext {
      * (null start) and input-field sites (null return table) are excluded — their paths are not the
      * {@code $fields(terminalAlias)} projection this invariant protects.
      *
- * <p>The FK-derived arm compares the terminal hop's target against {@code returnTableRef}
+     * <p>The FK-derived arm compares the terminal hop's target against {@code returnTableRef}
      * by jOOQ table-class identity ({@link TableRef#denotesSameTableAs}), not the verbatim
      * {@code returnSqlTableName} echo. Both sides are catalog-constructed, so a schema-qualified
      * return {@code @table} (e.g. {@code multischema_a.widget}) matches the hop's unqualified
@@ -1567,8 +1547,7 @@ class BuildContext {
                 case On.Predicate ignored -> new TerminalTargetVerdict.Match();
                 // @reference path parsing never mints a lateral routine hop; routine
                 // chains are landed by FieldBuilder's chain interception, whose terminus
-                // invariant lives in FieldBuilder.routineChainVerdict (the resolver went
-                // position-agnostic and no longer owns the check).
+                // invariant lives in FieldBuilder.routineChainVerdict.
                 case On.Lateral ignored -> throw new IllegalStateException(
                     "On.Lateral is never produced by @reference path parsing; routine-node "
                     + "terminus checking lives in FieldBuilder.routineChainVerdict, not this gate.");
@@ -1617,7 +1596,7 @@ class BuildContext {
         boolean fkOnSource = catalog.foreignKeyOnSource(f, sourceSqlName, selfRefFkOnSource);
         // Both endpoints are resolved by jOOQ class identity off the FK object, never by bare
         // SQL name. The FK already pins the exact target and origin Table classes, so two schemas
-        // sharing a bare table name no longer yield Ambiguous here, and the orientation (fkOnSource,
+        // sharing a bare table name cannot yield Ambiguous here, and the orientation (fkOnSource,
         // itself identity-based) picks which endpoint is the target.
         var targetJooq = fkOnSource ? f.getKey().getTable() : f.getTable();
         var originJooq = fkOnSource ? f.getTable() : f.getKey().getTable();
@@ -1665,17 +1644,16 @@ class BuildContext {
      * {@code getKey().getFields()} returns the referenced {@code UniqueKey}'s <em>own</em> declaration
      * order, which for an FK whose referenced-column ordering differs from the parent PK's declaration
      * order (e.g. {@code PRIMARY KEY (a, b, c)} referenced as {@code REFERENCES parent (b, c, a)}) does
-     * NOT pair positionally with {@code getFields()}. Zipping the two non-parallel lists produced silent
-     * mis-paired slots — observable as {@code Field<X>.eq(Field<Y>)} compile errors in generated JOIN ON
- * predicates when the FK column types are heterogeneous, and as values decoded into the wrong
+     * NOT pair positionally with {@code getFields()}. Zipping the two non-parallel lists silently
+     * mis-pairs slots: {@code Field<X>.eq(Field<Y>)} compile errors in generated JOIN ON
+     * predicates when the FK column types are heterogeneous, and values decoded into the wrong
      * record columns. See {@code SynthesizeFkJoinReorderedKeysTest}.
      *
      * @param fkOnSource the FK orientation, decided once by the caller via
      *     {@link JooqCatalog#foreignKeyOnSource}: {@code true} when the source table is the FK-child
-     *     (referencing) side, {@code false} when it is the referenced-key side. Collapsing the
-     *     orientation decision into a single precomputed boolean keeps the FK source-side predicate
-     *     in exactly one place ({@code JooqCatalog.foreignKeyOnSource}); this method no longer
-     *     recomputes it from raw endpoint names, so a schema-qualified source no longer mis-orients
+     *     (referencing) side, {@code false} when it is the referenced-key side. The orientation
+     *     predicate lives only in {@code JooqCatalog.foreignKeyOnSource}; this method never
+     *     recomputes it from raw endpoint names, so a schema-qualified source cannot mis-orient
      *     the slot pairing.
      */
     List<JoinSlot.FkSlot> resolveFkSlots(ForeignKey<?, ?> f, boolean fkOnSource) {
@@ -1710,8 +1688,7 @@ class BuildContext {
      *       join on a {@code condition:}).</li>
      * </ul>
      *
-     * <p>Matching a non-PK unique key is a possible extension ("name-matched target UK, PK
-     * default"); day one is PK-only, with {@code condition:} as the escape hatch.
+     * <p>Matching is PK-only; {@code condition:} is the escape hatch.
      */
     private void synthesizeNameMatchedJoin(String targetTableName, String currentSourceSqlName,
             String fieldName, int stepIndex, JoinConditionRef whereFilter,
@@ -1759,8 +1736,8 @@ class BuildContext {
     }
 
     /**
-     * Sub-taxonomy of outcomes for {@link #synthesizeFkJoin}. Lifts the prior
-     * {@code Optional}-returning shape into a typed switch over the three catalog-failure shapes
+     * Sub-taxonomy of outcomes for {@link #synthesizeFkJoin}: a typed switch over the
+     * catalog-failure shapes
      * an FK-join construction can hit. Diagnostic builders read the carried failure data
      * directly: {@link UnknownTable#failure} routes through {@link #unknownTableRejection};
      * {@link UnknownForeignKey#fkName} routes through {@link #unknownForeignKeyRejection}.
@@ -2042,7 +2019,7 @@ class BuildContext {
      * field given its already-built joinPath. {@code OnFkSlots} for a filter-less FK first hop
      * (an {@code On.ColumnPairs} {@link JoinStep.Hop});
      * {@code OnParentJoin} (the parent-anchor arm) when the first hop is a condition method
- * <em>or</em> carries a hop-0 {@code filter()}; {@code OnLateralArgs} for a lateral
+     * <em>or</em> carries a hop-0 {@code filter()}; {@code OnLateralArgs} for a lateral
      * routine head. The grain follows the arm via
      * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation#parentKeyColumns()}, so this one
      * choice fixes both correlation topology and batch grain.
@@ -2070,8 +2047,8 @@ class BuildContext {
         // plus ParentCorrelation.OnLiftedSlots directly). A filter-less FK head mirrors to
         // OnFkSlots and a lateral head to OnLateralArgs; a condition-join head OR any hop-0 filter
         // lands the parent-anchor arm (OnParentJoin), because a hop-0 filter reads the parent row
-        // and so needs both the parent-PK grain and a parent alias to bind its source parameter
-        //. A new On arm is a compile error here rather than a runtime throw in a constructor.
+        // and so needs both the parent-PK grain and a parent alias to bind its source parameter.
+        // A new On arm is a compile error here rather than a runtime throw in a constructor.
         return switch (joinPath.get(0)) {
             case JoinStep.Hop hop -> switch (hop.on()) {
                 case On.ColumnPairs ignored -> {
@@ -2185,7 +2162,7 @@ class BuildContext {
     }
 
     /**
- * Check 2 for a {@link JoinStep.Hop#filter()}: the filter method is emitted as
+     * Check 2 for a {@link JoinStep.Hop#filter()}: the filter method is emitted as
      * {@code filter(sourceAlias, targetAlias)} by {@code JoinPathEmitter.emitTwoArgMethodCall},
      * with source = the hop's {@code originTable} and target = its {@code targetTable}, both
      * already resolved by {@code synthesizeFkJoin}. A no-op when the hop carries no filter.
@@ -2197,7 +2174,7 @@ class BuildContext {
     }
 
     /**
- * Check 2: a two-argument condition method the path emits is called positionally as
+     * Check 2: a two-argument condition method the path emits is called positionally as
      * {@code method(sourceAlias, targetAlias)}. When the author <em>concretely</em> types a table
      * parameter (e.g. {@code aCondition(NotB src, C tgt)}), it must agree with the table the
      * emitter will hand it, or the generated source fails javac with an incompatible-types error
@@ -2229,7 +2206,7 @@ class BuildContext {
      * {@code Table<?>}, or the concrete type does not resolve to a catalog table. Reuses
      * {@link #resolveConditionJoinTarget}'s {@code Class.forName} +
      * {@link JooqCatalog#findTableByClass} machinery and the wildcard predicate. The final compare
- * is jOOQ class identity via {@link TableRef#denotesSameTableAs}: both operands are
+     * is jOOQ class identity via {@link TableRef#denotesSameTableAs}: both operands are
      * catalog-built refs, so schema-qualified {@code @table} echoes match their unqualified jOOQ
      * canonical names and same-named tables across schemas stay distinct.
      */
@@ -2365,8 +2342,7 @@ class BuildContext {
      * container. Returns {@code null} when the directive is absent or could not be parsed
      * (e.g. missing {@code className}/{@code method}).
      *
-     * <p>Moved from {@code FieldBuilder} (was private) so both {@link FieldBuilder} and
-     * {@link TypeBuilder} can reach it via {@code ctx}.
+     * <p>Shared by {@link FieldBuilder} and {@link TypeBuilder} via {@code ctx}.
      */
     ConditionDirective readConditionDirective(GraphQLDirectiveContainer container) {
         var dir = container.getAppliedDirective(DIR_CONDITION);
@@ -2438,19 +2414,19 @@ class BuildContext {
      * an {@link InputFieldResolution}: either a fully classified {@link InputField} variant
      * (possibly with a {@code condition}) or an unresolved result with a diagnostic message.
      *
-     * <p>Extracted from {@code TypeBuilder.buildInputField} so both {@link TypeBuilder}
-     * (type-build pass, {@code @table} inputs) and {@link FieldBuilder} (argument-classify pass,
-     * plain inputs) share the same decision tree.
+     * <p>Shared by {@link TypeBuilder} (type-build pass, {@code @table} inputs) and
+     * {@link FieldBuilder} (argument-classify pass,
+     * plain inputs): one decision tree for both.
      *
      * <p>Condition reflection failures append to {@code errors} and leave the
      * {@code condition} field empty — the field still classifies as its structural variant.
      * Column-miss and path-resolution failures return {@link InputFieldResolution.Unresolved}.
      *
- * <p>{@code ctx} bundles the structural facts threaded through recursive descent that
+     * <p>{@code ctx} bundles the structural facts threaded through recursive descent that
      * a single field's local view cannot recover: {@link ClassifyContext#expandingTypes} guards
      * against circular plain-input nesting (callers start with {@link ClassifyContext#root()}),
-     * and {@link ClassifyContext#enclosingOverride} threads the cascade flag for future-growth
-     * axes. The classifier's variant decisions today do not branch on {@code enclosingOverride}
+     * and {@link ClassifyContext#enclosingOverride} threads the cascade flag.
+     * The classifier's variant decisions do not branch on {@code enclosingOverride}
      * (column-miss uniformly lifts to {@link InputField.UnboundField}); the consumer's
      * cascade-aware switch reads the carrier plus its own call-site {@code enclosingOverride}.
      */
@@ -2580,8 +2556,7 @@ class BuildContext {
         // table has KjerneJooqGenerator node metadata. Runs before column lookup so
         // @field(name: "X_ID") fields are intercepted before the case-insensitive column match
         // would shadow the qualifier reverse-map. The shim routes to the same column-shaped
-        // carriers as the canonical [ID!] @nodeId(typeName: T) branch above. The shim is on
-        // a retirement track.
+        // carriers as the canonical [ID!] @nodeId(typeName: T) branch above.
         if ("ID".equals(typeName)
                 && !field.hasAppliedDirective(DIR_NODE_ID)
                 && !field.hasAppliedDirective(DIR_REFERENCE)) {
@@ -2745,7 +2720,7 @@ class BuildContext {
      * construction.
      *
      * <p>Failure mode for the decode helper is fixed at
- * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch}: an
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch}: an
      * authored input-field {@code @nodeId} filter leaf throws a {@code GraphitronClientException}
      * on a malformed or wrong-type encoded id rather than silently dropping it to "no row matches".
      * This matches the argument-level filter leaves in {@link FieldBuilder#classifyArgument}; the
@@ -2844,15 +2819,8 @@ class BuildContext {
      *       rejection rather than a {@code decode<typeId>} call the encoder never generates.</li>
      *   <li>No {@code @node} backs it (orphan-input / synthesis-shim case): fall back to the
      *       metadata's {@code typeId} as the helper suffix. Only reachable through the synthesis
-     *       shim, on a retirement track.</li>
+     *       shim.</li>
      * </ul>
-     *
-     * <p>Previously this routed through {@code findGraphQLTypeForTable}, an all-{@code @table} index,
-     * which counted the nesting-projection types and so returned empty (ambiguous) for a table
-     * backed by a {@code @node} plus a projection type. That sent decode resolution to the typeId
-     * fallback, which agrees with the encoder only when {@code typeId} equals the type name; a
-     * customized numeric {@code @node(typeId:)} then emitted a {@code decode<typeId>} call javac
-     * could not resolve.
      */
     no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForTable(
             String sqlTableName,
@@ -2875,7 +2843,7 @@ class BuildContext {
         }
         // No @node backs this table (orphan-input / synthesis-shim case: an `input Foo @table(...)`
         // with catalog NodeId metadata but no @node SDL type). Fall back to the metadata's typeId as
-        // the helper suffix; only reachable through the synthesis shim, on a retirement track.
+        // the helper suffix; only reachable through the synthesis shim.
         if (fallbackTypeId == null || fallbackTypeId.isBlank()) return null;
         var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
@@ -2887,8 +2855,8 @@ class BuildContext {
     /**
      * Resolved NodeType key metadata for a {@code @nodeId(typeName:)} target: the wire-format
      * {@code typeId} plus the key {@link ColumnRef} list, or an {@code error} message when none of
-     * the three resolution sources (catalog metadata, a post-first-pass {@link NodeType} in
-     * {@code types}, or {@code @node} on the SDL with PK columns from the catalog) produce a usable
+     * the three resolution sources (catalog metadata, the {@link NodeIndex} entry,
+     * or {@code @node} on the SDL with PK columns from the catalog) produce a usable
      * pair. Shared shape: both {@link NodeIdLeafResolver#resolve} and
      * {@link #resolveNodeIdRecordDecode} read their key columns through {@link #resolveTargetKeys},
      * so the {@code @node(keyColumns:)} fallback lives in exactly one place.
@@ -2896,11 +2864,10 @@ class BuildContext {
     record TargetKeys(String typeId, List<ColumnRef> keyColumns, String error) {}
 
     /**
-     * Resolves the target table's NodeType metadata: prefers catalog metadata, falls back to a
-     * post-first-pass {@link NodeType} in {@code types}, then to {@code @node} on the SDL with PK
+     * Resolves the target table's NodeType metadata: prefers catalog metadata, falls back to the
+     * {@link NodeIndex} entry, then to {@code @node} on the SDL with PK
      * columns from the catalog. Returns an error message when none of those produce a usable
-     * {@code typeId} + {@code keyColumns} pair. Lifted from {@code NodeIdLeafResolver} so the
-     * input-bean jOOQ-record path ({@link #resolveNodeIdRecordDecode}) shares the same fallback.
+     * {@code typeId} + {@code keyColumns} pair.
      */
     TargetKeys resolveTargetKeys(GraphQLObjectType targetObj, String refTypeName,
                                  String targetTableName) {
@@ -2996,7 +2963,7 @@ class BuildContext {
 
     /**
      * Outcome of resolving the FK child columns <em>on a record</em> that a cross-table
- * {@code @nodeId} reference loads its decoded values into. {@link Resolved} carries the
+     * {@code @nodeId} reference loads its decoded values into. {@link Resolved} carries the
      * target columns aligned to node-key (decode) order; {@link Rejected} carries a formatted reason.
      */
     sealed interface RecordFkTargets {
@@ -3006,9 +2973,8 @@ class BuildContext {
 
     /**
      * Resolves the FK child columns on {@code recordTable} that a cross-table FK-reference
- * {@code @nodeId} populates: the decoded node-key values load into the foreign key's child
-     * columns on the record. This is legacy {@code NodeIdReferenceHelpers.mapKeyColumnsThroughForeignKey}
-     * expressed in the rewrite's model.
+     * {@code @nodeId} populates: the decoded node-key values load into the foreign key's child
+     * columns on the record.
      *
      * <p>FK selection: an explicit {@code @reference(key:)} ({@code explicitFkKey}) names the FK
      * verbatim via {@link JooqCatalog#findForeignKey(String, String)} (scoped by the record table);
@@ -3018,7 +2984,7 @@ class BuildContext {
      * the FK object). Zero or multiple such FKs reject through {@link #fkCountMessage}, asking the
      * author to add {@code @reference(key:)}.
      *
-     * <p>Column reconciliation is <em>by column identity, not position</em> (D3): the decoded values
+     * <p>Column reconciliation is <em>by column identity, not position</em>: the decoded values
      * arrive in node-key order ({@code nodeKeyColumns}), while {@link #resolveFkSlots} returns the
      * pairs in the FK's own declaration order. For each node key column, the slot whose parent
      * ({@code targetSide}) column equals it contributes its child ({@code sourceSide}) column, so the

@@ -14,36 +14,26 @@ import java.util.List;
  * Projects {@code @lookupKey}-bearing scalar arguments and {@code @table}-input field bindings
  * into a {@link LookupMapping} for the target table. Sibling to {@link OrderByResolver}.
  *
- * <p>This resolver reads only the classified {@link ArgumentRef} variants — the classifier is the
+ * <p>This resolver reads only the classified {@link ArgumentRef} variants; the classifier is the
  * single source of truth for which arguments contribute to a lookup mapping. The projection is
  * total: every input shape produces a {@link ColumnMapping}, possibly with an empty {@code args()}
  * list. The empty-mapping invariant ("@lookupKey declared but no argument resolved to a lookup
  * column") is enforced at the {@link FieldBuilder} call site, not here, because it consults
  * caller-side state (the field-level {@code @lookupKey} signal and the accumulating errors list).
  *
- * <p>Three {@code ColumnMapping.LookupArg} arms are produced:
- * <ul>
- *   <li>{@link ColumnMapping.LookupArg.ScalarLookupArg} — single-column scalar
- *       {@code @lookupKey} args (single-column {@link ArgumentRef.ScalarArg.ColumnBackedArg}).</li>
- *   <li>{@link ColumnMapping.LookupArg.DecodedRecord} — composite-PK NodeId scalar
- *       {@code @lookupKey} args (composite {@link ArgumentRef.ScalarArg.ColumnBackedArg}). Decode runs
- *       once per row at the arg layer; positional {@link InputColumnBinding.RecordBinding}s
- *       index the resulting {@code Record<N>}. Failure mode is
- *       {@link CallSiteExtraction.ThrowOnMismatch} — null returns surface as
- *       {@code GraphqlErrorException} via {@code LookupValuesJoinEmitter}'s per-row throw.</li>
- *   <li>{@link ColumnMapping.LookupArg.MapInput} — composite-key
- *       {@link ArgumentRef.InputTypeArg.TableInputArg} where each
- *       {@link InputColumnBinding.MapBinding} contributes one slot. List cardinality lives on
- *       the outer arg; individual input fields are guaranteed scalar by
- *       {@code FieldBuilder#buildLookupBindings}.</li>
- * </ul>
+ * <p>Downstream facts not visible here: a {@link ColumnMapping.LookupArg.DecodedRecord} decodes
+ * once per row at the arg layer, with positional {@link InputColumnBinding.RecordBinding}s
+ * indexing the resulting {@code Record<N>}; a null decode surfaces as
+ * {@code GraphqlErrorException} via {@code LookupValuesJoinEmitter}'s per-row throw
+ * ({@link CallSiteExtraction.ThrowOnMismatch}). For a
+ * {@link ColumnMapping.LookupArg.MapInput}, list cardinality lives on the outer arg and
+ * individual input fields are guaranteed scalar by {@code FieldBuilder#buildLookupBindings}.
  *
- * <p>Non-lookup-key args are ignored. {@link ArgumentRef.InputTypeArg.TableInputArg} args with no
- * {@code @lookupKey}-bearing input fields ({@code fieldBindings().isEmpty()}) are ignored as well
- * since they don't contribute to the mapping; the field still validates and generates correctly
- * via {@link no.sikt.graphitron.rewrite.model.GeneratedConditionFilter} or the standard filter
+ * <p>A {@link ArgumentRef.InputTypeArg.TableInputArg} with no {@code @lookupKey}-bearing input
+ * fields contributes nothing here, but the field still validates and generates correctly via
+ * {@link no.sikt.graphitron.rewrite.model.GeneratedConditionFilter} or the standard filter
  * path. {@link no.sikt.graphitron.rewrite.model.LookupField} variants must have at least one
- * column; that invariant is enforced by {@code projectForFilter} before the field is constructed
+ * column; {@code projectForFilter} enforces that invariant before the field is constructed
  * as a {@code LookupField} variant.
  */
 final class LookupMappingResolver {
@@ -63,9 +53,8 @@ final class LookupMappingResolver {
                     args.add(new ColumnMapping.LookupArg.ScalarLookupArg(
                         ca.name(), ca.columns().get(0), ca.extraction(), ca.list()));
                 case ArgumentRef.ScalarArg.ColumnBackedArg cca when cca.isLookupKey() -> {
-                    // Composite arm: decode once per row into a Record<N>; bindings index it
-                    // positionally. The NodeIdDecodeKeys extraction is guaranteed by the
-                    // carrier's constructor invariant.
+                    // The cast is safe: the carrier's constructor guarantees composite
+                    // ColumnBackedArgs carry a NodeIdDecodeKeys extraction.
                     var bindings = new ArrayList<InputColumnBinding.RecordBinding>();
                     for (int i = 0; i < cca.columns().size(); i++) {
                         bindings.add(new InputColumnBinding.RecordBinding(i, cca.columns().get(i)));
@@ -75,13 +64,8 @@ final class LookupMappingResolver {
                         (CallSiteExtraction.NodeIdDecodeKeys) cca.extraction(), bindings));
                 }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    // The TIA's groups may be a mix of MapGroup (scalar @lookupKey on a
-                    // single-column ColumnBackedField, possibly NodeIdDecodeKeys-extracted) and
-                    // DecodedRecordGroup (composite-PK @lookupKey on a composite
-                    // ColumnBackedField). MapGroups flatten into
-                    // one MapInput rooted at the outer arg name (slot order = group order, then
-                    // binding order within each group); each DecodedRecordGroup becomes its own
-                    // DecodedRecord LookupArg sharing the same outer arg name and list flag.
+                    // MapInput slot order is a contract: group order, then binding order
+                    // within each group.
                     var mapBindings = new ArrayList<InputColumnBinding.MapBinding>();
                     for (var g : tia.fieldBindings()) {
                         switch (g) {

@@ -13,45 +13,41 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The level-1 method-name closure walk over one generation run's emitted
+ * The method-name closure walk over one generation run's emitted
  * {@link TypeSpec}s. The emit target is a graph of Java methods calling each other by name
  * (the unit is the emitted method); this walk extracts that graph's two relations from
- * the current emit artifact and exposes the referential-integrity violations:
+ * the emit artifact and exposes the referential-integrity violations:
  *
  * <ul>
  *   <li><b>Node relation</b>: every method the emit declares, keyed by
  *       {@code (unit FQCN, nested-type path, method name)} ({@link #declaredMethods()}).</li>
  *   <li><b>Edge relation</b>: every <em>statically-qualified</em> call reference from one
- *       generated unit to a generated class — {@code GeneratedClass.method(...)},
+ *       generated unit to a generated class: {@code GeneratedClass.method(...)},
  *       {@code Generated.Nested.method(...)}, a fully-qualified form, or a
  *       {@code GeneratedClass::method} method reference ({@link #edges()}).</li>
  *   <li><b>Violations</b>: edges whose callee name resolves to a generated class but to no
- *       method that class declares ({@link #unresolved()}). Closure under reference — thread I's
- *       invariant at level 1 — is {@code unresolved().isEmpty()}.</li>
+ *       method that class declares ({@link #unresolved()}). Closure under reference is
+ *       {@code unresolved().isEmpty()}.</li>
  * </ul>
  *
- * <p><b>Level-1 scope.</b> This is the characterization form of the oracle: it walks the emit
- * artifact, not the model, so it is valid before any re-platforming and survives it as the
- * harness. The bidirectional form (every emitted method is exactly one command's
- * output; every callee resolves to a <em>committed command</em>) needs the command/name registry
- * and lands with the emit slices, first populated for the reentry family. Two documented
- * blind spots at this level, both closed by javac in the compilation tier and by the level-2
- * registry later: unqualified same-class calls (rendered with no class qualifier, so no
- * generated-name token to resolve), and instance calls through variables (the qualifier is a
- * value, not a class name). The load-bearing cross-unit seams — {@code $fields}, the
- * rows-methods, scatter, conditions, order-by, bean/record instantiation — are all
- * class-qualified static calls and are all visible to this walk; the oracle test pins that
- * visibility so a scan regression cannot go silently green.
+ * <p><b>Scope.</b> The walk reads the emit artifact, not the model, so it is independent of how
+ * the emitted names were derived. Two blind spots, both closed by javac in the compilation tier:
+ * unqualified same-class calls (rendered with no class qualifier, so no generated-name token to
+ * resolve), and instance calls through variables (the qualifier is a value, not a class name).
+ * The load-bearing cross-unit seams ({@code $fields}, the rows-methods, scatter, conditions,
+ * order-by, bean/record instantiation) are all class-qualified static calls and are all visible
+ * to this walk; {@link MethodClosureOracleTest} pins that visibility so a scan regression cannot
+ * go silently green.
  *
  * <p><b>How references are detected.</b> Each unit is rendered through {@link JavaFile} (the
- * same render the writer ships), comments and string/char literals are blanked (a baked
- * code-in-string reference is level-2 registry material, and prose in javadoc or literals must
- * not phantom-edge), and qualified call chains are scanned. A chain's qualifier resolves to a
- * generated class through the rendered import list, the unit's own package (same-package
- * references have no import), or a full FQCN match — mirroring how javac itself will bind the
- * name. A middle segment that is not a nested type of the resolved class (an enum constant, a
- * static field whose value the call is on) makes the reference an instance read, not a static
- * callee, and is skipped. A {@code new}-prefixed match is a constructor, not a method callee.
+ * same render the writer ships), comments and string/char literals are blanked (prose in javadoc
+ * or literals must not phantom-edge), and qualified call chains are scanned. A chain's qualifier
+ * resolves to a generated class through the rendered import list, the unit's own package
+ * (same-package references have no import), or a full FQCN match, mirroring how javac itself
+ * binds the name. A middle segment that is not a nested type of the resolved class (an enum
+ * constant, a static field whose value the call is on) makes the reference an instance read,
+ * not a static callee, and is skipped. A {@code new}-prefixed match is a constructor, not a
+ * method callee.
  */
 final class EmittedMethodClosure {
 

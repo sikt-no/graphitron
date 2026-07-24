@@ -17,20 +17,20 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Generates the {@code EntityFetcherDispatch} class — the runtime dispatcher for the
+ * Generates the {@code EntityFetcherDispatch} class, the runtime dispatcher for the
  * Apollo Federation {@code Query._entities(representations:)} field.
  *
  * <p>Emitted only when the schema has at least one classified
  * {@link EntityResolution} entry. The generated class:
  * <ol>
- *   <li>{@code fetchEntities(env)} — reads {@code representations}, dispatches per
+ *   <li>{@code fetchEntities(env)}: reads {@code representations}, dispatches per
  *       {@code __typename} to a per-type handler, returns
  *       {@code CompletableFuture<List<Object>>} preserving exact rep order.</li>
- *   <li>{@code handle<TypeName>(reps, indices, env, result)} — for each rep, selects the
+ *   <li>{@code handle<TypeName>(reps, indices, env, result)}: for each rep, selects the
  *       most-specific resolvable {@link KeyAlternative}, decodes the rep into a column-value
  *       row (DIRECT: copy values; NODE_ID: {@code NodeIdEncoder.decodeValues}), and groups
  *       by alternative-index for batching.</li>
- *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)} — issues one SELECT per
+ *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)}: issues one SELECT per
  *       group via a {@code VALUES (idx, col1, col2, ...)} derived table joined to the type's
  *       jOOQ table, projecting {@code <TypeName>.$fields(...)} plus the literal
  *       {@code __typename} column. Result rows scatter back to original positions via the
@@ -41,11 +41,10 @@ import java.util.List;
  * inside the dispatched alternative resolve against the individual rep, not the outer
  * representations list.
  *
- * <p>{@code resolveType} is exposed as a separate static helper that reads the synthetic
- * {@code __typename} column projected on every entity row. Consumers who override
- * {@code fetchEntities} and return a non-{@link org.jooq.Record} shape get {@code null}
- * back (federation surfaces its own resolution-failure error); enriching the type-resolution
- * path is a follow-up.
+ * <p>{@code resolveType} is a separate static helper reading the synthetic {@code __typename}
+ * column projected on every entity row. Consumers who override {@code fetchEntities} and return
+ * a non-{@link org.jooq.Record} shape get {@code null} back; federation surfaces its own
+ * resolution-failure error.
  */
 public final class EntityFetcherDispatchClassGenerator {
 
@@ -57,8 +56,9 @@ public final class EntityFetcherDispatchClassGenerator {
     /**
      * Synthetic result-set column carrying the participant typename. The {@code __}-wrapping is a
      * deliberate collision-avoidance device (the alias shares the column namespace with
-     * consumer-controlled table columns), not the lazy dunder convention banned for Java locals; it
-     * reaches generated code as a string literal, so the dunder-identifier meta-test leaves it alone.
+     * consumer-controlled table columns), not the dunder convention banned for Java identifiers;
+     * it reaches generated code only as a string literal, which the dunder guard
+     * ({@code DunderFreeEmissionPipelineTest}) masks before scanning.
      */
     public static final String TYPENAME_COLUMN = "__typename";
 
@@ -125,7 +125,7 @@ public final class EntityFetcherDispatchClassGenerator {
         return List.of(spec.build());
     }
 
-    // ----- Method emitters (defined in companion methods below) -----
+    // ----- Method emitters -----
 
     private static MethodSpec buildFetchEntitiesMethod() {
         var b = CodeBlock.builder();
@@ -162,10 +162,9 @@ public final class EntityFetcherDispatchClassGenerator {
     }
 
     private static MethodSpec buildTypenameForTypeIdMethod(List<EntityResolution> entities) {
-        // Static initialised map, keyed by each @node entity's NodeId alternative expectedTypeId
-        // (which differs from the typename when the consumer set @node(typeId: ...)). Used by
-        // QueryNodeFetcher.rowsNodes after peekTypeId to recover the GraphQL typename for
-        // synthesising reps.
+        // Map keyed by each @node entity's NodeId expectedTypeId (differs from the typename when
+        // the consumer sets @node(typeId: ...)). Used by QueryNodeFetcher.rowsNodes after
+        // peekTypeId to recover the GraphQL typename for synthesising reps.
         var b = CodeBlock.builder();
         b.add("$T<String, String> $L = $T.ofEntries(",
             MAP, "MAP", MAP);
@@ -173,8 +172,7 @@ public final class EntityFetcherDispatchClassGenerator {
         for (var entity : entities) {
             // Only @node entities carry a NodeId alternative (exactly one: required == ["id"]);
             // @key-only entities have none. Its expectedTypeId is the wire prefix, keyed to the
-            // typename here. Inclusion ignores resolvable, matching the former nodeTypeId != null
-            // test (a @node type always had a non-null nodeTypeId regardless of resolvable).
+            // typename here. Inclusion deliberately ignores resolvable.
             var nodeId = entity.alternatives().stream()
                 .filter(a -> a instanceof KeyAlternative.NodeId)
                 .map(a -> (KeyAlternative.NodeId) a)
@@ -248,8 +246,6 @@ public final class EntityFetcherDispatchClassGenerator {
             .build();
     }
 
-    // Per-type handle methods and per-alternative select methods are emitted by the helpers
-    // below.
     private static MethodSpec buildHandleMethod(
         EntityResolution entity, String outputPackage, ClassName nodeIdEncoder,
         HandleMethodBody.TenantRouting routing
@@ -264,7 +260,7 @@ public final class EntityFetcherDispatchClassGenerator {
         return new SelectMethodEmitter(entity, alt, altIndex, outputPackage).build();
     }
 
-    // ----- Inner emitter classes (lightweight; minimal state) -----
+    // ----- Inner emitter classes -----
 
     private static final class HandleMethodEmitter {
         final EntityResolution entity;

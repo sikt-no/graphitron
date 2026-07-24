@@ -26,25 +26,22 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAMED_TYPE;
  *
  * <p>Parallel to {@code hover/DeclarationHovers} beside {@code hover/Hovers}: where
  * {@link Definitions} keys on the cursor sitting inside a directive argument and
- * resolves into the jOOQ-generated Java tree, this provider keys on the cursor
- * sitting on a {@code named_type} reference name outside any directive and resolves
- * into a workspace declaration. The two key off disjoint syntax (a {@code named_type}
+ * resolves into the jOOQ-generated Java tree, this provider keys on a
+ * {@code named_type} reference name outside any directive and resolves into a
+ * workspace declaration. The two key off disjoint syntax (a {@code named_type}
  * never appears inside a directive argument), so the definition handler chains them
  * with {@code .or()} rather than classifying up front.
  *
- * <p>Targets here live in the tree-sitter-parsed workspace files, so when an open
- * buffer declares the type the returned range is the real declaration-name span, not
- * the {@code 0:0} placeholder the jOOQ path is stuck with pending JavaParser.
- *
- * <p>When no open buffer declares the type, the resolution falls back to the
- * build snapshot's type-definition-location map ({@link LspSchemaSnapshot.Built#typeDefinitionLocations()},
- * projected from the {@code TypeDefinitionRegistry} in {@code CatalogBuilder.buildSnapshot}),
- * which covers every type in every schema file regardless of which buffers are open. The
- * open-buffer scan stays first and authoritative: a type being edited resolves to its live
- * tree-sitter span, not the last-built on-disk position. The snapshot is taken as an explicit
- * parameter (not read off the {@link Workspace}) so the fallback is unit-testable without a
- * full build; the production call site in {@code GraphitronTextDocumentService} passes
- * {@code workspace.snapshot()}.
+ * <p>When an open buffer declares the type, the returned range is the real
+ * declaration-name span from the tree-sitter parse, not the {@code 0:0} placeholder
+ * the jOOQ path returns. Otherwise resolution falls back to the build snapshot's
+ * {@link LspSchemaSnapshot.Built#typeDefinitionLocations()}, which covers every type
+ * in every schema file regardless of which buffers are open. The open-buffer scan
+ * stays first and authoritative: a type being edited resolves to its live
+ * tree-sitter span, not the last-built on-disk position. The snapshot is an explicit
+ * parameter (not read off the {@link Workspace}) so the fallback is unit-testable
+ * without a full build; the production call site in
+ * {@code GraphitronTextDocumentService} passes {@code workspace.snapshot()}.
  */
 public final class IntraSchemaDefinitions {
 
@@ -71,10 +68,8 @@ public final class IntraSchemaDefinitions {
             for (var entry : views.entrySet()) {
                 var file = entry.getValue();
                 // findDefinition returns empty for a file that does not declare the
-                // type, so it doubles as the per-file guard; the snapshot no longer
-                // carries declaredTypes to pre-filter (it exists only for the
-                // workspace's own under-lock mutators), and the walk is cheap at LSP
-                // open-file counts.
+                // type, so it doubles as the per-file guard; no pre-filter is needed
+                // because the walk is cheap at LSP open-file counts.
                 var nameNode = DeclarationKind.findDefinition(file.tree().getRootNode(), file.source(), typeName);
                 if (nameNode.isPresent()) {
                     return Optional.of(locationOf(entry.getKey(), nameNode.get(), file.source()));
@@ -87,9 +82,8 @@ public final class IntraSchemaDefinitions {
     /**
      * Workspace-wide fallback: resolve the type to its declaration position recorded in the
      * build snapshot when no open buffer declares it. Returns empty for an
-     * {@link LspSchemaSnapshot.Unavailable} snapshot or a type the map does not carry
-     * (built-in scalar, bundled-directive type, or a name the schema does not declare),
-     * preserving the prior no-op for the genuine no-target case.
+     * {@link LspSchemaSnapshot.Unavailable} snapshot or a name the map does not carry
+     * (built-in scalar, bundled-directive type, or a name the schema does not declare).
      */
     private static Optional<Location> snapshotFallback(LspSchemaSnapshot snapshot, String typeName) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();

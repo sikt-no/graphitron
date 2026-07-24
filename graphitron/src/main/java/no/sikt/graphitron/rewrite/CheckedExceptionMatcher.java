@@ -14,39 +14,21 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Declared-checked-exception match rule. Walks a method's declared exception list
- * (as fully-qualified class names captured from {@link java.lang.reflect.Method#getExceptionTypes()})
- * and verifies each non-exempt checked exception is covered by at least one handler on the
- * surrounding field's {@link ErrorChannel}, per the spec's match rule:
+ * Declared-checked-exception match rule: verifies each non-exempt checked exception a method
+ * declares (FQNs captured from {@link java.lang.reflect.Method#getExceptionTypes()}) is covered
+ * by at least one handler on the surrounding field's {@link ErrorChannel}. Coverage rationale
+ * the code does not show: {@link SqlStateHandler} and {@link VendorCodeHandler} cover any
+ * declared {@link java.sql.SQLException} subtype because both match any {@code SQLException}
+ * in the cause chain at runtime; {@link ValidationHandler} covers nothing here, it is a
+ * wrapper-side pre-execution flag that never participates in the catch arm's dispatch.
  *
- * <ul>
- *   <li>{@link ExceptionHandler}: covered when the declared exception class is assignable to
- *       the handler's {@code exceptionClassName} (the handler's class is a supertype of, or
- *       equal to, the declared class). E.g. {@code ExceptionHandler(SQLException)} covers a
- *       method declaring {@code throws SQLDataException}; a method declaring {@code throws
- *       Throwable} is covered only by {@code ExceptionHandler(Throwable)}.</li>
- *   <li>{@link SqlStateHandler} / {@link VendorCodeHandler}: cover any declared exception
- *       assignable to {@link java.sql.SQLException}, since both variants match any
- *       {@code SQLException} in the cause chain at runtime. A declared exception that is not a
- *       {@code SQLException} subclass is not covered by these variants alone.</li>
- *   <li>{@link ValidationHandler}: covers nothing in this matcher — it's a wrapper-side
- *       pre-execution flag and never participates in the catch arm's dispatch.</li>
- * </ul>
+ * <p>{@link InterruptedException} and {@link java.io.IOException} (and subclasses) are exempt:
+ * infrastructure errors that should redact rather than surface as a typed {@code @error}.
+ * Unchecked exceptions are skipped even when declared; they still flow through the catch arm
+ * at runtime. Behavior is covered by {@code CheckedExceptionClassificationTest}.
  *
- * <p>Exemptions: {@link InterruptedException} and {@link java.io.IOException} (and their
- * subclasses) are infrastructure errors that should redact rather than surface as a typed
- * {@code @error}; they are exempt from the match rule per the §4 "Special cases" subsection,
- * so a service method declaring {@code throws IOException} does not need a corresponding
- * channel handler.
- *
- * <p>Unchecked exceptions ({@link RuntimeException} subclasses) are also skipped — Java
- * doesn't require them in {@code throws} clauses, but a method may declare them anyway
- * (e.g. {@code throws IllegalArgumentException}). The §4 check applies to checked exceptions
- * only; unchecked throws still flow through the catch arm at runtime.
- *
- * <p>Returns a list of FQNs that were not covered. An empty list means every declared
- * checked exception is either exempt or covered. The classifier turns a non-empty list into
- * an {@code UnclassifiedField} with a descriptive reason.
+ * <p>The classifier turns a non-empty result into an {@code UnclassifiedField} with a
+ * descriptive reason.
  */
 final class CheckedExceptionMatcher {
 
@@ -87,11 +69,6 @@ final class CheckedExceptionMatcher {
         return List.copyOf(unmatched);
     }
 
-    /**
-     * A class is "checked" when it is a {@link Throwable} but not a {@link RuntimeException}
-     * (or {@link Error}, but Java forbids declaring those in {@code throws} anyway, so this
-     * branch is defensive). Used to filter declared exceptions before the match-rule walk.
-     */
     private static boolean isChecked(Class<?> ex) {
         if (!Throwable.class.isAssignableFrom(ex)) return false;
         if (RuntimeException.class.isAssignableFrom(ex)) return false;
@@ -100,8 +77,7 @@ final class CheckedExceptionMatcher {
     }
 
     /**
-     * Per §4 "Special cases": {@link InterruptedException} and {@link IOException} (and their
-     * subclasses) are exempt. Schema authors who want explicit handling can still declare a
+     * Schema authors who want explicit handling of an exempt exception can still declare a
      * matching {@link ExceptionHandler}; the exemption only means the absence of one is not a
      * classifier error.
      */

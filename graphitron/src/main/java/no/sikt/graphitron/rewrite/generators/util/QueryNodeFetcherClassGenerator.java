@@ -14,30 +14,21 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Generates the {@code QueryNodeFetcher} class — the runtime dispatcher for the Relay
- * {@code Query.node(id: ID!): Node} field.
+ * Generates the {@code QueryNodeFetcher} class, the runtime dispatcher for the Relay
+ * {@code Query.node(id: ID!): Node} and {@code Query.nodes(ids: [ID!]!)} fields.
  *
  * <p>The emitted class lives next to the per-type {@code *Fetchers} classes for discoverability.
- * Its single static {@code getNode(env)} method:
- * <ol>
- *   <li>Reads the {@code id} argument from the {@link graphql.schema.DataFetchingEnvironment}.
- *       Null arguments and base64 decoding errors return {@code null} per the Relay
- *       "if no such object exists, the field returns null" contract — opacity says we never
- *       leak decoding errors back to the client.</li>
- *   <li>Extracts the {@code typeId} prefix via {@code NodeIdEncoder.peekTypeId(id)} (the
- *       generated decode helper next to {@link NodeIdEncoderClassGenerator}).</li>
- *   <li>Branches on the prefix. Each arm dispatches through {@code EntityFetcherDispatch}'s
- *       per-typeId {@code select<TypeName>Alt<N>} method, which SELECTs the requested fields
- *       (via the type's generated {@code TypeClass.$fields(...)}) plus a synthetic
- *       {@code __typename} column — read by the {@code Node} {@code TypeResolver} at scatter
- *       time — and joins on the decoded key columns.</li>
- *   <li>Unknown {@code typeId} returns {@code null}.</li>
- * </ol>
+ * The static {@code getNode(env)} method reads the {@code id} argument, extracts the
+ * {@code typeId} prefix via {@code NodeIdEncoder.peekTypeId(id)} (the generated decode helper
+ * next to {@link NodeIdEncoderClassGenerator}), and dispatches through
+ * {@code EntityFetcherDispatch.resolveByReps} (see {@link EntityFetcherDispatchClassGenerator}),
+ * which SELECTs the requested fields plus a synthetic {@code __typename} column read by the
+ * {@code Node} {@code TypeResolver} at scatter time. Null arguments, base64 decoding errors,
+ * and unknown {@code typeId}s all return {@code null} per the Relay "if no such object exists,
+ * the field returns null" contract; opacity says we never leak decoding errors back to the
+ * client.
  *
  * <p>Emitted only when at least one {@link NodeType} is classified for the schema.
- *
- * <p>{@code Query.node(id:)} dispatch shipped under {@code @nodeId} + {@code @node} directive
- * support; see {@code roadmap/changelog.md}.
  */
 public class QueryNodeFetcherClassGenerator {
 
@@ -49,7 +40,8 @@ public class QueryNodeFetcherClassGenerator {
      * Synthetic result-set column carrying the participant typename. The {@code __}-wrapping is a
      * deliberate collision-avoidance device (the alias shares the column namespace with
      * consumer-controlled table columns), not the lazy dunder convention banned for Java locals; it
-     * reaches generated code as a string literal, so the dunder-identifier meta-test leaves it alone.
+     * reaches generated code as a string literal, so the dunder-identifier meta-test
+     * ({@code DunderFreeEmissionPipelineTest}) leaves it alone.
      */
     public static final String TYPENAME_COLUMN           = "__typename";
     public static final String NODE_INTERFACE_NAME       = "Node";
@@ -91,7 +83,7 @@ public class QueryNodeFetcherClassGenerator {
 
         // fetchById: synthesise a single rep from id, dispatch through the entity dispatcher,
         // return the resolved Record (or null when typeId/decode/SELECT yields nothing).
-        // The dispatcher is now the single SELECT path for Query.node, Query.nodes, and
+        // The dispatcher is the single SELECT path for Query.node, Query.nodes, and
         // federation _entities.
         var fetchById = MethodSpec.methodBuilder("fetchById")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -139,7 +131,7 @@ public class QueryNodeFetcherClassGenerator {
         //
         // Assumes the DataLoaderRegistry is request-scoped (the standard graphql-java pattern,
         // one registry per ExecutionInput). A registry shared across requests would let loaders
-        // and their first-key contexts survive between calls — that's an app-level misconfig,
+        // and their first-key contexts survive between calls; that is an app-level misconfig,
         // not a generator concern.
         var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -186,15 +178,13 @@ public class QueryNodeFetcherClassGenerator {
             .addCode("    .thenApply(v -> futures.stream().map($T::join).toList());\n", COMPLETABLE_FUTURE)
             .build();
 
-        // rowsNodes: synthesise a representation per non-null id (peek typeId → recover
-        // GraphQL typename via the dispatcher's emitted lookup → build a {__typename, id}
-        // map), then dispatch through EntityFetcherDispatch.resolveByReps. The dispatcher's
-        // own grouping — per (type, alternative), widened per decoded tenant in a
-        // multi-tenant build — issues one SELECT per group, and idx carried through the
-        // SELECT scatters rows back to their original positions in keys. Replaces the
-        // previous per-typeId loop and its encode-canonicalize-scatter round-trip; the
-        // dispatcher's idx-driven scatter handles non-canonical inputs directly because
-        // Base64.getUrlDecoder accepts both padded and unpadded forms.
+        // rowsNodes: synthesise a representation per non-null id (peek typeId, recover the
+        // GraphQL typename via the dispatcher's emitted lookup, build a {__typename, id} map),
+        // then dispatch through EntityFetcherDispatch.resolveByReps. The dispatcher groups per
+        // (type, alternative), widened per decoded tenant in a multi-tenant build, issues one
+        // SELECT per group, and scatters rows back to their original positions in keys via idx.
+        // Non-canonical id inputs need no re-encode round-trip: Base64.getUrlDecoder accepts
+        // both padded and unpadded forms.
         var listOfMap = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(MAP, STRING_CLASS, ClassName.get(Object.class)));
         var arrayListOfMap = ParameterizedTypeName.get(ARRAY_LIST,
@@ -230,7 +220,7 @@ public class QueryNodeFetcherClassGenerator {
             .build();
 
         // Type resolver for the Relay Node interface. Reads the synthetic __typename column
-        // (projected by every dispatch arm above) and routes the result to the matching
+        // (projected by every dispatcher select arm) and routes the result to the matching
         // concrete GraphQLObjectType. Registered on GraphQLCodeRegistry as
         // .typeResolver("Node", ...) by GraphitronSchema.build().
         var registerResolver = MethodSpec.methodBuilder(REGISTER_RESOLVER_METHOD)

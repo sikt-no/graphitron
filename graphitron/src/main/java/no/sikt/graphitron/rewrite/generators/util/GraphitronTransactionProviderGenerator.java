@@ -15,24 +15,22 @@ import java.util.List;
  * consumer's {@code <outputPackage>.schema} package. This is the one seam every transaction boundary
  * routes through.
  *
- * <p>Emitted (not shipped as a graphitron artifact), so bodies depend only on the JDK
- * ({@code java.sql.*}, {@code java.util.ArrayDeque}) and jOOQ ({@code org.jooq.TransactionProvider},
- * {@code org.jooq.TransactionContext}, {@code org.jooq.exception.DataAccessException}); valid Java 17.
+ * <p>Emitted (not shipped as a graphitron artifact), so bodies depend only on the JDK and jOOQ;
+ * valid Java 17.
  *
  * <h2>Why custom rather than jOOQ's {@code DefaultTransactionProvider}</h2>
  * {@code DefaultTransactionProvider.begin/commit/rollback} are {@code public final}, so a subclass
  * cannot suppress a commit. The commit-policy axis needs exactly that: under
- * {@code CommitPolicy.ROLLBACK_ONLY} (the rollback-everything dev tool, consumed by name) the
- * top-level {@code commit()} must roll back instead. A {@code TransactionListener} cannot fill the
- * role either: listeners observe boundaries but cannot change the outcome. So the provider is
+ * {@code CommitPolicy.ROLLBACK_ONLY} (the rollback-everything dev mode) the top-level
+ * {@code commit()} must roll back instead. A {@code TransactionListener} cannot fill the role
+ * either: listeners observe boundaries but cannot change the outcome. So the provider is
  * reimplemented from scratch over the pinned connection.
  *
  * <h2>Commit policy is the one axis</h2>
  * The provider governs only mutation transactions: each mutation field's shipped
  * {@code dsl.transactionResult(...)} opens a writable transaction through this provider. Query
- * operations run in autocommit and never reach it (blanket read-only enforcement is dropped; a
- * targeted successor is planned). {@code CommitPolicy} is global provider configuration, never
- * site-declared: {@code COMMIT} persists a successful top-level transaction; {@code ROLLBACK_ONLY}
+ * operations run in autocommit and never reach it. {@code CommitPolicy} is global provider
+ * configuration, never site-declared: {@code COMMIT} persists a successful top-level transaction; {@code ROLLBACK_ONLY}
  * (the dev-execution mode) defers one operation transaction across field settles, savepoint-scoping each
  * field, so the generated DML two-step's post-settle payload read-back observes the uncommitted
  * write, and the whole transaction is discarded by {@code PinnedConnection#release} at operation
@@ -50,12 +48,7 @@ import java.util.List;
  * The provider instance is built per operation over the pinned connection and holds its own nesting
  * depth and savepoint stack. That is sound because SQL for one operation runs sequentially on the
  * dispatch thread ({@code RowsMethodCall} emits synchronous batch loaders); no two transactions on
- * the pinned connection are ever open concurrently. Under {@code COMMIT}, top-level begin sets
- * autocommit false, top-level commit/rollback settles and restores autocommit, and nested begins are
- * savepoint-scoped. Under {@code ROLLBACK_ONLY} (the dev observe-then-discard topology), the first
- * top-level begin opens the one operation transaction, every field boundary (and nested begin) is a
- * savepoint, no depth-0 settle ever closes the transaction, and {@code PinnedConnection#release}
- * discards the whole thing at operation completion.
+ * the pinned connection are ever open concurrently.
  *
  * <h2>Stated fidelity limitation of the deferred topology</h2>
  * Holding the operation transaction open structurally conflicts with the per-settle session-identity
@@ -63,7 +56,8 @@ import java.util.List;
  * the {@code afterSettle} seam never fires mid-operation: dev execution does not exercise a
  * consumer's unconfirmed connect/disconnect re-fire pair between mutation fields. Mounted identity
  * itself is unaffected (session-scoped state established at acquire, which the release rollback
- * cannot revert). Pinned by the generator's unit test, named in the dev-tool user doc.
+ * cannot revert). Pinned by {@code GraphitronTransactionProviderGeneratorTest}, named in the
+ * dev-tool user doc.
  */
 public final class GraphitronTransactionProviderGenerator {
 

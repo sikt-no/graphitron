@@ -22,37 +22,23 @@ import java.util.Optional;
 
 /**
  * Produces the {@link DeleteRows} carrier for an {@code @mutation(typeName: DELETE)} field.
- * The DELETE analogue of {@code UpdateRowsWalker}, but where that walker partitions the input
+ * The DELETE analogue of {@link UpdateRowsWalker}, but where that walker partitions the input
  * into a matched-key WHERE half and an everything-else SET half, this walker has no SET destination:
  * <em>every</em> admitted input column is a WHERE filter ({@link DeleteRows#whereColumns()}), and the
  * matched key is a single-row <em>guard</em> rather than a column subset.
  *
- * <p>The PK-or-UK identification is the shared {@link MatchedKeys#firstCovered} matcher both walkers
- * call. Three outcomes:
- * <ul>
- *   <li>A candidate key is covered → {@link DeleteRows.Identified} (single-row; any {@code multiRow}
- *       flag is moot because the key already proves at most one row).</li>
- *   <li>No key covered but {@code multiRow: true} → {@link DeleteRows.Broadcast} (the DELETE
- *       broadcasts over every matching row; non-key filters are legitimate predicates).</li>
- *   <li>No key covered and not {@code multiRow} → {@link DeleteRowsError.NoUniqueKeyCoverage}
- *       (subsumes the earlier silent PK-less gap and the {@code table-has-no-pk} rejection).</li>
- * </ul>
+ * <p>PK-or-UK identification is the shared {@link MatchedKeys#firstCovered} matcher both walkers
+ * call: a covered key yields {@link DeleteRows.Identified} (single-row; {@code multiRow} is moot
+ * because the key already proves at most one row); no covered key yields
+ * {@link DeleteRows.Broadcast} when {@code multiRow: true}, and
+ * {@link DeleteRowsError.NoUniqueKeyCoverage} otherwise.
  *
- * <p><b>Substrate concession (mirrors {@code UpdateRowsWalker}).</b> The ideal is a
- * walker reading {@code GraphQLFieldDefinition} + jOOQ catalog directly and re-deriving the column
- * classification from raw SDL. Re-running the input-field classifier inside the walker would
- * duplicate a substantial component, so this walker instead translates over the already-classified
- * {@link InputField} permits the upstream classifier produced. Reading the substrate directly from
- * SDL remains a planned follow-up. The {@code field} parameter is reserved for that future substrate;
- * the current translator does not read it. Errors are collected across stages without short-circuiting
- * so the LSP surfaces every per-field issue at once.
- *
- * <p><b>Nested grouping inputs.</b> Mirrors {@code UpdateRowsWalker}: a plain
- * (non-{@code @table}) {@link InputField.NestingField} grouping columns of the outer table is
- * flattened in place ({@link #classifyInto}) into its leaf carriers, each nested leaf's
- * {@code extraction} rewrapped as a {@link CallSiteExtraction.NestedInputField} that records the SDL
- * access path. Every flattened leaf's column becomes a WHERE filter and counts toward the single-row
- * PK-or-UK guard unchanged. A list-typed nesting is rejected.
+ * <p><b>Substrate concession (mirrors {@link UpdateRowsWalker}).</b> Re-deriving the column
+ * classification from raw SDL would duplicate the upstream input-field classifier, so this walker
+ * translates over the already-classified {@link InputField} permits instead. The {@code field}
+ * parameter is unread; it keeps the signature shaped for a walker reading the SDL substrate
+ * directly. Errors are collected across stages without short-circuiting so the LSP surfaces
+ * every per-field issue at once.
  */
 public final class DeleteRowsWalker {
 
@@ -70,9 +56,6 @@ public final class DeleteRowsWalker {
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
 
-        // Stage 2: classify each input field into a walker-local column contribution, flattening
-        // any nested (non-@table) grouping input into its leaf carriers in place; collect
-        // per-field admissibility rejections across the loop (no short-circuit).
         var contributions = new ArrayList<Contribution>();
         classifyInto(inputFields, List.of(), outerArgName, errors, contributions);
         if (!errors.isEmpty()) {
@@ -81,8 +64,8 @@ public final class DeleteRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // Stage 3: union of every admitted field's target columns, and the WHERE column list (every
-        // admitted column — DELETE has no SET partition).
+        // Union of every admitted field's target columns; every admitted column is a WHERE
+        // filter (DELETE has no SET partition).
         var inputColumns = new ArrayList<ColumnRef>();
         var inputColumnSqlNames = new LinkedHashSet<String>();
         var whereColumns = new ArrayList<KeyColumn>();
@@ -95,15 +78,15 @@ public final class DeleteRowsWalker {
             }
         }
 
-        // Stage 4-5: PK-or-UK identification via the shared matcher. A covered key proves single-row;
-        // the matched key is a cardinality guard, not a column subset, so whereColumns is unaffected.
+        // A covered key proves single-row; the matched key is a cardinality guard, not a column
+        // subset, so whereColumns is unaffected.
         MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, inputColumnSqlNames).orElse(null);
         if (matchedKey != null) {
             return new WalkerResult.Ok<>(new DeleteRows.Identified(matchedKey, whereColumns));
         }
 
-        // Stage 6: no key covered. multiRow: true opts into a broadcast (non-key) delete; otherwise
-        // the input cannot identify rows and is a typed rejection (subsumes the earlier PK-less gap).
+        // No key covered. multiRow: true opts into a broadcast (non-key) delete; otherwise the
+        // input cannot identify rows and is a typed rejection.
         if (multiRow) {
             return new WalkerResult.Ok<>(new DeleteRows.Broadcast(whereColumns));
         }
@@ -114,12 +97,11 @@ public final class DeleteRowsWalker {
 
     /**
      * Flatten {@code fields} into {@link Contribution}s, descending into any
- * {@link InputField.NestingField} grouping input, the DELETE analogue of
+     * {@link InputField.NestingField} grouping input, the DELETE analogue of
      * {@code UpdateRowsWalker.classifyInto}. A nested leaf's {@code extraction} is rewrapped as a
      * {@link CallSiteExtraction.NestedInputField} carrying the full SDL access path; a top-level
-     * leaf keeps its extraction unchanged (byte-identical emit). Every flattened leaf's column
-     * becomes a WHERE filter and counts toward the single-row PK-or-UK guard exactly as a root
-     * leaf's does.
+     * leaf keeps its extraction unchanged. Every flattened leaf's column becomes a WHERE filter
+     * and counts toward the single-row PK-or-UK guard exactly as a root leaf's does.
      */
     private void classifyInto(
         List<InputField> fields, List<String> prefix, String outerArgName,
@@ -187,8 +169,6 @@ public final class DeleteRowsWalker {
      * carries a field-level {@code @condition}. This walker does not emit input-field conditions on
      * DELETE, so a condition would be silently dropped, the same footgun
      * {@link DeleteRowsError.OverrideConditionNotSupported} makes honest; reject rather than admit.
-     * An {@code override: true} condition reports through that arm; any other condition reports as an
-     * unsupported shape.
      */
     private void classifyColumnCarrier(
         String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,

@@ -27,19 +27,16 @@ import java.util.Set;
  * ({@link TypeClassGenerator#generateForType}):
  *
  * <ul>
- *   <li><b>Guarantee</b> — the {@link TypeClassGenerator.RequiredProjection} that
+ *   <li><b>Guarantee</b>: the {@link TypeClassGenerator.RequiredProjection} that
  *       {@code TypeClassGenerator.collectRequiredProjection} computed for the anchor type (the
  *       walk under audit).</li>
- *   <li><b>Requirement</b> — this class's own enumeration of every table-sourced
- *       {@link BatchKeyField} <em>and</em> {@link ParentRowDemand} coordinate rooted at the anchor:
- *       the anchor's own entries from the classifier's flat field index
- *       ({@link GraphitronSchema#fields()}), descending {@link ChildField.NestingField} sub-trees
- *       with a local worklist (nested plain-object fields are not flat-indexed; they resolve
- *       through the embedding {@code NestingField}). A {@code BatchKeyField} coordinate's
- *       {@code sourceKey()} demand must be contained in the guarantee (base-named columns for the
- *       column-tuple wraps, the reserved full parent row for {@link SourceKey.Wrap.TableRecord});
- *       a {@code ParentRowDemand} coordinate's {@code parentRowColumns()} demand (a correlation or
- *       key-extraction read off the parent row) must be contained as base-named columns.</li>
+ *   <li><b>Requirement</b>: this class's own enumeration of every table-sourced
+ *       {@link BatchKeyField} and {@link ParentRowDemand} coordinate rooted at the anchor,
+ *       read off the classifier's flat field index ({@link GraphitronSchema#fields()}) and
+ *       descending {@link ChildField.NestingField} sub-trees with a local worklist (nested
+ *       plain-object fields are not flat-indexed). Each coordinate's demanded columns, or the
+ *       reserved full parent row for {@link SourceKey.Wrap.TableRecord}, must be contained in
+ *       the guarantee.</li>
  * </ul>
  *
  * <p><b>Independence is the hard requirement, not a preference.</b> The requirement side must not
@@ -48,12 +45,11 @@ import java.util.Set;
  * side sharing its traversal would reproduce the omission on both sides and pass green over the
  * exact bug family this check exists to catch. It is keyed on the {@link BatchKeyField} /
  * {@link ParentRowDemand} capabilities plus {@link ChildField#sourceShape()}, never on leaf
- * identity, so the leaf merge does not touch it. Record-sourced coordinates stay out: their
- * key / correlation rides the held object, not the parent SELECT (the projection walk's hard-throw
- * tripwire owns that exclusion).
+ * identity. Record-sourced coordinates stay out: their key / correlation rides the held object,
+ * not the parent SELECT (the projection walk's hard-throw tripwire owns that exclusion).
  *
  * <p><b>A divergence is a generator invariant violation, not an author-facing rejection.</b> No
- * valid author schema can produce it under a correct generator — the demand and the projection
+ * valid author schema can produce it under a correct generator: the demand and the projection
  * are both derived from the same classified model, so disagreement always means a walk omission
  * (a Graphitron bug). {@link IllegalStateException} at generation time is therefore deliberate;
  * the "validator mirrors classifier" rejection discipline does not call for a typed
@@ -119,12 +115,10 @@ final class ParentProjectionContainmentCheck {
                     }
                 }
             }
-            // The ParentRowDemand capability widens the same containment invariant to correlation
-            // reads: a table-parent child whose fetcher reads parent-row columns by base name
-            // (a @tableMethod correlation, a multi-table polymorphic single-fetch parent-side read,
-            // or a batched polymorphic key extraction) demands every such column be projected. Keyed
-            // on the capability, never on leaf identity, so it closes that bug family for gaps A and B
-            // in one clause.
+            // ParentRowDemand widens the same containment invariant to correlation reads: a
+            // table-parent child whose fetcher reads parent-row columns by base name (a
+            // @tableMethod correlation, a multi-table polymorphic single-fetch parent-side read,
+            // or a batched polymorphic key extraction) demands every such column be projected.
             if (f instanceof ParentRowDemand prd) {
                 for (ColumnRef col : prd.parentRowColumns()) {
                     if (!guaranteedColumns.contains(col)) {

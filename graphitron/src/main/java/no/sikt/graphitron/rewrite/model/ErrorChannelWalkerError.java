@@ -4,30 +4,24 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Sealed sub-family of {@link Rejection.AuthorError} for the error-channel domain:
- * the {@code ErrorChannelWalker} that resolves an outcome type's errors-field channel onto
- * {@link ErrorChannel.Mapped}, plus the {@code OutcomeType} classification that produces the
+ * Sealed sub-family of {@link Rejection.AuthorError} for the error-channel domain: errors raised
+ * by the {@code ErrorChannelWalker} that resolves an outcome type's errors-field channel onto
+ * {@link ErrorChannel.Mapped}, and by the {@link OutcomeType} classification that produces the
  * walker's input. Each typed arm carries the structural data its diagnostic message and LSP
  * {@code relatedInformation} need; downstream tooling switches on the arm rather than parsing
  * prose.
  *
- * <p>The arm-to-code mapping is exposed via {@link #lspCode()} so the orchestrator can project a
- * typed error to a {@link Diagnostic} under the {@code graphitron.error-channel.} namespace
- * without a separate dispatch table. The stable wire strings are written next to each arm rather
- * than derived from the Java identifier, mirroring the {@link ServiceMethodCallError} wire
- * convention.
+ * <p>{@link #lspCode()} projects an arm to its {@link Diagnostic} code under the
+ * {@code graphitron.error-channel.} namespace. The wire strings are literals next to each arm, not
+ * derived from the Java identifier, mirroring the {@link ServiceMethodCallError} wire convention.
  *
- * <p>Two arms ({@link MultipleErrorsFields}, {@link NonNullableSuccessProjectionField}) are
- * raised by the {@code OutcomeType} classification that produces the walker's input; the rest are
- * raised by {@code walk()}. They share one family because they share one SDL surface (the outcome
- * type and its errors field) and one LSP namespace; each arm's javadoc names its actual raiser.
- * Keeping {@code OutcomeType} construction as the single producer of the two structural arms is a
- * smaller seam than pushing errors-field detection into the walker that
- * {@code BuildContext.detectErrorsFieldShape} already centralises.
- *
- * <p>Following the {@link ServiceMethodCallError} precedent, this is its own sibling sub-seal of {@link Rejection.AuthorError}
- * rather than a set of arms under the flat {@link Rejection.AuthorError.Structural}, keeping
- * {@code AuthorError}'s permits one-row-per-walker as the dimensional pivot scales.
+ * <p>Classification-raised and walker-raised arms share one family because they share one SDL
+ * surface (the outcome type and its errors field) and one LSP namespace; each arm's javadoc names
+ * its raiser. {@link OutcomeType} construction stays the single producer of the structural arms
+ * because {@code BuildContext.detectErrorsFieldShape} already centralises errors-field detection.
+ * This is its own sibling sub-seal of {@link Rejection.AuthorError} rather than arms under the
+ * flat {@link Rejection.AuthorError.Structural}, keeping {@code AuthorError}'s permits list
+ * one row per walker.
  */
 public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError permits
     ErrorChannelWalkerError.MultipleErrorsFields,
@@ -40,14 +34,13 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     String lspCode();
 
     @Override default Rejection prefixedWith(String prefix) {
-        // Typed arms keep their structural components; prefixing is a no-op concerning structure.
-        // The orchestrator's renderer prepends author-facing prose via diagnostic projection, not
-        // via Rejection#prefixedWith.
+        // No-op: the orchestrator's renderer prepends author-facing prose via diagnostic
+        // projection, not via Rejection#prefixedWith.
         return this;
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification: a type carries more than one errors field.
+     * Raised by the {@link OutcomeType} classification: a type carries more than one errors field.
      * The binary {@code Outcome} witness has one error slot, so a type with two errors fields has
      * no well-defined fork.
      */
@@ -65,7 +58,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification: a success-projection (data) field is
+     * Raised by the {@link OutcomeType} classification: a success-projection (data) field is
      * non-null, which would bubble null up and drop the errors field on the error arm.
      * Success-projection fields must be nullable.
      */
@@ -83,7 +76,7 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
- * Raised by the {@code OutcomeType} classification: the errors field carries a non-null
+     * Raised by the {@link OutcomeType} classification: the errors field carries a non-null
      * list type ({@code [X!]!}). The mirror of {@link NonNullableSuccessProjectionField}: the
      * success arm resolves the errors field to {@code null} (there are no errors), so a non-null
      * errors field would raise {@code NonNullableFieldWasNullError} and drop the sibling data field
@@ -103,9 +96,9 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by {@code walk()}: a channel-level handler rule was violated. Rule 7 (no two
-     * VALIDATION handlers in one channel) and rule 8 (no duplicate match-criteria across the
-     * flattened handler list) are today's rules; future rules slot in via {@code ruleNumber}.
+     * Raised by {@code walk()}: a channel-level handler rule is violated. Rule 7 forbids two
+     * VALIDATION handlers in one channel; rule 8 forbids duplicate match-criteria across the
+     * flattened handler list. {@code ruleNumber} selects the wire code.
      */
     record ChannelRuleViolation(
         String payloadTypeName,
@@ -129,10 +122,10 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     /**
      * Raised by {@code walk()}: an {@code @error} type's handler source class does not expose a
      * {@code PropertyDataFetcher}-visible accessor for one of the {@code @error} type's declared
-     * SDL fields ({@code path} and {@code message} are exempt). Carries the handler details so the
-     * diagnostic can list what was available. {@code accessorBaseName} is the accessor the resolver
-     * looked for: equal to {@code missingFieldName} when no {@code @field(name:)} override applies,
-     * otherwise the directive value (the {@code message()} then flags the remap).
+     * SDL fields ({@code path} and {@code message} are exempt). {@code accessorBaseName} is the
+     * accessor the resolver looked for: equal to {@code missingFieldName} when no
+     * {@code @field(name:)} override applies, otherwise the directive value (the {@code message()}
+     * then flags the remap).
      */
     record HandlerSourceAccessorMissing(
         String payloadTypeName,

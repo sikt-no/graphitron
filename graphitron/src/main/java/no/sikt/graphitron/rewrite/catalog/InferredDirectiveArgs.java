@@ -4,9 +4,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Canonical-argument-per-directive map for the three current inference targets.
- * Single source of truth for "which directive arguments does Graphitron's inference layer
- * fill in when the author omits them?".
+ * Canonical-argument-per-directive map: single source of truth for which directive
+ * arguments Graphitron's inference layer fills in when the author omits them.
  *
  * <ul>
  *   <li>{@code @table(name:)} resolved from the SDL type name.</li>
@@ -14,24 +13,20 @@ import java.util.Optional;
  *   <li>{@code @reference(path:)} resolved from a unique single-hop FK.</li>
  * </ul>
  *
- * <p>Consumers (today: the LSP's inferred-directive inlay-hint arm) read from this table
- * rather than encoding the directive / argument name pairs as switch literals. A future
- * inference rule adds one entry here and downstream consumers either pick it up
- * automatically or fail to compile when they need a rendering arm to match.
+ * <p>Consumers (the LSP's inferred-directive inlay-hint arm) read from this table rather
+ * than encoding directive / argument name pairs as switch literals; a new inference rule
+ * is one added entry, which consumers pick up automatically or fail to compile against.
  *
  * <p>String identity (not constant identity) is the contract; the directive-vocabulary
- * source-of-truth in {@code BuildContext} uses the same string literals.
+ * source of truth in {@code BuildContext} uses the same string literals.
  *
- * <p><b>Absent-arm strategy.</b> {@link Entry#absentArm()} carries the renderer
- * strategy for the absent-directive arm: a non-null {@link AbsentArm} declares that
- * the canonical argument should also render as a synthetic ghost annotation on
- * declarations that omit the directive entirely (not only on present-but-bare directive
- * nodes), and the strategy itself owns the eligibility set and the projection accessor.
- * Adding a new entry with absent rendering therefore requires implementing (or reusing)
- * an {@link AbsentArm} permit; flipping it on by accident no-ops at compile time, not at
- * runtime. Today only {@code @table} carries an arm ({@link AbsentArm.TableName});
- * {@code @field} would drown the view (one ghost per column-bound field) and
- * {@code @reference} has a different cost/benefit profile.
+ * <p><b>Absent-arm strategy.</b> A non-null {@link Entry#absentArm()} declares that the
+ * canonical argument also renders as a synthetic ghost annotation on declarations that
+ * omit the directive entirely (not only on present-but-bare directive nodes). Enabling
+ * absent rendering requires an {@link AbsentArm} permit, so it cannot be flipped on by
+ * accident. Only {@code @table} carries one ({@link AbsentArm.TableName}): {@code @field}
+ * would drown the view (one ghost per column-bound field) and {@code @reference} has a
+ * different cost/benefit profile.
  */
 public final class InferredDirectiveArgs {
 
@@ -42,27 +37,23 @@ public final class InferredDirectiveArgs {
      *
      * @param directiveName SDL directive name without the leading {@code @}.
      * @param argName       Canonical argument name (the one inference resolves).
-     * @param absentArm     Non-null when the LSP inlay arm should also render a synthetic
-     *                      ghost annotation on declarations that carry no directive of
-     *                      this name. The strategy owns the eligibility set (which
-     *                      classification variants produce a value) and the resolution
-     *                      from classification to rendered argument value. {@code null}
-     *                      disables the absent-directive pass for this entry.
+     * @param absentArm     Strategy for rendering a synthetic ghost annotation on
+     *                      declarations that carry no directive of this name, or
+     *                      {@code null} to disable the absent-directive pass for this
+     *                      entry.
      */
     public record Entry(String directiveName, String argName, AbsentArm absentArm) {}
 
     /**
      * Renderer strategy for the absent-directive arm on an {@link Entry}. Owns both the
-     * eligibility check (which classification variants this arm applies to) and the
-     * canonical-arg value derived from those variants' projection payload. Returning
-     * empty from {@link #resolveAbsentValue} means "this classification is not in this
-     * arm's eligibility set"; the renderer skips the hint silently.
+     * eligibility check (which classification variants the arm applies to) and the
+     * canonical-arg value derived from those variants' projection payload; empty from
+     * {@link #resolveAbsentValue} means the classification is outside the arm's
+     * eligibility set and the renderer skips the hint silently.
      *
-     * <p>Sealed so that the absent-arm renderer in {@code InlayHints} dispatches over
-     * the closed family of strategies via virtual call rather than re-matching on
-     * {@link Entry#directiveName()}. A future absent-arm rule (e.g. {@code @reference}
-     * on FK fields, explicitly out of scope) lands as a new
-     * permit here and the renderer picks it up without additional dispatch arms.
+     * <p>Sealed so the absent-arm renderer in the LSP's {@code InlayHints} dispatches
+     * over the closed family via virtual call rather than re-matching on
+     * {@link Entry#directiveName()}; a new rule is a new permit, with no extra dispatch arm.
      */
     public sealed interface AbsentArm {
 
@@ -74,9 +65,7 @@ public final class InferredDirectiveArgs {
 
         /**
          * Renders the {@code @table(name:)} canonical value from the table-bound
-         * {@link TypeClassification} variants ({@code Table}, {@code Node},
-         * {@code TableInterface}, {@code TableInput}). The eligibility set is encoded
-         * in the switch arms below; non-eligible classifications return empty.
+         * {@link TypeClassification} variants.
          */
         record TableName() implements AbsentArm {
             @Override

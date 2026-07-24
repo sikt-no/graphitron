@@ -10,29 +10,13 @@ import java.util.Objects;
  * the skeleton owns the declaration scaffolding (modifiers, parameters, return type, empty-input
  * gate, {@code DSLContext dsl} resolution); each permit carries the body content that follows.
  *
- * <p>One permit per body shape, mirroring the classifier's {@code (Reader, Container)}
- * projection:
- *
- * <ul>
- *   <li>{@link SqlBatchedTable}, {@link SqlBatchedLookupTable} — SQL-side bodies. The skeleton emits the empty-input
- *       short-circuit and the {@code DSLContext dsl = ...} line, then pastes the permit's
- *       {@code content()}; the SELECT / scatter logic that lives in {@code content} consumes
- *       both {@code keys} and {@code dsl}.</li>
- *   <li>{@link Service} — service-delegating body. The skeleton emits a {@code DSLContext dsl}
- *       line iff {@code needsDsl()} (driven by the {@code @service} method's
- *       {@link MethodRef.CallShape}); the empty-input gate is omitted (today's service-path
- *       behaviour preserved per the spec's "Out of scope" carve-out).</li>
- * </ul>
- *
- * <p>Permits are intentionally distinct types even though the SQL framings are identical
- * today: distinct permits make the dispatch axis first-class so the construction site's
- * projection from the field's {@code (variant, LoaderRegistration.container())}
- * pair lands in a single typed slot rather than a runtime branch.
+ * <p>The SQL permits are intentionally distinct types even though their framings are identical:
+ * distinct permits make the dispatch axis first-class so the construction site's projection
+ * from the field's variant and {@link LoaderRegistration#container()} lands in a single typed
+ * slot rather than a runtime branch.
  *
  * <p>The body content is an opaque {@link CodeBlock} so the skeleton is decoupled from the
- * SELECT / scatter / service-call construction logic. A later phase wires the existing
- * body builders ({@code SplitRowsMethodEmitter}, {@code TypeFetcherGenerator}'s
- * {@code buildServiceRowsMethod}) into the construction sites that produce these permits.
+ * SELECT / scatter / service-call construction logic.
  */
 public sealed interface RowsMethodBody {
 
@@ -45,9 +29,8 @@ public sealed interface RowsMethodBody {
     CodeBlock content();
 
     /**
-     * SQL body for {@code BatchedTableField} — flat correlated-batch SELECT plus scatter, keyed
-     * off the parent-lifted key tuple (both source shapes; the SQL framing was identical for the
-     * pre-merge {@code SqlSplitTable} / {@code SqlRecordTable} permits).
+     * SQL body for {@link ChildField.BatchedTableField} (both source shapes): flat
+     * correlated-batch SELECT plus scatter, keyed off the parent-lifted key tuple.
      */
     record SqlBatchedTable(CodeBlock content) implements RowsMethodBody {
         public SqlBatchedTable {
@@ -56,8 +39,8 @@ public sealed interface RowsMethodBody {
     }
 
     /**
-     * SQL body for {@code BatchedLookupTableField} — {@link SqlBatchedTable} plus a
-     * {@code @lookupKey} VALUES join (both source shapes).
+     * SQL body for {@link ChildField.BatchedLookupTableField} (both source shapes):
+     * {@link SqlBatchedTable} plus a {@code @lookupKey} VALUES join.
      */
     record SqlBatchedLookupTable(CodeBlock content) implements RowsMethodBody {
         public SqlBatchedLookupTable {
@@ -66,7 +49,7 @@ public sealed interface RowsMethodBody {
     }
 
     /**
-     * SQL body for {@code BatchedPivotField} — the key-preserving left join from the parent-input
+     * SQL body for {@link ChildField.BatchedPivotField}: the key-preserving left join from the parent-input
      * {@code VALUES} table to the attribute table, the selection-gated filtered aggregates, and
      * {@code GROUP BY __idx__}, scattered single-per-key.
      */
@@ -78,7 +61,8 @@ public sealed interface RowsMethodBody {
 
 
     /**
-     * Service-delegating body for {@code ServiceTableField} / {@code ServiceRecordField}. The
+     * Service-delegating body for {@link ChildField.ServiceTableField} /
+     * {@link ChildField.ServiceRecordField}. The
      * {@code needsDsl} flag mirrors {@link MethodRef.CallShape.Static#needsDslLocal()} (with
      * {@link MethodRef.CallShape.InstanceWithDslHolder} folding to {@code true}); the skeleton
      * emits a {@code DSLContext dsl = ...} line when {@code true} and skips otherwise.

@@ -18,28 +18,21 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The level-1 closure oracle over the current emit. The model's central
- * falsifiable invariant is that the emit target is a <em>referentially-closed</em> graph of
- * emitted methods: every method-name reference in every emitted body resolves to a method the
- * generator also emitted. This harness characterizes the current generator against that
- * invariant: it generates over a schema exercising the seam families of the seam worklist,
- * walks the emitted {@link TypeSpec}s with {@link EmittedMethodClosure}, and asserts closure.
+ * The level-1 closure oracle over the emit. The model's central falsifiable invariant is that
+ * the emit target is a <em>referentially-closed</em> graph of emitted methods: every method-name
+ * reference in every emitted body resolves to a method the generator also emitted. This harness
+ * generates over a schema exercising the load-bearing seam families, walks the emitted
+ * {@link TypeSpec}s with {@link EmittedMethodClosure}, and asserts closure.
  *
- * <p>Level 1 is valid before any re-platforming and survives it as the harness the emit slices
- * run against (first consumed by the reentry family). The bidirectional form —
- * every emitted method is exactly one command's output, every callee resolves to a
- * <em>committed command</em> — needs the command/name registry and is deferred to the emit
- * re-platforming, not this test. Two invariants this oracle deliberately does <b>not</b> cover:
- * the parent-projection key-containment check (facts, not method names;
- * {@code ParentProjectionContainmentCheck} owns it) and the
- * naming-regime migration (a per-edge lift done in the emit slices; this
- * oracle only proves the names, however derived, resolve).
+ * <p>Level 1 proves only that names, however derived, resolve. Two invariants this oracle
+ * deliberately does <b>not</b> cover: the parent-projection key-containment check (facts, not
+ * method names; {@code ParentProjectionContainmentCheck} owns it) and how the names themselves
+ * are derived.
  *
- * <p>The schema spans the load-bearing rows of the seam worklist: root select and child
- * reference (Fetcher, Projection), {@code @splitQuery} (rows-method, scatter), a Relay
- * connection with {@code @orderBy} (pagination, order-by), {@code @lookupKey} (input-rows),
- * a {@code @nodeId} filter input (conditions, node codec), a nesting type, a table-bound
- * {@code @service} child (the service reentry family re-platformed first), and a DML
+ * <p>The schema spans the seam families: root select and child reference (Fetcher, Projection),
+ * {@code @splitQuery} (rows-method, scatter), a Relay connection with {@code @orderBy}
+ * (pagination, order-by), {@code @lookupKey} (input-rows), a {@code @nodeId} filter input
+ * (conditions, node codec), a nesting type, a table-bound {@code @service} child, and a DML
  * insert projecting its {@code @table} return (record instantiation, mutation reentry).
  */
 @PipelineTier
@@ -123,7 +116,6 @@ class MethodClosureOracleTest {
         walk = EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx).generate().emittedUnits());
     }
 
-    /** Thread I at level 1: every statically-qualified callee on a generated class is an emitted method. */
     @Test
     void everyQualifiedCalleeResolvesToAnEmittedMethod() {
         assertThat(walk.unresolved())
@@ -134,32 +126,31 @@ class MethodClosureOracleTest {
 
     /**
      * Non-vacuity floor for the <b>edge relation</b>: the walk actually sees the cross-unit seam
-     * families whose callee names are class-qualified in the current emit, so a scan regression
-     * cannot pass the closure check by seeing nothing. Pinned at family granularity (a witness
-     * filter per family, not an exhaustive edge list): the closure assertion is the gate, these
-     * pins only prove the gate is fed. The emit slices may normalize code shape (their acceptance
-     * is execution-tier equivalence), so pins name the seam family, not the exact body.
+     * families whose callee names are class-qualified, so a scan regression cannot pass the
+     * closure check by seeing nothing. Pinned at family granularity (a witness filter per family,
+     * not an exhaustive edge list): the closure assertion is the gate, these pins only prove the
+     * gate is fed, and family granularity keeps them stable across code-shape changes.
      */
     @Test
     void walkSeesTheLoadBearingSeamFamilies() {
         String pkg = OUTPUT_PACKAGE;
 
-        // Fetcher -> Projection ($fields, seam worklist row 2): a fetcher launches a SELECT
-        // over the target type's projection (today QueryFetchers -> types.Film#$fields).
+        // Fetcher -> Projection: a fetcher launches a SELECT over the target type's
+        // projection (QueryFetchers -> types.Film#$fields).
         assertThat(walk.edges().stream()
             .filter(e -> e.fromUnit().startsWith(pkg + ".fetchers."))
             .filter(e -> e.methodName().equals("$fields")))
             .as("Fetcher -> Projection ($fields) edges").isNotEmpty();
 
-        // Projection -> Projection (row 2, thread F's cycle): an inline reference composes the
-        // nested type's $fields from inside another type class (types.Film <-> types.Language).
+        // Projection -> Projection: an inline reference composes the nested type's $fields
+        // from inside another type class (types.Film <-> types.Language).
         assertThat(walk.edges().stream()
             .filter(e -> e.fromUnit().startsWith(pkg + ".types."))
             .filter(e -> e.targetUnit().startsWith(pkg + ".types."))
             .filter(e -> e.methodName().equals("$fields")))
             .as("Projection -> Projection (recursive $fields) edges").isNotEmpty();
 
-        // Condition (row 5): a generated condition method is called by name, from the root
+        // Condition: a generated condition method is called by name, from the root
         // fetcher (QueryConditions) and from an inline reference arm (FilmConditions).
         assertThat(walk.edges().stream()
             .filter(e -> e.targetUnit().endsWith("Conditions")))
@@ -171,15 +162,15 @@ class MethodClosureOracleTest {
             .filter(e -> e.targetUnit().equals(pkg + ".util.NodeIdEncoder")))
             .as("-> NodeIdEncoder codec edges").isNotEmpty();
 
-        // Fetcher wiring (row 1): the schema-shape classes reference the per-type fetcher
+        // Fetcher wiring: the schema-shape classes reference the per-type fetcher
         // classes' field methods (schema.FilmType -> fetchers.FilmFetchers#actors, ...).
         assertThat(walk.edges().stream()
             .filter(e -> e.fromUnit().startsWith(pkg + ".schema."))
             .filter(e -> e.targetUnit().endsWith("Fetchers")))
             .as("schema shape -> Fetchers wiring edges").isNotEmpty();
 
-        // The reentry family re-platformed first: a table-bound @service child and a DML
-        // insert both re-project their @table return through the target type's $fields.
+        // Reentry: a table-bound @service child and a DML insert both re-project their
+        // @table return through the target type's $fields.
         assertThat(walk.hasEdge(pkg + ".fetchers.LanguageFetchers", pkg + ".types.Film", "$fields"))
             .as("service reentry: LanguageFetchers -> types.Film#$fields").isTrue();
         assertThat(walk.hasEdge(pkg + ".fetchers.MutationFetchers", pkg + ".types.Film", "$fields"))
@@ -187,12 +178,11 @@ class MethodClosureOracleTest {
     }
 
     /**
-     * Non-vacuity floor for the <b>node relation</b>, at the granularities of the
-     * method-command table (thread E) — including the families whose call sites are
-     * <em>same-class and unqualified</em> in the current emit and therefore invisible to the
-     * level-1 edge scan (the documented blind spot): the rows-methods, scatter, order-by, the
-     * service load method, and the record-instantiation helpers. Level 1 pins them as emitted
-     * nodes; their edges become assertable when the command/name registry lands.
+     * Non-vacuity floor for the <b>node relation</b>, covering the families whose call sites
+     * are <em>same-class and unqualified</em> in the emit and therefore invisible to the
+     * level-1 edge scan: the rows-methods, scatter, order-by, the service load method, and
+     * the record-instantiation helpers. Level 1 pins them as emitted nodes; their call edges
+     * are not assertable at this level.
      */
     @Test
     void nodeRelationCarriesTheCommandGranularities() {
@@ -209,11 +199,11 @@ class MethodClosureOracleTest {
                 "actorsConnection", "rowsActorsConnection", "scatterConnectionByIdx",
                 "actorsConnectionOrderBy");
 
-        // The service reentry load method (the first family re-platformed).
+        // The service reentry load method.
         assertThat(declaredIn(pkg + ".fetchers.LanguageFetchers"))
             .contains("filmsViaService", "loadFilmsViaService");
 
-        // Boundary helpers (row 8): the jOOQ-record instantiation pair at the @service
+        // Boundary helpers: the jOOQ-record instantiation pair at the @service
         // parameter position, and the input carrier's fromMap factory.
         assertThat(declaredIn(pkg + ".fetchers.QueryFetchers"))
             .contains("createFilmRecord", "createFilmRecordList");

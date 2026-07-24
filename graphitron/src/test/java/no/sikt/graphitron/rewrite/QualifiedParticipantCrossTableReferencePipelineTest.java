@@ -16,13 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline coverage: a participant cross-table {@code @reference} field whose single-hop FK
  * terminates on a table whose bare name collides across generated schemas must resolve the column
  * against the FK-pinned terminal {@link no.sikt.graphitron.rewrite.model.TableRef} (class identity),
- * not re-resolve the bare SQL name through the catalog. Pre-fix, {@code TypeBuilder.extractCrossTableFields}
- * collapsed the identity-carrying {@code fk.targetTable()} to its bare {@code tableName()} and
- * {@code JooqCatalog.findColumn(String, ...)} hit {@code TableResolution.Ambiguous} on the colliding
- * name; the column resolve came back empty and the field was skipped from the participant's
- * cross-table set. It then fell through to {@code FieldBuilder}'s scalar {@code @reference} path,
- * which silently misclassifies it as a plain {@link ChildField.ColumnBackedReferenceField}
- * instead of a {@link ChildField.ParticipantColumnReferenceField} — so the interface fetcher emits
+ * not re-resolve the bare SQL name through the catalog. A bare-name lookup is ambiguous on the
+ * colliding name, so the field drops out of the participant's cross-table set and falls through to
+ * the scalar {@code @reference} path as a plain {@link ChildField.ColumnBackedReferenceField}
+ * instead of a {@link ChildField.ParticipantColumnReferenceField}: the interface fetcher then emits
  * no conditional LEFT JOIN / alias projection, and the classification of a participant field comes
  * to depend on whether an unrelated schema happens to hold a same-named table. There is no
  * author-side workaround: the FK terminal is not author-named (the {@code @reference} key is
@@ -77,10 +74,9 @@ class QualifiedParticipantCrossTableReferencePipelineTest {
 
     @Test
     void collidingTerminal_columnOnPinnedSchema_classifiesAsParticipantColumnReferenceField() {
-        // 'name' exists only on multischema_a.event (the FK-pinned terminal). Pre-fix the bare-name
-        // terminal lookup was ambiguous across the two 'event' tables, so the field was skipped from
-        // the cross-table set and misclassified as a plain ColumnReferenceField through
-        // the FieldBuilder fallback. The identity-carrying resolver classifies it green.
+        // 'name' exists only on multischema_a.event (the FK-pinned terminal); the identity-carrying
+        // resolver classifies it green where a bare-name terminal lookup is ambiguous across the
+        // two 'event' tables.
         var schema = build(
             "eventName: String @field(name: \"name\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");
         var field = schema.field("AlertEntry", "eventName");
@@ -98,8 +94,8 @@ class QualifiedParticipantCrossTableReferencePipelineTest {
         // 'code' exists only on multischema_b.event; the FK pins multischema_a.event. The field is
         // skipped from the cross-table set (the FK-pinned terminal has no 'code'), falls through to
         // FieldBuilder's scalar @reference path, and rejects as an unknown-column author error whose
-        // candidates enumerate A's event columns — not B's. This pins that the fix resolves against
-        // the FK-pinned schema A copy rather than scanning every schema for a match.
+        // candidates enumerate A's event columns, not B's. This pins that resolution targets the
+        // FK-pinned schema A copy rather than scanning every schema for a match.
         var schema = build(
             "eventName: String @field(name: \"code\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");
         var field = schema.field("AlertEntry", "eventName");
@@ -117,10 +113,9 @@ class QualifiedParticipantCrossTableReferencePipelineTest {
     @Test
     void collidingTerminal_baseResidentColumn_tripsContradictionGuardWithNonEmptyHint() {
         // 'event_id' exists on both event_log (base) and multischema_a.event (detail). The
-        // base-resident-column guard fires (the column is read directly off the base table, so the cross-table
-        // @reference is meaningless), and its detail-only candidate hint must be non-empty — naming
-        // 'name', A's only detail-resident column. Pre-fix the colliding detail table produced an
-        // empty candidate list, so the "did you mean" hint vanished exactly when the layout confused.
+        // base-resident-column guard fires (the column is read directly off the base table, so the
+        // cross-table @reference is meaningless), and its detail-only candidate hint must be
+        // non-empty, naming 'name', A's only detail-resident column.
         var schema = build(
             "eventName: String @field(name: \"event_id\") @reference(path: [{key: \"event_log_event_id_fkey\"}])");
         assertThat(schema.diagnostics())
@@ -132,7 +127,7 @@ class QualifiedParticipantCrossTableReferencePipelineTest {
                 && e.message().contains("event_log")
                 && e.message().contains("must be removed")
                 // the rendered "did you mean" suffix names A's only detail-resident column; the
-                // suffix is emitted only when the candidate list is non-empty (empty pre-fix).
+                // suffix is emitted only when the candidate list is non-empty.
                 && e.message().contains("e.g.: name"));
     }
 }

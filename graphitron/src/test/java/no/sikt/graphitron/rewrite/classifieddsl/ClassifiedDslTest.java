@@ -25,8 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * against its declared dimensional verdict (read off the field model's {@code source()} /
  * {@code operation()} / {@code target()} accessors).
  *
- * <p>The meta-tests pin the coverage obligations from the Spec (§"Validating the axis set"), now over the
- * {@code (source, operation, target)} axes:
+ * <p>The meta-tests pin the coverage obligations over the {@code (source, operation, target)} axes:
  * <ul>
  *   <li><b>Verdict totality</b> is compiler-enforced: the {@code source()} / {@code operation()} /
  *       {@code target()} producers on each root ({@code QueryField} / {@code MutationField} /
@@ -75,21 +74,17 @@ class ClassifiedDslTest {
     }
 
     /**
-     * Source wrapper arms the model declares but no fixture reaches, each with the reason. Empty since
- * The ancestor-product arrival fold makes {@link Source.OnlyChild} ({@code One} arrival)
-     * reachable, so every source wrapper arm ({@code Query} / {@code Mutation} / {@code OnlyChild} /
-     * {@code Child}) is now exercised by a corpus fixture. An arm that later becomes unreachable rejoins
+     * Source wrapper arms the model declares but no fixture reaches, each with the reason. Empty:
+     * every source wrapper arm ({@code Query} / {@code Mutation} / {@code OnlyChild} /
+     * {@code Child}) is exercised by a corpus fixture. An arm that becomes unreachable rejoins
      * this list with its reason; an entry a fixture exercises must be removed (asserted below).
      */
     private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of();
 
     /**
-     * Operation arms the model declares but the current leaf set cannot populate, each with the reason no
-     * fixture lands on it. Five are model-completeness gaps (no classified leaf exists yet);
-     * {@code Upsert} is the sixth shape, a leaf that exists but is upstream-rejected, following the
-     * {@code VariantCoverageTest.NO_CASE_REQUIRED} precedent for {@code MutationUpsertTableField}. An arm
-     * leaves this list the moment a fixture exercises it; an unexercised arm not listed here fails
-     * {@link #everyDimensionValueIsExercised()}.
+     * Operation arms the model declares but the current leaf set cannot populate, each with the
+     * reason no fixture lands on it. An arm leaves this list the moment a fixture exercises it; an
+     * unexercised arm not listed here fails {@link #everyDimensionValueIsExercised()}.
      */
     private static final Map<Class<? extends Operation>, String> OPERATION_KNOWN_GAPS = Map.of(
         Operation.EntityResolve.class, "Federation _entities is not a classified leaf yet (separate item).",

@@ -13,41 +13,20 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
 /**
  * Resolves {@code @externalField} on a child field of a {@code @table}-typed parent into a sealed
- * {@link Resolved} the caller switches on, absorbing the cross-cutting checks previously inlined
- * at the sole classify site ({@code classifyChildFieldOnTableType}):
+ * {@link Resolved} that the classify site ({@code FieldBuilder.classifyChildFieldOnTableType})
+ * switches on, projecting {@link Resolved.Success} into
+ * {@link no.sikt.graphitron.rewrite.model.ChildField.ComputedField}. Reflection goes through
+ * {@link ServiceCatalog#reflectExternalField}.
  *
- * <ul>
- *   <li>Alias-collision rejection: the GraphQL field name must not collide with a real SQL column
- *       on the parent table (the wiring side looks the field up by name via {@code DSL.field("…")}
- *       against the result Record, so a collision shadows the real column).</li>
- *   <li>External-reference parse, missing-className rejection, argMapping parse.</li>
- *   <li>{@link ServiceCatalog#reflectExternalField} reflection against the parent table's Java
- *       class, with method-name defaulting to the GraphQL field name when {@code method:} is
- *       omitted from the directive reference.</li>
- * </ul>
- *
- * <p>The classify arm projects {@link Resolved.Success} into {@code ComputedField}, carrying the
- * parsed join path it parses ahead of this resolver (path-parse is a parent-context concern: it
- * uses the parent table's name as the join start, and a path error must surface ahead of any
- * reflection failure).
- *
- * <p>Implementation note: like {@link ServiceDirectiveResolver} and
- * {@link TableMethodDirectiveResolver}, the helpers this resolver calls back into
- * ({@code parseExternalRef}, {@code buildWrapper}) are package-private members of
- * {@link FieldBuilder}.
+ * <p>Join-path parsing stays at the classify site, ahead of this resolver: the path uses the
+ * parent table's name as the join start, and a path error must surface ahead of any reflection
+ * failure.
  */
 final class ExternalFieldDirectiveResolver {
 
     /**
-     * Outcome of {@link #resolve}. Two terminal arms; the caller exhausts them with a switch.
-     *
-     * <ul>
-     *   <li>{@link Success} — successful resolution, carrying the resolved {@link ReturnTypeRef}
-     *       (computed from the field's GraphQL type + wrapper) and the reflected
-     *       {@link MethodRef}.</li>
-     *   <li>{@link Rejected} — every error path: alias-collision, directive-parse failure,
-     *       missing-className, method-reflection failure.</li>
-     * </ul>
+     * Outcome of {@link #resolve}; the caller exhausts the two arms with a switch.
+     * {@link Rejected} carries every error path.
      */
     sealed interface Resolved {
         record Success(ReturnTypeRef returnType, MethodRef method) implements Resolved {}

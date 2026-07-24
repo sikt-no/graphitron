@@ -33,7 +33,7 @@ import java.util.List;
  *       with the group's own {@code DSLContext}: per-tenant acquisition through
  *       {@code TenantConnections.dslFor} for a bound entity, the default source for a global
  *       entity in a multi-tenant build, and the escape-hatch context read in single-tenant
- *       builds (byte-identical to the pre-tenant emission).</li>
+ *       builds.</li>
  * </ol>
  *
  * <p>Order preservation: result positions come from the rep's original index in the outer
@@ -54,13 +54,13 @@ final class HandleMethodBody {
 
     /**
      * The dispatch surface's tenant routing for one entity type. {@code null} for a
-     * single-tenant build (the emission is byte-identical to the pre-tenant form).
-     * {@code bound} carries the per-alternative decoded tenant positions for a tenant-scoped
-     * entity, or {@code null} for a global entity (which acquires the default source).
+     * single-tenant build. {@code bound} carries the per-alternative decoded tenant
+     * positions for a tenant-scoped entity, or {@code null} for a global entity (which
+     * acquires the default source).
      */
     record TenantRouting(ClassName tenantConnections, TenantBinding.EntityRepBound bound) {}
 
-    /** Single-tenant emission, byte-identical to the pre-tenant form. */
+    /** Single-tenant emission: no tenant routing. */
     static CodeBlock emit(EntityResolution entity, ClassName nodeIdEncoder) {
         return emit(entity, nodeIdEncoder, null);
     }

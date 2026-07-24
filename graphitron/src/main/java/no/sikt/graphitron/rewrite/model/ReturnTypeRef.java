@@ -5,27 +5,6 @@ package no.sikt.graphitron.rewrite.model;
  * Outcome of resolving the return type name of a field against the classified
  * {@link no.sikt.graphitron.rewrite.GraphitronSchema}, combined with the
  * {@link FieldWrapper} that describes how the element type is wrapped (single, list, or connection).
- *
- * <p>{@link TableBoundReturnType} — Graphitron generates the SQL query. The named type is a
- * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableType} or
- * {@link no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType}, or the field
- * inherits its parent's table context ({@code NestingField}). {@code table} is always a fully
- * resolved {@link no.sikt.graphitron.rewrite.model.TableRef}; when the table name in
- * {@code @table} cannot be found in the jOOQ catalog the builder classifies the containing
- * field as {@link GraphitronField.UnclassifiedField} instead of emitting a {@link TableBoundReturnType}.
- *
- * <p>{@link ResultReturnType} — the return type is a result-mapped, class-backed type whose backing comes from its producer's reflected return. No SQL is
- * generated; the generator accesses properties on the parent result object. The specific backing
- * Java representation is known from the parent
- * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType} sub-type.
- *
- * <p>{@link ScalarReturnType} — the return type is a scalar, enum, or a type name that does not
- * resolve to any classified schema type (e.g., directive-argument type names used by
- * {@code @nodeId(typeName:)}). No SQL is generated.
- *
- * <p>{@link PolymorphicReturnType} — stub for multi-table polymorphic returns (GraphQL interfaces
- * and unions whose members are each backed by separate tables, and Relay/Federation built-in
- * fields). Code generation for this case is not yet implemented.
  */
 public sealed interface ReturnTypeRef
     permits ReturnTypeRef.TableBoundReturnType, ReturnTypeRef.ResultReturnType,
@@ -33,13 +12,16 @@ public sealed interface ReturnTypeRef
 
     String returnTypeName();
 
-    /** The wrapper around the element type — {@link FieldWrapper.Single}, {@link FieldWrapper.List}, or {@link FieldWrapper.Connection}. */
+    /** The wrapper around the element type: {@link FieldWrapper.Single}, {@link FieldWrapper.List}, or {@link FieldWrapper.Connection}. */
     FieldWrapper wrapper();
 
     /**
      * Graphitron generates the SQL query. The named type is a table-backed type
      * or the field inherits its parent's table context.
-     * {@code table} is the outcome of resolving the type's {@code @table} directive.
+     * {@code table} is the outcome of resolving the type's {@code @table} directive and is
+     * always fully resolved: when the name is not found in the jOOQ catalog, the builder
+     * classifies the containing field as {@link GraphitronField.UnclassifiedField} instead of
+     * emitting this variant.
      */
     record TableBoundReturnType(String returnTypeName, TableRef table, FieldWrapper wrapper) implements ReturnTypeRef {}
 
@@ -62,9 +44,10 @@ public sealed interface ReturnTypeRef
     record ScalarReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
 
     /**
-     * Stub for multi-table polymorphic returns: GraphQL interfaces and unions whose member types
-     * are each backed by separate tables, and Relay/Federation built-in fields ({@code node},
-     * {@code _entities}). Code generation for this case is not yet implemented.
+     * Multi-table polymorphic return: a GraphQL interface or union whose member types are each
+     * backed by separate tables, or a Relay/Federation built-in field ({@code node},
+     * {@code _entities}). Interface and union fetchers are emitted by
+     * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}.
      */
     record PolymorphicReturnType(String returnTypeName, FieldWrapper wrapper) implements ReturnTypeRef {}
 }

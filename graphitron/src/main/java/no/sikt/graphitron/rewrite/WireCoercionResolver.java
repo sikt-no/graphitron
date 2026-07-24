@@ -16,26 +16,25 @@ import no.sikt.graphitron.rewrite.model.WireCoercionError;
  * assignable to the declared type (a true raw pass-through), or produce a typed
  * {@link WireCoercionError.Assignability} rejection.
  *
- * <p>Previously, every arg-classification site fell through to {@code CallSiteExtraction.Direct}
- * and emitted a raw {@code (DeclaredType) wireValue} cast, never checking that graphql-java's
- * coercion for the SDL type actually yields {@code DeclaredType}. graphql-java delivers {@code ID}
- * and enum values as {@code String}, {@code Int} as {@code Integer}, {@code Float} as
- * {@code Double}, input-objects as {@code Map}. So a declared cast target of a jOOQ record, a
- * numeric PK type, a domain class, or a width-mismatched numeric compiles cleanly and
- * {@code ClassCastException}s on the first request. This predicate turns the {@code Direct}
- * fall-through into the <em>narrow</em> arm the check confirms is wire-pass-through.
+ * <p>The check exists because graphql-java's coercion output routinely differs from the declared
+ * cast target: {@code ID} and enum values arrive as {@code String}, {@code Int} as {@code Integer},
+ * {@code Float} as {@code Double}, input-objects as {@code Map}. An unchecked
+ * {@code (DeclaredType) wireValue} cast against a jOOQ record, a numeric PK type, a domain class,
+ * or a width-mismatched numeric compiles cleanly and throws {@code ClassCastException} on the
+ * first request; this predicate confirms
+ * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct} is the <em>narrow</em>
+ * wire-pass-through arm before a site classifies into it.
  *
- * <p>The judgment lives here, at the classifier, not on {@link ScalarTypeResolver} (D1):
+ * <p>The judgment lives here, at the classifier, not on {@link ScalarTypeResolver}:
  * {@code ScalarTypeResolver} is a pure name↔type mapping that never holds a consumer-declared Java
- * type or a call site; folding the assignability verdict into it would make it a reader of types
- * it has never held. {@code ScalarTypeResolver} owns only the forward mapping
+ * type or a call site, and owns only the forward mapping
  * ({@link ScalarTypeResolver#coercionOutputType}); this class owns the verdict, and returns a
  * sealed {@link Result} mirroring the {@link EnumMappingResolver.EnumValidation} shape.
  *
  * <p>Enum leaves are <em>not</em> handled here: the enum→{@code String} coercion fact is carried
- * structurally by {@code EnumValueOf}, and enum-constant-name parity (site E) is a distinct axis
- * homed in {@code EnumMappingResolver} producing {@link WireCoercionError.EnumConstantDivergence}.
- * This class is scalar-assignability only.
+ * structurally by {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.EnumValueOf}, and
+ * enum-constant-name parity is a distinct axis homed in {@link EnumMappingResolver} producing
+ * {@link WireCoercionError.EnumConstantDivergence}. This class is scalar-assignability only.
  */
 final class WireCoercionResolver {
 
@@ -62,9 +61,9 @@ final class WireCoercionResolver {
      * their {@code Int}/{@code Integer} elements. Primitives are boxed before comparison so a
      * declared {@code int} matches an {@code Integer} coercion. When the coercion output cannot be
      * determined (an unrecognised custom scalar, or an SDL leaf that is not a scalar), the check
-     * passes through: it never over-rejects a leaf it cannot judge, keeping the audit-cleared
-     * custom-scalar path sound. When the leaf and declared type disagree on list-ness the check
-     * also passes through, leaving that cardinality concern to the existing shape checks.
+     * passes through: it never over-rejects a leaf it cannot judge, so custom scalars stay sound.
+     * When the leaf and declared type disagree on list-ness the check also passes through,
+     * leaving that cardinality concern to the shape checks.
      */
     static Result checkScalar(GraphQLInputType sdlLeafType, String declaredJavaTypeName,
             Iterable<GraphitronType> classifiedTypes, String site) {

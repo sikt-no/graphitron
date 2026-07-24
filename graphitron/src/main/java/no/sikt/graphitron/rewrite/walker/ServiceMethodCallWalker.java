@@ -21,18 +21,9 @@ import java.util.List;
 
 /**
  * Walker that produces a {@link ServiceMethodCall} carrier from an already-resolved
- * {@link MethodRef.Service}.
- *
- * <h3>Implementation note</h3>
- *
- * The spec describes a producer whose substrate is the field's SDL definition plus the
- * codegen classloader, with no graphitron-internal intermediate model. The current
- * implementation takes the {@link MethodRef.Service} produced upstream by
- * {@code ServiceDirectiveResolver}/{@code ServiceCatalog} and translates it to the
- * carrier shape; this keeps the slice's blast radius bounded and lets it land
- * without duplicating ~1k LOC of reflection logic. A follow-up may lift the existing
- * reflection helpers under {@code walker/internal/} and have this class call them directly,
- * retiring the {@link MethodRef.Service} intermediate at the model boundary.
+ * {@link MethodRef.Service}, the intermediate produced upstream by
+ * {@code ServiceDirectiveResolver}/{@code ServiceCatalog}; this class translates that
+ * shape and does no reflection of its own.
  *
  * <h3>Stage layout</h3>
  *
@@ -53,10 +44,10 @@ public final class ServiceMethodCallWalker {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
 
     /**
-     * Translate a resolved {@link MethodRef.Service} into a {@link ServiceMethodCall}. The
-     * {@code fieldDef} is reserved for future direct-reflection use; the current translator
-     * doesn't read it. Returns {@link WalkerResult.Ok} on success or
-     * {@link WalkerResult.Err} carrying typed {@link ServiceMethodCallError} arms.
+     * Translates a resolved {@link MethodRef.Service} into a {@link ServiceMethodCall};
+     * {@code fieldDef} is part of the walk signature but unread by the translation.
+     * Returns {@link WalkerResult.Ok} on success or {@link WalkerResult.Err} carrying
+     * typed {@link ServiceMethodCallError} arms.
      */
     public WalkerResult<ServiceMethodCall> walk(GraphQLFieldDefinition fieldDef, MethodRef.Service method) {
         List<Rejection.AuthorError> errors = new ArrayList<>();
@@ -103,14 +94,12 @@ public final class ServiceMethodCallWalker {
     }
 
     /**
-     * Project the holder constructor's resolved parameter sources onto {@code ctorArgs} entries
- *. Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} or
+     * Projects the holder constructor's resolved parameter sources onto {@code ctorArgs}
+     * entries. Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} or
      * {@link ParamSource.Context} by construction (the producer's {@code resolveInstanceHolder}
-     * only binds those), so the projection is {@link MappingEntry.FromDsl} /
-     * {@link MappingEntry.FromContext}; the cross-round invariant forbidding
-     * {@link MappingEntry.FromArg} in {@code ctorArgs} holds structurally. A constructor with more
-     * than one {@code DSLContext} slot raises {@link ServiceMethodCallError.MultipleDslContextSlots}
-     * under the {@code CTOR} round (the constructor mirror of the method-round guard above).
+     * only binds those), so the cross-round invariant forbidding {@link MappingEntry.FromArg}
+     * in {@code ctorArgs} holds structurally. More than one {@code DSLContext} slot raises
+     * {@link ServiceMethodCallError.MultipleDslContextSlots} under the {@code CTOR} round.
      */
     private List<MappingEntry> ctorArgs(
         MethodRef.CallShape.InstanceWithDslHolder holder,
@@ -209,7 +198,7 @@ public final class ServiceMethodCallWalker {
             return new ValueShape.Scalar(javaType, path, extraction);
         }
 
-        // ContextArg at @service Arg slot is not produced by the current resolver — defensive.
+        // ContextArg at @service Arg slot is not produced by the current resolver; defensive.
         errors.add(new ServiceMethodCallError.ParameterUnbindable(
             arg.graphqlArgName(),
             List.of(),
@@ -238,8 +227,8 @@ public final class ServiceMethodCallWalker {
             inner = inputBeanToValueShape(nestedBean, path);
         } else if (leaf instanceof CallSiteExtraction.NodeIdDecodeRecord) {
             // A jOOQ-record member decoded from @nodeId. Carry the leaf through unchanged so
-            // the create<Bean> helper emits the decode<Record> call; never downgrade to Direct (the
-            // wire-String → *Record ClassCastException this item exists to eliminate).
+            // the create<Bean> helper emits the decode<Record> call; downgrading to Direct would
+            // pass the wire String where a *Record is expected and throw ClassCastException at runtime.
             inner = new ValueShape.Scalar(elementType, path, leaf);
         } else if (isLeaf(leaf)) {
             inner = new ValueShape.Scalar(elementType, path, leaf);

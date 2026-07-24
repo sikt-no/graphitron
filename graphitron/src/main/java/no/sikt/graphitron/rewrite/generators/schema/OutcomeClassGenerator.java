@@ -16,44 +16,30 @@ import java.util.List;
  *
  * <p>{@code Outcome} is the request-time GraphQL source object an outcome field's fetcher returns:
  * {@code Success(value)} on the success projection, {@code ErrorList(errors)} on the error
- * projection. It is the request-time witness of the success/error fork, deliberately distinct from
- * the classify-time {@code ErrorChannel} carrier.
+ * projection. It is the request-time witness of the success/error fork, distinct from the
+ * classify-time {@link no.sikt.graphitron.rewrite.model.ErrorChannel} carrier.
  *
- * <h2>The graphql-java completion invariant this type encodes</h2>
- *
- * <p>The wrapper exists to satisfy a graphql-java 25.0 completion invariant that a {@code null}
- * source violates. A null source makes graphql-java's {@code completeValueForObject} short-circuit
- * <em>all</em> of an object type's children, so an errors field on a forking type is never fetched
- * and the typed error is silently dropped ({@code {outcomeField: null}}, no top-level error
- * either). {@code Outcome} resolves this by construction: the source is always non-null, so
- * graphql-java always descends. The data (success-projection) fields project {@code Success.value}
- * (null on the {@code ErrorList} arm, so they render null and their own children are not visited)
- * and the errors field projects {@code ErrorList.errors}.
+ * <p>The wrapper exists because graphql-java short-circuits <em>all</em> of an object type's
+ * children when the source is null, so an errors field on a forking type would never be fetched
+ * and the typed error silently dropped. With {@code Outcome} the source is always non-null and
+ * graphql-java always descends: data fields project {@code Success.value} (null on the
+ * {@code ErrorList} arm) and the errors field projects {@code ErrorList.errors}.
  *
  * <p>Two corollaries every immediate child of an outcome type must honour:
  * <ul>
- *   <li><b>Every immediate child arm-switches.</b> Each data-channel fetcher unwraps
- *       {@code Success} before its existing read and returns null on {@code ErrorList}; the errors
- *       field reads {@code ErrorList.errors}. An un-switched child would read a property off the
- *       {@code Outcome} object itself. Pinned at build time by
+ *   <li><b>Every immediate child arm-switches</b>: unwrap {@code Success} before the read, null on
+ *       {@code ErrorList}. Pinned at build time by
  *       {@code GraphitronSchemaValidator.validateOutcomeChildArmSwitch}.</li>
- *   <li><b>Success-projection fields must be nullable.</b> On the {@code ErrorList} arm a data
- *       field resolves null; if its SDL type is non-null, graphql-java raises
- *       {@code NonNullableFieldWasNullError} and bubbles the null up to the outcome field, dropping
- *       the sibling errors field. Rejected at classify time as
- *       {@code ErrorChannelWalkerError.NonNullableSuccessProjectionField}, where the SDL
- *       nullability is reachable.</li>
+ *   <li><b>Success-projection fields must be nullable</b>: on a non-null SDL type the error-arm
+ *       null raises {@code NonNullableFieldWasNullError} and bubbles up, dropping the sibling
+ *       errors field. Rejected at classify time as
+ *       {@code ErrorChannelWalkerError.NonNullableSuccessProjectionField}.</li>
  * </ul>
  *
- * <p>{@code ErrorList.errors} is {@code List<Object>} because it carries two populations: matched
- * throwables on the catch path and Jakarta {@code ConstraintViolation} objects on the
- * validator pre-step path. The per-{@code @error}-type field DataFetchers read off each element.
- *
  * <p>Emitted as plain classes with accessors rather than a sealed interface with {@code record}
- * arms because the project's JavaPoet fork does not yet expose {@code sealed} / {@code permits} /
- * {@code recordBuilder}; the runtime contract (non-null source, {@code Success}/{@code ErrorList}
- * arms, {@code value()}/{@code errors()} accessors) is unchanged. Generated alongside
- * {@code ErrorRouter} / {@code ErrorMappings}; preserves the rewrite's no-runtime-jar invariant.
+ * arms because the project's JavaPoet fork does not expose {@code sealed} / {@code permits} /
+ * record builders. Generated alongside {@code ErrorRouter} / {@code ErrorMappings}, preserving the
+ * rewrite's no-runtime-jar invariant.
  */
 public final class OutcomeClassGenerator {
 
@@ -69,7 +55,6 @@ public final class OutcomeClassGenerator {
     public static List<TypeSpec> generate(String outputPackage) {
         var outcomeRaw = ClassName.get(outputPackage + ".schema", CLASS_NAME);
 
-        // Success<T> implements Outcome<T> { private final T value; Success(T value); T value(); }
         var sT = TypeVariableName.get("T");
         var success = TypeSpec.classBuilder(SUCCESS_CLASS)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -90,9 +75,6 @@ public final class OutcomeClassGenerator {
                 .build())
             .build();
 
-        // ErrorList<T> implements Outcome<T> { private final List<Object> errors; ...; List<Object> errors(); }
-        // T is phantom on this arm (the error path discards the success type); it exists only so the
-        // arm satisfies Outcome<T>.
         var eT = TypeVariableName.get("T");
         var listOfObject = ParameterizedTypeName.get(LIST_CN, OBJECT_CN);
         var errorList = TypeSpec.classBuilder(ERROR_LIST_CLASS)

@@ -12,25 +12,18 @@ import java.util.Objects;
  * Java shape one emitted key row takes. Nothing about where the key points (the leaf's
  * {@code returnType.table()} / {@link ParentCorrelation}), how it is lifted off the parent
  * ({@link KeyLift} on the record-parent leaves), or what envelope the parent arrived in
- * ({@link SourceEnvelope} on the carrier leaves). The former six-component record was
- * decomposed onto those facts; this residue is what remains — and it is exactly the
- * {@code (wrap, columns)} pair the partial carriers ({@link MethodRef.Param.Sourced},
- * {@link ParamSource.Sources}, {@code ServiceCatalog.SourcesShape}) always held.
+ * ({@link SourceEnvelope} on the carrier leaves).
  *
  * <p>Pairs with {@link LoaderRegistration} (DataLoader container kind + dispatch shape) at the
  * field-classifier site: one {@code SourceKey} per {@link BatchKeyField}; the
  * {@link LoaderRegistration} is a separate value because the same key shape can be loaded into
  * either a positional or mapped DataLoader container.
  *
- * <h2>Components</h2>
- *
  * <ul>
- *   <li>{@link #columns()} — entry-point columns for the rows-method's parent-input VALUES
+ *   <li>{@link #columns()}: entry-point columns for the rows-method's parent-input VALUES
  *       table: target-side columns for the catalog-FK / accessor arms, first-hop source-side
  *       columns for the {@code @sourceRow + @reference} chain.</li>
- *   <li>{@link #wrap()} — the Java shape of one key row: {@link Wrap.Row} ({@code RowN<...>}),
- *       {@link Wrap.Record} ({@code RecordN<...>}), or {@link Wrap.TableRecord} (the typed jOOQ
- *       {@code TableRecord} subclass, with the {@link ClassName} payload). Stored where the
+ *   <li>{@link #wrap()}: the Java shape of one key row (see {@link Wrap}). Stored where the
  *       shape is authored (the {@code @splitQuery} source-shape choice, the {@code @service}
  *       {@code Sources} signature); derived from the lift arm ({@link KeyLift#wrap()}) where it
  *       is inferred (the record-parent leaves, whose constructors pin the derivation via
@@ -71,15 +64,9 @@ public record SourceKey(
     }
 
     /**
-     * The DataLoader key element type — {@code RowN<...>}, {@code RecordN<...>}, or the
-     * developer-declared {@code TableRecord} subclass — derived from {@link #wrap()} and
+     * The DataLoader key element type ({@code RowN<...>}, {@code RecordN<...>}, or the
+     * developer-declared {@code TableRecord} subclass) derived from {@link #wrap()} and
      * {@link #columns()}.
-     *
-     * <p>For {@link Wrap.Row}: {@code Row<n>} parameterised by each column's
-     * {@link ColumnRef#columnClass()}.
-     * For {@link Wrap.Record}: {@code Record<n>} parameterised by each column's
-     * {@code columnClass}. For {@link Wrap.TableRecord}: the captured
-     * {@link Wrap.TableRecord#className()}.
      */
     public TypeName keyElementType() {
         return keyElementType(wrap, columns);

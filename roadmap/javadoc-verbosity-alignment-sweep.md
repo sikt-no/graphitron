@@ -191,10 +191,75 @@ Bout 3 (census rows 71-130, 58 workable files, verified, reactor green with both
 128. `graphitron-sakila-example/.../FixtureWarningsGateTest.java`: 72 -> 51. Dangling `{@link}` to a nonexistent test method repointed; stale carve-out claim corrected against the file's own assertions.
 129. `graphitron/.../ArrivalIndex.java`: 69 -> 68. Monoid-role prose replaced with a `{@link Arrival#tensor(Arrival)}` pin.
 
-Claims routed out of the sweep (follow-ons to file at Done): `GraphitronType.ResultType#fqClassName` null caveat vs non-null construction paths; `GraphitronType` InputType garbled "(or `@table`)" parenthetical; `TypeFetcherGenerator` L2085 comment contradicting `DSL.noCondition()` emission; `TypeFetcherGenerator` stale "Mapped is not produced yet" claims (x2) whose adjacent throw-message string literals repeat the stale claim; `RecordBindingResolver#fromAnyProducer` is dead API (zero callers). From bout 2: `JooqRecordInstantiationEmitter#openDescent` javadoc's graphql-java nested present-null coercion claim (load-bearing external-library behavior with no named execution test to pin to); `ScalarTypeResolver#resolveFromDirectiveValue` javadoc's rationale citing a per-arm LSP `ClassNotFound` fix-it that does not exist in `graphitron-lsp` main sources. From bout 3: `JoinPathEmitter#emitCorrelationWhere` javadoc's claim that the empty-slot fallback's emitted `DSL.noCondition()` stub is runtime-throwing (behavioral claim about generated output with no named pin); `MultiTablePolymorphicEmitter` (two comments) and `RowsMethodCall` still cite the removed `buildSplitQueryDataFetcher`/`buildRecordBasedDataFetcher` methods (the former survived the bout-1 pass; the latter is below the census cutoff). Also for the generated-output item: "slice" mentions inside `ConnectionRuntimeClassGenerator` `.addJavadoc` string literals render into generated output.
+Bout 4 (census rows 131-190 plus the rejoined row 4, 61 workable files, verified, reactor green with both guards):
+
+Census row 4, `graphitron/.../BuildContext.java` (rejoined per Mechanics once its exclusion owner landed): 1284 -> 1250. Severed registry-sync claim confirmed absent; stale `TargetKeys` claim corrected to the live `NodeIndex` read path; dead slug citation removed; two `§`-numbered channel-rule comments routed.
+
+130. `graphitron/.../walker/DeleteRowsWalker.java`: 68 -> 48. Stage-numbering vocabulary dropped.
+131. `graphitron/.../methodgraph/EmittedMethodClosure.java`: 68 -> 64. Level/thread plan vocabulary cut; oracle pinned to `MethodClosureOracleTest`.
+132. `graphitron/.../model/PayloadConstructionShape.java`: 67 -> 62. Reference to nonexistent `ReflectionHelpers` removed.
+133. `graphitron/.../model/LoaderRegistration.java`: 67 -> 55. Components list deduplicated onto the enum-constant docs.
+134. `graphitron/.../generators/schema/ObjectTypeGenerator.java`: 67 -> 61.
+135. `graphitron/.../compile/IncrementalCompiler.java`: 67 -> 66. One future-work promise cut; rest load-bearing.
+136. `graphitron/.../WrapperAlgebraTest.java`: 67 -> 57. Laws deduplicated onto the assertion descriptions.
+137. `graphitron/.../TypeRegistry.java`: 66 -> 60. Verb-collapse history restated present-tense.
+138. `graphitron/.../catalog/InferredDirectiveArgs.java`: 66 -> 55.
+139. `graphitron-maven-plugin/.../CodegenLoaderTest.java`: 66 -> 63. False generated-via-javac claim corrected to the hand-rolled `writeMarkerClass` bytes.
+140. `graphitron/.../walker/ServiceMethodCallWalker.java`: 65 -> 54. Spec-vs-implementation narrative cut.
+141. `graphitron/.../generators/util/HandleMethodBody.java`: 64 -> 64. Three byte-identical-history anchors cut; rewraps kept the count level.
+142. `graphitron-sakila-example/.../RoutineFieldExecutionTest.java`: 64 -> 53. Design-alternative label dropped.
+143. `graphitron/.../generators/schema/GraphitronFacadeGenerator.java`: 63 -> 55.
+144. `graphitron/.../generators/util/QueryNodeFetcherClassGenerator.java`: 62 -> 52. Stale dispatch claim corrected to `EntityFetcherDispatch.resolveByReps`; changelog citation removed.
+145. `graphitron/.../model/ParentRowDemand.java`: 59 -> 41. Gap-label plan vocabulary dropped.
+146. `graphitron/.../model/DmlReturnExpression.java`: 55 -> 48.
+147. `graphitron/.../model/SourceKey.java`: 54 -> 41. Stale `columnClass()` cite corrected.
+148. `graphitron/.../model/ErrorChannelWalkerError.java`: 60 -> 53. Stale two-arms header corrected (three arms carry the classification-raised doc).
+149. `graphitron/.../model/Source.java`: 60 -> 45. `OnlyChild` honesty clause kept with an explicit nothing-machine-enforces marker; 1 claim routed.
+150. `graphitron/.../generators/util/GraphitronTransactionProviderGenerator.java`: 60 -> 54. Fidelity claim pinned to its unit test by name.
+151. `graphitron/.../methodgraph/MethodClosureOracleTest.java`: 60 -> 50. Seam-worklist row/thread labels cut.
+152. `graphitron-sakila-example/.../SealedHierarchyDocCoverageTest.java`: 60 -> 59. Stale path claim and retired vocabulary corrected.
+153. `graphitron/.../generators/ParentProjectionContainmentCheck.java`: 59 -> 53.
+154. `graphitron/.../generators/RowsMethodSkeleton.java`: 59 -> 35. Phase framing cut; seams pinned to the live emitters.
+155. `graphitron/.../generators/schema/GraphitronDevExecutorGenerator.java`: 58 -> 57.
+156. `graphitron/.../generators/util/GraphitronConnectionInstrumentationGenerator.java`: 58 -> 58. Slice labels and successor promises restated present-tense; false `CLAIMS_KEY_VALUE` cross-reference dropped.
+157. `graphitron/.../CheckedExceptionMatcher.java`: 57 -> 33. False `throws Error` claim deleted; exemptions pinned to `CheckedExceptionClassificationTest`.
+158. `graphitron-sakila-example/.../DirectiveDocCoverageTest.java`: 57 -> 48.
+159. `graphitron/.../TableMethodDirectiveResolver.java`: 56 -> 34. Helper list corrected to the two helpers the code calls.
+160. `graphitron/.../model/RowsMethodBody.java`: 56 -> 40. Stale wiring promise cut (consumers already live); rotted permit list dropped.
+161. `graphitron/.../RetiredVocabularyGuardTest.java`: 56 -> 48. Remediation prose deduplicated onto the assertion messages.
+162. `graphitron/.../model/ScalarResolution.java`: 55 -> 48. Aspirational LSP consumer dropped from the consumer list.
+163. `graphitron/.../LookupKeyDirectiveResolver.java`: 53 -> 26.
+164. `graphitron/.../PaginationResolver.java`: 53 -> 28.
+165. `graphitron/.../model/WireCoercionError.java`: 53 -> 44. Spec/audit site labels cut; assignability claim pinned to `{@link CallSiteExtraction.Direct}`.
+166. `graphitron/.../generators/schema/ErrorRouterClassGenerator.java`: 51 -> 22. Dead spec-file citation removed; contracts deduplicated onto the emitted-javadoc literals.
+167. `graphitron/.../SettKvotesporsmalShapeRegressionTest.java`: 52 -> 21. Stale pin bullet for a deleted test removed; self-contradictory classification sentence and wrong accessor claim fixed.
+168. `graphitron/.../generators/PolymorphicProjectionFilterPinTest.java`: 53 -> 33. Rot-prone occurrence count softened and pinned to the counting helper.
+169. `graphitron/.../ContextArgumentClassifier.java`: 52 -> 33.
+170. `graphitron/.../generators/util/EntityFetcherDispatchClassGenerator.java`: 52 -> 48. Dunder rationale pinned to `DunderFreeEmissionPipelineTest`.
+171. `graphitron/.../compile/TypeSpecReferenceWalk.java`: 52 -> 47. Nonexistent `walkEdges` corrected to `edges(u)`; subset contract pinned to the harness oracle test.
+172. `graphitron-lsp/.../code_action/SdlAction.java`: 52 -> 43.
+173. `graphitron-maven-plugin/.../SessionStateBinding.java`: 52 -> 52. No trimmable claim (author-facing config contract).
+174. `graphitron/.../LookupMappingResolver.java`: 51 -> 35. Arm enumeration reduced to the non-local downstream facts.
+175. `graphitron/.../model/ReturnTypeRef.java`: 51 -> 34. Stale not-yet-implemented polymorphic-stub claim corrected, pinned to the live `MultiTablePolymorphicEmitter`.
+176. `graphitron/.../DunderFreeEmissionPipelineTest.java`: 51 -> 35.
+177. `graphitron/.../QualifiedParticipantCrossTableReferencePipelineTest.java`: 51 -> 46. Pre-fix narration restated present-tense.
+178. `graphitron/.../ExternalFieldDirectiveResolver.java`: 50 -> 29.
+179. `graphitron/.../model/ColumnRef.java`: 50 -> 47.
+180. `graphitron/.../RoadmapReferenceScanner.java`: 40 -> 40. No trimmable claim (the guard's own deliberately oblique phrasing; any rewrite risks the pattern it scans for).
+181. `graphitron/.../generators/schema/OutcomeClassGenerator.java`: 49 -> 31. Contracts deduplicated onto the emitted-javadoc literals.
+182. `graphitron/.../methodgraph/MethodCommandRegistry.java`: 49 -> 41. Closure oracle named; migration promises restated present-tense.
+183. `graphitron/.../classifieddsl/ClassifiedDslTest.java`: 49 -> 44. Spec-section citation cut; gap prose deduplicated onto the map literals.
+184. `graphitron/.../model/DomainReturnType.java`: 48 -> 34. Dead validator-method name removed; enforcement restated against the live builder path.
+185. `graphitron-mcp/.../rag/LuceneEmbeddingStore.java`: 48 -> 43. Warm-gating claim pinned to `{@link WarmState}`.
+186. `graphitron/.../WireCoercionResolver.java`: 47 -> 46. Plan labels cut; failure mode pinned to `{@link CallSiteExtraction.Direct}`.
+187. `graphitron/.../schema/federation/FederationKeyFieldsParser.java`: 47 -> 26. Accept/reject lists deduplicated onto the lexer; caller contract pinned to `{@link EntityResolutionBuilder}`.
+188. `graphitron/.../generators/schema/OneOfDirectiveSdl.java`: 47 -> 39.
+189. `graphitron-lsp/.../definition/IntraSchemaDefinitions.java`: 47 -> 41.
+
+Claims routed out of the sweep (follow-ons to file at Done): `GraphitronType.ResultType#fqClassName` null caveat vs non-null construction paths; `GraphitronType` InputType garbled "(or `@table`)" parenthetical; `TypeFetcherGenerator` L2085 comment contradicting `DSL.noCondition()` emission; `TypeFetcherGenerator` stale "Mapped is not produced yet" claims (x2) whose adjacent throw-message string literals repeat the stale claim; `RecordBindingResolver#fromAnyProducer` is dead API (zero callers). From bout 2: `JooqRecordInstantiationEmitter#openDescent` javadoc's graphql-java nested present-null coercion claim (load-bearing external-library behavior with no named execution test to pin to); `ScalarTypeResolver#resolveFromDirectiveValue` javadoc's rationale citing a per-arm LSP `ClassNotFound` fix-it that does not exist in `graphitron-lsp` main sources. From bout 3: `JoinPathEmitter#emitCorrelationWhere` javadoc's claim that the empty-slot fallback's emitted `DSL.noCondition()` stub is runtime-throwing (behavioral claim about generated output with no named pin); `MultiTablePolymorphicEmitter` (two comments) and `RowsMethodCall` still cite the removed `buildSplitQueryDataFetcher`/`buildRecordBasedDataFetcher` methods (the former survived the bout-1 pass; the latter is below the census cutoff). Also for the generated-output item: "slice" mentions inside `ConnectionRuntimeClassGenerator` `.addJavadoc` string literals render into generated output. From bout 4: `BuildContext`'s two `§`-numbered channel-rule comments (rule-family names pinned to fixtures, but the numbered rule spec they cite resolves to no live artifact); `Source.OnlyChild`'s row-correctness contract (load-bearing, explicitly marked as machine-unenforced; needs an enforcer or a pin). String-literal findings for the generated-output item (untouchable by this sweep's comment-only constraint): emitted javadoc in `ErrorRouterClassGenerator`, `FieldBuilder`, and `WithErrorChannel` cites the dead `error-handling-parity.md` spec file and carries future-work phrasing; `GraphitronConnectionInstrumentationGenerator`'s emitted incremental-delivery rejection message says "it is a named follow-on"; `BuildContext` emits "file a roadmap item if this shape needs admission" / "a future Backlog item may admit multi-data carriers" diagnostics. Test-source note: `ClassifiedDslTest`'s `OPERATION_KNOWN_GAPS` map values cite roadmap ids in string literals (out of the guard's string-scan scope by design).
 
 ## Out of scope
 
 - Adding missing orientation javadoc and `package-info.java` files: [`source-orientation-javadocs.md`](source-orientation-javadocs.md). Rubric verdict 5 and the sequencing note above coordinate the two items; this sweep preserves and tightens on-ramps but never authors new ones.
 - Generated-output javadoc and hygiene: [`generated-output-hygiene-sweep.md`](generated-output-hygiene-sweep.md).
-- Fixing individually tracked drifted claims (R494, R496, R498); bound by the exclusion list under Mechanics, not by intent alone.
+- Fixing individually tracked drifted claims (R496, R498); bound by the exclusion list under Mechanics, not by intent alone. R494 landed mid-sweep, so its files rejoined the worklist (BuildContext swept in bout 4; SchemaDirectiveRegistry sits below the census cutoff).

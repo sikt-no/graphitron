@@ -16,29 +16,17 @@ import java.util.Objects;
  * onto {@code Container.MAPPED_SET}; catalog-FK and {@code List<...>}-source declarations
  * collapse onto {@code Container.POSITIONAL_LIST}.
  *
- * <p>The rooted DML payload case has no {@link LoaderRegistration} — the DataFetcher
+ * <p>The rooted DML payload case has no {@link LoaderRegistration}: the DataFetcher
  * reads {@code env.getSource()} and uses {@link SourceKey} directly to extract source-row
  * instances. {@link LoaderRegistration} being a separate value (not a field on
  * {@link SourceKey}) is what makes that absence representable.
  *
- * <h2>Components</h2>
- *
- * <ul>
- *   <li>{@link #valueIsList()} — {@code false} when the loader returns one record per key
- *       ({@code load(key) -> Record}); {@code true} when it returns a list per key
- *       ({@code load(key) -> List<Record>}).</li>
- *   <li>{@link #container()} — {@link Container#POSITIONAL_LIST} drives {@code newDataLoader}
- *       (positional: {@code keys[i]} aligns with {@code values[i]});
- *       {@link Container#MAPPED_SET} drives {@code newMappedDataLoader} (the mapped variant
- *       returns a {@code Map<KeyType, V>}).</li>
- *   <li>{@link #dispatch()} — {@link Dispatch#LOAD_ONE} drives
- *       {@code loader.load(key, env)} (one key per fetch site, single value back);
- *       {@link Dispatch#LOAD_MANY} drives
- *       {@code loader.loadMany(keys, contexts)} (one fetch site, many keys, many values back).
- *       Container and dispatch are independent axes: {@code Container.MAPPED_SET} pairs with
- *       both {@link Dispatch#LOAD_ONE} (single-cardinality mapped-source declarations) and
- *       {@link Dispatch#LOAD_MANY} (accessor-many's loadMany contract).</li>
- * </ul>
+ * <p>{@link #valueIsList()} is {@code false} when the loader returns one record per key
+ * ({@code load(key) -> Record}), {@code true} when it returns a list per key
+ * ({@code load(key) -> List<Record>}). Container and dispatch are independent axes:
+ * {@link Container#MAPPED_SET} pairs with both {@link Dispatch#LOAD_ONE} (single-cardinality
+ * mapped-source declarations) and {@link Dispatch#LOAD_MANY} (accessor-many's loadMany
+ * contract).
  *
  * <p>The path-scoped DataLoader name (tenant-partitioned for fields inheriting a divined tenant
  * in a multi-tenant build) is computed at fetch time from

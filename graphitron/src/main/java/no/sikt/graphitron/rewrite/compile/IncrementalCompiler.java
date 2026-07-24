@@ -24,9 +24,8 @@ import java.util.Set;
  * <ul>
  *   <li><b>Startup / consumer-{@code .class} change</b> → {@link #compileAll}: full compile of the whole
  *       generated tree, establishing (or re-establishing) the ABI baseline. A consumer service ABI edit
- *       is invalidated conservatively by recompiling the whole tree rather than modelling
- *       generated→consumer edges (the graph only carries generated→generated edges; a precise
- *       generated→consumer invalidation is deferred, and belongs with the eventual method graph).</li>
+ *       is invalidated conservatively by recompiling the whole tree; the graph only carries
+ *       generated→generated edges, not generated→consumer edges.</li>
  *   <li><b>Schema save</b> → {@link #recompile}: recompile the writer's delta plus the reverse-transitive
  *       dependents of the delta units whose ABI moved, then advance the ABI baseline. A failed round's
  *       units are re-attempted on every later round until one compiles them clean, so an unrelated save

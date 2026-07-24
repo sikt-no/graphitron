@@ -40,25 +40,22 @@ import java.util.Map;
  * and KNN vector search in a single index, fused by reciprocal-rank fusion. Pure Java, so the only
  * native footprint in the RAG stack is the embedder; this store ships no JNI.
  *
- * <p><strong>Hybrid fusion is reciprocal-rank fusion (RRF), a Lucene-internal detail behind the
- * seam.</strong> A {@link #search} runs the KNN vector query and the BM25 text query separately and
- * fuses their two ranked lists by {@code score = Σ 1/(RRF_K + rank)} over the documents each
- * surfaces, rather than normalizing and linearly combining raw KNN distances against BM25 scores.
- * RRF is parameter-light (one constant, no per-corpus calibration) and makes a "BM25 hybrid
- * surfaces a lexical match" outcome deterministic. The choice never reaches a consumer and can
- * change without touching the consuming tools.
+ * <p><strong>Hybrid fusion is reciprocal-rank fusion (RRF), a detail behind the seam.</strong>
+ * {@link #search} runs the KNN vector query and the BM25 text query separately and fuses the two
+ * ranked lists by summed reciprocal rank, avoiding any normalization of raw KNN distances against
+ * BM25 scores. RRF is parameter-light (one constant, no per-corpus calibration) and makes a "BM25
+ * hybrid surfaces a lexical match" outcome deterministic. The choice never reaches a consumer and
+ * can change without touching the consuming tools.
  *
  * <p><strong>The dimension invariant is structural, checked once.</strong> The store is constructed
  * with the embedder's {@code dimension()} (the single source of truth for vector width); {@link #add}
- * validates each embedding's vector length against it at that one point and fails loudly on
- * mismatch, so the embedder that produces vectors and the index that stores them agree by
- * construction, not by prose. The store needs the embedder's width, not the embedder itself, so a
- * load-only index still loads off disk before the embedder is {@code Ready}.
+ * fails loudly on any embedding whose vector length disagrees. The store needs the embedder's
+ * width, not the embedder itself, so a load-only index loads off disk before the embedder's
+ * {@link WarmState} is {@code Ready}.
  *
- * <p>Construction picks build vs load and never names the backend at the consumer: {@link #inMemory}
- * (RAM directory, the seam's test fake), {@link #building} (writable on-disk index), and
- * {@link #load} (read-only over a prebuilt index). The first two accept {@link #add}; {@link #load}
- * rejects it.
+ * <p>Construction picks build vs load: {@link #inMemory} (RAM directory, the seam's test fake),
+ * {@link #building} (writable on-disk index), and {@link #load} (read-only over a prebuilt index).
+ * The first two accept {@link #add}; {@link #load} rejects it.
  */
 public final class LuceneEmbeddingStore implements EmbeddingStore {
 
@@ -150,9 +147,7 @@ public final class LuceneEmbeddingStore implements EmbeddingStore {
             TopDocs knn = searcher.search(new KnnFloatVectorQuery(VECTOR_FIELD, query.vector(), k), k);
             TopDocs bm25 = searcher.search(bm25Query(query.text()), k);
 
-            // RRF over the two ranked lists: a document's fused score sums 1/(RRF_K + rank) across
-            // whichever lists surface it (rank is 1-based). The map preserves first-seen order only
-            // for stable iteration; the final ordering is by fused score below.
+            // The LinkedHashMap only stabilizes iteration order; ranking is by fused RRF score below.
             var fused = new LinkedHashMap<Integer, Double>();
             accumulate(fused, knn);
             accumulate(fused, bm25);

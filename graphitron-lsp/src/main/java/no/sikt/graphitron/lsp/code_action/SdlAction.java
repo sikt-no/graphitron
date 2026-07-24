@@ -11,37 +11,29 @@ import java.util.stream.Stream;
 /**
  * The reusable shape for an LSP-side SDL refactor: detection of
  * matched literals plus per-match rewriting that produces a
- * {@link RewriteResult}. The first instantiation is the
- * {@code ExternalCodeReference.name → className} migration; future
- * deprecation migrations or directive renames instantiate it
- * differently.
+ * {@link RewriteResult}. Each SDL migration (directive rename,
+ * deprecation migration) is one instance.
  *
  * <p>A single {@code SdlAction} drives all three activation points the
  * code-action provider exposes (per-site, file-scoped bulk,
- * workspace-scoped bulk). Per-site invocations call {@link #detector()}
- * once and {@link #rewrite()} for whichever match contains the cursor;
- * bulk invocations call {@link #rewrite()} for every match the
- * detector emits and partition the results by {@link RewriteResult}
- * arm to drive the result message.
+ * workspace-scoped bulk). Per-site invocations rewrite the match
+ * containing the cursor; bulk invocations rewrite every detected match
+ * and partition the results by {@link RewriteResult} arm to drive the
+ * result message.
  *
  * @param displayName the code-action title shown in the editor (e.g.
  *                    "Migrate `name:` to `className:`").
  * @param targets     the deprecation sites this action migrates,
- *                    keyed by {@link SchemaCoordinate}. When an action
- *                    targets a deprecation, {@code SdlActionDriftTest}
- *                    asserts the target points at a real deprecation
- *                    marker in {@code directives.graphqls} so a renamed
- *                    or removed marker cannot leave a stale action; a
+ *                    keyed by {@link SchemaCoordinate}.
+ *                    {@code SdlActionDriftTest} asserts each target
+ *                    points at a real deprecation marker in
+ *                    {@code directives.graphqls}, so a renamed or
+ *                    removed marker cannot leave a stale action; a
  *                    deprecation is not required to have an action.
- * @param detector    finds matched literals in a file, in source
- *                    order. Eager / finite stream; the consumer
- *                    materialises before iterating multiple times.
- * @param rewrite     per-match rewrite. Returns
- *                    {@link RewriteResult.Edit} with the TextEdit to
- *                    apply, or {@link RewriteResult.Skip} when the
- *                    rewrite cannot proceed (e.g. unresolvable
- *                    {@code name:} value); skip reasons feed the bulk
- *                    action's result message.
+ * @param detector    per-file match detection; see {@link Detector}
+ *                    for the stream contract.
+ * @param rewrite     per-match rewrite; {@link RewriteResult.Skip}
+ *                    reasons feed the bulk action's result message.
  */
 public record SdlAction(
     String displayName,
@@ -51,10 +43,9 @@ public record SdlAction(
 ) {
 
     /**
-     * Detects matched literals in a workspace file. Implementations
-     * walk the parsed tree and emit one {@link Node} per match in
-     * source order. The contract is: finite, eager-friendly stream
-     * scoped to a single file.
+     * Detects matched literals in a workspace file: one {@link Node}
+     * per match, in source order. Finite, eager-friendly stream scoped
+     * to a single file.
      */
     @FunctionalInterface
     public interface Detector {

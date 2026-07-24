@@ -20,18 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Bidirectional drift-protection seam between the rewrite's {@code directives.graphqls}
  * (the canonical directive surface auto-injected by {@code RewriteSchemaLoader}) and
- * the per-directive reference pages under {@code docs/manual/reference/directives/}.
- *
- * <p>Asserts every directive declared in the schema <em>and advertised in the v1
- * surface</em> has a {@code <name>.adoc} page, and every {@code <name>.adoc} page
- * corresponds to a directive declared in the schema. Failures print the missing
- * pages or stale files so the fix is mechanical.
- *
- * <p>A future PR that adds a directive cannot land green
- * without adding the doc page; a PR that removes a directive must remove its page
- * (or the build fails). This test lives in {@code graphitron-sakila-example} because
- * that module already carries cross-cutting structural tests against the project
- * layout.
+ * the per-directive reference pages under {@code docs/manual/reference/directives/}:
+ * every directive declared in the schema <em>and advertised in the v1 surface</em>
+ * must have a {@code <name>.adoc} page, and every page must correspond to a declared
+ * directive. Failures print the missing pages or stale files so the fix is mechanical.
+ * Lives in {@code graphitron-sakila-example} because that module carries the
+ * cross-cutting structural tests against the project layout.
  *
  * <p>Carve-out: a directive may be declared in {@code directives.graphqls} (so
  * legacy schemas keep parsing) yet withheld from the advertised v1 surface, in which
@@ -39,8 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * it is derived from the generated {@code supported-directives.adoc} fragment that
  * {@code DirectiveSupportReport} renders (a declared directive absent from that
  * fragment is withheld), so the exemption cannot drift from the report that owns the
- * policy. When a withheld directive is re-advertised, its page reappears and the
- * bijection tightens automatically.
+ * policy.
  */
 @UnitTier
 class DirectiveDocCoverageTest {
@@ -56,8 +49,7 @@ class DirectiveDocCoverageTest {
 
     /**
      * Generated migration fragment listing the advertised directive surface (Supported +
-     * Removed/rejected + shape-changes). Rendered by {@code DirectiveSupportReport}; the set
-     * of declared directives absent from it is exactly the withheld-from-v1 set.
+     * Removed/rejected + shape-changes), rendered by {@code DirectiveSupportReport}.
      */
     private static final String SUPPORTED_DIRECTIVES_FRAGMENT =
         "docs/manual/_generated/supported-directives.adoc";
@@ -89,9 +81,9 @@ class DirectiveDocCoverageTest {
         Set<String> pages = pagesFromDocs();
         Set<String> advertised = advertisedDirectives();
 
-        // Directives declared but absent from the advertised surface are withheld
-        // from v1 and intentionally page-less. Derived from the report's own output so the
-        // exemption cannot drift from DirectiveSupportReport.WITHHELD_FROM_V1.
+        // Declared-but-not-advertised directives are withheld from v1 and intentionally
+        // page-less; derived from the report's own output so the exemption cannot drift
+        // from DirectiveSupportReport.WITHHELD_FROM_V1.
         Set<String> withheld = new TreeSet<>(directives);
         withheld.removeAll(advertised);
 
@@ -120,8 +112,7 @@ class DirectiveDocCoverageTest {
 
     /**
      * Directive names mentioned in the generated {@code supported-directives.adoc} fragment,
-     * i.e. the advertised v1 surface. A directive declared in the schema but missing from
-     * this set is withheld from v1 and needs no reference page.
+     * i.e. the advertised v1 surface.
      */
     private static Set<String> advertisedDirectives() throws IOException {
         Path fragment = locate(SUPPORTED_DIRECTIVES_FRAGMENT);

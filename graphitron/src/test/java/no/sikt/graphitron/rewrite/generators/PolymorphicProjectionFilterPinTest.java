@@ -14,9 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Guarantee marker: the Stage-2 per-typename SELECT in
  * {@code MultiTablePolymorphicEmitter.buildPerTypenameSelect} threads
  * {@code PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "<Type>")}
- * into the emitted {@code <Type>.$fields(...)} call. A refactor that reverts
- * to passing the unfiltered parent selection set re-introduces the over-selection
- * the wrapper closes.
+ * into the emitted {@code <Type>.$fields(...)} call. Passing the unfiltered parent
+ * selection set instead re-introduces the over-selection the wrapper closes.
  *
  * <p>The classifier does not reject this shape (no classifier guarantee applies),
  * and the rewrite bans code-string assertions on <em>emitted</em> method bodies,
@@ -24,28 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * regex scan over <em>generator source files</em> that counts occurrences and
  * asserts the expected enumeration.
  *
- * <p>Two assertions:
- * <ul>
- *   <li>Folder-wide scan via {@link #countAcrossGenerators}: occurrences of the
- *       JavaPoet emit-string shape {@code $T.restrictTo(env.getSelectionSet()}
- *       across the generators package. The {@code $T} placeholder uniquely
- *       identifies addStatement/addCode emit-site strings (prose mentions of
- *       {@code PolymorphicSelectionSet.restrictTo} in javadoc / comments use
- *       the qualified-class form, not the placeholder, so they are filtered
- *       out). Expected count: 1 — the single Stage-2 site in
- *       {@code MultiTablePolymorphicEmitter.java}.</li>
- *   <li>Single-file scan over {@code MultiTablePolymorphicEmitter.java}:
- *       occurrences of {@code env.getSelectionSet()} passed <em>directly</em> as
- *       the first argument to {@code $$fields(} (the double-dollar distinguishes
- *       JavaPoet emit-site strings from javadoc text, which uses single
- *       {@code $fields}). Expected count: 0 after the fix. A regression that
- *       reverts the Stage-2 site to the unfiltered shape re-introduces a match,
- *       the count rises, the pin trips.</li>
- * </ul>
- *
  * <p>Scoping the second pin to a single file (rather than reusing
- * {@code countAcrossGenerators}) is deliberate: the same direct-arg shape
- * appears in ~12 non-polymorphic emit sites across {@code FetcherEmitter},
+ * {@link #countAcrossGenerators}) is deliberate: the same direct-arg shape
+ * appears in many non-polymorphic emit sites across {@code FetcherEmitter},
  * {@code SplitRowsMethodEmitter}, and several {@code TypeFetcherGenerator}
  * sites that are correct as-is per the "Filter at the call site, not inside
  * {@code $fields}" reasoning, plus the same-table interface emit site at
@@ -84,10 +64,10 @@ class PolymorphicProjectionFilterPinTest {
 
     @Test
     void stage2EmitterPassesNoUnfilteredSelectionSetToFields() throws IOException {
-        // Matches the JavaPoet emit-string shape `$$fields(env.getSelectionSet()` — the double
+        // Matches the JavaPoet emit-string shape `$$fields(env.getSelectionSet()`; the double
         // dollar distinguishes addStatement bodies from javadoc text (which uses single $fields).
-        // After the fix, no occurrences remain in MultiTablePolymorphicEmitter.java: every
-        // call passes through PolymorphicSelectionSet.restrictTo.
+        // Expected count 0: every call in MultiTablePolymorphicEmitter.java passes through
+        // PolymorphicSelectionSet.restrictTo.
         String content = Files.readString(STAGE_2_EMITTER);
         long directArgs = Pattern.compile("\\$\\$fields\\(env\\.getSelectionSet\\(\\)")
             .matcher(content).results().count();

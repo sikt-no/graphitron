@@ -8,24 +8,20 @@ import java.util.List;
  * How a payload class is constructed by the generated fetcher. Two structurally distinct shapes
  * the emitter forks on: the canonical all-fields constructor (records always present this shape;
  * hand-rolled POJOs may too), and the Java-bean shape (no-arg constructor plus per-SDL-field
- * setter methods). The shape is resolved once at classify time and carried on the assembly
- * carrier ({@link ErrorChannel}); each emit site dispatches on the arm directly, with no
- * per-instance branching.
+ * setter methods). The shape is resolved once at classify time (by
+ * {@link no.sikt.graphitron.rewrite.FieldBuilder}'s {@code resolvePayloadConstructionShape})
+ * and carried on the assembly carrier ({@link ErrorChannel}); each emit site dispatches on the
+ * arm directly, with no per-instance branching.
  *
- * <p>Variant identity tracks construction shape, per the rule applied repeatedly elsewhere in
- * the model: two structurally distinct ways of building the same artifact are modelled as
- * a sealed sub-taxonomy where the variant identifier carries the shape, not a flag or a nullable
- * component. The all-fields-ctor path and the mutable-bean path have different mechanical
- * contracts ({@code new Payload(...)} vs. {@code var p = new Payload(); p.setX(...); ... return
- * p;}), different slot-identification rules (parameter index vs. setter method by SDL field
- * name), and different ambiguity modes.
+ * <p>Variant identity carries the construction shape, not a flag or a nullable component: the
+ * two arms have different mechanical contracts ({@code new Payload(...)} vs. {@code var p = new
+ * Payload(); p.setX(...); ... return p;}), different slot-identification rules (parameter index
+ * vs. setter method by SDL field name), and different ambiguity modes.
  *
- * <p>The predicates run in order: {@link AllFieldsCtor} first, then {@link MutableBean}. When
- * both match {@code AllFieldsCtor} wins (canonical-over-bridge precedence: records always
- * present the all-fields ctor; the setter shape is a legacy bridge from
- * {@code graphitron-codegen-parent}). Both shapes yield equivalent payload instances; there's
- * no construction drift to surface. Consumers who want the setter shape exclusively drop the
- * all-fields ctor from their class.
+ * <p>When both shapes match, {@link AllFieldsCtor} wins: records always present the all-fields
+ * ctor, and the setter shape is a bridge for {@code graphitron-codegen-parent}-style beans.
+ * Both shapes yield equivalent payload instances; there's no construction drift to surface.
+ * Consumers who want the setter shape exclusively drop the all-fields ctor from their class.
  *
  * <p><b>{@code @field(name:)} on payload fields.</b> A setter or constructor parameter name
  * matches the {@code @field(name:)} value when the directive is present, the SDL field name
@@ -40,7 +36,7 @@ public sealed interface PayloadConstructionShape
         permits PayloadConstructionShape.AllFieldsCtor, PayloadConstructionShape.MutableBean {
 
     /**
-     * Canonical all-fields constructor; today's contract. Records always present this shape.
+     * The canonical all-fields constructor. Records always present this shape.
      * Hand-rolled POJOs match when their declared constructor list disambiguates to a single
      * canonical (all-fields) ctor (typically by parameter count vs. SDL field count).
      *
@@ -90,8 +86,7 @@ public sealed interface PayloadConstructionShape
 
     /**
      * One per-SDL-field binding on the setter shape: the SDL field name, the resolved Java-bean
-     * setter, and a flag for whether the setter accepts {@code Optional<T>} (lifted verbatim
-     * from the legacy {@code ReflectionHelpers.setterAcceptsOptional} rule).
+     * setter, and a flag for whether the setter accepts {@code Optional<T>}.
      *
      * @param sdlFieldName    the wire identity, e.g. {@code "rating"} (kept even when the setter
      *                        is resolved from a divergent {@code @field(name:)} base, so
