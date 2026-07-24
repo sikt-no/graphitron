@@ -61,6 +61,13 @@ that fails to emit the `graphitronContext` helper on non-fetcher hosts. Whicheve
 lands first changes the other's diff; sequence knowingly (distinct deliverables,
 not a merge).
 
+R521 (`generated-output-hygiene-sweep`) pulls in the other direction: it
+deduplicates the `graphitronContext` helper (byte-identical in 57 generated
+classes) into a single shared home, e.g. a static `from(env)` on the generated
+`GraphitronContext`. If R521's dedup lands first, this item's fix collapses to
+"make the non-fetcher call sites reference the shared helper" instead of
+emitting new per-class copies. Sequence knowingly.
+
 ## Out of scope
 
 The four other class generators that emit a `graphitronContext` helper
