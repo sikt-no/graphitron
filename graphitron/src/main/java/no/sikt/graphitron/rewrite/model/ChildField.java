@@ -694,7 +694,7 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements ChildField, MethodBackedField, WithErrorChannel, ParentRowDemand {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
@@ -1004,7 +1004,7 @@ public sealed interface ChildField extends OutputField
         MethodRef method,
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
         @Override
         public String rowsMethodName() {
@@ -1048,7 +1048,7 @@ public sealed interface ChildField extends OutputField
         MethodRef method,
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
 
         @Override

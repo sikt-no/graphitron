@@ -173,7 +173,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression,
         DialectRequirement dialectRequirement,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements DmlTableField {
         @Override public DomainReturnType domainReturnType() {
             return dmlDomainReturnType(returnExpression, tableInputArg.inputTable());
@@ -195,7 +195,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DialectRequirement dialectRequirement,
         InputArgRef inputArg,
         UpdateRows updateRows,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements DmlTableField, UpdateRowsField {
         @Override public DomainReturnType domainReturnType() {
             return dmlDomainReturnType(returnExpression, inputArg.table());
@@ -229,7 +229,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DialectRequirement dialectRequirement,
         InputArgRef inputArg,
         DeleteRows deleteRows,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements DmlTableField, DeleteRowsField {
         public MutationDeleteTableField {
             if (returnExpression instanceof DmlReturnExpression.ProjectedSingle
@@ -254,7 +254,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression,
         DialectRequirement dialectRequirement,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements DmlTableField {
         @Override public DomainReturnType domainReturnType() {
             return dmlDomainReturnType(returnExpression, tableInputArg.inputTable());
@@ -313,7 +313,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             }
         }
 
-        @Override public Optional<ErrorChannel> errorChannel() {
+        @Override public Optional<ErrorChannel.RouterDispatched> errorChannel() {
             return Optional.empty();
         }
 
@@ -343,7 +343,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, ServiceField {
         /**
          * See {@link ChildField.ServiceTableField#domainReturnType()}: the typed {@code XRecord}
@@ -370,7 +370,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, ServiceField {
         /**
          * The carrier-shape case ({@code @service} mutation whose reflected return-element is the
@@ -407,7 +407,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, ServiceField {
         public MutationServicePolymorphicField {
             participants = List.copyOf(participants);
@@ -438,7 +438,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         List<String> knownDiscriminatorValues,
         List<ParticipantRef> participants,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, ServiceField {
         public MutationServiceTableInterfaceField {
             knownDiscriminatorValues = List.copyOf(knownDiscriminatorValues);
@@ -479,7 +479,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.ResultReturnType returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         DmlKind kind,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements MutationField {
 
         public MutationDmlRecordField {
@@ -547,7 +547,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.ResultReturnType returnType,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         DmlKind kind,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements MutationField {
 
         public MutationBulkDmlRecordField {
@@ -605,7 +605,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.ResultReturnType returnType,
         InputArgRef inputArg,
         UpdateRows updateRows,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements MutationField, UpdateRowsField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(inputArg.table());
@@ -636,7 +636,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.ResultReturnType returnType,
         InputArgRef inputArg,
         UpdateRows updateRows,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements MutationField, UpdateRowsField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(inputArg.table());
@@ -667,7 +667,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.ResultReturnType returnType,
         InputArgRef inputArg,
         DeleteRows deleteRows,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements MutationField, DeleteRowsField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(inputArg.table());
@@ -698,7 +698,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.ResultReturnType returnType,
         InputArgRef inputArg,
         DeleteRows deleteRows,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements MutationField, DeleteRowsField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(inputArg.table());

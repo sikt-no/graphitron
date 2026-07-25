@@ -2250,14 +2250,14 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName,
                                                         ServiceMethodCall carrier,
                                                         String parentTypeName, TypeName valueType,
-                                                        Optional<ErrorChannel> errorChannel,
+                                                        Optional<ErrorChannel.Mapped> errorChannel,
                                                         String outputPackage) {
         // An @service outcome field (Mapped channel) hands graphql-java a typed Outcome<X>
         // source. The DataFetcherResult payload type becomes Outcome<X>; the inner method result
         // local stays X (the service's return), wrapped in Success on the happy path and replaced by
         // ErrorList on the mapped-error path. A channel-less @service field (no errors field) keeps
         // the bare X payload and the redact-only catch arm.
-        boolean wrap = errorChannel.isPresent() && errorChannel.get() instanceof ErrorChannel.Mapped;
+        boolean wrap = errorChannel.isPresent();
         TypeName payloadType = wrap ? outcomeOf(valueType, outputPackage) : valueType;
 
         var builder = MethodSpec.methodBuilder(fieldName)
@@ -2288,9 +2288,9 @@ public class TypeFetcherGenerator {
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         if (wrap) {
-            builder.addCode(ChannelCatchArmEmitter.emit(errorChannel, payloadType, outputPackage, null));
+            builder.addCode(ChannelCatchArmEmitter.emit(errorChannel.get(), payloadType, outputPackage));
         } else {
-            builder.addCode(catchArm(outputPackage, errorChannel));
+            builder.addCode(catchArm(outputPackage, Optional.empty()));
         }
         builder.endControlFlow();
 
@@ -4852,7 +4852,7 @@ public class TypeFetcherGenerator {
             TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
-            Optional<ErrorChannel> errorChannel,
+            Optional<ErrorChannel.RouterDispatched> errorChannel,
             String inputArgName,
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
@@ -4895,7 +4895,7 @@ public class TypeFetcherGenerator {
             TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
-            Optional<ErrorChannel> errorChannel,
+            Optional<ErrorChannel.RouterDispatched> errorChannel,
             String inputArgName,
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
@@ -6032,7 +6032,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel> errorChannel, String qualifiedName,
+            TableRef tableRef, Optional<ErrorChannel.RouterDispatched> errorChannel, String qualifiedName,
             java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
             String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
@@ -6419,7 +6419,7 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildBulkRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel> errorChannel, String qualifiedName,
+            TableRef tableRef, Optional<ErrorChannel.RouterDispatched> errorChannel, String qualifiedName,
             BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -6759,7 +6759,7 @@ public class TypeFetcherGenerator {
             TypeName perKeyType,
             String className,
             String outputPackage,
-            Optional<ErrorChannel> errorChannel) {
+            Optional<ErrorChannel.RouterDispatched> errorChannel) {
 
         boolean isList = returnType.wrapper().isList();
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
@@ -7068,7 +7068,8 @@ public class TypeFetcherGenerator {
      * field after emitting the success-path
      * {@code return DataFetcherResult.<P>newResult().data(payload).build()}.
      */
-    private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel) {
+    private static CodeBlock catchArm(String outputPackage,
+                                      Optional<ErrorChannel.RouterDispatched> errorChannel) {
         return catchArm(outputPackage, errorChannel, null);
     }
 
@@ -7081,17 +7082,13 @@ public class TypeFetcherGenerator {
      * {@code buildMutationDmlRecordFetcher} and {@code buildMutationBulkDmlRecordFetcher} is in
      * this category).
      */
-    private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel,
+    private static CodeBlock catchArm(String outputPackage,
+                                      Optional<ErrorChannel.RouterDispatched> errorChannel,
                                       CodeBlock localContextSentinel) {
         if (errorChannel.isEmpty()) {
             return noChannelCatchArm(outputPackage);
         }
         return switch (errorChannel.get()) {
-            // Additive window: Mapped is not produced yet (the Outcome-wrapper emit seam,
-            // ChannelCatchArmEmitter, lands in a later commit). Handle the arm so the
-            // sealed switch compiles; it is unreachable until the in-scope fields flip.
-            case ErrorChannel.Mapped m -> throw new IllegalStateException(
-                "catchArm reached ErrorChannel.Mapped before the Outcome-wrapper emit seam landed");
             case ErrorChannel.PayloadClass pc -> dispatchCatchArm(outputPackage, pc);
             case ErrorChannel.LocalContext lc -> {
                 if (localContextSentinel == null) {
@@ -7234,7 +7231,7 @@ public class TypeFetcherGenerator {
      * {@link #catchArm} does for sync fetchers.
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
-                                           Optional<ErrorChannel> errorChannel) {
+                                           Optional<ErrorChannel.RouterDispatched> errorChannel) {
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
                 DATA_FETCHER_RESULT, boxed(valueType))
@@ -7255,17 +7252,14 @@ public class TypeFetcherGenerator {
      * via {@code surfaceClientErrorOrRedact}, which walks the cause chain so a DataLoader-wrapped
      * {@code CompletionException} still unwraps to the client-error marker.
      */
-    private static CodeBlock asyncRouterCall(String outputPackage, Optional<ErrorChannel> errorChannel,
+    private static CodeBlock asyncRouterCall(String outputPackage,
+                                             Optional<ErrorChannel.RouterDispatched> errorChannel,
                                              String throwableVar) {
         if (errorChannel.isEmpty()) {
             return no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
                 .noChannelRouterCall(outputPackage, throwableVar);
         }
         return switch (errorChannel.get()) {
-            // Additive window: Mapped is not produced yet; the async Outcome-wrapper tail
-            // lands with the in-scope flip. Handle the arm so the sealed switch compiles.
-            case ErrorChannel.Mapped m -> throw new IllegalStateException(
-                "asyncRouterCall reached ErrorChannel.Mapped before the Outcome-wrapper emit seam landed");
             case ErrorChannel.PayloadClass pc -> CodeBlock.builder()
                 .add("$T.dispatch($L, $T.$L, env, ",
                     errorRouterClass(outputPackage), throwableVar,
@@ -7292,7 +7286,7 @@ public class TypeFetcherGenerator {
      * catch and the async tail cannot disagree on the disposition.
      */
     private static CodeBlock dataLoaderSyncCatchBody(TypeName valueType, String outputPackage,
-                                                     Optional<ErrorChannel> errorChannel) {
+                                                     Optional<ErrorChannel.RouterDispatched> errorChannel) {
         return CodeBlock.builder()
             .add("return $T.<$T>completedFuture(", COMPLETABLE_FUTURE, syncResultType(valueType))
             .add(asyncRouterCall(outputPackage, errorChannel, "e"))

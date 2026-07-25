@@ -1349,17 +1349,21 @@ public class GraphitronSchemaValidator {
      * {@link ChildField.Transport.LocalContext}:
      *
      * <ul>
-     *   <li>Record-sourced {@code BatchedTableField} → {@code buildRecordBasedDataFetcher}
-     *       (explicit {@code if (env.getSource() == null) return completedFuture(null);} prelude
-     *       before the key read; the {@code OUTCOME_SUCCESS} arm's {@code instanceof Success}
-     *       narrowing also rejects null). The Table-sourced arm is deliberately excluded:
-     *       {@code buildSplitQueryDataFetcher} carries no null-source guard.</li>
-     *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
-     *       (explicit guard before encoder dispatch).</li>
+     *   <li>Record-sourced {@code BatchedTableField} → the Record-shape arm of
+     *       {@code TypeFetcherGenerator.buildBatchedDataFetcher} (explicit
+     *       {@code if (env.getSource() == null) return completedFuture(null);} prelude before
+     *       the key read; the Outcome arm's {@code instanceof Success} narrowing also rejects
+     *       null). The Table-sourced arm is deliberately excluded: it emits an empty prelude
+     *       with no null-source guard.</li>
+     *   <li>{@code SingleRecordIdFieldFromReturning} →
+     *       {@code FetcherEmitter.buildSingleRecordIdFromReturningFetcherValue} (explicit
+     *       {@code if (source == null) return null;} guard before encoder dispatch).</li>
      * </ul>
      *
-     * <p>The lookup leaf ({@code BatchedLookupTableField}, either arm) is not admitted: its
-     * fetcher's guard has not been audited.
+     * <p>The lookup leaf ({@code BatchedLookupTableField}) is not admitted, although it now
+     * routes through the same source-shape-gated builder arms as {@code BatchedTableField};
+     * widening the allow-list is a validator behavior change that needs its own
+     * validation-coverage decision, not a rename.
      *
      * <p>Admitting a variant here requires the matching emitter site to honor the guard;
      * removing the guard from an existing emitter arm must remove the variant here.

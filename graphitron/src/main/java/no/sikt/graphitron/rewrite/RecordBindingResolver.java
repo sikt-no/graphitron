@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
@@ -85,9 +84,6 @@ final class RecordBindingResolver {
     /** Multi-producer rejections, keyed by SDL type, on either axis. */
     private final Map<String, Rejection.AuthorError.RecordBindingMultiProducer> rejections =
         new LinkedHashMap<>();
-
-    /** SDL types with at least one observation on either axis; see {@link #fromAnyProducer}. */
-    private final Set<String> reachable = new LinkedHashSet<>();
 
     /**
      * DML mutation payload bindings, observed for the payload SDL type of every DML
@@ -199,11 +195,6 @@ final class RecordBindingResolver {
     /** The {@code parentType.fieldName} key under which producer arrival is memoised. */
     private static String carrierFieldKey(String parentType, String fieldName) {
         return parentType + "." + fieldName;
-    }
-
-    /** Whether the walk produced an observation for this SDL type on either axis. */
-    boolean fromAnyProducer(String sdlTypeName) {
-        return reachable.contains(sdlTypeName);
     }
 
     /** Multi-producer rejection for the SDL type, or empty when none. */
@@ -868,7 +859,6 @@ final class RecordBindingResolver {
 
     private boolean addObservation(String sdlType, ProducerBinding binding,
                                    Map<String, List<ProducerBinding>> store) {
-        reachable.add(sdlType);
         List<ProducerBinding> list = store.computeIfAbsent(sdlType, k -> new ArrayList<>());
         // Deduplicate by (reflectedClass identity + describe()) so the same (parent, field)
         // path doesn't double-count across propagation passes.

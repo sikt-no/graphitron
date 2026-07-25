@@ -134,10 +134,10 @@ public sealed interface TypeClassification
     record JooqRecordInput(String fqClassName) implements TypeClassification {}
 
     /**
-     * A reflection-bound output type backed by a jOOQ {@code TableRecord<?>}
-     * with a resolved table (its producer's reflected return is such a record). Covers
-     * {@code GraphitronType.JooqTableRecordType}.
-     * {@code tableName} may be null when the catalog is unavailable.
+     * An output type whose runtime carrier is a jOOQ record of a resolved table. Covers
+     * {@code GraphitronType.JooqTableRecordType}, both populations: {@code fqClassName} is the
+     * reflected jOOQ table-record class name, or null for the stand-in mints that assert only
+     * a projected-row source. {@code tableName} may be null when the catalog is unavailable.
      */
     record JooqTableRecord(String fqClassName, String tableName) implements TypeClassification {}
 
@@ -154,9 +154,10 @@ public sealed interface TypeClassification
     record PojoResult(String fqClassName) implements TypeClassification {}
 
     /**
-     * A reflection-bound input type backed by a plain Java class (POJO; the method parameter
-     * it flows into is such a class). Covers {@code GraphitronType.PojoInputType};
-     * {@code fqClassName} is null when no backing class could be resolved.
+     * A non-table input type backed by a plain Java class (POJO), or unbacked. Covers
+     * {@code GraphitronType.PojoInputType}: {@code fqClassName} is the class the input's
+     * producers bound (the method parameter the input flows into, or an enclosing bound input
+     * class's accessor for a nested input), and null when no producer bound a class.
      *
      * <p>{@code resolvedTables} names the distinct tables the input's fields resolve against,
      * one per consuming field that resolves to a table (the input is not itself a modeled

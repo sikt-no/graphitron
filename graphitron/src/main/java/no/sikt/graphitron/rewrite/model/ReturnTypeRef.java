@@ -30,9 +30,14 @@ public sealed interface ReturnTypeRef
      * from its producer's return type. No SQL is generated; the generator accesses properties on the
      * parent result object.
      *
-     * <p>{@code fqClassName} is the binary class name of the backing Java class, taken directly
-     * from the corresponding {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType}
-     * at build time. May be {@code null} when no backing class could be resolved.
+     * <p>{@code fqClassName} is copied verbatim from the corresponding
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType#fqClassName()} at build
+     * time, so it is {@code null} exactly when the source component is: for the stand-in
+     * population of {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType},
+     * whose runtime source is a projected table row with no reflected backing class. A consumer
+     * forking on the null is asking "is there a reflected backing class to work against". The
+     * copied string stands in for carrying the source arm's identity, so it shares the source
+     * slot's caveat: the null is a stand-in marker, not a designed contract.
      */
     record ResultReturnType(String returnTypeName, FieldWrapper wrapper, String fqClassName) implements ReturnTypeRef {}
 

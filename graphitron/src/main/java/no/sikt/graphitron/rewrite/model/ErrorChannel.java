@@ -22,7 +22,7 @@ import java.util.List;
  * the channel-agnostic consumers ({@code MappingsConstantNameDedup},
  * {@code ErrorMappingsClassGenerator}, {@code CheckedExceptionMatcher}) need.
  */
-public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.PayloadClass, ErrorChannel.LocalContext {
+public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.RouterDispatched {
 
     /**
      * The resolved {@code @error} types this channel routes to, in source order. A
@@ -63,6 +63,19 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
     }
 
     /**
+     * The {@link ErrorChannel} partition whose catch-side ferry dispatches through the generated
+     * {@code ErrorRouter} ({@code dispatch} for {@link PayloadClass}, {@code dispatchToLocalContext}
+     * for {@link LocalContext}), emitted by the sync {@code catchArm} and async
+     * {@code asyncRouterCall} seams in
+     * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}. {@link Mapped} sits
+     * outside this partition: it rides the typed {@code Outcome} wrapper and is emitted solely by
+     * {@link no.sikt.graphitron.rewrite.generators.ChannelCatchArmEmitter}. The permits clause is
+     * the compiler-checked membership; a field variant whose channel slot declares this type
+     * cannot hand a {@code Mapped} channel to the router seams.
+     */
+    sealed interface RouterDispatched extends ErrorChannel permits PayloadClass, LocalContext {}
+
+    /**
      * The catch arm constructs a developer payload class and slots the errors list into it.
      * Active for every fetcher whose payload return is a class-backed shape; it is the only
      * arm for service-backed paths
@@ -94,7 +107,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
         ErrorsSlot errorsSlot,
         List<DefaultedSlot> defaultedSlots,
         String mappingsConstantName
-    ) implements ErrorChannel {
+    ) implements RouterDispatched {
 
         public PayloadClass {
             mappedErrorTypes = List.copyOf(mappedErrorTypes);
@@ -144,7 +157,7 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.P
     record LocalContext(
         List<GraphitronType.ErrorType> mappedErrorTypes,
         String mappingsConstantName
-    ) implements ErrorChannel {
+    ) implements RouterDispatched {
 
         public LocalContext {
             mappedErrorTypes = List.copyOf(mappedErrorTypes);

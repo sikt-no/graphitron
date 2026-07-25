@@ -17,7 +17,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandl
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -272,27 +272,29 @@ class ErrorMappingsClassGeneratorTest {
             defaultedSlots, constantName);
     }
 
-    /** Synthesises a minimal schema with one MutationServiceRecordField per channel supplied. */
+    /**
+     * Synthesises a minimal schema with one {@code @tableMethod} root field per channel
+     * supplied: the lightest field variant whose channel slot carries the
+     * {@link ErrorChannel.RouterDispatched} partition {@link ErrorChannel.PayloadClass}
+     * belongs to (root {@code @service} variants carry {@link ErrorChannel.Mapped}).
+     */
     private static GraphitronSchema synthesizeSchema(List<ErrorChannel.PayloadClass> channels) {
         Map<String, GraphitronType> types = new LinkedHashMap<>();
-        types.put("Mutation", new GraphitronType.RootType("Mutation", null));
+        types.put("Query", new GraphitronType.RootType("Query", null));
         Map<FieldCoordinates, GraphitronField> fields = new LinkedHashMap<>();
         for (int i = 0; i < channels.size(); i++) {
             String fieldName = "fetch" + i;
-            var returnType = new ReturnTypeRef.ResultReturnType(
-                channels.get(i).payloadClass().simpleName(),
-                new FieldWrapper.Single(true),
-                channels.get(i).payloadClass().reflectionName());
             var method = TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff",
                 ClassName.get(Object.class), List.of());
-            var field = new MutationField.MutationServiceRecordField(
-                "Mutation",
+            var field = new QueryField.QueryTableMethodTableField(
+                "Query",
                 fieldName,
                 null,
-                returnType,
-                TestFixtures.stubServiceCall(method),
+                new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.filmTable(),
+                    new FieldWrapper.Single(true)),
+                method,
                 Optional.of(channels.get(i)));
-            fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);
+            fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
         }
         return new GraphitronSchema(types, fields);
     }

@@ -3018,7 +3018,7 @@ class FieldBuilder {
      */
     private sealed interface ErrorChannelResult {
         record NoChannel() implements ErrorChannelResult {}
-        record Channel(ErrorChannel channel) implements ErrorChannelResult {}
+        record Channel(ErrorChannel.RouterDispatched channel) implements ErrorChannelResult {}
         record Reject(String reason) implements ErrorChannelResult {}
     }
 
@@ -3625,7 +3625,7 @@ class FieldBuilder {
     private GraphitronField buildWithChannel(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.Function<Optional<ErrorChannel>, GraphitronField> builder) {
+            java.util.function.Function<Optional<ErrorChannel.RouterDispatched>, GraphitronField> builder) {
         return switch (resolveErrorChannel(returnType)) {
             case ErrorChannelResult.NoChannel ignored -> builder.apply(Optional.empty());
             case ErrorChannelResult.Channel c -> builder.apply(Optional.of(c.channel()));
@@ -3653,8 +3653,8 @@ class FieldBuilder {
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.Function<Optional<ErrorChannel>, GraphitronField> builder) {
-        Optional<ErrorChannel> channel;
+            java.util.function.Function<Optional<ErrorChannel.RouterDispatched>, GraphitronField> builder) {
+        Optional<ErrorChannel.RouterDispatched> channel;
         switch (resolveErrorChannel(returnType)) {
             case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
             case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
@@ -3687,11 +3687,11 @@ class FieldBuilder {
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.BiFunction<Optional<ErrorChannel>, no.sikt.graphitron.rewrite.model.ServiceMethodCall, GraphitronField> builder) {
+            java.util.function.BiFunction<Optional<ErrorChannel.Mapped>, no.sikt.graphitron.rewrite.model.ServiceMethodCall, GraphitronField> builder) {
         // @service outcome fields classify to ErrorChannel.Mapped via the ErrorChannelWalker
         // (the Outcome wrapper transport) rather than PayloadClass construction. NoChannel when the
         // payload carries no errors field.
-        Optional<ErrorChannel> channel;
+        Optional<ErrorChannel.Mapped> channel;
         switch (resolveServiceOutcomeChannel(returnType)) {
             case ServiceOutcomeResult.NoChannel ignored -> channel = Optional.empty();
             case ServiceOutcomeResult.Channel c -> channel = Optional.of(c.channel());
@@ -3912,7 +3912,7 @@ class FieldBuilder {
     // The explicit-parameter sibling lives at `CheckedExceptionMatcher.unmatched`, which
     // crosses a class boundary.
     private String checkDeclaredCheckedExceptions(
-            no.sikt.graphitron.rewrite.model.MethodRef method, Optional<ErrorChannel> channel) {
+            no.sikt.graphitron.rewrite.model.MethodRef method, Optional<? extends ErrorChannel> channel) {
         var unmatched = CheckedExceptionMatcher.unmatched(
             method.declaredExceptions(), channel, ctx.codegenLoader());
         if (unmatched.isEmpty()) return null;
@@ -3939,9 +3939,9 @@ class FieldBuilder {
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel>, GraphitronField> builder,
+            java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel.RouterDispatched>, GraphitronField> builder,
             Optional<HelperRef.Encode> encodeReturn) {
-        Optional<ErrorChannel> channel;
+        Optional<ErrorChannel.RouterDispatched> channel;
         switch (resolveErrorChannel(returnType)) {
             case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
             case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
@@ -4069,7 +4069,7 @@ class FieldBuilder {
      */
     private sealed interface StructuralDmlErrorChannel {
         record None() implements StructuralDmlErrorChannel {}
-        record Present(ErrorChannel channel) implements StructuralDmlErrorChannel {}
+        record Present(ErrorChannel.RouterDispatched channel) implements StructuralDmlErrorChannel {}
         record RuleViolation(String reason) implements StructuralDmlErrorChannel {}
     }
 
@@ -5093,7 +5093,7 @@ class FieldBuilder {
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
         }
-        Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+        Optional<ErrorChannel.RouterDispatched> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
         // UpdateRows walker: PK-or-UK identification + SET/WHERE partition over the already-classified
@@ -5383,7 +5383,7 @@ class FieldBuilder {
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
         }
-        Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+        Optional<ErrorChannel.RouterDispatched> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
         if (inputArg.list()) {
@@ -5779,7 +5779,7 @@ class FieldBuilder {
         if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
         }
-        Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+        Optional<ErrorChannel.RouterDispatched> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
         if (tia.list()) {

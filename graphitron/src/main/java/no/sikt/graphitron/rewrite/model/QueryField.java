@@ -141,7 +141,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.RouterDispatched> errorChannel
     ) implements QueryField, MethodBackedField, WithErrorChannel {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
@@ -304,7 +304,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         /**
          * See {@link ChildField.ServiceTableField#domainReturnType()}: the typed
@@ -334,7 +334,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
@@ -367,7 +367,7 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         public QueryServicePolymorphicField {
             participants = List.copyOf(participants);
@@ -406,7 +406,7 @@ public sealed interface QueryField extends RootField
         List<String> knownDiscriminatorValues,
         List<ParticipantRef> participants,
         ServiceMethodCall serviceMethodCall,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         public QueryServiceTableInterfaceField {
             knownDiscriminatorValues = List.copyOf(knownDiscriminatorValues);

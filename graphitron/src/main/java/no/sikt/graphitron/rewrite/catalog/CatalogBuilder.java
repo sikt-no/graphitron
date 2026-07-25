@@ -547,7 +547,7 @@ public final class CatalogBuilder {
     private static FieldClassification dmlMutation(
         no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg inputArg,
         no.sikt.graphitron.rewrite.model.DmlKind kind,
-        java.util.Optional<no.sikt.graphitron.rewrite.model.ErrorChannel> errorChannel
+        java.util.Optional<? extends no.sikt.graphitron.rewrite.model.ErrorChannel> errorChannel
     ) {
         return new FieldClassification.DmlMutation(
             inputArg != null && inputArg.inputTable() != null ? inputArg.inputTable().tableName() : null,
@@ -624,7 +624,7 @@ public final class CatalogBuilder {
         return participants.stream().map(ParticipantRef::typeName).toList();
     }
 
-    private static String errorChannelName(java.util.Optional<ErrorChannel> channel) {
+    private static String errorChannelName(java.util.Optional<? extends ErrorChannel> channel) {
         return channel == null ? null : channel.map(ErrorChannel::mappingsConstantName).orElse(null);
     }
 

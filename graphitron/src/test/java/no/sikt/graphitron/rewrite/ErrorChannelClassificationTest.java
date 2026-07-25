@@ -61,9 +61,10 @@ class ErrorChannelClassificationTest {
 
         var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "behandleSak");
         assertThat(f.errorChannel()).isPresent();
-        // @service outcome fields classify to ErrorChannel.Mapped (the Outcome wrapper
-        // transport), not PayloadClass; no developer payload class is constructed on the error path.
-        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped) f.errorChannel().get();
+        // @service outcome fields carry ErrorChannel.Mapped (the Outcome wrapper transport) by
+        // the record component's own type; no developer payload class is constructed on the
+        // error path.
+        var ch = f.errorChannel().get();
         assertThat(ch.mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("ValidationErr", "DbErr");

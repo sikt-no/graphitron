@@ -12,7 +12,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandle
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -129,17 +129,17 @@ class MappingsConstantNameDedupTest {
     void fieldsWithoutErrorChannel_passThroughUnchanged() {
         // Fields that don't carry a channel pass through by reference. The dedup must not crash
         // on such fields and must not invent a channel for them.
-        var withoutChannel = mutationServiceRecordField("noChannel", FILM_PAYLOAD_FQN, Optional.empty());
-        var withChannel = mutationServiceRecordField("withChannel", FILM_PAYLOAD_FQN,
+        var withoutChannel = tableMethodField("noChannel", Optional.empty());
+        var withChannel = tableMethodField("withChannel",
             Optional.of(filmPayloadChannel(exceptionHandler("java.lang.RuntimeException"))));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
-        fields.put(FieldCoordinates.coordinates("Mutation", "noChannel"), withoutChannel);
-        fields.put(FieldCoordinates.coordinates("Mutation", "withChannel"), withChannel);
+        fields.put(FieldCoordinates.coordinates("Query", "noChannel"), withoutChannel);
+        fields.put(FieldCoordinates.coordinates("Query", "withChannel"), withChannel);
 
         var deduped = MappingsConstantNameDedup.apply(fields);
 
         // The no-channel field must round-trip by reference (the dedup never reconstructs it).
-        assertThat(deduped.get(FieldCoordinates.coordinates("Mutation", "noChannel")))
+        assertThat(deduped.get(FieldCoordinates.coordinates("Query", "noChannel")))
             .isSameAs(withoutChannel);
         assertThat(channelOf(deduped, "withChannel").mappingsConstantName()).isEqualTo("FILM_PAYLOAD");
     }
@@ -172,38 +172,43 @@ class MappingsConstantNameDedupTest {
         return new SqlStateHandler(state, Optional.empty(), Optional.empty());
     }
 
-    private static MutationField.MutationServiceRecordField mutationServiceRecordField(
-            String fieldName, String payloadFqn, Optional<ErrorChannel> channel) {
+    /**
+     * A {@code @tableMethod} root field: the lightest {@link WithErrorChannel} variant whose
+     * channel slot carries the {@link ErrorChannel.RouterDispatched} partition the dedup's
+     * grouping rules cover (root {@code @service} variants carry {@link ErrorChannel.Mapped},
+     * which dedups by bare constant name only).
+     */
+    private static QueryField.QueryTableMethodTableField tableMethodField(
+            String fieldName, Optional<ErrorChannel.RouterDispatched> channel) {
         var method = TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of());
-        return new MutationField.MutationServiceRecordField(
-            "Mutation",
+        return new QueryField.QueryTableMethodTableField(
+            "Query",
             fieldName,
             null,
-            new ReturnTypeRef.ResultReturnType("Payload", new FieldWrapper.Single(true), payloadFqn),
-            TestFixtures.stubServiceCall(method),
+            new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.filmTable(), new FieldWrapper.Single(true)),
+            method,
             channel);
     }
 
     private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel.PayloadClass channel) {
-        var field = mutationServiceRecordField(fieldName,
-            channel.payloadClass().reflectionName(), Optional.of(channel));
+        var field = tableMethodField(fieldName, Optional.of(channel));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
-        fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);
+        fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
         return fields;
     }
 
     private static Map<FieldCoordinates, GraphitronField> twoFetchers(String n0, ErrorChannel.PayloadClass c0,
                                                                       String n1, ErrorChannel.PayloadClass c1) {
-        var f0 = mutationServiceRecordField(n0, c0.payloadClass().reflectionName(), Optional.of(c0));
-        var f1 = mutationServiceRecordField(n1, c1.payloadClass().reflectionName(), Optional.of(c1));
+        var f0 = tableMethodField(n0, Optional.of(c0));
+        var f1 = tableMethodField(n1, Optional.of(c1));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
-        fields.put(FieldCoordinates.coordinates("Mutation", n0), f0);
-        fields.put(FieldCoordinates.coordinates("Mutation", n1), f1);
+        fields.put(FieldCoordinates.coordinates("Query", n0), f0);
+        fields.put(FieldCoordinates.coordinates("Query", n1), f1);
         return fields;
     }
 
     private static ErrorChannel channelOf(Map<FieldCoordinates, GraphitronField> fields, String fieldName) {
-        var field = fields.get(FieldCoordinates.coordinates("Mutation", fieldName));
+        var field = fields.get(FieldCoordinates.coordinates("Query", fieldName));
         if (!(field instanceof WithErrorChannel w) || w.errorChannel().isEmpty()) {
             throw new AssertionError("Field '" + fieldName + "' has no ErrorChannel");
         }

@@ -45,7 +45,7 @@ final class CheckedExceptionMatcher {
      * code paths reflect on developer classes already, so an unloadable declared exception is
      * a real configuration problem the schema author should see.
      */
-    static List<String> unmatched(List<String> declaredExceptions, Optional<ErrorChannel> channel,
+    static List<String> unmatched(List<String> declaredExceptions, Optional<? extends ErrorChannel> channel,
             ClassLoader codegenLoader) {
         if (declaredExceptions.isEmpty()) return List.of();
         var handlers = channel.map(ErrorChannel::mappedErrorTypes)

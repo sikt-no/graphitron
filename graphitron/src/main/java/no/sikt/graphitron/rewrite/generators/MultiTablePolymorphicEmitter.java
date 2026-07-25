@@ -1516,12 +1516,14 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Batched child-connection main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
      * parent's {@link no.sikt.graphitron.rewrite.model.SourceKey} and delegates to a
-     * {@code rows<Field>(List<RowN<PK1...PKn>>, env)} batch loader. The body shape mirrors
-     * {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the DataLoader name (the
+     * {@code rows<Field>(List<RowN<PK1...PKn>>, env)} batch loader: build the DataLoader name (the
      * path-derived form, partitioned per inherited tenant in a multi-tenant build),
      * {@code computeIfAbsent} the loader, extract the parent PK from {@code env.getSource()}
      * via {@link GeneratorUtils#buildRecordParentKeyExtraction}, then return
-     * {@code loader.load(key, env).thenApply(...).exceptionally(...)}.
+     * {@code loader.load(key, env).thenApply(...).exceptionally(...)}. This batched polymorphic
+     * family hand-rolls its loader registration and does not route through the unified
+     * {@link DataLoaderFetcherEmitter} seam; the seam's emission pin deliberately carves this
+     * family out, so no pinned shape agreement exists between the two.
      *
      * <p>Parent PK arity 1..21 enforced upstream (validator's
      * {@code validateChildMultiTableParentPk}); the {@code parentInput} VALUES table widens to
@@ -1635,8 +1637,7 @@ public final class MultiTablePolymorphicEmitter {
 
         builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentKeyLift, parentKeyOwnerTable, parentResultType));
 
-        // Mirrors TypeFetcherGenerator.buildRecordBasedDataFetcher's load vs loadMany branch;
-        // the load site must match the key shape buildRecordParentKeyExtraction declared
+        // The load site must match the key shape buildRecordParentKeyExtraction declared
         // (single key for ONE lifts, List of keys for MANY lifts).
         if (parentKeyLift instanceof KeyLift.Accessor a && a.arity() == Arity.MANY
                 || parentKeyLift instanceof KeyLift.ProducedRecords pr && pr.arity() == Arity.MANY) {

@@ -157,12 +157,20 @@ public sealed interface GraphitronType
     ) implements JooqRecordCarrier {}
 
     /**
-     * A result type whose producer's reflected return is a jOOQ {@code TableRecord<?>}.
+     * A result type whose runtime carrier is a jOOQ record of a resolved table.
      *
-     * <p>{@code fqClassName} is the binary class name of the jOOQ table-record class.
+     * <p>{@code fqClassName} has two populations. When classification reflected the type from a
+     * producer's return, it is the binary class name of the jOOQ table-record class. Stand-in
+     * mints (table-backed carrier payloads, and the parent-source stand-in on polymorphic child
+     * fields) pass {@code null}: they assert only "the runtime source is a projected row of
+     * {@code table}", and no reflected class exists to name. The nullable slot stands in for a
+     * missing class-less carrier arm; the permit-identity split that {@link PojoResultType}
+     * applies on the POJO side is the intended carrier of the distinction here too, so do not
+     * read the null as a designed contract.
      *
      * <p>{@code table} is the resolved jOOQ table this record is bound to, found by matching
-     * {@link org.jooq.Table#getRecordType()} against the backing class. May be {@code null}
+     * {@link org.jooq.Table#getRecordType()} against the backing class on the reflected
+     * population and supplied directly by the stand-in mints. May be {@code null}
      * when the backing class comes from a catalog not loaded at build time.
      */
     record JooqTableRecordType(
@@ -338,9 +346,14 @@ public sealed interface GraphitronType
      * This is the input-side counterpart of {@link ReturnTypeRef.ResultReturnType} and
      * {@link ReturnTypeRef.ScalarReturnType}.
      *
-     * <p>The sub-type identifies the backing Java representation. The builder reflects on the method
-     * parameter type the input flows into (or {@code @table}) at build time. When no backing class
-     * can be resolved the type is classified as {@link PojoInputType} with a {@code null} backing class.
+     * <p>The sub-type identifies the backing Java representation. The backing class comes from
+     * the record-binding fold over the input's producers, reflected at build time: the method
+     * parameter type the input flows into (a {@code @service} or {@code @tableMethod} parameter),
+     * or the enclosing bound input class's accessor for a nested input. When no producer binds a
+     * class the type is classified as {@link PojoInputType} with a {@code null} backing class:
+     * backed-vs-unbacked is carried by that nullable slot, not by permit identity the way the
+     * result side's {@link PojoResultType} carries it, so consumers fork on the null rather than
+     * on an arm.
      */
     sealed interface InputType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordInputType, GraphitronType.PojoInputType,
@@ -367,8 +380,9 @@ public sealed interface GraphitronType
     ) implements InputType, HasInputRecordShape {}
 
     /**
-     * A non-table input type backed by a plain Java class (POJO), or one whose backing class
-     * was not specified in the directive ({@code fqClassName} is {@code null} in that case).
+     * A non-table input type backed by a plain Java class (POJO), or one for which no producer
+     * bound a backing class at all ({@code fqClassName} is {@code null} in that case; see the
+     * {@link InputType} contract for where the binding comes from).
      */
     record PojoInputType(
         String name,

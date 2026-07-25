@@ -11,15 +11,12 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 
 /**
  * Single source of truth for the {@code (keys, batchEnv) -> rowsXxx(keys, dfe)} BatchLoader
- * lambda emitted inside DataLoader registration. It replaces the three handcrafted
- * inline lambda blocks (in {@code TypeFetcherGenerator}'s {@code buildServiceDataFetcher},
- * {@code buildSplitQueryDataFetcher}, {@code buildRecordBasedDataFetcher}) with one call to
- * {@link #batchLoaderLambda}. Today's three sites emit byte-identical bodies; the only
- * variation is the keys-container element type ({@code List<K>} for the positional sites,
- * {@code Set<K>} for mapped). This factory folds that single axis onto
+ * lambda emitted inside DataLoader registration. The only per-site variation is the
+ * keys-container element type ({@code List<K>} for positional sites, {@code Set<K>} for
+ * mapped); {@link #batchLoaderLambda} folds that single axis onto
  * {@link LoaderRegistration#container()} and pins the lambda body in one place.
  *
- * <p>Lambda body shape (unchanged from today):
+ * <p>Lambda body shape:
  *
  * <pre>{@code
  * (List<K> keys, BatchLoaderEnvironment batchEnv) -> {

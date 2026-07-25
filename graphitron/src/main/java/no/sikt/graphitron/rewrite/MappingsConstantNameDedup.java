@@ -22,7 +22,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Classifier-side cross-field pass that resolves the final
@@ -121,8 +120,7 @@ public final class MappingsConstantNameDedup {
                 rewritten.put(entry.getKey(), field);
                 continue;
             }
-            var newChannel = renameChannel(ch, resolvedName);
-            rewritten.put(entry.getKey(), withResolvedChannel(field, newChannel));
+            rewritten.put(entry.getKey(), withResolvedChannel(field, resolvedName));
         }
         return rewritten;
     }
@@ -145,12 +143,22 @@ public final class MappingsConstantNameDedup {
     }
 
     /**
-     * Re-constructs a channel with {@code newName} swapped onto its
-     * {@code mappingsConstantName} slot, preserving the sealed arm.
+     * Re-constructs a {@link ErrorChannel.Mapped} channel with {@code newName} swapped onto its
+     * {@code mappingsConstantName} slot. Arm-typed (with {@link #renameRouted} as its
+     * {@link ErrorChannel.RouterDispatched} sibling) so {@link #withResolvedChannel} can rebuild
+     * each field variant with the narrowed channel component its record declares.
      */
-    private static ErrorChannel renameChannel(ErrorChannel ch, String newName) {
+    private static ErrorChannel.Mapped renameMapped(ErrorChannel.Mapped m, String newName) {
+        return new ErrorChannel.Mapped(m.mappedErrorTypes(), newName);
+    }
+
+    /**
+     * Re-constructs a {@link ErrorChannel.RouterDispatched} channel with {@code newName} swapped
+     * onto its {@code mappingsConstantName} slot, preserving the sealed arm.
+     */
+    private static ErrorChannel.RouterDispatched renameRouted(
+            ErrorChannel.RouterDispatched ch, String newName) {
         return switch (ch) {
-            case ErrorChannel.Mapped m -> new ErrorChannel.Mapped(m.mappedErrorTypes(), newName);
             case ErrorChannel.PayloadClass p -> new ErrorChannel.PayloadClass(
                 p.mappedErrorTypes(), p.payloadClass(), p.errorsSlot(),
                 p.defaultedSlots(), newName);
@@ -172,61 +180,62 @@ public final class MappingsConstantNameDedup {
     }
 
     /**
-     * Re-constructs {@code field} with {@code newChannel} swapped in. Pattern-matches each
-     * {@link WithErrorChannel} variant; new variants must be added here when introduced.
+     * Re-constructs {@code field} with its channel renamed to {@code newName}. Pattern-matches
+     * each {@link WithErrorChannel} variant so the rebuild goes through the variant's own
+     * narrowed channel component; new variants must be added here when introduced. Only called
+     * for fields whose channel is present.
      */
-    private static GraphitronField withResolvedChannel(GraphitronField field, ErrorChannel newChannel) {
-        var present = Optional.of(newChannel);
+    private static GraphitronField withResolvedChannel(GraphitronField field, String newName) {
         return switch (field) {
             case MutationField.MutationInsertTableField f -> new MutationField.MutationInsertTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.tableInputArg(), present);
+                f.tableInputArg(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationUpdateTableField f -> new MutationField.MutationUpdateTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.inputArg(), f.updateRows(), present);
+                f.inputArg(), f.updateRows(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDeleteTableField f -> new MutationField.MutationDeleteTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.inputArg(), f.deleteRows(), present);
+                f.inputArg(), f.deleteRows(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationUpsertTableField f -> new MutationField.MutationUpsertTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
-                f.tableInputArg(), present);
+                f.tableInputArg(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case QueryField.QueryServiceTableField f -> new QueryField.QueryServiceTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case QueryField.QueryServiceRecordField f -> new QueryField.QueryServiceRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case QueryField.QueryTableMethodTableField f -> new QueryField.QueryTableMethodTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.filters(),
-                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.loaderRegistration(), present);
+                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case ChildField.ServiceRecordField f -> new ChildField.ServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                f.sourceKey(), f.loaderRegistration(), present);
+                f.sourceKey(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case ChildField.TableMethodField f -> new ChildField.TableMethodField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                present);
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
-                f.kind(), present);
+                f.kind(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationBulkDmlRecordField f -> new MutationField.MutationBulkDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
-                f.kind(), present);
+                f.kind(), f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationUpdatePayloadField f -> new MutationField.MutationUpdatePayloadField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.updateRows(),
-                present);
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationBulkUpdatePayloadField f -> new MutationField.MutationBulkUpdatePayloadField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.updateRows(),
-                present);
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationDeletePayloadField f -> new MutationField.MutationDeletePayloadField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.deleteRows(),
-                present);
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             case MutationField.MutationBulkDeletePayloadField f -> new MutationField.MutationBulkDeletePayloadField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.deleteRows(),
-                present);
+                f.errorChannel().map(c -> renameRouted(c, newName)));
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "
                     + field.getClass().getName()

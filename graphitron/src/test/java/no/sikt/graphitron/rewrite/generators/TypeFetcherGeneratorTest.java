@@ -751,46 +751,43 @@ class TypeFetcherGeneratorTest {
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<? extends java.lang.Number>>");
     }
 
-    // ===== try/catch wrapper: dispatch arm vs redact arm =====
+    // ===== try/catch wrapper: Outcome-wrapper arm vs redact arm =====
 
-    private static ErrorChannel.PayloadClass sakPayloadChannel() {
-        // Mirrors the SakPayload(String data, List<?> errors) shape used by
-        // ErrorChannelClassificationTest. The mappedErrorTypes list is empty here because the
-        // catch-arm emission only walks errorsSlot + defaultedSlots + mappingsConstantName;
-        // the channel's @error classes don't need to be resolved for the lambda print.
-        return new ErrorChannel.PayloadClass(
-            List.of(),
-            ClassName.bestGuess("com.example.SakPayload"),
-            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
-            List.of(
-                new no.sikt.graphitron.rewrite.model.DefaultedSlot(
-                    0, "data", ClassName.get("java.lang", "String"), "null")),
-            "SAK_PAYLOAD");
+    private static ErrorChannel.Mapped sakMappedChannel() {
+        // A root @service outcome field's channel: Mapped (the Outcome-wrapper transport).
+        // One handler suffices; the catch-arm emission walks only mappingsConstantName.
+        var errorType = new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType(
+            "SakError", null,
+            List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler(
+                "java.lang.RuntimeException", Optional.empty(), Optional.empty())),
+            List.of());
+        return new ErrorChannel.Mapped(List.of(errorType), "SAK_PAYLOAD");
     }
 
     @Test
-    void queryServiceRecordField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
-        // When the field's WithErrorChannel resolves to a present channel, the catch
-        // arm calls ErrorRouter.dispatch with the channel's mapping-table constant and a
-        // synthesized payload-factory lambda. No-channel fields still route through redact,
-        // covered by every service-record test that passes Optional.empty().
+    void queryServiceRecordField_withMappedChannel_wrapsInOutcomeAndWalksMappings() {
+        // A present channel on a root @service field is always Mapped: the fetcher's payload
+        // type wraps to Outcome<X>, the success arm returns Success, and the catch arm walks
+        // the channel's mapping table into Outcome.ErrorList (no ErrorRouter.dispatch; the
+        // router seams serve the RouterDispatched partition on other field variants).
+        // No-channel fields still route through redact, covered by every service-record test
+        // that passes Optional.empty().
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "runSak",
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "sak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()),             TestFixtures.stubServiceCall(method),
-            Optional.of(sakPayloadChannel()));
+            Optional.of(sakMappedChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
-        var body = method(spec, "sak").code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
+        var emitted = method(spec, "sak");
+        assertThat(emitted.returnType().toString()).contains(".schema.Outcome<");
+        var body = emitted.code().toString();
         assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        // Synthesized payload factory: errors-slot binds the lambda parameter, defaulted slot
-        // prints its literal. SakPayload's ctor is (data, errors), so "null, errors"; order
-        // mirrors payloadCtorParams.
-        assertThat(body).contains("errors -> new com.example.SakPayload(null, errors)");
-        assertThat(body).doesNotContain("ErrorRouter.redact");
+        assertThat(body).contains("mapping.match(cause)");
+        assertThat(body).contains("ErrorList<>(");
+        assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
     @Test
@@ -811,24 +808,10 @@ class TypeFetcherGeneratorTest {
         assertThat(body).doesNotContain("ErrorMappings");
     }
 
-    @Test
-    void queryServiceTableField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
-        // Same dispatch wiring applies on the @table-bound service path
-        // (buildQueryServiceTableFetcher → buildServiceFetcherCommon shared body shape).
-        var method = TestFixtures.staticServiceMethodRef(
-            "no.sikt.graphitron.rewrite.TestServiceStub", "getFilm",
-            ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
-            List.of());
-        var field = new QueryField.QueryServiceTableField("Query", "getFilm", null,
-            tableBoundFilm(single()), TestFixtures.stubServiceCall(method), Optional.of(sakPayloadChannel()));
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
-
-        var body = method(spec, "getFilm").code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
-        assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        assertThat(body).doesNotContain("ErrorRouter.redact");
-    }
+    // The @table-bound service path shares buildServiceFetcherCommon, but its channel is
+    // always empty (the classifier's outcome-channel resolution requires a result-mapped
+    // return), so its catch arm is the no-channel disposition covered by
+    // mutationServiceTableField_withoutErrorChannel_catchArmSurfacesOrRedacts.
 
     // ===== MutationServiceTableField / MutationServiceRecordField =====
     //
@@ -920,24 +903,26 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void mutationServiceTableField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
-        // Wrapper integration on the mutation side: a present channel routes the catch
-        // arm through ErrorRouter.dispatch with the channel's mapping table and synthesized
-        // payload-factory lambda.
+    void mutationServiceRecordField_withMappedChannel_wrapsInOutcomeAndWalksMappings() {
+        // Wrapper integration on the mutation side: a present (Mapped) channel wraps the
+        // payload in Outcome and the catch arm walks the channel's mapping table into
+        // Outcome.ErrorList, mirroring the query-side test above.
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "createSak",
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()),             TestFixtures.stubServiceCall(method),
-            Optional.of(sakPayloadChannel()));
+            Optional.of(sakMappedChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
-        var body = method(spec, "createSak").code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
+        var emitted = method(spec, "createSak");
+        assertThat(emitted.returnType().toString()).contains(".schema.Outcome<");
+        var body = emitted.code().toString();
         assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        assertThat(body).contains("errors -> new com.example.SakPayload(null, errors)");
-        assertThat(body).doesNotContain("ErrorRouter.redact");
+        assertThat(body).contains("mapping.match(cause)");
+        assertThat(body).contains("ErrorList<>(");
+        assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
     @Test
