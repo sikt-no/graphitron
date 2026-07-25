@@ -5,7 +5,8 @@ import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
-import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
+import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * shape the resolver rejects produces an actionable diagnostic.
  */
 @PipelineTier
-class RecordFieldAccessorValidationTest {
+class RecordReadAccessorValidationTest {
+
+    /** The resolved accessor off the field's JavaAccessor locator. */
+    private static AccessorResolution.Resolved accessorOf(Object field) {
+        var locator = ((RecordReadField) field).locator();
+        return ((ValueLocator.JavaAccessor) locator).accessor();
+    }
 
     private static final String FIXTURES_FQN_PREFIX = "no.sikt.graphitron.codereferences.dummyreferences.R88AccessorFixtures$";
 
@@ -53,7 +60,7 @@ class RecordFieldAccessorValidationTest {
     }
 
     @Test
-    void pojoRecordField_missingGetter_validatorReportsActionableError() {
+    void pojoParent_missingGetter_validatorReportsActionableError() {
         var schema = buildWithRecord("MissingGetterPojo", "sakId: ID");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
@@ -62,8 +69,8 @@ class RecordFieldAccessorValidationTest {
                 && m.contains("getSakId")
                 && m.contains("sakId")
                 && m.contains("@field(name:"));
-        // Structural: the rejected field classifies as UnclassifiedField, not as a PropertyField
-        // carrying a Rejected accessor. The slot-type tightening on PropertyField/RecordField
+        // Structural: the rejected field classifies as UnclassifiedField, not as a RecordReadField
+        // carrying a Rejected accessor. The arm-type tightening on ValueLocator.JavaAccessor
         // (AccessorResolution.Resolved) is enforced by routing the rejection through the
         // Unclassified arm in FieldBuilder; this is the test that pins that routing change.
         assertThat(schema.field("TestType", "sakId"))
@@ -71,7 +78,7 @@ class RecordFieldAccessorValidationTest {
     }
 
     @Test
-    void javaRecordField_missingComponent_validatorReportsActionableError() {
+    void javaRecordParent_missingComponent_validatorReportsActionableError() {
         var schema = buildWithRecord("MissingComponentRecord", "sakId: ID");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
@@ -84,7 +91,7 @@ class RecordFieldAccessorValidationTest {
     }
 
     @Test
-    void pojoRecordField_returnTypeMismatch_validatorReportsActionableError() {
+    void pojoParent_returnTypeMismatch_validatorReportsActionableError() {
         var schema = buildWithRecord("ReturnTypeMismatchPojo", "sakId: ID");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
@@ -96,14 +103,14 @@ class RecordFieldAccessorValidationTest {
     }
 
     @Test
-    void pojoRecordField_argumentBearingFieldMatchingMethod_resolves() {
+    void pojoParent_argumentBearingFieldMatchingMethod_resolves() {
         var schema = buildWithRecord("ArgumentBearingPojo", "fooBar(x: String): String");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message)
             .noneMatch(m -> m.contains("TestType.fooBar"));
-        var pf = (PropertyField) schema.field("TestType", "fooBar");
-        assertThat(pf.accessor()).isInstanceOf(AccessorResolution.Resolved.class);
-        var resolved = switch (pf.accessor()) {
+        var accessor = accessorOf(schema.field("TestType", "fooBar"));
+        assertThat(accessor).isInstanceOf(AccessorResolution.Resolved.class);
+        var resolved = switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> gp.method();
             case AccessorResolution.BareName bn -> bn.method();
             case AccessorResolution.FieldRead fr -> null;
@@ -114,50 +121,50 @@ class RecordFieldAccessorValidationTest {
     }
 
     @Test
-    void pojoRecordField_fieldNameOverride_resolvesAgainstOverride() {
+    void pojoParent_fieldNameOverride_resolvesAgainstOverride() {
         var schema = buildWithRecord("OverridePojo", "sakId: ID @field(name: \"sak\")");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message)
             .noneMatch(m -> m.contains("TestType.sakId"));
-        var pf = (PropertyField) schema.field("TestType", "sakId");
-        assertThat(pf.accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        var gp = (AccessorResolution.GetterPrefixed) pf.accessor();
+        var accessor = accessorOf(schema.field("TestType", "sakId"));
+        assertThat(accessor).isInstanceOf(AccessorResolution.GetterPrefixed.class);
+        var gp = (AccessorResolution.GetterPrefixed) accessor;
         assertThat(gp.method().getName()).isEqualTo("getSak");
     }
 
     @Test
-    void javaRecordField_bareNameAccessor_resolves() {
+    void javaRecordParent_bareNameAccessor_resolves() {
         var schema = buildWithRecord("BareNameRecord", "sakId: ID");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message)
             .noneMatch(m -> m.contains("TestType.sakId"));
-        var pf = (PropertyField) schema.field("TestType", "sakId");
-        assertThat(pf.accessor()).isInstanceOf(AccessorResolution.BareName.class);
-        var bn = (AccessorResolution.BareName) pf.accessor();
+        var accessor = accessorOf(schema.field("TestType", "sakId"));
+        assertThat(accessor).isInstanceOf(AccessorResolution.BareName.class);
+        var bn = (AccessorResolution.BareName) accessor;
         assertThat(bn.method().getName()).isEqualTo("sakId");
     }
 
     @Test
-    void pojoRecordField_publicFieldFallback_resolvesAsFieldRead() {
+    void pojoParent_publicFieldFallback_resolvesAsFieldRead() {
         var schema = buildWithRecord("PublicFieldPojo", "title: String");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message)
             .noneMatch(m -> m.contains("TestType.title"));
-        var pf = (PropertyField) schema.field("TestType", "title");
-        assertThat(pf.accessor()).isInstanceOf(AccessorResolution.FieldRead.class);
-        var fr = (AccessorResolution.FieldRead) pf.accessor();
+        var accessor = accessorOf(schema.field("TestType", "title"));
+        assertThat(accessor).isInstanceOf(AccessorResolution.FieldRead.class);
+        var fr = (AccessorResolution.FieldRead) accessor;
         assertThat(fr.field().getName()).isEqualTo("title");
     }
 
     @Test
-    void pojoRecordField_argumentBearingFieldFullEnv_resolves() {
+    void pojoParent_argumentBearingFieldFullEnv_resolves() {
         var schema = buildWithRecord("FullEnvPojo", "fooBar(x: String): String");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message)
             .noneMatch(m -> m.contains("TestType.fooBar"));
-        var pf = (PropertyField) schema.field("TestType", "fooBar");
-        assertThat(pf.accessor()).isInstanceOf(AccessorResolution.Resolved.class);
-        var method = switch (pf.accessor()) {
+        var accessor = accessorOf(schema.field("TestType", "fooBar"));
+        assertThat(accessor).isInstanceOf(AccessorResolution.Resolved.class);
+        var method = switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> gp.method();
             case AccessorResolution.BareName bn -> bn.method();
             case AccessorResolution.FieldRead fr -> null;
@@ -168,14 +175,14 @@ class RecordFieldAccessorValidationTest {
     }
 
     @Test
-    void pojoRecordField_booleanReturn_resolvesAsIsAccessor() {
+    void pojoParent_booleanReturn_resolvesAsIsAccessor() {
         var schema = buildWithRecord("BooleanPojo", "active: Boolean");
         var errors = validate(schema);
         assertThat(errors).extracting(ValidationError::message)
             .noneMatch(m -> m.contains("TestType.active"));
-        var pf = (PropertyField) schema.field("TestType", "active");
-        assertThat(pf.accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        var gp = (AccessorResolution.GetterPrefixed) pf.accessor();
+        var accessor = accessorOf(schema.field("TestType", "active"));
+        assertThat(accessor).isInstanceOf(AccessorResolution.GetterPrefixed.class);
+        var gp = (AccessorResolution.GetterPrefixed) accessor;
         assertThat(gp.method().getName()).isEqualTo("isActive");
     }
 }

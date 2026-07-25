@@ -1,7 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
+import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -69,9 +70,9 @@ class R461WalkGroundingPipelineTest {
         assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
             .isEqualTo(FIX + "BeanChild");
         // Emission resolves the same accessor.
-        var field = (RecordField) schema.field("Parent", "film");
-        assertThat(field.accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
-        assertThat(((AccessorResolution.GetterPrefixed) field.accessor()).method().getName()).isEqualTo("getFilm");
+        var field = (RecordReadField) schema.field("Parent", "film");
+        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
+        assertThat(((AccessorResolution.GetterPrefixed) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("getFilm");
     }
 
     @Test
@@ -81,9 +82,9 @@ class R461WalkGroundingPipelineTest {
         assertThat(schema.type("Child")).isInstanceOf(GraphitronType.PojoResultType.Backed.class);
         assertThat(((GraphitronType.PojoResultType.Backed) schema.type("Child")).fqClassName())
             .isEqualTo(FIX + "FluentChild");
-        var field = (RecordField) schema.field("Parent", "film");
-        assertThat(field.accessor()).isInstanceOf(AccessorResolution.BareName.class);
-        assertThat(((AccessorResolution.BareName) field.accessor()).method().getName()).isEqualTo("film");
+        var field = (RecordReadField) schema.field("Parent", "film");
+        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.BareName.class);
+        assertThat(((AccessorResolution.BareName) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("film");
     }
 
     // ===== B2: field arguments =====
@@ -146,10 +147,10 @@ class R461WalkGroundingPipelineTest {
         // plain wrapper and the data field reads through the renamed accessor rather than flipping to
         // a two-level carrier.
         var schema = build("RenameParent", "child: Child @field(name: \"renamed\")", "tag: String");
-        assertThat(schema.field("Parent", "child")).isInstanceOf(RecordField.class);
-        var field = (RecordField) schema.field("Parent", "child");
-        assertThat(field.accessor()).isInstanceOf(AccessorResolution.BareName.class);
-        assertThat(((AccessorResolution.BareName) field.accessor()).method().getName()).isEqualTo("renamed");
+        assertThat(schema.field("Parent", "child")).isInstanceOf(RecordReadField.class);
+        var field = (RecordReadField) schema.field("Parent", "child");
+        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.BareName.class);
+        assertThat(((AccessorResolution.BareName) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("renamed");
     }
 
     // ===== B5: public-field fallback =====

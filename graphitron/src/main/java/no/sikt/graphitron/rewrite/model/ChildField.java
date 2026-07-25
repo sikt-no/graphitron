@@ -19,9 +19,9 @@ public sealed interface ChildField extends OutputField
             ChildField.NestingField,
             ChildField.PivotField, ChildField.BatchedPivotField, ChildField.PivotSlotField,
             ChildField.ServiceRecordField,
-            ChildField.RecordField,
+            ChildField.RecordReadField,
             ChildField.RecordCompositeField,
-            ChildField.ComputedField, ChildField.PropertyField,
+            ChildField.ComputedField,
             ChildField.SingleRecordIdField,
             ChildField.SingleRecordIdFieldFromReturning,
             ChildField.ErrorsField {
@@ -83,9 +83,8 @@ public sealed interface ChildField extends OutputField
             case BatchedLookupTableField f -> f.sourceShape();
             // Record-backed parents (DTO batching, @service / DML payload carriers): the source is a
             // producer-handed domain record.
-            case RecordField ignored -> SourceShape.Record;
+            case RecordReadField ignored -> SourceShape.Record;
             case RecordCompositeField ignored -> SourceShape.Record;
-            case PropertyField ignored -> SourceShape.Record;
             case SingleRecordIdField ignored -> SourceShape.Record;
             case SingleRecordIdFieldFromReturning ignored -> SourceShape.Record;
             case ErrorsField ignored -> SourceShape.Record;
@@ -114,10 +113,9 @@ public sealed interface ChildField extends OutputField
             case ServiceTableField f -> OutputField.serviceCall(f.method());
             case ServiceRecordField f -> OutputField.serviceCall(f.method());
             // Record / passthrough scalar reads.
-            case RecordField ignored -> OutputField.bareFetch();
+            case RecordReadField ignored -> OutputField.bareFetch();
             // The composite carrier's data field: a bare source passthrough, no filter surface.
             case RecordCompositeField ignored -> OutputField.bareFetch();
-            case PropertyField ignored -> OutputField.bareFetch();
             case ComputedField ignored -> OutputField.bareFetch();
             // Structural nesting (asserted, not derived from an absent join-path).
             case NestingField ignored -> new Operation.Nest();
@@ -150,16 +148,15 @@ public sealed interface ChildField extends OutputField
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
             case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
-            case RecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
+            case RecordReadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
             // Composite carrier data field: the element is a record-backed result type
-            // (not a scalar Field, not a @table), distinguishing this leaf from RecordField.
+            // (not a scalar Field, not a @table), distinguishing this leaf from RecordReadField.
             case RecordCompositeField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
-            case PropertyField ignored -> OutputField.single(new TargetShape.Field());
             // The pivot projects one graphitron-built record per parent (never a list; the
             // classifier rejects list returns), so the target is Single(Record) on both deliveries.
             case PivotField ignored -> OutputField.single(new TargetShape.Record());
             case BatchedPivotField ignored -> OutputField.single(new TargetShape.Record());
-            // A slot is a scalar read off that record: the Java scalar side, like PropertyField.
+            // A slot is a scalar read off that record: the Java scalar side, like RecordReadField.
             case PivotSlotField ignored -> OutputField.single(new TargetShape.Field());
             // @externalField inlines a jOOQ Field<X> into the parent SELECT; the shape stays Column.
             case ComputedField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
@@ -955,10 +952,10 @@ public sealed interface ChildField extends OutputField
      * nesting children emit, which is what lets one registered fetcher per slot coordinate serve
      * both the pivot subselect's {@code Record} and a compatible nesting parent's record.
      *
-     * <p>A nulled-out {@link PropertyField} reuse was considered and rejected:
-     * {@code PropertyField}'s meaning is a read off a {@link GraphitronType.ResultType}-classified
-     * parent carrying a resolved accessor or column, neither of which a slot has. The dedicated
-     * leaf forks on identity in the sealed dispatch instead.
+     * <p>A {@link RecordReadField} reuse was considered and rejected: that leaf's meaning is a
+     * read off a {@link GraphitronType.ResultType}-classified parent whose {@link ValueLocator}
+     * arm the classifier resolved, neither of which a slot has. The dedicated leaf forks on
+     * identity in the sealed dispatch instead.
      */
     record PivotSlotField(
         String parentTypeName,
@@ -1098,35 +1095,38 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * @param column the resolved parent-table column when the parent is a
-     *     {@link GraphitronType.JooqTableRecordType} with a resolvable {@link TableRef} and the
-     *     SQL column name maps to a real column; {@code null} otherwise (including for
-     *     {@link GraphitronType.JooqRecordType}, {@link GraphitronType.JavaRecordType}, and
-     *     {@link GraphitronType.PojoResultType} parents). When non-null, the generator emits a
-     *     typed {@code Tables.X.COL} reference; when null, it falls back to
-     *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
-     * @param accessor the resolved accessor when the parent is a
-     *     {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
-     *     with non-null {@code fqClassName} (i.e. a class-backed parent: Java record or POJO);
-     *     {@code null} otherwise. The slot is statically typed
-     *     {@link AccessorResolution.Resolved}: classifier-side rejection is routed through
-     *     {@link GraphitronField.UnclassifiedField} instead of riding on this slot, so the
-     *     emitter consumer never sees a {@link AccessorResolution.Rejected} value here. The
-     *     slot stays nullable to carry the parent shapes that don't run reflective resolution
-     *     at all ({@link GraphitronType.JooqRecordCarrier} parents, null-{@code fqClassName}
-     *     parents).
+     * A value read off a record-backed parent's in-memory source object: the scalar / enum /
+     * non-table-object field on a {@code @service} or DML payload carrier, DTO, or
+     * {@code @error} type. The read mechanism lives on the sealed {@link #locator()}; read
+     * sites switch on its arm identity and consult the parent {@link GraphitronType.ResultType}
+     * only for the cast target. Arm/parent-shape compatibility is a validate-time rule (see
+     * {@link ValueLocator}), which is what keeps the emitter's per-arm casts guard-free.
+     *
+     * <p>{@code returnType} covers both classification triggers: the scalar/enum SDL return
+     * carries a {@link ReturnTypeRef.ScalarReturnType}, the non-table object return the
+     * resolved {@link ReturnTypeRef.ResultReturnType}. {@link #target()} mirrors the field's
+     * own SDL wrapper unconditionally ({@code listOrSingle(returnType.wrapper(), Field)}), so
+     * a list-shaped scalar such as an {@code @error} type's {@code path: [String!]!} models
+     * {@code List} like every other wrapper-carrying leaf.
      */
-    record RecordField(
+    record RecordReadField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        String columnName,
-        ColumnRef column,
-        AccessorResolution.Resolved accessor
+        ValueLocator locator
     ) implements ChildField {
+        public RecordReadField {
+            java.util.Objects.requireNonNull(returnType, "returnType");
+            java.util.Objects.requireNonNull(locator, "locator");
+        }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OBJECT_CLASS);
+            return new DomainReturnType.Plain(switch (locator) {
+                case ValueLocator.TypedColumn tc -> tc.column().columnType();
+                case ValueLocator.JavaAccessor ignored -> OBJECT_CLASS;
+                case ValueLocator.ByName ignored -> OBJECT_CLASS;
+                case ValueLocator.DefaultRead ignored -> OBJECT_CLASS;
+            });
         }
     }
 
@@ -1144,7 +1144,7 @@ public sealed interface ChildField extends OutputField
      * {@code @table} children resolve through the record-backed accessor path off the composite.
      *
      * <p>Sibling of the record-sourced {@link BatchedTableField} arm (a PK-keyed re-fetch) and
-     * {@link RecordField} (a scalar / accessor read): its {@link #target()} is
+     * {@link RecordReadField} (a scalar / accessor read): its {@link #target()} is
      * {@code listOrSingle(Record)} (the element is a record-backed result type, not a
      * {@code @table} and not a scalar {@code Field}) and its {@link #domainReturnType()} is the
      * per-element composite class, there being no single table to name. Carries no
@@ -1206,35 +1206,6 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField, MethodBackedField, ResultKeyAliasedField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
-        }
-    }
-
-    /**
-     * @param column the resolved parent-table column when the parent is a
-     *     {@link GraphitronType.JooqTableRecordType} with a resolvable {@link TableRef} and the
-     *     SQL column name maps to a real column; {@code null} otherwise. When non-null, the
-     *     generator emits a typed {@code Tables.X.COL} reference; when null, it falls back to
-     *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
-     * @param accessor the resolved accessor when the parent is a
-     *     {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
-     *     with non-null {@code fqClassName}; {@code null} otherwise
-     *     ({@link GraphitronType.JooqRecordCarrier} parents, null-{@code fqClassName} parents,
-     *     and {@code @error}-type parents do not run reflective accessor resolution). See {@link RecordField}'s analogous slot for the
-     *     full contract, including that classifier-side rejection routes through
-     *     {@link GraphitronField.UnclassifiedField} rather than a {@code Rejected} value
-     *     riding on this slot.
-     */
-    record PropertyField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        String columnName,
-        ColumnRef column,
-        AccessorResolution.Resolved accessor
-    ) implements ChildField {
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(
-                column != null ? column.columnType() : OBJECT_CLASS);
         }
     }
 

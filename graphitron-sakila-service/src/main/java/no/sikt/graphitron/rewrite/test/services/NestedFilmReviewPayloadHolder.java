@@ -40,7 +40,7 @@ public final class NestedFilmReviewPayloadHolder {
      * ({@code buildErrorChannelCtorArm}), which emits {@code new Outer.Nested(...)}.
      *
      * <p>Deliberately no scalar/property data field: a scalar read off the backing record routes
-     * through {@code FetcherEmitter.propertyOrRecordBinding} / {@code inlineSuccessRead}, which cast
+     * through {@code FetcherEmitter.recordReadBinding} / {@code inlineSuccessRead}, which cast
      * via {@code ClassName.bestGuess(fqClassName)} (they hold only a binary string, no reflected
      * {@code Class<?>}) and would spell the non-compiling {@code Outer$Nested} for a nested record.
      * Errors-only keeps this fixture compiling as a witness for the two sites named on the

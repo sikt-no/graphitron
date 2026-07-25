@@ -80,7 +80,7 @@ class MixedSourceNestedTypeReadsTest {
         // Result edge: FilmDetails registers as the class-backed JavaRecordType and its own visit resolves
         // the accessor read.
         assertThat(schema.type("FilmDetails")).isInstanceOf(GraphitronType.JavaRecordType.class);
-        assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ChildField.PropertyField.class);
+        assertThat(schema.field("FilmDetails", "rating")).isInstanceOf(ChildField.RecordReadField.class);
 
         // The reified union.
         assertThat(schema.reachableSourceShapes("FilmDetails", "rating")).isEqualTo(DUAL);

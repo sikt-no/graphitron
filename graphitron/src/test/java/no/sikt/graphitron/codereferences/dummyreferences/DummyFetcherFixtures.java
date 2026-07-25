@@ -5,7 +5,7 @@ package no.sikt.graphitron.codereferences.dummyreferences;
  * Under reflection-only binding a standalone {@code @record} no longer fabricates a backing class,
  * so these tests bind their result type through a {@code @service} producer (in {@link DummyService})
  * returning one of these records. The component shapes match the test SDL field shapes so the
- * inner-field accessor classification (PropertyField for a scalar, RecordField for a nested record)
+ * inner-field accessor classification (a RecordReadField carrying a JavaAccessor locator)
  * resolves exactly as the {@code @record} idiom used to set up.
  */
 public final class DummyFetcherFixtures {
@@ -22,7 +22,7 @@ public final class DummyFetcherFixtures {
     public record FilmDetailsRecord(FilmStatsRecord stats) {}
 
     /**
-     * Backs PropertyField column-name cases: exposes both a {@code title} accessor (SDL field name)
+     * Backs record-read accessor-name cases: exposes both a {@code title} accessor (SDL field name)
      * and a {@code film_title} accessor (the {@code @field(name: "film_title")} override target),
      * so the same backing serves the with- and without-override variants.
      */

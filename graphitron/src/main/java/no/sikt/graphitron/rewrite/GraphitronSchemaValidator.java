@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 import java.util.ArrayList;
 import java.util.List;
@@ -216,9 +217,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // Narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // Narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordCompositeField f    -> {} // Narrow ResultReturnType + non-null fqClassName / envelope compact-constructor invariants pin the structural shape; the near-miss rejections (mismatched producer, a @field child neither @table-backed nor a resolvable composite accessor, the re-leveled cardinality mismatch) fire at classify time as UnclassifiedField (RecordBindingMultiProducer / accessor-mismatch / the composite-carrier cardinality reject), surfaced via validateUnclassifiedField
-            case no.sikt.graphitron.rewrite.model.ChildField.RecordField f             -> validateRecordField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.RecordReadField f         -> validateRecordReadField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ErrorsField f             -> {} // structural; @error type checks already ran at classify time
             case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedField f     -> {} // column resolution guaranteed by the builder; arity/extraction invariants enforced by the record ctor
             case no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField f -> validateInputColumnBackedReferenceField(f, errors);
@@ -1183,10 +1183,48 @@ public class GraphitronSchemaValidator {
         }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
-    private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {
-        // Accessor-resolution rejection routes through UnclassifiedField at classify time
-        // (FieldBuilder), so the slot here is statically AccessorResolution.Resolved or null.
-        // Nothing to validate at this site.
+    /**
+     * The record-read leaf's cross-axis gating rule: each {@link ValueLocator} arm is only
+     * admissible under the parent source-object shape whose cast the emitter's corresponding
+     * read arm performs ({@code FetcherEmitter.recordReadBinding}). The leaf cannot carry the
+     * parent classification, so a compact constructor cannot see this; checking it here is what
+     * makes the emitter's parent-shape casts guaranteed by a checked fact instead of
+     * construction-site coincidence. {@link ValueLocator.DefaultRead} is unconstrained:
+     * graphitron locates nothing, so no cast depends on the parent shape.
+     *
+     * <p>Accessor-resolution rejection routes through {@code UnclassifiedField} at classify time
+     * (FieldBuilder), so the {@link ValueLocator.JavaAccessor} arm is statically
+     * {@code AccessorResolution.Resolved}.
+     */
+    private void validateRecordReadField(no.sikt.graphitron.rewrite.model.ChildField.RecordReadField field,
+            Map<String, GraphitronType> types, List<ValidationError> errors) {
+        var parent = types.get(field.parentTypeName());
+        if (parent == null) return;
+        String incompatible = switch (field.locator()) {
+            case ValueLocator.TypedColumn ignored ->
+                parent instanceof GraphitronType.JooqTableRecordType jtrt && jtrt.table() != null
+                    ? null
+                    : "a TypedColumn locator requires a jOOQ table-record-backed parent with a resolved table";
+            case ValueLocator.JavaAccessor ignored ->
+                parent instanceof GraphitronType.JavaRecordType
+                        || parent instanceof GraphitronType.PojoResultType.Backed
+                    ? null
+                    : "a JavaAccessor locator requires a class-backed parent (Java record or POJO)";
+            case ValueLocator.ByName ignored ->
+                parent instanceof GraphitronType.JooqRecordCarrier
+                    ? null
+                    : "a ByName locator requires a jOOQ-record-carrier parent";
+            case ValueLocator.DefaultRead ignored -> null;
+        };
+        if (incompatible != null) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': " + incompatible
+                    + "; parent type '" + field.parentTypeName() + "' classifies as "
+                    + parent.getClass().getSimpleName()),
+                field.location()
+            ));
+        }
     }
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
@@ -1199,9 +1237,6 @@ public class GraphitronSchemaValidator {
             return;
         }
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
-    }
-    private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {
-        // See validateRecordField: classifier-side routing leaves nothing for this site to do.
     }
     private static void validateInputColumnBackedReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField field, List<ValidationError> errors) {
         // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).

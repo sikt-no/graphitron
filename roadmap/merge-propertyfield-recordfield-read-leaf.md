@@ -113,44 +113,51 @@ guaranteed by a checked fact instead of construction-site coincidence. Compact-c
 reserved for what the leaf can see alone (non-null components; `ScalarReturnType` xor result-typed
 `returnType` agreement with whatever the merged record needs structurally).
 
-## Slices
+## Shipped
 
-R432/R314 additive-cutover-retire template:
+All three slices (additive, cutover, retire) landed in one pass; the two old leaves never
+coexisted with the merged one on trunk. The merged leaf is `ChildField.RecordReadField` (fresh
+name per the plan), the locator `no.sikt.graphitron.rewrite.model.ValueLocator`. Implementer
+decisions on points the spec left open or under-specified:
 
-1. **Additive**: land `ValueLocator` and the merged leaf with compact ctor, `target()` /
-   `domainReturnType()` derivations, and consumer arms. The leaf enters
-   `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`'s partition and the
-   validator's exhaustive switch the moment it exists (both are exhaustive over every sealed leaf;
-   "unreachable" still needs a status).
-2. **Cutover**: flip the three `FieldBuilder` construction sites (scalar arm, object arm via
-   `recordFieldOrUnclassified`, `classifyChildFieldOnErrorType`) to build the merged leaf with the
-   locator arm chosen from the same resolution logic that populates the slots today; migrate the
-   validator rule, `@classified` corpus rows, and LSP projection switch.
-3. **Retire**: delete the two old leaves; collapse every paired `instanceof` / switch arm; rename
-   `propertyOrRecordBinding` and rewrite its javadoc and the surrounding two-leaf narration (the
-   `ChildField` "distinguishing this leaf from RecordField" prose, the "See RecordField's analogous
-   slot" cross-references, the paired no-op dispatch comments, and `OutputField.single`'s javadoc
-   mention of the property projection, which the merged leaf no longer uses); sweep the architecture
-   docs (`code-generation-triggers.adoc` names both leaves) and regenerate, not hand-edit, the
-   generated `supported-schema-shapes.adoc` fragment.
+- **`DefaultRead` at emit**: `FetcherEmitter.bind`'s `RecordReadField` arm registers
+  `PropertyDataFetcher.fetching(name)` explicitly for the `DefaultRead` locator, mirroring the
+  `ErrorsField` `PayloadAccessor` arm, so "graphql-java's default machinery applies" is an emitted
+  value rather than absence-of-registration. `resolvesViaPropertyDataFetcher` gains the
+  `DefaultRead` case, which makes the DefaultRead-under-Outcome corner a validate-time rejection
+  (`validateOutcomeChildArmSwitch`); `isInlineArmSwitchedDataField` excludes `DefaultRead`
+  accordingly, and `inlineSuccessRead`'s old broad terminal throw narrows to a single
+  pinned-unreachable `DefaultRead` arm.
+- **LSP projection slots**: `RecordOrProperty(columnName, accessorName)` now derives per locator
+  arm; `JavaAccessor` projects the accessor member name with a null `columnName` (the "Column:"
+  hover line becomes conditional), `TypedColumn` / `ByName` / `DefaultRead` project their name
+  into `columnName`. The old projection put the accessor's base name in `columnName`; the base
+  name is not a locator fact, and a fake "Column:" label for an accessor read was a misnomer.
+- **Validator rule strengthening**: `TypedColumn` requires not just a `JooqTableRecordType`
+  parent but one with a non-null resolved table, mirroring the emit-side cast exactly.
+- The two single-purpose validation unit tests collapsed into
+  `RecordReadFieldValidationTest` (one positive and one negative case per constrained locator
+  arm); `RecordFieldAccessorValidationTest` renamed to `RecordReadAccessorValidationTest`.
 
 ## Acceptance bar
 
 Byte-identical generated sakila output is the backstop, not the definition; nothing in the generator
 consumes `target()`, so bytes can hold while the model moves. The bar is the named enforcer deltas,
-each one-way and intended:
+each one-way and intended, all confirmed on the shipped implementation:
 
-- `@classified` corpus: `error-field` / `error-type` rows flip `target: Single` to `List`;
+- `@classified` corpus: `error-field` / `error-type` rows flipped `target: Single` to `List`;
   `mapping`'s rows (`FilmStats.count`, `FilmDetails.stats`) unchanged apart from the leaf name.
-- `WrapperAlgebraTest`: the `CARDINALITY_NOT_MODELED` entry for the retired leaf is removed, the
-  exemption set correspondingly smaller.
-- `GeneratorCoverageTest`: two `IMPLEMENTED_LEAVES` entries become one.
+- `WrapperAlgebraTest`: the `CARDINALITY_NOT_MODELED` entry for the retired leaf removed, the
+  exemption set now four members.
+- `GeneratorCoverageTest`: two `IMPLEMENTED_LEAVES` entries became one.
 - Diagnostic channel: no entry gained or lost across the corpus on
   `MultiProducerDomainTypeDisagreement` (pins the `domainReturnType` derivation change).
-- Sakila regeneration diff empty on slices 2 and 3.
+- Sakila regeneration diff verified byte-identical against the pre-change generated sources.
 
 The change is representational: no per-locator-arm unit tests and no code-string assertions on
 generated bodies; corpus rows plus the `graphitron-sakila-example` compile are the right tiers.
+(The validator's new cross-axis gating rule got direct unit coverage, which is validator-rule
+coverage, not per-arm emission testing.)
 
 ## Out of scope
 

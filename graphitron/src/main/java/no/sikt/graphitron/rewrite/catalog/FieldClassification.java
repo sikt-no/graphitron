@@ -321,10 +321,11 @@ public sealed interface FieldClassification
     ) implements FieldClassification {}
 
     /**
-     * A class-backed-parent field whose value reaches the field through a parent
-     * column or accessor. Covers {@code ChildField.RecordField} and
-     * {@code ChildField.PropertyField}; either component may be null when the parent
-     * shape doesn't carry that resolution kind.
+     * A record-backed-parent field whose value reaches the field through a parent
+     * column or accessor. Covers {@code ChildField.RecordReadField} (the locator arm
+     * decides which component carries the read fact) plus the record-backed passthrough
+     * projections ({@code ChildField.RecordCompositeField}, {@code ChildField.PivotSlotField});
+     * either component may be null when the read doesn't carry that resolution kind.
      */
     record RecordOrProperty(String columnName, String accessorName) implements FieldClassification {}
 

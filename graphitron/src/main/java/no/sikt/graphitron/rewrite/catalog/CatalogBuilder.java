@@ -318,19 +318,23 @@ public final class CatalogBuilder {
                     false,
                     null,
                     errorChannelName(f.errorChannel()));
-            case ChildField.RecordField f ->
-                new FieldClassification.RecordOrProperty(
-                    f.column() != null ? f.column().sqlName() : f.columnName(),
-                    accessorName(f.accessor()));
+            // Record-read leaf: the locator arm decides which slot carries the read fact — a
+            // resolved or by-name column name, or the accessor member name (no column).
+            case ChildField.RecordReadField f -> switch (f.locator()) {
+                case no.sikt.graphitron.rewrite.model.ValueLocator.TypedColumn tc ->
+                    new FieldClassification.RecordOrProperty(tc.column().sqlName(), null);
+                case no.sikt.graphitron.rewrite.model.ValueLocator.ByName bn ->
+                    new FieldClassification.RecordOrProperty(bn.sqlName(), null);
+                case no.sikt.graphitron.rewrite.model.ValueLocator.JavaAccessor ja ->
+                    new FieldClassification.RecordOrProperty(null, accessorName(ja.accessor()));
+                case no.sikt.graphitron.rewrite.model.ValueLocator.DefaultRead dr ->
+                    new FieldClassification.RecordOrProperty(dr.name(), null);
+            };
             // The @service record-composite carrier's data field is a record-backed
             // source passthrough (no column, no accessor): project it onto the record-backed
             // RecordOrProperty label (FallThrough LSP arm, no column resolution).
             case ChildField.RecordCompositeField f ->
                 new FieldClassification.RecordOrProperty(f.name(), null);
-            case ChildField.PropertyField f ->
-                new FieldClassification.RecordOrProperty(
-                    f.column() != null ? f.column().sqlName() : f.columnName(),
-                    accessorName(f.accessor()));
             case ChildField.ComputedField f ->
                 new FieldClassification.Computed(
                     f.method() != null ? f.method().className() : null,

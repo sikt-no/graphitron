@@ -19,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.ValueLocator;
 
 import java.util.List;
 
@@ -127,8 +128,10 @@ public final class FetcherEmitter {
      * Whether {@code field} would resolve to graphql-java's {@code PropertyDataFetcher} (a property
      * read off the source object) rather than a graphitron-emitted fetcher. Under an
      * {@code Outcome} wrapper this is a silent runtime hole: the read would land on the
-     * {@code Outcome} object itself rather than arm-switching. The emit-time source is
-     * an {@code ErrorsField} on the {@code PayloadAccessor} transport, which emits
+     * {@code Outcome} object itself rather than arm-switching. The emit-time sources are
+     * an {@code ErrorsField} on the {@code PayloadAccessor} transport and a
+     * {@code RecordReadField} whose {@link ValueLocator.DefaultRead} locator located nothing
+     * (a class-backed parent with no loadable backing), both of which emit
      * {@code PropertyDataFetcher.fetching} in {@link #bindRaw}. The validator consults
      * this predicate so it keys on the emitter's own dispositions rather than re-deriving them.
      * The live case is pinned by {@code FetcherPipelineTest} wiring assertions.
@@ -145,8 +148,10 @@ public final class FetcherEmitter {
      */
     public static boolean resolvesViaPropertyDataFetcher(
             GraphitronField field, GraphitronType.ResultType resultType) {
-        return field instanceof ChildField.ErrorsField ef
-                && ef.transport() instanceof ChildField.Transport.PayloadAccessor;
+        return (field instanceof ChildField.ErrorsField ef
+                    && ef.transport() instanceof ChildField.Transport.PayloadAccessor)
+            || (field instanceof ChildField.RecordReadField rrf
+                    && rrf.locator() instanceof ValueLocator.DefaultRead);
     }
 
     /**
@@ -206,14 +211,15 @@ public final class FetcherEmitter {
             ClassName fetchersClass, TableRef nestingParentTable,
             GraphitronType.ResultType resultType, String outputPackage) {
         AccessorResolution.Resolved accessor =
-            accessorField instanceof ChildField.RecordField rf ? rf.accessor()
-            : accessorField instanceof ChildField.PropertyField pf ? pf.accessor()
-            : null;
+            accessorField instanceof ChildField.RecordReadField rrf
+                    && rrf.locator() instanceof ValueLocator.JavaAccessor ja
+                ? ja.accessor()
+                : null;
         String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
             ? jrt.fqClassName()
             : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
         var backingClass = ClassName.bestGuess(fqClassName);
-        boolean envDependent = isEnvDependentAccessorRead(accessorField, resultType);
+        boolean envDependent = isEnvDependentAccessorRead(accessorField);
         CodeBlock accessorRead = recordBackedAccessorRead(backingClass, accessor, CodeBlock.of("source"));
         CodeBlock columnRead = dualShapeRecordArmRead(recordArm, nestingParentTable);
         var body = CodeBlock.builder();
@@ -268,13 +274,17 @@ public final class FetcherEmitter {
      * <p>The errors field is excluded (it reads {@code ErrorList.errors} via its
      * {@code WrapperArm} transport). DataLoader/method-backed fields are excluded because their
      * generated fetcher method owns the arm-switch; the registration site emits a plain method
-     * reference for them. This names the shapes whose read is resolved <em>here</em> as a
-     * narrowable source read, a structural property of the emit path, not an allow-list.
+     * reference for them. A {@link ValueLocator.DefaultRead} record read is excluded because
+     * nothing was located, so there is no inline read to repoint at {@code success.value()};
+     * that combination under an outcome parent is rejected at validate time
+     * ({@code validateOutcomeChildArmSwitch} via {@link #resolvesViaPropertyDataFetcher}). This
+     * names the shapes whose read is resolved <em>here</em> as a narrowable source read, a
+     * structural property of the emit path, not an allow-list.
      */
     private static boolean isInlineArmSwitchedDataField(GraphitronField field) {
         return field instanceof ChildField.NestingField
-            || field instanceof ChildField.PropertyField
-            || field instanceof ChildField.RecordField;
+            || (field instanceof ChildField.RecordReadField rrf
+                && !(rrf.locator() instanceof ValueLocator.DefaultRead));
     }
 
     /**
@@ -282,13 +292,13 @@ public final class FetcherEmitter {
      * {@code Success.value()} of the non-null {@code Outcome} source and resolves null on the
      * {@code ErrorList} arm. The success-arm read is the field's <em>own</em> read, source-bound to
      * {@code success.value()} instead of {@code env.getSource()}; record-backed accessors go via
-     * the shared {@link #recordBackedAccessorRead} (the same helper {@link #propertyOrRecordBinding}
+     * the shared {@link #recordBackedAccessorRead} (the same helper {@link #recordReadBinding}
      * uses), so there is no parallel accessor taxonomy.
      */
     private static FetcherBinding armSwitchedInlineDataFetcher(
             GraphitronField field, ClassName fetchersClass,
             GraphitronType.ResultType resultType, String outputPackage) {
-        boolean envDependent = isEnvDependentAccessorRead(field, resultType);
+        boolean envDependent = isEnvDependentAccessorRead(field);
         CodeBlock subject = envDependent ? ENV_SOURCE : CodeBlock.of("source");
         CodeBlock body = CodeBlock.builder()
             .add("if (!($L instanceof $T<?> success)) return null;\n", subject, successClass(outputPackage))
@@ -303,21 +313,16 @@ public final class FetcherEmitter {
      * Whether {@code field}'s read needs the {@code DataFetchingEnvironment}. Only a class-backed
      * accessor that injects the environment (a method with parameters: the full-env or per-argument
      * forms in {@link #methodCallValue}) does; jOOQ-record column reads, field reads, and zero-arg
-     * accessors are source-only.
+     * accessors are source-only. The accessor lives on the {@link ValueLocator.JavaAccessor} arm,
+     * whose parent-shape compatibility is validate-time-checked, so no parent cross-check is
+     * needed here.
      */
-    private static boolean isEnvDependentAccessorRead(
-            GraphitronField field, GraphitronType.ResultType resultType) {
-        AccessorResolution.Resolved accessor =
-            field instanceof ChildField.PropertyField pf ? pf.accessor()
-            : field instanceof ChildField.RecordField rf ? rf.accessor()
-            : null;
-        if (accessor == null) {
+    private static boolean isEnvDependentAccessorRead(GraphitronField field) {
+        if (!(field instanceof ChildField.RecordReadField rrf)
+                || !(rrf.locator() instanceof ValueLocator.JavaAccessor ja)) {
             return false;
         }
-        if (resultType instanceof GraphitronType.JooqRecordCarrier) {
-            return false;
-        }
-        return switch (accessor) {
+        return switch (ja.accessor()) {
             case AccessorResolution.FieldRead ignored -> false;
             case AccessorResolution.GetterPrefixed gp -> gp.method().getParameterTypes().length > 0;
             case AccessorResolution.BareName bn -> bn.method().getParameterTypes().length > 0;
@@ -326,47 +331,39 @@ public final class FetcherEmitter {
 
     /**
      * The success-arm value expression: the field's own read, source-bound to {@code success.value()}.
-     * The read shape follows the field's backing, mirroring {@link #bindRaw} /
-     * {@link #propertyOrRecordBinding} so there is no parallel taxonomy: a jOOQ-record column
-     * {@code get}, a class-backed accessor call, or the nesting source passthrough.
-     *
-     * <p>The final {@code throw} is a defensive backstop for any field/backing combination that
-     * has neither a column nor a resolved accessor and so cannot be projected inline.
+     * The read shape is an exhaustive switch over the record-read leaf's {@link ValueLocator},
+     * mirroring {@link #bindRaw} / {@link #recordReadBinding} so there is no parallel taxonomy:
+     * a jOOQ-record column {@code get}, a class-backed accessor call, or the nesting source
+     * passthrough. The parent {@code resultType} is consulted only for the cast target, per
+     * arm, under the validate-time-checked arm/parent-shape compatibility.
      */
     private static CodeBlock inlineSuccessRead(GraphitronField field, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.NestingField) {
             return CodeBlock.of("success.value()");
         }
-        // jOOQ-record-backed column read: same two arms as propertyOrRecordBinding's jOOQ branches.
-        ColumnRef column = field instanceof ChildField.PropertyField pf ? pf.column()
-            : field instanceof ChildField.RecordField rf ? rf.column()
-            : null;
-        String columnName = field instanceof ChildField.PropertyField pf ? pf.columnName()
-            : field instanceof ChildField.RecordField rf ? rf.columnName()
-            : null;
-        if (resultType instanceof GraphitronType.JooqTableRecordType jtrt && column != null && jtrt.table() != null) {
-            return CodeBlock.of("(($T) success.value()).get($T.$L.$L)",
-                RECORD, jtrt.table().constantsClass(), jtrt.table().javaFieldName(), column.javaName());
-        }
-        if (resultType instanceof GraphitronType.JooqRecordCarrier && columnName != null) {
-            return CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, columnName);
-        }
-        // Record-backed (Pojo / JavaRecord) accessor read.
-        AccessorResolution.Resolved accessor =
-            field instanceof ChildField.PropertyField pf ? pf.accessor()
-            : field instanceof ChildField.RecordField rf ? rf.accessor()
-            : null;
-        String javaBackingFqcn =
-            resultType instanceof GraphitronType.JavaRecordType jrt ? jrt.fqClassName()
-            : resultType instanceof GraphitronType.PojoResultType.Backed b ? b.fqClassName()
-            : null;
-        if (accessor != null && javaBackingFqcn != null) {
-            return recordBackedAccessorRead(
-                ClassName.bestGuess(javaBackingFqcn), accessor, CodeBlock.of("success.value()"));
-        }
-        throw new IllegalStateException(
-            "inline success-projection arm-switch: unsupported field "
-            + field.getClass().getSimpleName() + " on backing " + resultType);
+        var rrf = (ChildField.RecordReadField) field;
+        return switch (rrf.locator()) {
+            case ValueLocator.TypedColumn tc -> {
+                var table = ((GraphitronType.JooqTableRecordType) resultType).table();
+                yield CodeBlock.of("(($T) success.value()).get($T.$L.$L)",
+                    RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
+            }
+            case ValueLocator.ByName bn ->
+                CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, bn.sqlName());
+            case ValueLocator.JavaAccessor ja -> {
+                String javaBackingFqcn =
+                    resultType instanceof GraphitronType.JavaRecordType jrt ? jrt.fqClassName()
+                    : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
+                yield recordBackedAccessorRead(
+                    ClassName.bestGuess(javaBackingFqcn), ja.accessor(), CodeBlock.of("success.value()"));
+            }
+            // Unreachable: isInlineArmSwitchedDataField excludes DefaultRead reads, and the
+            // outcome-parent combination is rejected at validate time
+            // (validateOutcomeChildArmSwitch via resolvesViaPropertyDataFetcher).
+            case ValueLocator.DefaultRead ignored -> throw new IllegalStateException(
+                "inline success-projection arm-switch: DefaultRead locator on "
+                + field.qualifiedName() + " has no inline read");
+        };
     }
 
     private static ClassName successClass(String outputPackage) {
@@ -456,13 +453,8 @@ public final class FetcherEmitter {
                             errorListClass(outputPackage)));
             };
         }
-        if (field instanceof ChildField.PropertyField pf && resultType != null) {
-            return propertyOrRecordBinding(pf, pf.columnName(), pf.column(), resultType,
-                pf.accessor(), fetchersClass, outputPackage);
-        }
-        if (field instanceof ChildField.RecordField rf && resultType != null) {
-            return propertyOrRecordBinding(rf, rf.columnName(), rf.column(), resultType,
-                rf.accessor(), fetchersClass, outputPackage);
+        if (field instanceof ChildField.RecordReadField rrf) {
+            return recordReadBinding(rrf, resultType, fetchersClass, outputPackage);
         }
         if (field instanceof ChildField.ColumnBackedField cf && parentTable != null) {
             if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
@@ -722,44 +714,56 @@ public final class FetcherEmitter {
     }
 
     /**
-     * Binding for a {@code PropertyField} / {@code RecordField}. jOOQ-record parents read a column
-     * off the source (source-only, wrapped in {@code LightFetcher}); class-backed parents read the
-     * pre-resolved accessor: source-only for field reads and zero-arg accessors, env-dependent when
-     * the accessor injects the environment. The accessor read itself goes through the shared
+     * Binding for a {@code RecordReadField}: an exhaustive switch over the leaf's
+     * {@link ValueLocator}. jOOQ-record parents read a column off the source (source-only,
+     * wrapped in {@code LightFetcher}); class-backed parents read the pre-resolved accessor:
+     * source-only for field reads and zero-arg accessors, env-dependent when the accessor
+     * injects the environment; a {@link ValueLocator.DefaultRead} registers graphql-java's own
+     * {@code PropertyDataFetcher} explicitly. The accessor read itself goes through the shared
      * {@link #recordBackedAccessorRead} (the same helper the arm-switch path uses), so the
-     * accessor switch lives in one place.
+     * accessor switch lives in one place. Each arm's parent-shape cast is guaranteed by the
+     * validator's record-read gating rule, not construction-site coincidence.
      */
-    private static FetcherBinding propertyOrRecordBinding(
-            GraphitronField field, String columnName, ColumnRef column,
-            GraphitronType.ResultType resultType, AccessorResolution.Resolved accessor,
+    private static FetcherBinding recordReadBinding(
+            ChildField.RecordReadField field, GraphitronType.ResultType resultType,
             ClassName fetchersClass, String outputPackage) {
-        if (resultType instanceof GraphitronType.JooqTableRecordType jtrt
-                && column != null && jtrt.table() != null) {
-            return sourceOnly(field.name(), fetchersClass, outputPackage,
-                CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
-                    RECORD, jtrt.table().constantsClass(), jtrt.table().javaFieldName(), column.javaName()));
-        }
-        if (resultType instanceof GraphitronType.JooqRecordCarrier) {
-            return sourceOnly(field.name(), fetchersClass, outputPackage,
-                CodeBlock.of("return (($T) source).get($T.field($S));\n", RECORD, DSL, columnName));
-        }
-        String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
-            ? jrt.fqClassName()
-            : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
-        var backingClass = ClassName.bestGuess(fqClassName);
-        if (isEnvDependentAccessorRead(field, resultType)) {
-            return envDependent(field.name(), fetchersClass,
-                CodeBlock.of("return $L;\n", recordBackedAccessorRead(backingClass, accessor, ENV_SOURCE)));
-        }
-        return sourceOnly(field.name(), fetchersClass, outputPackage,
-            CodeBlock.of("return $L;\n", recordBackedAccessorRead(backingClass, accessor, CodeBlock.of("source"))));
+        return switch (field.locator()) {
+            case ValueLocator.TypedColumn tc -> {
+                var table = ((GraphitronType.JooqTableRecordType) resultType).table();
+                yield sourceOnly(field.name(), fetchersClass, outputPackage,
+                    CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
+                        RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName()));
+            }
+            case ValueLocator.ByName bn ->
+                sourceOnly(field.name(), fetchersClass, outputPackage,
+                    CodeBlock.of("return (($T) source).get($T.field($S));\n", RECORD, DSL, bn.sqlName()));
+            case ValueLocator.JavaAccessor ja -> {
+                String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
+                    ? jrt.fqClassName()
+                    : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
+                var backingClass = ClassName.bestGuess(fqClassName);
+                if (isEnvDependentAccessorRead(field)) {
+                    yield envDependent(field.name(), fetchersClass,
+                        CodeBlock.of("return $L;\n", recordBackedAccessorRead(backingClass, ja.accessor(), ENV_SOURCE)));
+                }
+                yield sourceOnly(field.name(), fetchersClass, outputPackage,
+                    CodeBlock.of("return $L;\n", recordBackedAccessorRead(backingClass, ja.accessor(), CodeBlock.of("source"))));
+            }
+            // Graphitron located nothing: register graphql-java's default property machinery
+            // explicitly, keyed on the located name (mirrors the ErrorsField PayloadAccessor arm).
+            case ValueLocator.DefaultRead dr -> {
+                var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
+                yield new FetcherBinding.Inline(
+                    CodeBlock.of("$T.fetching($S)", propertyDataFetcher, dr.name()));
+            }
+        };
     }
 
     /**
      * The value expression reading a class-backed accessor off a source object. The
      * source is supplied as a {@link CodeBlock} ({@code env.getSource()} on the normal path,
      * {@code success.value()} on the outcome arm-switch), so this one helper serves both the
-     * normal {@link #propertyOrRecordBinding} lambda and the arm-switch ternary. Field reads emit
+     * normal {@link #recordReadBinding} lambda and the arm-switch ternary. Field reads emit
      * {@code (($T) src).field}; method accessors delegate to {@link #methodCallValue} for the
      * zero-arg / full-environment / per-argument injection forms.
      */

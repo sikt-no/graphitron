@@ -221,7 +221,7 @@ public final class DeclarationHovers {
                   .append(s.tableBound() ? " → `" + nullSafe(s.tableName()) + "`" : "")
                   .append(errorChannelSuffix(s.errorChannelMappingName()));
             case FieldClassification.RecordOrProperty r ->
-                sb.append("\n\nColumn: `").append(nullSafe(r.columnName())).append("`")
+                sb.append(r.columnName() != null ? "\n\nColumn: `" + r.columnName() + "`" : "")
                   .append(r.accessorName() != null ? "\n\nAccessor: `" + r.accessorName() + "`" : "");
             case FieldClassification.Computed c ->
                 sb.append("\n\nComputed via `").append(nullSafe(c.methodClassName())).append("#")

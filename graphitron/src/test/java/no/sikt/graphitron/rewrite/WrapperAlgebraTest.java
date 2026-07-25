@@ -68,17 +68,16 @@ class WrapperAlgebraTest {
     /**
      * The scalar-projection leaves whose {@link OutputField#target()} is built via
      * {@link OutputField#single} and therefore <em>does not model output cardinality</em>: the column
-     * family, the record-property passthrough, and the errors-list field. graphql-java's
-     * {@code PropertyDataFetcher} reads the value (list or not) straight off the source, so {@code Single}
-     * is the faithful read regardless of the GraphQL wrapper, even for a list-shaped scalar such as
-     * {@code MyError.path: [String!]!} (see {@link OutputField#single}). These are excluded from the
-     * SDL-list mirror and instead pinned as always-{@code Single}.
+     * family and the errors-list field. These leaves carry no return wrapper, so the read
+     * (list or not) lands straight off the source and {@code Single} is the faithful default
+     * (see {@link OutputField#single}). They are excluded from the SDL-list mirror and instead
+     * pinned as always-{@code Single}; a leaf that gains a wrapper slot exits this set and
+     * obeys the mirror.
      */
     private static final Set<Class<?>> CARDINALITY_NOT_MODELED = Set.of(
         no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField.class,
         no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField.class,
         no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class,
-        no.sikt.graphitron.rewrite.model.ChildField.PropertyField.class,
         no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
     @Test

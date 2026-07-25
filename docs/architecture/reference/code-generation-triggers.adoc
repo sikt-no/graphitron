@@ -545,11 +545,11 @@ The parent here is a type whose backing class is reflection-derived from its pro
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| Scalar/enum with `@field` | `PropertyField` | Wiring value ; property read off the parent record
+| Scalar/enum (optionally `@field`-renamed) | `RecordReadField` | Wiring value ; read located by the leaf's sealed `ValueLocator` arm (typed column, resolved accessor, by-name, or graphql-java's default property read)
 | Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `BatchedLookupTableField` (Record-sourced, `KeyLift.FkColumns`) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `BatchedTableField` (Record-sourced, `KeyLift.FkColumns`) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `BatchedTableField` / `BatchedLookupTableField` (Record-sourced, `KeyLift.Lifter`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
-| Return non-table type | `RecordField` | Wiring value ; read off the parent record
+| Return non-table type | `RecordReadField` | Wiring value ; read located by the same `ValueLocator` arm set as the scalar row
 | `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table | `ServiceRecordField` | Fetcher method

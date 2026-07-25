@@ -119,7 +119,8 @@ public final class ClassifiedCorpus {
          * Target-shape minimal pair: Column vs Field. A scalar under the @table parent Film projects a
          * Column (`title` is a real DB column); a scalar under a record-backed parent projects a Field
          * (`FilmStats.count` is a POJO property, the record having no @table). The non-table object
-         * field `FilmDetails.stats` is the object flavor of Field (RecordField). All three are inline
+         * field `FilmDetails.stats` is the object flavor of the same record-read leaf
+         * (RecordReadField). All three are inline
          * Fetch; only the parent's table-ness moves the source shape (Table vs Record) and with it the
          * target shape. The two parents are record-bound by being service producers' return types
          * (`makeFilmDetailsRecord` -> FilmDetailsRecord, whose sole component is `stats`;
@@ -256,13 +257,15 @@ public final class ClassifiedCorpus {
         /*
          * Fields on an @error parent. The @error contract restricts the field set to exactly
          * `path: [String!]!` and `message: String!`; both resolve off the developer-supplied error
-         * class via graphql-java's default PropertyDataFetcher, so both classify as PropertyField
-         * (Child / Fetch / Field). Corpus-only: it lands on the already-taught Child / Fetch / Field
-         * coordinate, and the @error type itself is not a documentation-query selection shape.
+         * class via graphql-java's default PropertyDataFetcher, so both classify as RecordReadField
+         * with the DefaultRead locator (Child / Fetch / Field). The leaf carries the field's own
+         * return wrapper, so the list-shaped `path` obeys the SDL-list mirror (target: List).
+         * Corpus-only: it lands on the already-taught Child / Fetch / Field coordinate, and the
+         * @error type itself is not a documentation-query selection shape.
          */
         new Example("error-field", """
             type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-              path: [String!]! @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              path: [String!]! @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Field, sourceShape: Record)
               message: String! @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
             type Query { err: MyError }
@@ -281,7 +284,7 @@ public final class ClassifiedCorpus {
             enum Severity { LOW HIGH }
             type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
                 @classifiedType(as: ErrorType) {
-              path: [String!]! @classified(source: OnlyChild, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              path: [String!]! @classified(source: OnlyChild, operation: Fetch, target: List, targetShape: Field, sourceShape: Record)
               message: String!
               severity: Severity!
             }

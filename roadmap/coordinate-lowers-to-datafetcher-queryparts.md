@@ -1087,8 +1087,8 @@ off the generic `org.jooq.Record`, the identity all embedding sites share.)
 
 Where the source object keys on the type, the **accessor** keys on the field: each field pulls its own value
 out of the (now cast) source object. It is a **sealed family**, each arm carrying only its own facts, gated by
-the source object, replacing the nullable `column`-xor-`accessor` slots on today's `RecordField` /
-`PropertyField` with arm identity. It is a **locator**. There is **no transform axis**: how a read is
+the source object, replacing the nullable `column`-xor-`accessor` slot pair the pre-merge record-read
+leaves carried (dissolved into `RecordReadField`'s sealed `ValueLocator`) with arm identity. It is a **locator**. There is **no transform axis**: how a read is
 encoded is not a function carried on the field but a consequence of the facts the locator points at,
 worked through after the locator arms below.
 

@@ -27,9 +27,9 @@ import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
+import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
@@ -2770,7 +2770,12 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
         if (isScalarOrEnum(fieldDef)) {
-            return new PropertyField(parentTypeName, name, location, name, null, null);
+            // The parent is not a ResultType; the read is mediated by the @error type's
+            // accessor-base mapping against the developer's exception class, so graphitron
+            // locates nothing here (ValueLocator.DefaultRead).
+            return new RecordReadField(parentTypeName, name, location,
+                ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+                new ValueLocator.DefaultRead(name));
         }
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("fields on @error types must be scalar or enum"));
     }
@@ -6277,7 +6282,7 @@ class FieldBuilder {
         // @sourceRow is owned by its dedicated resolver from this point onward: the resolver
         // validates the parent shape, the directive payload, the lifter's signature, and the
         // @reference composition; non-table returns surface a directive-specific rejection here
-        // rather than being silently dropped by the PropertyField / RecordField branches below.
+        // rather than being silently dropped by the RecordReadField branches below.
         if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
             // @splitQuery on a @sourceRow class-backed-parent field is structurally redundant: the
             // lifter-keyed DataLoader already opens a new scope. Fire the advisory before the
@@ -6377,18 +6382,9 @@ class FieldBuilder {
             String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
                 ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
                 : name;
-            var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass);
-            return switch (accessor) {
-                case AccessorResolution.Rejected r ->
-                    new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.accessorMismatch(r.reason()));
-                case AccessorResolution.Resolved ok ->
-                    new PropertyField(parentTypeName, name, location, columnName,
-                        resolveColumnOnJooqTableRecord(columnName, parentResultType), ok);
-                case null ->
-                    new PropertyField(parentTypeName, name, location, columnName,
-                        resolveColumnOnJooqTableRecord(columnName, parentResultType), null);
-            };
+            return recordReadFieldOrUnclassified(fieldDef, parentTypeName, name, location,
+                ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef)),
+                columnName, parentResultType, parentBackingClass);
         }
 
         // Object return type on a result-mapped parent.
@@ -6459,9 +6455,9 @@ class FieldBuilder {
                     SourceShape.Record, resolved.sourceKey(), resolved.lift(), resolved.loaderRegistration(),
                     resolvedParentCorrelation);
             }
-            case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
+            case ReturnTypeRef.ResultReturnType r -> recordReadFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);
-            case ReturnTypeRef.ScalarReturnType s -> recordFieldOrUnclassified(
+            case ReturnTypeRef.ScalarReturnType s -> recordReadFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
@@ -6488,7 +6484,7 @@ class FieldBuilder {
     }
 
     /**
-     * Resolves the parent-table {@link ColumnRef} for a {@code PropertyField} or {@code RecordField}
+     * Resolves the parent-table {@link ColumnRef} for a {@link RecordReadField}
      * when the parent is a {@link GraphitronType.JooqTableRecordType} whose backing jOOQ table
      * resolves in the catalog and contains a column with the given SQL name. Returns {@code null}
      * for all other {@link GraphitronType.ResultType} variants, when the {@code JooqTableRecordType}
@@ -6531,27 +6527,37 @@ class FieldBuilder {
     }
 
     /**
-     * Object-arm helper for the class-backed parent paths: resolves the accessor and
-     * routes a {@link AccessorResolution.Rejected} through {@link UnclassifiedField} so the
-     * {@link RecordField} accessor slot only ever carries a {@link AccessorResolution.Resolved} or
-     * {@code null}. Mirrors the scalar-arm switch above.
+     * Shared lift for the record-read leaf's construction sites (the scalar/enum arm and the
+     * non-table object arm): resolves the {@link ValueLocator} arm from the parent shape and
+     * routes an {@link AccessorResolution.Rejected} through {@link UnclassifiedField}, so the
+     * {@link ValueLocator.JavaAccessor} arm only ever carries a
+     * {@link AccessorResolution.Resolved}.
      */
-    private GraphitronField recordFieldOrUnclassified(GraphQLFieldDefinition fieldDef,
+    private GraphitronField recordReadFieldOrUnclassified(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location, ReturnTypeRef returnType,
             String columnName, GraphitronType.ResultType parentResultType,
             Class<?> parentBackingClass) {
         var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass);
-        return switch (accessor) {
-            case AccessorResolution.Rejected r ->
-                new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    Rejection.accessorMismatch(r.reason()));
-            case AccessorResolution.Resolved ok ->
-                new RecordField(parentTypeName, name, location, returnType, columnName,
-                    resolveColumnOnJooqTableRecord(columnName, parentResultType), ok);
-            case null ->
-                new RecordField(parentTypeName, name, location, returnType, columnName,
-                    resolveColumnOnJooqTableRecord(columnName, parentResultType), null);
-        };
+        if (accessor instanceof AccessorResolution.Rejected r) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.accessorMismatch(r.reason()));
+        }
+        ColumnRef column = resolveColumnOnJooqTableRecord(columnName, parentResultType);
+        ValueLocator locator;
+        if (column != null) {
+            locator = new ValueLocator.TypedColumn(column);
+        } else if (accessor != null) {
+            locator = new ValueLocator.JavaAccessor((AccessorResolution.Resolved) accessor);
+        } else if (parentResultType instanceof GraphitronType.JooqRecordCarrier) {
+            // No typed constant resolved on a jOOQ-record parent (the nesting-reuse case, or a
+            // table-record parent whose catalog lookup found no matching column).
+            locator = new ValueLocator.ByName(columnName);
+        } else {
+            // Class-backed parent whose backing class could not be loaded: graphitron locates
+            // nothing; graphql-java's default property machinery reads the name.
+            locator = new ValueLocator.DefaultRead(columnName);
+        }
+        return new RecordReadField(parentTypeName, name, location, returnType, locator);
     }
 
     private ClassAccessorResolver.ParamShape mapArgsToParamShape(GraphQLFieldDefinition fieldDef) {

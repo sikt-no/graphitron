@@ -333,8 +333,7 @@ public class TypeFetcherGenerator {
         ChildField.BatchedTableField.class,
         ChildField.BatchedLookupTableField.class,
         ChildField.BatchedPivotField.class,
-        ChildField.PropertyField.class,
-        ChildField.RecordField.class,
+        ChildField.RecordReadField.class,
         ChildField.RecordCompositeField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
@@ -729,13 +728,12 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildPivotBatchedDataFetcher(ctx, f, parentTable, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForBatchedPivot(ctx, f, outputPackage));
                 }
-                case ChildField.RecordField ignored             -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
+                case ChildField.RecordReadField ignored         -> { /* locator read reified by FetcherEmitter.bind, collected below */ }
                 // The @service record-composite carrier's data field: the Outcome/source
                 // narrowing + verbatim projection of the producer's composite record(s) is reified by
                 // FetcherEmitter.bind into a named (DataFetchingEnvironment env) method, collected below.
                 case ChildField.RecordCompositeField ignored    -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
                 case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via TypeClassGenerator.$fields() */ }
-                case ChildField.PropertyField ignored           -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
                 case ChildField.ErrorsField ignored             -> { /* LocalContext / WrapperArm reified by FetcherEmitter.bind; PayloadAccessor still PropertyDataFetcher.fetching */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->

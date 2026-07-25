@@ -351,7 +351,7 @@ is carried once by the unified axes:
    target projection.
 5. **Return shape**: `returnExpression` re-expresses `returnType` + `FieldWrapper` for DML; it dissolves
    into the target `wrapper(shape)`.
-6. **`column`**: the projection on `ColumnField` and the source read-location on `PropertyField` are the
+6. **`column`**: the projection on `ColumnBackedField` and the source read-location on `RecordReadField`'s `TypedColumn` locator are the
    same name at opposite endpoints, split by endpoint.
 7. **Cardinality**: `SourceKey.cardinality`, `LoaderRegistration`, `wrapper().isList()`, and the arrival
    count are one-vs-many at four positions, each a wrapper bound to its endpoint (the wrapper algebra).

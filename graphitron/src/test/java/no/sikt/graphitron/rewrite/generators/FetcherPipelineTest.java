@@ -79,10 +79,10 @@ class FetcherPipelineTest {
         assertThat(classes).contains("ContainerFetchers");
     }
 
-    // ===== record-backed parent — PropertyField and RecordField =====
+    // ===== record-backed parent — RecordReadField =====
 
     @Test
-    void propertyField_onRecordType_hasWiringEntry() {
+    void scalarRecordRead_onRecordType_hasWiringEntry() {
         var sdl = """
             type Container { value: String }
             type Query {
@@ -95,7 +95,7 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void propertyField_onRecordType_reifiesReadMethod() {
+    void scalarRecordRead_onRecordType_reifiesReadMethod() {
         var fetchers = findSpec("ContainerFetchers", """
             type Container { value: String }
             type Query {
@@ -103,12 +103,12 @@ class FetcherPipelineTest {
                 c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
             }
             """);
-        // The PropertyField read is reified as a named source-only method on the class.
+        // The scalar record read is reified as a named source-only method on the class.
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("value");
     }
 
     @Test
-    void propertyField_onBackedRecord_wrapsAccessorReadInLightFetcher() {
+    void scalarRecordRead_onBackedRecord_wrapsAccessorReadInLightFetcher() {
         // A reflection-backed record type reads its scalar field through the (zero-arg) record
         // accessor, reified as a named source-only method and registered wrapped in LightFetcher
         // (COLUMN_FETCHER kind), not an inline lambda.
@@ -127,7 +127,7 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void recordField_onRecordType_hasWiringEntry() {
+    void objectRecordRead_onRecordType_hasWiringEntry() {
         var sdl = """
             type FilmStats { count: Int }
             type FilmDetails { stats: FilmStats }
@@ -142,7 +142,7 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void recordField_onRecordType_reifiesReadMethod() {
+    void objectRecordRead_onRecordType_reifiesReadMethod() {
         var fetchers = findSpec("FilmDetailsFetchers", """
             type FilmStats { count: Int }
             type FilmDetails { stats: FilmStats }
@@ -152,7 +152,7 @@ class FetcherPipelineTest {
                 fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
             }
             """);
-        // The RecordField read is reified as a named source-only method on the class.
+        // The object record read is reified as a named source-only method on the class.
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("stats");
     }
 

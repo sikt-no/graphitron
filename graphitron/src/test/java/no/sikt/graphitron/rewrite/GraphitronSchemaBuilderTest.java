@@ -22,19 +22,20 @@ import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
-import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
-import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedLookupTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
+import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
+import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -2301,14 +2302,23 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Fields on record-backed parents =====
 
+    /** The resolved accessor's own member name (method or field), for locator assertions. */
+    private static String accessorMemberName(AccessorResolution.Resolved accessor) {
+        return switch (accessor) {
+            case AccessorResolution.GetterPrefixed gp -> gp.method().getName();
+            case AccessorResolution.BareName bn -> bn.method().getName();
+            case AccessorResolution.FieldRead fr -> fr.field().getName();
+        };
+    }
+
     /**
      * Child field on a record-backed parent. One case per variant the builder can produce from
      * this shape. Covers the <em>Child Fields (on record-backed parent)</em> table in
      * {@code code-generation-triggers.adoc}.
      */
     enum NonTableParentCase implements ClassificationCase {
-        PROPERTY_FIELD_ON_RESULT_TYPE(
-            "record-backed (ResultType) parent — scalar field → PropertyField using field name as columnName",
+        RECORD_READ_ON_RESULT_TYPE(
+            "record-backed (ResultType) parent — scalar field → RecordReadField with the field-name accessor",
             """
             type FilmDetails { title: String }
             type Film @table(name: "film") { details: FilmDetails }
@@ -2318,14 +2328,15 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (PropertyField) schema.field("FilmDetails", "title");
-                assertThat(f.columnName()).isEqualTo("title");
+                var f = (RecordReadField) schema.field("FilmDetails", "title");
+                var ja = (ValueLocator.JavaAccessor) f.locator();
+                assertThat(accessorMemberName(ja.accessor())).isEqualTo("title");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(PropertyField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(RecordReadField.class); }
         },
 
-        PROPERTY_FIELD_EXPLICIT_NAME(
-            "record-backed parent + @field(name:) — PropertyField uses the explicit column name",
+        RECORD_READ_EXPLICIT_NAME(
+            "record-backed parent + @field(name:) — the locator resolves against the explicit name",
             """
             type FilmDetails { title: String @field(name: "film_title") }
             type Film @table(name: "film") { details: FilmDetails }
@@ -2335,8 +2346,9 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (PropertyField) schema.field("FilmDetails", "title");
-                assertThat(f.columnName()).isEqualTo("film_title");
+                var f = (RecordReadField) schema.field("FilmDetails", "title");
+                var ja = (ValueLocator.JavaAccessor) f.locator();
+                assertThat(accessorMemberName(ja.accessor())).isEqualTo("film_title");
             }),
 
         SERVICE_FIELD_ON_RESULT_TYPE(
@@ -2428,8 +2440,8 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedLookupTableField.class); }
         },
 
-        // The bare `record-backed parent + non-table object return -> RecordField` verdict lives
-        // in the spec-by-example corpus (FilmDetails.stats in the `mapping` ClassifiedCorpus
+        // The bare `record-backed parent + non-table object return -> RecordReadField` verdict
+        // lives in the spec-by-example corpus (FilmDetails.stats in the `mapping` ClassifiedCorpus
         // example). This enum keeps the slot-asserting record cases above.
 
         RECORD_TABLE_FIELD_SINGLE_CARDINALITY(
@@ -2626,10 +2638,10 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    @ProjectionFor({RecordField.class, PropertyField.class, BatchedTableField.class, BatchedLookupTableField.class})
+    @ProjectionFor({RecordReadField.class, BatchedTableField.class, BatchedLookupTableField.class})
     void recordParentChildProjectionsCarryColumnAccessorAndTableTargetPayloads() {
-        // PropertyField + RecordField — projection collapses to RecordOrProperty with
-        // columnName / accessorName.
+        // RecordReadField — projection collapses to RecordOrProperty; the JavaAccessor locator
+        // carries the accessor member name (no column).
         var s1 = buildSnapshot("""
             type FilmDetails { title: String @field(name: "film_title") }
             type Film @table(name: "film") { details: FilmDetails }
@@ -2639,7 +2651,8 @@ class GraphitronSchemaBuilderTest {
             }
             """);
         var prop = (FieldClassification.RecordOrProperty) s1.fieldClassificationsByCoord().get("FilmDetails.title");
-        assertThat(prop.columnName()).isEqualTo("film_title");
+        assertThat(prop.columnName()).isNull();
+        assertThat(prop.accessorName()).isEqualTo("film_title");
 
         // BatchedTableField — projection is RecordTableTarget(tableName, joinPath, hasLookupKey=false).
         var s2 = buildSnapshot("""
@@ -6347,11 +6360,11 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Fields on @error parents =====
 
-    // The `@error parent path/message -> PropertyField` verdict lives in the spec-by-example
-    // corpus (the `error-field` ClassifiedCorpus example, MyError.path / MyError.message); both
-    // fields resolve off the developer-supplied @error class via graphql-java's default
-    // PropertyDataFetcher. No ErrorFieldCase enum exists here; the PropertyField leaf is also
-    // covered by the slot-asserting RecordPropertyFieldCase rows.
+    // The `@error parent path/message -> RecordReadField (DefaultRead)` verdict lives in the
+    // spec-by-example corpus (the `error-field` ClassifiedCorpus example, MyError.path /
+    // MyError.message); both fields resolve off the developer-supplied @error class via
+    // graphql-java's default PropertyDataFetcher. No ErrorFieldCase enum exists here; the
+    // RecordReadField leaf is also covered by the slot-asserting record cases above.
 
     // ===== Errors-shaped fields lifting from PolymorphicReturnType to ErrorsField =====
 

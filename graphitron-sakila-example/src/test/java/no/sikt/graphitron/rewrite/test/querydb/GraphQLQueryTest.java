@@ -2948,8 +2948,8 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void recordTableField_propertyField_resolvedFromSameRecord() {
-        // title is a PropertyField on FilmDetails; it uses ColumnFetcher(DSL.field("title"))
+    void recordTableField_recordRead_resolvedFromSameRecord() {
+        // title is a RecordReadField on FilmDetails; its ByName locator reads DSL.field("title")
         // which extracts from the same Film Record passed through by the NestingField.
         Map<String, Object> data = execute(
             "{ films { filmDetails { title } } }");

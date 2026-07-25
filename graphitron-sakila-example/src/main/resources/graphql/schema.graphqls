@@ -821,7 +821,7 @@ type FilmReviewPayload {
 # failed javac; after, they spell NestedFilmReviewPayloadHolder.Payload and compile.
 #
 # Errors-only on purpose: a scalar data field (e.g. a reviewId) would be read off the backing record
-# through FetcherEmitter.propertyOrRecordBinding / inlineSuccessRead, whose own bestGuess cast is the
+# through FetcherEmitter.recordReadBinding / inlineSuccessRead, whose own bestGuess cast is the
 # no-Class-in-hand emit-site defect scoped to R412 (not R370). Keeping the payload errors-only isolates
 # this witness to the two in-hand sites so it compiles without depending on R412.
 type NestedFilmReviewPayload {

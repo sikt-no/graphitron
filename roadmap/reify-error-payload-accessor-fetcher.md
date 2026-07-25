@@ -24,8 +24,8 @@ classifier (`FieldBuilder.liftToErrorsField`) must reflect the payload class and
 excluded ("the classifier model is untouched"). So R303 deferred it here rather than reach past the
 parse-boundary with emit-time reflection.
 
-Scope when this is picked up: resolve the errors-field accessor at classify time (mirroring the
-`PropertyField` / `RecordField` accessor resolution on a class-backed parent), reify the
+Scope when this is picked up: resolve the errors-field accessor at classify time (mirroring
+`RecordReadField`'s `ValueLocator.JavaAccessor` resolution on a class-backed parent), reify the
 `PayloadAccessor` arm in `FetcherEmitter.bind` to a source-only `LightFetcher`-wrapped read, then
 reconcile `FetcherEmitter.resolvesViaPropertyDataFetcher` and the R268
 `validateOutcomeChildArmSwitch` rule (the `PropertyDataFetcher` escape the predicate guards no

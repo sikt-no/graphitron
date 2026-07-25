@@ -194,7 +194,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
 
     /**
      * A {@link Target.Single} of {@code shape}: the default wrapper for a leaf that carries no return
-     * wrapper (a scalar column / property projection). The leaf does not model its own output
+     * wrapper (a scalar column projection). The leaf does not model its own output
      * cardinality, so {@code Single} is the faithful read; {@code WrapperAlgebraTest} is where
      * any list-shaped scalar leaf would surface.
      */

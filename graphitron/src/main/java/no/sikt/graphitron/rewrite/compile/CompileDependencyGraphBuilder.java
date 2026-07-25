@@ -196,9 +196,8 @@ public final class CompileDependencyGraphBuilder {
             // Scalar / record / passthrough / cross-table-participant leaves: read off the arrived
             // source, no cross-type projection edge. (Frozen runtime helpers reached via the blanket.)
             case ChildField.ParticipantColumnReferenceField ignored -> { }
-            case ChildField.RecordField ignored -> { }
             case ChildField.RecordCompositeField ignored -> { }
-            case ChildField.PropertyField ignored -> { }
+            case ChildField.RecordReadField ignored -> { }
             case ChildField.ComputedField ignored -> { }
             case ChildField.ServiceRecordField ignored -> { }
             case ChildField.ErrorsField ignored -> { }
@@ -396,9 +395,8 @@ public final class CompileDependencyGraphBuilder {
             case ChildField.InterfaceField ignored -> { }
             case ChildField.UnionField ignored -> { }
             case ChildField.ServiceRecordField ignored -> { }
-            case ChildField.RecordField ignored -> { }
             case ChildField.RecordCompositeField ignored -> { }
-            case ChildField.PropertyField ignored -> { }
+            case ChildField.RecordReadField ignored -> { }
             case ChildField.SingleRecordIdField ignored -> { }
             case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
             case ChildField.ErrorsField ignored -> { }
