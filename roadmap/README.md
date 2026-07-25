@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R526` | Correct stale generator and model comment claims routed out of the javadoc sweep | In Review | 2026-07-25 <sub>created 2026-07-24</sub> | [plan](generator-comment-drift-corrections.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
+| `R527` | Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor | Ready | 2026-07-25 <sub>created 2026-07-24</sub> | [plan](unpinned-comment-contract-enforcement.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R51` | Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator | In Progress | 2026-07-25 | [plan](merge-propertyfield-recordfield-read-leaf.md) |
-| `R527` | Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor | In Review | 2026-07-25 <sub>created 2026-07-24</sub> | [plan](unpinned-comment-contract-enforcement.md) |
 | `R519` | Remove @table from input types; delete TableInputType (Phase 3) | Spec | 2026-07-24 | [plan](remove-table-on-input-directive.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-07-15 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-07-17 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
@@ -327,7 +327,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R521` [**Generated-output readability and hygiene sweep**](generated-output-hygiene-sweep.md) — Backlog, cleanup
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
-- `R527` [**Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor**](unpinned-comment-contract-enforcement.md) — In Review, testing
+- `R527` [**Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor**](unpinned-comment-contract-enforcement.md) — Ready, testing
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R529` [**Reject multi-hop and condition-join @tableMethod paths at build time instead of emitting a runtime throw**](tablemethod-subshape-buildtime-rejection.md) — Backlog, correctness
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
