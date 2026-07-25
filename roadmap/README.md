@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R526` | Correct stale generator and model comment claims routed out of the javadoc sweep | In Progress | 2026-07-25 <sub>created 2026-07-24</sub> | [plan](generator-comment-drift-corrections.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-07-14 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R51` | Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator | Ready | 2026-07-25 | [plan](merge-propertyfield-recordfield-read-leaf.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
+| `R51` | Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator | In Progress | 2026-07-25 | [plan](merge-propertyfield-recordfield-read-leaf.md) |
 | `R527` | Pin or enforce the load-bearing comment contracts the javadoc sweep could not anchor | In Progress | 2026-07-25 <sub>created 2026-07-24</sub> | [plan](unpinned-comment-contract-enforcement.md) |
 | `R519` | Remove @table from input types; delete TableInputType (Phase 3) | Spec | 2026-07-24 | [plan](remove-table-on-input-directive.md) |
 | `R417` | Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links) | In Review | 2026-07-24 <sub>created 2026-07-01</sub> | [plan](sakila-readme-app-section-r399-drift.md) |
@@ -198,7 +198,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R509` [**Bulk DML payloads follow input order, and warn where that cannot be guaranteed**](bulk-dml-payload-input-order.md) — Backlog, architecture
 - `R471` [**Direct-SQL OnlyChild emit for the reentry family**](direct-sql-onlychild-reentry-emit.md) — Backlog, architecture
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
-- `R51` [**Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator**](merge-propertyfield-recordfield-read-leaf.md) — Ready, cleanup
+- `R51` [**Merge PropertyField and RecordField into one record-read leaf carrying a sealed locator**](merge-propertyfield-recordfield-read-leaf.md) — In Progress, cleanup
 - `R531` [**Meta-test: no registry reads in the classify-time set**](classify-time-registry-read-guard.md) — Backlog, architecture
 - `R532` [**Route surfaceMultiProducerRejections through bindingRejectionVerdict**](single-producer-rejection-seed.md) — Backlog, cleanup
 - `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Backlog, tech-debt
