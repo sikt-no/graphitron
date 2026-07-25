@@ -1,13 +1,13 @@
 ---
 id: R519
 title: "Remove @table from input types; delete TableInputType (Phase 3)"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: classification-model
 depends-on: []
 created: 2026-07-24
-last-updated: 2026-07-24
+last-updated: 2026-07-25
 ---
 
 # Remove `@table` from input types; delete `TableInputType` (Phase 3)
@@ -136,6 +136,10 @@ seams lose their source when the variant goes:
 
 ## Plan
 
+Line citations throughout were exact at the spec commit and drift with trunk
+(~25-45 lines in `FieldBuilder` / `TypeBuilder` already); anchor on the named
+symbols, which the Ready review re-verified all exist.
+
 Additive-then-cutover at commit granularity: Phase A is behavior-neutral while
 the bridge still exists (R97's plain path already handles every `@table`-free
 input), so every commit stays green and any cross-table-reuse flip surfaces
@@ -155,15 +159,15 @@ Phase B is the isolated cutover with the exhaustive-switch cascade.
    `CreateKeyedNodeInput` → `ID`, …) move to `@mutation(table:)` on the field.
    `FixtureWarningsGateTest` and `DmlBulkMutationsExecutionTest` expectations
    (which currently expect the deprecation warnings) update here.
-2. **Inline SDL in tests**: ~383 `input … @table` declarations across 40 files
-   in `graphitron/src/test/java` (largest: `GraphitronSchemaBuilderTest` ~156,
-   `NodeIdPipelineTest` ~41, `MutationDmlNodeIdClassificationTest` ~35,
-   `MutationTableArgClassificationTest` ~25, `FacetedConnectionPipelineTest`
-   ~23; the Backlog body's "38 + a few" undercounted — its 29/23 figures were
-   `TableInputType`-string counts, a different metric) plus inline SDL in
-   `graphitron-lsp` tests (`FieldCompletionsTest`, `DiagnosticsTest`,
-   `HoversTest`, 2 each; `ValidatorDiagnosticsTest`'s deprecation-diagnostic
-   case). Same migration rules as (1). Tests that pin the *bridge itself*
+2. **Inline SDL in tests**: ~320 `input … @table` declarations across ~37
+   files in `graphitron/src/test/java` (largest at the Ready sign-off:
+   `GraphitronSchemaBuilderTest` ~124, `NodeIdPipelineTest` ~34,
+   `MutationDmlNodeIdClassificationTest` ~32, `FacetedConnectionPipelineTest`
+   ~20, `MutationTableArgClassificationTest` ~17; counts drift with trunk —
+   re-grep at implementation. The Backlog body's "38 + a few" undercounted —
+   its 29/23 figures were `TableInputType`-string counts, a different metric)
+   plus inline SDL in `graphitron-lsp` tests (`FieldCompletionsTest`,
+   `DiagnosticsTest`, `HoversTest`, 2 each). Same migration rules as (1). Tests that pin the *bridge itself*
    are not migrated here; they retire or flip in Phase B.
 3. **Pipeline-tier pin for the headline behavior flip** (new test, lands while
    both paths exist): a directiveless input consumed by two fields on different
