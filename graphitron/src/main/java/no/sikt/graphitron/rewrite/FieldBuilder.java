@@ -3678,10 +3678,10 @@ class FieldBuilder {
      * Variant of {@link #buildWithChannel} for service-backed root fields: resolves the
      * {@link ErrorChannel} (catch-arm dispatch recipe), runs the declared-checked-exception
      * match check against the resolved channel, and verifies the service method's reflected
-     * return type matches the SDL payload type. Used by the four service field variants
-     * ({@code MutationServiceTableField}, {@code MutationServiceRecordField},
-     * {@code QueryServiceTableField}, {@code QueryServiceRecordField}); a rejection on any of
-     * the three checks surfaces as {@code UnclassifiedField}.
+     * return type matches the SDL payload type. Used by every root {@code @service} field
+     * variant on both sides; the {@link ErrorChannel.Mapped} component type on those records is
+     * the membership. A rejection on any of the three checks surfaces as
+     * {@code UnclassifiedField}.
      *
      * <p>The strict-return check runs only when the field resolves to a class-backed
      * payload ({@code ResultReturnType} with a non-null {@code fqClassName}); other return
