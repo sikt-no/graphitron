@@ -1,5 +1,5 @@
 ---
-id: R533
+id: R534
 title: "Record key decodes erase explicit-null column writes via jOOQ from() flag reset"
 status: Backlog
 bucket: architecture
